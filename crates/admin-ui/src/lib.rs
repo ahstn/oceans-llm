@@ -14,7 +14,7 @@ impl Default for AdminUiConfig {
     fn default() -> Self {
         Self {
             base_path: "/admin".to_string(),
-            upstream: "http://127.0.0.1:3001".to_string(),
+            upstream: "http://localhost:3001".to_string(),
             connect_timeout_ms: 750,
             request_timeout_ms: 10_000,
         }

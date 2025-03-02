@@ -14,7 +14,7 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
-ADMIN_UI_UPSTREAM="${ADMIN_UI_UPSTREAM:-http://127.0.0.1:${ADMIN_UI_INTERNAL_PORT}}"
+ADMIN_UI_UPSTREAM="${ADMIN_UI_UPSTREAM:-http://localhost:${ADMIN_UI_INTERNAL_PORT}}"
 
 bun run --cwd "$WEB_DIR" dev -- --port "$ADMIN_UI_INTERNAL_PORT" &
 UI_PID=$!

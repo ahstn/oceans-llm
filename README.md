@@ -25,7 +25,7 @@ Single-container dual process:
 - `PORT`: Gateway bind port (default `8080`)
 - `GATEWAY_CONFIG`: gateway config file path (default `./gateway.yaml`)
 - `ADMIN_UI_BASE_PATH`: UI mount path (default `/admin`)
-- `ADMIN_UI_UPSTREAM`: SSR upstream URL (default `http://127.0.0.1:3001`)
+- `ADMIN_UI_UPSTREAM`: SSR upstream URL (default `http://localhost:3001`)
 - `ADMIN_UI_CONNECT_TIMEOUT_MS`: Proxy connect timeout (default `750`)
 - `ADMIN_UI_REQUEST_TIMEOUT_MS`: Proxy request timeout (default `10000`)
 - `ADMIN_UI_INTERNAL_PORT`: Internal Bun SSR port used by helper scripts (default `3001`)

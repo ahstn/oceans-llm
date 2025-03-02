@@ -82,7 +82,7 @@ fn load_admin_ui_config() -> AdminUiConfig {
     AdminUiConfig {
         base_path: env::var("ADMIN_UI_BASE_PATH").unwrap_or_else(|_| "/admin".to_string()),
         upstream: env::var("ADMIN_UI_UPSTREAM")
-            .unwrap_or_else(|_| "http://127.0.0.1:3001".to_string()),
+            .unwrap_or_else(|_| "http://localhost:3001".to_string()),
         connect_timeout_ms: env_u64("ADMIN_UI_CONNECT_TIMEOUT_MS", 750),
         request_timeout_ms: env_u64("ADMIN_UI_REQUEST_TIMEOUT_MS", 10_000),
     }
