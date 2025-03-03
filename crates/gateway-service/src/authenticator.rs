@@ -5,8 +5,8 @@ use argon2::{
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
 };
 use gateway_core::{
-    ApiKeyRepository, AuthError, AuthenticatedApiKey, GatewayError, extract_bearer_token,
-    parse_gateway_api_key,
+    ApiKeyOwnerKind, ApiKeyRepository, AuthError, AuthenticatedApiKey, GatewayError,
+    extract_bearer_token, parse_gateway_api_key,
 };
 
 #[derive(Clone)]
@@ -51,6 +51,18 @@ where
             return Err(AuthError::ApiKeyRevoked.into());
         }
 
+        let owner_is_valid = match record.owner_kind {
+            ApiKeyOwnerKind::User => {
+                record.owner_user_id.is_some() && record.owner_team_id.is_none()
+            }
+            ApiKeyOwnerKind::Team => {
+                record.owner_team_id.is_some() && record.owner_user_id.is_none()
+            }
+        };
+        if !owner_is_valid {
+            return Err(AuthError::ApiKeyOwnerInvalid.into());
+        }
+
         let password_hash = PasswordHash::new(&record.secret_hash)
             .map_err(|error| AuthError::HashVerification(error.to_string()))?;
 
@@ -64,6 +76,9 @@ where
             id: record.id,
             public_id: record.public_id,
             name: record.name,
+            owner_kind: record.owner_kind,
+            owner_user_id: record.owner_user_id,
+            owner_team_id: record.owner_team_id,
         })
     }
 }
@@ -84,7 +99,8 @@ mod tests {
 
     use async_trait::async_trait;
     use gateway_core::{
-        ApiKeyRecord, ApiKeyRepository, AuthError, GatewayError, StoreError, parse_gateway_api_key,
+        ApiKeyOwnerKind, ApiKeyRecord, ApiKeyRepository, AuthError, GatewayError, StoreError,
+        parse_gateway_api_key,
     };
     use time::OffsetDateTime;
     use uuid::Uuid;
@@ -125,6 +141,9 @@ mod tests {
                 secret_hash: hash,
                 name: "dev".to_string(),
                 status: "active".to_string(),
+                owner_kind: ApiKeyOwnerKind::Team,
+                owner_user_id: None,
+                owner_team_id: Some(Uuid::new_v4()),
                 created_at: OffsetDateTime::now_utc(),
                 last_used_at: None,
                 revoked_at: None,
@@ -138,6 +157,7 @@ mod tests {
             .expect("must authenticate");
 
         assert_eq!(authenticated.public_id, "dev123");
+        assert!(authenticated.owner_team_id.is_some());
     }
 
     #[tokio::test]
@@ -150,6 +170,9 @@ mod tests {
                 secret_hash: hash,
                 name: "dev".to_string(),
                 status: "active".to_string(),
+                owner_kind: ApiKeyOwnerKind::Team,
+                owner_user_id: None,
+                owner_team_id: Some(Uuid::new_v4()),
                 created_at: OffsetDateTime::now_utc(),
                 last_used_at: None,
                 revoked_at: None,
@@ -165,6 +188,37 @@ mod tests {
         assert!(matches!(
             error,
             GatewayError::Auth(AuthError::ApiKeySecretMismatch)
+        ));
+    }
+
+    #[tokio::test]
+    async fn rejects_invalid_owner_metadata() {
+        let hash = hash_gateway_key_secret("super-secret").expect("hash secret");
+        let repo = Arc::new(InMemoryKeyRepo {
+            key: Some(ApiKeyRecord {
+                id: Uuid::new_v4(),
+                public_id: "dev123".to_string(),
+                secret_hash: hash,
+                name: "dev".to_string(),
+                status: "active".to_string(),
+                owner_kind: ApiKeyOwnerKind::Team,
+                owner_user_id: Some(Uuid::new_v4()),
+                owner_team_id: Some(Uuid::new_v4()),
+                created_at: OffsetDateTime::now_utc(),
+                last_used_at: None,
+                revoked_at: None,
+            }),
+        });
+
+        let authenticator = Authenticator::new(repo);
+        let error = authenticator
+            .authenticate_authorization_header(Some("Bearer gwk_dev123.super-secret"))
+            .await
+            .expect_err("must reject invalid owner metadata");
+
+        assert!(matches!(
+            error,
+            GatewayError::Auth(AuthError::ApiKeyOwnerInvalid)
         ));
     }
 }

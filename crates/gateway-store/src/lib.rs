@@ -8,12 +8,13 @@ pub use migrate::run_migrations;
 #[cfg(test)]
 mod tests {
     use gateway_core::{
-        ApiKeyRepository, ModelRepository, SeedApiKey, SeedModel, SeedModelRoute, SeedProvider,
-        StoreHealth,
+        ApiKeyOwnerKind, ApiKeyRepository, ModelRepository, SYSTEM_LEGACY_TEAM_ID, SeedApiKey,
+        SeedModel, SeedModelRoute, SeedProvider, StoreHealth,
     };
     use serde_json::{Map, json};
     use serial_test::serial;
     use tempfile::tempdir;
+    use uuid::Uuid;
 
     use crate::{LibsqlStore, run_migrations};
 
@@ -96,6 +97,12 @@ mod tests {
             .await
             .expect("query key")
             .expect("api key should exist");
+        assert_eq!(api_key.owner_kind, ApiKeyOwnerKind::Team);
+        assert_eq!(
+            api_key.owner_team_id,
+            Some(Uuid::parse_str(SYSTEM_LEGACY_TEAM_ID).expect("legacy team uuid"))
+        );
+        assert_eq!(api_key.owner_user_id, None);
 
         let accessible_models = store
             .list_models_for_api_key(api_key.id)
@@ -110,5 +117,263 @@ mod tests {
             .expect("model routes");
         assert_eq!(routes.len(), 1);
         assert_eq!(routes[0].provider_key, "openai-prod");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn migration_backfills_legacy_api_keys_with_reserved_team_owner() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
+            .build()
+            .await
+            .expect("db");
+        let conn = db.connect().expect("connection");
+
+        conn.execute(
+            r#"
+            CREATE TABLE refinery_schema_history (
+                version INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                applied_on INTEGER NOT NULL,
+                checksum TEXT NOT NULL
+            )
+            "#,
+            (),
+        )
+        .await
+        .expect("schema history");
+        conn.execute_batch(include_str!("../migrations/V1__init.sql"))
+            .await
+            .expect("v1 schema");
+        conn.execute_batch(include_str!("../migrations/V2__audit_baseline.sql"))
+            .await
+            .expect("v2 schema");
+        conn.execute(
+            "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) VALUES (1, 'init', unixepoch(), 'v1')",
+            (),
+        )
+        .await
+        .expect("history v1");
+        conn.execute(
+            "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) VALUES (2, 'audit_baseline', unixepoch(), 'v2')",
+            (),
+        )
+        .await
+        .expect("history v2");
+        conn.execute(
+            r#"
+            INSERT INTO api_keys (id, public_id, secret_hash, name, status, created_at)
+            VALUES (?1, 'legacy', 'hash', 'legacy key', 'active', unixepoch())
+            "#,
+            [Uuid::new_v4().to_string()],
+        )
+        .await
+        .expect("legacy api key");
+
+        run_migrations(&db_path).await.expect("migrate to v3");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+        let key = store
+            .get_api_key_by_public_id("legacy")
+            .await
+            .expect("query")
+            .expect("legacy key should exist");
+        assert_eq!(key.owner_kind, ApiKeyOwnerKind::Team);
+        assert_eq!(
+            key.owner_team_id,
+            Some(Uuid::parse_str(SYSTEM_LEGACY_TEAM_ID).expect("legacy team uuid"))
+        );
+        assert_eq!(key.owner_user_id, None);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn users_email_normalized_is_case_insensitive_unique() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
+            .build()
+            .await
+            .expect("db");
+        let conn = db.connect().expect("connection");
+        let now = time::OffsetDateTime::now_utc().unix_timestamp();
+
+        conn.execute(
+            r#"
+            INSERT INTO users (
+              user_id, name, email, email_normalized, global_role, auth_mode, status,
+              request_logging_enabled, model_access_mode, created_at, updated_at
+            ) VALUES (?1, 'User One', 'USER@EXAMPLE.COM', 'user@example.com', 'user', 'password', 'active', 1, 'all', ?2, ?2)
+            "#,
+            libsql::params![Uuid::new_v4().to_string(), now],
+        )
+        .await
+        .expect("first user");
+
+        let duplicate_result = conn
+            .execute(
+                r#"
+                INSERT INTO users (
+                  user_id, name, email, email_normalized, global_role, auth_mode, status,
+                  request_logging_enabled, model_access_mode, created_at, updated_at
+                ) VALUES (?1, 'User Two', 'user@example.com', 'user@example.com', 'user', 'password', 'active', 1, 'all', ?2, ?2)
+                "#,
+                libsql::params![Uuid::new_v4().to_string(), now],
+            )
+            .await;
+
+        assert!(duplicate_result.is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn team_membership_enforces_single_team_per_user() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
+            .build()
+            .await
+            .expect("db");
+        let conn = db.connect().expect("connection");
+        let now = time::OffsetDateTime::now_utc().unix_timestamp();
+        let user_id = Uuid::new_v4();
+        let team_a = Uuid::new_v4();
+        let team_b = Uuid::new_v4();
+
+        conn.execute(
+            r#"
+            INSERT INTO users (
+              user_id, name, email, email_normalized, global_role, auth_mode, status,
+              request_logging_enabled, model_access_mode, created_at, updated_at
+            ) VALUES (?1, 'User One', 'user@example.com', 'user@example.com', 'user', 'password', 'active', 1, 'all', ?2, ?2)
+            "#,
+            libsql::params![user_id.to_string(), now],
+        )
+        .await
+        .expect("user");
+        conn.execute(
+            r#"
+            INSERT INTO teams (team_id, team_key, team_name, status, model_access_mode, created_at, updated_at)
+            VALUES (?1, 'team-a', 'Team A', 'active', 'all', ?3, ?3),
+                   (?2, 'team-b', 'Team B', 'active', 'all', ?3, ?3)
+            "#,
+            libsql::params![team_a.to_string(), team_b.to_string(), now],
+        )
+        .await
+        .expect("teams");
+        conn.execute(
+            r#"
+            INSERT INTO team_memberships (team_id, user_id, role, created_at, updated_at)
+            VALUES (?1, ?2, 'member', ?3, ?3)
+            "#,
+            libsql::params![team_a.to_string(), user_id.to_string(), now],
+        )
+        .await
+        .expect("first membership");
+
+        let duplicate_result = conn
+            .execute(
+                r#"
+                INSERT INTO team_memberships (team_id, user_id, role, created_at, updated_at)
+                VALUES (?1, ?2, 'member', ?3, ?3)
+                "#,
+                libsql::params![team_b.to_string(), user_id.to_string(), now],
+            )
+            .await;
+
+        assert!(duplicate_result.is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn api_key_owner_constraint_rejects_invalid_combinations() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
+            .build()
+            .await
+            .expect("db");
+        let conn = db.connect().expect("connection");
+        let now = time::OffsetDateTime::now_utc().unix_timestamp();
+
+        let invalid_result = conn
+            .execute(
+                r#"
+                INSERT INTO api_keys (
+                  id, public_id, secret_hash, name, status, owner_kind, owner_user_id, owner_team_id, created_at
+                ) VALUES (?1, 'invalid_owner', 'hash', 'invalid', 'active', 'user', NULL, NULL, ?2)
+                "#,
+                libsql::params![Uuid::new_v4().to_string(), now],
+            )
+            .await;
+
+        assert!(invalid_result.is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn user_budget_enforces_single_active_record_per_user() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
+            .build()
+            .await
+            .expect("db");
+        let conn = db.connect().expect("connection");
+        let now = time::OffsetDateTime::now_utc().unix_timestamp();
+        let user_id = Uuid::new_v4();
+
+        conn.execute(
+            r#"
+            INSERT INTO users (
+              user_id, name, email, email_normalized, global_role, auth_mode, status,
+              request_logging_enabled, model_access_mode, created_at, updated_at
+            ) VALUES (?1, 'User One', 'user@example.com', 'user@example.com', 'user', 'password', 'active', 1, 'all', ?2, ?2)
+            "#,
+            libsql::params![user_id.to_string(), now],
+        )
+        .await
+        .expect("user");
+
+        conn.execute(
+            r#"
+            INSERT INTO user_budgets (
+                user_budget_id, user_id, cadence, amount_usd, hard_limit, timezone, is_active, created_at, updated_at
+            ) VALUES (?1, ?2, 'daily', 10.0, 1, 'UTC', 1, ?3, ?3)
+            "#,
+            libsql::params![Uuid::new_v4().to_string(), user_id.to_string(), now],
+        )
+        .await
+        .expect("first budget");
+
+        let duplicate_active_result = conn
+            .execute(
+                r#"
+                INSERT INTO user_budgets (
+                    user_budget_id, user_id, cadence, amount_usd, hard_limit, timezone, is_active, created_at, updated_at
+                ) VALUES (?1, ?2, 'weekly', 20.0, 1, 'UTC', 1, ?3, ?3)
+                "#,
+                libsql::params![Uuid::new_v4().to_string(), user_id.to_string(), now],
+            )
+            .await;
+        assert!(duplicate_active_result.is_err());
+
+        conn.execute(
+            r#"
+            INSERT INTO user_budgets (
+                user_budget_id, user_id, cadence, amount_usd, hard_limit, timezone, is_active, created_at, updated_at
+            ) VALUES (?1, ?2, 'weekly', 20.0, 1, 'UTC', 0, ?3, ?3)
+            "#,
+            libsql::params![Uuid::new_v4().to_string(), user_id.to_string(), now],
+        )
+        .await
+        .expect("inactive budget should be allowed");
     }
 }

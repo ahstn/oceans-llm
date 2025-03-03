@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use gateway_core::{SeedApiKey, SeedModel, SeedProvider, StoreError};
+use gateway_core::{
+    SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedModel, SeedProvider, StoreError,
+};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -14,6 +16,18 @@ impl LibsqlStore {
         api_keys: &[SeedApiKey],
     ) -> Result<(), StoreError> {
         let now = OffsetDateTime::now_utc().unix_timestamp();
+
+        self.connection()
+            .execute(
+                r#"
+                INSERT OR IGNORE INTO teams (
+                    team_id, team_key, team_name, status, model_access_mode, created_at, updated_at
+                ) VALUES (?1, ?2, 'System Legacy', 'active', 'all', ?3, ?3)
+                "#,
+                libsql::params![SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY, now],
+            )
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?;
 
         for provider in providers {
             let config_json = serde_json::to_string(&provider.config)
@@ -141,17 +155,22 @@ impl LibsqlStore {
                 .execute(
                     r#"
                     INSERT INTO api_keys (
-                        id, public_id, secret_hash, name, status, created_at
-                    ) VALUES (?1, ?2, ?3, ?4, 'active', ?5)
+                        id, public_id, secret_hash, name, status,
+                        owner_kind, owner_user_id, owner_team_id, created_at
+                    ) VALUES (?1, ?2, ?3, ?4, 'active', 'team', NULL, ?5, ?6)
                     ON CONFLICT(public_id) DO UPDATE SET
                         secret_hash = excluded.secret_hash,
-                        name = excluded.name
+                        name = excluded.name,
+                        owner_kind = excluded.owner_kind,
+                        owner_user_id = excluded.owner_user_id,
+                        owner_team_id = excluded.owner_team_id
                     "#,
                     libsql::params![
                         key_id.to_string(),
                         api_key.public_id.as_str(),
                         api_key.secret_hash.as_str(),
                         api_key.name.as_str(),
+                        SYSTEM_LEGACY_TEAM_ID,
                         now
                     ],
                 )

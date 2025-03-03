@@ -8,8 +8,11 @@ pub use auth::{
     AuthenticatedApiKey, ParsedGatewayApiKey, extract_bearer_token, parse_gateway_api_key,
 };
 pub use domain::{
-    ApiKeyRecord, GatewayModel, ModelRoute, ProviderConnection, ProviderRequestContext, SeedApiKey,
-    SeedModel, SeedModelRoute, SeedProvider,
+    ApiKeyOwnerKind, ApiKeyRecord, AuthMode, BudgetCadence, GatewayModel, GlobalRole,
+    MembershipRole, ModelAccessMode, ModelRoute, ProviderConnection, ProviderRequestContext,
+    RequestLogRecord, SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedModel,
+    SeedModelRoute, SeedProvider, TeamMembershipRecord, TeamRecord, UsageCostEventRecord,
+    UserBudgetRecord, UserRecord,
 };
 pub use error::{AuthError, GatewayError, ProviderError, RouteError, StoreError};
 pub use protocol::openai::{
@@ -17,6 +20,7 @@ pub use protocol::openai::{
     OpenAiErrorEnvelope,
 };
 pub use traits::{
-    ApiKeyRepository, ModelRepository, ProviderClient, ProviderRegistry, ProviderRepository,
-    ProviderStream, RoutePlanner, StoreHealth,
+    ApiKeyRepository, BudgetRepository, IdentityRepository, ModelRepository, ProviderClient,
+    ProviderRegistry, ProviderRepository, ProviderStream, RequestLogRepository, RoutePlanner,
+    StoreHealth,
 };

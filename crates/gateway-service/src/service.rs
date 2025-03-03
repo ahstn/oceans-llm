@@ -1,12 +1,15 @@
 use std::sync::Arc;
 
 use gateway_core::{
-    AuthenticatedApiKey, GatewayError, GatewayModel, ModelRepository, ModelRoute,
-    ProviderRepository, RouteError, RoutePlanner, StoreHealth,
+    AuthenticatedApiKey, BudgetRepository, GatewayError, GatewayModel, IdentityRepository,
+    ModelRepository, ModelRoute, ProviderRepository, RequestLogRecord, RequestLogRepository,
+    RouteError, RoutePlanner, StoreHealth,
 };
+use time::OffsetDateTime;
 use tracing::warn;
+use uuid::Uuid;
 
-use crate::{Authenticator, ModelAccess};
+use crate::{Authenticator, BudgetGuard, ModelAccess, RequestLogging};
 
 #[derive(Debug, Clone)]
 pub struct ResolvedRequest {
@@ -20,6 +23,8 @@ pub struct GatewayService<S, P> {
     store: Arc<S>,
     authenticator: Authenticator<S>,
     model_access: ModelAccess<S>,
+    budget_guard: BudgetGuard<S>,
+    request_logging: RequestLogging<S>,
     planner: Arc<P>,
 }
 
@@ -27,6 +32,9 @@ impl<S, P> GatewayService<S, P>
 where
     S: gateway_core::ApiKeyRepository
         + ModelRepository
+        + IdentityRepository
+        + BudgetRepository
+        + RequestLogRepository
         + ProviderRepository
         + StoreHealth
         + Send
@@ -38,11 +46,15 @@ where
     pub fn new(store: Arc<S>, planner: Arc<P>) -> Self {
         let authenticator = Authenticator::new(store.clone());
         let model_access = ModelAccess::new(store.clone());
+        let budget_guard = BudgetGuard::new(store.clone());
+        let request_logging = RequestLogging::new(store.clone());
 
         Self {
             store,
             authenticator,
             model_access,
+            budget_guard,
+            request_logging,
             planner,
         }
     }
@@ -65,7 +77,7 @@ where
         &self,
         auth: &AuthenticatedApiKey,
     ) -> Result<Vec<GatewayModel>, GatewayError> {
-        self.model_access.list_models_for_api_key(auth.id).await
+        self.model_access.list_models_for_api_key(auth).await
     }
 
     pub async fn resolve_request(
@@ -108,5 +120,26 @@ where
             model,
             routes: viable_routes,
         })
+    }
+
+    pub async fn enforce_and_record_budget_usage(
+        &self,
+        auth: &AuthenticatedApiKey,
+        request_id: &str,
+        model_id: Option<Uuid>,
+        estimated_cost_usd: f64,
+        occurred_at: OffsetDateTime,
+    ) -> Result<(), GatewayError> {
+        self.budget_guard
+            .enforce_and_record_usage(auth, request_id, model_id, estimated_cost_usd, occurred_at)
+            .await
+    }
+
+    pub async fn log_request_if_enabled(
+        &self,
+        auth: &AuthenticatedApiKey,
+        log: RequestLogRecord,
+    ) -> Result<bool, GatewayError> {
+        self.request_logging.log_request_if_enabled(auth, log).await
     }
 }

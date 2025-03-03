@@ -1,5 +1,6 @@
 use uuid::Uuid;
 
+use crate::domain::ApiKeyOwnerKind;
 use crate::error::AuthError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -13,6 +14,21 @@ pub struct AuthenticatedApiKey {
     pub id: Uuid,
     pub public_id: String,
     pub name: String,
+    pub owner_kind: ApiKeyOwnerKind,
+    pub owner_user_id: Option<Uuid>,
+    pub owner_team_id: Option<Uuid>,
+}
+
+impl AuthenticatedApiKey {
+    #[must_use]
+    pub fn is_user_owned(&self) -> bool {
+        self.owner_kind == ApiKeyOwnerKind::User
+    }
+
+    #[must_use]
+    pub fn is_team_owned(&self) -> bool {
+        self.owner_kind == ApiKeyOwnerKind::Team
+    }
 }
 
 pub fn extract_bearer_token(header: &str) -> Result<&str, AuthError> {
