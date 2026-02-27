@@ -1,0 +1,31 @@
+[tools]
+rust = "stable"
+opentofu = "latest"
+
+[tasks.install]
+description = "Install or update tool versions from mise.toml"
+run = "mise install"
+
+[tasks.build]
+description = "Build all Rust crates"
+run = "cargo build --workspace"
+
+[tasks.check]
+description = "Compile all targets without producing binaries"
+run = "cargo check --workspace --all-targets"
+
+[tasks.test]
+description = "Run workspace tests"
+run = "cargo test --workspace"
+
+[tasks.fmt]
+description = "Format Rust sources"
+run = "cargo fmt --all"
+
+[tasks.lint]
+description = "Run clippy with warnings denied"
+run = "cargo clippy --workspace --all-targets -- -D warnings"
+
+[tasks.run]
+description = "Run the gateway binary"
+run = "cargo run -p gateway"
