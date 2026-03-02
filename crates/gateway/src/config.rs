@@ -1,0 +1,321 @@
+use std::{collections::BTreeMap, env, fs, path::Path};
+
+use anyhow::{Context, bail};
+use gateway_core::{SeedApiKey, SeedModel, SeedModelRoute, SeedProvider, parse_gateway_api_key};
+use gateway_providers::OpenAiCompatConfig;
+use gateway_service::hash_gateway_key_secret;
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value, json};
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct GatewayConfig {
+    #[serde(default)]
+    pub server: ServerConfig,
+    #[serde(default)]
+    pub database: DatabaseConfig,
+    #[serde(default)]
+    pub auth: AuthConfig,
+    #[serde(default)]
+    pub providers: Vec<ProviderConfig>,
+    #[serde(default)]
+    pub models: Vec<ModelConfig>,
+}
+
+impl GatewayConfig {
+    pub fn from_path(path: &Path) -> anyhow::Result<Self> {
+        if !path.exists() {
+            return Ok(Self::default());
+        }
+
+        let raw = fs::read_to_string(path)
+            .with_context(|| format!("failed reading config file `{}`", path.display()))?;
+        let parsed: Self = serde_yaml::from_str(&raw)
+            .with_context(|| format!("failed parsing yaml config `{}`", path.display()))?;
+
+        Ok(parsed)
+    }
+
+    pub fn seed_providers(&self) -> anyhow::Result<Vec<SeedProvider>> {
+        let mut providers = Vec::new();
+
+        for provider in &self.providers {
+            if let Some(auth) = &provider.auth
+                && let Some(token) = &auth.token
+            {
+                validate_env_reference_if_needed(token)?;
+            }
+
+            let config = json!({
+                "base_url": provider.base_url,
+                "default_headers": provider.default_headers,
+                "timeouts": provider.timeouts,
+            });
+
+            let secrets = provider.auth.as_ref().map(|auth| {
+                json!({
+                    "kind": auth.kind,
+                    "token": auth.token,
+                })
+            });
+
+            providers.push(SeedProvider {
+                provider_key: provider.id.clone(),
+                provider_type: provider.provider_type.clone(),
+                config,
+                secrets,
+            });
+        }
+
+        Ok(providers)
+    }
+
+    #[must_use]
+    pub fn seed_models(&self) -> Vec<SeedModel> {
+        self.models
+            .iter()
+            .map(|model| SeedModel {
+                model_key: model.id.clone(),
+                description: model.description.clone(),
+                tags: model.tags.clone(),
+                rank: model.rank,
+                routes: model
+                    .routes
+                    .iter()
+                    .map(|route| SeedModelRoute {
+                        provider_key: route.provider.clone(),
+                        upstream_model: route.upstream_model.clone(),
+                        priority: route.priority,
+                        weight: route.weight,
+                        enabled: route.enabled,
+                        extra_headers: route
+                            .extra_headers
+                            .iter()
+                            .map(|(key, value)| (key.clone(), Value::String(value.clone())))
+                            .collect::<Map<String, Value>>(),
+                        extra_body: route.extra_body.clone(),
+                    })
+                    .collect(),
+            })
+            .collect()
+    }
+
+    pub fn seed_api_keys(&self) -> anyhow::Result<Vec<SeedApiKey>> {
+        let mut api_keys = Vec::new();
+
+        for seed_key in &self.auth.seed_api_keys {
+            let raw_value = resolve_env_reference(&seed_key.value)?;
+            let parsed = parse_gateway_api_key(&raw_value).with_context(|| {
+                format!("invalid gateway key configured for `{}`", seed_key.name)
+            })?;
+
+            let secret_hash = hash_gateway_key_secret(&parsed.secret).with_context(|| {
+                format!(
+                    "failed hashing configured gateway key for `{}`",
+                    seed_key.name
+                )
+            })?;
+
+            api_keys.push(SeedApiKey {
+                name: seed_key.name.clone(),
+                public_id: parsed.public_id,
+                secret_hash,
+                allowed_models: seed_key.allowed_models.clone(),
+            });
+        }
+
+        Ok(api_keys)
+    }
+
+    pub fn openai_compat_provider_configs(&self) -> anyhow::Result<Vec<OpenAiCompatConfig>> {
+        let mut configs = Vec::new();
+
+        for provider in &self.providers {
+            if provider.provider_type != "openai_compat" {
+                continue;
+            }
+
+            let mut config =
+                OpenAiCompatConfig::new(provider.id.clone(), provider.base_url.clone());
+            config.default_headers = provider.default_headers.clone();
+            config.request_timeout_ms = provider
+                .timeouts
+                .as_ref()
+                .map(|timeouts| timeouts.total_ms)
+                .unwrap_or(120_000);
+
+            if let Some(auth) = &provider.auth
+                && let Some(token) = &auth.token
+            {
+                config.bearer_token = Some(resolve_secret_reference(token)?);
+            }
+
+            configs.push(config);
+        }
+
+        Ok(configs)
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ServerConfig {
+    #[serde(default = "default_bind")]
+    pub bind: String,
+    #[serde(default = "default_log_format")]
+    pub log_format: String,
+    #[serde(default)]
+    pub otel_endpoint: Option<String>,
+}
+
+impl Default for ServerConfig {
+    fn default() -> Self {
+        Self {
+            bind: default_bind(),
+            log_format: default_log_format(),
+            otel_endpoint: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DatabaseConfig {
+    #[serde(default = "default_db_path")]
+    pub path: String,
+}
+
+impl Default for DatabaseConfig {
+    fn default() -> Self {
+        Self {
+            path: default_db_path(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct AuthConfig {
+    #[serde(default)]
+    pub seed_api_keys: Vec<SeedApiKeyConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SeedApiKeyConfig {
+    pub name: String,
+    pub value: String,
+    #[serde(default)]
+    pub allowed_models: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ProviderConfig {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub provider_type: String,
+    pub base_url: String,
+    #[serde(default)]
+    pub auth: Option<ProviderAuthConfig>,
+    #[serde(default)]
+    pub default_headers: BTreeMap<String, String>,
+    #[serde(default)]
+    pub timeouts: Option<ProviderTimeouts>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ProviderAuthConfig {
+    pub kind: String,
+    #[serde(default)]
+    pub token: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ProviderTimeouts {
+    #[serde(default = "default_provider_timeout_ms")]
+    pub total_ms: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ModelConfig {
+    pub id: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default = "default_model_rank")]
+    pub rank: i32,
+    #[serde(default)]
+    pub routes: Vec<ModelRouteConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ModelRouteConfig {
+    pub provider: String,
+    pub upstream_model: String,
+    #[serde(default = "default_route_priority")]
+    pub priority: i32,
+    #[serde(default = "default_route_weight")]
+    pub weight: f64,
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub extra_headers: BTreeMap<String, String>,
+    #[serde(default)]
+    pub extra_body: Map<String, Value>,
+}
+
+fn resolve_env_reference(value: &str) -> anyhow::Result<String> {
+    let env_var_name = value
+        .strip_prefix("env.")
+        .ok_or_else(|| anyhow::anyhow!("expected env.* secret reference, got `{value}`"))?;
+
+    let resolved = env::var(env_var_name)
+        .with_context(|| format!("required environment variable `{env_var_name}` is not set"))?;
+
+    Ok(resolved)
+}
+
+fn resolve_secret_reference(value: &str) -> anyhow::Result<String> {
+    if value.starts_with("env.") {
+        resolve_env_reference(value)
+    } else if let Some(literal) = value.strip_prefix("literal.") {
+        Ok(literal.to_string())
+    } else {
+        bail!("unsupported secret reference `{value}`; use env.* or literal.* for this phase")
+    }
+}
+
+fn validate_env_reference_if_needed(value: &str) -> anyhow::Result<()> {
+    if value.starts_with("env.") {
+        let _ = resolve_env_reference(value)?;
+    }
+    Ok(())
+}
+
+fn default_bind() -> String {
+    "0.0.0.0:8080".to_string()
+}
+
+fn default_log_format() -> String {
+    "pretty".to_string()
+}
+
+fn default_db_path() -> String {
+    "./gateway.db".to_string()
+}
+
+const fn default_provider_timeout_ms() -> u64 {
+    120_000
+}
+
+const fn default_model_rank() -> i32 {
+    100
+}
+
+const fn default_route_priority() -> i32 {
+    100
+}
+
+const fn default_route_weight() -> f64 {
+    1.0
+}
+
+const fn default_enabled() -> bool {
+    true
+}

@@ -1,0 +1,19 @@
+[package]
+name = "gateway-service"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow.workspace = true
+argon2.workspace = true
+gateway-core.workspace = true
+itertools.workspace = true
+rand.workspace = true
+tracing.workspace = true
+time.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+async-trait.workspace = true
+tokio.workspace = true
+serde_json.workspace = true
