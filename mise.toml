@@ -1,5 +1,6 @@
 [tools]
 rust = "stable"
+bun = "latest"
 opentofu = "latest"
 
 [tasks.install]
@@ -7,25 +8,49 @@ description = "Install or update tool versions from mise.toml"
 run = "mise install"
 
 [tasks.build]
-description = "Build all Rust crates"
-run = "cargo build --workspace"
+description = "Build Rust crates and admin UI bundle"
+run = "cargo build --workspace && bun run --cwd crates/admin-ui/web build"
 
 [tasks.check]
-description = "Compile all targets without producing binaries"
-run = "cargo check --workspace --all-targets"
+description = "Compile Rust targets and verify admin UI builds"
+run = "cargo check --workspace --all-targets && bun run --cwd crates/admin-ui/web build"
 
 [tasks.test]
-description = "Run workspace tests"
-run = "cargo test --workspace"
+description = "Run Rust and admin UI tests"
+run = "cargo test --workspace && bun run --cwd crates/admin-ui/web test"
 
 [tasks.fmt]
 description = "Format Rust sources"
 run = "cargo fmt --all"
 
 [tasks.lint]
-description = "Run clippy with warnings denied"
-run = "cargo clippy --workspace --all-targets -- -D warnings"
+description = "Run Rust and admin UI linting"
+run = "cargo clippy --workspace --all-targets -- -D warnings && bun run --cwd crates/admin-ui/web lint"
 
 [tasks.run]
 description = "Run the gateway binary"
 run = "cargo run -p gateway"
+
+[tasks.ui-install]
+description = "Install admin UI dependencies"
+run = "bun install --cwd crates/admin-ui/web"
+
+[tasks.ui-dev]
+description = "Run admin UI dev server"
+run = "bun run --cwd crates/admin-ui/web dev"
+
+[tasks.ui-build]
+description = "Build admin UI"
+run = "bun run --cwd crates/admin-ui/web build"
+
+[tasks.ui-lint]
+description = "Lint admin UI"
+run = "bun run --cwd crates/admin-ui/web lint"
+
+[tasks.ui-fmt]
+description = "Format admin UI"
+run = "bun run --cwd crates/admin-ui/web fmt"
+
+[tasks.ui-test]
+description = "Run admin UI tests"
+run = "bun run --cwd crates/admin-ui/web test"

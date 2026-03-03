@@ -1,0 +1,17 @@
+[package]
+name = "admin-ui"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = "0.8"
+http = "1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+serde_json = "1"
+tokio = { version = "1", features = ["time"] }
+tracing = "0.1"
+
+[dev-dependencies]
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
+tower = { version = "0.5", features = ["util"] }
