@@ -39,7 +39,7 @@ export function AppShell({ children }: AppShellProps) {
       <div className="mx-auto flex h-[calc(100vh-24px)] max-w-[1400px] overflow-hidden rounded-xl border border-neutral-800 bg-[#131313]/95 shadow-2xl sm:h-[calc(100vh-48px)]">
         <aside className="hidden w-[270px] shrink-0 border-r border-neutral-800 bg-[#151515] p-3 sm:flex sm:flex-col">
           <div className="flex items-center gap-2 rounded-md border border-neutral-800 bg-neutral-950/50 px-3 py-2">
-            <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-[--color-primary] text-[10px] font-semibold text-black">
+            <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-[var(--color-primary)] text-[10px] font-semibold text-black">
               OC
             </span>
             <div>
@@ -148,7 +148,7 @@ function NavLink({
         icon={item.icon}
         size={16}
         stroke={1.2}
-        className={cn(active ? 'text-[--color-primary]' : 'text-neutral-500')}
+        className={cn(active ? 'text-[var(--color-primary)]' : 'text-neutral-500')}
       />
       <span>{item.label}</span>
     </Link>

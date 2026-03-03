@@ -1,0 +1,12 @@
+server:
+  bind: "0.0.0.0:8080"
+  log_format: "pretty"
+
+database:
+  path: "./gateway.db"
+
+auth:
+  seed_api_keys: []
+
+providers: []
+models: []

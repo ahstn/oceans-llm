@@ -4,7 +4,11 @@ Rust-first gateway workspace with an embedded `admin-ui` crate that hosts a TanS
 
 ## Workspace layout
 
-- `crates/gateway`: Rust API front door (`/api/*`, `/healthz`)
+- `crates/gateway`: Rust API binary (`/healthz`, `/readyz`, `/v1/*`)
+- `crates/gateway-core`: shared domain types, traits, OpenAI-compatible DTOs, typed errors
+- `crates/gateway-store`: Turso/libsql store, migrations, seed upserts
+- `crates/gateway-service`: auth, model resolution, route planning, orchestration
+- `crates/gateway-providers`: reqwest provider transport scaffolding
 - `crates/admin-ui`: Rust reverse proxy integration for `/admin*`
 - `crates/admin-ui/web`: TanStack Start + React + shadcn-style UI implementation
 
@@ -19,11 +23,16 @@ Single-container dual process:
 ## Environment
 
 - `PORT`: Gateway bind port (default `8080`)
+- `GATEWAY_CONFIG`: gateway config file path (default `./gateway.yaml`)
 - `ADMIN_UI_BASE_PATH`: UI mount path (default `/admin`)
-- `ADMIN_UI_UPSTREAM`: SSR upstream URL (default `http://127.0.0.1:3001`)
+- `ADMIN_UI_UPSTREAM`: SSR upstream URL (default `http://localhost:3001`)
 - `ADMIN_UI_CONNECT_TIMEOUT_MS`: Proxy connect timeout (default `750`)
 - `ADMIN_UI_REQUEST_TIMEOUT_MS`: Proxy request timeout (default `10000`)
 - `ADMIN_UI_INTERNAL_PORT`: Internal Bun SSR port used by helper scripts (default `3001`)
+
+## Gateway config
+
+`gateway` reads `gateway.yaml` (or `GATEWAY_CONFIG`) at startup, runs SQL migrations, seeds providers/models/api keys, then starts serving traffic.
 
 ## Setup
 

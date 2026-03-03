@@ -24,7 +24,7 @@ function UsageCostsPage() {
               <span className="text-xs text-neutral-500">{point.day}</span>
               <div className="h-2 rounded-full bg-neutral-800">
                 <div
-                  className="h-2 rounded-full bg-[--color-primary]"
+                  className="h-2 rounded-full bg-[var(--color-primary)]"
                   style={{ width: `${(point.amountUsd / max) * 100}%` }}
                 />
               </div>

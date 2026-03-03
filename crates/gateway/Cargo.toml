@@ -4,12 +4,27 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-admin-ui = { path = "../admin-ui" }
-axum = "0.8"
-serde_json = "1"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+admin-ui.workspace = true
+anyhow.workspace = true
+axum.workspace = true
+gateway-core.workspace = true
+gateway-providers.workspace = true
+gateway-service.workspace = true
+gateway-store.workspace = true
+http.workspace = true
+opentelemetry.workspace = true
+opentelemetry-otlp.workspace = true
+opentelemetry_sdk.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+tokio.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+tracing-opentelemetry.workspace = true
+tracing-subscriber.workspace = true
 
 [dev-dependencies]
-tower = { version = "0.5", features = ["util"] }
+tower = { workspace = true, features = ["util"] }
+tempfile = "3"
+serial_test = "3"
