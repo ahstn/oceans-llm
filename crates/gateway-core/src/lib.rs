@@ -9,10 +9,10 @@ pub use auth::{
 };
 pub use domain::{
     ApiKeyOwnerKind, ApiKeyRecord, AuthMode, BudgetCadence, GatewayModel, GlobalRole,
-    MembershipRole, ModelAccessMode, ModelRoute, ProviderConnection, ProviderRequestContext,
-    RequestLogRecord, SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedModel,
-    SeedModelRoute, SeedProvider, TeamMembershipRecord, TeamRecord, UsageCostEventRecord,
-    UserBudgetRecord, UserRecord,
+    MembershipRole, ModelAccessMode, ModelRoute, Money4, ProviderConnection,
+    ProviderRequestContext, RequestLogRecord, SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY,
+    SeedApiKey, SeedModel, SeedModelRoute, SeedProvider, TeamMembershipRecord, TeamRecord,
+    UsageCostEventRecord, UserBudgetRecord, UserRecord,
 };
 pub use error::{AuthError, GatewayError, ProviderError, RouteError, StoreError};
 pub use protocol::openai::{

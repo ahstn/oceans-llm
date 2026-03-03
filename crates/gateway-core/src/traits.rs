@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::{
     domain::{
-        ApiKeyRecord, GatewayModel, ModelRoute, ProviderConnection, ProviderRequestContext,
+        ApiKeyRecord, GatewayModel, ModelRoute, Money4, ProviderConnection, ProviderRequestContext,
         RequestLogRecord, TeamMembershipRecord, TeamRecord, UsageCostEventRecord, UserBudgetRecord,
         UserRecord,
     },
@@ -74,7 +74,7 @@ pub trait BudgetRepository: Send + Sync {
         user_id: Uuid,
         window_start: OffsetDateTime,
         window_end: OffsetDateTime,
-    ) -> Result<f64, StoreError>;
+    ) -> Result<Money4, StoreError>;
     async fn insert_usage_cost_event(&self, event: &UsageCostEventRecord)
     -> Result<(), StoreError>;
 }

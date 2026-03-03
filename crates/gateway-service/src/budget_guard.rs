@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use gateway_core::{
     ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, BudgetCadence, BudgetRepository, GatewayError,
-    UsageCostEventRecord,
+    Money4, UsageCostEventRecord,
 };
 use time::{Duration, OffsetDateTime, UtcOffset};
 use uuid::Uuid;
@@ -26,10 +26,10 @@ where
         api_key: &AuthenticatedApiKey,
         request_id: &str,
         model_id: Option<Uuid>,
-        estimated_cost_usd: f64,
+        estimated_cost_usd: Money4,
         occurred_at: OffsetDateTime,
     ) -> Result<(), GatewayError> {
-        if estimated_cost_usd.is_sign_negative() {
+        if estimated_cost_usd.is_negative() {
             return Err(GatewayError::InvalidRequest(
                 "estimated_cost_usd must be >= 0".to_string(),
             ));
@@ -38,12 +38,15 @@ where
         if api_key.owner_kind == ApiKeyOwnerKind::User {
             let user_id = api_key.owner_user_id.ok_or(AuthError::ApiKeyOwnerInvalid)?;
             if let Some(budget) = self.repo.get_active_budget_for_user(user_id).await? {
-                let (window_start, window_end) = budget_window_bounds(budget.cadence, occurred_at)?;
+                let (window_start, window_end) =
+                    budget_window_bounds_utc(budget.cadence, occurred_at)?;
                 let spent = self
                     .repo
                     .sum_usage_cost_for_user_in_window(user_id, window_start, window_end)
                     .await?;
-                let projected = spent + estimated_cost_usd;
+                let projected = spent.checked_add(estimated_cost_usd).ok_or_else(|| {
+                    GatewayError::Internal("budget projection overflow".to_string())
+                })?;
                 if budget.hard_limit && projected > budget.amount_usd {
                     return Err(GatewayError::BudgetExceeded {
                         user_id: user_id.to_string(),
@@ -71,7 +74,7 @@ where
     }
 }
 
-fn budget_window_bounds(
+fn budget_window_bounds_utc(
     cadence: BudgetCadence,
     occurred_at: OffsetDateTime,
 ) -> Result<(OffsetDateTime, OffsetDateTime), GatewayError> {
@@ -83,6 +86,10 @@ fn budget_window_bounds(
         .assume_offset(UtcOffset::UTC);
     let end = now_utc + Duration::seconds(1);
 
+    // Budget windows are fixed to UTC:
+    // - Daily: starts at 00:00:00 UTC.
+    // - Weekly: starts at Monday 00:00:00 UTC.
+    //   Sunday 23:59:59 UTC remains in the prior week.
     let start = match cadence {
         BudgetCadence::Daily => day_start,
         BudgetCadence::Weekly => {
@@ -100,18 +107,18 @@ mod tests {
 
     use async_trait::async_trait;
     use gateway_core::{
-        ApiKeyOwnerKind, AuthenticatedApiKey, BudgetCadence, BudgetRepository, StoreError,
+        ApiKeyOwnerKind, AuthenticatedApiKey, BudgetCadence, BudgetRepository, Money4, StoreError,
         UsageCostEventRecord, UserBudgetRecord,
     };
-    use time::OffsetDateTime;
+    use time::{Date, Month, OffsetDateTime};
     use uuid::Uuid;
 
-    use super::BudgetGuard;
+    use super::{BudgetGuard, budget_window_bounds_utc};
 
     #[derive(Clone, Default)]
     struct InMemoryBudgetRepo {
         active_budget: Option<UserBudgetRecord>,
-        current_spend: f64,
+        current_spend: Money4,
         inserted_events: Arc<Mutex<Vec<UsageCostEventRecord>>>,
     }
 
@@ -129,7 +136,7 @@ mod tests {
             _user_id: Uuid,
             _window_start: OffsetDateTime,
             _window_end: OffsetDateTime,
-        ) -> Result<f64, StoreError> {
+        ) -> Result<Money4, StoreError> {
             Ok(self.current_spend)
         }
 
@@ -175,14 +182,14 @@ mod tests {
                 user_budget_id: Uuid::new_v4(),
                 user_id,
                 cadence: BudgetCadence::Daily,
-                amount_usd: 10.0,
+                amount_usd: Money4::from_scaled(100_000),
                 hard_limit: true,
                 timezone: "UTC".to_string(),
                 is_active: true,
                 created_at: OffsetDateTime::now_utc(),
                 updated_at: OffsetDateTime::now_utc(),
             }),
-            current_spend: 9.5,
+            current_spend: Money4::from_scaled(95_000),
             inserted_events: Arc::new(Mutex::new(Vec::new())),
         });
 
@@ -192,7 +199,7 @@ mod tests {
                 &user_auth(user_id),
                 "req_1",
                 None,
-                1.0,
+                Money4::from_scaled(10_000),
                 OffsetDateTime::now_utc(),
             )
             .await
@@ -207,7 +214,7 @@ mod tests {
         let team_id = Uuid::new_v4();
         let repo = Arc::new(InMemoryBudgetRepo {
             active_budget: None,
-            current_spend: 0.0,
+            current_spend: Money4::ZERO,
             inserted_events: Arc::new(Mutex::new(Vec::new())),
         });
 
@@ -217,12 +224,43 @@ mod tests {
                 &team_auth(team_id),
                 "req_2",
                 None,
-                12.5,
+                Money4::from_scaled(125_000),
                 OffsetDateTime::now_utc(),
             )
             .await
             .expect("team-owned keys should not be blocked by user budget policy");
 
         assert_eq!(repo.inserted_events.lock().expect("events lock").len(), 1);
+    }
+
+    #[test]
+    fn weekly_budget_window_includes_sunday_in_prior_week() {
+        let sunday = date_time(2025, Month::March, 2, 23, 59, 59);
+        let (start, _) =
+            budget_window_bounds_utc(BudgetCadence::Weekly, sunday).expect("window bounds");
+        assert_eq!(start, date_time(2025, Month::February, 24, 0, 0, 0));
+    }
+
+    #[test]
+    fn weekly_budget_window_starts_new_week_at_monday_midnight_utc() {
+        let monday = date_time(2025, Month::March, 3, 0, 0, 0);
+        let (start, _) =
+            budget_window_bounds_utc(BudgetCadence::Weekly, monday).expect("window bounds");
+        assert_eq!(start, date_time(2025, Month::March, 3, 0, 0, 0));
+    }
+
+    fn date_time(
+        year: i32,
+        month: Month,
+        day: u8,
+        hour: u8,
+        minute: u8,
+        second: u8,
+    ) -> OffsetDateTime {
+        Date::from_calendar_date(year, month, day)
+            .expect("valid date")
+            .with_hms(hour, minute, second)
+            .expect("valid time")
+            .assume_utc()
     }
 }

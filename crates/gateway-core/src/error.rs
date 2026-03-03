@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+use crate::domain::Money4;
+
 #[derive(Debug, Error)]
 pub enum AuthError {
     #[error("authorization header is missing")]
@@ -88,12 +90,12 @@ pub enum GatewayError {
     #[error(transparent)]
     Provider(#[from] ProviderError),
     #[error(
-        "budget exceeded for user `{user_id}`: projected {projected_cost_usd:.6} exceeds limit {limit_usd:.6}"
+        "budget exceeded for user `{user_id}`: projected {projected_cost_usd} exceeds limit {limit_usd}"
     )]
     BudgetExceeded {
         user_id: String,
-        projected_cost_usd: f64,
-        limit_usd: f64,
+        projected_cost_usd: Money4,
+        limit_usd: Money4,
     },
     #[error("identity constraint violation: {0}")]
     IdentityConstraint(String),

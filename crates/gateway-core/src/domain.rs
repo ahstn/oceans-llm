@@ -6,6 +6,58 @@ use uuid::Uuid;
 pub const SYSTEM_LEGACY_TEAM_ID: &str = "00000000-0000-0000-0000-000000000001";
 pub const SYSTEM_LEGACY_TEAM_KEY: &str = "system-legacy";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Default)]
+#[serde(transparent)]
+pub struct Money4 {
+    amount_10000: i64,
+}
+
+impl Money4 {
+    pub const SCALE: i64 = 10_000;
+    pub const ZERO: Self = Self { amount_10000: 0 };
+
+    #[must_use]
+    pub const fn from_scaled(amount_10000: i64) -> Self {
+        Self { amount_10000 }
+    }
+
+    #[must_use]
+    pub const fn as_scaled_i64(self) -> i64 {
+        self.amount_10000
+    }
+
+    #[must_use]
+    pub fn checked_add(self, other: Self) -> Option<Self> {
+        self.amount_10000
+            .checked_add(other.amount_10000)
+            .map(Self::from_scaled)
+    }
+
+    #[must_use]
+    pub const fn is_negative(self) -> bool {
+        self.amount_10000 < 0
+    }
+
+    #[must_use]
+    pub fn format_4dp(self) -> String {
+        let is_negative = self.amount_10000 < 0;
+        let absolute = self.amount_10000.unsigned_abs();
+        let integer = absolute / (Self::SCALE as u64);
+        let fraction = absolute % (Self::SCALE as u64);
+        if is_negative {
+            format!("-{integer}.{fraction:04}")
+        } else {
+            format!("{integer}.{fraction:04}")
+        }
+    }
+}
+
+impl std::fmt::Display for Money4 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.format_4dp())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AuthMode {
@@ -223,7 +275,7 @@ pub struct UserBudgetRecord {
     pub user_budget_id: Uuid,
     pub user_id: Uuid,
     pub cadence: BudgetCadence,
-    pub amount_usd: f64,
+    pub amount_usd: Money4,
     pub hard_limit: bool,
     pub timezone: String,
     pub is_active: bool,
@@ -239,7 +291,7 @@ pub struct UsageCostEventRecord {
     pub user_id: Option<Uuid>,
     pub team_id: Option<Uuid>,
     pub model_id: Option<Uuid>,
-    pub estimated_cost_usd: f64,
+    pub estimated_cost_usd: Money4,
     pub occurred_at: OffsetDateTime,
 }
 

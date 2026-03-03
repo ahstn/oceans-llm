@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use gateway_core::{
     AuthenticatedApiKey, BudgetRepository, GatewayError, GatewayModel, IdentityRepository,
-    ModelRepository, ModelRoute, ProviderRepository, RequestLogRecord, RequestLogRepository,
-    RouteError, RoutePlanner, StoreHealth,
+    ModelRepository, ModelRoute, Money4, ProviderRepository, RequestLogRecord,
+    RequestLogRepository, RouteError, RoutePlanner, StoreHealth,
 };
 use time::OffsetDateTime;
 use tracing::warn;
@@ -127,7 +127,7 @@ where
         auth: &AuthenticatedApiKey,
         request_id: &str,
         model_id: Option<Uuid>,
-        estimated_cost_usd: f64,
+        estimated_cost_usd: Money4,
         occurred_at: OffsetDateTime,
     ) -> Result<(), GatewayError> {
         self.budget_guard

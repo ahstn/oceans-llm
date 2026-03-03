@@ -6,6 +6,7 @@ This document catalogs the database tables, key relationships, and policy semant
 
 - Schema migrations: `crates/gateway-store/migrations/`
 - Identity foundation migration: [`V3__identity_foundation.sql`](/Users/ahstn/git/oceans-llm.feat-ui-init/crates/gateway-store/migrations/V3__identity_foundation.sql)
+- Money precision migration: [`V4__money_fixed_point.sql`](/Users/ahstn/git/oceans-llm.feat-ui-init/crates/gateway-store/migrations/V4__money_fixed_point.sql)
 - Core domain types: [`crates/gateway-core/src/domain.rs`](/Users/ahstn/git/oceans-llm.feat-ui-init/crates/gateway-core/src/domain.rs)
 - Repository traits: [`crates/gateway-core/src/traits.rs`](/Users/ahstn/git/oceans-llm.feat-ui-init/crates/gateway-core/src/traits.rs)
 - Store implementation: [`crates/gateway-store/src/libsql_store.rs`](/Users/ahstn/git/oceans-llm.feat-ui-init/crates/gateway-store/src/libsql_store.rs)
@@ -14,6 +15,7 @@ This document catalogs the database tables, key relationships, and policy semant
   - [`crates/gateway-service/src/model_access.rs`](/Users/ahstn/git/oceans-llm.feat-ui-init/crates/gateway-service/src/model_access.rs)
   - [`crates/gateway-service/src/budget_guard.rs`](/Users/ahstn/git/oceans-llm.feat-ui-init/crates/gateway-service/src/budget_guard.rs)
   - [`crates/gateway-service/src/request_logging.rs`](/Users/ahstn/git/oceans-llm.feat-ui-init/crates/gateway-service/src/request_logging.rs)
+- User-facing policy guide: [`docs/budgets-and-spending.md`](/Users/ahstn/git/oceans-llm.feat-ui-init/docs/budgets-and-spending.md)
 
 ## Core Entity Graph
 
@@ -77,10 +79,10 @@ This document catalogs the database tables, key relationships, and policy semant
   - Constraint: exactly one owner column set and consistent with `owner_kind`.
   - Migration/backfill: legacy keys are assigned to reserved `system-legacy` team (`00000000-0000-0000-0000-000000000001`).
 - `user_budgets`
-  - Key columns: `user_budget_id`, `user_id`, `cadence`, `amount_usd`, `hard_limit`, `timezone`, `is_active`
+  - Key columns: `user_budget_id`, `user_id`, `cadence`, `amount_10000`, `hard_limit`, `timezone`, `is_active`
   - Constraint: one active budget per user (`WHERE is_active=1` unique index).
 - `usage_cost_events`
-  - Key columns: `usage_event_id`, `request_id`, `api_key_id`, `user_id`, `team_id`, `model_id`, `estimated_cost_usd`, `occurred_at`
+  - Key columns: `usage_event_id`, `request_id`, `api_key_id`, `user_id`, `team_id`, `model_id`, `estimated_cost_10000`, `occurred_at`
   - Notes: used for budget accounting regardless of request logging toggle.
 - `request_logs`
   - Key columns: `request_log_id`, `request_id`, `api_key_id`, `user_id`, `team_id`, `model_key`, `provider_key`, token/latency/status fields, `metadata_json`, `occurred_at`
@@ -101,8 +103,16 @@ If no restriction mode applies, grants remain unchanged.
 - Budget target: user-owned requests only in this phase.
 - Team-owned keys are not budget-blocked in this phase.
 - Cadence: `daily|weekly`.
-- Enforcement: hard block when projected spend exceeds `amount_usd` and `hard_limit=true`.
+- UTC boundary semantics:
+  - Daily windows start at `00:00:00 UTC`.
+  - Weekly windows start at `Monday 00:00:00 UTC`.
+  - `Sunday 23:59:59 UTC` is still in the previous weekly window.
+- Enforcement: hard block when projected spend exceeds the active budget amount and `hard_limit=true`.
 - Accounting: `usage_cost_events` are written even when request logging is disabled.
+- Team-owned request attribution policy:
+  - Team key + acting user context: usage is attributed to both user and team.
+  - Team key without acting user context: usage is attributed to team only.
+- User-facing behavior details are documented in [`docs/budgets-and-spending.md`](/Users/ahstn/git/oceans-llm.feat-ui-init/docs/budgets-and-spending.md).
 
 ## PostgreSQL Mapping Notes
 
@@ -112,5 +122,6 @@ Current runtime is SQLite/libsql. For PostgreSQL migration/dual-write planning:
 2. For `request_logs`, use:
    - BRIN index on `occurred_at` for large append-heavy scans.
    - Additional btree indexes for frequent filters (for example `(user_id, occurred_at)`, `(team_id, occurred_at)`).
-3. For monetary values (`amount_usd`, `estimated_cost_usd`), prefer `NUMERIC` in PostgreSQL.
-4. For timestamps, prefer `TIMESTAMPTZ` in PostgreSQL.
+3. For monetary values, SQLite stores exact scaled integers (`amount_10000`, `estimated_cost_10000`).
+4. PostgreSQL mapping should use `NUMERIC(18,4)` for these values.
+5. For timestamps, prefer `TIMESTAMPTZ` in PostgreSQL.

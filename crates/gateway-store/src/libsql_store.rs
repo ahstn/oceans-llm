@@ -5,9 +5,9 @@ use async_trait::async_trait;
 use gateway_core::{
     ApiKeyOwnerKind, ApiKeyRecord, ApiKeyRepository, AuthMode, BudgetCadence, BudgetRepository,
     GatewayModel, GlobalRole, IdentityRepository, MembershipRole, ModelAccessMode, ModelRepository,
-    ModelRoute, ProviderConnection, ProviderRepository, RequestLogRecord, RequestLogRepository,
-    StoreError, StoreHealth, TeamMembershipRecord, TeamRecord, UsageCostEventRecord,
-    UserBudgetRecord, UserRecord,
+    ModelRoute, Money4, ProviderConnection, ProviderRepository, RequestLogRecord,
+    RequestLogRepository, StoreError, StoreHealth, TeamMembershipRecord, TeamRecord,
+    UsageCostEventRecord, UserBudgetRecord, UserRecord,
 };
 use serde_json::{Map, Value};
 use time::OffsetDateTime;
@@ -349,7 +349,7 @@ impl BudgetRepository for LibsqlStore {
             .connection
             .query(
                 r#"
-                SELECT user_budget_id, user_id, cadence, amount_usd, hard_limit, timezone,
+                SELECT user_budget_id, user_id, cadence, amount_10000, hard_limit, timezone,
                        is_active, created_at, updated_at
                 FROM user_budgets
                 WHERE user_id = ?1 AND is_active = 1
@@ -376,12 +376,12 @@ impl BudgetRepository for LibsqlStore {
         user_id: Uuid,
         window_start: OffsetDateTime,
         window_end: OffsetDateTime,
-    ) -> Result<f64, StoreError> {
+    ) -> Result<Money4, StoreError> {
         let mut rows = self
             .connection
             .query(
                 r#"
-                SELECT COALESCE(SUM(estimated_cost_usd), 0.0)
+                SELECT COALESCE(SUM(estimated_cost_10000), 0)
                 FROM usage_cost_events
                 WHERE user_id = ?1
                   AND occurred_at >= ?2
@@ -401,11 +401,11 @@ impl BudgetRepository for LibsqlStore {
             .await
             .map_err(|error| StoreError::Query(error.to_string()))?
         else {
-            return Ok(0.0);
+            return Ok(Money4::ZERO);
         };
 
-        let sum: f64 = row.get(0).map_err(to_query_error)?;
-        Ok(sum)
+        let sum_10000: i64 = row.get(0).map_err(to_query_error)?;
+        Ok(Money4::from_scaled(sum_10000))
     }
 
     async fn insert_usage_cost_event(
@@ -417,7 +417,7 @@ impl BudgetRepository for LibsqlStore {
                 r#"
                 INSERT INTO usage_cost_events (
                     usage_event_id, request_id, api_key_id, user_id, team_id, model_id,
-                    estimated_cost_usd, occurred_at
+                    estimated_cost_10000, occurred_at
                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
                 "#,
                 libsql::params![
@@ -427,7 +427,7 @@ impl BudgetRepository for LibsqlStore {
                     event.user_id.map(|value| value.to_string()),
                     event.team_id.map(|value| value.to_string()),
                     event.model_id.map(|value| value.to_string()),
-                    event.estimated_cost_usd,
+                    event.estimated_cost_usd.as_scaled_i64(),
                     event.occurred_at.unix_timestamp()
                 ],
             )
@@ -655,6 +655,7 @@ fn decode_user_budget_record(row: &libsql::Row) -> Result<UserBudgetRecord, Stor
     let user_budget_id: String = row.get(0).map_err(to_query_error)?;
     let user_id: String = row.get(1).map_err(to_query_error)?;
     let cadence: String = row.get(2).map_err(to_query_error)?;
+    let amount_10000: i64 = row.get(3).map_err(to_query_error)?;
     let hard_limit: i64 = row.get(4).map_err(to_query_error)?;
     let is_active: i64 = row.get(6).map_err(to_query_error)?;
     let created_at: i64 = row.get(7).map_err(to_query_error)?;
@@ -666,7 +667,7 @@ fn decode_user_budget_record(row: &libsql::Row) -> Result<UserBudgetRecord, Stor
         cadence: BudgetCadence::from_db(&cadence).ok_or_else(|| {
             StoreError::Serialization(format!("unknown budget cadence `{cadence}`"))
         })?,
-        amount_usd: row.get(3).map_err(to_query_error)?,
+        amount_usd: Money4::from_scaled(amount_10000),
         hard_limit: hard_limit == 1,
         timezone: row.get(5).map_err(to_query_error)?,
         is_active: is_active == 1,

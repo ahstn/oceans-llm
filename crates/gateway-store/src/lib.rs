@@ -345,8 +345,8 @@ mod tests {
         conn.execute(
             r#"
             INSERT INTO user_budgets (
-                user_budget_id, user_id, cadence, amount_usd, hard_limit, timezone, is_active, created_at, updated_at
-            ) VALUES (?1, ?2, 'daily', 10.0, 1, 'UTC', 1, ?3, ?3)
+                user_budget_id, user_id, cadence, amount_10000, hard_limit, timezone, is_active, created_at, updated_at
+            ) VALUES (?1, ?2, 'daily', 100000, 1, 'UTC', 1, ?3, ?3)
             "#,
             libsql::params![Uuid::new_v4().to_string(), user_id.to_string(), now],
         )
@@ -357,8 +357,8 @@ mod tests {
             .execute(
                 r#"
                 INSERT INTO user_budgets (
-                    user_budget_id, user_id, cadence, amount_usd, hard_limit, timezone, is_active, created_at, updated_at
-                ) VALUES (?1, ?2, 'weekly', 20.0, 1, 'UTC', 1, ?3, ?3)
+                    user_budget_id, user_id, cadence, amount_10000, hard_limit, timezone, is_active, created_at, updated_at
+                ) VALUES (?1, ?2, 'weekly', 200000, 1, 'UTC', 1, ?3, ?3)
                 "#,
                 libsql::params![Uuid::new_v4().to_string(), user_id.to_string(), now],
             )
@@ -368,12 +368,167 @@ mod tests {
         conn.execute(
             r#"
             INSERT INTO user_budgets (
-                user_budget_id, user_id, cadence, amount_usd, hard_limit, timezone, is_active, created_at, updated_at
-            ) VALUES (?1, ?2, 'weekly', 20.0, 1, 'UTC', 0, ?3, ?3)
+                user_budget_id, user_id, cadence, amount_10000, hard_limit, timezone, is_active, created_at, updated_at
+            ) VALUES (?1, ?2, 'weekly', 200000, 1, 'UTC', 0, ?3, ?3)
             "#,
             libsql::params![Uuid::new_v4().to_string(), user_id.to_string(), now],
         )
         .await
         .expect("inactive budget should be allowed");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn v4_migration_converts_money_columns_to_scaled_integers() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
+            .build()
+            .await
+            .expect("db");
+        let conn = db.connect().expect("connection");
+        let now = time::OffsetDateTime::now_utc().unix_timestamp();
+        let user_id = Uuid::new_v4();
+        let api_key_id = Uuid::new_v4();
+        let budget_id = Uuid::new_v4();
+        let usage_event_id = Uuid::new_v4();
+
+        conn.execute(
+            r#"
+            CREATE TABLE refinery_schema_history (
+                version INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                applied_on INTEGER NOT NULL,
+                checksum TEXT NOT NULL
+            )
+            "#,
+            (),
+        )
+        .await
+        .expect("schema history");
+        conn.execute_batch(include_str!("../migrations/V1__init.sql"))
+            .await
+            .expect("v1 schema");
+        conn.execute_batch(include_str!("../migrations/V2__audit_baseline.sql"))
+            .await
+            .expect("v2 schema");
+        conn.execute_batch(include_str!("../migrations/V3__identity_foundation.sql"))
+            .await
+            .expect("v3 schema");
+        conn.execute(
+            "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) VALUES (1, 'init', unixepoch(), 'v1')",
+            (),
+        )
+        .await
+        .expect("history v1");
+        conn.execute(
+            "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) VALUES (2, 'audit_baseline', unixepoch(), 'v2')",
+            (),
+        )
+        .await
+        .expect("history v2");
+        conn.execute(
+            "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) VALUES (3, 'identity_foundation', unixepoch(), 'v3')",
+            (),
+        )
+        .await
+        .expect("history v3");
+
+        conn.execute(
+            r#"
+            INSERT INTO users (
+              user_id, name, email, email_normalized, global_role, auth_mode, status,
+              request_logging_enabled, model_access_mode, created_at, updated_at
+            ) VALUES (?1, 'Money User', 'money@example.com', 'money@example.com', 'user', 'password', 'active', 1, 'all', ?2, ?2)
+            "#,
+            libsql::params![user_id.to_string(), now],
+        )
+        .await
+        .expect("user");
+        conn.execute(
+            r#"
+            INSERT INTO api_keys (
+                id, public_id, secret_hash, name, status, owner_kind, owner_user_id, owner_team_id, created_at
+            ) VALUES (?1, 'money_key', 'hash', 'money key', 'active', 'user', ?2, NULL, ?3)
+            "#,
+            libsql::params![api_key_id.to_string(), user_id.to_string(), now],
+        )
+        .await
+        .expect("api key");
+        conn.execute(
+            r#"
+            INSERT INTO user_budgets (
+                user_budget_id, user_id, cadence, amount_usd, hard_limit, timezone, is_active, created_at, updated_at
+            ) VALUES (?1, ?2, 'weekly', 12.3456, 1, 'UTC', 1, ?3, ?3)
+            "#,
+            libsql::params![budget_id.to_string(), user_id.to_string(), now],
+        )
+        .await
+        .expect("budget");
+        conn.execute(
+            r#"
+            INSERT INTO usage_cost_events (
+                usage_event_id, request_id, api_key_id, user_id, team_id, model_id, estimated_cost_usd, occurred_at
+            ) VALUES (?1, 'req_money', ?2, ?3, NULL, NULL, 0.6789, ?4)
+            "#,
+            libsql::params![
+                usage_event_id.to_string(),
+                api_key_id.to_string(),
+                user_id.to_string(),
+                now
+            ],
+        )
+        .await
+        .expect("usage event");
+
+        run_migrations(&db_path).await.expect("migrate to v4");
+
+        let mut budget_rows = conn
+            .query(
+                "SELECT amount_10000 FROM user_budgets WHERE user_budget_id = ?1",
+                [budget_id.to_string()],
+            )
+            .await
+            .expect("query budget amount");
+        let budget_row = budget_rows
+            .next()
+            .await
+            .expect("fetch budget row")
+            .expect("budget row");
+        let amount_10000: i64 = budget_row.get(0).expect("decode budget amount");
+        assert_eq!(amount_10000, 123_456);
+
+        let mut usage_rows = conn
+            .query(
+                "SELECT estimated_cost_10000 FROM usage_cost_events WHERE usage_event_id = ?1",
+                [usage_event_id.to_string()],
+            )
+            .await
+            .expect("query usage amount");
+        let usage_row = usage_rows
+            .next()
+            .await
+            .expect("fetch usage row")
+            .expect("usage row");
+        let estimated_cost_10000: i64 = usage_row.get(0).expect("decode usage amount");
+        assert_eq!(estimated_cost_10000, 6_789);
+
+        let mut budget_columns = conn
+            .query("PRAGMA table_info(user_budgets)", ())
+            .await
+            .expect("budget table info");
+        while let Some(column) = budget_columns.next().await.expect("column row") {
+            let column_name: String = column.get(1).expect("column name");
+            assert_ne!(column_name, "amount_usd");
+        }
+
+        let mut usage_columns = conn
+            .query("PRAGMA table_info(usage_cost_events)", ())
+            .await
+            .expect("usage table info");
+        while let Some(column) = usage_columns.next().await.expect("column row") {
+            let column_name: String = column.get(1).expect("column name");
+            assert_ne!(column_name, "estimated_cost_usd");
+        }
     }
 }
