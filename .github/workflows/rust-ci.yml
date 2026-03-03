@@ -1,0 +1,31 @@
+name: rust-ci
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  MISE_EXPERIMENTAL: true
+
+jobs:
+  rust-lint-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup mise + tools
+        uses: jdx/mise-action@v3
+
+      - name: Lint Rust workspace
+        run: mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test Rust workspace
+        run: mise exec -- cargo test --workspace
