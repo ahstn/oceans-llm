@@ -131,3 +131,7 @@ Tradeoffs:
 - Deterministic token usage + pricing ledger for spend accounting.
 - Request/response payload logging design for PostgreSQL scale (BRIN, selective JSON indexing, retention/partitioning).
 - Vertex embeddings support.
+
+## Attribution
+
+This ADR was prepared through collaborative human + AI implementation/design work.
