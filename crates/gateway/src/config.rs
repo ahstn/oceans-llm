@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, env, fs, path::Path};
 use anyhow::{Context, bail};
 use gateway_core::{SeedApiKey, SeedModel, SeedModelRoute, SeedProvider, parse_gateway_api_key};
 use gateway_providers::{OpenAiCompatConfig, VertexAuthConfig, VertexProviderConfig};
-use gateway_service::hash_gateway_key_secret;
+use gateway_service::{hash_gateway_key_secret, is_supported_pricing_provider_id};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
@@ -56,6 +56,19 @@ impl GatewayConfig {
                         bail!(
                             "openai_compat provider `{}` base_url cannot be empty",
                             provider.id
+                        );
+                    }
+                    if provider.pricing_provider_id.trim().is_empty() {
+                        bail!(
+                            "openai_compat provider `{}` pricing_provider_id cannot be empty",
+                            provider.id
+                        );
+                    }
+                    if !is_supported_pricing_provider_id(&provider.pricing_provider_id) {
+                        bail!(
+                            "openai_compat provider `{}` pricing_provider_id `{}` is not supported",
+                            provider.id,
+                            provider.pricing_provider_id
                         );
                     }
                 }
@@ -132,6 +145,7 @@ impl GatewayConfig {
 
                     let config = json!({
                         "base_url": provider.base_url,
+                        "pricing_provider_id": provider.pricing_provider_id,
                         "default_headers": provider.default_headers,
                         "timeouts": provider.timeouts,
                     });
@@ -368,6 +382,7 @@ pub struct SeedApiKeyConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ProviderConfig {
+    #[serde(rename = "openai_compat")]
     OpenAiCompat(OpenAiCompatProviderConfig),
     GcpVertex(GcpVertexProviderConfig),
 }
@@ -386,6 +401,8 @@ impl ProviderConfig {
 pub struct OpenAiCompatProviderConfig {
     pub id: String,
     pub base_url: String,
+    #[serde(default)]
+    pub pricing_provider_id: String,
     #[serde(default)]
     pub auth: Option<OpenAiCompatAuthConfig>,
     #[serde(default)]
@@ -661,5 +678,71 @@ models:
         );
 
         GatewayConfig::from_path(&config_path).expect_err("config should fail");
+    }
+
+    #[test]
+    fn accepts_openai_compat_with_supported_pricing_provider() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+"#,
+        );
+
+        GatewayConfig::from_path(&config_path).expect("config should parse");
+    }
+
+    #[test]
+    fn rejects_openai_compat_without_pricing_provider_id() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("pricing_provider_id cannot be empty"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_openai_compat_with_unsupported_pricing_provider_id() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: azure
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("pricing_provider_id `azure` is not supported"),
+            "unexpected error: {error_text}"
+        );
     }
 }

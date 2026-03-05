@@ -41,6 +41,12 @@ Single-container dual process:
 - `openai_compat`
 - `gcp_vertex`
 
+`openai_compat` requires a `pricing_provider_id` so the gateway can resolve exact pricing from the internal catalog. In this slice, supported values are:
+
+- `openai`
+- `google-vertex`
+- `google-vertex-anthropic`
+
 `gcp_vertex` supports three auth modes:
 
 - `adc`
@@ -53,6 +59,13 @@ Single-container dual process:
 
 ```yaml
 providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+    auth:
+      kind: bearer
+      token: env.OPENAI_API_KEY
   - id: vertex-adc
     type: gcp_vertex
     project_id: your-gcp-project
@@ -112,4 +125,5 @@ mise run ui-build
 mise run check
 mise run lint
 mise run test
+mise run sync-pricing-catalog
 ```

@@ -2,13 +2,15 @@ mod config;
 mod http;
 mod observability;
 
-use std::{env, net::SocketAddr, path::Path, sync::Arc};
+use std::{env, net::SocketAddr, path::Path, sync::Arc, time::Duration};
 
 use admin_ui::AdminUiConfig;
 use anyhow::Context;
 use gateway_core::ProviderRegistry;
 use gateway_providers::{OpenAiCompatProvider, VertexProvider};
-use gateway_service::{GatewayService, WeightedRoutePlanner};
+use gateway_service::{
+    DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, GatewayService, WeightedRoutePlanner,
+};
 use gateway_store::{LibsqlStore, run_migrations};
 use http::{build_router, state::AppState};
 use tokio::net::TcpListener;
@@ -43,6 +45,10 @@ async fn main() -> anyhow::Result<()> {
 
     let planner = Arc::new(WeightedRoutePlanner::default());
     let service = Arc::new(GatewayService::new(store, planner));
+    if let Err(error) = service.refresh_pricing_catalog_if_stale().await {
+        tracing::warn!(error = %error, "initial pricing catalog refresh failed");
+    }
+    spawn_pricing_catalog_refresh_loop(service.clone());
     let providers = build_provider_registry(&config)?;
 
     let bind_address: SocketAddr = config
@@ -92,6 +98,26 @@ fn load_admin_ui_config() -> AdminUiConfig {
         connect_timeout_ms: env_u64("ADMIN_UI_CONNECT_TIMEOUT_MS", 750),
         request_timeout_ms: env_u64("ADMIN_UI_REQUEST_TIMEOUT_MS", 10_000),
     }
+}
+
+fn spawn_pricing_catalog_refresh_loop(
+    service: Arc<GatewayService<LibsqlStore, WeightedRoutePlanner>>,
+) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(pricing_catalog_refresh_interval());
+        interval.tick().await;
+
+        loop {
+            interval.tick().await;
+            if let Err(error) = service.refresh_pricing_catalog_if_stale().await {
+                tracing::warn!(error = %error, "background pricing catalog refresh failed");
+            }
+        }
+    });
+}
+
+fn pricing_catalog_refresh_interval() -> Duration {
+    DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL
 }
 
 fn env_u64(key: &str, default: u64) -> u64 {

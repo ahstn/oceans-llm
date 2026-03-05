@@ -9,9 +9,9 @@ use uuid::Uuid;
 
 use crate::{
     domain::{
-        ApiKeyRecord, GatewayModel, ModelRoute, Money4, ProviderCapabilities, ProviderConnection,
-        ProviderRequestContext, RequestLogRecord, TeamMembershipRecord, TeamRecord,
-        UsageCostEventRecord, UserBudgetRecord, UserRecord,
+        ApiKeyRecord, GatewayModel, ModelRoute, Money4, PricingCatalogCacheRecord,
+        ProviderCapabilities, ProviderConnection, ProviderRequestContext, RequestLogRecord,
+        TeamMembershipRecord, TeamRecord, UsageCostEventRecord, UserBudgetRecord, UserRecord,
     },
     error::{ProviderError, RouteError, StoreError},
     protocol::openai::{ChatCompletionsRequest, EmbeddingsRequest},
@@ -82,6 +82,25 @@ pub trait BudgetRepository: Send + Sync {
 #[async_trait]
 pub trait RequestLogRepository: Send + Sync {
     async fn insert_request_log(&self, log: &RequestLogRecord) -> Result<(), StoreError>;
+}
+
+#[async_trait]
+pub trait PricingCatalogRepository: Send + Sync {
+    async fn get_pricing_catalog_cache(
+        &self,
+        catalog_key: &str,
+    ) -> Result<Option<PricingCatalogCacheRecord>, StoreError>;
+
+    async fn upsert_pricing_catalog_cache(
+        &self,
+        cache: &PricingCatalogCacheRecord,
+    ) -> Result<(), StoreError>;
+
+    async fn touch_pricing_catalog_cache_fetched_at(
+        &self,
+        catalog_key: &str,
+        fetched_at: OffsetDateTime,
+    ) -> Result<(), StoreError>;
 }
 
 #[async_trait]

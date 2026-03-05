@@ -2,12 +2,13 @@ use std::sync::Arc;
 
 use gateway_core::{
     AuthenticatedApiKey, GatewayError, GatewayModel, IdentityRepository, ModelRepository,
-    ModelRoute, ProviderRepository, RequestLogRecord, RequestLogRepository, RouteError,
-    RoutePlanner, StoreHealth,
+    ModelRoute, PricingCatalogRepository, PricingResolution, PricingUnpricedReason,
+    ProviderRepository, RequestLogRecord, RequestLogRepository, RouteError, RoutePlanner,
+    StoreHealth,
 };
 use tracing::warn;
 
-use crate::{Authenticator, ModelAccess, RequestLogging};
+use crate::{Authenticator, ModelAccess, PricingCatalog, RequestLogging};
 
 #[derive(Debug, Clone)]
 pub struct ResolvedRequest {
@@ -21,6 +22,7 @@ pub struct GatewayService<S, P> {
     store: Arc<S>,
     authenticator: Authenticator<S>,
     model_access: ModelAccess<S>,
+    pricing_catalog: PricingCatalog<S>,
     request_logging: RequestLogging<S>,
     planner: Arc<P>,
 }
@@ -30,6 +32,7 @@ where
     S: gateway_core::ApiKeyRepository
         + ModelRepository
         + IdentityRepository
+        + PricingCatalogRepository
         + RequestLogRepository
         + ProviderRepository
         + StoreHealth
@@ -42,12 +45,14 @@ where
     pub fn new(store: Arc<S>, planner: Arc<P>) -> Self {
         let authenticator = Authenticator::new(store.clone());
         let model_access = ModelAccess::new(store.clone());
+        let pricing_catalog = PricingCatalog::new(store.clone());
         let request_logging = RequestLogging::new(store.clone());
 
         Self {
             store,
             authenticator,
             model_access,
+            pricing_catalog,
             request_logging,
             planner,
         }
@@ -122,5 +127,26 @@ where
         log: RequestLogRecord,
     ) -> Result<bool, GatewayError> {
         self.request_logging.log_request_if_enabled(auth, log).await
+    }
+
+    pub async fn refresh_pricing_catalog_if_stale(&self) -> Result<(), GatewayError> {
+        self.pricing_catalog.refresh_if_stale().await
+    }
+
+    pub async fn resolve_route_pricing(
+        &self,
+        route: &ModelRoute,
+    ) -> Result<PricingResolution, GatewayError> {
+        let Some(provider) = self.store.get_provider_by_key(&route.provider_key).await? else {
+            return Ok(PricingResolution::Unpriced {
+                reason: PricingUnpricedReason::UnsupportedPricingProviderId(
+                    route.provider_key.clone(),
+                ),
+            });
+        };
+
+        self.pricing_catalog
+            .resolve_for_provider_connection(&provider, route)
+            .await
     }
 }
