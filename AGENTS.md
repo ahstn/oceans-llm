@@ -21,3 +21,10 @@ Use `mise` for all repo tooling and task execution.
   - `mise run fmt`
   - `mise run lint`
   - `mise run run`
+
+## GitHub
+- Use `gh` CLI for creating pull requests.
+  - For new pull requests, use `.github/PULL_REQUEST_TEMPLATE.md` as the content reference.
+- Use `gh` CLI for creating issues.
+  - Use `.github/ISSUE_TEMPLATE/feature_request.md` for new features/enhancements (new capability, scoped change, acceptance criteria).
+  - Use `.github/ISSUE_TEMPLATE/bug_report.md` for bugs/issues (unexpected behavior, repro details, expected vs actual).
