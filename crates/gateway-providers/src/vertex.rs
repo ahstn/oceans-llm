@@ -106,14 +106,17 @@ impl VertexProvider {
     }
 
     fn model_endpoint(&self, publisher: &str, model_id: &str, method: &str) -> String {
+        let base = if self.config.api_host.starts_with("http://")
+            || self.config.api_host.starts_with("https://")
+        {
+            self.config.api_host.trim_end_matches('/').to_string()
+        } else {
+            format!("https://{}", self.config.api_host)
+        };
+
         format!(
-            "https://{}/v1/projects/{}/locations/{}/publishers/{}/models/{}:{}",
-            self.config.api_host,
-            self.config.project_id,
-            self.config.location,
-            publisher,
-            model_id,
-            method
+            "{}/v1/projects/{}/locations/{}/publishers/{}/models/{}:{}",
+            base, self.config.project_id, self.config.location, publisher, model_id, method
         )
     }
 }
@@ -1209,21 +1212,18 @@ impl SseEventParser {
         self.buffer.push_str(text);
 
         let mut events = Vec::new();
-        while let Some(delimiter_index) = find_sse_delimiter(&self.buffer) {
-            let mut block = self.buffer[..delimiter_index].to_string();
-            self.buffer.drain(..delimiter_index + 2);
-
-            if block.ends_with('\r') {
-                block.pop();
-            }
+        while let Some((delimiter_index, delimiter_len)) = find_sse_delimiter(&self.buffer) {
+            let block = self.buffer[..delimiter_index]
+                .replace("\r\n", "\n")
+                .replace('\r', "\n");
+            self.buffer.drain(..delimiter_index + delimiter_len);
 
             let mut event_type = None;
             let mut data_lines = Vec::new();
             for line in block.lines() {
-                let trimmed = line.trim_end_matches('\r');
-                if let Some(rest) = trimmed.strip_prefix("event:") {
+                if let Some(rest) = line.strip_prefix("event:") {
                     event_type = Some(rest.trim().to_string());
-                } else if let Some(rest) = trimmed.strip_prefix("data:") {
+                } else if let Some(rest) = line.strip_prefix("data:") {
                     data_lines.push(rest.trim_start().to_string());
                 }
             }
@@ -1238,8 +1238,15 @@ impl SseEventParser {
     }
 }
 
-fn find_sse_delimiter(input: &str) -> Option<usize> {
-    input.find("\n\n")
+fn find_sse_delimiter(input: &str) -> Option<(usize, usize)> {
+    [
+        input.find("\r\n\r\n").map(|index| (index, 4)),
+        input.find("\n\n").map(|index| (index, 2)),
+        input.find("\r\r").map(|index| (index, 2)),
+    ]
+    .into_iter()
+    .flatten()
+    .min_by_key(|(index, _)| *index)
 }
 
 fn openai_chunk(
@@ -1296,15 +1303,27 @@ fn openai_sse_error_chunk(kind: &str, message: &str) -> Bytes {
 
 #[cfg(test)]
 mod tests {
+    use std::{collections::BTreeMap, convert::Infallible, sync::Arc};
+
+    use axum::{
+        Json, Router,
+        body::Body,
+        extract::{Path, State},
+        http::{HeaderMap, StatusCode},
+        response::Response,
+        routing::post,
+    };
     use bytes::Bytes;
     use futures_util::StreamExt;
     use futures_util::stream;
-    use gateway_core::ProviderRequestContext;
+    use gateway_core::{ChatCompletionsRequest, ProviderClient, ProviderRequestContext};
     use serde_json::{Map, Value, json};
+    use tokio::{net::TcpListener, sync::Mutex};
 
     use super::{
-        JsonObjectParser, SseEventParser, map_anthropic_request, map_google_request,
-        normalize_anthropic_response, normalize_google_response, parse_upstream_model,
+        JsonObjectParser, SseEventParser, VertexAuthConfig, VertexProvider, VertexProviderConfig,
+        map_anthropic_request, map_google_request, normalize_anthropic_response,
+        normalize_google_response, parse_upstream_model,
     };
 
     fn context(upstream_model: &str) -> ProviderRequestContext {
@@ -1326,6 +1345,19 @@ mod tests {
         assert!(matches!(family, super::PublisherFamily::Google));
         parse_upstream_model("bad-format").expect_err("invalid format");
         parse_upstream_model("meta/llama").expect_err("unsupported family");
+    }
+
+    #[test]
+    fn model_endpoint_defaults_to_https_but_honors_explicit_scheme() {
+        let default_host = vertex_provider_for_test("aiplatform.googleapis.com".to_string());
+        let default_url =
+            default_host.model_endpoint("google", "gemini-2.0-flash", "generateContent");
+        assert!(default_url.starts_with("https://aiplatform.googleapis.com/"));
+
+        let explicit_host = vertex_provider_for_test("http://127.0.0.1:8080/".to_string());
+        let explicit_url =
+            explicit_host.model_endpoint("google", "gemini-2.0-flash", "generateContent");
+        assert!(explicit_url.starts_with("http://127.0.0.1:8080/"));
     }
 
     #[test]
@@ -1445,6 +1477,20 @@ data: {"type":"vertex_event"}
         assert_eq!(events[2].event.as_deref(), Some("vertex_event"));
     }
 
+    #[test]
+    fn parses_anthropic_sse_events_with_crlf_and_chunked_boundaries() {
+        let mut parser = SseEventParser::default();
+        let part_a = b"event: message_start\r\ndata: {\"type\":\"message_start\",\"message\":{\"role\":\"assistant\"}}\r\n\r";
+        let part_b = b"\nevent: message_stop\r\ndata: {\"type\":\"message_stop\"}\r\n\r\n";
+
+        let first = parser.push_bytes(part_a).expect("events a");
+        assert!(first.is_empty());
+        let second = parser.push_bytes(part_b).expect("events b");
+        assert_eq!(second.len(), 2);
+        assert_eq!(second[0].event.as_deref(), Some("message_start"));
+        assert_eq!(second[1].event.as_deref(), Some("message_stop"));
+    }
+
     #[tokio::test]
     async fn google_stream_normalization_emits_done() {
         let upstream = stream::iter(vec![
@@ -1465,5 +1511,181 @@ data: {"type":"vertex_event"}
             .map(|item| String::from_utf8(item.expect("chunk").to_vec()).expect("utf8"))
             .collect::<String>();
         assert!(rendered.contains("data: [DONE]"));
+    }
+
+    fn vertex_provider_for_test(api_host: String) -> VertexProvider {
+        VertexProvider::new(VertexProviderConfig {
+            provider_key: "vertex-prod".to_string(),
+            project_id: "proj-123".to_string(),
+            location: "global".to_string(),
+            api_host,
+            auth: VertexAuthConfig::Bearer {
+                token: "test-token".to_string(),
+            },
+            default_headers: BTreeMap::new(),
+            request_timeout_ms: 5_000,
+        })
+        .expect("provider")
+    }
+
+    fn chat_request(
+        messages: Vec<gateway_core::protocol::openai::ChatMessage>,
+    ) -> ChatCompletionsRequest {
+        ChatCompletionsRequest {
+            model: "fast".to_string(),
+            messages,
+            stream: false,
+            extra: BTreeMap::new(),
+        }
+    }
+
+    async fn start_router(app: Router) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("local addr");
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve");
+        });
+        addr.to_string()
+    }
+
+    #[tokio::test]
+    async fn vertex_provider_google_non_stream_executes_real_http_mapping() {
+        let captured = Arc::new(Mutex::new(None::<Value>));
+        let state = captured.clone();
+        let app = Router::new()
+            .route(
+                "/v1/{*path}",
+                post(
+                    |Path(path): Path<String>,
+                     State(captured): State<Arc<Mutex<Option<Value>>>>,
+                     headers: HeaderMap,
+                     Json(payload): Json<Value>| async move {
+                        assert!(path.ends_with(":generateContent"));
+                        assert_eq!(
+                            headers
+                                .get("authorization")
+                                .and_then(|value| value.to_str().ok()),
+                            Some("Bearer test-token")
+                        );
+                        *captured.lock().await = Some(payload);
+                        Json(json!({
+                            "responseId": "resp-google-1",
+                            "candidates": [{
+                                "index": 0,
+                                "content": {"parts": [{"text":"pong"}]},
+                                "finishReason":"STOP"
+                            }]
+                        }))
+                    },
+                ),
+            )
+            .with_state(state);
+
+        let host = start_router(app).await;
+        let provider = vertex_provider_for_test(format!("http://{host}"));
+
+        let mut request = chat_request(vec![gateway_core::protocol::openai::ChatMessage {
+            role: "user".to_string(),
+            content: Value::String("ping".to_string()),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+        request.extra.insert("temperature".to_string(), json!(0.2));
+
+        let response = provider
+            .chat_completions(&request, &context("google/gemini-2.0-flash"))
+            .await
+            .expect("chat completion");
+
+        assert_eq!(response["choices"][0]["message"]["content"], "pong");
+
+        let request_payload = captured.lock().await.clone().expect("captured request");
+        assert_eq!(request_payload["contents"][0]["parts"][0]["text"], "ping");
+        assert_eq!(
+            request_payload["generationConfig"]["temperature"],
+            json!(0.2)
+        );
+    }
+
+    #[tokio::test]
+    async fn vertex_provider_anthropic_stream_handles_fragmented_crlf_events() {
+        let captured = Arc::new(Mutex::new(None::<Value>));
+        let state = captured.clone();
+        let app = Router::new()
+            .route(
+                "/v1/{*path}",
+                post(
+                    |Path(path): Path<String>,
+                     State(captured): State<Arc<Mutex<Option<Value>>>>,
+                     headers: HeaderMap,
+                     Json(payload): Json<Value>| async move {
+                        assert!(path.ends_with(":streamRawPredict"));
+                        assert_eq!(
+                            headers
+                                .get("authorization")
+                                .and_then(|value| value.to_str().ok()),
+                            Some("Bearer test-token")
+                        );
+                        *captured.lock().await = Some(payload);
+
+                        let chunks = vec![
+                            "event: message_start\r\n",
+                            "data: {\"type\":\"message_start\"}\r\n",
+                            "\r\nevent: content_block_delta\r\n",
+                            "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"hel\"}}\r\n\r\n",
+                            "event: content_block_delta\r\n",
+                            "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"lo\"}}\r\n\r\n",
+                            "event: message_delta\r\n",
+                            "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\r\n\r\n",
+                            "event: message_stop\r\n",
+                            "data: {\"type\":\"message_stop\"}\r\n\r\n",
+                        ];
+
+                        let body = Body::from_stream(stream::iter(chunks.into_iter().map(
+                            |chunk| Ok::<_, Infallible>(Bytes::from(chunk)),
+                        )));
+                        Response::builder()
+                            .status(StatusCode::OK)
+                            .header("content-type", "text/event-stream")
+                            .body(body)
+                            .expect("stream response")
+                    },
+                ),
+            )
+            .with_state(state);
+
+        let host = start_router(app).await;
+        let provider = vertex_provider_for_test(format!("http://{host}"));
+        let mut request = chat_request(vec![gateway_core::protocol::openai::ChatMessage {
+            role: "user".to_string(),
+            content: Value::String("ping".to_string()),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+        request.stream = true;
+
+        let stream = provider
+            .chat_completions_stream(&request, &context("anthropic/claude-sonnet-4-6"))
+            .await
+            .expect("stream");
+
+        let bytes: Vec<_> = stream.collect().await;
+        let rendered = bytes
+            .into_iter()
+            .map(|item| String::from_utf8(item.expect("chunk").to_vec()).expect("utf8"))
+            .collect::<String>();
+
+        assert!(rendered.contains("\"content\":\"hel\""));
+        assert!(rendered.contains("\"content\":\"lo\""));
+        assert_eq!(rendered.matches("\"role\":\"assistant\"").count(), 1);
+        assert!(rendered.contains("\"finish_reason\":\"stop\""));
+        assert!(rendered.contains("data: [DONE]"));
+
+        let request_payload = captured.lock().await.clone().expect("captured request");
+        assert_eq!(
+            request_payload["anthropic_version"],
+            Value::String("vertex-2023-10-16".to_string())
+        );
+        assert_eq!(request_payload["stream"], Value::Bool(true));
     }
 }
