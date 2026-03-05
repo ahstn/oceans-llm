@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use time::OffsetDateTime;
@@ -352,6 +354,46 @@ pub struct ProviderRequestContext {
     pub model_key: String,
     pub provider_key: String,
     pub upstream_model: String,
+    #[serde(default)]
+    pub extra_headers: Map<String, Value>,
+    #[serde(default)]
+    pub extra_body: Map<String, Value>,
+    #[serde(default)]
+    pub idempotency_key: Option<String>,
+    #[serde(default)]
+    pub request_headers: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProviderCapabilities {
+    pub chat_completions: bool,
+    pub chat_completions_stream: bool,
+    pub embeddings: bool,
+}
+
+impl ProviderCapabilities {
+    #[must_use]
+    pub const fn new(
+        chat_completions: bool,
+        chat_completions_stream: bool,
+        embeddings: bool,
+    ) -> Self {
+        Self {
+            chat_completions,
+            chat_completions_stream,
+            embeddings,
+        }
+    }
+
+    #[must_use]
+    pub const fn chat_only_streaming() -> Self {
+        Self::new(true, true, false)
+    }
+
+    #[must_use]
+    pub const fn openai_compat_baseline() -> Self {
+        Self::new(true, false, true)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

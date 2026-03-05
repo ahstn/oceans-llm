@@ -9,7 +9,7 @@ pub use auth::{
 };
 pub use domain::{
     ApiKeyOwnerKind, ApiKeyRecord, AuthMode, BudgetCadence, GatewayModel, GlobalRole,
-    MembershipRole, ModelAccessMode, ModelRoute, Money4, ProviderConnection,
+    MembershipRole, ModelAccessMode, ModelRoute, Money4, ProviderCapabilities, ProviderConnection,
     ProviderRequestContext, RequestLogRecord, SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY,
     SeedApiKey, SeedModel, SeedModelRoute, SeedProvider, TeamMembershipRecord, TeamRecord,
     UsageCostEventRecord, UserBudgetRecord, UserRecord,

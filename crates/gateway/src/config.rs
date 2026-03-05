@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, env, fs, path::Path};
 
 use anyhow::{Context, bail};
 use gateway_core::{SeedApiKey, SeedModel, SeedModelRoute, SeedProvider, parse_gateway_api_key};
-use gateway_providers::OpenAiCompatConfig;
+use gateway_providers::{OpenAiCompatConfig, VertexAuthConfig, VertexProviderConfig};
 use gateway_service::hash_gateway_key_secret;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -32,46 +32,167 @@ impl GatewayConfig {
         let parsed: Self = serde_yaml::from_str(&raw)
             .with_context(|| format!("failed parsing yaml config `{}`", path.display()))?;
 
+        parsed
+            .validate()
+            .with_context(|| format!("invalid gateway configuration `{}`", path.display()))?;
+
         Ok(parsed)
+    }
+
+    fn validate(&self) -> anyhow::Result<()> {
+        let provider_by_id = self
+            .providers
+            .iter()
+            .map(|provider| (provider.id().to_string(), provider))
+            .collect::<BTreeMap<_, _>>();
+
+        for provider in &self.providers {
+            match provider {
+                ProviderConfig::OpenAiCompat(provider) => {
+                    if provider.id.trim().is_empty() {
+                        bail!("openai_compat provider id cannot be empty");
+                    }
+                    if provider.base_url.trim().is_empty() {
+                        bail!(
+                            "openai_compat provider `{}` base_url cannot be empty",
+                            provider.id
+                        );
+                    }
+                }
+                ProviderConfig::GcpVertex(provider) => {
+                    if provider.id.trim().is_empty() {
+                        bail!("gcp_vertex provider id cannot be empty");
+                    }
+                    if provider.project_id.trim().is_empty() {
+                        bail!(
+                            "gcp_vertex provider `{}` project_id cannot be empty",
+                            provider.id
+                        );
+                    }
+                    if provider.location.trim().is_empty() {
+                        bail!(
+                            "gcp_vertex provider `{}` location cannot be empty",
+                            provider.id
+                        );
+                    }
+                    if provider.api_host.trim().is_empty() {
+                        bail!(
+                            "gcp_vertex provider `{}` api_host cannot be empty",
+                            provider.id
+                        );
+                    }
+
+                    match &provider.auth {
+                        GcpVertexAuthConfig::Adc => {}
+                        GcpVertexAuthConfig::ServiceAccount { credentials_path } => {
+                            if credentials_path.trim().is_empty() {
+                                bail!(
+                                    "gcp_vertex provider `{}` service_account.credentials_path cannot be empty",
+                                    provider.id
+                                );
+                            }
+                        }
+                        GcpVertexAuthConfig::Bearer { token } => {
+                            if token.trim().is_empty() {
+                                bail!(
+                                    "gcp_vertex provider `{}` bearer.token cannot be empty",
+                                    provider.id
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        for model in &self.models {
+            for route in &model.routes {
+                if let Some(provider) = provider_by_id.get(route.provider.as_str())
+                    && matches!(provider, ProviderConfig::GcpVertex(_))
+                {
+                    validate_vertex_upstream_model_format(&route.upstream_model)?;
+                }
+            }
+        }
+
+        Ok(())
     }
 
     pub fn seed_providers(&self) -> anyhow::Result<Vec<SeedProvider>> {
         let mut providers = Vec::new();
 
         for provider in &self.providers {
-            if let Some(auth) = &provider.auth
-                && let Some(token) = &auth.token
-            {
-                validate_env_reference_if_needed(token)?;
+            match provider {
+                ProviderConfig::OpenAiCompat(provider) => {
+                    if let Some(auth) = &provider.auth
+                        && let Some(token) = &auth.token
+                    {
+                        validate_env_reference_if_needed(token)?;
+                    }
+
+                    let config = json!({
+                        "base_url": provider.base_url,
+                        "default_headers": provider.default_headers,
+                        "timeouts": provider.timeouts,
+                    });
+
+                    let secrets = provider.auth.as_ref().map(|auth| {
+                        json!({
+                            "kind": auth.kind,
+                            "token": auth.token,
+                        })
+                    });
+
+                    providers.push(SeedProvider {
+                        provider_key: provider.id.clone(),
+                        provider_type: "openai_compat".to_string(),
+                        config,
+                        secrets,
+                    });
+                }
+                ProviderConfig::GcpVertex(provider) => {
+                    if let GcpVertexAuthConfig::Bearer { token } = &provider.auth {
+                        validate_env_reference_if_needed(token)?;
+                    }
+                    if let GcpVertexAuthConfig::ServiceAccount { credentials_path } = &provider.auth
+                    {
+                        validate_env_reference_if_needed(credentials_path)?;
+                    }
+
+                    let config = json!({
+                        "project_id": provider.project_id,
+                        "location": provider.location,
+                        "api_host": provider.api_host,
+                        "default_headers": provider.default_headers,
+                        "timeouts": provider.timeouts,
+                    });
+
+                    let secrets = Some(match &provider.auth {
+                        GcpVertexAuthConfig::Adc => json!({"mode": "adc"}),
+                        GcpVertexAuthConfig::ServiceAccount { credentials_path } => {
+                            json!({"mode": "service_account", "credentials_path": credentials_path})
+                        }
+                        GcpVertexAuthConfig::Bearer { token } => {
+                            json!({"mode": "bearer", "token": token})
+                        }
+                    });
+
+                    providers.push(SeedProvider {
+                        provider_key: provider.id.clone(),
+                        provider_type: "gcp_vertex".to_string(),
+                        config,
+                        secrets,
+                    });
+                }
             }
-
-            let config = json!({
-                "base_url": provider.base_url,
-                "default_headers": provider.default_headers,
-                "timeouts": provider.timeouts,
-            });
-
-            let secrets = provider.auth.as_ref().map(|auth| {
-                json!({
-                    "kind": auth.kind,
-                    "token": auth.token,
-                })
-            });
-
-            providers.push(SeedProvider {
-                provider_key: provider.id.clone(),
-                provider_type: provider.provider_type.clone(),
-                config,
-                secrets,
-            });
         }
 
         Ok(providers)
     }
 
-    #[must_use]
-    pub fn seed_models(&self) -> Vec<SeedModel> {
-        self.models
+    pub fn seed_models(&self) -> anyhow::Result<Vec<SeedModel>> {
+        let models = self
+            .models
             .iter()
             .map(|model| SeedModel {
                 model_key: model.id.clone(),
@@ -96,7 +217,9 @@ impl GatewayConfig {
                     })
                     .collect(),
             })
-            .collect()
+            .collect();
+
+        Ok(models)
     }
 
     pub fn seed_api_keys(&self) -> anyhow::Result<Vec<SeedApiKey>> {
@@ -130,9 +253,9 @@ impl GatewayConfig {
         let mut configs = Vec::new();
 
         for provider in &self.providers {
-            if provider.provider_type != "openai_compat" {
+            let ProviderConfig::OpenAiCompat(provider) = provider else {
                 continue;
-            }
+            };
 
             let mut config =
                 OpenAiCompatConfig::new(provider.id.clone(), provider.base_url.clone());
@@ -150,6 +273,44 @@ impl GatewayConfig {
             }
 
             configs.push(config);
+        }
+
+        Ok(configs)
+    }
+
+    pub fn vertex_provider_configs(&self) -> anyhow::Result<Vec<VertexProviderConfig>> {
+        let mut configs = Vec::new();
+
+        for provider in &self.providers {
+            let ProviderConfig::GcpVertex(provider) = provider else {
+                continue;
+            };
+
+            let auth = match &provider.auth {
+                GcpVertexAuthConfig::Adc => VertexAuthConfig::Adc,
+                GcpVertexAuthConfig::ServiceAccount { credentials_path } => {
+                    VertexAuthConfig::ServiceAccount {
+                        credentials_path: resolve_path_reference(credentials_path)?.into(),
+                    }
+                }
+                GcpVertexAuthConfig::Bearer { token } => VertexAuthConfig::Bearer {
+                    token: resolve_secret_reference(token)?,
+                },
+            };
+
+            configs.push(VertexProviderConfig {
+                provider_key: provider.id.clone(),
+                project_id: provider.project_id.clone(),
+                location: provider.location.clone(),
+                api_host: provider.api_host.clone(),
+                auth,
+                default_headers: provider.default_headers.clone(),
+                request_timeout_ms: provider
+                    .timeouts
+                    .as_ref()
+                    .map(|timeouts| timeouts.total_ms)
+                    .unwrap_or(120_000),
+            });
         }
 
         Ok(configs)
@@ -205,13 +366,28 @@ pub struct SeedApiKeyConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct ProviderConfig {
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ProviderConfig {
+    OpenAiCompat(OpenAiCompatProviderConfig),
+    GcpVertex(GcpVertexProviderConfig),
+}
+
+impl ProviderConfig {
+    #[must_use]
+    pub fn id(&self) -> &str {
+        match self {
+            Self::OpenAiCompat(provider) => &provider.id,
+            Self::GcpVertex(provider) => &provider.id,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct OpenAiCompatProviderConfig {
     pub id: String,
-    #[serde(rename = "type")]
-    pub provider_type: String,
     pub base_url: String,
     #[serde(default)]
-    pub auth: Option<ProviderAuthConfig>,
+    pub auth: Option<OpenAiCompatAuthConfig>,
     #[serde(default)]
     pub default_headers: BTreeMap<String, String>,
     #[serde(default)]
@@ -219,10 +395,33 @@ pub struct ProviderConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct ProviderAuthConfig {
+pub struct OpenAiCompatAuthConfig {
     pub kind: String,
     #[serde(default)]
     pub token: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GcpVertexProviderConfig {
+    pub id: String,
+    pub project_id: String,
+    #[serde(default = "default_vertex_location")]
+    pub location: String,
+    #[serde(default = "default_vertex_api_host")]
+    pub api_host: String,
+    pub auth: GcpVertexAuthConfig,
+    #[serde(default)]
+    pub default_headers: BTreeMap<String, String>,
+    #[serde(default)]
+    pub timeouts: Option<ProviderTimeouts>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum GcpVertexAuthConfig {
+    Adc,
+    ServiceAccount { credentials_path: String },
+    Bearer { token: String },
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -281,9 +480,31 @@ fn resolve_secret_reference(value: &str) -> anyhow::Result<String> {
     }
 }
 
+fn resolve_path_reference(value: &str) -> anyhow::Result<String> {
+    if value.starts_with("env.") {
+        resolve_env_reference(value)
+    } else if let Some(literal) = value.strip_prefix("literal.") {
+        Ok(literal.to_string())
+    } else {
+        Ok(value.to_string())
+    }
+}
+
 fn validate_env_reference_if_needed(value: &str) -> anyhow::Result<()> {
     if value.starts_with("env.") {
         let _ = resolve_env_reference(value)?;
+    }
+    Ok(())
+}
+
+fn validate_vertex_upstream_model_format(value: &str) -> anyhow::Result<()> {
+    let mut parts = value.splitn(2, '/');
+    let publisher = parts.next().unwrap_or_default();
+    let model_id = parts.next().unwrap_or_default();
+    if publisher.is_empty() || model_id.is_empty() {
+        bail!(
+            "gcp_vertex routes require upstream_model in <publisher>/<model_id> format, got `{value}`"
+        );
     }
     Ok(())
 }
@@ -318,4 +539,127 @@ const fn default_route_weight() -> f64 {
 
 const fn default_enabled() -> bool {
     true
+}
+
+fn default_vertex_location() -> String {
+    "global".to_string()
+}
+
+fn default_vertex_api_host() -> String {
+    "aiplatform.googleapis.com".to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use tempfile::tempdir;
+
+    use super::GatewayConfig;
+
+    fn write_config(path: &Path, yaml: &str) {
+        std::fs::write(path, yaml).expect("write config");
+    }
+
+    #[test]
+    fn accepts_valid_vertex_auth_modes() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: vertex-adc
+    type: gcp_vertex
+    project_id: test-proj
+    auth:
+      mode: adc
+  - id: vertex-sa
+    type: gcp_vertex
+    project_id: test-proj
+    auth:
+      mode: service_account
+      credentials_path: /tmp/sa.json
+  - id: vertex-bearer
+    type: gcp_vertex
+    project_id: test-proj
+    auth:
+      mode: bearer
+      token: literal.test-token
+models:
+  - id: fast
+    routes:
+      - provider: vertex-adc
+        upstream_model: google/gemini-2.0-flash
+"#,
+        );
+
+        GatewayConfig::from_path(&config_path).expect("config should parse");
+    }
+
+    #[test]
+    fn rejects_missing_vertex_service_account_path() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: vertex-sa
+    type: gcp_vertex
+    project_id: test-proj
+    auth:
+      mode: service_account
+"#,
+        );
+
+        GatewayConfig::from_path(&config_path).expect_err("config should fail");
+    }
+
+    #[test]
+    fn rejects_missing_vertex_bearer_token() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: vertex-bearer
+    type: gcp_vertex
+    project_id: test-proj
+    auth:
+      mode: bearer
+"#,
+        );
+
+        GatewayConfig::from_path(&config_path).expect_err("config should fail");
+    }
+
+    #[test]
+    fn rejects_invalid_vertex_upstream_model_route_format() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: vertex
+    type: gcp_vertex
+    project_id: test-proj
+    auth:
+      mode: adc
+models:
+  - id: fast
+    routes:
+      - provider: vertex
+        upstream_model: gemini-2.0-flash
+"#,
+        );
+
+        GatewayConfig::from_path(&config_path).expect_err("config should fail");
+    }
 }

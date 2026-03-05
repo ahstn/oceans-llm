@@ -8,5 +8,31 @@ database:
 auth:
   seed_api_keys: []
 
-providers: []
-models: []
+providers:
+  - id: vertex-adc
+    type: gcp_vertex
+    project_id: your-gcp-project
+    location: global
+    auth:
+      mode: adc
+
+  - id: vertex-claude
+    type: gcp_vertex
+    project_id: your-gcp-project
+    location: global
+    auth:
+      mode: service_account
+      credentials_path: /path/to/service-account.json
+
+models:
+  - id: gemini-fast
+    description: Gemini on Vertex
+    routes:
+      - provider: vertex-adc
+        upstream_model: google/gemini-2.0-flash
+
+  - id: claude-sonnet
+    description: Claude on Vertex
+    routes:
+      - provider: vertex-claude
+        upstream_model: anthropic/claude-sonnet-4-6

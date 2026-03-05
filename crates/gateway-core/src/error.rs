@@ -54,6 +54,8 @@ pub enum RouteError {
 
 #[derive(Debug, Error)]
 pub enum ProviderError {
+    #[error("invalid request for provider: {0}")]
+    InvalidRequest(String),
     #[error("upstream provider timed out")]
     Timeout,
     #[error("upstream provider transport failure: {0}")]
@@ -125,6 +127,7 @@ impl GatewayError {
             Self::InvalidRequest(_) => 400,
             Self::Route(RouteError::ModelNotFound(_)) => 404,
             Self::NotImplemented(_) | Self::Provider(ProviderError::NotImplemented(_)) => 501,
+            Self::Provider(ProviderError::InvalidRequest(_)) => 400,
             Self::Provider(ProviderError::UpstreamHttp { status, .. }) => *status,
             Self::Provider(ProviderError::Timeout) => 504,
             Self::Provider(ProviderError::Transport(_)) => 502,
@@ -147,6 +150,7 @@ impl GatewayError {
             Self::Route(RouteError::ModelNotFound(_)) => "not_found_error",
             Self::Route(_) => "routing_error",
             Self::Store(_) => "store_error",
+            Self::Provider(ProviderError::InvalidRequest(_)) => "invalid_request_error",
             Self::Provider(_) => "upstream_error",
             Self::NotImplemented(_) => "not_implemented_error",
             Self::Internal(_) => "internal_error",
@@ -176,6 +180,7 @@ impl GatewayError {
             Self::Provider(ProviderError::Transport(_)) => "upstream_transport",
             Self::Provider(ProviderError::UpstreamHttp { .. }) => "upstream_http_error",
             Self::Provider(ProviderError::NotImplemented(_)) => "provider_not_implemented",
+            Self::Provider(ProviderError::InvalidRequest(_)) => "invalid_request",
             Self::InvalidRequest(_) => "invalid_request",
             Self::NotImplemented(_) => "not_implemented",
             Self::Internal(_) => "internal_error",

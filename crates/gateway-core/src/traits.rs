@@ -9,9 +9,9 @@ use uuid::Uuid;
 
 use crate::{
     domain::{
-        ApiKeyRecord, GatewayModel, ModelRoute, Money4, ProviderConnection, ProviderRequestContext,
-        RequestLogRecord, TeamMembershipRecord, TeamRecord, UsageCostEventRecord, UserBudgetRecord,
-        UserRecord,
+        ApiKeyRecord, GatewayModel, ModelRoute, Money4, ProviderCapabilities, ProviderConnection,
+        ProviderRequestContext, RequestLogRecord, TeamMembershipRecord, TeamRecord,
+        UsageCostEventRecord, UserBudgetRecord, UserRecord,
     },
     error::{ProviderError, RouteError, StoreError},
     protocol::openai::{ChatCompletionsRequest, EmbeddingsRequest},
@@ -99,6 +99,7 @@ pub type ProviderStream = Pin<Box<dyn Stream<Item = Result<Bytes, ProviderError>
 pub trait ProviderClient: Send + Sync {
     fn provider_key(&self) -> &str;
     fn provider_type(&self) -> &str;
+    fn capabilities(&self) -> ProviderCapabilities;
 
     async fn chat_completions(
         &self,

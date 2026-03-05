@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, time::Duration};
 
 use async_trait::async_trait;
 use gateway_core::{
-    ChatCompletionsRequest, EmbeddingsRequest, ProviderClient, ProviderError,
+    ChatCompletionsRequest, EmbeddingsRequest, ProviderCapabilities, ProviderClient, ProviderError,
     ProviderRequestContext, ProviderStream,
 };
 use serde_json::Value;
@@ -86,9 +86,15 @@ impl OpenAiCompatProvider {
     fn build_request(
         &self,
         endpoint_suffix: &str,
-        body: Value,
+        mut body: Value,
         context: &ProviderRequestContext,
     ) -> Result<reqwest::Request, ProviderError> {
+        if let Some(object) = body.as_object_mut() {
+            for (key, value) in &context.extra_body {
+                object.insert(key.clone(), value.clone());
+            }
+        }
+
         let url = join_base_url(&self.config.base_url, endpoint_suffix)?;
 
         let mut request = self.client.post(url).json(&body);
@@ -96,8 +102,16 @@ impl OpenAiCompatProvider {
         for (header_name, header_value) in &self.config.default_headers {
             request = request.header(header_name, header_value);
         }
+        for (header_name, value) in &context.extra_headers {
+            if let Some(value) = value.as_str() {
+                request = request.header(header_name, value);
+            }
+        }
 
         request = request.header("x-request-id", &context.request_id);
+        if let Some(idempotency_key) = &context.idempotency_key {
+            request = request.header("Idempotency-Key", idempotency_key);
+        }
 
         if let Some(bearer_token) = &self.config.bearer_token {
             request = request.bearer_auth(bearer_token);
@@ -139,6 +153,10 @@ impl ProviderClient for OpenAiCompatProvider {
         "openai_compat"
     }
 
+    fn capabilities(&self) -> ProviderCapabilities {
+        ProviderCapabilities::openai_compat_baseline()
+    }
+
     async fn chat_completions(
         &self,
         request: &ChatCompletionsRequest,
@@ -177,7 +195,7 @@ mod tests {
         ChatCompletionsRequest, ProviderClient, ProviderError, ProviderRequestContext,
         protocol::openai::ChatMessage,
     };
-    use serde_json::{Value, json};
+    use serde_json::{Map, Value, json};
     use tokio::net::TcpListener;
 
     use super::{OpenAiCompatConfig, OpenAiCompatProvider};
@@ -213,6 +231,10 @@ mod tests {
             model_key: "fast".to_string(),
             provider_key: "openai-prod".to_string(),
             upstream_model: "gpt-4o-mini".to_string(),
+            extra_headers: Map::new(),
+            extra_body: Map::new(),
+            idempotency_key: None,
+            request_headers: BTreeMap::new(),
         };
 
         let built = provider
@@ -287,6 +309,10 @@ mod tests {
             model_key: "fast".to_string(),
             provider_key: "openai-prod".to_string(),
             upstream_model: "gpt-4o-mini".to_string(),
+            extra_headers: Map::new(),
+            extra_body: Map::new(),
+            idempotency_key: None,
+            request_headers: BTreeMap::new(),
         };
 
         let error = provider
