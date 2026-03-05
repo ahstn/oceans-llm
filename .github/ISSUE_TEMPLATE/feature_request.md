@@ -1,7 +1,7 @@
 ---
-name: Work Item
-about: Capture feature requests and implementation issues with clear scope and acceptance criteria.
-title: "<short imperative title>"
+name: Feature Request
+about: Capture feature requests and enhancements with clear scope and acceptance criteria.
+title: "[Feature]: <short imperative title>"
 labels: ["needs-triage"]
 assignees: []
 ---
