@@ -103,9 +103,12 @@ fn env_u64(key: &str, default: u64) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
+    use std::{
+        path::{Path, PathBuf},
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
     };
 
     use admin_ui::AdminUiConfig;
@@ -127,6 +130,7 @@ mod tests {
     use serial_test::serial;
     use tempfile::tempdir;
     use tower::ServiceExt;
+    use uuid::Uuid;
 
     use crate::http::{build_router, state::AppState};
 
@@ -230,11 +234,115 @@ mod tests {
         )
     }
 
+    #[derive(Debug)]
+    struct RequestLogRow {
+        user_id: Option<String>,
+        team_id: Option<String>,
+        model_key: String,
+        provider_key: String,
+        status_code: Option<i64>,
+        latency_ms: Option<i64>,
+        prompt_tokens: Option<i64>,
+        completion_tokens: Option<i64>,
+        total_tokens: Option<i64>,
+        error_code: Option<String>,
+        metadata: Value,
+    }
+
+    async fn load_request_logs(db_path: &Path) -> Vec<RequestLogRow> {
+        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
+            .build()
+            .await
+            .expect("libsql db");
+        let connection = db.connect().expect("libsql connection");
+        let mut rows = connection
+            .query(
+                r#"
+                SELECT user_id, team_id, model_key, provider_key, status_code, latency_ms,
+                       prompt_tokens, completion_tokens, total_tokens, error_code, metadata_json
+                FROM request_logs
+                ORDER BY occurred_at ASC, rowid ASC
+                "#,
+                (),
+            )
+            .await
+            .expect("request logs query");
+
+        let mut logs = Vec::new();
+        while let Some(row) = rows.next().await.expect("request logs row") {
+            let metadata_json: String = row.get(10).expect("metadata json");
+            logs.push(RequestLogRow {
+                user_id: row.get(0).expect("user_id"),
+                team_id: row.get(1).expect("team_id"),
+                model_key: row.get(2).expect("model_key"),
+                provider_key: row.get(3).expect("provider_key"),
+                status_code: row.get(4).expect("status_code"),
+                latency_ms: row.get(5).expect("latency_ms"),
+                prompt_tokens: row.get(6).expect("prompt_tokens"),
+                completion_tokens: row.get(7).expect("completion_tokens"),
+                total_tokens: row.get(8).expect("total_tokens"),
+                error_code: row.get(9).expect("error_code"),
+                metadata: serde_json::from_str(&metadata_json).expect("metadata value"),
+            });
+        }
+
+        logs
+    }
+
+    async fn set_api_key_owner_to_user(
+        db_path: &Path,
+        raw_key: &str,
+        request_logging_enabled: bool,
+    ) -> Uuid {
+        let parsed = parse_gateway_api_key(raw_key).expect("parse key");
+        let user_id = Uuid::new_v4();
+        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
+            .build()
+            .await
+            .expect("libsql db");
+        let connection = db.connect().expect("libsql connection");
+
+        connection
+            .execute(
+                r#"
+                INSERT INTO users (
+                    user_id, name, email, email_normalized, global_role, auth_mode, status,
+                    request_logging_enabled, model_access_mode, created_at, updated_at
+                ) VALUES (?1, ?2, ?3, ?4, 'user', 'password', 'active', ?5, 'all', unixepoch(), unixepoch())
+                "#,
+                libsql::params![
+                    user_id.to_string(),
+                    "Request Logging Test User",
+                    format!("{}@example.com", user_id.simple()),
+                    format!("{}@example.com", user_id.simple()),
+                    if request_logging_enabled { 1_i64 } else { 0_i64 },
+                ],
+            )
+            .await
+            .expect("insert user");
+
+        connection
+            .execute(
+                r#"
+                UPDATE api_keys
+                SET owner_kind = 'user',
+                    owner_user_id = ?1,
+                    owner_team_id = NULL
+                WHERE public_id = ?2
+                "#,
+                libsql::params![user_id.to_string(), parsed.public_id],
+            )
+            .await
+            .expect("update api key owner");
+
+        user_id
+    }
+
     async fn build_test_app(
         seed_providers: Vec<SeedProvider>,
         models: Vec<SeedModel>,
         provider_registry: gateway_core::ProviderRegistry,
-    ) -> (Router, String) {
+    ) -> (Router, String, PathBuf) {
         let tmp = tempdir().expect("tempdir");
         let tmp_path = tmp.keep();
         let db_path = tmp_path.join("gateway.db");
@@ -274,10 +382,12 @@ mod tests {
             AdminUiConfig::default(),
         );
 
-        (app, raw_key)
+        (app, raw_key, db_path)
     }
 
-    async fn build_default_test_app(providers: gateway_core::ProviderRegistry) -> (Router, String) {
+    async fn build_default_test_app(
+        providers: gateway_core::ProviderRegistry,
+    ) -> (Router, String, PathBuf) {
         let seed_providers = vec![SeedProvider {
             provider_key: "openai-prod".to_string(),
             provider_type: "openai_compat".to_string(),
@@ -306,7 +416,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn api_routes_are_not_swallowed_by_ui_proxy() {
-        let (app, _) = build_default_test_app(gateway_core::ProviderRegistry::new()).await;
+        let (app, _, _) = build_default_test_app(gateway_core::ProviderRegistry::new()).await;
 
         let response = app
             .oneshot(
@@ -325,7 +435,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn readyz_returns_ok() {
-        let (app, _) = build_default_test_app(gateway_core::ProviderRegistry::new()).await;
+        let (app, _, _) = build_default_test_app(gateway_core::ProviderRegistry::new()).await;
 
         let response = app
             .oneshot(
@@ -344,7 +454,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn v1_models_are_auth_filtered() {
-        let (app, raw_key) = build_default_test_app(gateway_core::ProviderRegistry::new()).await;
+        let (app, raw_key, _) = build_default_test_app(gateway_core::ProviderRegistry::new()).await;
 
         let response = app
             .oneshot(
@@ -376,7 +486,8 @@ mod tests {
             MockChatResult::Value(json!({
                 "id": "chatcmpl_123",
                 "object": "chat.completion",
-                "choices": [{"index": 0, "message": {"role": "assistant", "content": "pong"}, "finish_reason":"stop"}]
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "pong"}, "finish_reason":"stop"}],
+                "usage": {"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18}
             })),
             vec![],
             ProviderCapabilities::openai_compat_baseline(),
@@ -384,7 +495,7 @@ mod tests {
         let mut registry = gateway_core::ProviderRegistry::new();
         registry.register(Arc::new(provider));
 
-        let (app, raw_key) = build_default_test_app(registry).await;
+        let (app, raw_key, db_path) = build_default_test_app(registry).await;
 
         let response = app
             .oneshot(
@@ -413,6 +524,22 @@ mod tests {
         let json: serde_json::Value = serde_json::from_slice(&body).expect("json");
         assert_eq!(json["choices"][0]["message"]["content"], "pong");
         assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        let logs = load_request_logs(&db_path).await;
+        assert_eq!(logs.len(), 1);
+        assert!(logs[0].user_id.is_none());
+        assert!(logs[0].team_id.is_some());
+        assert_eq!(logs[0].model_key, "fast");
+        assert_eq!(logs[0].provider_key, "openai-prod");
+        assert_eq!(logs[0].status_code, Some(200));
+        assert!(logs[0].latency_ms.is_some());
+        assert_eq!(logs[0].prompt_tokens, Some(11));
+        assert_eq!(logs[0].completion_tokens, Some(7));
+        assert_eq!(logs[0].total_tokens, Some(18));
+        assert_eq!(logs[0].error_code, None);
+        assert_eq!(logs[0].metadata["stream"], Value::Bool(false));
+        assert_eq!(logs[0].metadata["fallback_used"], Value::Bool(false));
+        assert_eq!(logs[0].metadata["attempt_count"], json!(1));
     }
 
     #[tokio::test]
@@ -480,7 +607,7 @@ mod tests {
             ],
         }];
 
-        let (app, raw_key) = build_test_app(seed_providers, models, registry).await;
+        let (app, raw_key, db_path) = build_test_app(seed_providers, models, registry).await;
 
         let response = app
             .oneshot(
@@ -510,6 +637,15 @@ mod tests {
         assert_eq!(payload["choices"][0]["message"]["content"], "from-fallback");
         assert_eq!(primary_calls.load(Ordering::SeqCst), 1);
         assert_eq!(fallback_calls.load(Ordering::SeqCst), 1);
+
+        let logs = load_request_logs(&db_path).await;
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].provider_key, "fallback");
+        assert_eq!(logs[0].status_code, Some(200));
+        assert_eq!(logs[0].error_code, None);
+        assert_eq!(logs[0].metadata["stream"], Value::Bool(false));
+        assert_eq!(logs[0].metadata["fallback_used"], Value::Bool(true));
+        assert_eq!(logs[0].metadata["attempt_count"], json!(2));
     }
 
     #[tokio::test]
@@ -577,7 +713,7 @@ mod tests {
             ],
         }];
 
-        let (app, raw_key) = build_test_app(seed_providers, models, registry).await;
+        let (app, raw_key, db_path) = build_test_app(seed_providers, models, registry).await;
 
         let response = app
             .oneshot(
@@ -601,6 +737,62 @@ mod tests {
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(primary_calls.load(Ordering::SeqCst), 1);
         assert_eq!(fallback_calls.load(Ordering::SeqCst), 0);
+
+        let logs = load_request_logs(&db_path).await;
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].provider_key, "primary");
+        assert_eq!(logs[0].status_code, Some(503));
+        assert_eq!(logs[0].prompt_tokens, None);
+        assert_eq!(logs[0].completion_tokens, None);
+        assert_eq!(logs[0].total_tokens, None);
+        assert_eq!(logs[0].error_code.as_deref(), Some("upstream_http_error"));
+        assert_eq!(logs[0].metadata["stream"], Value::Bool(false));
+        assert_eq!(logs[0].metadata["fallback_used"], Value::Bool(false));
+        assert_eq!(logs[0].metadata["attempt_count"], json!(1));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn user_owned_key_respects_request_logging_toggle() {
+        let (calls, provider) = make_chat_provider(
+            "openai-prod",
+            MockChatResult::Value(json!({
+                "id": "chatcmpl_123",
+                "object": "chat.completion",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "pong"}, "finish_reason":"stop"}]
+            })),
+            vec![],
+            ProviderCapabilities::openai_compat_baseline(),
+        );
+        let mut registry = gateway_core::ProviderRegistry::new();
+        registry.register(Arc::new(provider));
+
+        let (app, raw_key, db_path) = build_default_test_app(registry).await;
+        let user_id = set_api_key_owner_to_user(&db_path, &raw_key, false).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .body(Body::from(
+                        serde_json::json!({
+                            "model": "fast",
+                            "messages": [{"role": "user", "content": "ping"}]
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert_eq!(user_id.to_string().len(), 36);
+        assert!(load_request_logs(&db_path).await.is_empty());
     }
 
     #[tokio::test]
@@ -622,7 +814,7 @@ mod tests {
         let mut registry = gateway_core::ProviderRegistry::new();
         registry.register(Arc::new(provider));
 
-        let (app, raw_key) = build_default_test_app(registry).await;
+        let (app, raw_key, db_path) = build_default_test_app(registry).await;
 
         let response = app
             .oneshot(
@@ -650,5 +842,17 @@ mod tests {
             .expect("body");
         let text = String::from_utf8(body.to_vec()).expect("utf8");
         assert!(text.contains("data: [DONE]"));
+
+        let logs = load_request_logs(&db_path).await;
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].provider_key, "openai-prod");
+        assert_eq!(logs[0].status_code, Some(200));
+        assert_eq!(logs[0].prompt_tokens, None);
+        assert_eq!(logs[0].completion_tokens, None);
+        assert_eq!(logs[0].total_tokens, None);
+        assert_eq!(logs[0].error_code, None);
+        assert_eq!(logs[0].metadata["stream"], Value::Bool(true));
+        assert_eq!(logs[0].metadata["fallback_used"], Value::Bool(false));
+        assert_eq!(logs[0].metadata["attempt_count"], json!(1));
     }
 }

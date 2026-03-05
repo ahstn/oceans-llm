@@ -123,7 +123,7 @@ Positive:
 
 Tradeoffs:
 - Added adapter complexity (mapping + stream parsing/normalization).
-- Cost accounting and full request/response payload logging are still follow-up concerns.
+- Budget enforcement, cost accounting, and full request/response payload logging are still follow-up concerns.
 - Current implementation assumes UTF-8 textual stream framing for normalization paths.
 
 ## Follow-up Work

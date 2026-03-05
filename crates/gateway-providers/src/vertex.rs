@@ -342,6 +342,7 @@ fn map_google_request(
     }
 
     merge_object_overrides(&mut body, &context.extra_body);
+    validate_google_stream_candidate_count(&body, stream)?;
     Ok(Value::Object(body))
 }
 
@@ -650,6 +651,33 @@ fn extract_google_generation_config(extra: &mut BTreeMap<String, Value>) -> Map<
     }
 
     generation_config
+}
+
+fn validate_google_stream_candidate_count(
+    body: &Map<String, Value>,
+    stream: bool,
+) -> Result<(), ProviderError> {
+    if !stream {
+        return Ok(());
+    }
+
+    let candidate_count = body
+        .get("generationConfig")
+        .and_then(Value::as_object)
+        .and_then(|config| config.get("candidateCount"))
+        .and_then(|value| {
+            value
+                .as_u64()
+                .or_else(|| value.as_i64().and_then(|count| u64::try_from(count).ok()))
+        });
+
+    if candidate_count.is_some_and(|count| count > 1) {
+        return Err(ProviderError::InvalidRequest(
+            "google vertex streaming supports only a single candidate in this slice; remove `n`/`candidateCount` or use non-streaming".to_string(),
+        ));
+    }
+
+    Ok(())
 }
 
 fn normalize_google_response(value: &Value, context: &ProviderRequestContext) -> Value {
@@ -1325,6 +1353,7 @@ mod tests {
         map_anthropic_request, map_google_request, normalize_anthropic_response,
         normalize_google_response, parse_upstream_model,
     };
+    use gateway_core::ProviderError;
 
     fn context(upstream_model: &str) -> ProviderRequestContext {
         ProviderRequestContext {
@@ -1384,6 +1413,83 @@ mod tests {
             mapped["contents"][0]["parts"][1]["fileData"]["fileUri"],
             "gs://bucket/pic.png"
         );
+    }
+
+    #[test]
+    fn rejects_google_streaming_multiple_candidates_from_n() {
+        let mut request = gateway_core::ChatCompletionsRequest {
+            model: "fast".to_string(),
+            messages: vec![gateway_core::protocol::openai::ChatMessage {
+                role: "user".to_string(),
+                content: Value::String("ping".to_string()),
+                name: None,
+                extra: std::collections::BTreeMap::new(),
+            }],
+            stream: true,
+            extra: std::collections::BTreeMap::new(),
+        };
+        request.extra.insert("n".to_string(), json!(2));
+
+        let error = map_google_request(&request, &context("google/gemini-2.0-flash"), true)
+            .expect_err("streaming n>1 should be rejected");
+
+        match error {
+            ProviderError::InvalidRequest(message) => {
+                assert!(message.contains("single candidate"));
+            }
+            other => panic!("unexpected error: {other}"),
+        }
+    }
+
+    #[test]
+    fn rejects_google_streaming_multiple_candidates_from_route_override() {
+        let request = gateway_core::ChatCompletionsRequest {
+            model: "fast".to_string(),
+            messages: vec![gateway_core::protocol::openai::ChatMessage {
+                role: "user".to_string(),
+                content: Value::String("ping".to_string()),
+                name: None,
+                extra: std::collections::BTreeMap::new(),
+            }],
+            stream: true,
+            extra: std::collections::BTreeMap::new(),
+        };
+        let mut context = context("google/gemini-2.0-flash");
+        context.extra_body.insert(
+            "generationConfig".to_string(),
+            json!({ "candidateCount": 2 }),
+        );
+
+        let error =
+            map_google_request(&request, &context, true).expect_err("route override should win");
+
+        match error {
+            ProviderError::InvalidRequest(message) => {
+                assert!(message.contains("single candidate"));
+            }
+            other => panic!("unexpected error: {other}"),
+        }
+    }
+
+    #[test]
+    fn allows_google_non_streaming_multiple_candidates() {
+        let mut request = gateway_core::ChatCompletionsRequest {
+            model: "fast".to_string(),
+            messages: vec![gateway_core::protocol::openai::ChatMessage {
+                role: "user".to_string(),
+                content: Value::String("ping".to_string()),
+                name: None,
+                extra: std::collections::BTreeMap::new(),
+            }],
+            stream: false,
+            extra: std::collections::BTreeMap::new(),
+        };
+        request.extra.insert("n".to_string(), json!(2));
+
+        let mapped = map_google_request(&request, &context("google/gemini-2.0-flash"), false)
+            .expect("non-stream n>1 remains allowed");
+
+        assert_eq!(mapped["generationConfig"]["candidateCount"], json!(2));
     }
 
     #[test]

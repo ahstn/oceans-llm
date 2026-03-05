@@ -679,6 +679,7 @@ dependencies = [
  "gateway-service",
  "gateway-store",
  "http 1.4.0",
+ "libsql",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
@@ -687,12 +688,14 @@ dependencies = [
  "serde_yaml",
  "serial_test",
  "tempfile",
+ "time",
  "tokio",
  "tower 0.5.3",
  "tower-http 0.6.8",
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

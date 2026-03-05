@@ -10,7 +10,7 @@ This document catalogs the database tables, key relationships, and policy semant
 - Core domain types: [`crates/gateway-core/src/domain.rs`](/Users/ahstn/git/oceans-llm.feat-ui-init/crates/gateway-core/src/domain.rs)
 - Repository traits: [`crates/gateway-core/src/traits.rs`](/Users/ahstn/git/oceans-llm.feat-ui-init/crates/gateway-core/src/traits.rs)
 - Store implementation: [`crates/gateway-store/src/libsql_store.rs`](/Users/ahstn/git/oceans-llm.feat-ui-init/crates/gateway-store/src/libsql_store.rs)
-- Auth/model/budget/logging behavior:
+- Auth/model/logging behavior and deferred budget foundation:
   - [`crates/gateway-service/src/authenticator.rs`](/Users/ahstn/git/oceans-llm.feat-ui-init/crates/gateway-service/src/authenticator.rs)
   - [`crates/gateway-service/src/model_access.rs`](/Users/ahstn/git/oceans-llm.feat-ui-init/crates/gateway-service/src/model_access.rs)
   - [`crates/gateway-service/src/budget_guard.rs`](/Users/ahstn/git/oceans-llm.feat-ui-init/crates/gateway-service/src/budget_guard.rs)
@@ -83,10 +83,10 @@ This document catalogs the database tables, key relationships, and policy semant
   - Constraint: one active budget per user (`WHERE is_active=1` unique index).
 - `usage_cost_events`
   - Key columns: `usage_event_id`, `request_id`, `api_key_id`, `user_id`, `team_id`, `model_id`, `estimated_cost_10000`, `occurred_at`
-  - Notes: used for budget accounting regardless of request logging toggle.
+  - Notes: schema foundation for future pricing-backed spend accounting; the current chat request path does not write these rows yet.
 - `request_logs`
   - Key columns: `request_log_id`, `request_id`, `api_key_id`, `user_id`, `team_id`, `model_key`, `provider_key`, token/latency/status fields, `metadata_json`, `occurred_at`
-  - Notes: user-owned requests honor `users.request_logging_enabled`; team-owned requests are always logged with nullable `user_id`.
+  - Notes: chat execution writes one row for the final user-visible outcome of each executed request. User-owned requests honor `users.request_logging_enabled`; team-owned requests are always logged with nullable `user_id`.
 
 ## Authorization Semantics
 
@@ -100,16 +100,15 @@ If no restriction mode applies, grants remain unchanged.
 
 ## Budget Semantics
 
-- Budget target: user-owned requests only in this phase.
-- Team-owned keys are not budget-blocked in this phase.
-- Cadence: `daily|weekly`.
-- UTC boundary semantics:
+- `user_budgets` and `usage_cost_events` are present as schema groundwork for later pricing-ledger work.
+- Current runtime behavior: `/v1/chat/completions` does not enforce budgets and does not write `usage_cost_events`.
+- Planned target when pricing exists: user-owned requests first; team-owned keys remain outside user-budget blocking in the initial rollout.
+- Planned cadence values remain `daily|weekly`.
+- Planned UTC window semantics:
   - Daily windows start at `00:00:00 UTC`.
   - Weekly windows start at `Monday 00:00:00 UTC`.
   - `Sunday 23:59:59 UTC` is still in the previous weekly window.
-- Enforcement: hard block when projected spend exceeds the active budget amount and `hard_limit=true`.
-- Accounting: `usage_cost_events` are written even when request logging is disabled.
-- Team-owned request attribution policy:
+- Planned attribution policy once accounting is wired:
   - Team key + acting user context: usage is attributed to both user and team.
   - Team key without acting user context: usage is attributed to team only.
 - User-facing behavior details are documented in [`docs/budgets-and-spending.md`](/Users/ahstn/git/oceans-llm.feat-ui-init/docs/budgets-and-spending.md).
