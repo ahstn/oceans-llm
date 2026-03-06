@@ -1,15 +1,14 @@
 use std::sync::Arc;
 
 use gateway_core::{
-    AuthenticatedApiKey, BudgetRepository, GatewayError, GatewayModel, IdentityRepository,
-    ModelRepository, ModelRoute, Money4, ProviderRepository, RequestLogRecord,
-    RequestLogRepository, RouteError, RoutePlanner, StoreHealth,
+    AuthenticatedApiKey, GatewayError, GatewayModel, IdentityRepository, ModelRepository,
+    ModelRoute, PricingCatalogRepository, PricingResolution, PricingUnpricedReason,
+    ProviderRepository, RequestLogRecord, RequestLogRepository, RouteError, RoutePlanner,
+    StoreHealth,
 };
-use time::OffsetDateTime;
 use tracing::warn;
-use uuid::Uuid;
 
-use crate::{Authenticator, BudgetGuard, ModelAccess, RequestLogging};
+use crate::{Authenticator, ModelAccess, PricingCatalog, RequestLogging};
 
 #[derive(Debug, Clone)]
 pub struct ResolvedRequest {
@@ -23,7 +22,7 @@ pub struct GatewayService<S, P> {
     store: Arc<S>,
     authenticator: Authenticator<S>,
     model_access: ModelAccess<S>,
-    budget_guard: BudgetGuard<S>,
+    pricing_catalog: PricingCatalog<S>,
     request_logging: RequestLogging<S>,
     planner: Arc<P>,
 }
@@ -33,7 +32,7 @@ where
     S: gateway_core::ApiKeyRepository
         + ModelRepository
         + IdentityRepository
-        + BudgetRepository
+        + PricingCatalogRepository
         + RequestLogRepository
         + ProviderRepository
         + StoreHealth
@@ -46,14 +45,14 @@ where
     pub fn new(store: Arc<S>, planner: Arc<P>) -> Self {
         let authenticator = Authenticator::new(store.clone());
         let model_access = ModelAccess::new(store.clone());
-        let budget_guard = BudgetGuard::new(store.clone());
+        let pricing_catalog = PricingCatalog::new(store.clone());
         let request_logging = RequestLogging::new(store.clone());
 
         Self {
             store,
             authenticator,
             model_access,
-            budget_guard,
+            pricing_catalog,
             request_logging,
             planner,
         }
@@ -122,24 +121,32 @@ where
         })
     }
 
-    pub async fn enforce_and_record_budget_usage(
-        &self,
-        auth: &AuthenticatedApiKey,
-        request_id: &str,
-        model_id: Option<Uuid>,
-        estimated_cost_usd: Money4,
-        occurred_at: OffsetDateTime,
-    ) -> Result<(), GatewayError> {
-        self.budget_guard
-            .enforce_and_record_usage(auth, request_id, model_id, estimated_cost_usd, occurred_at)
-            .await
-    }
-
     pub async fn log_request_if_enabled(
         &self,
         auth: &AuthenticatedApiKey,
         log: RequestLogRecord,
     ) -> Result<bool, GatewayError> {
         self.request_logging.log_request_if_enabled(auth, log).await
+    }
+
+    pub async fn refresh_pricing_catalog_if_stale(&self) -> Result<(), GatewayError> {
+        self.pricing_catalog.refresh_if_stale().await
+    }
+
+    pub async fn resolve_route_pricing(
+        &self,
+        route: &ModelRoute,
+    ) -> Result<PricingResolution, GatewayError> {
+        let Some(provider) = self.store.get_provider_by_key(&route.provider_key).await? else {
+            return Ok(PricingResolution::Unpriced {
+                reason: PricingUnpricedReason::UnsupportedPricingProviderId(
+                    route.provider_key.clone(),
+                ),
+            });
+        };
+
+        self.pricing_catalog
+            .resolve_for_provider_connection(&provider, route)
+            .await
     }
 }

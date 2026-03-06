@@ -9,9 +9,9 @@ use uuid::Uuid;
 
 use crate::{
     domain::{
-        ApiKeyRecord, GatewayModel, ModelRoute, Money4, ProviderConnection, ProviderRequestContext,
-        RequestLogRecord, TeamMembershipRecord, TeamRecord, UsageCostEventRecord, UserBudgetRecord,
-        UserRecord,
+        ApiKeyRecord, GatewayModel, ModelRoute, Money4, PricingCatalogCacheRecord,
+        ProviderCapabilities, ProviderConnection, ProviderRequestContext, RequestLogRecord,
+        TeamMembershipRecord, TeamRecord, UsageCostEventRecord, UserBudgetRecord, UserRecord,
     },
     error::{ProviderError, RouteError, StoreError},
     protocol::openai::{ChatCompletionsRequest, EmbeddingsRequest},
@@ -85,6 +85,25 @@ pub trait RequestLogRepository: Send + Sync {
 }
 
 #[async_trait]
+pub trait PricingCatalogRepository: Send + Sync {
+    async fn get_pricing_catalog_cache(
+        &self,
+        catalog_key: &str,
+    ) -> Result<Option<PricingCatalogCacheRecord>, StoreError>;
+
+    async fn upsert_pricing_catalog_cache(
+        &self,
+        cache: &PricingCatalogCacheRecord,
+    ) -> Result<(), StoreError>;
+
+    async fn touch_pricing_catalog_cache_fetched_at(
+        &self,
+        catalog_key: &str,
+        fetched_at: OffsetDateTime,
+    ) -> Result<(), StoreError>;
+}
+
+#[async_trait]
 pub trait StoreHealth: Send + Sync {
     async fn ping(&self) -> Result<(), StoreError>;
 }
@@ -99,6 +118,7 @@ pub type ProviderStream = Pin<Box<dyn Stream<Item = Result<Bytes, ProviderError>
 pub trait ProviderClient: Send + Sync {
     fn provider_key(&self) -> &str;
     fn provider_type(&self) -> &str;
+    fn capabilities(&self) -> ProviderCapabilities;
 
     async fn chat_completions(
         &self,

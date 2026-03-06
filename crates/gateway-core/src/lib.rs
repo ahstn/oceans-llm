@@ -9,10 +9,12 @@ pub use auth::{
 };
 pub use domain::{
     ApiKeyOwnerKind, ApiKeyRecord, AuthMode, BudgetCadence, GatewayModel, GlobalRole,
-    MembershipRole, ModelAccessMode, ModelRoute, Money4, ProviderConnection,
-    ProviderRequestContext, RequestLogRecord, SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY,
-    SeedApiKey, SeedModel, SeedModelRoute, SeedProvider, TeamMembershipRecord, TeamRecord,
-    UsageCostEventRecord, UserBudgetRecord, UserRecord,
+    MembershipRole, ModelAccessMode, ModelRoute, Money4, PricingCatalogCacheRecord, PricingLimits,
+    PricingModalities, PricingProvenance, PricingResolution, PricingUnpricedReason,
+    ProviderCapabilities, ProviderConnection, ProviderRequestContext, RequestLogRecord,
+    ResolvedModelPricing, SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedModel,
+    SeedModelRoute, SeedProvider, TeamMembershipRecord, TeamRecord, UsageCostEventRecord,
+    UserBudgetRecord, UserRecord,
 };
 pub use error::{AuthError, GatewayError, ProviderError, RouteError, StoreError};
 pub use protocol::openai::{
@@ -20,7 +22,7 @@ pub use protocol::openai::{
     OpenAiErrorEnvelope,
 };
 pub use traits::{
-    ApiKeyRepository, BudgetRepository, IdentityRepository, ModelRepository, ProviderClient,
-    ProviderRegistry, ProviderRepository, ProviderStream, RequestLogRepository, RoutePlanner,
-    StoreHealth,
+    ApiKeyRepository, BudgetRepository, IdentityRepository, ModelRepository,
+    PricingCatalogRepository, ProviderClient, ProviderRegistry, ProviderRepository, ProviderStream,
+    RequestLogRepository, RoutePlanner, StoreHealth,
 };

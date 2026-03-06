@@ -34,6 +34,65 @@ Single-container dual process:
 
 `gateway` reads `gateway.yaml` (or `GATEWAY_CONFIG`) at startup, runs SQL migrations, seeds providers/models/api keys, then starts serving traffic.
 
+### Provider types
+
+`providers[*].type` currently supports:
+
+- `openai_compat`
+- `gcp_vertex`
+
+`openai_compat` requires a `pricing_provider_id` so the gateway can resolve exact pricing from the internal catalog. In this slice, supported values are:
+
+- `openai`
+- `google-vertex`
+- `google-vertex-anthropic`
+
+`gcp_vertex` supports three auth modes:
+
+- `adc`
+- `service_account` (`credentials_path`)
+- `bearer` (`token`)
+
+`gcp_vertex` routes require `upstream_model` in `<publisher>/<model_id>` format. In this slice, supported publishers are `google` and `anthropic`.
+
+### Example Vertex config
+
+```yaml
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+    auth:
+      kind: bearer
+      token: env.OPENAI_API_KEY
+  - id: vertex-adc
+    type: gcp_vertex
+    project_id: your-gcp-project
+    location: global
+    auth:
+      mode: adc
+  - id: vertex-bearer
+    type: gcp_vertex
+    project_id: your-gcp-project
+    location: global
+    auth:
+      mode: bearer
+      token: env.GCP_VERTEX_BEARER_TOKEN
+
+models:
+  - id: fast
+    description: Gemini on Vertex
+    routes:
+      - provider: vertex-adc
+        upstream_model: google/gemini-2.0-flash
+  - id: claude
+    description: Claude on Vertex
+    routes:
+      - provider: vertex-bearer
+        upstream_model: anthropic/claude-sonnet-4-6
+```
+
 ## Setup
 
 ```bash
@@ -66,4 +125,5 @@ mise run ui-build
 mise run check
 mise run lint
 mise run test
+mise run sync-pricing-catalog
 ```

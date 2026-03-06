@@ -7,15 +7,17 @@ This document catalogs the database tables, key relationships, and policy semant
 - Schema migrations: `crates/gateway-store/migrations/`
 - Identity foundation migration: [`V3__identity_foundation.sql`](/Users/ahstn/git/oceans-llm.feat-ui-init/crates/gateway-store/migrations/V3__identity_foundation.sql)
 - Money precision migration: [`V4__money_fixed_point.sql`](/Users/ahstn/git/oceans-llm.feat-ui-init/crates/gateway-store/migrations/V4__money_fixed_point.sql)
+- Pricing cache migration: [`V5__pricing_catalog_cache.sql`](/Users/ahstn/git/oceans-llm.feat-ui-init/crates/gateway-store/migrations/V5__pricing_catalog_cache.sql)
 - Core domain types: [`crates/gateway-core/src/domain.rs`](/Users/ahstn/git/oceans-llm.feat-ui-init/crates/gateway-core/src/domain.rs)
 - Repository traits: [`crates/gateway-core/src/traits.rs`](/Users/ahstn/git/oceans-llm.feat-ui-init/crates/gateway-core/src/traits.rs)
 - Store implementation: [`crates/gateway-store/src/libsql_store.rs`](/Users/ahstn/git/oceans-llm.feat-ui-init/crates/gateway-store/src/libsql_store.rs)
-- Auth/model/budget/logging behavior:
+- Auth/model/logging/pricing behavior:
   - [`crates/gateway-service/src/authenticator.rs`](/Users/ahstn/git/oceans-llm.feat-ui-init/crates/gateway-service/src/authenticator.rs)
   - [`crates/gateway-service/src/model_access.rs`](/Users/ahstn/git/oceans-llm.feat-ui-init/crates/gateway-service/src/model_access.rs)
-  - [`crates/gateway-service/src/budget_guard.rs`](/Users/ahstn/git/oceans-llm.feat-ui-init/crates/gateway-service/src/budget_guard.rs)
+  - [`crates/gateway-service/src/pricing_catalog.rs`](/Users/ahstn/git/oceans-llm.feat-ui-init/crates/gateway-service/src/pricing_catalog.rs)
   - [`crates/gateway-service/src/request_logging.rs`](/Users/ahstn/git/oceans-llm.feat-ui-init/crates/gateway-service/src/request_logging.rs)
 - User-facing policy guide: [`docs/budgets-and-spending.md`](/Users/ahstn/git/oceans-llm.feat-ui-init/docs/budgets-and-spending.md)
+- Pricing decision record: [`docs/adr/2026-03-06-hybrid-pricing-catalog.md`](/Users/ahstn/git/oceans-llm.feat-ui-init/docs/adr/2026-03-06-hybrid-pricing-catalog.md)
 
 ## Core Entity Graph
 
@@ -31,6 +33,7 @@ This document catalogs the database tables, key relationships, and policy semant
 6. `users` 1..N `user_budgets` (with one active budget enforced by partial unique index)
 7. `usage_cost_events` references request ownership (`api_key_id`, optional `user_id`/`team_id`) and optional `model_id`
 8. `request_logs` references request ownership (`api_key_id`, optional `user_id`/`team_id`)
+9. `pricing_catalog_cache` stores one cached normalized pricing snapshot per `catalog_key`
 
 ## Table Catalog
 
@@ -83,10 +86,16 @@ This document catalogs the database tables, key relationships, and policy semant
   - Constraint: one active budget per user (`WHERE is_active=1` unique index).
 - `usage_cost_events`
   - Key columns: `usage_event_id`, `request_id`, `api_key_id`, `user_id`, `team_id`, `model_id`, `estimated_cost_10000`, `occurred_at`
-  - Notes: used for budget accounting regardless of request logging toggle.
+  - Notes: schema foundation for future pricing-backed spend accounting; the current chat request path does not write these rows yet.
 - `request_logs`
   - Key columns: `request_log_id`, `request_id`, `api_key_id`, `user_id`, `team_id`, `model_key`, `provider_key`, token/latency/status fields, `metadata_json`, `occurred_at`
-  - Notes: user-owned requests honor `users.request_logging_enabled`; team-owned requests are always logged with nullable `user_id`.
+  - Notes: chat execution writes one row for the final user-visible outcome of each executed request. User-owned requests honor `users.request_logging_enabled`; team-owned requests are always logged with nullable `user_id`.
+
+### Pricing Catalog Cache
+
+- `pricing_catalog_cache`
+  - Key columns: `catalog_key`, `source`, `etag`, `fetched_at`, `snapshot_json`
+  - Notes: stores the last successful normalized pricing snapshot fetched from the external catalog source. Current runtime uses `models.dev` as the upstream input, a vendored fallback snapshot in the repo, and best-effort 15-minute conditional refresh.
 
 ## Authorization Semantics
 
@@ -100,16 +109,20 @@ If no restriction mode applies, grants remain unchanged.
 
 ## Budget Semantics
 
-- Budget target: user-owned requests only in this phase.
-- Team-owned keys are not budget-blocked in this phase.
-- Cadence: `daily|weekly`.
-- UTC boundary semantics:
+- `user_budgets` and `usage_cost_events` are present as schema groundwork for later pricing-ledger work.
+- Current pricing lookup comes from the internal pricing catalog layer, not from provider `/v1/models` responses.
+- Supported pricing source ids in this slice are `openai`, `google-vertex`, and `google-vertex-anthropic`.
+- `openai_compat` providers must declare `pricing_provider_id`; `gcp_vertex` derives pricing source from `upstream_model` publisher prefix.
+- Pricing is exact-only in this slice. Unsupported billing modifiers, unsupported publisher/location combinations, and unknown model ids resolve as `unpriced`.
+- Current runtime behavior: `/v1/chat/completions` does not enforce budgets and does not write `usage_cost_events`.
+- Current runtime behavior: unpriced requests are not charged and must not be budget-blocked.
+- Planned target when pricing exists: user-owned requests first; team-owned keys remain outside user-budget blocking in the initial rollout.
+- Planned cadence values remain `daily|weekly`.
+- Planned UTC window semantics:
   - Daily windows start at `00:00:00 UTC`.
   - Weekly windows start at `Monday 00:00:00 UTC`.
   - `Sunday 23:59:59 UTC` is still in the previous weekly window.
-- Enforcement: hard block when projected spend exceeds the active budget amount and `hard_limit=true`.
-- Accounting: `usage_cost_events` are written even when request logging is disabled.
-- Team-owned request attribution policy:
+- Planned attribution policy once accounting is wired:
   - Team key + acting user context: usage is attributed to both user and team.
   - Team key without acting user context: usage is attributed to team only.
 - User-facing behavior details are documented in [`docs/budgets-and-spending.md`](/Users/ahstn/git/oceans-llm.feat-ui-init/docs/budgets-and-spending.md).
