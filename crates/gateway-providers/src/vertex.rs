@@ -920,6 +920,7 @@ where
         let mut parser = JsonObjectParser::default();
         let mut role_emitted = false;
         let mut finish_emitted = false;
+        let mut stream_failed = false;
         futures_util::pin_mut!(upstream);
 
         while let Some(chunk) = upstream.next().await {
@@ -927,6 +928,7 @@ where
                 Ok(chunk) => chunk,
                 Err(error) => {
                     yield Ok(openai_sse_error_chunk("upstream_google_stream_error", &error.to_string()));
+                    stream_failed = true;
                     break;
                 }
             };
@@ -935,6 +937,7 @@ where
                 Ok(objects) => objects,
                 Err(error) => {
                     yield Ok(openai_sse_error_chunk("google_stream_parse_error", &error.to_string()));
+                    stream_failed = true;
                     break;
                 }
             };
@@ -982,7 +985,7 @@ where
             }
         }
 
-        if !finish_emitted {
+        if !stream_failed && !finish_emitted {
             let finish = openai_chunk(
                 &stream_id,
                 created,
@@ -993,7 +996,9 @@ where
             );
             yield Ok(openai_sse_chunk(&finish));
         }
-        yield Ok(Bytes::from("data: [DONE]\n\n"));
+        if !stream_failed {
+            yield Ok(Bytes::from("data: [DONE]\n\n"));
+        }
     })
 }
 
@@ -1010,13 +1015,15 @@ where
         let mut parser = SseEventParser::default();
         let mut role_emitted = false;
         let mut finish_emitted = false;
+        let mut stream_failed = false;
         futures_util::pin_mut!(upstream);
 
-        while let Some(chunk) = upstream.next().await {
+        'stream_loop: while let Some(chunk) = upstream.next().await {
             let chunk = match chunk {
                 Ok(chunk) => chunk,
                 Err(error) => {
                     yield Ok(openai_sse_error_chunk("upstream_anthropic_stream_error", &error.to_string()));
+                    stream_failed = true;
                     break;
                 }
             };
@@ -1025,6 +1032,7 @@ where
                 Ok(events) => events,
                 Err(error) => {
                     yield Ok(openai_sse_error_chunk("anthropic_sse_parse_error", &error.to_string()));
+                    stream_failed = true;
                     break;
                 }
             };
@@ -1124,13 +1132,15 @@ where
                             .and_then(Value::as_str)
                             .unwrap_or("anthropic stream error");
                         yield Ok(openai_sse_error_chunk("anthropic_stream_error", message));
+                        stream_failed = true;
+                        break 'stream_loop;
                     }
                     _ => {}
                 }
             }
         }
 
-        if !finish_emitted {
+        if !stream_failed && !finish_emitted {
             let finish = openai_chunk(
                 &stream_id,
                 created,
@@ -1141,21 +1151,22 @@ where
             );
             yield Ok(openai_sse_chunk(&finish));
         }
-        yield Ok(Bytes::from("data: [DONE]\n\n"));
+        if !stream_failed {
+            yield Ok(Bytes::from("data: [DONE]\n\n"));
+        }
     })
 }
 
 #[derive(Debug, Clone, Default)]
 struct JsonObjectParser {
+    utf8: Utf8ChunkDecoder,
     buffer: String,
 }
 
 impl JsonObjectParser {
     fn push_bytes(&mut self, chunk: &[u8]) -> Result<Vec<Value>, ProviderError> {
-        let text = std::str::from_utf8(chunk).map_err(|error| {
-            ProviderError::Transport(format!("stream chunk was not utf8: {error}"))
-        })?;
-        self.buffer.push_str(text);
+        let text = self.utf8.push_bytes(chunk)?;
+        self.buffer.push_str(&text);
 
         let mut parsed = Vec::new();
         let mut consumed_until = 0usize;
@@ -1229,15 +1240,14 @@ struct ParsedSseEvent {
 
 #[derive(Debug, Clone, Default)]
 struct SseEventParser {
+    utf8: Utf8ChunkDecoder,
     buffer: String,
 }
 
 impl SseEventParser {
     fn push_bytes(&mut self, chunk: &[u8]) -> Result<Vec<ParsedSseEvent>, ProviderError> {
-        let text = std::str::from_utf8(chunk).map_err(|error| {
-            ProviderError::Transport(format!("stream chunk was not utf8: {error}"))
-        })?;
-        self.buffer.push_str(text);
+        let text = self.utf8.push_bytes(chunk)?;
+        self.buffer.push_str(&text);
 
         let mut events = Vec::new();
         while let Some((delimiter_index, delimiter_len)) = find_sse_delimiter(&self.buffer) {
@@ -1263,6 +1273,52 @@ impl SseEventParser {
         }
 
         Ok(events)
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct Utf8ChunkDecoder {
+    pending: Vec<u8>,
+}
+
+impl Utf8ChunkDecoder {
+    fn push_bytes(&mut self, chunk: &[u8]) -> Result<String, ProviderError> {
+        if self.pending.is_empty() {
+            match std::str::from_utf8(chunk) {
+                Ok(text) => return Ok(text.to_string()),
+                Err(error) if error.error_len().is_some() => {
+                    return Err(ProviderError::Transport(format!(
+                        "stream chunk was not utf8: {error}"
+                    )));
+                }
+                Err(_) => {}
+            }
+        }
+
+        self.pending.extend_from_slice(chunk);
+        match std::str::from_utf8(&self.pending) {
+            Ok(text) => {
+                let owned = text.to_string();
+                self.pending.clear();
+                Ok(owned)
+            }
+            Err(error) if error.error_len().is_some() => Err(ProviderError::Transport(format!(
+                "stream chunk was not utf8: {error}"
+            ))),
+            Err(error) => {
+                let valid_up_to = error.valid_up_to();
+                if valid_up_to == 0 {
+                    return Ok(String::new());
+                }
+
+                let valid = std::str::from_utf8(&self.pending[..valid_up_to]).map_err(|error| {
+                    ProviderError::Transport(format!("stream chunk was not utf8: {error}"))
+                })?;
+                let owned = valid.to_string();
+                self.pending.drain(..valid_up_to);
+                Ok(owned)
+            }
+        }
     }
 }
 
@@ -1564,6 +1620,28 @@ mod tests {
     }
 
     #[test]
+    fn parses_google_streamed_json_objects_with_split_utf8_codepoint() {
+        let mut parser = JsonObjectParser::default();
+        let payload = format!(
+            r#"{{"candidates":[{{"content":{{"parts":[{{"text":"{}"}}]}}}}]}}"#,
+            "👋"
+        );
+        let split = payload.find('👋').expect("emoji position") + 2;
+        let first = parser
+            .push_bytes(&payload.as_bytes()[..split])
+            .expect("first chunk");
+        assert!(first.is_empty());
+        let second = parser
+            .push_bytes(&payload.as_bytes()[split..])
+            .expect("second chunk");
+        assert_eq!(second.len(), 1);
+        assert_eq!(
+            super::extract_google_candidate_text(&second[0]["candidates"][0]),
+            "👋"
+        );
+    }
+
+    #[test]
     fn parses_anthropic_sse_events() {
         let mut parser = SseEventParser::default();
         let input = br#"event: message_start
@@ -1597,6 +1675,26 @@ data: {"type":"vertex_event"}
         assert_eq!(second[1].event.as_deref(), Some("message_stop"));
     }
 
+    #[test]
+    fn parses_anthropic_sse_events_with_split_utf8_codepoint() {
+        let mut parser = SseEventParser::default();
+        let payload = format!(
+            "event: content_block_delta\ndata: {{\"type\":\"content_block_delta\",\"delta\":{{\"type\":\"text_delta\",\"text\":\"{}\"}}}}\n\n",
+            "👋"
+        );
+        let split = payload.find('👋').expect("emoji position") + 2;
+        let first = parser
+            .push_bytes(&payload.as_bytes()[..split])
+            .expect("first chunk");
+        assert!(first.is_empty());
+        let second = parser
+            .push_bytes(&payload.as_bytes()[split..])
+            .expect("second chunk");
+        assert_eq!(second.len(), 1);
+        let payload: Value = serde_json::from_str(&second[0].data).expect("event payload");
+        assert_eq!(payload["delta"]["text"], "👋");
+    }
+
     #[tokio::test]
     async fn google_stream_normalization_emits_done() {
         let upstream = stream::iter(vec![
@@ -1617,6 +1715,44 @@ data: {"type":"vertex_event"}
             .map(|item| String::from_utf8(item.expect("chunk").to_vec()).expect("utf8"))
             .collect::<String>();
         assert!(rendered.contains("data: [DONE]"));
+    }
+
+    #[tokio::test]
+    async fn google_stream_normalization_stops_after_parse_error() {
+        let upstream = stream::iter(vec![Ok(Bytes::from_static(&[0x80]))]);
+        let stream = super::normalize_google_stream(
+            upstream,
+            "chatcmpl-test".to_string(),
+            1,
+            "fast".to_string(),
+        );
+        let bytes: Vec<_> = stream.collect().await;
+        let rendered = bytes
+            .into_iter()
+            .map(|item| String::from_utf8(item.expect("chunk").to_vec()).expect("utf8"))
+            .collect::<String>();
+        assert!(rendered.contains("google_stream_parse_error"));
+        assert!(!rendered.contains(r#""finish_reason":"stop""#));
+        assert!(!rendered.contains("data: [DONE]"));
+    }
+
+    #[tokio::test]
+    async fn anthropic_stream_normalization_stops_after_parse_error() {
+        let upstream = stream::iter(vec![Ok(Bytes::from_static(&[0x80]))]);
+        let stream = super::normalize_anthropic_stream(
+            upstream,
+            "chatcmpl-test".to_string(),
+            1,
+            "fast".to_string(),
+        );
+        let bytes: Vec<_> = stream.collect().await;
+        let rendered = bytes
+            .into_iter()
+            .map(|item| String::from_utf8(item.expect("chunk").to_vec()).expect("utf8"))
+            .collect::<String>();
+        assert!(rendered.contains("anthropic_sse_parse_error"));
+        assert!(!rendered.contains(r#""finish_reason":"stop""#));
+        assert!(!rendered.contains("data: [DONE]"));
     }
 
     fn vertex_provider_for_test(api_host: String) -> VertexProvider {
