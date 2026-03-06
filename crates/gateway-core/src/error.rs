@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+use crate::domain::Money4;
+
 #[derive(Debug, Error)]
 pub enum AuthError {
     #[error("authorization header is missing")]
@@ -18,6 +20,8 @@ pub enum AuthError {
     ApiKeySecretMismatch,
     #[error("api key is not authorized for model `{0}`")]
     ModelNotGranted(String),
+    #[error("api key owner metadata is invalid")]
+    ApiKeyOwnerInvalid,
     #[error("api key hash verification failed: {0}")]
     HashVerification(String),
 }
@@ -85,6 +89,16 @@ pub enum GatewayError {
     Route(#[from] RouteError),
     #[error(transparent)]
     Provider(#[from] ProviderError),
+    #[error(
+        "budget exceeded for user `{user_id}`: projected {projected_cost_usd} exceeds limit {limit_usd}"
+    )]
+    BudgetExceeded {
+        user_id: String,
+        projected_cost_usd: Money4,
+        limit_usd: Money4,
+    },
+    #[error("identity constraint violation: {0}")]
+    IdentityConstraint(String),
     #[error("invalid request: {0}")]
     InvalidRequest(String),
     #[error("feature not implemented: {0}")]
@@ -104,7 +118,10 @@ impl GatewayError {
             | Self::Auth(AuthError::ApiKeyRevoked)
             | Self::Auth(AuthError::ApiKeySecretMismatch)
             | Self::Auth(AuthError::InvalidApiKeyFormat) => 401,
+            Self::Auth(AuthError::ApiKeyOwnerInvalid) => 500,
             Self::Auth(AuthError::ModelNotGranted(_)) => 403,
+            Self::BudgetExceeded { .. } => 429,
+            Self::IdentityConstraint(_) => 400,
             Self::InvalidRequest(_) => 400,
             Self::Route(RouteError::ModelNotFound(_)) => 404,
             Self::NotImplemented(_) | Self::Provider(ProviderError::NotImplemented(_)) => 501,
@@ -124,6 +141,8 @@ impl GatewayError {
     pub fn error_type(&self) -> &'static str {
         match self {
             Self::Auth(_) => "authentication_error",
+            Self::BudgetExceeded { .. } => "budget_error",
+            Self::IdentityConstraint(_) => "identity_error",
             Self::InvalidRequest(_) => "invalid_request_error",
             Self::Route(RouteError::ModelNotFound(_)) => "not_found_error",
             Self::Route(_) => "routing_error",
@@ -145,7 +164,10 @@ impl GatewayError {
             Self::Auth(AuthError::ApiKeyRevoked) => "api_key_revoked",
             Self::Auth(AuthError::ApiKeySecretMismatch) => "api_key_secret_mismatch",
             Self::Auth(AuthError::ModelNotGranted(_)) => "model_not_granted",
+            Self::Auth(AuthError::ApiKeyOwnerInvalid) => "api_key_owner_invalid",
             Self::Auth(AuthError::HashVerification(_)) => "api_key_hash_verification_failed",
+            Self::BudgetExceeded { .. } => "budget_exceeded",
+            Self::IdentityConstraint(_) => "identity_constraint_violation",
             Self::Store(_) => "store_error",
             Self::Route(RouteError::ModelNotFound(_)) => "model_not_found",
             Self::Route(RouteError::NoRoutesAvailable(_)) => "no_routes_available",

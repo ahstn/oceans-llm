@@ -4,10 +4,15 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use futures_core::Stream;
 use serde_json::Value;
+use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::{
-    domain::{ApiKeyRecord, GatewayModel, ModelRoute, ProviderConnection, ProviderRequestContext},
+    domain::{
+        ApiKeyRecord, GatewayModel, ModelRoute, Money4, ProviderConnection, ProviderRequestContext,
+        RequestLogRecord, TeamMembershipRecord, TeamRecord, UsageCostEventRecord, UserBudgetRecord,
+        UserRecord,
+    },
     error::{ProviderError, RouteError, StoreError},
     protocol::openai::{ChatCompletionsRequest, EmbeddingsRequest},
 };
@@ -38,6 +43,45 @@ pub trait ProviderRepository: Send + Sync {
         &self,
         provider_key: &str,
     ) -> Result<Option<ProviderConnection>, StoreError>;
+}
+
+#[async_trait]
+pub trait IdentityRepository: Send + Sync {
+    async fn get_user_by_id(&self, user_id: Uuid) -> Result<Option<UserRecord>, StoreError>;
+    async fn get_team_by_id(&self, team_id: Uuid) -> Result<Option<TeamRecord>, StoreError>;
+    async fn get_team_membership_for_user(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Option<TeamMembershipRecord>, StoreError>;
+    async fn list_allowed_model_keys_for_user(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<String>, StoreError>;
+    async fn list_allowed_model_keys_for_team(
+        &self,
+        team_id: Uuid,
+    ) -> Result<Vec<String>, StoreError>;
+}
+
+#[async_trait]
+pub trait BudgetRepository: Send + Sync {
+    async fn get_active_budget_for_user(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Option<UserBudgetRecord>, StoreError>;
+    async fn sum_usage_cost_for_user_in_window(
+        &self,
+        user_id: Uuid,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+    ) -> Result<Money4, StoreError>;
+    async fn insert_usage_cost_event(&self, event: &UsageCostEventRecord)
+    -> Result<(), StoreError>;
+}
+
+#[async_trait]
+pub trait RequestLogRepository: Send + Sync {
+    async fn insert_request_log(&self, log: &RequestLogRecord) -> Result<(), StoreError>;
 }
 
 #[async_trait]
