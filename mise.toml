@@ -4,6 +4,7 @@ node = "lts"
 bun = "1.3.10"
 gh = "latest"
 opentofu = "latest"
+git-cliff = "latest"
 
 [tasks.install]
 description = "Install or update tool versions from mise.toml"
@@ -48,11 +49,7 @@ run = "bun install --cwd crates/admin-ui/web --frozen-lockfile"
 [tasks.ui-check]
 description = "Install, lint, test, and build admin UI"
 depends = ["ui-install"]
-run = [
-  { task = "ui-lint" },
-  { task = "ui-test" },
-  { task = "ui-build" },
-]
+run = [{ task = "ui-lint" }, { task = "ui-test" }, { task = "ui-build" }]
 
 [tasks.ui-dev]
 description = "Run admin UI dev server"
@@ -74,36 +71,17 @@ run = "bun run --cwd crates/admin-ui/web fmt"
 description = "Run admin UI tests"
 run = "bun run --cwd crates/admin-ui/web test"
 
-[tasks.release-install]
-description = "Install root release-tooling dependencies"
-run = "bun install --frozen-lockfile"
-
-[tasks.release-analyze]
-description = "Analyze commit history and print the pending release"
-depends = ["release-install"]
-run = "node ./scripts/release-analyze.mjs"
-
 [tasks.release]
 description = "Analyze commits and dispatch the release workflow when a release is pending"
 depends = ["release-install"]
-run = "node ./scripts/release-dispatch.mjs"
+# Requires GITHUB_TOKEN to be set in the environment
+run = ["cog bump --auto --skip-untracked", "git-cliff -o CHANGELOG.md"]
 
-[tasks.release-analyze-test]
-description = "Test release analysis scenarios"
-depends = ["release-install"]
-run = "./scripts/test-release-analyze.sh"
 
-[tasks.release-semantic-dry-run]
+[tasks.release-dry-run]
 description = "Validate semantic-release configuration in dry-run mode"
 depends = ["release-install"]
-run = "./node_modules/.bin/semantic-release --dry-run --no-ci"
-
-[tasks.release-preflight]
-description = "Run all checks required before creating a release"
-depends = ["ui-install", "release-install"]
 run = [
-  { task = "lint" },
-  { task = "test" },
-  { task = "build" },
-  { task = "release-analyze-test" },
+  "cog bump --auto --dry-run --skip-untracked",
+  "git-cliff --dry-run --offline",
 ]
