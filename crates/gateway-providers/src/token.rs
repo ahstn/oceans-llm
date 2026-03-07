@@ -379,7 +379,7 @@ async fn fetch_metadata_server_token(
 
     Ok(AccessToken {
         token: parsed.access_token,
-        expires_at: OffsetDateTime::now_utc() + Duration::seconds(parsed.expires_in.into()),
+        expires_at: OffsetDateTime::now_utc() + Duration::seconds(parsed.expires_in),
     })
 }
 

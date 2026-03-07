@@ -1,7 +1,11 @@
 [tools]
 rust = "stable"
+node = "lts"
 bun = "1.3.10"
+gh = "latest"
 opentofu = "latest"
+git-cliff = "latest"
+cocogitto = "latest"
 
 [tasks.install]
 description = "Install or update tool versions from mise.toml"
@@ -9,14 +13,17 @@ run = "mise install"
 
 [tasks.build]
 description = "Build Rust crates and admin UI bundle"
+depends = ["ui-install"]
 run = "cargo build --workspace && bun run --cwd crates/admin-ui/web build"
 
 [tasks.check]
 description = "Compile Rust targets and verify admin UI builds"
+depends = ["ui-install"]
 run = "cargo check --workspace --all-targets && bun run --cwd crates/admin-ui/web build"
 
 [tasks.test]
 description = "Run Rust and admin UI tests"
+depends = ["ui-install"]
 run = "cargo test --workspace && bun run --cwd crates/admin-ui/web test"
 
 [tasks.fmt]
@@ -25,6 +32,7 @@ run = "cargo fmt --all"
 
 [tasks.lint]
 description = "Run Rust and admin UI linting"
+depends = ["ui-install"]
 run = "cargo clippy --workspace --all-targets -- -D warnings && bun run --cwd crates/admin-ui/web lint"
 
 [tasks.run]
@@ -37,16 +45,12 @@ run = "cargo run -p gateway --bin sync_pricing_catalog"
 
 [tasks.ui-install]
 description = "Install admin UI dependencies"
-run = "bun install --cwd crates/admin-ui/web"
+run = "bun install --cwd crates/admin-ui/web --frozen-lockfile"
 
 [tasks.ui-check]
 description = "Install, lint, test, and build admin UI"
 depends = ["ui-install"]
-run = [
-  { task = "ui-lint" },
-  { task = "ui-test" },
-  { task = "ui-build" },
-]
+run = [{ task = "ui-lint" }, { task = "ui-test" }, { task = "ui-build" }]
 
 [tasks.ui-dev]
 description = "Run admin UI dev server"
@@ -67,3 +71,16 @@ run = "bun run --cwd crates/admin-ui/web fmt"
 [tasks.ui-test]
 description = "Run admin UI tests"
 run = "bun run --cwd crates/admin-ui/web test"
+
+[tasks.release]
+description = "Analyze commits and dispatch the release workflow when a release is pending"
+# Requires GITHUB_TOKEN to be set in the environment
+run = ["cog bump --auto --skip-untracked", "git-cliff -o CHANGELOG.md"]
+
+
+[tasks.release-dry-run]
+description = "Validate semantic-release configuration in dry-run mode"
+run = [
+  "cog bump --auto --dry-run --skip-untracked",
+  "git-cliff --dry-run --offline",
+]
