@@ -192,12 +192,12 @@ where
         };
 
         Ok(PricingResolution::Exact {
-            pricing: resolved_model_pricing(
+            pricing: Box::new(resolved_model_pricing(
                 &snapshot.metadata,
                 &pricing_provider_id,
                 &model_id,
                 model_document,
-            )?,
+            )?),
         })
     }
 

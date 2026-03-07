@@ -1,4 +1,4 @@
-name: rust-ci
+name: release-tooling-ci
 
 on:
   pull_request:
@@ -13,9 +13,9 @@ env:
   MISE_EXPERIMENTAL: true
 
 jobs:
-  rust-lint-test:
+  release-tooling:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -24,8 +24,11 @@ jobs:
       - name: Setup mise + tools
         uses: jdx/mise-action@e79ddf65a11cec7b0e882bedced08d6e976efb2d
 
-      - name: Lint Rust workspace
-        run: mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+      - name: Test release version calculator
+        run: mise run release-version-test
 
-      - name: Test Rust workspace
-        run: mise exec -- cargo test --workspace
+      - name: Build gateway image
+        run: docker build --file crates/gateway/Dockerfile .
+
+      - name: Build admin UI image
+        run: docker build --file crates/admin-ui/web/Dockerfile .

@@ -2,6 +2,8 @@
 
 A clear and concise description of this PR.
 
+PR title format must follow Conventional Commits, for example `feat(gateway): add release workflow`.
+
 Use this section for review hints, explanations, discussion points, and follow-up TODOs.
 
 - Summary of changes

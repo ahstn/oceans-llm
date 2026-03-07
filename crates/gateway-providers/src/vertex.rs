@@ -1072,23 +1072,22 @@ where
                         let delta_type = delta
                             .and_then(|delta| delta.get("type"))
                             .and_then(Value::as_str);
-                        if delta_type == Some("text_delta") {
-                            if let Some(text) = delta
+                        if delta_type == Some("text_delta")
+                            && let Some(text) = delta
                                 .and_then(|delta| delta.get("text"))
                                 .and_then(Value::as_str)
                                 .filter(|text| !text.is_empty())
-                            {
-                                let chunk = openai_chunk(
-                                    &stream_id,
-                                    created,
-                                    &model,
-                                    Some("assistant").filter(|_| !role_emitted),
-                                    Some(text),
-                                    None,
-                                );
-                                yield Ok(openai_sse_chunk(&chunk));
-                                role_emitted = true;
-                            }
+                        {
+                            let chunk = openai_chunk(
+                                &stream_id,
+                                created,
+                                &model,
+                                Some("assistant").filter(|_| !role_emitted),
+                                Some(text),
+                                None,
+                            );
+                            yield Ok(openai_sse_chunk(&chunk));
+                            role_emitted = true;
                         }
                     }
                     "message_delta" => {
@@ -1202,19 +1201,17 @@ impl JsonObjectParser {
                 b'}' => {
                     if depth > 0 {
                         depth -= 1;
-                        if depth == 0 {
-                            if let Some(start) = object_start.take() {
-                                let end = index + 1;
-                                let object_json = &self.buffer[start..end];
-                                let value: Value =
-                                    serde_json::from_str(object_json).map_err(|error| {
-                                        ProviderError::Transport(format!(
-                                            "failed parsing streamed google JSON object: {error}"
-                                        ))
-                                    })?;
-                                parsed.push(value);
-                                consumed_until = end;
-                            }
+                        if depth == 0 && let Some(start) = object_start.take() {
+                            let end = index + 1;
+                            let object_json = &self.buffer[start..end];
+                            let value: Value =
+                                serde_json::from_str(object_json).map_err(|error| {
+                                    ProviderError::Transport(format!(
+                                        "failed parsing streamed google JSON object: {error}"
+                                    ))
+                                })?;
+                            parsed.push(value);
+                            consumed_until = end;
                         }
                     }
                 }

@@ -1,4 +1,4 @@
-name: rust-ci
+name: ui-ci
 
 on:
   pull_request:
@@ -13,7 +13,7 @@ env:
   MISE_EXPERIMENTAL: true
 
 jobs:
-  rust-lint-test:
+  admin-ui-check:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -24,8 +24,5 @@ jobs:
       - name: Setup mise + tools
         uses: jdx/mise-action@e79ddf65a11cec7b0e882bedced08d6e976efb2d
 
-      - name: Lint Rust workspace
-        run: mise exec -- cargo clippy --workspace --all-targets -- -D warnings
-
-      - name: Test Rust workspace
-        run: mise exec -- cargo test --workspace
+      - name: Lint, test, and build admin UI
+        run: mise run ui-check

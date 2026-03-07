@@ -1,0 +1,307 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_as:
+        description: "Explicit release version (for bootstrap or override), e.g. v0.1.0"
+        required: false
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  MISE_EXPERIMENTAL: true
+  REGISTRY: ghcr.io
+  GATEWAY_IMAGE_NAME: oceans-llm-gateway
+  ADMIN_UI_IMAGE_NAME: oceans-llm-admin-ui
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      version_number: ${{ steps.version.outputs.version_number }}
+      major_minor: ${{ steps.version.outputs.major_minor }}
+      short_sha: ${{ steps.version.outputs.short_sha }}
+      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
+      owner_lc: ${{ steps.version.outputs.owner_lc }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: Setup mise + tools
+        uses: jdx/mise-action@e79ddf65a11cec7b0e882bedced08d6e976efb2d
+
+      - name: Require main branch
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF_NAME" != "main" ]]; then
+            echo "release workflow must be dispatched from main, got $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+
+      - name: Run release preflight
+        run: mise run release-preflight
+
+      - name: Resolve release version
+        id: version
+        env:
+          RELEASE_AS: ${{ github.event.inputs.release_as }}
+        run: |
+          set -euo pipefail
+
+          version="$(mise run --quiet --no-timings release-version)"
+          version_number="${version#v}"
+          version_base="${version_number%%-*}"
+          major_minor="$(printf '%s\n' "$version_base" | cut -d. -f1,2)"
+          short_sha="$(git rev-parse --short HEAD)"
+          owner_lc="${GITHUB_REPOSITORY_OWNER,,}"
+          is_prerelease="false"
+          if [[ "$version_number" == *-* ]]; then
+            is_prerelease="true"
+          fi
+
+          {
+            printf 'version=%s\n' "$version"
+            printf 'version_number=%s\n' "$version_number"
+            printf 'major_minor=%s\n' "$major_minor"
+            printf 'short_sha=%s\n' "$short_sha"
+            printf 'owner_lc=%s\n' "$owner_lc"
+            printf 'is_prerelease=%s\n' "$is_prerelease"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create or reuse draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          IS_PRERELEASE: ${{ steps.version.outputs.is_prerelease }}
+        run: |
+          set -euo pipefail
+
+          git fetch --tags origin
+
+          if existing_release="$(gh release view "$VERSION" --json id,isDraft 2>/dev/null)"; then
+            is_draft="$(printf '%s' "$existing_release" | jq -r '.isDraft')"
+            if [[ "$is_draft" != "true" ]]; then
+              echo "release $VERSION already exists and is not a draft" >&2
+              exit 1
+            fi
+
+            tag_commit="$(git rev-list -n 1 "$VERSION")"
+            head_commit="$(git rev-parse HEAD)"
+            if [[ "$tag_commit" != "$head_commit" ]]; then
+              echo "draft release $VERSION points at $tag_commit, expected $head_commit" >&2
+              echo "delete the draft/tag or choose a different release_as value" >&2
+              exit 1
+            fi
+
+            exit 0
+          fi
+
+          args=(release create "$VERSION" --draft --generate-notes --target "$GITHUB_SHA")
+          if [[ "$IS_PRERELEASE" == "true" ]]; then
+            args+=(--prerelease)
+          fi
+
+          gh "${args[@]}"
+
+  build-gateway:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract gateway image metadata
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051
+        with:
+          images: ${{ env.REGISTRY }}/${{ needs.prepare.outputs.owner_lc }}/${{ env.GATEWAY_IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ needs.prepare.outputs.version }}
+            type=raw,value=${{ needs.prepare.outputs.major_minor }},enable=${{ needs.prepare.outputs.is_prerelease != 'true' }}
+            type=raw,value=sha-${{ needs.prepare.outputs.short_sha }}
+            type=raw,value=latest,enable=${{ needs.prepare.outputs.is_prerelease != 'true' }}
+          labels: |
+            org.opencontainers.image.title=Oceans LLM Gateway
+            org.opencontainers.image.description=Oceans LLM gateway service
+            org.opencontainers.image.version=${{ needs.prepare.outputs.version_number }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+      - name: Build and push gateway image
+        id: push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: .
+          file: crates/gateway/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Attest gateway image provenance
+        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ needs.prepare.outputs.owner_lc }}/${{ env.GATEWAY_IMAGE_NAME }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+  build-admin-ui:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract admin UI image metadata
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051
+        with:
+          images: ${{ env.REGISTRY }}/${{ needs.prepare.outputs.owner_lc }}/${{ env.ADMIN_UI_IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ needs.prepare.outputs.version }}
+            type=raw,value=${{ needs.prepare.outputs.major_minor }},enable=${{ needs.prepare.outputs.is_prerelease != 'true' }}
+            type=raw,value=sha-${{ needs.prepare.outputs.short_sha }}
+            type=raw,value=latest,enable=${{ needs.prepare.outputs.is_prerelease != 'true' }}
+          labels: |
+            org.opencontainers.image.title=Oceans LLM Admin UI
+            org.opencontainers.image.description=Oceans LLM admin UI service
+            org.opencontainers.image.version=${{ needs.prepare.outputs.version_number }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+      - name: Build and push admin UI image
+        id: push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: .
+          file: crates/admin-ui/web/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Attest admin UI image provenance
+        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ needs.prepare.outputs.owner_lc }}/${{ env.ADMIN_UI_IMAGE_NAME }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+  publish:
+    needs: [prepare, build-gateway, build-admin-ui]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+
+    steps:
+      - name: Update draft release and publish it
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          OWNER_LC: ${{ needs.prepare.outputs.owner_lc }}
+          GATEWAY_DIGEST: ${{ needs.build-gateway.outputs.digest }}
+          ADMIN_UI_DIGEST: ${{ needs.build-admin-ui.outputs.digest }}
+          IS_PRERELEASE: ${{ needs.prepare.outputs.is_prerelease }}
+          GATEWAY_IMAGE_NAME: ${{ env.GATEWAY_IMAGE_NAME }}
+          ADMIN_UI_IMAGE_NAME: ${{ env.ADMIN_UI_IMAGE_NAME }}
+          REGISTRY: ${{ env.REGISTRY }}
+        run: |
+          set -euo pipefail
+
+          gh release view "$VERSION" --json body --jq '.body' > current-release-body.md
+
+          cat > image-block.md <<EOF
+          <!-- release:images:start -->
+          ## Container Images
+
+          - \`${REGISTRY}/${OWNER_LC}/${GATEWAY_IMAGE_NAME}:${VERSION}\` - digest \`${GATEWAY_DIGEST}\`
+          - \`${REGISTRY}/${OWNER_LC}/${ADMIN_UI_IMAGE_NAME}:${VERSION}\` - digest \`${ADMIN_UI_DIGEST}\`
+          <!-- release:images:end -->
+          EOF
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          body = Path("current-release-body.md").read_text()
+          image_block = Path("image-block.md").read_text().strip()
+          pattern = re.compile(r"<!-- release:images:start -->.*?<!-- release:images:end -->\n*", re.S)
+
+          if pattern.search(body):
+              updated = pattern.sub(f"{image_block}\n\n", body, count=1)
+          else:
+              updated = f"{image_block}\n\n{body.lstrip()}"
+
+          Path("release-notes.md").write_text(updated.rstrip() + "\n")
+          PY
+
+          args=(release edit "$VERSION" --draft=false --notes-file release-notes.md)
+          if [[ "$IS_PRERELEASE" == "true" ]]; then
+            args+=(--prerelease)
+          else
+            args+=(--latest)
+          fi
+
+          gh "${args[@]}"

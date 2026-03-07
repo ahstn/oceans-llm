@@ -1,0 +1,9 @@
+.agents
+.github
+.git
+.gitignore
+.DS_Store
+docs
+target
+crates/admin-ui/web/dist
+crates/admin-ui/web/node_modules

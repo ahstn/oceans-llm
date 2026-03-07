@@ -439,7 +439,7 @@ pub enum PricingUnpricedReason {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PricingResolution {
-    Exact { pricing: ResolvedModelPricing },
+    Exact { pricing: Box<ResolvedModelPricing> },
     Unpriced { reason: PricingUnpricedReason },
 }
 

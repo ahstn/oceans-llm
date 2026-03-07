@@ -1,5 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
-@import 'tailwindcss';
+/* Rolldown's SSR CSS transform does not resolve the bare package import here. */
+@import '../../node_modules/tailwindcss/index.css';
 
 :root {
   --color-bg: #1c1c1c;
