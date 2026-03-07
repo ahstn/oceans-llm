@@ -1,7 +1,9 @@
 name: release
 
 on:
-  workflow_dispatch:
+  push:
+    tags:
+      - v**
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -9,70 +11,11 @@ concurrency:
 
 env:
   MISE_EXPERIMENTAL: true
-  REGISTRY: ghcr.io
   GATEWAY_IMAGE_NAME: oceans-llm-gateway
   ADMIN_UI_IMAGE_NAME: oceans-llm-admin-ui
 
 jobs:
-  analyze:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    permissions:
-      contents: read
-    outputs:
-      has_release: ${{ steps.plan.outputs.has_release }}
-      version: ${{ steps.plan.outputs.version }}
-      tag: ${{ steps.plan.outputs.tag }}
-      major_minor: ${{ steps.plan.outputs.major_minor }}
-      release_sha: ${{ steps.plan.outputs.release_sha }}
-      short_sha: ${{ steps.plan.outputs.short_sha }}
-      owner_lc: ${{ steps.plan.outputs.owner_lc }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          ref: ${{ github.ref_name }}
-
-      - name: Setup mise + tools
-        uses: jdx/mise-action@v3
-
-      - name: Require main branch
-        run: |
-          set -euo pipefail
-          if [[ "$GITHUB_REF_NAME" != "main" ]]; then
-            echo "release workflow must be dispatched from main, got $GITHUB_REF_NAME" >&2
-            exit 1
-          fi
-
-      - name: Run release preflight
-        run: mise run release-preflight
-
-      - name: Analyze release plan
-        id: plan
-        run: |
-          set -euo pipefail
-
-          node ./scripts/release-analyze.mjs --json > release-analysis.json
-
-          {
-            printf 'has_release=%s\n' "$(jq -r '.hasRelease' release-analysis.json)"
-            printf 'version=%s\n' "$(jq -r '.version // empty' release-analysis.json)"
-            printf 'tag=%s\n' "$(jq -r '.tag // empty' release-analysis.json)"
-            printf 'major_minor=%s\n' "$(jq -r '.majorMinor // empty' release-analysis.json)"
-            printf 'release_sha=%s\n' "$(jq -r '.releaseSha' release-analysis.json)"
-            printf 'short_sha=%s\n' "$(jq -r '.shortSha' release-analysis.json)"
-            printf 'owner_lc=%s\n' "${GITHUB_REPOSITORY_OWNER,,}"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Report no-op release
-        if: steps.plan.outputs.has_release != 'true'
-        run: echo "No releasable commits found; skipping release pipeline."
-
   build-gateway:
-    needs: analyze
-    if: needs.analyze.outputs.has_release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -86,17 +29,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.analyze.outputs.release_sha }}
 
       - name: Setup mise + tools
         uses: jdx/mise-action@v3
-
-      - name: Install release tooling
-        run: mise run release-install
-
-      - name: Prepare Cargo workspace version
-        run: node ./scripts/release-cargo-prepare.mjs "${{ needs.analyze.outputs.version }}"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -107,7 +42,7 @@ jobs:
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
@@ -115,17 +50,16 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ needs.analyze.outputs.owner_lc }}/${{ env.GATEWAY_IMAGE_NAME }}
+          images: ghcr.io/ahstn/${{ env.GATEWAY_IMAGE_NAME }}
           tags: |
-            type=raw,value=${{ needs.analyze.outputs.tag }}
-            type=raw,value=${{ needs.analyze.outputs.major_minor }}
-            type=raw,value=sha-${{ needs.analyze.outputs.short_sha }}
+            type=raw,value=${{ github.ref_name }}
+            type=raw,value=sha-${{ github.sha }}
             type=raw,value=latest
           labels: |
             org.opencontainers.image.title=Oceans LLM Gateway
             org.opencontainers.image.description=Oceans LLM gateway service
-            org.opencontainers.image.version=${{ needs.analyze.outputs.version }}
-            org.opencontainers.image.revision=${{ needs.analyze.outputs.release_sha }}
+            org.opencontainers.image.version=${{ github.ref_name  }}
+            org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
 
       - name: Build and push gateway image
@@ -145,13 +79,11 @@ jobs:
       - name: Attest gateway image provenance
         uses: actions/attest-build-provenance@v3
         with:
-          subject-name: ${{ env.REGISTRY }}/${{ needs.analyze.outputs.owner_lc }}/${{ env.GATEWAY_IMAGE_NAME }}
+          subject-name: ghcr.io/ahstn/${{ env.GATEWAY_IMAGE_NAME }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
 
   build-admin-ui:
-    needs: analyze
-    if: needs.analyze.outputs.has_release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -165,17 +97,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.analyze.outputs.release_sha }}
 
       - name: Setup mise + tools
         uses: jdx/mise-action@v3
-
-      - name: Install release tooling
-        run: mise run release-install
-
-      - name: Prepare Cargo workspace version
-        run: node ./scripts/release-cargo-prepare.mjs "${{ needs.analyze.outputs.version }}"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -186,7 +110,7 @@ jobs:
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
@@ -194,17 +118,16 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ needs.analyze.outputs.owner_lc }}/${{ env.ADMIN_UI_IMAGE_NAME }}
+          images: ghcr.io/ahstn/${{ env.ADMIN_UI_IMAGE_NAME }}
           tags: |
-            type=raw,value=${{ needs.analyze.outputs.tag }}
-            type=raw,value=${{ needs.analyze.outputs.major_minor }}
-            type=raw,value=sha-${{ needs.analyze.outputs.short_sha }}
+            type=raw,value=${{ github.ref_name }}
+            type=raw,value=sha-${{ github.sha }}
             type=raw,value=latest
           labels: |
             org.opencontainers.image.title=Oceans LLM Admin UI
             org.opencontainers.image.description=Oceans LLM admin UI service
-            org.opencontainers.image.version=${{ needs.analyze.outputs.version }}
-            org.opencontainers.image.revision=${{ needs.analyze.outputs.release_sha }}
+            org.opencontainers.image.version=${{ github.ref_name  }}
+            org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
 
       - name: Build and push admin UI image
@@ -224,64 +147,6 @@ jobs:
       - name: Attest admin UI image provenance
         uses: actions/attest-build-provenance@v3
         with:
-          subject-name: ${{ env.REGISTRY }}/${{ needs.analyze.outputs.owner_lc }}/${{ env.ADMIN_UI_IMAGE_NAME }}
+          subject-name: ghcr.io/ahstn//${{ env.ADMIN_UI_IMAGE_NAME }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
-
-  publish:
-    needs: [analyze, build-gateway, build-admin-ui]
-    if: needs.analyze.outputs.has_release == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: write
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          ref: ${{ needs.analyze.outputs.release_sha }}
-
-      - name: Setup mise + tools
-        uses: jdx/mise-action@v3
-
-      - name: Install release tooling
-        run: mise run release-install
-
-      - name: Verify main has not advanced
-        run: |
-          set -euo pipefail
-
-          git fetch origin main --tags
-          remote_main="$(git rev-parse origin/main)"
-          if [[ "$remote_main" != "${{ needs.analyze.outputs.release_sha }}" ]]; then
-            echo "main advanced to $remote_main after analysis; rerun the release workflow" >&2
-            exit 1
-          fi
-
-      - name: Bootstrap initial stable tag
-        run: |
-          set -euo pipefail
-
-          if git tag --merged HEAD | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
-            exit 0
-          fi
-
-          root_commit="$(git rev-list --max-parents=0 HEAD | tail -n 1)"
-          git tag v0.0.0 "$root_commit"
-
-      - name: Publish release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OWNER_LC: ${{ needs.analyze.outputs.owner_lc }}
-          GATEWAY_DIGEST: ${{ needs.build-gateway.outputs.digest }}
-          ADMIN_UI_DIGEST: ${{ needs.build-admin-ui.outputs.digest }}
-          GATEWAY_IMAGE_NAME: ${{ env.GATEWAY_IMAGE_NAME }}
-          ADMIN_UI_IMAGE_NAME: ${{ env.ADMIN_UI_IMAGE_NAME }}
-          REGISTRY: ${{ env.REGISTRY }}
-        run: |
-          set -euo pipefail
-
-          ./node_modules/.bin/semantic-release

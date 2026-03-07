@@ -5,6 +5,7 @@ bun = "1.3.10"
 gh = "latest"
 opentofu = "latest"
 git-cliff = "latest"
+cocogitto = "latest"
 
 [tasks.install]
 description = "Install or update tool versions from mise.toml"
@@ -73,14 +74,12 @@ run = "bun run --cwd crates/admin-ui/web test"
 
 [tasks.release]
 description = "Analyze commits and dispatch the release workflow when a release is pending"
-depends = ["release-install"]
 # Requires GITHUB_TOKEN to be set in the environment
 run = ["cog bump --auto --skip-untracked", "git-cliff -o CHANGELOG.md"]
 
 
 [tasks.release-dry-run]
 description = "Validate semantic-release configuration in dry-run mode"
-depends = ["release-install"]
 run = [
   "cog bump --auto --dry-run --skip-untracked",
   "git-cliff --dry-run --offline",
