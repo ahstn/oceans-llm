@@ -147,6 +147,6 @@ jobs:
       - name: Attest admin UI image provenance
         uses: actions/attest-build-provenance@v3
         with:
-          subject-name: ghcr.io/ahstn//${{ env.ADMIN_UI_IMAGE_NAME }}
+          subject-name: ghcr.io/ahstn/${{ env.ADMIN_UI_IMAGE_NAME }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
