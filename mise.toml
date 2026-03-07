@@ -2,6 +2,7 @@
 rust = "stable"
 bun = "1.3.10"
 opentofu = "latest"
+git-cliff = "2.12.0"
 
 [tasks.install]
 description = "Install or update tool versions from mise.toml"
@@ -80,6 +81,21 @@ run = "./scripts/next-release-version.sh"
 description = "Test release-version calculation scenarios"
 run = "./scripts/test-next-release-version.sh"
 
+[tasks.release-changelog-dry-run]
+description = "Validate git-cliff changelog generation"
+run = "git-cliff --config cliff.toml --unreleased --tag v0.0.0-dry-run --offline > /dev/null"
+
+[tasks.release-notes-dry-run]
+description = "Validate git-cliff GitHub release-note generation"
+run = "git-cliff --config .github/cliff-release-notes.toml --unreleased --tag v0.0.0-dry-run --offline > /dev/null"
+
+[tasks.release-cliff-check]
+description = "Run git-cliff dry-run checks"
+run = [
+  { task = "release-changelog-dry-run" },
+  { task = "release-notes-dry-run" },
+]
+
 [tasks.release-preflight]
 description = "Run all checks required before creating a release"
 depends = ["ui-install"]
@@ -88,4 +104,5 @@ run = [
   { task = "test" },
   { task = "build" },
   { task = "release-version-test" },
+  { task = "release-cliff-check" },
 ]

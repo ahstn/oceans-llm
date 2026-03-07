@@ -27,6 +27,9 @@ jobs:
       - name: Test release version calculator
         run: mise run release-version-test
 
+      - name: Validate git-cliff configs
+        run: mise run release-cliff-check
+
       - name: Build gateway image
         run: docker build --file crates/gateway/Dockerfile .
 

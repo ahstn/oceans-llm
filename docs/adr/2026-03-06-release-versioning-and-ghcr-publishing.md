@@ -15,7 +15,7 @@ We wanted to add release automation that:
 - preserves the simple `main` plus short-lived feature/bug branch flow,
 - does not introduce dedicated release branches or release PR churn,
 - publishes one coherent product release for both deployables,
-- generates GitHub release notes automatically,
+- generates a repo-managed changelog and GitHub release notes automatically,
 - publishes versioned multi-architecture Docker images to GHCR,
 - stays compatible with repo-local `mise` tasks and CI.
 
@@ -92,31 +92,24 @@ Why:
 - release tooling should be tested before release day,
 - the release workflow should depend on a green preflight, not untested scripts.
 
-### 7. Create GitHub releases as drafts before publishing
+### 7. Create changelog commits and draft releases before publishing
 
-The release workflow creates or reuses a draft release first, publishes both images, prepends image references and digests to the draft notes, and only then publishes the release.
+The release workflow generates `CHANGELOG.md` and release notes from `git-cliff`, commits the changelog back to `main`, creates or reuses a draft release pointing at that commit, publishes both images, prepends image references and digests to the draft notes, and only then publishes the release.
 
 Why:
 - a public release should not appear before both images exist,
+- the tagged release commit should contain the changelog that describes it,
 - draft reuse makes failed release attempts recoverable,
 - the final published release can include both generated notes and concrete image references.
 
-### 8. Use GitHub-generated release notes with label-driven categories
+### 8. Use `git-cliff` for changelog and release notes
 
-We use GitHub generated release notes with `.github/release.yml`.
-
-Release note categories are driven by labels:
-- `breaking-change`,
-- `enhancement`,
-- `bug`,
-- `documentation`,
-- `dependencies`,
-- `ignore-for-release` for exclusions.
+We use `git-cliff` to generate both `CHANGELOG.md` and GitHub release notes from Conventional Commit history.
 
 Why:
-- GitHub already understands merged PRs and contributors,
-- label categories produce readable release notes without a custom changelog generator,
-- this keeps release notes aligned with GitHub’s native release UI.
+- changelog rendering becomes deterministic and owned by the repo,
+- release notes and changelog can share the same semantic grouping rules,
+- GitHub metadata can still enrich release notes with PR numbers, authors, and first-time contributors when available.
 
 ### 9. Publish multi-arch GHCR images for both deployables
 
@@ -194,20 +187,21 @@ Rejected because:
 Positive:
 - releases are intentional and auditable,
 - both deployables ship under one version,
-- release notes are automatic but still categorized,
+- changelog and release notes are automatic and consistent,
 - image publishing is tied directly to successful release execution,
 - release automation stays close to native GitHub capabilities.
 
 Tradeoffs:
 - maintainers still need to trigger releases manually,
-- PR titles and labels now carry more operational weight,
+- PR titles now carry more operational weight,
+- the release workflow now writes a changelog commit directly to `main`,
 - Cargo package versions are not the public release identity for now,
 - branch governance must be kept aligned with the workflow assumptions.
 
 ## Follow-up Work
 
 - Apply and maintain GitHub repository settings so `main` stays squash-only and PR-gated.
-- Keep the release labels available in the repository.
+- Ensure GitHub Actions can continue to write the changelog commit to `main` under branch protection.
 - Revisit Cargo-level release automation only if the repo starts publishing crates externally.
 
 ## Attribution
