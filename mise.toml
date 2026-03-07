@@ -1,8 +1,9 @@
 [tools]
 rust = "stable"
+node = "lts"
 bun = "1.3.10"
+gh = "latest"
 opentofu = "latest"
-git-cliff = "2.12.0"
 
 [tasks.install]
 description = "Install or update tool versions from mise.toml"
@@ -73,36 +74,36 @@ run = "bun run --cwd crates/admin-ui/web fmt"
 description = "Run admin UI tests"
 run = "bun run --cwd crates/admin-ui/web test"
 
-[tasks.release-version]
-description = "Compute the next release version from git history"
-run = "./scripts/next-release-version.sh"
+[tasks.release-install]
+description = "Install root release-tooling dependencies"
+run = "bun install --frozen-lockfile"
 
-[tasks.release-version-test]
-description = "Test release-version calculation scenarios"
-run = "./scripts/test-next-release-version.sh"
+[tasks.release-analyze]
+description = "Analyze commit history and print the pending release"
+depends = ["release-install"]
+run = "node ./scripts/release-analyze.mjs"
 
-[tasks.release-changelog-dry-run]
-description = "Validate git-cliff changelog generation"
-run = "git-cliff --config cliff.toml --unreleased --tag v0.0.0-dry-run --offline > /dev/null"
+[tasks.release]
+description = "Analyze commits and dispatch the release workflow when a release is pending"
+depends = ["release-install"]
+run = "node ./scripts/release-dispatch.mjs"
 
-[tasks.release-notes-dry-run]
-description = "Validate git-cliff GitHub release-note generation"
-run = "git-cliff --config .github/cliff-release-notes.toml --unreleased --tag v0.0.0-dry-run --offline > /dev/null"
+[tasks.release-analyze-test]
+description = "Test release analysis scenarios"
+depends = ["release-install"]
+run = "./scripts/test-release-analyze.sh"
 
-[tasks.release-cliff-check]
-description = "Run git-cliff dry-run checks"
-run = [
-  { task = "release-changelog-dry-run" },
-  { task = "release-notes-dry-run" },
-]
+[tasks.release-semantic-dry-run]
+description = "Validate semantic-release configuration in dry-run mode"
+depends = ["release-install"]
+run = "./node_modules/.bin/semantic-release --dry-run --no-ci"
 
 [tasks.release-preflight]
 description = "Run all checks required before creating a release"
-depends = ["ui-install"]
+depends = ["ui-install", "release-install"]
 run = [
   { task = "lint" },
   { task = "test" },
   { task = "build" },
-  { task = "release-version-test" },
-  { task = "release-cliff-check" },
+  { task = "release-analyze-test" },
 ]

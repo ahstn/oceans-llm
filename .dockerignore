@@ -3,6 +3,7 @@
 .git
 .gitignore
 .DS_Store
+node_modules
 docs
 target
 crates/admin-ui/web/dist

@@ -60,19 +60,20 @@ Why:
 - Cargo-focused tools optimize for crate publication and version-file churn,
 - product release identity is better represented by the git tag and release metadata.
 
-### 4. Infer versions from Conventional Commit history, with manual override
+### 4. Infer versions from Conventional Commit history
 
-The release workflow computes the next version from commits since the last `v*` tag using these rules:
+The release workflow computes the next version from commits since the last stable `vX.Y.Z` tag using these rules:
 
 - any `!` or `BREAKING CHANGE:` -> major,
 - any `feat` -> minor,
 - any `fix` -> patch,
-- otherwise fail unless an explicit override is provided.
+- otherwise do not release.
 
 Why:
 - it keeps versioning deterministic and reviewable,
-- it aligns with standard Conventional Commit semver rules,
-- the explicit override handles bootstrap and exceptional cases safely.
+- it aligns with standard Conventional Commit semver rules.
+
+For the very first release, the workflow bootstraps a local `v0.0.0` baseline tag so the first real stable release can be `v0.1.0`.
 
 ### 5. Enforce Conventional Commits at PR title level
 
@@ -85,31 +86,30 @@ Why:
 
 ### 6. Keep Rust CI and add dedicated UI and release-tooling CI
 
-We keep the existing Rust-only CI workflow, add a dedicated UI CI workflow through `mise`, and add release-tooling CI that validates the version calculator and both Dockerfiles.
+We keep the existing Rust-only CI workflow, add a dedicated UI CI workflow through `mise`, and add release-tooling CI that validates the release analyzer, semantic-release configuration, and both Dockerfiles.
 
 Why:
 - Rust and admin UI checks should stay independently visible,
 - release tooling should be tested before release day,
-- the release workflow should depend on a green preflight, not untested scripts.
+- the release workflow should depend on a green preflight, not untested release automation.
 
-### 7. Create changelog commits and draft releases before publishing
+### 7. Publish GitHub releases after images are available
 
-The release workflow generates `CHANGELOG.md` and release notes from `git-cliff`, commits the changelog back to `main`, creates or reuses a draft release pointing at that commit, publishes both images, prepends image references and digests to the draft notes, and only then publishes the release.
+The release workflow analyzes `main`, builds and publishes both images for the analyzed commit, then runs `semantic-release` once to update `CHANGELOG.md`, bump workspace crate versions, create the release commit and tag, and publish the GitHub release with the image digests in the release body.
 
 Why:
 - a public release should not appear before both images exist,
 - the tagged release commit should contain the changelog that describes it,
-- draft reuse makes failed release attempts recoverable,
 - the final published release can include both generated notes and concrete image references.
 
-### 8. Use `git-cliff` for changelog and release notes
+### 8. Use semantic-release plugins for changelog and release notes
 
-We use `git-cliff` to generate both `CHANGELOG.md` and GitHub release notes from Conventional Commit history.
+We use `@semantic-release/release-notes-generator`, `@semantic-release/changelog`, `@semantic-release/git`, `@semantic-release/github`, and `@semantic-release/exec`.
 
 Why:
-- changelog rendering becomes deterministic and owned by the repo,
-- release notes and changelog can share the same semantic grouping rules,
-- GitHub metadata can still enrich release notes with PR numbers, authors, and first-time contributors when available.
+- versioning, changelog generation, git tagging, and GitHub release publication stay inside one supported lifecycle,
+- the repo can still commit `CHANGELOG.md` and workspace `Cargo.toml` updates,
+- a small `prepare` hook is enough for Rust workspace version bumps before the release commit is created.
 
 ### 9. Publish multi-arch GHCR images for both deployables
 

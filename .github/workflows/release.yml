@@ -2,11 +2,6 @@ name: release
 
 on:
   workflow_dispatch:
-    inputs:
-      release_as:
-        description: "Explicit release version (for bootstrap or override), e.g. v0.1.0"
-        required: false
-        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -19,20 +14,19 @@ env:
   ADMIN_UI_IMAGE_NAME: oceans-llm-admin-ui
 
 jobs:
-  prepare:
+  analyze:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
-      contents: write
-      pull-requests: read
+      contents: read
     outputs:
-      version: ${{ steps.version.outputs.version }}
-      version_number: ${{ steps.version.outputs.version_number }}
-      major_minor: ${{ steps.version.outputs.major_minor }}
-      short_sha: ${{ steps.prepare_artifacts.outputs.short_sha }}
-      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
-      owner_lc: ${{ steps.version.outputs.owner_lc }}
-      release_sha: ${{ steps.prepare_artifacts.outputs.release_sha }}
+      has_release: ${{ steps.plan.outputs.has_release }}
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+      major_minor: ${{ steps.plan.outputs.major_minor }}
+      release_sha: ${{ steps.plan.outputs.release_sha }}
+      short_sha: ${{ steps.plan.outputs.short_sha }}
+      owner_lc: ${{ steps.plan.outputs.owner_lc }}
 
     steps:
       - name: Checkout
@@ -55,150 +49,30 @@ jobs:
       - name: Run release preflight
         run: mise run release-preflight
 
-      - name: Resolve release version
-        id: version
-        env:
-          RELEASE_AS: ${{ github.event.inputs.release_as }}
+      - name: Analyze release plan
+        id: plan
         run: |
           set -euo pipefail
 
-          version="$(mise run --quiet --no-timings release-version)"
-          version_number="${version#v}"
-          version_base="${version_number%%-*}"
-          major_minor="$(printf '%s\n' "$version_base" | cut -d. -f1,2)"
-          owner_lc="${GITHUB_REPOSITORY_OWNER,,}"
-          is_prerelease="false"
-          if [[ "$version_number" == *-* ]]; then
-            is_prerelease="true"
-          fi
+          node ./scripts/release-analyze.mjs --json > release-analysis.json
 
           {
-            printf 'version=%s\n' "$version"
-            printf 'version_number=%s\n' "$version_number"
-            printf 'major_minor=%s\n' "$major_minor"
-            printf 'owner_lc=%s\n' "$owner_lc"
-            printf 'is_prerelease=%s\n' "$is_prerelease"
+            printf 'has_release=%s\n' "$(jq -r '.hasRelease' release-analysis.json)"
+            printf 'version=%s\n' "$(jq -r '.version // empty' release-analysis.json)"
+            printf 'tag=%s\n' "$(jq -r '.tag // empty' release-analysis.json)"
+            printf 'major_minor=%s\n' "$(jq -r '.majorMinor // empty' release-analysis.json)"
+            printf 'release_sha=%s\n' "$(jq -r '.releaseSha' release-analysis.json)"
+            printf 'short_sha=%s\n' "$(jq -r '.shortSha' release-analysis.json)"
+            printf 'owner_lc=%s\n' "${GITHUB_REPOSITORY_OWNER,,}"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Prepare changelog and release notes
-        id: prepare_artifacts
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.version.outputs.version }}
-          VERSION_NUMBER: ${{ steps.version.outputs.version_number }}
-        run: |
-          set -euo pipefail
-
-          git fetch --tags origin
-
-          last_tag=""
-          if last_tag="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null)"; then
-            has_previous_tag="true"
-          else
-            has_previous_tag="false"
-          fi
-
-          if [[ "$has_previous_tag" == "true" ]]; then
-            changelog_tmp="$(mktemp)"
-            cp CHANGELOG.md "$changelog_tmp"
-            if ! git-cliff --config cliff.toml --unreleased --tag "$VERSION" --prepend "$changelog_tmp"; then
-              cp CHANGELOG.md "$changelog_tmp"
-              git-cliff --config cliff.toml --unreleased --tag "$VERSION" --offline --prepend "$changelog_tmp"
-            fi
-            mv "$changelog_tmp" CHANGELOG.md
-
-            if ! git-cliff --config .github/cliff-release-notes.toml --unreleased --tag "$VERSION" > draft-release-notes.md; then
-              git-cliff --config .github/cliff-release-notes.toml --unreleased --tag "$VERSION" --offline > draft-release-notes.md
-            fi
-          else
-            release_date="$(date -u +%Y-%m-%d)"
-            {
-              printf '%s\n' '# Changelog'
-              printf '\n'
-              printf '%s\n' 'All notable changes to this project will be documented in this file.'
-              printf '\n'
-              printf '%s\n' 'The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),'
-              printf '%s\n' 'and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).'
-              printf '\n'
-              printf '## [%s] - %s\n' "$VERSION_NUMBER" "$release_date"
-              printf '\n'
-              printf '%s\n' '### Added'
-              printf '%s\n' '- Initial release'
-              printf '\n'
-              printf '[%s]: https://github.com/%s/tree/%s\n' "$VERSION_NUMBER" "$GITHUB_REPOSITORY" "$VERSION"
-              printf '%s\n' '<!-- generated by git-cliff -->'
-            } > CHANGELOG.md
-
-            {
-              printf '## What'\''s Changed in %s\n' "$VERSION_NUMBER"
-              printf '\n'
-              printf '%s\n' '* Initial release'
-              printf '\n'
-              printf '%s\n' '<!-- generated by git-cliff -->'
-            } > draft-release-notes.md
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add CHANGELOG.md
-          if ! git diff --cached --quiet; then
-            git commit -m "docs(release): update changelog for ${VERSION}"
-            git push origin "HEAD:${GITHUB_REF_NAME}"
-          fi
-
-          release_sha="$(git rev-parse HEAD)"
-          short_sha="$(git rev-parse --short HEAD)"
-
-          {
-            printf 'release_sha=%s\n' "$release_sha"
-            printf 'short_sha=%s\n' "$short_sha"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Create or reuse draft release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.version.outputs.version }}
-          IS_PRERELEASE: ${{ steps.version.outputs.is_prerelease }}
-          RELEASE_SHA: ${{ steps.prepare_artifacts.outputs.release_sha }}
-        run: |
-          set -euo pipefail
-
-          git fetch --tags origin
-
-          if existing_release="$(gh release view "$VERSION" --json id,isDraft 2>/dev/null)"; then
-            is_draft="$(printf '%s' "$existing_release" | jq -r '.isDraft')"
-            if [[ "$is_draft" != "true" ]]; then
-              echo "release $VERSION already exists and is not a draft" >&2
-              exit 1
-            fi
-
-            tag_commit="$(git rev-list -n 1 "$VERSION")"
-            if [[ "$tag_commit" != "$RELEASE_SHA" ]]; then
-              echo "draft release $VERSION points at $tag_commit, expected $RELEASE_SHA" >&2
-              echo "delete the draft/tag or choose a different release_as value" >&2
-              exit 1
-            fi
-
-            args=(release edit "$VERSION" --notes-file draft-release-notes.md)
-            if [[ "$IS_PRERELEASE" == "true" ]]; then
-              args+=(--prerelease)
-            fi
-
-            gh "${args[@]}"
-            exit 0
-          fi
-
-          args=(release create "$VERSION" --draft --notes-file draft-release-notes.md --target "$RELEASE_SHA")
-          if [[ "$IS_PRERELEASE" == "true" ]]; then
-            args+=(--prerelease)
-          fi
-
-          gh "${args[@]}"
+      - name: Report no-op release
+        if: steps.plan.outputs.has_release != 'true'
+        run: echo "No releasable commits found; skipping release pipeline."
 
   build-gateway:
-    needs: prepare
+    needs: analyze
+    if: needs.analyze.outputs.has_release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -213,7 +87,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ needs.prepare.outputs.release_sha }}
+          ref: ${{ needs.analyze.outputs.release_sha }}
+
+      - name: Setup mise + tools
+        uses: jdx/mise-action@v3
+
+      - name: Install release tooling
+        run: mise run release-install
+
+      - name: Prepare Cargo workspace version
+        run: node ./scripts/release-cargo-prepare.mjs "${{ needs.analyze.outputs.version }}"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -232,17 +115,17 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ needs.prepare.outputs.owner_lc }}/${{ env.GATEWAY_IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ needs.analyze.outputs.owner_lc }}/${{ env.GATEWAY_IMAGE_NAME }}
           tags: |
-            type=raw,value=${{ needs.prepare.outputs.version }}
-            type=raw,value=${{ needs.prepare.outputs.major_minor }},enable=${{ needs.prepare.outputs.is_prerelease != 'true' }}
-            type=raw,value=sha-${{ needs.prepare.outputs.short_sha }}
-            type=raw,value=latest,enable=${{ needs.prepare.outputs.is_prerelease != 'true' }}
+            type=raw,value=${{ needs.analyze.outputs.tag }}
+            type=raw,value=${{ needs.analyze.outputs.major_minor }}
+            type=raw,value=sha-${{ needs.analyze.outputs.short_sha }}
+            type=raw,value=latest
           labels: |
             org.opencontainers.image.title=Oceans LLM Gateway
             org.opencontainers.image.description=Oceans LLM gateway service
-            org.opencontainers.image.version=${{ needs.prepare.outputs.version_number }}
-            org.opencontainers.image.revision=${{ needs.prepare.outputs.release_sha }}
+            org.opencontainers.image.version=${{ needs.analyze.outputs.version }}
+            org.opencontainers.image.revision=${{ needs.analyze.outputs.release_sha }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
 
       - name: Build and push gateway image
@@ -262,12 +145,13 @@ jobs:
       - name: Attest gateway image provenance
         uses: actions/attest-build-provenance@v3
         with:
-          subject-name: ${{ env.REGISTRY }}/${{ needs.prepare.outputs.owner_lc }}/${{ env.GATEWAY_IMAGE_NAME }}
+          subject-name: ${{ env.REGISTRY }}/${{ needs.analyze.outputs.owner_lc }}/${{ env.GATEWAY_IMAGE_NAME }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
 
   build-admin-ui:
-    needs: prepare
+    needs: analyze
+    if: needs.analyze.outputs.has_release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -282,7 +166,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ needs.prepare.outputs.release_sha }}
+          ref: ${{ needs.analyze.outputs.release_sha }}
+
+      - name: Setup mise + tools
+        uses: jdx/mise-action@v3
+
+      - name: Install release tooling
+        run: mise run release-install
+
+      - name: Prepare Cargo workspace version
+        run: node ./scripts/release-cargo-prepare.mjs "${{ needs.analyze.outputs.version }}"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -301,17 +194,17 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ needs.prepare.outputs.owner_lc }}/${{ env.ADMIN_UI_IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ needs.analyze.outputs.owner_lc }}/${{ env.ADMIN_UI_IMAGE_NAME }}
           tags: |
-            type=raw,value=${{ needs.prepare.outputs.version }}
-            type=raw,value=${{ needs.prepare.outputs.major_minor }},enable=${{ needs.prepare.outputs.is_prerelease != 'true' }}
-            type=raw,value=sha-${{ needs.prepare.outputs.short_sha }}
-            type=raw,value=latest,enable=${{ needs.prepare.outputs.is_prerelease != 'true' }}
+            type=raw,value=${{ needs.analyze.outputs.tag }}
+            type=raw,value=${{ needs.analyze.outputs.major_minor }}
+            type=raw,value=sha-${{ needs.analyze.outputs.short_sha }}
+            type=raw,value=latest
           labels: |
             org.opencontainers.image.title=Oceans LLM Admin UI
             org.opencontainers.image.description=Oceans LLM admin UI service
-            org.opencontainers.image.version=${{ needs.prepare.outputs.version_number }}
-            org.opencontainers.image.revision=${{ needs.prepare.outputs.release_sha }}
+            org.opencontainers.image.version=${{ needs.analyze.outputs.version }}
+            org.opencontainers.image.revision=${{ needs.analyze.outputs.release_sha }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
 
       - name: Build and push admin UI image
@@ -331,64 +224,64 @@ jobs:
       - name: Attest admin UI image provenance
         uses: actions/attest-build-provenance@v3
         with:
-          subject-name: ${{ env.REGISTRY }}/${{ needs.prepare.outputs.owner_lc }}/${{ env.ADMIN_UI_IMAGE_NAME }}
+          subject-name: ${{ env.REGISTRY }}/${{ needs.analyze.outputs.owner_lc }}/${{ env.ADMIN_UI_IMAGE_NAME }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
 
   publish:
-    needs: [prepare, build-gateway, build-admin-ui]
+    needs: [analyze, build-gateway, build-admin-ui]
+    if: needs.analyze.outputs.has_release == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     permissions:
       contents: write
 
     steps:
-      - name: Update draft release and publish it
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.analyze.outputs.release_sha }}
+
+      - name: Setup mise + tools
+        uses: jdx/mise-action@v3
+
+      - name: Install release tooling
+        run: mise run release-install
+
+      - name: Verify main has not advanced
+        run: |
+          set -euo pipefail
+
+          git fetch origin main --tags
+          remote_main="$(git rev-parse origin/main)"
+          if [[ "$remote_main" != "${{ needs.analyze.outputs.release_sha }}" ]]; then
+            echo "main advanced to $remote_main after analysis; rerun the release workflow" >&2
+            exit 1
+          fi
+
+      - name: Bootstrap initial stable tag
+        run: |
+          set -euo pipefail
+
+          if git tag --merged HEAD | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            exit 0
+          fi
+
+          root_commit="$(git rev-list --max-parents=0 HEAD | tail -n 1)"
+          git tag v0.0.0 "$root_commit"
+
+      - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ needs.prepare.outputs.version }}
-          OWNER_LC: ${{ needs.prepare.outputs.owner_lc }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER_LC: ${{ needs.analyze.outputs.owner_lc }}
           GATEWAY_DIGEST: ${{ needs.build-gateway.outputs.digest }}
           ADMIN_UI_DIGEST: ${{ needs.build-admin-ui.outputs.digest }}
-          IS_PRERELEASE: ${{ needs.prepare.outputs.is_prerelease }}
           GATEWAY_IMAGE_NAME: ${{ env.GATEWAY_IMAGE_NAME }}
           ADMIN_UI_IMAGE_NAME: ${{ env.ADMIN_UI_IMAGE_NAME }}
           REGISTRY: ${{ env.REGISTRY }}
         run: |
           set -euo pipefail
 
-          gh release view "$VERSION" --json body --jq '.body' > current-release-body.md
-
-          cat > image-block.md <<EOF
-          <!-- release:images:start -->
-          ## Container Images
-
-          - \`${REGISTRY}/${OWNER_LC}/${GATEWAY_IMAGE_NAME}:${VERSION}\` - digest \`${GATEWAY_DIGEST}\`
-          - \`${REGISTRY}/${OWNER_LC}/${ADMIN_UI_IMAGE_NAME}:${VERSION}\` - digest \`${ADMIN_UI_DIGEST}\`
-          <!-- release:images:end -->
-          EOF
-
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          body = Path("current-release-body.md").read_text()
-          image_block = Path("image-block.md").read_text().strip()
-          pattern = re.compile(r"<!-- release:images:start -->.*?<!-- release:images:end -->\n*", re.S)
-
-          if pattern.search(body):
-              updated = pattern.sub(f"{image_block}\n\n", body, count=1)
-          else:
-              updated = f"{image_block}\n\n{body.lstrip()}"
-
-          Path("release-notes.md").write_text(updated.rstrip() + "\n")
-          PY
-
-          args=(release edit "$VERSION" --draft=false --notes-file release-notes.md)
-          if [[ "$IS_PRERELEASE" == "true" ]]; then
-            args+=(--prerelease)
-          else
-            args+=(--latest)
-          fi
-
-          gh "${args[@]}"
+          ./node_modules/.bin/semantic-release

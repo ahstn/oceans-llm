@@ -16,6 +16,8 @@ jobs:
   release-tooling:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
@@ -24,11 +26,15 @@ jobs:
       - name: Setup mise + tools
         uses: jdx/mise-action@e79ddf65a11cec7b0e882bedced08d6e976efb2d
 
-      - name: Test release version calculator
-        run: mise run release-version-test
+      - name: Test release analysis
+        run: mise run release-analyze-test
 
-      - name: Validate git-cliff configs
-        run: mise run release-cliff-check
+      - name: Dry-run semantic-release
+        if: github.event_name == 'push' && github.ref_name == 'main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: mise run release-semantic-dry-run
 
       - name: Build gateway image
         run: docker build --file crates/gateway/Dockerfile .
