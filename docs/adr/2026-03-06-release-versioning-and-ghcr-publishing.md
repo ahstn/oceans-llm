@@ -1,4 +1,4 @@
-# ADR: Manual Product Releases and GHCR Image Publishing
+# ADR: Cocogitto Releases, git-cliff Changelogs, and GHCR Image Publishing
 
 - Date: 2026-03-06
 - Status: Accepted
@@ -28,14 +28,14 @@ We also needed to account for current repo reality:
 
 ## Decision
 
-### 1. Use manual `workflow_dispatch` releases from `main`
+### 1. Create releases locally from `main`, then publish from the tag workflow
 
-Releases are created by an explicit manual workflow run from `main`.
+Releases are created locally from `main` with `mise run release`. That task computes the next version, creates the release commit and tag, regenerates `CHANGELOG.md`, and pushes the release artifacts to GitHub. The pushed tag then triggers the GitHub Actions release workflow.
 
 Why:
 - every merge to `main` should not automatically become a public release,
-- maintainers need a deliberate batching point for release cadence,
-- this avoids introducing release branches or bot-created release PRs.
+- maintainers still get a deliberate batching point for release cadence,
+- this avoids release branches, release PRs, and bot-owned version commits.
 
 ### 2. Use one repo-wide product version per release
 
@@ -53,27 +53,27 @@ Why:
 
 ### 3. Use git tags and GitHub releases as the public version source of truth
 
-We do not add Cargo-centric version bump automation for this slice.
+We do not use Cargo package versions as the primary public release contract.
 
 Why:
 - this repo is not currently publishing crates to crates.io,
 - Cargo-focused tools optimize for crate publication and version-file churn,
 - product release identity is better represented by the git tag and release metadata.
 
-### 4. Infer versions from Conventional Commit history
+### 4. Use Cocogitto to infer versions and create release tags locally
 
-The release workflow computes the next version from commits since the last stable `vX.Y.Z` tag using these rules:
+We use `cog bump --auto` to infer the next version from Conventional Commit history and create the release tag locally.
 
-- any `!` or `BREAKING CHANGE:` -> major,
-- any `feat` -> minor,
-- any `fix` -> patch,
-- otherwise do not release.
+In practice this means:
+- breaking changes produce a major release,
+- `feat` commits produce a minor release,
+- `fix` commits produce a patch release,
+- other commit types do not independently force a version bump.
 
 Why:
 - it keeps versioning deterministic and reviewable,
-- it aligns with standard Conventional Commit semver rules.
-
-For the very first release, the workflow bootstraps a local `v0.0.0` baseline tag so the first real stable release can be `v0.1.0`.
+- it aligns with standard Conventional Commit semver rules,
+- the release step stays simple enough to run and understand locally.
 
 ### 5. Enforce Conventional Commits at PR title level
 
@@ -86,30 +86,30 @@ Why:
 
 ### 6. Keep Rust CI and add dedicated UI and release-tooling CI
 
-We keep the existing Rust-only CI workflow, add a dedicated UI CI workflow through `mise`, and add release-tooling CI that validates the release analyzer, semantic-release configuration, and both Dockerfiles.
+We keep the existing Rust-only CI workflow, add a dedicated UI CI workflow through `mise`, and validate release tooling with repo-local tasks plus Docker image builds.
 
 Why:
 - Rust and admin UI checks should stay independently visible,
 - release tooling should be tested before release day,
 - the release workflow should depend on a green preflight, not untested release automation.
 
-### 7. Publish GitHub releases after images are available
+### 7. Use `git-cliff` for the repository changelog and GitHub release notes
 
-The release workflow analyzes `main`, builds and publishes both images for the analyzed commit, then runs `semantic-release` once to update `CHANGELOG.md`, bump workspace crate versions, create the release commit and tag, and publish the GitHub release with the image digests in the release body.
+We use `git-cliff` to generate the repo-managed changelog from Conventional Commit history.
+
+Why:
+- changelog rendering stays repo-owned and reviewable,
+- the same commit history drives both version inference and release documentation,
+- the tooling is lightweight and easy to run locally.
+
+### 8. Publish GitHub releases after images are available
+
+The pushed release tag triggers GitHub Actions, which builds and publishes both images, then publishes the GitHub release for that tag.
 
 Why:
 - a public release should not appear before both images exist,
-- the tagged release commit should contain the changelog that describes it,
-- the final published release can include both generated notes and concrete image references.
-
-### 8. Use semantic-release plugins for changelog and release notes
-
-We use `@semantic-release/release-notes-generator`, `@semantic-release/changelog`, `@semantic-release/git`, `@semantic-release/github`, and `@semantic-release/exec`.
-
-Why:
-- versioning, changelog generation, git tagging, and GitHub release publication stay inside one supported lifecycle,
-- the repo can still commit `CHANGELOG.md` and workspace `Cargo.toml` updates,
-- a small `prepare` hook is enough for Rust workspace version bumps before the release commit is created.
+- image publishing stays in CI where registry credentials and attestations already live,
+- local release creation stays small while CI handles distribution.
 
 ### 9. Publish multi-arch GHCR images for both deployables
 
@@ -126,12 +126,34 @@ with tags:
 - full release tag, such as `v0.1.0`,
 - floating `X.Y`,
 - `sha-<shortsha>`,
-- `latest` only for stable releases.
+- `latest`.
 
 Why:
 - GHCR is a natural fit for a GitHub-hosted repo,
 - multi-arch images keep deployment options open,
 - floating tags help operations without replacing immutable version tags.
+
+## Release Flow Overview
+
+The release flow is intentionally split into a small local step and a tag-driven CI step.
+
+### Local release step
+
+1. A maintainer updates `main` locally and runs `mise run release`.
+2. `cog bump --auto` determines the next version from Conventional Commit history, creates the release commit, and creates the `vX.Y.Z` tag.
+3. `git-cliff` regenerates `CHANGELOG.md` for the new release.
+4. The maintainer pushes the release commit and tag to GitHub.
+
+This keeps versioning and changelog generation explicit and easy to inspect before the release is published.
+
+### GitHub Actions release step
+
+1. The pushed `vX.Y.Z` tag triggers [.github/workflows/release.yml](/Users/ahstn/git/oceans-llm/.github/workflows/release.yml).
+2. The workflow builds and publishes the gateway and admin UI images to GHCR for `linux/amd64` and `linux/arm64`.
+3. The workflow applies the release image tags and provenance attestations.
+4. The workflow publishes or updates the GitHub release associated with the tag.
+
+This split keeps local release authoring simple while leaving image publication and release distribution to CI.
 
 ## Alternatives Considered
 
@@ -171,6 +193,18 @@ Rejected because:
 - it does not solve admin UI image publishing or GitHub release-note composition cleanly,
 - it would still leave us stitching together frontend and GHCR logic around it.
 
+### `semantic-release`
+
+Pros:
+- strong Conventional Commit automation,
+- integrated versioning, notes, and GitHub release support,
+- large plugin ecosystem.
+
+Rejected because:
+- it is optimized for CI-owned releases rather than a simple local `mise run release` flow,
+- keeping repo-managed changelogs, Cargo workspace bumps, image metadata, and GitHub release customization still required non-trivial glue,
+- the resulting setup was more complex than needed for this repo’s release model.
+
 ### Automatic releases on every merge to `main`
 
 Pros:
@@ -189,19 +223,19 @@ Positive:
 - both deployables ship under one version,
 - changelog and release notes are automatic and consistent,
 - image publishing is tied directly to successful release execution,
-- release automation stays close to native GitHub capabilities.
+- release automation stays understandable with small local tooling.
 
 Tradeoffs:
 - maintainers still need to trigger releases manually,
 - PR titles now carry more operational weight,
-- the release workflow now writes a changelog commit directly to `main`,
+- changelog generation and tag creation now happen locally rather than entirely in CI,
 - Cargo package versions are not the public release identity for now,
 - branch governance must be kept aligned with the workflow assumptions.
 
 ## Follow-up Work
 
 - Apply and maintain GitHub repository settings so `main` stays squash-only and PR-gated.
-- Ensure GitHub Actions can continue to write the changelog commit to `main` under branch protection.
+- Ensure the local release task and tag-triggered CI workflow remain aligned.
 - Revisit Cargo-level release automation only if the repo starts publishing crates externally.
 
 ## Attribution
