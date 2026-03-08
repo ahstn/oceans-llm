@@ -1,0 +1,57 @@
+services:
+  gateway:
+    image: oceans-llm-gateway:local
+    build:
+      context: .
+      dockerfile: crates/gateway/Dockerfile
+    depends_on:
+      admin-ui:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: "8080"
+      GATEWAY_CONFIG: /app/gateway.yaml
+      ADMIN_UI_UPSTREAM: http://admin-ui:3000
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GATEWAY_API_KEY: ${GATEWAY_API_KEY:-gwk_localdev.replace-me}
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+    volumes:
+      - ./deploy/config/gateway.yaml:/app/gateway.yaml:ro
+      - gateway-data:/data
+    restart: unless-stopped
+
+  admin-ui:
+    image: oceans-llm-admin-ui:local
+    build:
+      context: .
+      dockerfile: crates/admin-ui/web/Dockerfile
+    environment:
+      PORT: "3000"
+    expose:
+      - "3000"
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-oceans_llm}
+      POSTGRES_USER: ${POSTGRES_USER:-oceans}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-oceans}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+volumes:
+  gateway-data:
+  postgres-data:
