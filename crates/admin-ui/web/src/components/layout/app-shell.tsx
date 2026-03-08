@@ -60,7 +60,8 @@ export function AppShell({ children }: AppShellProps) {
           <div className="mt-auto rounded-md border border-neutral-800 bg-neutral-950/40 p-3">
             <p className="text-xs text-neutral-400">Local-only preview mode</p>
             <p className="mt-1 text-xs text-neutral-500">
-              Server functions currently return mock control-plane data.
+              Identity onboarding is wired to the gateway. Other control-plane pages may still use
+              local preview data.
             </p>
           </div>
         </aside>

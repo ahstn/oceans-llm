@@ -63,6 +63,11 @@ where
         Ok(())
     }
 
+    #[must_use]
+    pub fn store(&self) -> &Arc<S> {
+        &self.store
+    }
+
     pub async fn authenticate(
         &self,
         authorization_header: Option<&str>,

@@ -7,6 +7,8 @@ use uuid::Uuid;
 
 pub const SYSTEM_LEGACY_TEAM_ID: &str = "00000000-0000-0000-0000-000000000001";
 pub const SYSTEM_LEGACY_TEAM_KEY: &str = "system-legacy";
+pub const SYSTEM_BOOTSTRAP_ADMIN_USER_ID: &str = "00000000-0000-0000-0000-000000000002";
+pub const SYSTEM_BOOTSTRAP_ADMIN_EMAIL: &str = "bootstrap-admin@local";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Default)]
 #[serde(transparent)]
@@ -326,12 +328,66 @@ pub struct UserRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IdentityUserRecord {
+    pub user: UserRecord,
+    pub team_id: Option<Uuid>,
+    pub team_name: Option<String>,
+    pub membership_role: Option<MembershipRole>,
+    pub oidc_provider_id: Option<String>,
+    pub oidc_provider_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TeamMembershipRecord {
     pub team_id: Uuid,
     pub user_id: Uuid,
     pub role: MembershipRole,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OidcProviderRecord {
+    pub oidc_provider_id: String,
+    pub provider_key: String,
+    pub provider_type: String,
+    pub issuer_url: String,
+    pub client_id: String,
+    pub scopes: Vec<String>,
+    pub enabled: bool,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserOidcAuthRecord {
+    pub user_id: Uuid,
+    pub oidc_provider_id: String,
+    pub subject: String,
+    pub email_claim: Option<String>,
+    pub created_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PasswordInvitationRecord {
+    pub invitation_id: Uuid,
+    pub user_id: Uuid,
+    pub token_hash: String,
+    pub expires_at: OffsetDateTime,
+    pub consumed_at: Option<OffsetDateTime>,
+    pub revoked_at: Option<OffsetDateTime>,
+    pub created_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserSessionRecord {
+    pub session_id: Uuid,
+    pub user_id: Uuid,
+    pub token_hash: String,
+    pub expires_at: OffsetDateTime,
+    pub created_at: OffsetDateTime,
+    pub last_seen_at: OffsetDateTime,
+    pub revoked_at: Option<OffsetDateTime>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

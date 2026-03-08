@@ -67,6 +67,22 @@ async fn proxy_request(State(state): State<ProxyState>, req: Request<Body>) -> R
 
     let target_url = build_target_url(&state, &uri);
     let mut outbound = state.client.request(method, target_url);
+    let forwarded_proto = inbound_headers
+        .get("x-forwarded-proto")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("http");
+    if let Some(host) = inbound_headers.get(HOST) {
+        outbound = outbound
+            .header("x-forwarded-host", host)
+            .header("x-forwarded-proto", forwarded_proto)
+            .header(
+                "x-forwarded-origin",
+                format!(
+                    "{forwarded_proto}://{}",
+                    host.to_str().unwrap_or("localhost")
+                ),
+            );
+    }
 
     let connection_tokens = parse_connection_tokens(&inbound_headers);
     for (name, value) in &inbound_headers {

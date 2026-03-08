@@ -20,6 +20,8 @@ pub enum AuthError {
     ApiKeySecretMismatch,
     #[error("api key is not authorized for model `{0}`")]
     ModelNotGranted(String),
+    #[error("authenticated subject lacks required privileges")]
+    InsufficientPrivileges,
     #[error("api key owner metadata is invalid")]
     ApiKeyOwnerInvalid,
     #[error("api key hash verification failed: {0}")]
@@ -121,10 +123,13 @@ impl GatewayError {
             | Self::Auth(AuthError::ApiKeySecretMismatch)
             | Self::Auth(AuthError::InvalidApiKeyFormat) => 401,
             Self::Auth(AuthError::ApiKeyOwnerInvalid) => 500,
-            Self::Auth(AuthError::ModelNotGranted(_)) => 403,
+            Self::Auth(AuthError::ModelNotGranted(_))
+            | Self::Auth(AuthError::InsufficientPrivileges) => 403,
             Self::BudgetExceeded { .. } => 429,
             Self::IdentityConstraint(_) => 400,
             Self::InvalidRequest(_) => 400,
+            Self::Store(StoreError::NotFound(_)) => 404,
+            Self::Store(StoreError::Conflict(_)) => 409,
             Self::Route(RouteError::ModelNotFound(_)) => 404,
             Self::NotImplemented(_) | Self::Provider(ProviderError::NotImplemented(_)) => 501,
             Self::Provider(ProviderError::InvalidRequest(_)) => 400,
@@ -149,6 +154,8 @@ impl GatewayError {
             Self::InvalidRequest(_) => "invalid_request_error",
             Self::Route(RouteError::ModelNotFound(_)) => "not_found_error",
             Self::Route(_) => "routing_error",
+            Self::Store(StoreError::NotFound(_)) => "not_found_error",
+            Self::Store(StoreError::Conflict(_)) => "conflict_error",
             Self::Store(_) => "store_error",
             Self::Provider(ProviderError::InvalidRequest(_)) => "invalid_request_error",
             Self::Provider(_) => "upstream_error",
@@ -168,10 +175,13 @@ impl GatewayError {
             Self::Auth(AuthError::ApiKeyRevoked) => "api_key_revoked",
             Self::Auth(AuthError::ApiKeySecretMismatch) => "api_key_secret_mismatch",
             Self::Auth(AuthError::ModelNotGranted(_)) => "model_not_granted",
+            Self::Auth(AuthError::InsufficientPrivileges) => "insufficient_privileges",
             Self::Auth(AuthError::ApiKeyOwnerInvalid) => "api_key_owner_invalid",
             Self::Auth(AuthError::HashVerification(_)) => "api_key_hash_verification_failed",
             Self::BudgetExceeded { .. } => "budget_exceeded",
             Self::IdentityConstraint(_) => "identity_constraint_violation",
+            Self::Store(StoreError::NotFound(_)) => "not_found",
+            Self::Store(StoreError::Conflict(_)) => "conflict",
             Self::Store(_) => "store_error",
             Self::Route(RouteError::ModelNotFound(_)) => "model_not_found",
             Self::Route(RouteError::NoRoutesAvailable(_)) => "no_routes_available",

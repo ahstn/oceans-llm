@@ -1,5 +1,6 @@
 pub mod error;
 pub mod handlers;
+pub mod identity;
 pub mod state;
 
 use admin_ui::{AdminUiConfig, mount_admin_ui};
@@ -13,7 +14,7 @@ use tower_http::{
     trace::TraceLayer,
 };
 
-use self::{handlers::*, state::AppState};
+use self::{handlers::*, identity::*, state::AppState};
 
 pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
     let request_id_header = HeaderName::from_static("x-request-id");
@@ -22,6 +23,24 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .route("/api/v1/health", get(api_health))
+        .route(
+            "/api/v1/admin/identity/users",
+            get(list_identity_users).post(create_identity_user),
+        )
+        .route(
+            "/api/v1/admin/identity/users/{user_id}/password-invite",
+            post(regenerate_password_invite),
+        )
+        .route(
+            "/api/v1/auth/invitations/{token}",
+            get(validate_password_invitation),
+        )
+        .route(
+            "/api/v1/auth/invitations/{token}/password",
+            post(complete_password_invitation),
+        )
+        .route("/api/v1/auth/oidc/start", get(oidc_start))
+        .route("/api/v1/auth/oidc/callback", get(oidc_callback))
         .route("/v1/models", get(v1_models))
         .route("/v1/chat/completions", post(v1_chat_completions))
         .route("/v1/embeddings", post(v1_embeddings))

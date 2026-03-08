@@ -57,7 +57,15 @@ async fn main() -> anyhow::Result<()> {
         .parse()
         .with_context(|| format!("invalid bind address `{}`", config.server.bind))?;
 
-    let app = build_router(AppState { service, providers }, load_admin_ui_config());
+    let app = build_router(
+        AppState {
+            service: service.clone(),
+            store: service.store().clone(),
+            providers,
+            identity_token_secret: Arc::new(load_identity_token_secret()),
+        },
+        load_admin_ui_config(),
+    );
 
     let listener = TcpListener::bind(bind_address)
         .await
@@ -125,6 +133,11 @@ fn env_u64(key: &str, default: u64) -> u64 {
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or(default)
+}
+
+fn load_identity_token_secret() -> String {
+    env::var("GATEWAY_IDENTITY_TOKEN_SECRET")
+        .unwrap_or_else(|_| "local-dev-identity-secret".to_string())
 }
 
 #[cfg(test)]
@@ -396,14 +409,16 @@ mod tests {
             .expect("seed data");
 
         let service = Arc::new(GatewayService::new(
-            store,
+            store.clone(),
             Arc::new(WeightedRoutePlanner::seeded(11)),
         ));
 
         let app = build_router(
             AppState {
                 service,
+                store,
                 providers: provider_registry,
+                identity_token_secret: Arc::new("local-dev-identity-secret".to_string()),
             },
             AdminUiConfig::default(),
         );
