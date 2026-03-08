@@ -19,4 +19,4 @@ ADMIN_UI_UPSTREAM="${ADMIN_UI_UPSTREAM:-http://localhost:${ADMIN_UI_INTERNAL_POR
 bun run --cwd "$WEB_DIR" dev -- --port "$ADMIN_UI_INTERNAL_PORT" &
 UI_PID=$!
 
-ADMIN_UI_UPSTREAM="$ADMIN_UI_UPSTREAM" PORT="$GATEWAY_PORT" cargo run -p gateway
+ADMIN_UI_UPSTREAM="$ADMIN_UI_UPSTREAM" PORT="$GATEWAY_PORT" cargo run -p gateway --bin gateway

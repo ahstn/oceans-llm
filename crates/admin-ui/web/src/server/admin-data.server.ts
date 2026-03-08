@@ -1,13 +1,18 @@
 import type {
+  CreateUserInput,
+  CreateUserResult,
+  IdentityUsersPayload,
+  InvitationStateView,
   ApiEnvelope,
   ApiKeyView,
   ModelView,
   Paginated,
+  PasswordInviteResult,
   RequestLogView,
   TeamView,
   UsageCostPoint,
-  UserView,
 } from '@/types/api'
+import { fetchGatewayJson } from '@/server/gateway-client.server'
 
 function envelope<T>(data: T): ApiEnvelope<T> {
   return {
@@ -116,35 +121,45 @@ export async function listTeams(): Promise<ApiEnvelope<TeamView[]>> {
   ])
 }
 
-export async function listUsers(): Promise<ApiEnvelope<UserView[]>> {
-  return envelope([
+export async function listUsers(): Promise<ApiEnvelope<IdentityUsersPayload>> {
+  return fetchGatewayJson<ApiEnvelope<IdentityUsersPayload>>('/api/v1/admin/identity/users')
+}
+
+export async function createUser(input: CreateUserInput): Promise<ApiEnvelope<CreateUserResult>> {
+  return fetchGatewayJson<ApiEnvelope<CreateUserResult>>('/api/v1/admin/identity/users', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+}
+
+export async function resendPasswordInvite(
+  userId: string,
+): Promise<ApiEnvelope<PasswordInviteResult>> {
+  return fetchGatewayJson<ApiEnvelope<PasswordInviteResult>>(
+    `/api/v1/admin/identity/users/${userId}/password-invite`,
     {
-      id: 'user_1',
-      email: 'sre@acme.local',
-      role: 'admin',
-      team: 'Core Platform',
-      status: 'active',
+      method: 'POST',
     },
+  )
+}
+
+export async function getInvitation(token: string): Promise<ApiEnvelope<InvitationStateView>> {
+  return fetchGatewayJson<ApiEnvelope<InvitationStateView>>(
+    `/api/v1/auth/invitations/${encodeURIComponent(token)}`,
+  )
+}
+
+export async function completeInvitation(
+  token: string,
+  password: string,
+): Promise<ApiEnvelope<{ status: string }>> {
+  return fetchGatewayJson<ApiEnvelope<{ status: string }>>(
+    `/api/v1/auth/invitations/${encodeURIComponent(token)}/password`,
     {
-      id: 'user_2',
-      email: 'ops@acme.local',
-      role: 'operator',
-      team: 'Core Platform',
-      status: 'active',
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ password }),
     },
-    {
-      id: 'user_3',
-      email: 'analyst@acme.local',
-      role: 'viewer',
-      team: 'Customer Success',
-      status: 'active',
-    },
-    {
-      id: 'user_4',
-      email: 'newhire@acme.local',
-      role: 'viewer',
-      team: 'Integrations',
-      status: 'invited',
-    },
-  ])
+  )
 }

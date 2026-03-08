@@ -2,13 +2,25 @@ use axum::{
     Json,
     response::{IntoResponse, Response},
 };
-use gateway_core::{GatewayError, OpenAiErrorEnvelope};
+use gateway_core::{AuthError, GatewayError, OpenAiErrorEnvelope, StoreError};
 
 pub struct AppError(pub GatewayError);
 
 impl From<GatewayError> for AppError {
     fn from(value: GatewayError) -> Self {
         Self(value)
+    }
+}
+
+impl From<StoreError> for AppError {
+    fn from(value: StoreError) -> Self {
+        Self(value.into())
+    }
+}
+
+impl From<AuthError> for AppError {
+    fn from(value: AuthError) -> Self {
+        Self(value.into())
     }
 }
 

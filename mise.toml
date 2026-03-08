@@ -37,7 +37,7 @@ run = "cargo clippy --workspace --all-targets -- -D warnings && bun run --cwd cr
 
 [tasks.run]
 description = "Run the gateway binary"
-run = "cargo run -p gateway"
+run = "cargo run -p gateway --bin gateway"
 
 [tasks.sync-pricing-catalog]
 description = "Refresh the vendored pricing catalog fallback snapshot"

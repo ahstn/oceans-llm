@@ -1,50 +1,486 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { useState, useTransition, type FormEvent } from 'react'
+import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { toast } from 'sonner'
 
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { getUsers } from '@/server/admin-data.functions'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  createIdentityUser,
+  getUsers,
+  resendIdentityUserPasswordInvite,
+} from '@/server/admin-data.functions'
+import type { CreateUserInput, CreateUserResult, IdentityUsersPayload, UserView } from '@/types/api'
 
 export const Route = createFileRoute('/identity/users')({
   loader: () => getUsers(),
   component: UsersPage,
 })
 
+const initialForm: CreateUserInput = {
+  name: '',
+  email: '',
+  auth_mode: 'password',
+  global_role: 'user',
+  team_id: null,
+  team_role: null,
+  oidc_provider_key: null,
+}
+
 function UsersPage() {
-  const { data } = Route.useLoaderData()
+  const router = useRouter()
+  const {
+    data: { users, teams, oidc_providers: oidcProviders },
+  } = Route.useLoaderData() as { data: IdentityUsersPayload }
+  const [isOpen, setIsOpen] = useState(false)
+  const [form, setForm] = useState<CreateUserInput>(initialForm)
+  const [result, setResult] = useState<CreateUserResult | null>(null)
+  const [isPending, startTransition] = useTransition()
+
+  async function refreshUsers() {
+    await router.invalidate()
+  }
+
+  function resetDialog() {
+    setForm(initialForm)
+    setResult(null)
+    setIsOpen(false)
+  }
+
+  function setAuthMode(authMode: CreateUserInput['auth_mode']) {
+    setForm((current) => ({
+      ...current,
+      auth_mode: authMode,
+      oidc_provider_key:
+        authMode === 'oidc'
+          ? (current.oidc_provider_key ??
+            (oidcProviders.length === 1 ? oidcProviders[0].key : null))
+          : null,
+    }))
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    startTransition(async () => {
+      try {
+        const response = await createIdentityUser({ data: sanitizeForm(form) })
+        setResult(response.data)
+        toast.success(
+          response.data.kind === 'password_invite'
+            ? 'Password invite created'
+            : 'SSO sign-in URL created',
+        )
+        await refreshUsers()
+      } catch (error) {
+        toast.error(getErrorMessage(error))
+      }
+    })
+  }
+
+  async function handleCopy(value: string, message: string) {
+    try {
+      await navigator.clipboard.writeText(value)
+      toast.success(message)
+    } catch {
+      toast.error('Clipboard access failed')
+    }
+  }
+
+  function handleResend(user: UserView) {
+    startTransition(async () => {
+      try {
+        const response = await resendIdentityUserPasswordInvite({ data: { userId: user.id } })
+        await handleCopy(response.data.invite_url, 'Invite URL copied')
+        await refreshUsers()
+      } catch (error) {
+        toast.error(getErrorMessage(error))
+      }
+    })
+  }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Users</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="overflow-hidden rounded-md border border-neutral-800">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-neutral-900/70 text-neutral-400">
-              <tr>
-                <th className="px-3 py-2 font-medium">Email</th>
-                <th className="px-3 py-2 font-medium">Role</th>
-                <th className="px-3 py-2 font-medium">Team</th>
-                <th className="px-3 py-2 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.map((user) => (
-                <tr key={user.id} className="border-t border-neutral-800">
-                  <td className="px-3 py-2 text-neutral-100">{user.email}</td>
-                  <td className="px-3 py-2 text-neutral-300">{user.role}</td>
-                  <td className="px-3 py-2 text-neutral-300">{user.team}</td>
-                  <td className="px-3 py-2">
-                    <Badge variant={user.status === 'active' ? 'success' : 'warning'}>
-                      {user.status}
-                    </Badge>
-                  </td>
+    <div className="flex flex-col gap-4">
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between gap-4">
+          <div className="flex flex-col gap-1">
+            <CardTitle>Users</CardTitle>
+            <CardDescription>
+              Create password or SSO users, then hand off the generated onboarding URL.
+            </CardDescription>
+          </div>
+
+          <Dialog
+            open={isOpen}
+            onOpenChange={(open) => {
+              setIsOpen(open)
+              if (!open) {
+                setResult(null)
+              }
+            }}
+          >
+            <DialogTrigger asChild>
+              <Button type="button">Add user</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add user</DialogTitle>
+                <DialogDescription>
+                  Pre-provision the account and generate the onboarding URL to share.
+                </DialogDescription>
+              </DialogHeader>
+
+              {result ? (
+                <div className="flex flex-col gap-4">
+                  <Alert>
+                    <AlertTitle>
+                      {result.kind === 'password_invite'
+                        ? 'Password invite ready'
+                        : 'SSO sign-in URL ready'}
+                    </AlertTitle>
+                    <AlertDescription>
+                      {result.kind === 'password_invite'
+                        ? `Share this invite before ${result.expires_at}.`
+                        : `Share this URL with ${result.user.email} so they can finish SSO onboarding.`}
+                    </AlertDescription>
+                  </Alert>
+
+                  <FieldGroup>
+                    <Field>
+                      <FieldLabel htmlFor="generated-url">Generated URL</FieldLabel>
+                      <div className="flex gap-2">
+                        <Input
+                          id="generated-url"
+                          readOnly
+                          value={
+                            result.kind === 'password_invite'
+                              ? result.invite_url
+                              : result.sign_in_url
+                          }
+                        />
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={() =>
+                            handleCopy(
+                              result.kind === 'password_invite'
+                                ? result.invite_url
+                                : result.sign_in_url,
+                              'URL copied',
+                            )
+                          }
+                        >
+                          Copy
+                        </Button>
+                      </div>
+                    </Field>
+                  </FieldGroup>
+
+                  <DialogFooter>
+                    <Button type="button" variant="secondary" onClick={resetDialog}>
+                      Close
+                    </Button>
+                  </DialogFooter>
+                </div>
+              ) : (
+                <form className="flex flex-col gap-6" onSubmit={handleSubmit}>
+                  <FieldGroup>
+                    <Field>
+                      <FieldLabel htmlFor="name">Name</FieldLabel>
+                      <Input
+                        id="name"
+                        value={form.name}
+                        onChange={(event) =>
+                          setForm((current) => ({ ...current, name: event.target.value }))
+                        }
+                        placeholder="Jane Operator"
+                        required
+                      />
+                    </Field>
+
+                    <Field>
+                      <FieldLabel htmlFor="email">Email</FieldLabel>
+                      <Input
+                        id="email"
+                        type="email"
+                        value={form.email}
+                        onChange={(event) =>
+                          setForm((current) => ({ ...current, email: event.target.value }))
+                        }
+                        placeholder="jane@example.com"
+                        required
+                      />
+                    </Field>
+
+                    <Field>
+                      <FieldLabel htmlFor="auth-mode">Auth method</FieldLabel>
+                      <Select value={form.auth_mode} onValueChange={setAuthMode}>
+                        <SelectTrigger id="auth-mode">
+                          <SelectValue placeholder="Select auth method" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectItem value="password">Password</SelectItem>
+                            <SelectItem value="oidc">SSO (OIDC)</SelectItem>
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+
+                    {form.auth_mode === 'oidc' ? (
+                      <>
+                        {oidcProviders.length === 0 ? (
+                          <Alert>
+                            <AlertTitle>No SSO providers configured</AlertTitle>
+                            <AlertDescription>
+                              Add an OIDC provider in the gateway before inviting users with SSO,
+                              or use password onboarding for now.
+                            </AlertDescription>
+                          </Alert>
+                        ) : null}
+
+                        <Field>
+                          <FieldLabel htmlFor="oidc-provider">OIDC provider</FieldLabel>
+                          <Select
+                            value={form.oidc_provider_key ?? undefined}
+                            onValueChange={(value) =>
+                              setForm((current) => ({ ...current, oidc_provider_key: value }))
+                            }
+                          >
+                            <SelectTrigger id="oidc-provider">
+                              <SelectValue placeholder="Select provider" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectGroup>
+                                {oidcProviders.map((provider) => (
+                                  <SelectItem key={provider.key} value={provider.key}>
+                                    {provider.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
+                            </SelectContent>
+                          </Select>
+                          <FieldDescription>
+                            Activation happens after a successful redirect back from this provider.
+                          </FieldDescription>
+                        </Field>
+                      </>
+                    ) : null}
+
+                    <Field>
+                      <FieldLabel htmlFor="global-role">Global role</FieldLabel>
+                      <Select
+                        value={form.global_role}
+                        onValueChange={(value: CreateUserInput['global_role']) =>
+                          setForm((current) => ({ ...current, global_role: value }))
+                        }
+                      >
+                        <SelectTrigger id="global-role">
+                          <SelectValue placeholder="Select role" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectItem value="user">User</SelectItem>
+                            <SelectItem value="platform_admin">Platform admin</SelectItem>
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+
+                    <Field>
+                      <FieldLabel htmlFor="team">Team</FieldLabel>
+                      <Select
+                        value={form.team_id ?? 'none'}
+                        onValueChange={(value) =>
+                          setForm((current) => ({
+                            ...current,
+                            team_id: value === 'none' ? null : value,
+                            team_role: value === 'none' ? null : (current.team_role ?? 'member'),
+                          }))
+                        }
+                      >
+                        <SelectTrigger id="team">
+                          <SelectValue placeholder="No team" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectItem value="none">No team</SelectItem>
+                            {teams.map((team) => (
+                              <SelectItem key={team.id} value={team.id}>
+                                {team.name}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+
+                    {form.team_id ? (
+                      <Field>
+                        <FieldLabel htmlFor="team-role">Team role</FieldLabel>
+                        <Select
+                          value={form.team_role ?? 'member'}
+                          onValueChange={(value: NonNullable<CreateUserInput['team_role']>) =>
+                            setForm((current) => ({ ...current, team_role: value }))
+                          }
+                        >
+                          <SelectTrigger id="team-role">
+                            <SelectValue placeholder="Select team role" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectGroup>
+                              <SelectItem value="member">Member</SelectItem>
+                              <SelectItem value="admin">Admin</SelectItem>
+                              <SelectItem value="owner">Owner</SelectItem>
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                    ) : null}
+                  </FieldGroup>
+
+                  <DialogFooter>
+                    <Button type="button" variant="secondary" onClick={resetDialog}>
+                      Cancel
+                    </Button>
+                    <Button
+                      type="submit"
+                      disabled={isPending || isOidcDisabled(form, oidcProviders)}
+                    >
+                      {isPending ? 'Creating…' : 'Create user'}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              )}
+            </DialogContent>
+          </Dialog>
+        </CardHeader>
+
+        <CardContent>
+          <div className="overflow-hidden rounded-md border border-neutral-800">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-neutral-900/70 text-neutral-400">
+                <tr>
+                  <th className="px-3 py-2 font-medium">Name</th>
+                  <th className="px-3 py-2 font-medium">Email</th>
+                  <th className="px-3 py-2 font-medium">Auth</th>
+                  <th className="px-3 py-2 font-medium">Global role</th>
+                  <th className="px-3 py-2 font-medium">Team</th>
+                  <th className="px-3 py-2 font-medium">Team role</th>
+                  <th className="px-3 py-2 font-medium">Status</th>
+                  <th className="px-3 py-2 font-medium">Onboarding</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </CardContent>
-    </Card>
+              </thead>
+              <tbody>
+                {users.map((user) => (
+                  <tr key={user.id} className="border-t border-neutral-800 align-top">
+                    <td className="px-3 py-3 text-neutral-100">{user.name}</td>
+                    <td className="px-3 py-3 text-neutral-300">{user.email}</td>
+                    <td className="px-3 py-3 text-neutral-300">{user.auth_mode}</td>
+                    <td className="px-3 py-3 text-neutral-300">{user.global_role}</td>
+                    <td className="px-3 py-3 text-neutral-300">{user.team_name ?? '—'}</td>
+                    <td className="px-3 py-3 text-neutral-300">{user.team_role ?? '—'}</td>
+                    <td className="px-3 py-3">
+                      <Badge
+                        variant={
+                          user.status === 'active'
+                            ? 'success'
+                            : user.status === 'invited'
+                              ? 'warning'
+                              : 'default'
+                        }
+                      >
+                        {user.status}
+                      </Badge>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex flex-wrap gap-2">
+                        {user.onboarding?.kind === 'password_invite' ? (
+                          <>
+                            {user.onboarding.invite_url ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                onClick={() =>
+                                  handleCopy(user.onboarding?.invite_url ?? '', 'Invite URL copied')
+                                }
+                              >
+                                Copy invite
+                              </Button>
+                            ) : null}
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleResend(user)}
+                              disabled={isPending}
+                            >
+                              Resend invite
+                            </Button>
+                          </>
+                        ) : user.onboarding?.kind === 'oidc_sign_in' ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            onClick={() =>
+                              handleCopy(user.onboarding?.sign_in_url ?? '', 'Sign-in URL copied')
+                            }
+                          >
+                            Copy sign-in URL
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-neutral-500">—</span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   )
+}
+
+function sanitizeForm(form: CreateUserInput): CreateUserInput {
+  return {
+    ...form,
+    name: form.name.trim(),
+    email: form.email.trim(),
+    team_id: form.team_id ?? null,
+    team_role: form.team_id ? (form.team_role ?? 'member') : null,
+    oidc_provider_key: form.auth_mode === 'oidc' ? (form.oidc_provider_key ?? null) : null,
+  }
+}
+
+function isOidcDisabled(form: CreateUserInput, providers: IdentityUsersPayload['oidc_providers']) {
+  return form.auth_mode === 'oidc' && (providers.length === 0 || !form.oidc_provider_key)
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : 'Something went wrong'
 }

@@ -9,12 +9,14 @@ pub use auth::{
 };
 pub use domain::{
     ApiKeyOwnerKind, ApiKeyRecord, AuthMode, BudgetCadence, GatewayModel, GlobalRole,
-    MembershipRole, ModelAccessMode, ModelRoute, Money4, PricingCatalogCacheRecord, PricingLimits,
-    PricingModalities, PricingProvenance, PricingResolution, PricingUnpricedReason,
-    ProviderCapabilities, ProviderConnection, ProviderRequestContext, RequestLogRecord,
-    ResolvedModelPricing, SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedModel,
-    SeedModelRoute, SeedProvider, TeamMembershipRecord, TeamRecord, UsageCostEventRecord,
-    UserBudgetRecord, UserRecord,
+    IdentityUserRecord, MembershipRole, ModelAccessMode, ModelRoute, Money4, OidcProviderRecord,
+    PasswordInvitationRecord, PricingCatalogCacheRecord, PricingLimits, PricingModalities,
+    PricingProvenance, PricingResolution, PricingUnpricedReason, ProviderCapabilities,
+    ProviderConnection, ProviderRequestContext, RequestLogRecord, ResolvedModelPricing,
+    SYSTEM_BOOTSTRAP_ADMIN_EMAIL, SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SYSTEM_LEGACY_TEAM_ID,
+    SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedModel, SeedModelRoute, SeedProvider,
+    TeamMembershipRecord, TeamRecord, UsageCostEventRecord, UserBudgetRecord, UserOidcAuthRecord,
+    UserRecord, UserSessionRecord,
 };
 pub use error::{AuthError, GatewayError, ProviderError, RouteError, StoreError};
 pub use protocol::openai::{

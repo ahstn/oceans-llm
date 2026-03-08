@@ -19,4 +19,4 @@ trap cleanup EXIT INT TERM
 PORT="$ADMIN_UI_INTERNAL_PORT" bun run --cwd "$WEB_DIR" start &
 UI_PID=$!
 
-ADMIN_UI_UPSTREAM="$ADMIN_UI_UPSTREAM" PORT="$GATEWAY_PORT" cargo run -p gateway
+ADMIN_UI_UPSTREAM="$ADMIN_UI_UPSTREAM" PORT="$GATEWAY_PORT" cargo run -p gateway --bin gateway

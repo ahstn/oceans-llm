@@ -11,9 +11,11 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ModelsRouteImport } from './routes/models'
 import { Route as ApiKeysRouteImport } from './routes/api-keys'
+import { Route as AccountReadyRouteImport } from './routes/account-ready'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ObservabilityUsageCostsRouteImport } from './routes/observability/usage-costs'
 import { Route as ObservabilityRequestLogsRouteImport } from './routes/observability/request-logs'
+import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as IdentityUsersRouteImport } from './routes/identity/users'
 import { Route as IdentityTeamsRouteImport } from './routes/identity/teams'
 
@@ -25,6 +27,11 @@ const ModelsRoute = ModelsRouteImport.update({
 const ApiKeysRoute = ApiKeysRouteImport.update({
   id: '/api-keys',
   path: '/api-keys',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AccountReadyRoute = AccountReadyRouteImport.update({
+  id: '/account-ready',
+  path: '/account-ready',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -43,6 +50,11 @@ const ObservabilityRequestLogsRoute =
     path: '/observability/request-logs',
     getParentRoute: () => rootRouteImport,
   } as any)
+const InviteTokenRoute = InviteTokenRouteImport.update({
+  id: '/invite/$token',
+  path: '/invite/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IdentityUsersRoute = IdentityUsersRouteImport.update({
   id: '/identity/users',
   path: '/identity/users',
@@ -56,29 +68,35 @@ const IdentityTeamsRoute = IdentityTeamsRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/account-ready': typeof AccountReadyRoute
   '/api-keys': typeof ApiKeysRoute
   '/models': typeof ModelsRoute
   '/identity/teams': typeof IdentityTeamsRoute
   '/identity/users': typeof IdentityUsersRoute
+  '/invite/$token': typeof InviteTokenRoute
   '/observability/request-logs': typeof ObservabilityRequestLogsRoute
   '/observability/usage-costs': typeof ObservabilityUsageCostsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/account-ready': typeof AccountReadyRoute
   '/api-keys': typeof ApiKeysRoute
   '/models': typeof ModelsRoute
   '/identity/teams': typeof IdentityTeamsRoute
   '/identity/users': typeof IdentityUsersRoute
+  '/invite/$token': typeof InviteTokenRoute
   '/observability/request-logs': typeof ObservabilityRequestLogsRoute
   '/observability/usage-costs': typeof ObservabilityUsageCostsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/account-ready': typeof AccountReadyRoute
   '/api-keys': typeof ApiKeysRoute
   '/models': typeof ModelsRoute
   '/identity/teams': typeof IdentityTeamsRoute
   '/identity/users': typeof IdentityUsersRoute
+  '/invite/$token': typeof InviteTokenRoute
   '/observability/request-logs': typeof ObservabilityRequestLogsRoute
   '/observability/usage-costs': typeof ObservabilityUsageCostsRoute
 }
@@ -86,38 +104,46 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/account-ready'
     | '/api-keys'
     | '/models'
     | '/identity/teams'
     | '/identity/users'
+    | '/invite/$token'
     | '/observability/request-logs'
     | '/observability/usage-costs'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/account-ready'
     | '/api-keys'
     | '/models'
     | '/identity/teams'
     | '/identity/users'
+    | '/invite/$token'
     | '/observability/request-logs'
     | '/observability/usage-costs'
   id:
     | '__root__'
     | '/'
+    | '/account-ready'
     | '/api-keys'
     | '/models'
     | '/identity/teams'
     | '/identity/users'
+    | '/invite/$token'
     | '/observability/request-logs'
     | '/observability/usage-costs'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AccountReadyRoute: typeof AccountReadyRoute
   ApiKeysRoute: typeof ApiKeysRoute
   ModelsRoute: typeof ModelsRoute
   IdentityTeamsRoute: typeof IdentityTeamsRoute
   IdentityUsersRoute: typeof IdentityUsersRoute
+  InviteTokenRoute: typeof InviteTokenRoute
   ObservabilityRequestLogsRoute: typeof ObservabilityRequestLogsRoute
   ObservabilityUsageCostsRoute: typeof ObservabilityUsageCostsRoute
 }
@@ -136,6 +162,13 @@ declare module '@tanstack/react-router' {
       path: '/api-keys'
       fullPath: '/api-keys'
       preLoaderRoute: typeof ApiKeysRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/account-ready': {
+      id: '/account-ready'
+      path: '/account-ready'
+      fullPath: '/account-ready'
+      preLoaderRoute: typeof AccountReadyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -159,6 +192,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ObservabilityRequestLogsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/invite/$token': {
+      id: '/invite/$token'
+      path: '/invite/$token'
+      fullPath: '/invite/$token'
+      preLoaderRoute: typeof InviteTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/identity/users': {
       id: '/identity/users'
       path: '/identity/users'
@@ -178,10 +218,12 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AccountReadyRoute: AccountReadyRoute,
   ApiKeysRoute: ApiKeysRoute,
   ModelsRoute: ModelsRoute,
   IdentityTeamsRoute: IdentityTeamsRoute,
   IdentityUsersRoute: IdentityUsersRoute,
+  InviteTokenRoute: InviteTokenRoute,
   ObservabilityRequestLogsRoute: ObservabilityRequestLogsRoute,
   ObservabilityUsageCostsRoute: ObservabilityUsageCostsRoute,
 }

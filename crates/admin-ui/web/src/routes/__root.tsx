@@ -2,7 +2,14 @@
 
 import type { ReactNode } from 'react'
 import type { QueryClient } from '@tanstack/react-query'
-import { HeadContent, Outlet, Scripts, createRootRouteWithContext } from '@tanstack/react-router'
+import {
+  HeadContent,
+  Outlet,
+  Scripts,
+  createRootRouteWithContext,
+  useRouterState,
+} from '@tanstack/react-router'
+import { Toaster } from 'sonner'
 
 import { AppShell } from '@/components/layout/app-shell'
 import globalsCss from '@/styles/globals.css?url'
@@ -24,11 +31,20 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 })
 
 function RootComponent() {
+  const pathname = useRouterState({ select: (state) => state.location.pathname })
+  const currentPath = pathname.replace(/^\/admin(?=\/|$)/, '') || '/'
+  const isPublicRoute =
+    currentPath.startsWith('/invite/') || currentPath.startsWith('/account-ready')
+
   return (
     <RootDocument>
-      <AppShell>
+      {isPublicRoute ? (
         <Outlet />
-      </AppShell>
+      ) : (
+        <AppShell>
+          <Outlet />
+        </AppShell>
+      )}
     </RootDocument>
   )
 }
@@ -41,6 +57,17 @@ function RootDocument({ children }: { children: ReactNode }) {
       </head>
       <body>
         {children}
+        <Toaster
+          position="top-right"
+          theme="dark"
+          toastOptions={{
+            style: {
+              background: '#151515',
+              border: '1px solid #2a2a2a',
+              color: '#f5f5f5',
+            },
+          }}
+        />
         <Scripts />
       </body>
     </html>

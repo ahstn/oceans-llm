@@ -4,10 +4,13 @@ use anyhow::Context;
 use async_trait::async_trait;
 use gateway_core::{
     ApiKeyOwnerKind, ApiKeyRecord, ApiKeyRepository, AuthMode, BudgetCadence, BudgetRepository,
-    GatewayModel, GlobalRole, IdentityRepository, MembershipRole, ModelAccessMode, ModelRepository,
-    ModelRoute, Money4, PricingCatalogCacheRecord, PricingCatalogRepository, ProviderConnection,
-    ProviderRepository, RequestLogRecord, RequestLogRepository, StoreError, StoreHealth,
-    TeamMembershipRecord, TeamRecord, UsageCostEventRecord, UserBudgetRecord, UserRecord,
+    GatewayModel, GlobalRole, IdentityRepository, IdentityUserRecord, MembershipRole,
+    ModelAccessMode, ModelRepository, ModelRoute, Money4, OidcProviderRecord,
+    PasswordInvitationRecord, PricingCatalogCacheRecord, PricingCatalogRepository,
+    ProviderConnection, ProviderRepository, RequestLogRecord, RequestLogRepository,
+    SYSTEM_BOOTSTRAP_ADMIN_EMAIL, SYSTEM_BOOTSTRAP_ADMIN_USER_ID, StoreError, StoreHealth,
+    TeamMembershipRecord, TeamRecord, UsageCostEventRecord, UserBudgetRecord, UserOidcAuthRecord,
+    UserRecord, UserSessionRecord,
 };
 use serde_json::{Map, Value};
 use time::OffsetDateTime;
@@ -33,6 +36,585 @@ impl LibsqlStore {
 
     pub(crate) fn connection(&self) -> &libsql::Connection {
         &self.connection
+    }
+
+    pub async fn ensure_bootstrap_admin_user(&self) -> Result<UserRecord, StoreError> {
+        let now = OffsetDateTime::now_utc().unix_timestamp();
+        self.connection
+            .execute(
+                r#"
+                INSERT OR IGNORE INTO users (
+                    user_id, name, email, email_normalized, global_role, auth_mode, status,
+                    request_logging_enabled, model_access_mode, created_at, updated_at
+                ) VALUES (?1, 'Bootstrap Admin', ?2, ?2, 'platform_admin', 'password', 'active', 1, 'all', ?3, ?3)
+                "#,
+                libsql::params![SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SYSTEM_BOOTSTRAP_ADMIN_EMAIL, now],
+            )
+            .await
+            .map_err(to_write_error)?;
+
+        self.get_user_by_id(parse_uuid(SYSTEM_BOOTSTRAP_ADMIN_USER_ID)?)
+            .await?
+            .ok_or_else(|| StoreError::NotFound("bootstrap admin user missing".to_string()))
+    }
+
+    pub async fn list_identity_users(&self) -> Result<Vec<IdentityUserRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT
+                    users.user_id,
+                    users.name,
+                    users.email,
+                    users.email_normalized,
+                    users.global_role,
+                    users.auth_mode,
+                    users.status,
+                    users.request_logging_enabled,
+                    users.model_access_mode,
+                    users.created_at,
+                    users.updated_at,
+                    teams.team_id,
+                    teams.team_name,
+                    team_memberships.role,
+                    user_oidc_links.oidc_provider_id,
+                    oidc_providers.provider_key
+                FROM users
+                LEFT JOIN team_memberships ON team_memberships.user_id = users.user_id
+                LEFT JOIN teams ON teams.team_id = team_memberships.team_id
+                LEFT JOIN user_oidc_links ON user_oidc_links.user_id = users.user_id
+                LEFT JOIN oidc_providers ON oidc_providers.oidc_provider_id = user_oidc_links.oidc_provider_id
+                WHERE users.user_id != ?1
+                ORDER BY users.created_at DESC, users.email_normalized ASC
+                "#,
+                [SYSTEM_BOOTSTRAP_ADMIN_USER_ID],
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let mut users = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            users.push(decode_identity_user_record(&row)?);
+        }
+
+        Ok(users)
+    }
+
+    pub async fn list_active_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT team_id, team_key, team_name, status, model_access_mode, created_at, updated_at
+                FROM teams
+                WHERE status = 'active'
+                ORDER BY team_name ASC
+                "#,
+                (),
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let mut teams = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            teams.push(decode_team_record(&row)?);
+        }
+
+        Ok(teams)
+    }
+
+    pub async fn list_enabled_oidc_providers(&self) -> Result<Vec<OidcProviderRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT oidc_provider_id, provider_key, provider_type, issuer_url, client_id,
+                       scopes_json, enabled, created_at, updated_at
+                FROM oidc_providers
+                WHERE enabled = 1
+                ORDER BY provider_key ASC
+                "#,
+                (),
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let mut providers = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            providers.push(decode_oidc_provider_record(&row)?);
+        }
+
+        Ok(providers)
+    }
+
+    pub async fn get_enabled_oidc_provider_by_key(
+        &self,
+        provider_key: &str,
+    ) -> Result<Option<OidcProviderRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT oidc_provider_id, provider_key, provider_type, issuer_url, client_id,
+                       scopes_json, enabled, created_at, updated_at
+                FROM oidc_providers
+                WHERE provider_key = ?1 AND enabled = 1
+                LIMIT 1
+                "#,
+                [provider_key],
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let Some(row) = rows.next().await.map_err(to_query_error)? else {
+            return Ok(None);
+        };
+
+        decode_oidc_provider_record(&row).map(Some)
+    }
+
+    pub async fn get_user_by_email_normalized(
+        &self,
+        email_normalized: &str,
+    ) -> Result<Option<UserRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT user_id, name, email, email_normalized, global_role, auth_mode, status,
+                       request_logging_enabled, model_access_mode, created_at, updated_at
+                FROM users
+                WHERE email_normalized = ?1
+                LIMIT 1
+                "#,
+                [email_normalized],
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let Some(row) = rows.next().await.map_err(to_query_error)? else {
+            return Ok(None);
+        };
+
+        decode_user_record(&row).map(Some)
+    }
+
+    pub async fn create_identity_user(
+        &self,
+        name: &str,
+        email: &str,
+        email_normalized: &str,
+        global_role: GlobalRole,
+        auth_mode: AuthMode,
+        status: &str,
+    ) -> Result<UserRecord, StoreError> {
+        let user_id = Uuid::new_v4();
+        let now = OffsetDateTime::now_utc().unix_timestamp();
+
+        self.connection
+            .execute(
+                r#"
+                INSERT INTO users (
+                    user_id, name, email, email_normalized, global_role, auth_mode, status,
+                    request_logging_enabled, model_access_mode, created_at, updated_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, 'all', ?8, ?8)
+                "#,
+                libsql::params![
+                    user_id.to_string(),
+                    name,
+                    email,
+                    email_normalized,
+                    global_role.as_str(),
+                    auth_mode.as_str(),
+                    status,
+                    now,
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+
+        self.get_user_by_id(user_id)
+            .await?
+            .ok_or_else(|| StoreError::NotFound(format!("created user `{user_id}` missing")))
+    }
+
+    pub async fn assign_team_membership(
+        &self,
+        user_id: Uuid,
+        team_id: Uuid,
+        role: MembershipRole,
+    ) -> Result<(), StoreError> {
+        let now = OffsetDateTime::now_utc().unix_timestamp();
+        self.connection
+            .execute(
+                r#"
+                INSERT INTO team_memberships (team_id, user_id, role, created_at, updated_at)
+                VALUES (?1, ?2, ?3, ?4, ?4)
+                "#,
+                libsql::params![team_id.to_string(), user_id.to_string(), role.as_str(), now],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn find_active_password_invitation_for_user(
+        &self,
+        user_id: Uuid,
+        now: OffsetDateTime,
+    ) -> Result<Option<PasswordInvitationRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT invitation_id, user_id, token_hash, expires_at, consumed_at, revoked_at, created_at
+                FROM password_invitations
+                WHERE user_id = ?1
+                  AND consumed_at IS NULL
+                  AND revoked_at IS NULL
+                  AND expires_at > ?2
+                ORDER BY created_at DESC
+                LIMIT 1
+                "#,
+                libsql::params![user_id.to_string(), now.unix_timestamp()],
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let Some(row) = rows.next().await.map_err(to_query_error)? else {
+            return Ok(None);
+        };
+
+        decode_password_invitation_record(&row).map(Some)
+    }
+
+    pub async fn revoke_password_invitations_for_user(
+        &self,
+        user_id: Uuid,
+        revoked_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        self.connection
+            .execute(
+                r#"
+                UPDATE password_invitations
+                SET revoked_at = ?1
+                WHERE user_id = ?2 AND consumed_at IS NULL AND revoked_at IS NULL
+                "#,
+                libsql::params![revoked_at.unix_timestamp(), user_id.to_string()],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn create_password_invitation(
+        &self,
+        invitation_id: Uuid,
+        user_id: Uuid,
+        token_hash: &str,
+        expires_at: OffsetDateTime,
+        created_at: OffsetDateTime,
+    ) -> Result<PasswordInvitationRecord, StoreError> {
+        self.connection
+            .execute(
+                r#"
+                INSERT INTO password_invitations (
+                    invitation_id, user_id, token_hash, expires_at, consumed_at, revoked_at, created_at
+                ) VALUES (?1, ?2, ?3, ?4, NULL, NULL, ?5)
+                "#,
+                libsql::params![
+                    invitation_id.to_string(),
+                    user_id.to_string(),
+                    token_hash,
+                    expires_at.unix_timestamp(),
+                    created_at.unix_timestamp(),
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+
+        self.get_password_invitation(invitation_id)
+            .await?
+            .ok_or_else(|| {
+                StoreError::NotFound(format!("password invitation `{invitation_id}` missing"))
+            })
+    }
+
+    pub async fn get_password_invitation(
+        &self,
+        invitation_id: Uuid,
+    ) -> Result<Option<PasswordInvitationRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT invitation_id, user_id, token_hash, expires_at, consumed_at, revoked_at, created_at
+                FROM password_invitations
+                WHERE invitation_id = ?1
+                LIMIT 1
+                "#,
+                [invitation_id.to_string()],
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let Some(row) = rows.next().await.map_err(to_query_error)? else {
+            return Ok(None);
+        };
+
+        decode_password_invitation_record(&row).map(Some)
+    }
+
+    pub async fn mark_password_invitation_consumed(
+        &self,
+        invitation_id: Uuid,
+        consumed_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        self.connection
+            .execute(
+                r#"
+                UPDATE password_invitations
+                SET consumed_at = ?1
+                WHERE invitation_id = ?2
+                "#,
+                libsql::params![consumed_at.unix_timestamp(), invitation_id.to_string()],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn store_user_password(
+        &self,
+        user_id: Uuid,
+        password_hash: &str,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        self.connection
+            .execute(
+                r#"
+                INSERT INTO user_password_auth (user_id, password_hash, password_updated_at)
+                VALUES (?1, ?2, ?3)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    password_hash = excluded.password_hash,
+                    password_updated_at = excluded.password_updated_at
+                "#,
+                libsql::params![
+                    user_id.to_string(),
+                    password_hash,
+                    updated_at.unix_timestamp()
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn update_user_status(
+        &self,
+        user_id: Uuid,
+        status: &str,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        self.connection
+            .execute(
+                r#"
+                UPDATE users
+                SET status = ?1, updated_at = ?2
+                WHERE user_id = ?3
+                "#,
+                libsql::params![status, updated_at.unix_timestamp(), user_id.to_string()],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn create_user_session(
+        &self,
+        session_id: Uuid,
+        user_id: Uuid,
+        token_hash: &str,
+        expires_at: OffsetDateTime,
+        created_at: OffsetDateTime,
+    ) -> Result<UserSessionRecord, StoreError> {
+        self.connection
+            .execute(
+                r#"
+                INSERT INTO user_sessions (
+                    session_id, user_id, token_hash, expires_at, created_at, last_seen_at, revoked_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?5, NULL)
+                "#,
+                libsql::params![
+                    session_id.to_string(),
+                    user_id.to_string(),
+                    token_hash,
+                    expires_at.unix_timestamp(),
+                    created_at.unix_timestamp(),
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+
+        self.get_user_session(session_id)
+            .await?
+            .ok_or_else(|| StoreError::NotFound(format!("user session `{session_id}` missing")))
+    }
+
+    pub async fn get_user_session(
+        &self,
+        session_id: Uuid,
+    ) -> Result<Option<UserSessionRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT session_id, user_id, token_hash, expires_at, created_at, last_seen_at, revoked_at
+                FROM user_sessions
+                WHERE session_id = ?1
+                LIMIT 1
+                "#,
+                [session_id.to_string()],
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let Some(row) = rows.next().await.map_err(to_query_error)? else {
+            return Ok(None);
+        };
+
+        decode_user_session_record(&row).map(Some)
+    }
+
+    pub async fn touch_user_session(
+        &self,
+        session_id: Uuid,
+        last_seen_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        self.connection
+            .execute(
+                "UPDATE user_sessions SET last_seen_at = ?1 WHERE session_id = ?2",
+                libsql::params![last_seen_at.unix_timestamp(), session_id.to_string()],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn get_user_oidc_auth(
+        &self,
+        oidc_provider_id: &str,
+        subject: &str,
+    ) -> Result<Option<UserOidcAuthRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT user_id, oidc_provider_id, subject, email_claim, created_at
+                FROM user_oidc_auth
+                WHERE oidc_provider_id = ?1 AND subject = ?2
+                LIMIT 1
+                "#,
+                libsql::params![oidc_provider_id, subject],
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let Some(row) = rows.next().await.map_err(to_query_error)? else {
+            return Ok(None);
+        };
+
+        decode_user_oidc_auth_record(&row).map(Some)
+    }
+
+    pub async fn create_user_oidc_auth(
+        &self,
+        user_id: Uuid,
+        oidc_provider_id: &str,
+        subject: &str,
+        email_claim: Option<&str>,
+        created_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        self.connection
+            .execute(
+                r#"
+                INSERT INTO user_oidc_auth (user_id, oidc_provider_id, subject, email_claim, created_at)
+                VALUES (?1, ?2, ?3, ?4, ?5)
+                "#,
+                libsql::params![
+                    user_id.to_string(),
+                    oidc_provider_id,
+                    subject,
+                    email_claim,
+                    created_at.unix_timestamp(),
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn set_user_oidc_link(
+        &self,
+        user_id: Uuid,
+        oidc_provider_id: &str,
+        created_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        self.connection
+            .execute(
+                r#"
+                INSERT INTO user_oidc_links (user_id, oidc_provider_id, created_at)
+                VALUES (?1, ?2, ?3)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    oidc_provider_id = excluded.oidc_provider_id
+                "#,
+                libsql::params![
+                    user_id.to_string(),
+                    oidc_provider_id,
+                    created_at.unix_timestamp()
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn find_invited_oidc_user(
+        &self,
+        email_normalized: &str,
+        oidc_provider_id: &str,
+    ) -> Result<Option<UserRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT users.user_id, users.name, users.email, users.email_normalized,
+                       users.global_role, users.auth_mode, users.status,
+                       users.request_logging_enabled, users.model_access_mode,
+                       users.created_at, users.updated_at
+                FROM users
+                INNER JOIN user_oidc_links ON user_oidc_links.user_id = users.user_id
+                LEFT JOIN user_oidc_auth ON
+                    user_oidc_auth.user_id = users.user_id
+                    AND user_oidc_auth.oidc_provider_id = ?2
+                WHERE users.email_normalized = ?1
+                  AND users.auth_mode = 'oidc'
+                  AND users.status = 'invited'
+                  AND user_oidc_links.oidc_provider_id = ?2
+                  AND user_oidc_auth.user_id IS NULL
+                LIMIT 1
+                "#,
+                libsql::params![email_normalized, oidc_provider_id],
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let Some(row) = rows.next().await.map_err(to_query_error)? else {
+            return Ok(None);
+        };
+
+        decode_user_record(&row).map(Some)
     }
 }
 
@@ -703,6 +1285,31 @@ fn decode_user_record(row: &libsql::Row) -> Result<UserRecord, StoreError> {
     })
 }
 
+fn decode_identity_user_record(row: &libsql::Row) -> Result<IdentityUserRecord, StoreError> {
+    let team_id: Option<String> = row.get(11).map_err(to_query_error)?;
+    let membership_role: Option<String> = row.get(13).map_err(to_query_error)?;
+    let oidc_provider_id: Option<String> = row.get(14).map_err(to_query_error)?;
+    let membership_role = match membership_role {
+        Some(role) => Some(MembershipRole::from_db(&role).ok_or_else(|| {
+            StoreError::Serialization(format!("unknown membership role `{role}`"))
+        })?),
+        None => None,
+    };
+
+    Ok(IdentityUserRecord {
+        user: decode_user_record(row)?,
+        team_id: team_id
+            .as_deref()
+            .map(parse_uuid)
+            .transpose()
+            .map_err(|error| StoreError::Serialization(error.to_string()))?,
+        team_name: row.get(12).map_err(to_query_error)?,
+        membership_role,
+        oidc_provider_id,
+        oidc_provider_key: row.get(15).map_err(to_query_error)?,
+    })
+}
+
 fn decode_team_record(row: &libsql::Row) -> Result<TeamRecord, StoreError> {
     let team_id: String = row.get(0).map_err(to_query_error)?;
     let model_access_mode: String = row.get(4).map_err(to_query_error)?;
@@ -737,6 +1344,79 @@ fn decode_team_membership_record(row: &libsql::Row) -> Result<TeamMembershipReco
         })?,
         created_at: unix_to_datetime(created_at)?,
         updated_at: unix_to_datetime(updated_at)?,
+    })
+}
+
+fn decode_oidc_provider_record(row: &libsql::Row) -> Result<OidcProviderRecord, StoreError> {
+    let scopes_json: String = row.get(5).map_err(to_query_error)?;
+    let enabled: i64 = row.get(6).map_err(to_query_error)?;
+    let created_at: i64 = row.get(7).map_err(to_query_error)?;
+    let updated_at: i64 = row.get(8).map_err(to_query_error)?;
+
+    Ok(OidcProviderRecord {
+        oidc_provider_id: row.get(0).map_err(to_query_error)?,
+        provider_key: row.get(1).map_err(to_query_error)?,
+        provider_type: row.get(2).map_err(to_query_error)?,
+        issuer_url: row.get(3).map_err(to_query_error)?,
+        client_id: row.get(4).map_err(to_query_error)?,
+        scopes: serde_json::from_str(&scopes_json)
+            .map_err(|error| StoreError::Serialization(error.to_string()))?,
+        enabled: enabled == 1,
+        created_at: unix_to_datetime(created_at)?,
+        updated_at: unix_to_datetime(updated_at)?,
+    })
+}
+
+fn decode_password_invitation_record(
+    row: &libsql::Row,
+) -> Result<PasswordInvitationRecord, StoreError> {
+    let invitation_id: String = row.get(0).map_err(to_query_error)?;
+    let user_id: String = row.get(1).map_err(to_query_error)?;
+    let expires_at: i64 = row.get(3).map_err(to_query_error)?;
+    let consumed_at: Option<i64> = row.get(4).map_err(to_query_error)?;
+    let revoked_at: Option<i64> = row.get(5).map_err(to_query_error)?;
+    let created_at: i64 = row.get(6).map_err(to_query_error)?;
+
+    Ok(PasswordInvitationRecord {
+        invitation_id: parse_uuid(&invitation_id)?,
+        user_id: parse_uuid(&user_id)?,
+        token_hash: row.get(2).map_err(to_query_error)?,
+        expires_at: unix_to_datetime(expires_at)?,
+        consumed_at: consumed_at.map(unix_to_datetime).transpose()?,
+        revoked_at: revoked_at.map(unix_to_datetime).transpose()?,
+        created_at: unix_to_datetime(created_at)?,
+    })
+}
+
+fn decode_user_session_record(row: &libsql::Row) -> Result<UserSessionRecord, StoreError> {
+    let session_id: String = row.get(0).map_err(to_query_error)?;
+    let user_id: String = row.get(1).map_err(to_query_error)?;
+    let expires_at: i64 = row.get(3).map_err(to_query_error)?;
+    let created_at: i64 = row.get(4).map_err(to_query_error)?;
+    let last_seen_at: i64 = row.get(5).map_err(to_query_error)?;
+    let revoked_at: Option<i64> = row.get(6).map_err(to_query_error)?;
+
+    Ok(UserSessionRecord {
+        session_id: parse_uuid(&session_id)?,
+        user_id: parse_uuid(&user_id)?,
+        token_hash: row.get(2).map_err(to_query_error)?,
+        expires_at: unix_to_datetime(expires_at)?,
+        created_at: unix_to_datetime(created_at)?,
+        last_seen_at: unix_to_datetime(last_seen_at)?,
+        revoked_at: revoked_at.map(unix_to_datetime).transpose()?,
+    })
+}
+
+fn decode_user_oidc_auth_record(row: &libsql::Row) -> Result<UserOidcAuthRecord, StoreError> {
+    let user_id: String = row.get(0).map_err(to_query_error)?;
+    let created_at: i64 = row.get(4).map_err(to_query_error)?;
+
+    Ok(UserOidcAuthRecord {
+        user_id: parse_uuid(&user_id)?,
+        oidc_provider_id: row.get(1).map_err(to_query_error)?,
+        subject: row.get(2).map_err(to_query_error)?,
+        email_claim: row.get(3).map_err(to_query_error)?,
+        created_at: unix_to_datetime(created_at)?,
     })
 }
 
@@ -780,4 +1460,16 @@ fn parse_uuid(raw: &str) -> Result<Uuid, StoreError> {
 
 fn to_query_error(error: libsql::Error) -> StoreError {
     StoreError::Query(error.to_string())
+}
+
+fn to_write_error(error: libsql::Error) -> StoreError {
+    let message = error.to_string();
+    if message.contains("UNIQUE constraint failed")
+        || message.contains("CHECK constraint failed")
+        || message.contains("FOREIGN KEY constraint failed")
+    {
+        return StoreError::Conflict(message);
+    }
+
+    StoreError::Query(message)
 }
