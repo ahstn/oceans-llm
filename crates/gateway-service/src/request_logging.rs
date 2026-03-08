@@ -131,6 +131,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Password,
             status: "active".to_string(),
+            must_change_password: false,
             request_logging_enabled,
             model_access_mode: ModelAccessMode::All,
             created_at: OffsetDateTime::now_utc(),

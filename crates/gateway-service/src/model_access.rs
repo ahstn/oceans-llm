@@ -282,6 +282,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Password,
             status: "active".to_string(),
+            must_change_password: false,
             request_logging_enabled: true,
             model_access_mode,
             created_at: OffsetDateTime::now_utc(),
