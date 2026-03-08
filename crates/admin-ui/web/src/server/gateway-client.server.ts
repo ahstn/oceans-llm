@@ -1,51 +1,72 @@
 import { getRequest, setResponseHeader } from '@tanstack/react-start/server'
 
-function resolveGatewayOrigin() {
-  const explicit = process.env.ADMIN_GATEWAY_ORIGIN?.trim()
+const DEFAULT_DEV_UI_PORT = '3001'
+const DEFAULT_GATEWAY_PORT = '8080'
+
+function trimOrigin(value: string) {
+  return value.replace(/\/$/, '')
+}
+
+export function resolveGatewayOriginFromRequest(request: Request, explicitOrigin?: string) {
+  const explicit = explicitOrigin?.trim()
   if (explicit) {
-    return explicit.replace(/\/$/, '')
+    return trimOrigin(explicit)
   }
 
-  const request = getRequest()
   const forwardedOrigin = request.headers.get('x-forwarded-origin')
   if (forwardedOrigin) {
-    return forwardedOrigin.replace(/\/$/, '')
+    return trimOrigin(forwardedOrigin)
+  }
+
+  const requestUrl = new URL(request.url)
+  if (requestUrl.port === DEFAULT_DEV_UI_PORT) {
+    requestUrl.port = DEFAULT_GATEWAY_PORT
+    return trimOrigin(requestUrl.origin)
   }
 
   const forwardedProto = request.headers.get('x-forwarded-proto') ?? 'http'
   const forwardedHost = request.headers.get('x-forwarded-host') ?? request.headers.get('host')
   if (forwardedHost) {
-    return `${forwardedProto}://${forwardedHost}`.replace(/\/$/, '')
+    return trimOrigin(`${forwardedProto}://${forwardedHost}`)
   }
 
-  return new URL(request.url).origin.replace(/\/$/, '')
+  return trimOrigin(requestUrl.origin)
 }
 
-function forwardRequestHeaders(initHeaders?: HeadersInit) {
+function resolveGatewayOrigin() {
   const request = getRequest()
+  return resolveGatewayOriginFromRequest(request, process.env.ADMIN_GATEWAY_ORIGIN)
+}
+
+export function forwardRequestHeadersFromRequest(request: Request, initHeaders?: HeadersInit) {
   const headers = new Headers(initHeaders)
+  const requestUrl = new URL(request.url)
+  const requestProto = request.headers.get('x-forwarded-proto') ?? requestUrl.protocol.replace(/:$/, '')
+  const requestHost = request.headers.get('x-forwarded-host') ?? request.headers.get('host') ?? requestUrl.host
+  const requestOrigin = request.headers.get('x-forwarded-origin') ?? requestUrl.origin
 
   const cookie = request.headers.get('cookie')
   if (cookie && !headers.has('cookie')) {
     headers.set('cookie', cookie)
   }
 
-  const forwardedOrigin = request.headers.get('x-forwarded-origin')
-  if (forwardedOrigin && !headers.has('x-forwarded-origin')) {
-    headers.set('x-forwarded-origin', forwardedOrigin)
+  if (!headers.has('x-forwarded-origin')) {
+    headers.set('x-forwarded-origin', requestOrigin)
   }
 
-  const forwardedProto = request.headers.get('x-forwarded-proto')
-  if (forwardedProto && !headers.has('x-forwarded-proto')) {
-    headers.set('x-forwarded-proto', forwardedProto)
+  if (!headers.has('x-forwarded-proto')) {
+    headers.set('x-forwarded-proto', requestProto)
   }
 
-  const forwardedHost = request.headers.get('x-forwarded-host')
-  if (forwardedHost && !headers.has('x-forwarded-host')) {
-    headers.set('x-forwarded-host', forwardedHost)
+  if (!headers.has('x-forwarded-host')) {
+    headers.set('x-forwarded-host', requestHost)
   }
 
   return headers
+}
+
+function forwardRequestHeaders(initHeaders?: HeadersInit) {
+  return forwardRequestHeadersFromRequest(getRequest(), initHeaders)
 }
 
 async function readGatewayError(response: Response) {
