@@ -28,6 +28,18 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
             get(list_identity_users).post(create_identity_user),
         )
         .route(
+            "/api/v1/admin/identity/teams",
+            get(list_identity_teams).post(create_identity_team),
+        )
+        .route(
+            "/api/v1/admin/identity/teams/{team_id}",
+            axum::routing::patch(update_identity_team),
+        )
+        .route(
+            "/api/v1/admin/identity/teams/{team_id}/members",
+            post(add_identity_team_members),
+        )
+        .route(
             "/api/v1/admin/identity/users/{user_id}/password-invite",
             post(regenerate_password_invite),
         )

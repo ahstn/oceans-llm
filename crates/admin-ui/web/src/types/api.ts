@@ -44,11 +44,50 @@ export interface RequestLogView {
   timestamp: string
 }
 
-export interface TeamView {
+export interface TeamAdminView {
   id: string
   name: string
-  users: number
+  email: string
+  status: 'active' | 'invited' | 'disabled'
+}
+
+export interface TeamManagementView {
+  id: string
+  name: string
+  key: string
   status: 'active' | 'inactive'
+  member_count: number
+  admins: TeamAdminView[]
+}
+
+export interface TeamAssignableUserView {
+  id: string
+  name: string
+  email: string
+  status: 'active' | 'invited' | 'disabled'
+  team_id: string | null
+  team_name: string | null
+  team_role: 'owner' | 'admin' | 'member' | null
+}
+
+export interface IdentityTeamsPayload {
+  teams: TeamManagementView[]
+  users: TeamAssignableUserView[]
+  oidc_providers: OidcProviderView[]
+}
+
+export interface CreateTeamInput {
+  name: string
+  admin_user_ids: string[]
+}
+
+export interface UpdateTeamInput {
+  name: string
+  admin_user_ids: string[]
+}
+
+export interface AddTeamMembersInput {
+  user_ids: string[]
 }
 
 export interface AdminTeamOption {

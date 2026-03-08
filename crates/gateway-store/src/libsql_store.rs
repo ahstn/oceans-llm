@@ -124,6 +124,28 @@ impl LibsqlStore {
         Ok(teams)
     }
 
+    pub async fn list_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT team_id, team_key, team_name, status, model_access_mode, created_at, updated_at
+                FROM teams
+                ORDER BY team_name ASC
+                "#,
+                (),
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let mut teams = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            teams.push(decode_team_record(&row)?);
+        }
+
+        Ok(teams)
+    }
+
     pub async fn list_enabled_oidc_providers(&self) -> Result<Vec<OidcProviderRecord>, StoreError> {
         let mut rows = self
             .connection
@@ -200,6 +222,73 @@ impl LibsqlStore {
         decode_user_record(&row).map(Some)
     }
 
+    pub async fn get_team_by_key(&self, team_key: &str) -> Result<Option<TeamRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT team_id, team_key, team_name, status, model_access_mode, created_at, updated_at
+                FROM teams
+                WHERE team_key = ?1
+                LIMIT 1
+                "#,
+                [team_key],
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let Some(row) = rows.next().await.map_err(to_query_error)? else {
+            return Ok(None);
+        };
+
+        decode_team_record(&row).map(Some)
+    }
+
+    pub async fn create_team(
+        &self,
+        team_key: &str,
+        team_name: &str,
+    ) -> Result<TeamRecord, StoreError> {
+        let team_id = Uuid::new_v4();
+        let now = OffsetDateTime::now_utc().unix_timestamp();
+
+        self.connection
+            .execute(
+                r#"
+                INSERT INTO teams (
+                    team_id, team_key, team_name, status, model_access_mode, created_at, updated_at
+                ) VALUES (?1, ?2, ?3, 'active', 'all', ?4, ?4)
+                "#,
+                libsql::params![team_id.to_string(), team_key, team_name, now],
+            )
+            .await
+            .map_err(to_write_error)?;
+
+        self.get_team_by_id(team_id)
+            .await?
+            .ok_or_else(|| StoreError::NotFound(format!("created team `{team_id}` missing")))
+    }
+
+    pub async fn update_team_name(
+        &self,
+        team_id: Uuid,
+        team_name: &str,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        self.connection
+            .execute(
+                r#"
+                UPDATE teams
+                SET team_name = ?1, updated_at = ?2
+                WHERE team_id = ?3
+                "#,
+                libsql::params![team_name, updated_at.unix_timestamp(), team_id.to_string()],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(())
+    }
+
     pub async fn create_identity_user(
         &self,
         name: &str,
@@ -253,6 +342,58 @@ impl LibsqlStore {
                 VALUES (?1, ?2, ?3, ?4, ?4)
                 "#,
                 libsql::params![team_id.to_string(), user_id.to_string(), role.as_str(), now],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn list_team_memberships(
+        &self,
+        team_id: Uuid,
+    ) -> Result<Vec<TeamMembershipRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT team_id, user_id, role, created_at, updated_at
+                FROM team_memberships
+                WHERE team_id = ?1
+                ORDER BY created_at ASC
+                "#,
+                [team_id.to_string()],
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let mut memberships = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            memberships.push(decode_team_membership_record(&row)?);
+        }
+
+        Ok(memberships)
+    }
+
+    pub async fn update_team_membership_role(
+        &self,
+        team_id: Uuid,
+        user_id: Uuid,
+        role: MembershipRole,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        self.connection
+            .execute(
+                r#"
+                UPDATE team_memberships
+                SET role = ?1, updated_at = ?2
+                WHERE team_id = ?3 AND user_id = ?4
+                "#,
+                libsql::params![
+                    role.as_str(),
+                    updated_at.unix_timestamp(),
+                    team_id.to_string(),
+                    user_id.to_string()
+                ],
             )
             .await
             .map_err(to_write_error)?;

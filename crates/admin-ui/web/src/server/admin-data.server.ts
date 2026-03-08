@@ -1,16 +1,20 @@
 import type {
+  AddTeamMembersInput,
   CreateUserInput,
   CreateUserResult,
   IdentityUsersPayload,
+  IdentityTeamsPayload,
   InvitationStateView,
   ApiEnvelope,
   ApiKeyView,
+  TeamManagementView,
   ModelView,
   Paginated,
   PasswordInviteResult,
   RequestLogView,
-  TeamView,
   UsageCostPoint,
+  CreateTeamInput,
+  UpdateTeamInput,
 } from '@/types/api'
 import { fetchGatewayJson } from '@/server/gateway-client.server'
 
@@ -113,12 +117,46 @@ export async function listRequestLogs(): Promise<ApiEnvelope<Paginated<RequestLo
   })
 }
 
-export async function listTeams(): Promise<ApiEnvelope<TeamView[]>> {
-  return envelope([
-    { id: 'team_1', name: 'Core Platform', users: 6, status: 'active' },
-    { id: 'team_2', name: 'Customer Success', users: 4, status: 'active' },
-    { id: 'team_3', name: 'Integrations', users: 3, status: 'inactive' },
-  ])
+export async function listTeams(): Promise<ApiEnvelope<IdentityTeamsPayload>> {
+  return fetchGatewayJson<ApiEnvelope<IdentityTeamsPayload>>('/api/v1/admin/identity/teams')
+}
+
+export async function createTeam(
+  input: CreateTeamInput,
+): Promise<ApiEnvelope<TeamManagementView>> {
+  return fetchGatewayJson<ApiEnvelope<TeamManagementView>>('/api/v1/admin/identity/teams', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+}
+
+export async function updateTeam(
+  teamId: string,
+  input: UpdateTeamInput,
+): Promise<ApiEnvelope<TeamManagementView>> {
+  return fetchGatewayJson<ApiEnvelope<TeamManagementView>>(
+    `/api/v1/admin/identity/teams/${teamId}`,
+    {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  )
+}
+
+export async function addTeamMembers(
+  teamId: string,
+  input: AddTeamMembersInput,
+): Promise<ApiEnvelope<TeamManagementView>> {
+  return fetchGatewayJson<ApiEnvelope<TeamManagementView>>(
+    `/api/v1/admin/identity/teams/${teamId}/members`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  )
 }
 
 export async function listUsers(): Promise<ApiEnvelope<IdentityUsersPayload>> {
