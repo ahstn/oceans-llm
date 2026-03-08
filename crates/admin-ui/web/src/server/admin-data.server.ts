@@ -14,6 +14,7 @@ import type {
   Paginated,
   PasswordInviteResult,
   RequestLogView,
+  RequestLogDetailView,
   UsageCostPoint,
   CreateTeamInput,
   PasswordLoginInput,
@@ -102,21 +103,84 @@ export async function listUsageCosts(): Promise<ApiEnvelope<UsageCostPoint[]>> {
 }
 
 export async function listRequestLogs(): Promise<ApiEnvelope<Paginated<RequestLogView>>> {
-  const items: RequestLogView[] = Array.from({ length: 500 }, (_, index) => ({
-    id: `req_${index + 1}`,
-    model: index % 3 === 0 ? 'fast' : index % 3 === 1 ? 'reasoning' : 'backup-fast',
-    provider: index % 2 === 0 ? 'openrouter' : 'openai-prod',
-    statusCode: index % 11 === 0 ? 500 : 200,
-    latencyMs: 120 + (index % 9) * 35,
-    tokens: 256 + (index % 7) * 64,
-    timestamp: `2026-02-26T${String(index % 24).padStart(2, '0')}:${String(index % 60).padStart(2, '0')}:00Z`,
-  }))
+  const response = await fetchGatewayJson<
+    ApiEnvelope<{
+      items: Array<{
+        id: string
+        model: string
+        provider: string
+        upstream_model: string
+        status_code: number
+        latency_ms: number
+        prompt_tokens: number | null
+        completion_tokens: number | null
+        total_tokens: number | null
+        stream: boolean
+        fallback_used: boolean
+        attempt_count: number
+        payload_available: boolean
+        error_code: string | null
+        timestamp: string
+      }>
+      page: number
+      page_size: number
+      total: number
+    }>
+  >('/api/v1/admin/observability/request-logs')
 
   return envelope({
-    items,
-    page: 1,
-    pageSize: items.length,
-    total: items.length,
+    items: response.data.items.map((item) => ({
+      id: item.id,
+      model: item.model,
+      provider: item.provider,
+      upstreamModel: item.upstream_model,
+      statusCode: item.status_code,
+      latencyMs: item.latency_ms,
+      promptTokens: item.prompt_tokens,
+      completionTokens: item.completion_tokens,
+      totalTokens: item.total_tokens,
+      stream: item.stream,
+      fallbackUsed: item.fallback_used,
+      attemptCount: item.attempt_count,
+      payloadAvailable: item.payload_available,
+      errorCode: item.error_code,
+      timestamp: item.timestamp,
+    })),
+    page: response.data.page,
+    pageSize: response.data.page_size,
+    total: response.data.total,
+  })
+}
+
+export async function getRequestLogDetail(
+  requestId: string,
+): Promise<ApiEnvelope<RequestLogDetailView>> {
+  const response = await fetchGatewayJson<
+    ApiEnvelope<{
+      request_id: string
+      request_json: unknown
+      response_json: unknown
+      request_bytes: number
+      response_bytes: number
+      request_truncated: boolean
+      response_truncated: boolean
+      request_sha256: string
+      response_sha256: string
+      timestamp: string
+    }>
+  >(`/api/v1/admin/observability/request-logs/${encodeURIComponent(requestId)}`)
+
+  return envelope({
+    requestId: response.data.request_id,
+    requestJson: response.data.request_json,
+    responseJson: response.data.response_json,
+    requestBytes: response.data.request_bytes,
+    responseBytes: response.data.response_bytes,
+    requestTruncated: response.data.request_truncated,
+    responseTruncated: response.data.response_truncated,
+    requestSha256: response.data.request_sha256,
+    responseSha256: response.data.response_sha256,
+    timestamp: response.data.timestamp,
   })
 }
 

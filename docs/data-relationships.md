@@ -33,7 +33,8 @@ This document catalogs the database tables, key relationships, and policy semant
 6. `users` 1..N `user_budgets` (with one active budget enforced by partial unique index)
 7. `usage_cost_events` references request ownership (`api_key_id`, optional `user_id`/`team_id`) and optional `model_id`
 8. `request_logs` references request ownership (`api_key_id`, optional `user_id`/`team_id`)
-9. `pricing_catalog_cache` stores one cached normalized pricing snapshot per `catalog_key`
+9. `request_log_payloads` stores sanitized request/response payloads keyed 1:1 by `request_log_id`
+10. `pricing_catalog_cache` stores one cached normalized pricing snapshot per `catalog_key`
 
 ## Table Catalog
 
@@ -88,8 +89,11 @@ This document catalogs the database tables, key relationships, and policy semant
   - Key columns: `usage_event_id`, `request_id`, `api_key_id`, `user_id`, `team_id`, `model_id`, `estimated_cost_10000`, `occurred_at`
   - Notes: schema foundation for future pricing-backed spend accounting; the current chat request path does not write these rows yet.
 - `request_logs`
-  - Key columns: `request_log_id`, `request_id`, `api_key_id`, `user_id`, `team_id`, `model_key`, `provider_key`, token/latency/status fields, `metadata_json`, `occurred_at`
-  - Notes: chat execution writes one row for the final user-visible outcome of each executed request. User-owned requests honor `users.request_logging_enabled`; team-owned requests are always logged with nullable `user_id`.
+  - Key columns: `request_log_id`, `request_id`, `api_key_id`, `user_id`, `team_id`, `model_key`, `provider_key`, `upstream_model`, token/latency/status fields, scalar stream/fallback fields, `payload_available`, `metadata_json`, `occurred_at`
+  - Notes: this is the hot summary table for operational filtering and future usage aggregation. Chat execution writes one row for the final user-visible outcome of each executed request. User-owned requests honor `users.request_logging_enabled`; team-owned requests are always logged with nullable `user_id`.
+- `request_log_payloads`
+  - Key columns: `request_log_id`, sanitized `request_json`, sanitized `response_json`, byte counts, truncation flags, SHA-256 digests, `occurred_at`
+  - Notes: this is the cold payload table. Payloads are stored inline after redaction/truncation so large request/response bodies do not inflate normal summary queries.
 
 ### Pricing Catalog Cache
 
@@ -135,6 +139,7 @@ Current runtime is SQLite/libsql. For PostgreSQL migration/dual-write planning:
 2. For `request_logs`, use:
    - BRIN index on `occurred_at` for large append-heavy scans.
    - Additional btree indexes for frequent filters (for example `(user_id, occurred_at)`, `(team_id, occurred_at)`).
-3. For monetary values, SQLite stores exact scaled integers (`amount_10000`, `estimated_cost_10000`).
-4. PostgreSQL mapping should use `NUMERIC(18,4)` for these values.
-5. For timestamps, prefer `TIMESTAMPTZ` in PostgreSQL.
+3. Keep `request_log_payloads` separate from `request_logs`; index it only by request identity/time unless a concrete JSON filter justifies more.
+4. For monetary values, SQLite stores exact scaled integers (`amount_10000`, `estimated_cost_10000`).
+5. PostgreSQL mapping should use `NUMERIC(18,4)` for these values.
+6. For timestamps, prefer `TIMESTAMPTZ` in PostgreSQL.

@@ -75,6 +75,35 @@ vi.mock('@/server/gateway-client.server', () => ({
       }
     }
 
+    if (path === '/api/v1/admin/observability/request-logs') {
+      return {
+        data: {
+          items: [
+            {
+              id: 'req_1',
+              model: 'fast',
+              provider: 'openai-prod',
+              upstream_model: 'gpt-4o-mini',
+              status_code: 200,
+              latency_ms: 120,
+              prompt_tokens: 11,
+              completion_tokens: 7,
+              total_tokens: 18,
+              stream: false,
+              fallback_used: false,
+              attempt_count: 1,
+              payload_available: true,
+              error_code: null,
+              timestamp: '2026-03-08T13:00:00Z',
+            },
+          ],
+          page: 1,
+          page_size: 1,
+          total: 1,
+        },
+      }
+    }
+
     throw new Error(`Unexpected path: ${path}`)
   }),
 }))
@@ -93,7 +122,7 @@ describe('server-side mock repositories', () => {
     expect(apiKeys.data.items.length).toBeGreaterThan(0)
     expect(models.data.length).toBeGreaterThan(0)
     expect(costs.data.length).toBeGreaterThan(0)
-    expect(logs.data.items.length).toBeGreaterThan(100)
+    expect(logs.data.items.length).toBeGreaterThan(0)
     expect(teams.data.teams.length).toBeGreaterThan(0)
     expect(teams.data.users.length).toBeGreaterThan(0)
     expect(users.data.users.length).toBeGreaterThan(0)

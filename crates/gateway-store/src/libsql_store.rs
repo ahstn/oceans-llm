@@ -7,10 +7,10 @@ use gateway_core::{
     GatewayModel, GlobalRole, IdentityRepository, IdentityUserRecord, MembershipRole,
     ModelAccessMode, ModelRepository, ModelRoute, Money4, OidcProviderRecord,
     PasswordInvitationRecord, PricingCatalogCacheRecord, PricingCatalogRepository,
-    ProviderConnection, ProviderRepository, RequestLogRecord, RequestLogRepository,
-    SYSTEM_BOOTSTRAP_ADMIN_USER_ID, StoreError, StoreHealth,
-    TeamMembershipRecord, TeamRecord, UsageCostEventRecord, UserBudgetRecord, UserOidcAuthRecord,
-    UserPasswordAuthRecord, UserRecord, UserSessionRecord,
+    ProviderConnection, ProviderRepository, RequestLogBundle, RequestLogPayloadRecord,
+    RequestLogRecord, RequestLogRepository, SYSTEM_BOOTSTRAP_ADMIN_USER_ID, StoreError,
+    StoreHealth, TeamMembershipRecord, TeamRecord, UsageCostEventRecord, UserBudgetRecord,
+    UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord,
 };
 use serde_json::{Map, Value};
 use time::OffsetDateTime;
@@ -1254,41 +1254,171 @@ impl BudgetRepository for LibsqlStore {
 
 #[async_trait]
 impl RequestLogRepository for LibsqlStore {
-    async fn insert_request_log(&self, log: &RequestLogRecord) -> Result<(), StoreError> {
+    async fn insert_request_log_bundle(&self, bundle: &RequestLogBundle) -> Result<(), StoreError> {
+        let tx = self
+            .connection
+            .transaction()
+            .await
+            .map_err(to_write_error)?;
+
+        insert_request_log_summary(&tx, &bundle.summary).await?;
+        if let Some(payload) = &bundle.payload {
+            insert_request_log_payload(&tx, payload).await?;
+        }
+
+        tx.commit().await.map_err(to_write_error)?;
+        Ok(())
+    }
+
+    async fn list_request_logs(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<RequestLogRecord>, StoreError> {
+        let limit = i64::try_from(limit)
+            .map_err(|_| StoreError::Serialization("request log limit overflow".to_string()))?;
+
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT
+                    request_log_id, request_id, api_key_id, user_id, team_id, model_key,
+                    provider_key, upstream_model, status_code, latency_ms, stream,
+                    fallback_used, attempt_count, prompt_tokens, completion_tokens,
+                    total_tokens, payload_available, error_code, metadata_json, occurred_at
+                FROM request_logs
+                ORDER BY occurred_at DESC, rowid DESC
+                LIMIT ?1
+                "#,
+                [limit],
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let mut logs = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            logs.push(decode_request_log_record(&row)?);
+        }
+
+        Ok(logs)
+    }
+
+    async fn get_request_log_payload_by_request_id(
+        &self,
+        request_id: &str,
+    ) -> Result<Option<RequestLogPayloadRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT
+                    payloads.request_log_id,
+                    payloads.request_json,
+                    payloads.response_json,
+                    payloads.request_bytes,
+                    payloads.response_bytes,
+                    payloads.request_truncated,
+                    payloads.response_truncated,
+                    payloads.request_sha256,
+                    payloads.response_sha256,
+                    payloads.occurred_at
+                FROM request_log_payloads AS payloads
+                INNER JOIN request_logs AS logs
+                    ON logs.request_log_id = payloads.request_log_id
+                WHERE logs.request_id = ?1
+                LIMIT 1
+                "#,
+                [request_id],
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let Some(row) = rows.next().await.map_err(to_query_error)? else {
+            return Ok(None);
+        };
+
+        decode_request_log_payload_record(&row).map(Some)
+    }
+}
+
+async fn insert_request_log_summary(
+    connection: &libsql::Connection,
+    log: &RequestLogRecord,
+) -> Result<(), StoreError> {
         let metadata_json = serde_json::to_string(&log.metadata)
             .map_err(|error| StoreError::Serialization(error.to_string()))?;
 
-        self.connection
-            .execute(
-                r#"
-                INSERT INTO request_logs (
-                    request_log_id, request_id, api_key_id, user_id, team_id, model_key,
-                    provider_key, status_code, latency_ms, prompt_tokens, completion_tokens,
-                    total_tokens, error_code, metadata_json, occurred_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
-                "#,
-                libsql::params![
-                    log.request_log_id.to_string(),
-                    log.request_id.as_str(),
-                    log.api_key_id.to_string(),
-                    log.user_id.map(|value| value.to_string()),
-                    log.team_id.map(|value| value.to_string()),
-                    log.model_key.as_str(),
-                    log.provider_key.as_str(),
-                    log.status_code,
-                    log.latency_ms,
-                    log.prompt_tokens,
-                    log.completion_tokens,
-                    log.total_tokens,
-                    log.error_code.as_deref(),
-                    metadata_json,
-                    log.occurred_at.unix_timestamp()
-                ],
-            )
-            .await
-            .map_err(|error| StoreError::Query(error.to_string()))?;
-        Ok(())
-    }
+    connection
+        .execute(
+            r#"
+            INSERT INTO request_logs (
+                request_log_id, request_id, api_key_id, user_id, team_id, model_key,
+                provider_key, upstream_model, status_code, latency_ms, stream, fallback_used,
+                attempt_count, prompt_tokens, completion_tokens, total_tokens, payload_available,
+                error_code, metadata_json, occurred_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
+            "#,
+            libsql::params![
+                log.request_log_id.to_string(),
+                log.request_id.as_str(),
+                log.api_key_id.to_string(),
+                log.user_id.map(|value| value.to_string()),
+                log.team_id.map(|value| value.to_string()),
+                log.model_key.as_str(),
+                log.provider_key.as_str(),
+                log.upstream_model.as_str(),
+                log.status_code,
+                log.latency_ms,
+                if log.stream { 1_i64 } else { 0_i64 },
+                if log.fallback_used { 1_i64 } else { 0_i64 },
+                log.attempt_count,
+                log.prompt_tokens,
+                log.completion_tokens,
+                log.total_tokens,
+                if log.payload_available { 1_i64 } else { 0_i64 },
+                log.error_code.as_deref(),
+                metadata_json,
+                log.occurred_at.unix_timestamp()
+            ],
+        )
+        .await
+        .map_err(to_write_error)?;
+    Ok(())
+}
+
+async fn insert_request_log_payload(
+    connection: &libsql::Connection,
+    payload: &RequestLogPayloadRecord,
+) -> Result<(), StoreError> {
+    let request_json = serde_json::to_string(&payload.request_json)
+        .map_err(|error| StoreError::Serialization(error.to_string()))?;
+    let response_json = serde_json::to_string(&payload.response_json)
+        .map_err(|error| StoreError::Serialization(error.to_string()))?;
+
+    connection
+        .execute(
+            r#"
+            INSERT INTO request_log_payloads (
+                request_log_id, request_json, response_json, request_bytes, response_bytes,
+                request_truncated, response_truncated, request_sha256, response_sha256, occurred_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+            "#,
+            libsql::params![
+                payload.request_log_id.to_string(),
+                request_json,
+                response_json,
+                payload.request_bytes,
+                payload.response_bytes,
+                if payload.request_truncated { 1_i64 } else { 0_i64 },
+                if payload.response_truncated { 1_i64 } else { 0_i64 },
+                payload.request_sha256.as_str(),
+                payload.response_sha256.as_str(),
+                payload.occurred_at.unix_timestamp()
+            ],
+        )
+        .await
+        .map_err(to_write_error)?;
+    Ok(())
 }
 
 #[async_trait]
@@ -1690,6 +1820,67 @@ fn decode_user_budget_record(row: &libsql::Row) -> Result<UserBudgetRecord, Stor
         is_active: is_active == 1,
         created_at: unix_to_datetime(created_at)?,
         updated_at: unix_to_datetime(updated_at)?,
+    })
+}
+
+fn decode_request_log_record(row: &libsql::Row) -> Result<RequestLogRecord, StoreError> {
+    let request_log_id: String = row.get(0).map_err(to_query_error)?;
+    let api_key_id: String = row.get(2).map_err(to_query_error)?;
+    let user_id: Option<String> = row.get(3).map_err(to_query_error)?;
+    let team_id: Option<String> = row.get(4).map_err(to_query_error)?;
+    let stream: i64 = row.get(10).map_err(to_query_error)?;
+    let fallback_used: i64 = row.get(11).map_err(to_query_error)?;
+    let payload_available: i64 = row.get(16).map_err(to_query_error)?;
+    let metadata_json: String = row.get(18).map_err(to_query_error)?;
+    let occurred_at: i64 = row.get(19).map_err(to_query_error)?;
+
+    Ok(RequestLogRecord {
+        request_log_id: parse_uuid(&request_log_id)?,
+        request_id: row.get(1).map_err(to_query_error)?,
+        api_key_id: parse_uuid(&api_key_id)?,
+        user_id: user_id.as_deref().map(parse_uuid).transpose()?,
+        team_id: team_id.as_deref().map(parse_uuid).transpose()?,
+        model_key: row.get(5).map_err(to_query_error)?,
+        provider_key: row.get(6).map_err(to_query_error)?,
+        upstream_model: row.get(7).map_err(to_query_error)?,
+        status_code: row.get(8).map_err(to_query_error)?,
+        latency_ms: row.get(9).map_err(to_query_error)?,
+        stream: stream == 1,
+        fallback_used: fallback_used == 1,
+        attempt_count: row.get(12).map_err(to_query_error)?,
+        prompt_tokens: row.get(13).map_err(to_query_error)?,
+        completion_tokens: row.get(14).map_err(to_query_error)?,
+        total_tokens: row.get(15).map_err(to_query_error)?,
+        payload_available: payload_available == 1,
+        error_code: row.get(17).map_err(to_query_error)?,
+        metadata: json_object_from_str(&metadata_json)?,
+        occurred_at: unix_to_datetime(occurred_at)?,
+    })
+}
+
+fn decode_request_log_payload_record(
+    row: &libsql::Row,
+) -> Result<RequestLogPayloadRecord, StoreError> {
+    let request_log_id: String = row.get(0).map_err(to_query_error)?;
+    let request_json: String = row.get(1).map_err(to_query_error)?;
+    let response_json: String = row.get(2).map_err(to_query_error)?;
+    let request_truncated: i64 = row.get(5).map_err(to_query_error)?;
+    let response_truncated: i64 = row.get(6).map_err(to_query_error)?;
+    let occurred_at: i64 = row.get(9).map_err(to_query_error)?;
+
+    Ok(RequestLogPayloadRecord {
+        request_log_id: parse_uuid(&request_log_id)?,
+        request_json: serde_json::from_str(&request_json)
+            .map_err(|error| StoreError::Serialization(error.to_string()))?,
+        response_json: serde_json::from_str(&response_json)
+            .map_err(|error| StoreError::Serialization(error.to_string()))?,
+        request_bytes: row.get(3).map_err(to_query_error)?,
+        response_bytes: row.get(4).map_err(to_query_error)?,
+        request_truncated: request_truncated == 1,
+        response_truncated: response_truncated == 1,
+        request_sha256: row.get(7).map_err(to_query_error)?,
+        response_sha256: row.get(8).map_err(to_query_error)?,
+        occurred_at: unix_to_datetime(occurred_at)?,
     })
 }
 

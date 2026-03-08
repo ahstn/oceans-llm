@@ -52,6 +52,12 @@ const EMBEDDED_MIGRATIONS: &[EmbeddedMigration] = &[
         checksum: "V7__user_password_rotation.sql",
         sql: include_str!("../migrations/V7__user_password_rotation.sql"),
     },
+    EmbeddedMigration {
+        version: 8,
+        name: "request_log_payloads",
+        checksum: "V8__request_log_payloads.sql",
+        sql: include_str!("../migrations/V8__request_log_payloads.sql"),
+    },
 ];
 
 pub async fn run_migrations(path: impl AsRef<Path>) -> anyhow::Result<()> {

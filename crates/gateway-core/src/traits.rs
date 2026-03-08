@@ -10,8 +10,9 @@ use uuid::Uuid;
 use crate::{
     domain::{
         ApiKeyRecord, GatewayModel, ModelRoute, Money4, PricingCatalogCacheRecord,
-        ProviderCapabilities, ProviderConnection, ProviderRequestContext, RequestLogRecord,
-        TeamMembershipRecord, TeamRecord, UsageCostEventRecord, UserBudgetRecord, UserRecord,
+        ProviderCapabilities, ProviderConnection, ProviderRequestContext, RequestLogBundle,
+        RequestLogPayloadRecord, RequestLogRecord, TeamMembershipRecord, TeamRecord,
+        UsageCostEventRecord, UserBudgetRecord, UserRecord,
     },
     error::{ProviderError, RouteError, StoreError},
     protocol::openai::{ChatCompletionsRequest, EmbeddingsRequest},
@@ -81,7 +82,15 @@ pub trait BudgetRepository: Send + Sync {
 
 #[async_trait]
 pub trait RequestLogRepository: Send + Sync {
-    async fn insert_request_log(&self, log: &RequestLogRecord) -> Result<(), StoreError>;
+    async fn insert_request_log_bundle(&self, bundle: &RequestLogBundle) -> Result<(), StoreError>;
+    async fn list_request_logs(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<RequestLogRecord>, StoreError>;
+    async fn get_request_log_payload_by_request_id(
+        &self,
+        request_id: &str,
+    ) -> Result<Option<RequestLogPayloadRecord>, StoreError>;
 }
 
 #[async_trait]

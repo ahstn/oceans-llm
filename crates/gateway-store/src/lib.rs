@@ -10,6 +10,7 @@ mod tests {
     use gateway_core::{
         ApiKeyOwnerKind, ApiKeyRepository, AuthMode, GlobalRole, IdentityRepository,
         MembershipRole, ModelRepository, PricingCatalogCacheRecord, PricingCatalogRepository,
+        RequestLogBundle, RequestLogPayloadRecord, RequestLogRecord, RequestLogRepository,
         SYSTEM_LEGACY_TEAM_ID, SeedApiKey, SeedModel, SeedModelRoute, SeedProvider, StoreHealth,
     };
     use serde_json::{Map, json};
@@ -37,6 +38,173 @@ mod tests {
             .expect("store");
 
         store.ping().await.expect("ping");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn v8_migration_adds_request_payload_tables_and_backfills_scalar_columns() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
+            .build()
+            .await
+            .expect("db");
+        let conn = db.connect().expect("connection");
+
+        conn.execute(
+            r#"
+            CREATE TABLE refinery_schema_history (
+                version INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                applied_on INTEGER NOT NULL,
+                checksum TEXT NOT NULL
+            )
+            "#,
+            (),
+        )
+        .await
+        .expect("schema history");
+        conn.execute_batch(include_str!("../migrations/V1__init.sql"))
+            .await
+            .expect("v1 schema");
+        conn.execute_batch(include_str!("../migrations/V2__audit_baseline.sql"))
+            .await
+            .expect("v2 schema");
+        conn.execute_batch(include_str!("../migrations/V3__identity_foundation.sql"))
+            .await
+            .expect("v3 schema");
+        conn.execute_batch(include_str!("../migrations/V4__money_fixed_point.sql"))
+            .await
+            .expect("v4 schema");
+        conn.execute_batch(include_str!("../migrations/V5__pricing_catalog_cache.sql"))
+            .await
+            .expect("v5 schema");
+        conn.execute_batch(include_str!("../migrations/V6__identity_onboarding.sql"))
+            .await
+            .expect("v6 schema");
+        conn.execute_batch(include_str!("../migrations/V7__user_password_rotation.sql"))
+            .await
+            .expect("v7 schema");
+
+        for (version, name) in [
+            (1_i64, "init"),
+            (2_i64, "audit_baseline"),
+            (3_i64, "identity_foundation"),
+            (4_i64, "money_fixed_point"),
+            (5_i64, "pricing_catalog_cache"),
+            (6_i64, "identity_onboarding"),
+            (7_i64, "user_password_rotation"),
+        ] {
+            conn.execute(
+                "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) VALUES (?1, ?2, unixepoch(), ?3)",
+                libsql::params![version, name, format!("v{version}")],
+            )
+            .await
+            .expect("history row");
+        }
+
+        let api_key_id = Uuid::new_v4();
+        let request_log_id = Uuid::new_v4();
+        conn.execute(
+            r#"
+            INSERT INTO api_keys (
+                id, public_id, secret_hash, name, status, owner_kind, owner_user_id, owner_team_id, created_at
+            ) VALUES (?1, 'legacy', 'hash', 'legacy', 'active', 'team', NULL, ?2, unixepoch())
+            "#,
+            libsql::params![api_key_id.to_string(), SYSTEM_LEGACY_TEAM_ID],
+        )
+        .await
+        .expect("api key");
+        conn.execute(
+            r#"
+            INSERT INTO request_logs (
+                request_log_id, request_id, api_key_id, user_id, team_id, model_key,
+                provider_key, status_code, latency_ms, prompt_tokens, completion_tokens,
+                total_tokens, error_code, metadata_json, occurred_at
+            ) VALUES (?1, 'req_backfill', ?2, NULL, ?3, 'fast', 'openai-prod', 200, 123, 10, 11, 21, NULL, '{"stream":true,"fallback_used":true,"attempt_count":2}', unixepoch())
+            "#,
+            libsql::params![
+                request_log_id.to_string(),
+                api_key_id.to_string(),
+                SYSTEM_LEGACY_TEAM_ID
+            ],
+        )
+        .await
+        .expect("request log");
+
+        run_migrations(&db_path).await.expect("migrate to v8");
+
+        {
+            let mut rows = conn
+                .query(
+                    "SELECT stream, fallback_used, attempt_count, payload_available FROM request_logs WHERE request_id = 'req_backfill'",
+                    (),
+                )
+                .await
+                .expect("query request log");
+            let row = rows.next().await.expect("row fetch").expect("row");
+            let stream: i64 = row.get(0).expect("stream");
+            let fallback_used: i64 = row.get(1).expect("fallback");
+            let attempt_count: i64 = row.get(2).expect("attempt count");
+            let payload_available: i64 = row.get(3).expect("payload available");
+            assert_eq!(stream, 1);
+            assert_eq!(fallback_used, 1);
+            assert_eq!(attempt_count, 2);
+            assert_eq!(payload_available, 0);
+        }
+        drop(conn);
+        drop(db);
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+        let payload_log_id = Uuid::new_v4();
+        store
+            .insert_request_log_bundle(&RequestLogBundle {
+                summary: RequestLogRecord {
+                    request_log_id: payload_log_id,
+                    request_id: "req_payload".to_string(),
+                    api_key_id,
+                    user_id: None,
+                    team_id: Some(Uuid::parse_str(SYSTEM_LEGACY_TEAM_ID).expect("legacy team")),
+                    model_key: "fast".to_string(),
+                    provider_key: "openai-prod".to_string(),
+                    upstream_model: "gpt-4o-mini".to_string(),
+                    status_code: Some(200),
+                    latency_ms: Some(50),
+                    stream: false,
+                    fallback_used: false,
+                    attempt_count: 1,
+                    prompt_tokens: Some(5),
+                    completion_tokens: Some(6),
+                    total_tokens: Some(11),
+                    payload_available: true,
+                    error_code: None,
+                    metadata: Map::new(),
+                    occurred_at: time::OffsetDateTime::now_utc(),
+                },
+                payload: Some(RequestLogPayloadRecord {
+                    request_log_id: payload_log_id,
+                    request_json: json!({"request": true}),
+                    response_json: json!({"response": true}),
+                    request_bytes: 15,
+                    response_bytes: 16,
+                    request_truncated: false,
+                    response_truncated: false,
+                    request_sha256: "abc".to_string(),
+                    response_sha256: "def".to_string(),
+                    occurred_at: time::OffsetDateTime::now_utc(),
+                }),
+            })
+            .await
+            .expect("insert payload log");
+
+        let payload = store
+            .get_request_log_payload_by_request_id("req_payload")
+            .await
+            .expect("payload fetch")
+            .expect("payload");
+        assert_eq!(payload.request_json["request"], true);
     }
 
     #[tokio::test]

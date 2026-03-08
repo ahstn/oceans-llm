@@ -6,6 +6,7 @@ import {
   completeInvitation,
   createTeam,
   createUser,
+  getRequestLogDetail,
   getSession,
   listApiKeys,
   listModels,
@@ -34,6 +35,12 @@ export const getUsageCosts = createServerFn({ method: 'GET' }).handler(async () 
 export const getRequestLogs = createServerFn({ method: 'GET' }).handler(async () => {
   return listRequestLogs()
 })
+
+export const getRequestLog = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: { requestId: string } }) => {
+    return getRequestLogDetail(data.requestId)
+  },
+)
 
 export const getTeams = createServerFn({ method: 'GET' }).handler(async () => {
   return listTeams()

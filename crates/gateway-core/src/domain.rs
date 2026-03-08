@@ -432,14 +432,39 @@ pub struct RequestLogRecord {
     pub team_id: Option<Uuid>,
     pub model_key: String,
     pub provider_key: String,
+    pub upstream_model: String,
     pub status_code: Option<i64>,
     pub latency_ms: Option<i64>,
+    pub stream: bool,
+    pub fallback_used: bool,
+    pub attempt_count: i64,
     pub prompt_tokens: Option<i64>,
     pub completion_tokens: Option<i64>,
     pub total_tokens: Option<i64>,
+    pub payload_available: bool,
     pub error_code: Option<String>,
     pub metadata: Map<String, Value>,
     pub occurred_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RequestLogPayloadRecord {
+    pub request_log_id: Uuid,
+    pub request_json: Value,
+    pub response_json: Value,
+    pub request_bytes: i64,
+    pub response_bytes: i64,
+    pub request_truncated: bool,
+    pub response_truncated: bool,
+    pub request_sha256: String,
+    pub response_sha256: String,
+    pub occurred_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RequestLogBundle {
+    pub summary: RequestLogRecord,
+    pub payload: Option<RequestLogPayloadRecord>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

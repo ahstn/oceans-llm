@@ -315,17 +315,31 @@ mod tests {
 
     #[derive(Debug)]
     struct RequestLogRow {
+        request_id: String,
         user_id: Option<String>,
         team_id: Option<String>,
         model_key: String,
         provider_key: String,
+        upstream_model: String,
         status_code: Option<i64>,
         latency_ms: Option<i64>,
+        stream: bool,
+        fallback_used: bool,
+        attempt_count: i64,
         prompt_tokens: Option<i64>,
         completion_tokens: Option<i64>,
         total_tokens: Option<i64>,
+        payload_available: bool,
         error_code: Option<String>,
-        metadata: Value,
+    }
+
+    #[derive(Debug)]
+    struct RequestLogPayloadRow {
+        request_id: String,
+        request_json: Value,
+        response_json: Value,
+        request_truncated: bool,
+        response_truncated: bool,
     }
 
     async fn load_request_logs(db_path: &Path) -> Vec<RequestLogRow> {
@@ -337,8 +351,10 @@ mod tests {
         let mut rows = connection
             .query(
                 r#"
-                SELECT user_id, team_id, model_key, provider_key, status_code, latency_ms,
-                       prompt_tokens, completion_tokens, total_tokens, error_code, metadata_json
+                SELECT request_id, user_id, team_id, model_key, provider_key, upstream_model,
+                       status_code, latency_ms, stream, fallback_used, attempt_count,
+                       prompt_tokens, completion_tokens, total_tokens, payload_available,
+                       error_code
                 FROM request_logs
                 ORDER BY occurred_at ASC, rowid ASC
                 "#,
@@ -349,23 +365,69 @@ mod tests {
 
         let mut logs = Vec::new();
         while let Some(row) = rows.next().await.expect("request logs row") {
-            let metadata_json: String = row.get(10).expect("metadata json");
+            let stream: i64 = row.get(8).expect("stream");
+            let fallback_used: i64 = row.get(9).expect("fallback_used");
+            let payload_available: i64 = row.get(14).expect("payload_available");
             logs.push(RequestLogRow {
-                user_id: row.get(0).expect("user_id"),
-                team_id: row.get(1).expect("team_id"),
-                model_key: row.get(2).expect("model_key"),
-                provider_key: row.get(3).expect("provider_key"),
-                status_code: row.get(4).expect("status_code"),
-                latency_ms: row.get(5).expect("latency_ms"),
-                prompt_tokens: row.get(6).expect("prompt_tokens"),
-                completion_tokens: row.get(7).expect("completion_tokens"),
-                total_tokens: row.get(8).expect("total_tokens"),
-                error_code: row.get(9).expect("error_code"),
-                metadata: serde_json::from_str(&metadata_json).expect("metadata value"),
+                request_id: row.get(0).expect("request_id"),
+                user_id: row.get(1).expect("user_id"),
+                team_id: row.get(2).expect("team_id"),
+                model_key: row.get(3).expect("model_key"),
+                provider_key: row.get(4).expect("provider_key"),
+                upstream_model: row.get(5).expect("upstream_model"),
+                status_code: row.get(6).expect("status_code"),
+                latency_ms: row.get(7).expect("latency_ms"),
+                stream: stream == 1,
+                fallback_used: fallback_used == 1,
+                attempt_count: row.get(10).expect("attempt_count"),
+                prompt_tokens: row.get(11).expect("prompt_tokens"),
+                completion_tokens: row.get(12).expect("completion_tokens"),
+                total_tokens: row.get(13).expect("total_tokens"),
+                payload_available: payload_available == 1,
+                error_code: row.get(15).expect("error_code"),
             });
         }
 
         logs
+    }
+
+    async fn load_request_log_payloads(db_path: &Path) -> Vec<RequestLogPayloadRow> {
+        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
+            .build()
+            .await
+            .expect("libsql db");
+        let connection = db.connect().expect("libsql connection");
+        let mut rows = connection
+            .query(
+                r#"
+                SELECT logs.request_id, payloads.request_json, payloads.response_json,
+                       payloads.request_truncated, payloads.response_truncated
+                FROM request_log_payloads AS payloads
+                INNER JOIN request_logs AS logs
+                  ON logs.request_log_id = payloads.request_log_id
+                ORDER BY payloads.occurred_at ASC
+                "#,
+                (),
+            )
+            .await
+            .expect("request log payloads query");
+
+        let mut payloads = Vec::new();
+        while let Some(row) = rows.next().await.expect("payload row") {
+            let request_json: String = row.get(1).expect("request_json");
+            let response_json: String = row.get(2).expect("response_json");
+            let request_truncated: i64 = row.get(3).expect("request_truncated");
+            let response_truncated: i64 = row.get(4).expect("response_truncated");
+            payloads.push(RequestLogPayloadRow {
+                request_id: row.get(0).expect("request_id"),
+                request_json: serde_json::from_str(&request_json).expect("request json"),
+                response_json: serde_json::from_str(&response_json).expect("response json"),
+                request_truncated: request_truncated == 1,
+                response_truncated: response_truncated == 1,
+            });
+        }
+
+        payloads
     }
 
     async fn set_api_key_owner_to_user(
@@ -662,15 +724,22 @@ mod tests {
         assert!(logs[0].team_id.is_some());
         assert_eq!(logs[0].model_key, "fast");
         assert_eq!(logs[0].provider_key, "openai-prod");
+        assert_eq!(logs[0].upstream_model, "gpt-4o-mini");
         assert_eq!(logs[0].status_code, Some(200));
         assert!(logs[0].latency_ms.is_some());
+        assert!(!logs[0].stream);
+        assert!(!logs[0].fallback_used);
+        assert_eq!(logs[0].attempt_count, 1);
         assert_eq!(logs[0].prompt_tokens, Some(11));
         assert_eq!(logs[0].completion_tokens, Some(7));
         assert_eq!(logs[0].total_tokens, Some(18));
+        assert!(logs[0].payload_available);
         assert_eq!(logs[0].error_code, None);
-        assert_eq!(logs[0].metadata["stream"], Value::Bool(false));
-        assert_eq!(logs[0].metadata["fallback_used"], Value::Bool(false));
-        assert_eq!(logs[0].metadata["attempt_count"], json!(1));
+
+        let payloads = load_request_log_payloads(&db_path).await;
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(payloads[0].request_json["body"]["model"], "fast");
+        assert_eq!(payloads[0].response_json["body"]["usage"]["total_tokens"], 18);
     }
 
     #[tokio::test]
@@ -774,9 +843,9 @@ mod tests {
         assert_eq!(logs[0].provider_key, "fallback");
         assert_eq!(logs[0].status_code, Some(200));
         assert_eq!(logs[0].error_code, None);
-        assert_eq!(logs[0].metadata["stream"], Value::Bool(false));
-        assert_eq!(logs[0].metadata["fallback_used"], Value::Bool(true));
-        assert_eq!(logs[0].metadata["attempt_count"], json!(2));
+        assert!(!logs[0].stream);
+        assert!(logs[0].fallback_used);
+        assert_eq!(logs[0].attempt_count, 2);
     }
 
     #[tokio::test]
@@ -877,9 +946,9 @@ mod tests {
         assert_eq!(logs[0].completion_tokens, None);
         assert_eq!(logs[0].total_tokens, None);
         assert_eq!(logs[0].error_code.as_deref(), Some("upstream_http_error"));
-        assert_eq!(logs[0].metadata["stream"], Value::Bool(false));
-        assert_eq!(logs[0].metadata["fallback_used"], Value::Bool(false));
-        assert_eq!(logs[0].metadata["attempt_count"], json!(1));
+        assert!(!logs[0].stream);
+        assert!(!logs[0].fallback_used);
+        assert_eq!(logs[0].attempt_count, 1);
     }
 
     #[tokio::test]
@@ -982,9 +1051,82 @@ mod tests {
         assert_eq!(logs[0].completion_tokens, None);
         assert_eq!(logs[0].total_tokens, None);
         assert_eq!(logs[0].error_code, None);
-        assert_eq!(logs[0].metadata["stream"], Value::Bool(true));
-        assert_eq!(logs[0].metadata["fallback_used"], Value::Bool(false));
-        assert_eq!(logs[0].metadata["attempt_count"], json!(1));
+        assert!(logs[0].stream);
+        assert!(!logs[0].fallback_used);
+        assert_eq!(logs[0].attempt_count, 1);
+
+        let payloads = load_request_log_payloads(&db_path).await;
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(payloads[0].response_json["body"]["kind"], "sse_transcript");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn generates_request_id_and_redacts_binary_payloads() {
+        let (_, provider) = make_chat_provider(
+            "openai-prod",
+            MockChatResult::Value(json!({
+                "id": "chatcmpl_123",
+                "object": "chat.completion",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "pong"}, "finish_reason":"stop"}]
+            })),
+            vec![],
+            ProviderCapabilities::openai_compat_baseline(),
+        );
+        let mut registry = gateway_core::ProviderRegistry::new();
+        registry.register(Arc::new(provider));
+
+        let (app, raw_key, db_path) = build_default_test_app(registry).await;
+        let large_image = format!("data:image/png;base64,{}", "a".repeat(9000));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .body(Body::from(
+                        json!({
+                            "model": "fast",
+                            "messages": [{
+                                "role": "user",
+                                "content": [{"type": "image_url", "image_url": {"url": large_image}}],
+                                "api_key": "secret-inline"
+                            }]
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let request_id = response
+            .headers()
+            .get("x-request-id")
+            .and_then(|value| value.to_str().ok())
+            .expect("request id header");
+        assert!(!request_id.is_empty());
+
+        let logs = load_request_logs(&db_path).await;
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].request_id, request_id);
+
+        let payloads = load_request_log_payloads(&db_path).await;
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(payloads[0].request_id, request_id);
+        assert_eq!(
+            payloads[0].request_json["body"]["messages"][0]["api_key"],
+            "[REDACTED]"
+        );
+        assert_eq!(
+            payloads[0].request_json["body"]["messages"][0]["content"][0]["image_url"]["url"]["kind"],
+            "omitted_string"
+        );
+        assert!(!payloads[0].request_truncated);
+        assert!(!payloads[0].response_truncated);
     }
 
     #[tokio::test]

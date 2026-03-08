@@ -38,9 +38,30 @@ export interface RequestLogView {
   id: string
   model: string
   provider: string
+  upstreamModel: string
   statusCode: number
   latencyMs: number
-  tokens: number
+  promptTokens: number | null
+  completionTokens: number | null
+  totalTokens: number | null
+  stream: boolean
+  fallbackUsed: boolean
+  attemptCount: number
+  payloadAvailable: boolean
+  errorCode: string | null
+  timestamp: string
+}
+
+export interface RequestLogDetailView {
+  requestId: string
+  requestJson: unknown
+  responseJson: unknown
+  requestBytes: number
+  responseBytes: number
+  requestTruncated: boolean
+  responseTruncated: boolean
+  requestSha256: string
+  responseSha256: string
   timestamp: string
 }
 

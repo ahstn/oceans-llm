@@ -3,7 +3,7 @@ use std::sync::Arc;
 use gateway_core::{
     AuthenticatedApiKey, GatewayError, GatewayModel, IdentityRepository, ModelRepository,
     ModelRoute, PricingCatalogRepository, PricingResolution, PricingUnpricedReason,
-    ProviderRepository, RequestLogRecord, RequestLogRepository, RouteError, RoutePlanner,
+    ProviderRepository, RequestLogBundle, RequestLogRepository, RouteError, RoutePlanner,
     StoreHealth,
 };
 use tracing::warn;
@@ -129,9 +129,11 @@ where
     pub async fn log_request_if_enabled(
         &self,
         auth: &AuthenticatedApiKey,
-        log: RequestLogRecord,
+        bundle: RequestLogBundle,
     ) -> Result<bool, GatewayError> {
-        self.request_logging.log_request_if_enabled(auth, log).await
+        self.request_logging
+            .log_request_if_enabled(auth, bundle)
+            .await
     }
 
     pub async fn refresh_pricing_catalog_if_stale(&self) -> Result<(), GatewayError> {

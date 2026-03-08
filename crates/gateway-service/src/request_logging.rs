@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use gateway_core::{
     ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, GatewayError, IdentityRepository,
-    RequestLogRecord, RequestLogRepository,
+    RequestLogBundle, RequestLogRepository,
 };
 
 #[derive(Clone)]
@@ -40,16 +40,19 @@ where
     pub async fn log_request_if_enabled(
         &self,
         api_key: &AuthenticatedApiKey,
-        mut log: RequestLogRecord,
+        mut bundle: RequestLogBundle,
     ) -> Result<bool, GatewayError> {
-        log.user_id = api_key.owner_user_id;
-        log.team_id = api_key.owner_team_id;
+        bundle.summary.user_id = api_key.owner_user_id;
+        bundle.summary.team_id = api_key.owner_team_id;
+        if let Some(payload) = &mut bundle.payload {
+            payload.request_log_id = bundle.summary.request_log_id;
+        }
 
         if !self.should_log_request(api_key).await? {
             return Ok(false);
         }
 
-        self.repo.insert_request_log(&log).await?;
+        self.repo.insert_request_log_bundle(&bundle).await?;
         Ok(true)
     }
 }
@@ -61,8 +64,8 @@ mod tests {
     use async_trait::async_trait;
     use gateway_core::{
         ApiKeyOwnerKind, AuthMode, AuthenticatedApiKey, GlobalRole, IdentityRepository,
-        ModelAccessMode, RequestLogRecord, RequestLogRepository, StoreError, TeamMembershipRecord,
-        TeamRecord, UserRecord,
+        ModelAccessMode, RequestLogBundle, RequestLogPayloadRecord, RequestLogRecord,
+        RequestLogRepository, StoreError, TeamMembershipRecord, TeamRecord, UserRecord,
     };
     use serde_json::Map;
     use time::OffsetDateTime;
@@ -73,7 +76,7 @@ mod tests {
     #[derive(Clone, Default)]
     struct InMemoryRepo {
         users: Arc<Mutex<Vec<UserRecord>>>,
-        logs: Arc<Mutex<Vec<RequestLogRecord>>>,
+        logs: Arc<Mutex<Vec<RequestLogBundle>>>,
     }
 
     #[async_trait]
@@ -116,9 +119,26 @@ mod tests {
 
     #[async_trait]
     impl RequestLogRepository for InMemoryRepo {
-        async fn insert_request_log(&self, log: &RequestLogRecord) -> Result<(), StoreError> {
-            self.logs.lock().expect("logs lock").push(log.clone());
+        async fn insert_request_log_bundle(
+            &self,
+            bundle: &RequestLogBundle,
+        ) -> Result<(), StoreError> {
+            self.logs.lock().expect("logs lock").push(bundle.clone());
             Ok(())
+        }
+
+        async fn list_request_logs(
+            &self,
+            _limit: usize,
+        ) -> Result<Vec<RequestLogRecord>, StoreError> {
+            Ok(Vec::new())
+        }
+
+        async fn get_request_log_payload_by_request_id(
+            &self,
+            _request_id: &str,
+        ) -> Result<Option<RequestLogPayloadRecord>, StoreError> {
+            Ok(None)
         }
     }
 
@@ -131,6 +151,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Password,
             status: "active".to_string(),
+            must_change_password: false,
             request_logging_enabled,
             model_access_mode: ModelAccessMode::All,
             created_at: OffsetDateTime::now_utc(),
@@ -147,11 +168,16 @@ mod tests {
             team_id: None,
             model_key: "fast".to_string(),
             provider_key: "openai-prod".to_string(),
+            upstream_model: "gpt-4o-mini".to_string(),
             status_code: Some(200),
             latency_ms: Some(120),
+            stream: false,
+            fallback_used: false,
+            attempt_count: 1,
             prompt_tokens: Some(100),
             completion_tokens: Some(200),
             total_tokens: Some(300),
+            payload_available: false,
             error_code: None,
             metadata: Map::new(),
             occurred_at: OffsetDateTime::now_utc(),
@@ -177,7 +203,13 @@ mod tests {
         };
 
         let wrote = logging
-            .log_request_if_enabled(&auth, sample_log(api_key_id))
+            .log_request_if_enabled(
+                &auth,
+                RequestLogBundle {
+                    summary: sample_log(api_key_id),
+                    payload: None,
+                },
+            )
             .await
             .expect("request logging should evaluate");
 
@@ -201,14 +233,20 @@ mod tests {
         };
 
         let wrote = logging
-            .log_request_if_enabled(&auth, sample_log(api_key_id))
+            .log_request_if_enabled(
+                &auth,
+                RequestLogBundle {
+                    summary: sample_log(api_key_id),
+                    payload: None,
+                },
+            )
             .await
             .expect("request logging should evaluate");
 
         let logs = repo.logs.lock().expect("logs lock");
         assert!(wrote);
         assert_eq!(logs.len(), 1);
-        assert!(logs[0].user_id.is_none());
-        assert_eq!(logs[0].team_id, Some(team_id));
+        assert!(logs[0].summary.user_id.is_none());
+        assert_eq!(logs[0].summary.team_id, Some(team_id));
     }
 }

@@ -843,7 +843,7 @@ pub async fn oidc_callback(
     Ok(response)
 }
 
-fn envelope<T>(data: T) -> Envelope<T> {
+pub(crate) fn envelope<T>(data: T) -> Envelope<T> {
     Envelope {
         data,
         meta: ResponseMeta {
@@ -852,7 +852,7 @@ fn envelope<T>(data: T) -> Envelope<T> {
     }
 }
 
-fn request_origin(headers: &HeaderMap) -> String {
+pub(crate) fn request_origin(headers: &HeaderMap) -> String {
     if let Some(origin) = header_value(headers, "x-forwarded-origin") {
         return origin;
     }
@@ -862,7 +862,7 @@ fn request_origin(headers: &HeaderMap) -> String {
     format!("{proto}://{host}")
 }
 
-async fn require_platform_admin(
+pub(crate) async fn require_platform_admin(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<UserRecord, AppError> {
@@ -1460,7 +1460,7 @@ fn oidc_subject(provider: &OidcProviderRecord, email: &str) -> String {
     format!("mock:{}:{email}", provider.provider_key)
 }
 
-fn format_timestamp(value: OffsetDateTime) -> String {
+pub(crate) fn format_timestamp(value: OffsetDateTime) -> String {
     value
         .format(&Rfc3339)
         .unwrap_or_else(|_| value.unix_timestamp().to_string())

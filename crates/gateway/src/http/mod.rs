@@ -1,6 +1,7 @@
 pub mod error;
 pub mod handlers;
 pub mod identity;
+pub mod observability;
 pub mod state;
 
 use admin_ui::{AdminUiConfig, mount_admin_ui};
@@ -14,7 +15,7 @@ use tower_http::{
     trace::TraceLayer,
 };
 
-use self::{handlers::*, identity::*, state::AppState};
+use self::{handlers::*, identity::*, observability::*, state::AppState};
 
 pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
     let request_id_header = HeaderName::from_static("x-request-id");
@@ -42,6 +43,14 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
         .route(
             "/api/v1/admin/identity/users/{user_id}/password-invite",
             post(regenerate_password_invite),
+        )
+        .route(
+            "/api/v1/admin/observability/request-logs",
+            get(list_request_logs),
+        )
+        .route(
+            "/api/v1/admin/observability/request-logs/{request_id}",
+            get(get_request_log_detail),
         )
         .route("/api/v1/auth/session", get(get_auth_session))
         .route("/api/v1/auth/login/password", post(login_with_password))
