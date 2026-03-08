@@ -11,12 +11,7 @@ skip_ci = "[skip ci]"
 skip_untracked = true
 tag_prefix = "v"
 
-post_bump_hooks = [
-    "git push origin {{version_tag}}",
-    "git-cliff --tag v$(cog get-version) --output CHANGELOG.md",
-    'gh release create v$(cog get-version) --notes "$(git-cliff --tag v$(cog get-version) --latest --strip header)"',
-    "cargo release version $(cog get-version) --execute",
-]
+post_bump_hooks = ["git push origin {{version_tag}}"]
 pre_bump_hooks = []
 # Hooks to execute
 pre_package_bump_hooks = []

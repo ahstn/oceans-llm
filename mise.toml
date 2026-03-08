@@ -74,12 +74,23 @@ run = "bun run --cwd crates/admin-ui/web test"
 
 [tasks.release]
 description = "Analyze commits and dispatch the release workflow when a release is pending"
-# Requires GITHUB_TOKEN to be set in the environment
-run = ["cog bump --auto --skip-untracked", "git-cliff -o CHANGELOG.md"]
+env = { GITHUB_TOKEN = { required = true } }
+# Cocogitto is used purely for version bumping and publishing tags.
+# git-cliff, might be able to replace it entirely, but failed when an initial tag didn't exist.
+# Requires GITHUB_TOKEN to be set in the environment to avoid rate limits
+run = [
+  "cog bump --auto --skip-untracked",
+  "git-cliff -o CHANGELOG.md",
+  # GitHub release with version specific notes (git-cliff)
+  'gh release create v$(cog get-version) --notes "$(git-cliff --tag v$(cog get-version) --latest --strip header)"',
+  # Bump package Cargo.toml versions
+  "cargo release version $(cog get-version) --execute",
+]
 
 
 [tasks.release-dry-run]
 description = "Validate semantic-release configuration in dry-run mode"
+env = { GITHUB_TOKEN = { required = true } }
 run = [
   "cog bump --auto --dry-run --skip-untracked",
   "git-cliff --dry-run --offline",
