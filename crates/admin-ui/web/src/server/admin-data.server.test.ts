@@ -39,6 +39,42 @@ vi.mock('@/server/gateway-client.server', () => ({
       }
     }
 
+    if (path === '/api/v1/admin/identity/teams') {
+      return {
+        data: {
+          teams: [
+            {
+              id: 'team_1',
+              name: 'Core Platform',
+              key: 'core-platform',
+              status: 'active',
+              member_count: 2,
+              admins: [
+                {
+                  id: 'user_1',
+                  name: 'Jane Admin',
+                  email: 'jane@example.com',
+                  status: 'active',
+                },
+              ],
+            },
+          ],
+          users: [
+            {
+              id: 'user_1',
+              name: 'Jane Admin',
+              email: 'jane@example.com',
+              status: 'active',
+              team_id: 'team_1',
+              team_name: 'Core Platform',
+              team_role: 'admin',
+            },
+          ],
+          oidc_providers: [{ id: 'oidc_1', key: 'okta-main', label: 'okta-main' }],
+        },
+      }
+    }
+
     throw new Error(`Unexpected path: ${path}`)
   }),
 }))
@@ -58,7 +94,8 @@ describe('server-side mock repositories', () => {
     expect(models.data.length).toBeGreaterThan(0)
     expect(costs.data.length).toBeGreaterThan(0)
     expect(logs.data.items.length).toBeGreaterThan(100)
-    expect(teams.data.length).toBeGreaterThan(0)
+    expect(teams.data.teams.length).toBeGreaterThan(0)
+    expect(teams.data.users.length).toBeGreaterThan(0)
     expect(users.data.users.length).toBeGreaterThan(0)
     expect(users.data.teams.length).toBeGreaterThan(0)
   })

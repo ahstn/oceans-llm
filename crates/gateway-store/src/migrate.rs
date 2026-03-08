@@ -2,11 +2,57 @@ use std::{collections::HashSet, path::Path};
 
 use anyhow::Context;
 
-mod embedded {
-    use refinery::embed_migrations;
-
-    embed_migrations!("migrations");
+struct EmbeddedMigration {
+    version: u32,
+    name: &'static str,
+    checksum: &'static str,
+    sql: &'static str,
 }
+
+const EMBEDDED_MIGRATIONS: &[EmbeddedMigration] = &[
+    EmbeddedMigration {
+        version: 1,
+        name: "init",
+        checksum: "V1__init.sql",
+        sql: include_str!("../migrations/V1__init.sql"),
+    },
+    EmbeddedMigration {
+        version: 2,
+        name: "audit_baseline",
+        checksum: "V2__audit_baseline.sql",
+        sql: include_str!("../migrations/V2__audit_baseline.sql"),
+    },
+    EmbeddedMigration {
+        version: 3,
+        name: "identity_foundation",
+        checksum: "V3__identity_foundation.sql",
+        sql: include_str!("../migrations/V3__identity_foundation.sql"),
+    },
+    EmbeddedMigration {
+        version: 4,
+        name: "money_fixed_point",
+        checksum: "V4__money_fixed_point.sql",
+        sql: include_str!("../migrations/V4__money_fixed_point.sql"),
+    },
+    EmbeddedMigration {
+        version: 5,
+        name: "pricing_catalog_cache",
+        checksum: "V5__pricing_catalog_cache.sql",
+        sql: include_str!("../migrations/V5__pricing_catalog_cache.sql"),
+    },
+    EmbeddedMigration {
+        version: 6,
+        name: "identity_onboarding",
+        checksum: "V6__identity_onboarding.sql",
+        sql: include_str!("../migrations/V6__identity_onboarding.sql"),
+    },
+    EmbeddedMigration {
+        version: 7,
+        name: "user_password_rotation",
+        checksum: "V7__user_password_rotation.sql",
+        sql: include_str!("../migrations/V7__user_password_rotation.sql"),
+    },
+];
 
 pub async fn run_migrations(path: impl AsRef<Path>) -> anyhow::Result<()> {
     let path = path.as_ref();
@@ -47,18 +93,14 @@ pub async fn run_migrations(path: impl AsRef<Path>) -> anyhow::Result<()> {
         applied_versions.insert(version as u32);
     }
 
-    for migration in embedded::migrations::runner().get_migrations() {
-        if applied_versions.contains(&migration.version()) {
+    for migration in EMBEDDED_MIGRATIONS {
+        if applied_versions.contains(&migration.version) {
             continue;
         }
 
-        let sql = migration.sql().ok_or_else(|| {
-            anyhow::anyhow!("embedded migration {} has no SQL body", migration.version())
-        })?;
-
-        conn.execute_batch(sql)
+        conn.execute_batch(migration.sql)
             .await
-            .with_context(|| format!("failed applying migration {}", migration.version()))?;
+            .with_context(|| format!("failed applying migration {}", migration.version))?;
 
         conn.execute(
             r#"
@@ -66,16 +108,16 @@ pub async fn run_migrations(path: impl AsRef<Path>) -> anyhow::Result<()> {
             VALUES (?1, ?2, unixepoch(), ?3)
             "#,
             libsql::params![
-                migration.version() as i64,
-                migration.name(),
-                migration.checksum().to_string()
+                migration.version as i64,
+                migration.name,
+                migration.checksum
             ],
         )
         .await
         .with_context(|| {
             format!(
                 "failed recording migration {} in refinery_schema_history",
-                migration.version()
+                migration.version
             )
         })?;
     }

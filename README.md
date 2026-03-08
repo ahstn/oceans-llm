@@ -23,7 +23,7 @@ Single-container dual process:
 ## Environment
 
 - `PORT`: Gateway bind port (default `8080`)
-- `GATEWAY_CONFIG`: gateway config file path (default `./gateway.yaml`)
+- `GATEWAY_CONFIG`: gateway config file path (default `./gateway.yaml`, prod helper uses `./gateway.prod.yaml`)
 - `ADMIN_UI_BASE_PATH`: UI mount path (default `/admin`)
 - `ADMIN_UI_UPSTREAM`: SSR upstream URL (default `http://localhost:3001`)
 - `ADMIN_UI_CONNECT_TIMEOUT_MS`: Proxy connect timeout (default `750`)
@@ -32,7 +32,12 @@ Single-container dual process:
 
 ## Gateway config
 
-`gateway` reads `gateway.yaml` (or `GATEWAY_CONFIG`) at startup, runs SQL migrations, seeds providers/models/api keys, then starts serving traffic.
+`gateway` reads `gateway.yaml` (or `GATEWAY_CONFIG`) at startup, runs SQL migrations, seeds providers/models/api keys, ensures a bootstrap admin exists, then starts serving traffic.
+
+Bootstrap admin defaults:
+
+- local config (`gateway.yaml`): `admin@local` / `admin`, no forced password change
+- production helper config (`gateway.prod.yaml`): `admin@local` / `admin`, forced password change on first login
 
 ### Provider types
 
@@ -118,6 +123,8 @@ Run both UI and gateway together:
 mise run ui-build
 ./scripts/start-prod.sh
 ```
+
+`start-prod.sh` defaults `GATEWAY_CONFIG` to `./gateway.prod.yaml`, which keeps the bootstrap admin enabled for first-time setup and forces a password change after initial sign-in.
 
 ## Quality gates
 

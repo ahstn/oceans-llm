@@ -8,9 +8,9 @@ use gateway_core::{
     ModelAccessMode, ModelRepository, ModelRoute, Money4, OidcProviderRecord,
     PasswordInvitationRecord, PricingCatalogCacheRecord, PricingCatalogRepository,
     ProviderConnection, ProviderRepository, RequestLogRecord, RequestLogRepository,
-    SYSTEM_BOOTSTRAP_ADMIN_EMAIL, SYSTEM_BOOTSTRAP_ADMIN_USER_ID, StoreError, StoreHealth,
+    SYSTEM_BOOTSTRAP_ADMIN_USER_ID, StoreError, StoreHealth,
     TeamMembershipRecord, TeamRecord, UsageCostEventRecord, UserBudgetRecord, UserOidcAuthRecord,
-    UserRecord, UserSessionRecord,
+    UserPasswordAuthRecord, UserRecord, UserSessionRecord,
 };
 use serde_json::{Map, Value};
 use time::OffsetDateTime;
@@ -38,17 +38,59 @@ impl LibsqlStore {
         &self.connection
     }
 
-    pub async fn ensure_bootstrap_admin_user(&self) -> Result<UserRecord, StoreError> {
+    pub async fn has_platform_admin(&self) -> Result<bool, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT 1
+                FROM users
+                WHERE global_role = 'platform_admin'
+                LIMIT 1
+                "#,
+                (),
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        Ok(rows.next().await.map_err(to_query_error)?.is_some())
+    }
+
+    pub async fn upsert_bootstrap_admin_user(
+        &self,
+        name: &str,
+        email: &str,
+        must_change_password: bool,
+    ) -> Result<UserRecord, StoreError> {
         let now = OffsetDateTime::now_utc().unix_timestamp();
+        let email_normalized = email.trim().to_ascii_lowercase();
         self.connection
             .execute(
                 r#"
-                INSERT OR IGNORE INTO users (
+                INSERT INTO users (
                     user_id, name, email, email_normalized, global_role, auth_mode, status,
-                    request_logging_enabled, model_access_mode, created_at, updated_at
-                ) VALUES (?1, 'Bootstrap Admin', ?2, ?2, 'platform_admin', 'password', 'active', 1, 'all', ?3, ?3)
+                    must_change_password, request_logging_enabled, model_access_mode, created_at, updated_at
+                ) VALUES (?1, ?2, ?3, ?4, 'platform_admin', 'password', 'active', ?5, 1, 'all', ?6, ?6)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    name = excluded.name,
+                    email = excluded.email,
+                    email_normalized = excluded.email_normalized,
+                    global_role = excluded.global_role,
+                    auth_mode = excluded.auth_mode,
+                    status = excluded.status,
+                    must_change_password = excluded.must_change_password,
+                    request_logging_enabled = excluded.request_logging_enabled,
+                    model_access_mode = excluded.model_access_mode,
+                    updated_at = excluded.updated_at
                 "#,
-                libsql::params![SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SYSTEM_BOOTSTRAP_ADMIN_EMAIL, now],
+                libsql::params![
+                    SYSTEM_BOOTSTRAP_ADMIN_USER_ID,
+                    name,
+                    email,
+                    email_normalized,
+                    if must_change_password { 1_i64 } else { 0_i64 },
+                    now
+                ],
             )
             .await
             .map_err(to_write_error)?;
@@ -71,6 +113,7 @@ impl LibsqlStore {
                     users.global_role,
                     users.auth_mode,
                     users.status,
+                    users.must_change_password,
                     users.request_logging_enabled,
                     users.model_access_mode,
                     users.created_at,
@@ -109,6 +152,28 @@ impl LibsqlStore {
                 SELECT team_id, team_key, team_name, status, model_access_mode, created_at, updated_at
                 FROM teams
                 WHERE status = 'active'
+                ORDER BY team_name ASC
+                "#,
+                (),
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let mut teams = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            teams.push(decode_team_record(&row)?);
+        }
+
+        Ok(teams)
+    }
+
+    pub async fn list_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT team_id, team_key, team_name, status, model_access_mode, created_at, updated_at
+                FROM teams
                 ORDER BY team_name ASC
                 "#,
                 (),
@@ -183,7 +248,7 @@ impl LibsqlStore {
             .query(
                 r#"
                 SELECT user_id, name, email, email_normalized, global_role, auth_mode, status,
-                       request_logging_enabled, model_access_mode, created_at, updated_at
+                       must_change_password, request_logging_enabled, model_access_mode, created_at, updated_at
                 FROM users
                 WHERE email_normalized = ?1
                 LIMIT 1
@@ -198,6 +263,73 @@ impl LibsqlStore {
         };
 
         decode_user_record(&row).map(Some)
+    }
+
+    pub async fn get_team_by_key(&self, team_key: &str) -> Result<Option<TeamRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT team_id, team_key, team_name, status, model_access_mode, created_at, updated_at
+                FROM teams
+                WHERE team_key = ?1
+                LIMIT 1
+                "#,
+                [team_key],
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let Some(row) = rows.next().await.map_err(to_query_error)? else {
+            return Ok(None);
+        };
+
+        decode_team_record(&row).map(Some)
+    }
+
+    pub async fn create_team(
+        &self,
+        team_key: &str,
+        team_name: &str,
+    ) -> Result<TeamRecord, StoreError> {
+        let team_id = Uuid::new_v4();
+        let now = OffsetDateTime::now_utc().unix_timestamp();
+
+        self.connection
+            .execute(
+                r#"
+                INSERT INTO teams (
+                    team_id, team_key, team_name, status, model_access_mode, created_at, updated_at
+                ) VALUES (?1, ?2, ?3, 'active', 'all', ?4, ?4)
+                "#,
+                libsql::params![team_id.to_string(), team_key, team_name, now],
+            )
+            .await
+            .map_err(to_write_error)?;
+
+        self.get_team_by_id(team_id)
+            .await?
+            .ok_or_else(|| StoreError::NotFound(format!("created team `{team_id}` missing")))
+    }
+
+    pub async fn update_team_name(
+        &self,
+        team_id: Uuid,
+        team_name: &str,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        self.connection
+            .execute(
+                r#"
+                UPDATE teams
+                SET team_name = ?1, updated_at = ?2
+                WHERE team_id = ?3
+                "#,
+                libsql::params![team_name, updated_at.unix_timestamp(), team_id.to_string()],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(())
     }
 
     pub async fn create_identity_user(
@@ -217,8 +349,8 @@ impl LibsqlStore {
                 r#"
                 INSERT INTO users (
                     user_id, name, email, email_normalized, global_role, auth_mode, status,
-                    request_logging_enabled, model_access_mode, created_at, updated_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, 'all', ?8, ?8)
+                    must_change_password, request_logging_enabled, model_access_mode, created_at, updated_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, 1, 'all', ?8, ?8)
                 "#,
                 libsql::params![
                     user_id.to_string(),
@@ -253,6 +385,83 @@ impl LibsqlStore {
                 VALUES (?1, ?2, ?3, ?4, ?4)
                 "#,
                 libsql::params![team_id.to_string(), user_id.to_string(), role.as_str(), now],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn get_user_password_auth(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Option<UserPasswordAuthRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT user_id, password_hash, password_updated_at
+                FROM user_password_auth
+                WHERE user_id = ?1
+                LIMIT 1
+                "#,
+                [user_id.to_string()],
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let Some(row) = rows.next().await.map_err(to_query_error)? else {
+            return Ok(None);
+        };
+
+        decode_user_password_auth_record(&row).map(Some)
+    }
+
+    pub async fn list_team_memberships(
+        &self,
+        team_id: Uuid,
+    ) -> Result<Vec<TeamMembershipRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT team_id, user_id, role, created_at, updated_at
+                FROM team_memberships
+                WHERE team_id = ?1
+                ORDER BY created_at ASC
+                "#,
+                [team_id.to_string()],
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let mut memberships = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            memberships.push(decode_team_membership_record(&row)?);
+        }
+
+        Ok(memberships)
+    }
+
+    pub async fn update_team_membership_role(
+        &self,
+        team_id: Uuid,
+        user_id: Uuid,
+        role: MembershipRole,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        self.connection
+            .execute(
+                r#"
+                UPDATE team_memberships
+                SET role = ?1, updated_at = ?2
+                WHERE team_id = ?3 AND user_id = ?4
+                "#,
+                libsql::params![
+                    role.as_str(),
+                    updated_at.unix_timestamp(),
+                    team_id.to_string(),
+                    user_id.to_string()
+                ],
             )
             .await
             .map_err(to_write_error)?;
@@ -431,6 +640,30 @@ impl LibsqlStore {
         Ok(())
     }
 
+    pub async fn update_user_must_change_password(
+        &self,
+        user_id: Uuid,
+        must_change_password: bool,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        self.connection
+            .execute(
+                r#"
+                UPDATE users
+                SET must_change_password = ?1, updated_at = ?2
+                WHERE user_id = ?3
+                "#,
+                libsql::params![
+                    if must_change_password { 1_i64 } else { 0_i64 },
+                    updated_at.unix_timestamp(),
+                    user_id.to_string()
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(())
+    }
+
     pub async fn create_user_session(
         &self,
         session_id: Uuid,
@@ -591,7 +824,7 @@ impl LibsqlStore {
                 r#"
                 SELECT users.user_id, users.name, users.email, users.email_normalized,
                        users.global_role, users.auth_mode, users.status,
-                       users.request_logging_enabled, users.model_access_mode,
+                       users.must_change_password, users.request_logging_enabled, users.model_access_mode,
                        users.created_at, users.updated_at
                 FROM users
                 INNER JOIN user_oidc_links ON user_oidc_links.user_id = users.user_id
@@ -808,7 +1041,7 @@ impl IdentityRepository for LibsqlStore {
             .query(
                 r#"
                 SELECT user_id, name, email, email_normalized, global_role, auth_mode, status,
-                       request_logging_enabled, model_access_mode, created_at, updated_at
+                       must_change_password, request_logging_enabled, model_access_mode, created_at, updated_at
                 FROM users
                 WHERE user_id = ?1
                 LIMIT 1
@@ -1260,10 +1493,11 @@ fn decode_user_record(row: &libsql::Row) -> Result<UserRecord, StoreError> {
     let user_id: String = row.get(0).map_err(to_query_error)?;
     let global_role: String = row.get(4).map_err(to_query_error)?;
     let auth_mode: String = row.get(5).map_err(to_query_error)?;
-    let request_logging_enabled: i64 = row.get(7).map_err(to_query_error)?;
-    let model_access_mode: String = row.get(8).map_err(to_query_error)?;
-    let created_at: i64 = row.get(9).map_err(to_query_error)?;
-    let updated_at: i64 = row.get(10).map_err(to_query_error)?;
+    let must_change_password: i64 = row.get(7).map_err(to_query_error)?;
+    let request_logging_enabled: i64 = row.get(8).map_err(to_query_error)?;
+    let model_access_mode: String = row.get(9).map_err(to_query_error)?;
+    let created_at: i64 = row.get(10).map_err(to_query_error)?;
+    let updated_at: i64 = row.get(11).map_err(to_query_error)?;
 
     Ok(UserRecord {
         user_id: parse_uuid(&user_id)?,
@@ -1276,6 +1510,7 @@ fn decode_user_record(row: &libsql::Row) -> Result<UserRecord, StoreError> {
         auth_mode: AuthMode::from_db(&auth_mode)
             .ok_or_else(|| StoreError::Serialization(format!("unknown auth mode `{auth_mode}`")))?,
         status: row.get(6).map_err(to_query_error)?,
+        must_change_password: must_change_password == 1,
         request_logging_enabled: request_logging_enabled == 1,
         model_access_mode: ModelAccessMode::from_db(&model_access_mode).ok_or_else(|| {
             StoreError::Serialization(format!("unknown model access mode `{model_access_mode}`"))
@@ -1286,9 +1521,9 @@ fn decode_user_record(row: &libsql::Row) -> Result<UserRecord, StoreError> {
 }
 
 fn decode_identity_user_record(row: &libsql::Row) -> Result<IdentityUserRecord, StoreError> {
-    let team_id: Option<String> = row.get(11).map_err(to_query_error)?;
-    let membership_role: Option<String> = row.get(13).map_err(to_query_error)?;
-    let oidc_provider_id: Option<String> = row.get(14).map_err(to_query_error)?;
+    let team_id: Option<String> = row.get(12).map_err(to_query_error)?;
+    let membership_role: Option<String> = row.get(14).map_err(to_query_error)?;
+    let oidc_provider_id: Option<String> = row.get(15).map_err(to_query_error)?;
     let membership_role = match membership_role {
         Some(role) => Some(MembershipRole::from_db(&role).ok_or_else(|| {
             StoreError::Serialization(format!("unknown membership role `{role}`"))
@@ -1303,10 +1538,23 @@ fn decode_identity_user_record(row: &libsql::Row) -> Result<IdentityUserRecord, 
             .map(parse_uuid)
             .transpose()
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
-        team_name: row.get(12).map_err(to_query_error)?,
+        team_name: row.get(13).map_err(to_query_error)?,
         membership_role,
         oidc_provider_id,
-        oidc_provider_key: row.get(15).map_err(to_query_error)?,
+        oidc_provider_key: row.get(16).map_err(to_query_error)?,
+    })
+}
+
+fn decode_user_password_auth_record(
+    row: &libsql::Row,
+) -> Result<UserPasswordAuthRecord, StoreError> {
+    let user_id: String = row.get(0).map_err(to_query_error)?;
+    let password_updated_at: i64 = row.get(2).map_err(to_query_error)?;
+
+    Ok(UserPasswordAuthRecord {
+        user_id: parse_uuid(&user_id)?,
+        password_hash: row.get(1).map_err(to_query_error)?,
+        password_updated_at: unix_to_datetime(password_updated_at)?,
     })
 }
 

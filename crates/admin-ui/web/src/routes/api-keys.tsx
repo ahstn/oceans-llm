@@ -2,9 +2,11 @@ import { createFileRoute } from '@tanstack/react-router'
 
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { requireAdminSession } from '@/routes/-admin-guard'
 import { getApiKeys } from '@/server/admin-data.functions'
 
 export const Route = createFileRoute('/api-keys')({
+  beforeLoad: ({ location }) => requireAdminSession(location),
   loader: () => getApiKeys(),
   component: ApiKeysPage,
 })

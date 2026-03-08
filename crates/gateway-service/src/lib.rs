@@ -7,7 +7,7 @@ pub mod request_logging;
 pub mod route_planner;
 pub mod service;
 
-pub use authenticator::{Authenticator, hash_gateway_key_secret};
+pub use authenticator::{Authenticator, hash_gateway_key_secret, verify_gateway_key_secret};
 pub use model_access::ModelAccess;
 pub use pricing_catalog::{
     DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, DEFAULT_PRICING_CATALOG_SOURCE_URL,

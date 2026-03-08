@@ -10,12 +10,12 @@ use gateway_core::ProviderRegistry;
 use gateway_providers::{OpenAiCompatProvider, VertexProvider};
 use gateway_service::{
     DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, GatewayService, WeightedRoutePlanner,
+    hash_gateway_key_secret,
 };
 use gateway_store::{LibsqlStore, run_migrations};
 use http::{build_router, state::AppState};
 use tokio::net::TcpListener;
-
-use crate::config::GatewayConfig;
+use crate::config::{BootstrapAdminConfig, GatewayConfig};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -33,6 +33,9 @@ async fn main() -> anyhow::Result<()> {
             .await
             .context("failed to initialize local libsql store")?,
     );
+    ensure_bootstrap_admin(&store, &config.auth.bootstrap_admin)
+        .await
+        .context("failed to ensure bootstrap admin access")?;
 
     let providers_seed = config.seed_providers()?;
     let models_seed = config.seed_models()?;
@@ -76,6 +79,39 @@ async fn main() -> anyhow::Result<()> {
     axum::serve(listener, app)
         .await
         .context("gateway server stopped unexpectedly")?;
+
+    Ok(())
+}
+
+async fn ensure_bootstrap_admin(
+    store: &Arc<LibsqlStore>,
+    config: &BootstrapAdminConfig,
+) -> anyhow::Result<()> {
+    if !config.enabled {
+        return Ok(());
+    }
+
+    if store
+        .has_platform_admin()
+        .await
+        .context("failed checking for existing platform admins")?
+    {
+        return Ok(());
+    }
+
+    let user = store
+        .upsert_bootstrap_admin_user("Admin", &config.email, config.require_password_change)
+        .await
+        .context("failed upserting bootstrap admin user")?;
+    let password = config
+        .resolved_password()
+        .context("failed resolving bootstrap admin password")?;
+    let password_hash =
+        hash_gateway_key_secret(&password).context("failed hashing bootstrap admin password")?;
+    store
+        .store_user_password(user.user_id, &password_hash, time::OffsetDateTime::now_utc())
+        .await
+        .context("failed storing bootstrap admin password")?;
 
     Ok(())
 }
@@ -160,8 +196,8 @@ mod tests {
     use gateway_core::ChatCompletionsRequest;
     use gateway_core::{
         EmbeddingsRequest, ProviderCapabilities, ProviderClient, ProviderError,
-        ProviderRequestContext, ProviderStream, SeedApiKey, SeedModel, SeedModelRoute,
-        SeedProvider, parse_gateway_api_key,
+        ProviderRequestContext, ProviderStream, SeedApiKey, SeedModel,
+        SeedModelRoute, SeedProvider, parse_gateway_api_key,
     };
     use gateway_service::{GatewayService, WeightedRoutePlanner, hash_gateway_key_secret};
     use gateway_store::{LibsqlStore, run_migrations};
@@ -171,7 +207,11 @@ mod tests {
     use tower::ServiceExt;
     use uuid::Uuid;
 
-    use crate::http::{build_router, state::AppState};
+    use crate::{
+        config::BootstrapAdminConfig,
+        ensure_bootstrap_admin,
+        http::{build_router, state::AppState},
+    };
 
     #[derive(Clone)]
     enum MockChatResult {
@@ -452,6 +492,56 @@ mod tests {
         }];
 
         build_test_app(seed_providers, models, providers).await
+    }
+
+    async fn build_default_test_app_with_store(
+        providers: gateway_core::ProviderRegistry,
+    ) -> (Router, Arc<LibsqlStore>, PathBuf) {
+        let tmp = tempdir().expect("tempdir");
+        let tmp_path = tmp.keep();
+        let db_path = tmp_path.join("gateway.db");
+
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = Arc::new(
+            LibsqlStore::new_local(db_path.to_str().expect("db path"))
+                .await
+                .expect("store"),
+        );
+
+        let service = Arc::new(GatewayService::new(
+            store.clone(),
+            Arc::new(WeightedRoutePlanner::seeded(11)),
+        ));
+
+        let app = build_router(
+            AppState {
+                service,
+                store: store.clone(),
+                providers,
+                identity_token_secret: Arc::new("local-dev-identity-secret".to_string()),
+            },
+            AdminUiConfig::default(),
+        );
+
+        (app, store, db_path)
+    }
+
+    fn set_cookie_header(response: &axum::response::Response) -> String {
+        response
+            .headers()
+            .get("set-cookie")
+            .expect("set-cookie header")
+            .to_str()
+            .expect("set-cookie value")
+            .to_string()
+    }
+
+    async fn read_json(response: axum::response::Response) -> Value {
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        serde_json::from_slice(&body).expect("json body")
     }
 
     #[tokio::test]
@@ -895,5 +985,289 @@ mod tests {
         assert_eq!(logs[0].metadata["stream"], Value::Bool(true));
         assert_eq!(logs[0].metadata["fallback_used"], Value::Bool(false));
         assert_eq!(logs[0].metadata["attempt_count"], json!(1));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn admin_identity_routes_require_authenticated_session() {
+        let (app, _, _) = build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/v1/admin/identity/users")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn bootstrap_admin_can_log_in_and_load_session() {
+        let (app, store, _) =
+            build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;
+        ensure_bootstrap_admin(
+            &store,
+            &BootstrapAdminConfig {
+                enabled: true,
+                email: "admin@local".to_string(),
+                password: "literal.admin".to_string(),
+                require_password_change: false,
+            },
+        )
+        .await
+        .expect("bootstrap admin");
+
+        let login_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/auth/login/password")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "email": "admin@local",
+                            "password": "admin"
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(login_response.status(), StatusCode::OK);
+        let session_cookie = set_cookie_header(&login_response);
+        let login_json = read_json(login_response).await;
+        assert_eq!(login_json["data"]["user"]["email"], "admin@local");
+        assert_eq!(login_json["data"]["user"]["global_role"], "platform_admin");
+        assert_eq!(login_json["data"]["must_change_password"], Value::Bool(false));
+
+        let session_response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/v1/auth/session")
+                    .header("cookie", session_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(session_response.status(), StatusCode::OK);
+        let session_json = read_json(session_response).await;
+        assert_eq!(session_json["data"]["user"]["email"], "admin@local");
+        assert_eq!(session_json["data"]["must_change_password"], Value::Bool(false));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn forced_password_change_can_be_completed_and_old_password_stops_working() {
+        let (app, store, _) =
+            build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;
+        ensure_bootstrap_admin(
+            &store,
+            &BootstrapAdminConfig {
+                enabled: true,
+                email: "admin@local".to_string(),
+                password: "literal.admin".to_string(),
+                require_password_change: true,
+            },
+        )
+        .await
+        .expect("bootstrap admin");
+
+        let login_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/auth/login/password")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "email": "admin@local",
+                            "password": "admin"
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(login_response.status(), StatusCode::OK);
+        let session_cookie = set_cookie_header(&login_response);
+        let login_json = read_json(login_response).await;
+        assert_eq!(login_json["data"]["must_change_password"], Value::Bool(true));
+
+        let change_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/auth/password/change")
+                    .header("content-type", "application/json")
+                    .header("cookie", session_cookie)
+                    .body(Body::from(
+                        json!({
+                            "current_password": "admin",
+                            "new_password": "s3cur3-passw0rd"
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(change_response.status(), StatusCode::OK);
+        let change_json = read_json(change_response).await;
+        assert_eq!(change_json["data"]["must_change_password"], Value::Bool(false));
+
+        let old_login_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/auth/login/password")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "email": "admin@local",
+                            "password": "admin"
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(old_login_response.status(), StatusCode::UNAUTHORIZED);
+
+        let new_login_response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/auth/login/password")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "email": "admin@local",
+                            "password": "s3cur3-passw0rd"
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(new_login_response.status(), StatusCode::OK);
+
+        let refreshed_user = store
+            .get_user_by_email_normalized("admin@local")
+            .await
+            .expect("reload bootstrap admin")
+            .expect("bootstrap admin should exist");
+        assert!(!refreshed_user.must_change_password);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn bootstrap_admin_is_not_reseeded_after_initial_creation() {
+        let (_, store, _) =
+            build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;
+        let initial_config = BootstrapAdminConfig {
+            enabled: true,
+            email: "admin@local".to_string(),
+            password: "literal.admin".to_string(),
+            require_password_change: false,
+        };
+        ensure_bootstrap_admin(&store, &initial_config)
+            .await
+            .expect("initial bootstrap admin");
+        let initial_password_hash = store
+            .get_user_password_auth(
+                store
+                    .get_user_by_email_normalized("admin@local")
+                    .await
+                    .expect("load bootstrap admin")
+                    .expect("bootstrap admin should exist")
+                    .user_id,
+            )
+            .await
+            .expect("load bootstrap password auth")
+            .expect("bootstrap password auth")
+            .password_hash;
+
+        ensure_bootstrap_admin(
+            &store,
+            &BootstrapAdminConfig {
+                enabled: true,
+                email: "admin@local".to_string(),
+                password: "literal.changed".to_string(),
+                require_password_change: true,
+            },
+        )
+        .await
+        .expect("second bootstrap pass");
+
+        let bootstrap_admin = store
+            .get_user_by_email_normalized("admin@local")
+            .await
+            .expect("reload bootstrap admin")
+            .expect("bootstrap admin should exist");
+        let password_hash = store
+            .get_user_password_auth(bootstrap_admin.user_id)
+            .await
+            .expect("reload password auth")
+            .expect("password auth should exist")
+            .password_hash;
+
+        assert_eq!(password_hash, initial_password_hash);
+        assert!(!bootstrap_admin.must_change_password);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn bootstrap_admin_is_not_created_when_another_platform_admin_exists() {
+        let (_, store, _) =
+            build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;
+        store
+            .create_identity_user(
+                "Existing Admin",
+                "owner@example.com",
+                "owner@example.com",
+                gateway_core::GlobalRole::PlatformAdmin,
+                gateway_core::AuthMode::Password,
+                "active",
+            )
+            .await
+            .expect("existing platform admin");
+
+        ensure_bootstrap_admin(
+            &store,
+            &BootstrapAdminConfig {
+                enabled: true,
+                email: "admin@local".to_string(),
+                password: "literal.admin".to_string(),
+                require_password_change: true,
+            },
+        )
+        .await
+        .expect("bootstrap should no-op");
+
+        let bootstrap_admin = store
+            .get_user_by_email_normalized("admin@local")
+            .await
+            .expect("lookup bootstrap admin");
+        assert!(bootstrap_admin.is_none());
     }
 }

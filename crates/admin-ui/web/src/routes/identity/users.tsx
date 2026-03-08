@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/dialog'
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { requireAdminSession } from '@/routes/-admin-guard'
 import {
   Select,
   SelectContent,
@@ -33,6 +34,7 @@ import {
 import type { CreateUserInput, CreateUserResult, IdentityUsersPayload, UserView } from '@/types/api'
 
 export const Route = createFileRoute('/identity/users')({
+  beforeLoad: ({ location }) => requireAdminSession(location),
   loader: () => getUsers(),
   component: UsersPage,
 })

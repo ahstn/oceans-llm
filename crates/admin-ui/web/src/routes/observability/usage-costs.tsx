@@ -1,9 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { requireAdminSession } from '@/routes/-admin-guard'
 import { getUsageCosts } from '@/server/admin-data.functions'
 
 export const Route = createFileRoute('/observability/usage-costs')({
+  beforeLoad: ({ location }) => requireAdminSession(location),
   loader: () => getUsageCosts(),
   component: UsageCostsPage,
 })

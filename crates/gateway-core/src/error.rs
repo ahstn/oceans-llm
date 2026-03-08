@@ -4,6 +4,10 @@ use crate::domain::Money4;
 
 #[derive(Debug, Error)]
 pub enum AuthError {
+    #[error("authenticated session is required")]
+    SessionRequired,
+    #[error("credentials are invalid")]
+    InvalidCredentials,
     #[error("authorization header is missing")]
     MissingAuthorizationHeader,
     #[error("authorization header is invalid")]
@@ -115,7 +119,9 @@ impl GatewayError {
     #[must_use]
     pub fn http_status_code(&self) -> u16 {
         match self {
-            Self::Auth(AuthError::MissingAuthorizationHeader)
+            Self::Auth(AuthError::SessionRequired)
+            | Self::Auth(AuthError::InvalidCredentials)
+            | Self::Auth(AuthError::MissingAuthorizationHeader)
             | Self::Auth(AuthError::InvalidAuthorizationHeader)
             | Self::Auth(AuthError::MissingBearerToken)
             | Self::Auth(AuthError::ApiKeyNotFound)
@@ -167,6 +173,8 @@ impl GatewayError {
     #[must_use]
     pub fn error_code(&self) -> &'static str {
         match self {
+            Self::Auth(AuthError::SessionRequired) => "session_required",
+            Self::Auth(AuthError::InvalidCredentials) => "invalid_credentials",
             Self::Auth(AuthError::MissingAuthorizationHeader) => "missing_authorization_header",
             Self::Auth(AuthError::InvalidAuthorizationHeader) => "invalid_authorization_header",
             Self::Auth(AuthError::MissingBearerToken) => "missing_bearer_token",

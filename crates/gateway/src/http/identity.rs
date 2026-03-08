@@ -1,3 +1,5 @@
+use std::collections::{BTreeSet, HashMap};
+
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -60,10 +62,60 @@ pub(crate) struct AdminTeamView {
 }
 
 #[derive(Debug, Serialize)]
+pub(crate) struct AdminTeamsPayload {
+    teams: Vec<AdminTeamManagementView>,
+    users: Vec<AdminTeamAssignableUserView>,
+    oidc_providers: Vec<AdminOidcProviderView>,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct AdminTeamManagementView {
+    id: String,
+    name: String,
+    key: String,
+    status: String,
+    member_count: usize,
+    admins: Vec<AdminTeamAdminView>,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct AdminTeamAdminView {
+    id: String,
+    name: String,
+    email: String,
+    status: String,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct AdminTeamAssignableUserView {
+    id: String,
+    name: String,
+    email: String,
+    status: String,
+    team_id: Option<String>,
+    team_name: Option<String>,
+    team_role: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
 pub(crate) struct AdminOidcProviderView {
     id: String,
     key: String,
     label: String,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct AuthSessionUserView {
+    id: String,
+    name: String,
+    email: String,
+    global_role: String,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct AuthSessionView {
+    user: AuthSessionUserView,
+    must_change_password: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -90,6 +142,23 @@ pub struct CreateUserRequest {
     pub team_id: Option<String>,
     pub team_role: Option<String>,
     pub oidc_provider_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateTeamRequest {
+    pub name: String,
+    pub admin_user_ids: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateTeamRequest {
+    pub name: String,
+    pub admin_user_ids: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AddTeamMembersRequest {
+    pub user_ids: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -125,6 +194,18 @@ pub(crate) struct InvitationView {
 #[derive(Debug, Deserialize)]
 pub struct CompleteInvitationRequest {
     pub password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PasswordLoginRequest {
+    pub email: String,
+    pub password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ChangePasswordRequest {
+    pub current_password: String,
+    pub new_password: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -191,6 +272,269 @@ pub async fn list_identity_users(
             })
             .collect(),
     })))
+}
+
+pub async fn list_identity_teams(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Envelope<AdminTeamsPayload>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+
+    let teams = state.store.list_teams().await?;
+    let users = state.store.list_identity_users().await?;
+    let providers = state.store.list_enabled_oidc_providers().await?;
+
+    Ok(Json(envelope(AdminTeamsPayload {
+        teams: build_admin_team_views(&teams, &users),
+        users: build_assignable_user_views(&users),
+        oidc_providers: providers
+            .into_iter()
+            .map(|provider| AdminOidcProviderView {
+                id: provider.oidc_provider_id,
+                key: provider.provider_key.clone(),
+                label: provider.provider_key,
+            })
+            .collect(),
+    })))
+}
+
+pub async fn create_identity_team(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<CreateTeamRequest>,
+) -> Result<Json<Envelope<AdminTeamManagementView>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+
+    let name = request.name.trim();
+    if name.is_empty() {
+        return Err(AppError(GatewayError::InvalidRequest(
+            "name cannot be empty".to_string(),
+        )));
+    }
+
+    let users = state.store.list_identity_users().await?;
+    let selected_admin_ids = parse_uuid_list(&request.admin_user_ids)?;
+    validate_team_admin_assignments(&users, None, &selected_admin_ids)?;
+
+    let team_key = generate_unique_team_key(&state.store, name).await?;
+    let team = state.store.create_team(&team_key, name).await?;
+    let now = OffsetDateTime::now_utc();
+
+    for user_id in selected_admin_ids {
+        state
+            .store
+            .assign_team_membership(user_id, team.team_id, MembershipRole::Admin)
+            .await?;
+    }
+
+    Ok(Json(envelope(reload_team_view(&state.store, team.team_id, now).await?)))
+}
+
+pub async fn update_identity_team(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(team_id): Path<String>,
+    Json(request): Json<UpdateTeamRequest>,
+) -> Result<Json<Envelope<AdminTeamManagementView>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+
+    let team_id = parse_uuid(&team_id)?;
+    state
+        .store
+        .get_team_by_id(team_id)
+        .await?
+        .ok_or_else(|| AppError(GatewayError::InvalidRequest("team not found".to_string())))?;
+
+    let name = request.name.trim();
+    if name.is_empty() {
+        return Err(AppError(GatewayError::InvalidRequest(
+            "name cannot be empty".to_string(),
+        )));
+    }
+
+    let users = state.store.list_identity_users().await?;
+    let selected_admin_ids = parse_uuid_list(&request.admin_user_ids)?;
+    validate_team_admin_assignments(&users, Some(team_id), &selected_admin_ids)?;
+
+    let now = OffsetDateTime::now_utc();
+    state.store.update_team_name(team_id, name, now).await?;
+    sync_team_admins(&state.store, team_id, &selected_admin_ids, now).await?;
+
+    Ok(Json(envelope(reload_team_view(&state.store, team_id, now).await?)))
+}
+
+pub async fn add_identity_team_members(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(team_id): Path<String>,
+    Json(request): Json<AddTeamMembersRequest>,
+) -> Result<Json<Envelope<AdminTeamManagementView>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+
+    let team_id = parse_uuid(&team_id)?;
+    state
+        .store
+        .get_team_by_id(team_id)
+        .await?
+        .ok_or_else(|| AppError(GatewayError::InvalidRequest("team not found".to_string())))?;
+
+    let requested_user_ids = parse_uuid_list(&request.user_ids)?;
+    let users = state.store.list_identity_users().await?;
+    let users_by_id: HashMap<Uuid, IdentityUserRecord> = users
+        .into_iter()
+        .map(|user| (user.user.user_id, user))
+        .collect();
+
+    let mut conflicts = Vec::new();
+    let mut assignable_user_ids = Vec::new();
+    for user_id in requested_user_ids {
+        let Some(user) = users_by_id.get(&user_id) else {
+            return Err(AppError(GatewayError::InvalidRequest(format!(
+                "user `{user_id}` not found"
+            ))));
+        };
+
+        match user.team_id {
+            Some(existing_team_id) if existing_team_id != team_id => {
+                conflicts.push(format!(
+                    "{} ({})",
+                    user.user.email,
+                    user.team_name.as_deref().unwrap_or("another team")
+                ));
+            }
+            Some(_) => {}
+            None => assignable_user_ids.push(user_id),
+        }
+    }
+
+    if !conflicts.is_empty() {
+        return Err(AppError(GatewayError::InvalidRequest(format!(
+            "users already belong to another team: {}",
+            conflicts.join(", ")
+        ))));
+    }
+
+    for user_id in assignable_user_ids {
+        state
+            .store
+            .assign_team_membership(user_id, team_id, MembershipRole::Member)
+            .await?;
+    }
+
+    Ok(Json(envelope(
+        reload_team_view(&state.store, team_id, OffsetDateTime::now_utc()).await?,
+    )))
+}
+
+pub async fn get_auth_session(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Envelope<Option<AuthSessionView>>>, AppError> {
+    let session = resolve_session_user(&state, &headers)
+        .await?
+        .map(build_auth_session_view);
+
+    Ok(Json(envelope(session)))
+}
+
+pub async fn login_with_password(
+    State(state): State<AppState>,
+    Json(request): Json<PasswordLoginRequest>,
+) -> Result<Response, AppError> {
+    let email_normalized = normalize_email(&request.email)?;
+    let user = state
+        .store
+        .get_user_by_email_normalized(&email_normalized)
+        .await?
+        .ok_or_else(|| AppError(GatewayError::Auth(AuthError::InvalidCredentials)))?;
+    let password_auth = state
+        .store
+        .get_user_password_auth(user.user_id)
+        .await?
+        .ok_or_else(|| AppError(GatewayError::Auth(AuthError::InvalidCredentials)))?;
+
+    if user.auth_mode != AuthMode::Password {
+        return Err(AppError(GatewayError::Auth(AuthError::InvalidCredentials)));
+    }
+    if user.global_role != GlobalRole::PlatformAdmin {
+        return Err(AppError(GatewayError::Auth(
+            AuthError::InsufficientPrivileges,
+        )));
+    }
+    if user.status != "active" {
+        return Err(AppError(GatewayError::InvalidRequest(
+            "only active admins can sign in".to_string(),
+        )));
+    }
+    let password_ok =
+        gateway_service::verify_gateway_key_secret(&request.password, &password_auth.password_hash)
+            .map_err(|error| AppError(GatewayError::Internal(error.to_string())))?;
+    if !password_ok {
+        return Err(AppError(GatewayError::Auth(AuthError::InvalidCredentials)));
+    }
+
+    let now = OffsetDateTime::now_utc();
+    let session_cookie = issue_session_cookie(&state, user.user_id, now).await?;
+    let mut response = Json(envelope(build_auth_session_view(user))).into_response();
+    response.headers_mut().append(SET_COOKIE, session_cookie);
+    Ok(response)
+}
+
+pub async fn change_password(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<ChangePasswordRequest>,
+) -> Result<Json<Envelope<AuthSessionView>>, AppError> {
+    if request.new_password.len() < 8 {
+        return Err(AppError(GatewayError::InvalidRequest(
+            "password must be at least 8 characters".to_string(),
+        )));
+    }
+
+    let user = require_authenticated_session(&state, &headers).await?;
+    if user.global_role != GlobalRole::PlatformAdmin {
+        return Err(AppError(GatewayError::Auth(
+            AuthError::InsufficientPrivileges,
+        )));
+    }
+    if user.auth_mode != AuthMode::Password {
+        return Err(AppError(GatewayError::InvalidRequest(
+            "password changes are only valid for password users".to_string(),
+        )));
+    }
+    let password_auth = state
+        .store
+        .get_user_password_auth(user.user_id)
+        .await?
+        .ok_or_else(|| AppError(GatewayError::Auth(AuthError::InvalidCredentials)))?;
+    let current_password_ok = gateway_service::verify_gateway_key_secret(
+        &request.current_password,
+        &password_auth.password_hash,
+    )
+    .map_err(|error| AppError(GatewayError::Internal(error.to_string())))?;
+    if !current_password_ok {
+        return Err(AppError(GatewayError::Auth(AuthError::InvalidCredentials)));
+    }
+
+    let now = OffsetDateTime::now_utc();
+    let new_password_hash = gateway_service::hash_gateway_key_secret(&request.new_password)
+        .map_err(|error| AppError(GatewayError::Internal(error.to_string())))?;
+    state
+        .store
+        .store_user_password(user.user_id, &new_password_hash, now)
+        .await?;
+    state
+        .store
+        .update_user_must_change_password(user.user_id, false, now)
+        .await?;
+
+    let refreshed_user = state
+        .store
+        .get_user_by_id(user.user_id)
+        .await?
+        .ok_or_else(|| AppError(GatewayError::InvalidRequest("user not found".to_string())))?;
+
+    Ok(Json(envelope(build_auth_session_view(refreshed_user))))
 }
 
 pub async fn create_identity_user(
@@ -522,11 +866,7 @@ async fn require_platform_admin(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<UserRecord, AppError> {
-    let current_user = if let Some(user) = resolve_session_user(state, headers).await? {
-        user
-    } else {
-        state.store.ensure_bootstrap_admin_user().await?
-    };
+    let current_user = require_authenticated_session(state, headers).await?;
 
     if current_user.global_role != GlobalRole::PlatformAdmin {
         return Err(AppError(GatewayError::Auth(
@@ -535,11 +875,20 @@ async fn require_platform_admin(
     }
     if current_user.status != "active" {
         return Err(AppError(GatewayError::InvalidRequest(
-            "only active admins can manage users".to_string(),
+            "only active admins can manage identity".to_string(),
         )));
     }
 
     Ok(current_user)
+}
+
+async fn require_authenticated_session(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<UserRecord, AppError> {
+    resolve_session_user(state, headers)
+        .await?
+        .ok_or_else(|| AppError(GatewayError::Auth(AuthError::SessionRequired)))
 }
 
 async fn resolve_session_user(
@@ -631,6 +980,219 @@ async fn build_admin_identity_user_view(
         status: user.user.status,
         onboarding,
     })
+}
+
+fn build_auth_session_view(user: UserRecord) -> AuthSessionView {
+    AuthSessionView {
+        user: AuthSessionUserView {
+            id: user.user_id.to_string(),
+            name: user.name,
+            email: user.email,
+            global_role: user.global_role.as_str().to_string(),
+        },
+        must_change_password: user.must_change_password,
+    }
+}
+
+fn build_assignable_user_views(users: &[IdentityUserRecord]) -> Vec<AdminTeamAssignableUserView> {
+    let mut views: Vec<_> = users
+        .iter()
+        .map(|user| AdminTeamAssignableUserView {
+            id: user.user.user_id.to_string(),
+            name: user.user.name.clone(),
+            email: user.user.email.clone(),
+            status: user.user.status.clone(),
+            team_id: user.team_id.map(|value| value.to_string()),
+            team_name: user.team_name.clone(),
+            team_role: user.membership_role.map(|value| value.as_str().to_string()),
+        })
+        .collect();
+    views.sort_by(|left, right| {
+        left.name
+            .cmp(&right.name)
+            .then_with(|| left.email.cmp(&right.email))
+    });
+    views
+}
+
+fn build_admin_team_views(
+    teams: &[gateway_core::TeamRecord],
+    users: &[IdentityUserRecord],
+) -> Vec<AdminTeamManagementView> {
+    teams.iter()
+        .map(|team| {
+            let mut admins: Vec<_> = users
+                .iter()
+                .filter(|user| user.team_id == Some(team.team_id))
+                .filter(|user| user.membership_role == Some(MembershipRole::Admin))
+                .map(|user| AdminTeamAdminView {
+                    id: user.user.user_id.to_string(),
+                    name: user.user.name.clone(),
+                    email: user.user.email.clone(),
+                    status: user.user.status.clone(),
+                })
+                .collect();
+            admins.sort_by(|left, right| left.name.cmp(&right.name).then_with(|| left.email.cmp(&right.email)));
+
+            let member_count = users
+                .iter()
+                .filter(|user| user.team_id == Some(team.team_id))
+                .count();
+
+            AdminTeamManagementView {
+                id: team.team_id.to_string(),
+                name: team.team_name.clone(),
+                key: team.team_key.clone(),
+                status: team.status.clone(),
+                member_count,
+                admins,
+            }
+        })
+        .collect()
+}
+
+async fn reload_team_view(
+    store: &LibsqlStore,
+    team_id: Uuid,
+    _now: OffsetDateTime,
+) -> Result<AdminTeamManagementView, AppError> {
+    let teams = store.list_teams().await?;
+    let users = store.list_identity_users().await?;
+    build_admin_team_views(&teams, &users)
+        .into_iter()
+        .find(|team| team.id == team_id.to_string())
+        .ok_or_else(|| {
+            AppError(GatewayError::Store(gateway_core::StoreError::NotFound(
+                "team missing".to_string(),
+            )))
+        })
+}
+
+async fn generate_unique_team_key(store: &LibsqlStore, name: &str) -> Result<String, AppError> {
+    let base = slugify_team_name(name);
+    let mut candidate = base.clone();
+    let mut suffix = 2_u32;
+
+    while store.get_team_by_key(&candidate).await?.is_some() {
+        candidate = format!("{base}-{suffix}");
+        suffix += 1;
+    }
+
+    Ok(candidate)
+}
+
+fn slugify_team_name(name: &str) -> String {
+    let mut slug = String::new();
+    let mut last_was_dash = false;
+
+    for ch in name.trim().chars() {
+        let lowered = ch.to_ascii_lowercase();
+        if lowered.is_ascii_alphanumeric() {
+            slug.push(lowered);
+            last_was_dash = false;
+        } else if !last_was_dash {
+            slug.push('-');
+            last_was_dash = true;
+        }
+    }
+
+    let slug = slug.trim_matches('-').to_string();
+    if slug.is_empty() {
+        "team".to_string()
+    } else {
+        slug
+    }
+}
+
+fn parse_uuid_list(raw_values: &[String]) -> Result<Vec<Uuid>, AppError> {
+    let mut seen = BTreeSet::new();
+    let mut values = Vec::new();
+    for value in raw_values {
+        let parsed = parse_uuid(value)?;
+        if seen.insert(parsed) {
+            values.push(parsed);
+        }
+    }
+    Ok(values)
+}
+
+fn validate_team_admin_assignments(
+    users: &[IdentityUserRecord],
+    team_id: Option<Uuid>,
+    selected_admin_ids: &[Uuid],
+) -> Result<(), AppError> {
+    let users_by_id: HashMap<Uuid, &IdentityUserRecord> =
+        users.iter().map(|user| (user.user.user_id, user)).collect();
+    let mut conflicts = Vec::new();
+
+    for user_id in selected_admin_ids {
+        let Some(user) = users_by_id.get(user_id) else {
+            return Err(AppError(GatewayError::InvalidRequest(format!(
+                "user `{user_id}` not found"
+            ))));
+        };
+
+        if let Some(existing_team_id) = user.team_id
+            && Some(existing_team_id) != team_id
+        {
+            conflicts.push(format!(
+                "{} ({})",
+                user.user.email,
+                user.team_name.as_deref().unwrap_or("another team")
+            ));
+        }
+    }
+
+    if conflicts.is_empty() {
+        Ok(())
+    } else {
+        Err(AppError(GatewayError::InvalidRequest(format!(
+            "users already belong to another team: {}",
+            conflicts.join(", ")
+        ))))
+    }
+}
+
+async fn sync_team_admins(
+    store: &LibsqlStore,
+    team_id: Uuid,
+    selected_admin_ids: &[Uuid],
+    now: OffsetDateTime,
+) -> Result<(), AppError> {
+    let selected_admin_ids: BTreeSet<_> = selected_admin_ids.iter().copied().collect();
+    let memberships = store.list_team_memberships(team_id).await?;
+
+    for membership in &memberships {
+        if membership.role == MembershipRole::Admin && !selected_admin_ids.contains(&membership.user_id)
+        {
+            store
+                .update_team_membership_role(team_id, membership.user_id, MembershipRole::Member, now)
+                .await?;
+        }
+    }
+
+    let memberships_by_user: HashMap<Uuid, gateway_core::TeamMembershipRecord> = memberships
+        .into_iter()
+        .map(|membership| (membership.user_id, membership))
+        .collect();
+
+    for user_id in selected_admin_ids {
+        match memberships_by_user.get(&user_id) {
+            Some(existing) if existing.role == MembershipRole::Admin || existing.role == MembershipRole::Owner => {}
+            Some(_) => {
+                store
+                    .update_team_membership_role(team_id, user_id, MembershipRole::Admin, now)
+                    .await?;
+            }
+            None => {
+                store
+                    .assign_team_membership(user_id, team_id, MembershipRole::Admin)
+                    .await?;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 async fn reload_identity_user(

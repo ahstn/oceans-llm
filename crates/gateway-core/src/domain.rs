@@ -8,7 +8,7 @@ use uuid::Uuid;
 pub const SYSTEM_LEGACY_TEAM_ID: &str = "00000000-0000-0000-0000-000000000001";
 pub const SYSTEM_LEGACY_TEAM_KEY: &str = "system-legacy";
 pub const SYSTEM_BOOTSTRAP_ADMIN_USER_ID: &str = "00000000-0000-0000-0000-000000000002";
-pub const SYSTEM_BOOTSTRAP_ADMIN_EMAIL: &str = "bootstrap-admin@local";
+pub const SYSTEM_BOOTSTRAP_ADMIN_EMAIL: &str = "admin@local";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Default)]
 #[serde(transparent)]
@@ -321,10 +321,18 @@ pub struct UserRecord {
     pub global_role: GlobalRole,
     pub auth_mode: AuthMode,
     pub status: String,
+    pub must_change_password: bool,
     pub request_logging_enabled: bool,
     pub model_access_mode: ModelAccessMode,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserPasswordAuthRecord {
+    pub user_id: Uuid,
+    pub password_hash: String,
+    pub password_updated_at: OffsetDateTime,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

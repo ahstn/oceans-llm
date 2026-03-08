@@ -8,9 +8,9 @@ pub use migrate::run_migrations;
 #[cfg(test)]
 mod tests {
     use gateway_core::{
-        ApiKeyOwnerKind, ApiKeyRepository, ModelRepository, PricingCatalogCacheRecord,
-        PricingCatalogRepository, SYSTEM_LEGACY_TEAM_ID, SeedApiKey, SeedModel, SeedModelRoute,
-        SeedProvider, StoreHealth,
+        ApiKeyOwnerKind, ApiKeyRepository, AuthMode, GlobalRole, IdentityRepository,
+        MembershipRole, ModelRepository, PricingCatalogCacheRecord, PricingCatalogRepository,
+        SYSTEM_LEGACY_TEAM_ID, SeedApiKey, SeedModel, SeedModelRoute, SeedProvider, StoreHealth,
     };
     use serde_json::{Map, json};
     use serial_test::serial;
@@ -232,6 +232,150 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn create_team_round_trips_and_accepts_zero_admins() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        let team = store
+            .create_team("platform-ops", "Platform Ops")
+            .await
+            .expect("create team");
+
+        assert_eq!(team.team_key, "platform-ops");
+        assert_eq!(team.team_name, "Platform Ops");
+        assert_eq!(team.status, "active");
+        assert!(store
+            .list_team_memberships(team.team_id)
+            .await
+            .expect("memberships")
+            .is_empty());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn update_team_membership_role_promotes_and_demotes_admins() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+        let team = store
+            .create_team("core-platform", "Core Platform")
+            .await
+            .expect("team");
+
+        let conn = store.connection();
+        let now = time::OffsetDateTime::now_utc().unix_timestamp();
+        let user_id = Uuid::new_v4();
+        conn.execute(
+            r#"
+            INSERT INTO users (
+              user_id, name, email, email_normalized, global_role, auth_mode, status,
+              request_logging_enabled, model_access_mode, created_at, updated_at
+            ) VALUES (?1, 'Jane Admin', 'jane@example.com', 'jane@example.com', ?2, ?3, 'active', 1, 'all', ?4, ?4)
+            "#,
+            libsql::params![
+                user_id.to_string(),
+                GlobalRole::User.as_str(),
+                AuthMode::Password.as_str(),
+                now
+            ],
+        )
+        .await
+        .expect("user");
+
+        store
+            .assign_team_membership(user_id, team.team_id, MembershipRole::Member)
+            .await
+            .expect("member");
+        store
+            .update_team_membership_role(
+                team.team_id,
+                user_id,
+                MembershipRole::Admin,
+                time::OffsetDateTime::now_utc(),
+            )
+            .await
+            .expect("promote");
+
+        let memberships = store
+            .list_team_memberships(team.team_id)
+            .await
+            .expect("memberships");
+        assert_eq!(memberships.len(), 1);
+        assert_eq!(memberships[0].role, MembershipRole::Admin);
+
+        store
+            .update_team_membership_role(
+                team.team_id,
+                user_id,
+                MembershipRole::Member,
+                time::OffsetDateTime::now_utc(),
+            )
+            .await
+            .expect("demote");
+
+        let memberships = store
+            .list_team_memberships(team.team_id)
+            .await
+            .expect("memberships");
+        assert_eq!(memberships[0].role, MembershipRole::Member);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn team_membership_enforces_single_team_per_user() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+        let first_team = store.create_team("alpha", "Alpha").await.expect("first team");
+        let second_team = store.create_team("beta", "Beta").await.expect("second team");
+
+        let conn = store.connection();
+        let now = time::OffsetDateTime::now_utc().unix_timestamp();
+        let user_id = Uuid::new_v4();
+        conn.execute(
+            r#"
+            INSERT INTO users (
+              user_id, name, email, email_normalized, global_role, auth_mode, status,
+              request_logging_enabled, model_access_mode, created_at, updated_at
+            ) VALUES (?1, 'Cross Team', 'cross@example.com', 'cross@example.com', ?2, ?3, 'active', 1, 'all', ?4, ?4)
+            "#,
+            libsql::params![
+                user_id.to_string(),
+                GlobalRole::User.as_str(),
+                AuthMode::Password.as_str(),
+                now
+            ],
+        )
+        .await
+        .expect("user");
+
+        store
+            .assign_team_membership(user_id, first_team.team_id, MembershipRole::Member)
+            .await
+            .expect("first membership");
+
+        let conflict = store
+            .assign_team_membership(user_id, second_team.team_id, MembershipRole::Member)
+            .await;
+
+        assert!(conflict.is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn pricing_catalog_cache_round_trips_and_touch_updates_fetched_at() {
         let tmp = tempdir().expect("tempdir");
         let db_path = tmp.path().join("gateway.db");
@@ -276,66 +420,6 @@ mod tests {
             .expect("pricing cache should exist");
         assert_eq!(touched.snapshot_json, inserted.snapshot_json);
         assert_eq!(touched.fetched_at, touched_at);
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn team_membership_enforces_single_team_per_user() {
-        let tmp = tempdir().expect("tempdir");
-        let db_path = tmp.path().join("gateway.db");
-        run_migrations(&db_path).await.expect("migrations");
-        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
-            .build()
-            .await
-            .expect("db");
-        let conn = db.connect().expect("connection");
-        let now = time::OffsetDateTime::now_utc().unix_timestamp();
-        let user_id = Uuid::new_v4();
-        let team_a = Uuid::new_v4();
-        let team_b = Uuid::new_v4();
-
-        conn.execute(
-            r#"
-            INSERT INTO users (
-              user_id, name, email, email_normalized, global_role, auth_mode, status,
-              request_logging_enabled, model_access_mode, created_at, updated_at
-            ) VALUES (?1, 'User One', 'user@example.com', 'user@example.com', 'user', 'password', 'active', 1, 'all', ?2, ?2)
-            "#,
-            libsql::params![user_id.to_string(), now],
-        )
-        .await
-        .expect("user");
-        conn.execute(
-            r#"
-            INSERT INTO teams (team_id, team_key, team_name, status, model_access_mode, created_at, updated_at)
-            VALUES (?1, 'team-a', 'Team A', 'active', 'all', ?3, ?3),
-                   (?2, 'team-b', 'Team B', 'active', 'all', ?3, ?3)
-            "#,
-            libsql::params![team_a.to_string(), team_b.to_string(), now],
-        )
-        .await
-        .expect("teams");
-        conn.execute(
-            r#"
-            INSERT INTO team_memberships (team_id, user_id, role, created_at, updated_at)
-            VALUES (?1, ?2, 'member', ?3, ?3)
-            "#,
-            libsql::params![team_a.to_string(), user_id.to_string(), now],
-        )
-        .await
-        .expect("first membership");
-
-        let duplicate_result = conn
-            .execute(
-                r#"
-                INSERT INTO team_memberships (team_id, user_id, role, created_at, updated_at)
-                VALUES (?1, ?2, 'member', ?3, ?3)
-                "#,
-                libsql::params![team_b.to_string(), user_id.to_string(), now],
-            )
-            .await;
-
-        assert!(duplicate_result.is_err());
     }
 
     #[tokio::test]
@@ -579,5 +663,48 @@ mod tests {
             let column_name: String = column.get(1).expect("column name");
             assert_ne!(column_name, "estimated_cost_usd");
         }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn bootstrap_admin_password_state_round_trips() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+        let created_at = time::OffsetDateTime::now_utc();
+
+        let user = store
+            .upsert_bootstrap_admin_user("Admin", "admin@local", true)
+            .await
+            .expect("bootstrap user");
+        assert!(user.must_change_password);
+
+        store
+            .store_user_password(user.user_id, "hash-1", created_at)
+            .await
+            .expect("store password");
+
+        let password_auth = store
+            .get_user_password_auth(user.user_id)
+            .await
+            .expect("load password auth")
+            .expect("password auth should exist");
+        assert_eq!(password_auth.password_hash, "hash-1");
+
+        store
+            .update_user_must_change_password(user.user_id, false, created_at)
+            .await
+            .expect("clear forced password change");
+
+        let refreshed = store
+            .get_user_by_id(user.user_id)
+            .await
+            .expect("reload user")
+            .expect("user should exist");
+        assert!(!refreshed.must_change_password);
     }
 }
