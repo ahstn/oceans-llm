@@ -170,3 +170,25 @@ export interface InvitationStateView {
   name: string | null
   expires_at: string | null
 }
+
+export interface AuthSessionUserView {
+  id: string
+  name: string
+  email: string
+  global_role: 'platform_admin' | 'user'
+}
+
+export interface AuthSessionView {
+  user: AuthSessionUserView
+  must_change_password: boolean
+}
+
+export interface PasswordLoginInput {
+  email: string
+  password: string
+}
+
+export interface ChangePasswordInput {
+  current_password: string
+  new_password: string
+}

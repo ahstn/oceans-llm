@@ -2,9 +2,11 @@ import { createFileRoute } from '@tanstack/react-router'
 
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { requireAdminSession } from '@/routes/-admin-guard'
 import { getModels } from '@/server/admin-data.functions'
 
 export const Route = createFileRoute('/models')({
+  beforeLoad: ({ location }) => requireAdminSession(location),
   loader: () => getModels(),
   component: ModelsPage,
 })

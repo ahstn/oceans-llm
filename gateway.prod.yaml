@@ -11,7 +11,7 @@ auth:
     enabled: true
     email: admin@local
     password: literal.admin
-    require_password_change: false
+    require_password_change: true
 
 providers:
   - id: openai-prod

@@ -93,6 +93,15 @@ pub fn hash_gateway_key_secret(secret: &str) -> anyhow::Result<String> {
     Ok(hash)
 }
 
+pub fn verify_gateway_key_secret(secret: &str, expected_hash: &str) -> anyhow::Result<bool> {
+    let password_hash = PasswordHash::new(expected_hash)
+        .map_err(|error| anyhow::anyhow!("failed to parse password hash: {error}"))?;
+
+    Ok(Argon2::default()
+        .verify_password(secret.as_bytes(), &password_hash)
+        .is_ok())
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;

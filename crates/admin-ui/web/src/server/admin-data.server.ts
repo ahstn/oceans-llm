@@ -1,5 +1,7 @@
 import type {
   AddTeamMembersInput,
+  AuthSessionView,
+  ChangePasswordInput,
   CreateUserInput,
   CreateUserResult,
   IdentityUsersPayload,
@@ -14,6 +16,7 @@ import type {
   RequestLogView,
   UsageCostPoint,
   CreateTeamInput,
+  PasswordLoginInput,
   UpdateTeamInput,
 } from '@/types/api'
 import { fetchGatewayJson } from '@/server/gateway-client.server'
@@ -157,6 +160,30 @@ export async function addTeamMembers(
       body: JSON.stringify(input),
     },
   )
+}
+
+export async function getSession(): Promise<ApiEnvelope<AuthSessionView | null>> {
+  return fetchGatewayJson<ApiEnvelope<AuthSessionView | null>>('/api/v1/auth/session')
+}
+
+export async function loginWithPassword(
+  input: PasswordLoginInput,
+): Promise<ApiEnvelope<AuthSessionView>> {
+  return fetchGatewayJson<ApiEnvelope<AuthSessionView>>('/api/v1/auth/login/password', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+}
+
+export async function changePassword(
+  input: ChangePasswordInput,
+): Promise<ApiEnvelope<AuthSessionView>> {
+  return fetchGatewayJson<ApiEnvelope<AuthSessionView>>('/api/v1/auth/password/change', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  })
 }
 
 export async function listUsers(): Promise<ApiEnvelope<IdentityUsersPayload>> {

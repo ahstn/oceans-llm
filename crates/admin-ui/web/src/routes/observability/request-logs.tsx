@@ -3,9 +3,11 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useVirtualizer } from '@tanstack/react-virtual'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { requireAdminSession } from '@/routes/-admin-guard'
 import { getRequestLogs } from '@/server/admin-data.functions'
 
 export const Route = createFileRoute('/observability/request-logs')({
+  beforeLoad: ({ location }) => requireAdminSession(location),
   loader: () => getRequestLogs(),
   component: RequestLogsPage,
 })

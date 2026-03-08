@@ -16,7 +16,7 @@ pub use domain::{
     SYSTEM_BOOTSTRAP_ADMIN_EMAIL, SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SYSTEM_LEGACY_TEAM_ID,
     SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedModel, SeedModelRoute, SeedProvider,
     TeamMembershipRecord, TeamRecord, UsageCostEventRecord, UserBudgetRecord, UserOidcAuthRecord,
-    UserRecord, UserSessionRecord,
+    UserPasswordAuthRecord, UserRecord, UserSessionRecord,
 };
 pub use error::{AuthError, GatewayError, ProviderError, RouteError, StoreError};
 pub use protocol::openai::{

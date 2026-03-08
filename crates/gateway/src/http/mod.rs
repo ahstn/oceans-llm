@@ -43,6 +43,9 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
             "/api/v1/admin/identity/users/{user_id}/password-invite",
             post(regenerate_password_invite),
         )
+        .route("/api/v1/auth/session", get(get_auth_session))
+        .route("/api/v1/auth/login/password", post(login_with_password))
+        .route("/api/v1/auth/password/change", post(change_password))
         .route(
             "/api/v1/auth/invitations/{token}",
             get(validate_password_invitation),

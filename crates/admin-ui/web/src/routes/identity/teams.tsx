@@ -25,6 +25,7 @@ import {
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { requireAdminSession } from '@/routes/-admin-guard'
 import {
   Select,
   SelectContent,
@@ -50,6 +51,7 @@ import type {
 } from '@/types/api'
 
 export const Route = createFileRoute('/identity/teams')({
+  beforeLoad: ({ location }) => requireAdminSession(location),
   loader: () => getTeams(),
   component: TeamsPage,
 })

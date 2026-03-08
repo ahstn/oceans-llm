@@ -8,9 +8,9 @@ pub use migrate::run_migrations;
 #[cfg(test)]
 mod tests {
     use gateway_core::{
-        ApiKeyOwnerKind, ApiKeyRepository, AuthMode, GlobalRole, MembershipRole, ModelRepository,
-        PricingCatalogCacheRecord, PricingCatalogRepository, SYSTEM_LEGACY_TEAM_ID, SeedApiKey,
-        SeedModel, SeedModelRoute, SeedProvider, StoreHealth,
+        ApiKeyOwnerKind, ApiKeyRepository, AuthMode, GlobalRole, IdentityRepository,
+        MembershipRole, ModelRepository, PricingCatalogCacheRecord, PricingCatalogRepository,
+        SYSTEM_LEGACY_TEAM_ID, SeedApiKey, SeedModel, SeedModelRoute, SeedProvider, StoreHealth,
     };
     use serde_json::{Map, json};
     use serial_test::serial;
@@ -663,5 +663,48 @@ mod tests {
             let column_name: String = column.get(1).expect("column name");
             assert_ne!(column_name, "estimated_cost_usd");
         }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn bootstrap_admin_password_state_round_trips() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+        let created_at = time::OffsetDateTime::now_utc();
+
+        let user = store
+            .upsert_bootstrap_admin_user("Admin", "admin@local", true)
+            .await
+            .expect("bootstrap user");
+        assert!(user.must_change_password);
+
+        store
+            .store_user_password(user.user_id, "hash-1", created_at)
+            .await
+            .expect("store password");
+
+        let password_auth = store
+            .get_user_password_auth(user.user_id)
+            .await
+            .expect("load password auth")
+            .expect("password auth should exist");
+        assert_eq!(password_auth.password_hash, "hash-1");
+
+        store
+            .update_user_must_change_password(user.user_id, false, created_at)
+            .await
+            .expect("clear forced password change");
+
+        let refreshed = store
+            .get_user_by_id(user.user_id)
+            .await
+            .expect("reload user")
+            .expect("user should exist");
+        assert!(!refreshed.must_change_password);
     }
 }

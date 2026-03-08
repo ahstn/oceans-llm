@@ -2,9 +2,11 @@ import { createServerFn } from '@tanstack/react-start'
 
 import {
   addTeamMembers,
+  changePassword,
   completeInvitation,
   createTeam,
   createUser,
+  getSession,
   listApiKeys,
   listModels,
   listRequestLogs,
@@ -12,6 +14,7 @@ import {
   listUsageCosts,
   listUsers,
   getInvitation,
+  loginWithPassword,
   resendPasswordInvite,
   updateTeam,
 } from '@/server/admin-data.server'
@@ -35,6 +38,22 @@ export const getRequestLogs = createServerFn({ method: 'GET' }).handler(async ()
 export const getTeams = createServerFn({ method: 'GET' }).handler(async () => {
   return listTeams()
 })
+
+export const getAuthSession = createServerFn({ method: 'GET' }).handler(async () => {
+  return getSession()
+})
+
+export const loginAdminWithPassword = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: Parameters<typeof loginWithPassword>[0] }) => {
+    return loginWithPassword(data)
+  },
+)
+
+export const changeCurrentPassword = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: Parameters<typeof changePassword>[0] }) => {
+    return changePassword(data)
+  },
+)
 
 export const createIdentityTeam = createServerFn({ method: 'POST' }).handler(
   async ({ data }: { data: Parameters<typeof createTeam>[0] }) => {

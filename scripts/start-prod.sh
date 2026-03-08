@@ -7,6 +7,7 @@ WEB_DIR="$ROOT_DIR/crates/admin-ui/web"
 GATEWAY_PORT="${PORT:-8080}"
 ADMIN_UI_INTERNAL_PORT="${ADMIN_UI_INTERNAL_PORT:-3001}"
 ADMIN_UI_UPSTREAM="${ADMIN_UI_UPSTREAM:-http://localhost:${ADMIN_UI_INTERNAL_PORT}}"
+GATEWAY_CONFIG="${GATEWAY_CONFIG:-$ROOT_DIR/gateway.prod.yaml}"
 
 cleanup() {
   if [[ -n "${UI_PID:-}" ]]; then
@@ -19,4 +20,4 @@ trap cleanup EXIT INT TERM
 PORT="$ADMIN_UI_INTERNAL_PORT" bun run --cwd "$WEB_DIR" start &
 UI_PID=$!
 
-ADMIN_UI_UPSTREAM="$ADMIN_UI_UPSTREAM" PORT="$GATEWAY_PORT" cargo run -p gateway --bin gateway
+ADMIN_UI_UPSTREAM="$ADMIN_UI_UPSTREAM" GATEWAY_CONFIG="$GATEWAY_CONFIG" PORT="$GATEWAY_PORT" cargo run -p gateway --bin gateway

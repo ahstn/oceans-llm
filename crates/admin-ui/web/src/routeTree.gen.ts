@@ -10,6 +10,8 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ModelsRouteImport } from './routes/models'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as ChangePasswordRouteImport } from './routes/change-password'
 import { Route as ApiKeysRouteImport } from './routes/api-keys'
 import { Route as AccountReadyRouteImport } from './routes/account-ready'
 import { Route as IndexRouteImport } from './routes/index'
@@ -22,6 +24,16 @@ import { Route as IdentityTeamsRouteImport } from './routes/identity/teams'
 const ModelsRoute = ModelsRouteImport.update({
   id: '/models',
   path: '/models',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ChangePasswordRoute = ChangePasswordRouteImport.update({
+  id: '/change-password',
+  path: '/change-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiKeysRoute = ApiKeysRouteImport.update({
@@ -70,6 +82,8 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/account-ready': typeof AccountReadyRoute
   '/api-keys': typeof ApiKeysRoute
+  '/change-password': typeof ChangePasswordRoute
+  '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
   '/identity/teams': typeof IdentityTeamsRoute
   '/identity/users': typeof IdentityUsersRoute
@@ -81,6 +95,8 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/account-ready': typeof AccountReadyRoute
   '/api-keys': typeof ApiKeysRoute
+  '/change-password': typeof ChangePasswordRoute
+  '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
   '/identity/teams': typeof IdentityTeamsRoute
   '/identity/users': typeof IdentityUsersRoute
@@ -93,6 +109,8 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/account-ready': typeof AccountReadyRoute
   '/api-keys': typeof ApiKeysRoute
+  '/change-password': typeof ChangePasswordRoute
+  '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
   '/identity/teams': typeof IdentityTeamsRoute
   '/identity/users': typeof IdentityUsersRoute
@@ -106,6 +124,8 @@ export interface FileRouteTypes {
     | '/'
     | '/account-ready'
     | '/api-keys'
+    | '/change-password'
+    | '/login'
     | '/models'
     | '/identity/teams'
     | '/identity/users'
@@ -117,6 +137,8 @@ export interface FileRouteTypes {
     | '/'
     | '/account-ready'
     | '/api-keys'
+    | '/change-password'
+    | '/login'
     | '/models'
     | '/identity/teams'
     | '/identity/users'
@@ -128,6 +150,8 @@ export interface FileRouteTypes {
     | '/'
     | '/account-ready'
     | '/api-keys'
+    | '/change-password'
+    | '/login'
     | '/models'
     | '/identity/teams'
     | '/identity/users'
@@ -140,6 +164,8 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountReadyRoute: typeof AccountReadyRoute
   ApiKeysRoute: typeof ApiKeysRoute
+  ChangePasswordRoute: typeof ChangePasswordRoute
+  LoginRoute: typeof LoginRoute
   ModelsRoute: typeof ModelsRoute
   IdentityTeamsRoute: typeof IdentityTeamsRoute
   IdentityUsersRoute: typeof IdentityUsersRoute
@@ -155,6 +181,20 @@ declare module '@tanstack/react-router' {
       path: '/models'
       fullPath: '/models'
       preLoaderRoute: typeof ModelsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/change-password': {
+      id: '/change-password'
+      path: '/change-password'
+      fullPath: '/change-password'
+      preLoaderRoute: typeof ChangePasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api-keys': {
@@ -220,6 +260,8 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountReadyRoute: AccountReadyRoute,
   ApiKeysRoute: ApiKeysRoute,
+  ChangePasswordRoute: ChangePasswordRoute,
+  LoginRoute: LoginRoute,
   ModelsRoute: ModelsRoute,
   IdentityTeamsRoute: IdentityTeamsRoute,
   IdentityUsersRoute: IdentityUsersRoute,

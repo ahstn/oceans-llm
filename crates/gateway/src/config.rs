@@ -369,6 +369,37 @@ impl Default for DatabaseConfig {
 pub struct AuthConfig {
     #[serde(default)]
     pub seed_api_keys: Vec<SeedApiKeyConfig>,
+    #[serde(default)]
+    pub bootstrap_admin: BootstrapAdminConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BootstrapAdminConfig {
+    #[serde(default = "default_bootstrap_admin_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_bootstrap_admin_email")]
+    pub email: String,
+    #[serde(default = "default_bootstrap_admin_password")]
+    pub password: String,
+    #[serde(default)]
+    pub require_password_change: bool,
+}
+
+impl Default for BootstrapAdminConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_bootstrap_admin_enabled(),
+            email: default_bootstrap_admin_email(),
+            password: default_bootstrap_admin_password(),
+            require_password_change: false,
+        }
+    }
+}
+
+impl BootstrapAdminConfig {
+    pub fn resolved_password(&self) -> anyhow::Result<String> {
+        resolve_secret_reference(&self.password)
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -558,6 +589,18 @@ const fn default_enabled() -> bool {
     true
 }
 
+const fn default_bootstrap_admin_enabled() -> bool {
+    true
+}
+
+fn default_bootstrap_admin_email() -> String {
+    "admin@local".to_string()
+}
+
+fn default_bootstrap_admin_password() -> String {
+    "literal.admin".to_string()
+}
+
 fn default_vertex_location() -> String {
     "global".to_string()
 }
@@ -744,5 +787,17 @@ providers:
             error_text.contains("pricing_provider_id `azure` is not supported"),
             "unexpected error: {error_text}"
         );
+    }
+
+    #[test]
+    fn production_config_requires_bootstrap_password_change() {
+        let config_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../gateway.prod.yaml");
+
+        let config = GatewayConfig::from_path(&config_path).expect("prod config should parse");
+
+        assert!(config.auth.bootstrap_admin.enabled);
+        assert_eq!(config.auth.bootstrap_admin.email, "admin@local");
+        assert!(config.auth.bootstrap_admin.require_password_change);
     }
 }

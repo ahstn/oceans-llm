@@ -105,6 +105,20 @@ pub(crate) struct AdminOidcProviderView {
 }
 
 #[derive(Debug, Serialize)]
+pub(crate) struct AuthSessionUserView {
+    id: String,
+    name: String,
+    email: String,
+    global_role: String,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct AuthSessionView {
+    user: AuthSessionUserView,
+    must_change_password: bool,
+}
+
+#[derive(Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum AdminOnboardingActionView {
     PasswordInvite {
@@ -180,6 +194,18 @@ pub(crate) struct InvitationView {
 #[derive(Debug, Deserialize)]
 pub struct CompleteInvitationRequest {
     pub password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PasswordLoginRequest {
+    pub email: String,
+    pub password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ChangePasswordRequest {
+    pub current_password: String,
+    pub new_password: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -398,6 +424,117 @@ pub async fn add_identity_team_members(
     Ok(Json(envelope(
         reload_team_view(&state.store, team_id, OffsetDateTime::now_utc()).await?,
     )))
+}
+
+pub async fn get_auth_session(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Envelope<Option<AuthSessionView>>>, AppError> {
+    let session = resolve_session_user(&state, &headers)
+        .await?
+        .map(build_auth_session_view);
+
+    Ok(Json(envelope(session)))
+}
+
+pub async fn login_with_password(
+    State(state): State<AppState>,
+    Json(request): Json<PasswordLoginRequest>,
+) -> Result<Response, AppError> {
+    let email_normalized = normalize_email(&request.email)?;
+    let user = state
+        .store
+        .get_user_by_email_normalized(&email_normalized)
+        .await?
+        .ok_or_else(|| AppError(GatewayError::Auth(AuthError::InvalidCredentials)))?;
+    let password_auth = state
+        .store
+        .get_user_password_auth(user.user_id)
+        .await?
+        .ok_or_else(|| AppError(GatewayError::Auth(AuthError::InvalidCredentials)))?;
+
+    if user.auth_mode != AuthMode::Password {
+        return Err(AppError(GatewayError::Auth(AuthError::InvalidCredentials)));
+    }
+    if user.global_role != GlobalRole::PlatformAdmin {
+        return Err(AppError(GatewayError::Auth(
+            AuthError::InsufficientPrivileges,
+        )));
+    }
+    if user.status != "active" {
+        return Err(AppError(GatewayError::InvalidRequest(
+            "only active admins can sign in".to_string(),
+        )));
+    }
+    let password_ok =
+        gateway_service::verify_gateway_key_secret(&request.password, &password_auth.password_hash)
+            .map_err(|error| AppError(GatewayError::Internal(error.to_string())))?;
+    if !password_ok {
+        return Err(AppError(GatewayError::Auth(AuthError::InvalidCredentials)));
+    }
+
+    let now = OffsetDateTime::now_utc();
+    let session_cookie = issue_session_cookie(&state, user.user_id, now).await?;
+    let mut response = Json(envelope(build_auth_session_view(user))).into_response();
+    response.headers_mut().append(SET_COOKIE, session_cookie);
+    Ok(response)
+}
+
+pub async fn change_password(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<ChangePasswordRequest>,
+) -> Result<Json<Envelope<AuthSessionView>>, AppError> {
+    if request.new_password.len() < 8 {
+        return Err(AppError(GatewayError::InvalidRequest(
+            "password must be at least 8 characters".to_string(),
+        )));
+    }
+
+    let user = require_authenticated_session(&state, &headers).await?;
+    if user.global_role != GlobalRole::PlatformAdmin {
+        return Err(AppError(GatewayError::Auth(
+            AuthError::InsufficientPrivileges,
+        )));
+    }
+    if user.auth_mode != AuthMode::Password {
+        return Err(AppError(GatewayError::InvalidRequest(
+            "password changes are only valid for password users".to_string(),
+        )));
+    }
+    let password_auth = state
+        .store
+        .get_user_password_auth(user.user_id)
+        .await?
+        .ok_or_else(|| AppError(GatewayError::Auth(AuthError::InvalidCredentials)))?;
+    let current_password_ok = gateway_service::verify_gateway_key_secret(
+        &request.current_password,
+        &password_auth.password_hash,
+    )
+    .map_err(|error| AppError(GatewayError::Internal(error.to_string())))?;
+    if !current_password_ok {
+        return Err(AppError(GatewayError::Auth(AuthError::InvalidCredentials)));
+    }
+
+    let now = OffsetDateTime::now_utc();
+    let new_password_hash = gateway_service::hash_gateway_key_secret(&request.new_password)
+        .map_err(|error| AppError(GatewayError::Internal(error.to_string())))?;
+    state
+        .store
+        .store_user_password(user.user_id, &new_password_hash, now)
+        .await?;
+    state
+        .store
+        .update_user_must_change_password(user.user_id, false, now)
+        .await?;
+
+    let refreshed_user = state
+        .store
+        .get_user_by_id(user.user_id)
+        .await?
+        .ok_or_else(|| AppError(GatewayError::InvalidRequest("user not found".to_string())))?;
+
+    Ok(Json(envelope(build_auth_session_view(refreshed_user))))
 }
 
 pub async fn create_identity_user(
@@ -729,11 +866,7 @@ async fn require_platform_admin(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<UserRecord, AppError> {
-    let current_user = if let Some(user) = resolve_session_user(state, headers).await? {
-        user
-    } else {
-        state.store.ensure_bootstrap_admin_user().await?
-    };
+    let current_user = require_authenticated_session(state, headers).await?;
 
     if current_user.global_role != GlobalRole::PlatformAdmin {
         return Err(AppError(GatewayError::Auth(
@@ -747,6 +880,15 @@ async fn require_platform_admin(
     }
 
     Ok(current_user)
+}
+
+async fn require_authenticated_session(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<UserRecord, AppError> {
+    resolve_session_user(state, headers)
+        .await?
+        .ok_or_else(|| AppError(GatewayError::Auth(AuthError::SessionRequired)))
 }
 
 async fn resolve_session_user(
@@ -838,6 +980,18 @@ async fn build_admin_identity_user_view(
         status: user.user.status,
         onboarding,
     })
+}
+
+fn build_auth_session_view(user: UserRecord) -> AuthSessionView {
+    AuthSessionView {
+        user: AuthSessionUserView {
+            id: user.user_id.to_string(),
+            name: user.name,
+            email: user.email,
+            global_role: user.global_role.as_str().to_string(),
+        },
+        must_change_password: user.must_change_password,
+    }
 }
 
 fn build_assignable_user_views(users: &[IdentityUserRecord]) -> Vec<AdminTeamAssignableUserView> {
