@@ -446,12 +446,12 @@ pub async fn login_with_password(
         .store
         .get_user_by_email_normalized(&email_normalized)
         .await?
-        .ok_or_else(|| AppError(GatewayError::Auth(AuthError::InvalidCredentials)))?;
+        .ok_or(AppError(GatewayError::Auth(AuthError::InvalidCredentials)))?;
     let password_auth = state
         .store
         .get_user_password_auth(user.user_id)
         .await?
-        .ok_or_else(|| AppError(GatewayError::Auth(AuthError::InvalidCredentials)))?;
+        .ok_or(AppError(GatewayError::Auth(AuthError::InvalidCredentials)))?;
 
     if user.auth_mode != AuthMode::Password {
         return Err(AppError(GatewayError::Auth(AuthError::InvalidCredentials)));
@@ -506,7 +506,7 @@ pub async fn change_password(
         .store
         .get_user_password_auth(user.user_id)
         .await?
-        .ok_or_else(|| AppError(GatewayError::Auth(AuthError::InvalidCredentials)))?;
+        .ok_or(AppError(GatewayError::Auth(AuthError::InvalidCredentials)))?;
     let current_password_ok = gateway_service::verify_gateway_key_secret(
         &request.current_password,
         &password_auth.password_hash,
@@ -888,7 +888,7 @@ async fn require_authenticated_session(
 ) -> Result<UserRecord, AppError> {
     resolve_session_user(state, headers)
         .await?
-        .ok_or_else(|| AppError(GatewayError::Auth(AuthError::SessionRequired)))
+        .ok_or(AppError(GatewayError::Auth(AuthError::SessionRequired)))
 }
 
 async fn resolve_session_user(
