@@ -1,0 +1,28 @@
+server:
+  bind: "0.0.0.0:8080"
+  log_format: "json"
+
+database:
+  # The current gateway runtime persists to a local libsql/SQLite file.
+  path: "/data/gateway.db"
+
+auth:
+  seed_api_keys:
+    - name: default
+      value: env.GATEWAY_API_KEY
+
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+    auth:
+      kind: bearer
+      token: env.OPENAI_API_KEY
+
+models:
+  - id: openai-fast
+    description: OpenAI via the compatible provider adapter
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-5
