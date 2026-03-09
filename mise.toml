@@ -58,6 +58,7 @@ run = "bun run --cwd crates/admin-ui/web dev"
 
 [tasks.ui-build]
 description = "Build admin UI"
+depends = ["ui-install"]
 run = "bun run --cwd crates/admin-ui/web build"
 
 [tasks.ui-lint]
@@ -71,6 +72,16 @@ run = "bun run --cwd crates/admin-ui/web fmt"
 [tasks.ui-test]
 description = "Run admin UI tests"
 run = "bun run --cwd crates/admin-ui/web test"
+
+[tasks.e2e-install]
+description = "Install Playwright Chromium for the end-to-end suite"
+depends = ["ui-install"]
+run = "bun run --cwd crates/admin-ui/web playwright:install"
+
+[tasks.e2e-test]
+description = "Run gateway and admin UI end-to-end contract tests"
+depends = ["ui-build", "e2e-install"]
+run = "bun run --cwd crates/admin-ui/web test:e2e"
 
 [tasks.release]
 description = "Analyze commits and dispatch the release workflow when a release is pending"
