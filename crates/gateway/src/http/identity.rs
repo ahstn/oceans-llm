@@ -10,7 +10,7 @@ use gateway_core::{
     AuthError, AuthMode, GatewayError, GlobalRole, IdentityRepository, IdentityUserRecord,
     MembershipRole, OidcProviderRecord, PasswordInvitationRecord, UserRecord,
 };
-use gateway_store::LibsqlStore;
+use gateway_store::{AnyStore, GatewayStore};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use time::{Duration, OffsetDateTime, format_description::well_known::Rfc3339};
@@ -921,7 +921,7 @@ async fn resolve_session_user(
 }
 
 async fn build_admin_identity_user_view(
-    store: &LibsqlStore,
+    store: &AnyStore,
     secret: &str,
     origin: &str,
     now: OffsetDateTime,
@@ -1052,7 +1052,7 @@ fn build_admin_team_views(
 }
 
 async fn reload_team_view(
-    store: &LibsqlStore,
+    store: &AnyStore,
     team_id: Uuid,
     _now: OffsetDateTime,
 ) -> Result<AdminTeamManagementView, AppError> {
@@ -1068,7 +1068,7 @@ async fn reload_team_view(
         })
 }
 
-async fn generate_unique_team_key(store: &LibsqlStore, name: &str) -> Result<String, AppError> {
+async fn generate_unique_team_key(store: &AnyStore, name: &str) -> Result<String, AppError> {
     let base = slugify_team_name(name);
     let mut candidate = base.clone();
     let mut suffix = 2_u32;
@@ -1154,7 +1154,7 @@ fn validate_team_admin_assignments(
 }
 
 async fn sync_team_admins(
-    store: &LibsqlStore,
+    store: &AnyStore,
     team_id: Uuid,
     selected_admin_ids: &[Uuid],
     now: OffsetDateTime,
@@ -1196,7 +1196,7 @@ async fn sync_team_admins(
 }
 
 async fn reload_identity_user(
-    store: &LibsqlStore,
+    store: &AnyStore,
     user_id: Uuid,
 ) -> Result<IdentityUserRecord, AppError> {
     let user = store
@@ -1218,7 +1218,7 @@ struct GeneratedInvite {
 }
 
 async fn create_password_invite(
-    store: &LibsqlStore,
+    store: &AnyStore,
     secret: &str,
     origin: &str,
     user_id: Uuid,
@@ -1358,7 +1358,7 @@ async fn issue_session_cookie(
 }
 
 async fn load_enabled_oidc_provider(
-    store: &LibsqlStore,
+    store: &AnyStore,
     provider_key: &str,
 ) -> Result<OidcProviderRecord, AppError> {
     store

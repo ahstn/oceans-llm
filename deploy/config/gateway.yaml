@@ -3,8 +3,8 @@ server:
   log_format: "json"
 
 database:
-  # The current gateway runtime persists to a local libsql/SQLite file.
-  path: "/data/gateway.db"
+  kind: postgres
+  url: env.POSTGRES_URL
 
 auth:
   seed_api_keys:

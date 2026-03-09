@@ -12,7 +12,7 @@ use gateway_service::{
     DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, GatewayService, WeightedRoutePlanner,
     hash_gateway_key_secret,
 };
-use gateway_store::{LibsqlStore, run_migrations};
+use gateway_store::{AnyStore, GatewayStore, MigrationTestHook, run_migrations_with_options};
 use http::{build_router, state::AppState};
 use tokio::net::TcpListener;
 use crate::config::{BootstrapAdminConfig, GatewayConfig};
@@ -25,13 +25,17 @@ async fn main() -> anyhow::Result<()> {
 
     observability::init_tracing(&config.server)?;
 
-    run_migrations(&config.database.path)
+    let database_options = config
+        .database_options()
+        .context("failed resolving database configuration")?;
+
+    run_migrations_with_options(&database_options, MigrationTestHook::default())
         .await
         .context("failed to run database migrations")?;
     let store = Arc::new(
-        LibsqlStore::new_local(&config.database.path)
+        AnyStore::connect(&database_options)
             .await
-            .context("failed to initialize local libsql store")?,
+            .context("failed to initialize gateway store")?,
     );
     ensure_bootstrap_admin(&store, &config.auth.bootstrap_admin)
         .await
@@ -84,7 +88,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn ensure_bootstrap_admin(
-    store: &Arc<LibsqlStore>,
+    store: &Arc<AnyStore>,
     config: &BootstrapAdminConfig,
 ) -> anyhow::Result<()> {
     if !config.enabled {
@@ -145,7 +149,7 @@ fn load_admin_ui_config() -> AdminUiConfig {
 }
 
 fn spawn_pricing_catalog_refresh_loop(
-    service: Arc<GatewayService<LibsqlStore, WeightedRoutePlanner>>,
+    service: Arc<GatewayService<AnyStore, WeightedRoutePlanner>>,
 ) {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(pricing_catalog_refresh_interval());
@@ -179,6 +183,7 @@ fn load_identity_token_secret() -> String {
 #[cfg(test)]
 mod tests {
     use std::{
+        env,
         path::{Path, PathBuf},
         sync::{
             Arc,
@@ -200,11 +205,16 @@ mod tests {
         SeedModelRoute, SeedProvider, parse_gateway_api_key,
     };
     use gateway_service::{GatewayService, WeightedRoutePlanner, hash_gateway_key_secret};
-    use gateway_store::{LibsqlStore, run_migrations};
+    use gateway_store::{
+        AnyStore, GatewayStore, LibsqlStore, MigrationTestHook, StoreConnectionOptions,
+        run_migrations, run_migrations_with_options,
+    };
     use serde_json::{Map, Value, json};
     use serial_test::serial;
+    use sqlx::Row;
     use tempfile::tempdir;
     use tower::ServiceExt;
+    use url::Url;
     use uuid::Uuid;
 
     use crate::{
@@ -428,11 +438,11 @@ mod tests {
 
         run_migrations(&db_path).await.expect("migrations");
 
-        let store = Arc::new(
+        let store = Arc::new(AnyStore::Libsql(
             LibsqlStore::new_local(db_path.to_str().expect("db path"))
                 .await
                 .expect("store"),
-        );
+        ));
 
         let raw_key = "gwk_dev123.super-secret".to_string();
         let parsed = parse_gateway_api_key(&raw_key).expect("parse key");
@@ -496,18 +506,18 @@ mod tests {
 
     async fn build_default_test_app_with_store(
         providers: gateway_core::ProviderRegistry,
-    ) -> (Router, Arc<LibsqlStore>, PathBuf) {
+    ) -> (Router, Arc<AnyStore>, PathBuf) {
         let tmp = tempdir().expect("tempdir");
         let tmp_path = tmp.keep();
         let db_path = tmp_path.join("gateway.db");
 
         run_migrations(&db_path).await.expect("migrations");
 
-        let store = Arc::new(
+        let store = Arc::new(AnyStore::Libsql(
             LibsqlStore::new_local(db_path.to_str().expect("db path"))
                 .await
                 .expect("store"),
-        );
+        ));
 
         let service = Arc::new(GatewayService::new(
             store.clone(),
@@ -527,6 +537,74 @@ mod tests {
         (app, store, db_path)
     }
 
+    async fn build_postgres_test_app(
+        database_url: &str,
+        provider_registry: gateway_core::ProviderRegistry,
+    ) -> (Router, String) {
+        let options = StoreConnectionOptions::Postgres {
+            url: database_url.to_string(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options, MigrationTestHook::default())
+            .await
+            .expect("postgres migrations");
+
+        let store = Arc::new(AnyStore::connect(&options).await.expect("postgres store"));
+
+        let seed_providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: serde_json::json!({"base_url": "https://api.openai.com/v1"}),
+            secrets: None,
+        }];
+        let models = vec![SeedModel {
+            model_key: "fast".to_string(),
+            description: Some("Fast tier".to_string()),
+            tags: vec!["fast".to_string()],
+            rank: 10,
+            routes: vec![SeedModelRoute {
+                provider_key: "openai-prod".to_string(),
+                upstream_model: "gpt-4o-mini".to_string(),
+                priority: 10,
+                weight: 1.0,
+                enabled: true,
+                extra_headers: Map::<String, Value>::new(),
+                extra_body: Map::<String, Value>::new(),
+            }],
+        }];
+
+        let raw_key = "gwk_dev123.super-secret".to_string();
+        let parsed = parse_gateway_api_key(&raw_key).expect("parse key");
+        let api_keys = vec![SeedApiKey {
+            name: "dev".to_string(),
+            public_id: parsed.public_id,
+            secret_hash: hash_gateway_key_secret(&parsed.secret).expect("hash"),
+            allowed_models: vec!["fast".to_string()],
+        }];
+
+        store
+            .seed_from_inputs(&seed_providers, &models, &api_keys)
+            .await
+            .expect("seed");
+
+        let service = Arc::new(GatewayService::new(
+            store.clone(),
+            Arc::new(WeightedRoutePlanner::seeded(11)),
+        ));
+
+        let app = build_router(
+            AppState {
+                service,
+                store,
+                providers: provider_registry,
+                identity_token_secret: Arc::new("local-dev-identity-secret".to_string()),
+            },
+            AdminUiConfig::default(),
+        );
+
+        (app, raw_key)
+    }
+
     fn set_cookie_header(response: &axum::response::Response) -> String {
         response
             .headers()
@@ -542,6 +620,67 @@ mod tests {
             .await
             .expect("body bytes");
         serde_json::from_slice(&body).expect("json body")
+    }
+
+    struct PostgresTestDatabase {
+        admin_url: String,
+        database_url: String,
+        database_name: String,
+    }
+
+    async fn create_postgres_test_database() -> Option<PostgresTestDatabase> {
+        let base_url = env::var("TEST_POSTGRES_URL").ok()?;
+        let mut admin_url = Url::parse(&base_url).expect("valid postgres url");
+        admin_url.set_path("/postgres");
+
+        let admin_pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(admin_url.as_str())
+            .await
+            .expect("admin postgres pool");
+
+        let database_name = format!("gateway_test_{}", Uuid::new_v4().simple());
+        sqlx::query(&format!("CREATE DATABASE {database_name}"))
+            .execute(&admin_pool)
+            .await
+            .expect("create test database");
+        admin_pool.close().await;
+
+        let mut database_url = Url::parse(&base_url).expect("valid postgres url");
+        database_url.set_path(&format!("/{database_name}"));
+
+        Some(PostgresTestDatabase {
+            admin_url: admin_url.to_string(),
+            database_url: database_url.to_string(),
+            database_name,
+        })
+    }
+
+    async fn drop_postgres_test_database(database: &PostgresTestDatabase) {
+        let admin_pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&database.admin_url)
+            .await
+            .expect("admin postgres pool");
+
+        sqlx::query(
+            r#"
+            SELECT pg_terminate_backend(pid)
+            FROM pg_stat_activity
+            WHERE datname = $1
+              AND pid <> pg_backend_pid()
+            "#,
+        )
+        .bind(database.database_name.as_str())
+        .execute(&admin_pool)
+        .await
+        .expect("terminate sessions");
+
+        sqlx::query(&format!("DROP DATABASE IF EXISTS {}", database.database_name))
+            .execute(&admin_pool)
+            .await
+            .expect("drop test database");
+        admin_pool.close().await;
     }
 
     #[tokio::test]
@@ -1269,5 +1408,106 @@ mod tests {
             .await
             .expect("lookup bootstrap admin");
         assert!(bootstrap_admin.is_none());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_runtime_serves_and_logs_requests() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!("skipping postgres gateway smoke test because TEST_POSTGRES_URL is not set");
+            return;
+        };
+
+        let mut providers = gateway_core::ProviderRegistry::new();
+        let (_, mock_provider) = make_chat_provider(
+            "openai-prod",
+            MockChatResult::Value(json!({
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 1,
+                "model": "gpt-4o-mini",
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "hello"},
+                    "finish_reason": "stop"
+                }],
+                "usage": {
+                    "prompt_tokens": 3,
+                    "completion_tokens": 2,
+                    "total_tokens": 5
+                }
+            })),
+            vec![],
+            ProviderCapabilities {
+                chat_completions: true,
+                chat_completions_stream: false,
+                embeddings: false,
+            },
+        );
+        providers.register(Arc::new(mock_provider));
+
+        let (app, raw_key) = build_postgres_test_app(&test_db.database_url, providers).await;
+
+        let ready = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/readyz")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("ready response");
+        assert_eq!(ready.status(), StatusCode::OK);
+
+        let models = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/models")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("models response");
+        assert_eq!(models.status(), StatusCode::OK);
+
+        let chat = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "model": "fast",
+                            "messages": [{"role": "user", "content": "hello"}]
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("chat response");
+        assert_eq!(chat.status(), StatusCode::OK);
+
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&test_db.database_url)
+            .await
+            .expect("postgres pool");
+        let row = sqlx::query("SELECT COUNT(*) FROM request_logs")
+            .fetch_one(&pool)
+            .await
+            .expect("request log count");
+        let count: i64 = row.try_get(0).expect("count");
+        assert_eq!(count, 1);
+        pool.close().await;
+
+        drop_postgres_test_database(&test_db).await;
     }
 }

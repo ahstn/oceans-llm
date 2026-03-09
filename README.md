@@ -6,7 +6,7 @@ Rust-first gateway workspace with an embedded `admin-ui` crate that hosts a TanS
 
 - `crates/gateway`: Rust API binary (`/healthz`, `/readyz`, `/v1/*`)
 - `crates/gateway-core`: shared domain types, traits, OpenAI-compatible DTOs, typed errors
-- `crates/gateway-store`: Turso/libsql store, migrations, seed upserts
+- `crates/gateway-store`: libsql + PostgreSQL store implementations, migrations, seed upserts
 - `crates/gateway-service`: auth, model resolution, route planning, orchestration
 - `crates/gateway-providers`: reqwest provider transport scaffolding
 - `crates/admin-ui`: Rust reverse proxy integration for `/admin*`
@@ -24,6 +24,7 @@ Single-container dual process:
 
 - `PORT`: Gateway bind port (default `8080`)
 - `GATEWAY_CONFIG`: gateway config file path (default `./gateway.yaml`, prod helper uses `./gateway.prod.yaml`)
+- `POSTGRES_URL`: PostgreSQL connection string used by production-shaped configs (for example `postgres://oceans:oceans@localhost:5432/oceans_llm`)
 - `ADMIN_UI_BASE_PATH`: UI mount path (default `/admin`)
 - `ADMIN_UI_UPSTREAM`: SSR upstream URL (default `http://localhost:3001`)
 - `ADMIN_UI_CONNECT_TIMEOUT_MS`: Proxy connect timeout (default `750`)
@@ -34,10 +35,34 @@ Single-container dual process:
 
 `gateway` reads `gateway.yaml` (or `GATEWAY_CONFIG`) at startup, runs SQL migrations, seeds providers/models/api keys, ensures a bootstrap admin exists, then starts serving traffic.
 
+Database policy:
+
+- `gateway.yaml` remains the local-development default and uses the libsql/SQLite backend.
+- `gateway.prod.yaml` and deploy-facing configs use PostgreSQL by default.
+- Fresh PostgreSQL environments are bootstrapped by the gateway on startup; application seed data is not preloaded into the Postgres container.
+
 Bootstrap admin defaults:
 
 - local config (`gateway.yaml`): `admin@local` / `admin`, no forced password change
 - production helper config (`gateway.prod.yaml`): `admin@local` / `admin`, forced password change on first login
+
+### Database config
+
+Local libsql/SQLite example:
+
+```yaml
+database:
+  kind: libsql
+  path: "./gateway.db"
+```
+
+Production/pre-production PostgreSQL example:
+
+```yaml
+database:
+  kind: postgres
+  url: env.POSTGRES_URL
+```
 
 ### Provider types
 
@@ -116,15 +141,18 @@ Run both UI and gateway together:
 
 - Gateway/API: `http://localhost:8080`
 - Admin UI: `http://localhost:8080/admin`
+- Database backend: local libsql/SQLite via `gateway.yaml`
 
 ## Production-style local run
 
 ```bash
+docker compose -f compose.local.yaml up -d postgres
+export POSTGRES_URL="postgres://oceans:oceans@localhost:5432/oceans_llm"
 mise run ui-build
 ./scripts/start-prod.sh
 ```
 
-`start-prod.sh` defaults `GATEWAY_CONFIG` to `./gateway.prod.yaml`, which keeps the bootstrap admin enabled for first-time setup and forces a password change after initial sign-in.
+`start-prod.sh` defaults `GATEWAY_CONFIG` to `./gateway.prod.yaml`, which now expects PostgreSQL through `POSTGRES_URL`, keeps the bootstrap admin enabled for first-time setup, and forces a password change after initial sign-in.
 
 ## Quality gates
 
@@ -134,3 +162,5 @@ mise run lint
 mise run test
 mise run sync-pricing-catalog
 ```
+
+CI also runs the Rust workspace against a PostgreSQL service so the production-shaped database path is exercised before merge.

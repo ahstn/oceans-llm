@@ -16,6 +16,22 @@ jobs:
   rust-lint-test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: oceans_llm_ci
+          POSTGRES_USER: oceans
+          POSTGRES_PASSWORD: oceans
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U oceans -d oceans_llm_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      TEST_POSTGRES_URL: postgres://oceans:oceans@localhost:5432/oceans_llm_ci
 
     steps:
       - name: Checkout

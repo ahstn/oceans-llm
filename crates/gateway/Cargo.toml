@@ -32,6 +32,8 @@ uuid.workspace = true
 [dev-dependencies]
 async-trait.workspace = true
 libsql.workspace = true
+sqlx.workspace = true
 tower = { workspace = true, features = ["util"] }
 tempfile = "3"
 serial_test = "3"
+url.workspace = true
