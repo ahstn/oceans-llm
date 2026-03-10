@@ -4,14 +4,31 @@ use anyhow::{Context, bail};
 use sqlx::Row;
 use time::OffsetDateTime;
 
-use crate::StoreConnectionOptions;
+use crate::{
+    StoreConnectionOptions,
+    migration_registry::{BackendMigrationStep, MIGRATION_REGISTRY, MigrationBackend},
+};
 
-struct EmbeddedMigration {
-    version: u32,
-    name: &'static str,
-    checksum: &'static str,
-    libsql_sql: &'static str,
-    postgres_sql: &'static str,
+#[derive(Debug, Clone)]
+pub struct MigrationStatusEntry {
+    pub version: u32,
+    pub name: &'static str,
+    pub checksum: &'static str,
+    pub applied: bool,
+    pub backend_note: Option<&'static str>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MigrationStatus {
+    pub backend: &'static str,
+    pub entries: Vec<MigrationStatusEntry>,
+}
+
+impl MigrationStatus {
+    #[must_use]
+    pub fn pending_count(&self) -> usize {
+        self.entries.iter().filter(|entry| !entry.applied).count()
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -27,58 +44,6 @@ impl MigrationTestHook {
         Ok(())
     }
 }
-
-const EMBEDDED_MIGRATIONS: &[EmbeddedMigration] = &[
-    EmbeddedMigration {
-        version: 1,
-        name: "init",
-        checksum: "V1__init.sql",
-        libsql_sql: include_str!("../migrations/V1__init.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V1__init.sql"),
-    },
-    EmbeddedMigration {
-        version: 2,
-        name: "audit_baseline",
-        checksum: "V2__audit_baseline.sql",
-        libsql_sql: include_str!("../migrations/V2__audit_baseline.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V2__audit_baseline.sql"),
-    },
-    EmbeddedMigration {
-        version: 3,
-        name: "identity_foundation",
-        checksum: "V3__identity_foundation.sql",
-        libsql_sql: include_str!("../migrations/V3__identity_foundation.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V3__identity_foundation.sql"),
-    },
-    EmbeddedMigration {
-        version: 4,
-        name: "money_fixed_point",
-        checksum: "V4__money_fixed_point.sql",
-        libsql_sql: include_str!("../migrations/V4__money_fixed_point.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V4__money_fixed_point.sql"),
-    },
-    EmbeddedMigration {
-        version: 5,
-        name: "pricing_catalog_cache",
-        checksum: "V5__pricing_catalog_cache.sql",
-        libsql_sql: include_str!("../migrations/V5__pricing_catalog_cache.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V5__pricing_catalog_cache.sql"),
-    },
-    EmbeddedMigration {
-        version: 6,
-        name: "identity_onboarding",
-        checksum: "V6__identity_onboarding.sql",
-        libsql_sql: include_str!("../migrations/V6__identity_onboarding.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V6__identity_onboarding.sql"),
-    },
-    EmbeddedMigration {
-        version: 7,
-        name: "user_password_rotation",
-        checksum: "V7__user_password_rotation.sql",
-        libsql_sql: include_str!("../migrations/V7__user_password_rotation.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V7__user_password_rotation.sql"),
-    },
-];
 
 pub async fn run_migrations(path: impl AsRef<Path>) -> anyhow::Result<()> {
     run_migrations_with_options(
@@ -100,6 +65,61 @@ pub async fn run_migrations_with_options(
     }
 }
 
+pub async fn status_migrations_with_options(
+    options: &StoreConnectionOptions,
+) -> anyhow::Result<MigrationStatus> {
+    let (backend, applied_versions) = match options {
+        StoreConnectionOptions::Libsql { path } => (
+            "libsql",
+            load_libsql_applied_versions(path).await.with_context(|| {
+                format!("failed loading migration status for `{}`", path.display())
+            })?,
+        ),
+        StoreConnectionOptions::Postgres { url, .. } => (
+            "postgres",
+            load_postgres_applied_versions(url)
+                .await
+                .context("failed loading postgres migration status")?,
+        ),
+    };
+
+    let entries = MIGRATION_REGISTRY
+        .iter()
+        .map(|migration| {
+            let step = migration.step_for(match backend {
+                "libsql" => MigrationBackend::Libsql,
+                _ => MigrationBackend::Postgres,
+            });
+            MigrationStatusEntry {
+                version: migration.version,
+                name: migration.name,
+                checksum: migration.checksum,
+                applied: applied_versions.contains(&migration.version),
+                backend_note: match step {
+                    BackendMigrationStep::Sql(_) => None,
+                    BackendMigrationStep::Compatibility { reason } => Some(reason),
+                },
+            }
+        })
+        .collect();
+
+    Ok(MigrationStatus { backend, entries })
+}
+
+pub async fn check_migrations_with_options(
+    options: &StoreConnectionOptions,
+) -> anyhow::Result<MigrationStatus> {
+    let status = status_migrations_with_options(options).await?;
+    if status.pending_count() > 0 {
+        bail!(
+            "{} pending migrations remain for {}",
+            status.pending_count(),
+            status.backend
+        );
+    }
+    Ok(status)
+}
+
 async fn run_libsql_migrations(path: &Path, hook: &MigrationTestHook) -> anyhow::Result<()> {
     let db = libsql::Builder::new_local(path)
         .build()
@@ -107,47 +127,34 @@ async fn run_libsql_migrations(path: &Path, hook: &MigrationTestHook) -> anyhow:
         .with_context(|| format!("failed opening local libsql database `{}`", path.display()))?;
     let conn = db.connect().context("failed opening libsql connection")?;
 
-    conn.execute(
-        r#"
-        CREATE TABLE IF NOT EXISTS refinery_schema_history (
-            version INTEGER PRIMARY KEY,
-            name TEXT NOT NULL,
-            applied_on INTEGER NOT NULL,
-            checksum TEXT NOT NULL
-        )
-        "#,
-        (),
-    )
-    .await
-    .context("failed ensuring refinery schema history table")?;
+    ensure_libsql_history_table(&conn).await?;
+    let applied_versions = load_libsql_versions_from_connection(&conn).await?;
 
-    let applied_versions = load_libsql_applied_versions(&conn).await?;
-
-    for migration in EMBEDDED_MIGRATIONS {
+    for migration in MIGRATION_REGISTRY {
         if applied_versions.contains(&migration.version) {
             continue;
         }
 
-        let tx = conn
-            .transaction()
-            .await
-            .with_context(|| format!("failed starting transaction for migration {}", migration.version))?;
+        let tx = conn.transaction().await.with_context(|| {
+            format!(
+                "failed starting transaction for migration {}",
+                migration.version
+            )
+        })?;
 
         let migration_result = async {
-            tx.execute_batch(migration.libsql_sql)
-                .await
-                .with_context(|| format!("failed applying migration {}", migration.version))?;
+            if let BackendMigrationStep::Sql(sql) = migration.step_for(MigrationBackend::Libsql) {
+                tx.execute_batch(sql)
+                    .await
+                    .with_context(|| format!("failed applying migration {}", migration.version))?;
+            }
             hook.maybe_fail(migration.version)?;
             tx.execute(
                 r#"
                 INSERT INTO refinery_schema_history (version, name, applied_on, checksum)
                 VALUES (?1, ?2, unixepoch(), ?3)
                 "#,
-                libsql::params![
-                    migration.version as i64,
-                    migration.name,
-                    migration.checksum
-                ],
+                libsql::params![migration.version as i64, migration.name, migration.checksum],
             )
             .await
             .with_context(|| {
@@ -182,29 +189,6 @@ async fn run_libsql_migrations(path: &Path, hook: &MigrationTestHook) -> anyhow:
     Ok(())
 }
 
-async fn load_libsql_applied_versions(
-    conn: &libsql::Connection,
-) -> anyhow::Result<HashSet<u32>> {
-    let mut applied_rows = conn
-        .query("SELECT version FROM refinery_schema_history", ())
-        .await
-        .context("failed reading applied migration versions")?;
-
-    let mut applied_versions = HashSet::new();
-    while let Some(row) = applied_rows
-        .next()
-        .await
-        .context("failed iterating applied migration versions")?
-    {
-        let version: i64 = row
-            .get(0)
-            .map_err(|error| anyhow::anyhow!("failed decoding migration version: {error}"))?;
-        applied_versions.insert(version as u32);
-    }
-
-    Ok(applied_versions)
-}
-
 async fn run_postgres_migrations(url: &str, hook: &MigrationTestHook) -> anyhow::Result<()> {
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(1)
@@ -212,45 +196,30 @@ async fn run_postgres_migrations(url: &str, hook: &MigrationTestHook) -> anyhow:
         .await
         .context("failed opening postgres connection pool for migrations")?;
 
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS refinery_schema_history (
-            version BIGINT PRIMARY KEY,
-            name TEXT NOT NULL,
-            applied_on BIGINT NOT NULL,
-            checksum TEXT NOT NULL
-        )
-        "#,
-    )
-    .execute(&pool)
-    .await
-    .context("failed ensuring refinery schema history table")?;
+    ensure_postgres_history_table(&pool).await?;
+    let applied_versions = load_postgres_versions_from_pool(&pool).await?;
 
-    let rows = sqlx::query("SELECT version FROM refinery_schema_history")
-        .fetch_all(&pool)
-        .await
-        .context("failed reading applied postgres migration versions")?;
-    let applied_versions = rows
-        .iter()
-        .map(|row| row.try_get::<i64, _>(0).map(|value| value as u32))
-        .collect::<Result<HashSet<_>, _>>()
-        .context("failed decoding applied postgres migration versions")?;
-
-    for migration in EMBEDDED_MIGRATIONS {
+    for migration in MIGRATION_REGISTRY {
         if applied_versions.contains(&migration.version) {
             continue;
         }
 
-        let mut tx = pool
-            .begin()
-            .await
-            .with_context(|| format!("failed starting postgres transaction for migration {}", migration.version))?;
+        let mut tx = pool.begin().await.with_context(|| {
+            format!(
+                "failed starting postgres transaction for migration {}",
+                migration.version
+            )
+        })?;
 
         let migration_result = async {
-            sqlx::raw_sql(migration.postgres_sql)
-                .execute(&mut *tx)
-                .await
-                .with_context(|| format!("failed applying postgres migration {}", migration.version))?;
+            if let BackendMigrationStep::Sql(sql) = migration.step_for(MigrationBackend::Postgres) {
+                sqlx::raw_sql(sql)
+                    .execute(&mut *tx)
+                    .await
+                    .with_context(|| {
+                        format!("failed applying postgres migration {}", migration.version)
+                    })?;
+            }
             hook.maybe_fail(migration.version)?;
             sqlx::query(
                 r#"
@@ -275,10 +244,9 @@ async fn run_postgres_migrations(url: &str, hook: &MigrationTestHook) -> anyhow:
         .await;
 
         match migration_result {
-            Ok(()) => tx
-                .commit()
-                .await
-                .with_context(|| format!("failed committing postgres migration {}", migration.version))?,
+            Ok(()) => tx.commit().await.with_context(|| {
+                format!("failed committing postgres migration {}", migration.version)
+            })?,
             Err(error) => {
                 let rollback_error = tx.rollback().await.err();
                 if let Some(rollback_error) = rollback_error {
@@ -294,4 +262,139 @@ async fn run_postgres_migrations(url: &str, hook: &MigrationTestHook) -> anyhow:
     }
 
     Ok(())
+}
+
+async fn ensure_libsql_history_table(conn: &libsql::Connection) -> anyhow::Result<()> {
+    conn.execute(
+        r#"
+        CREATE TABLE IF NOT EXISTS refinery_schema_history (
+            version INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            applied_on INTEGER NOT NULL,
+            checksum TEXT NOT NULL
+        )
+        "#,
+        (),
+    )
+    .await
+    .context("failed ensuring refinery schema history table")?;
+    Ok(())
+}
+
+async fn ensure_postgres_history_table(pool: &sqlx::PgPool) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS refinery_schema_history (
+            version BIGINT PRIMARY KEY,
+            name TEXT NOT NULL,
+            applied_on BIGINT NOT NULL,
+            checksum TEXT NOT NULL
+        )
+        "#,
+    )
+    .execute(pool)
+    .await
+    .context("failed ensuring refinery schema history table")?;
+    Ok(())
+}
+
+async fn load_libsql_applied_versions(path: &Path) -> anyhow::Result<HashSet<u32>> {
+    let db = libsql::Builder::new_local(path)
+        .build()
+        .await
+        .with_context(|| format!("failed opening local libsql database `{}`", path.display()))?;
+    let conn = db.connect().context("failed opening libsql connection")?;
+
+    if !libsql_history_table_exists(&conn).await? {
+        return Ok(HashSet::new());
+    }
+
+    load_libsql_versions_from_connection(&conn).await
+}
+
+async fn load_libsql_versions_from_connection(
+    conn: &libsql::Connection,
+) -> anyhow::Result<HashSet<u32>> {
+    let mut applied_rows = conn
+        .query("SELECT version FROM refinery_schema_history", ())
+        .await
+        .context("failed reading applied migration versions")?;
+
+    let mut applied_versions = HashSet::new();
+    while let Some(row) = applied_rows
+        .next()
+        .await
+        .context("failed iterating applied migration versions")?
+    {
+        let version: i64 = row
+            .get(0)
+            .map_err(|error| anyhow::anyhow!("failed decoding migration version: {error}"))?;
+        applied_versions.insert(version as u32);
+    }
+
+    Ok(applied_versions)
+}
+
+async fn libsql_history_table_exists(conn: &libsql::Connection) -> anyhow::Result<bool> {
+    let mut rows = conn
+        .query(
+            r#"
+            SELECT COUNT(*)
+            FROM sqlite_master
+            WHERE type = 'table'
+              AND name = 'refinery_schema_history'
+            "#,
+            (),
+        )
+        .await
+        .context("failed checking libsql migration history table")?;
+
+    let row = rows
+        .next()
+        .await
+        .context("failed loading libsql migration history table row")?
+        .ok_or_else(|| anyhow::anyhow!("missing libsql migration history table row"))?;
+    let count: i64 = row.get(0).map_err(|error| {
+        anyhow::anyhow!("failed decoding libsql migration history count: {error}")
+    })?;
+    Ok(count > 0)
+}
+
+async fn load_postgres_applied_versions(url: &str) -> anyhow::Result<HashSet<u32>> {
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect(url)
+        .await
+        .context("failed opening postgres connection pool for migration status")?;
+
+    if !postgres_history_table_exists(&pool).await? {
+        pool.close().await;
+        return Ok(HashSet::new());
+    }
+
+    let versions = load_postgres_versions_from_pool(&pool).await;
+    pool.close().await;
+    versions
+}
+
+async fn load_postgres_versions_from_pool(pool: &sqlx::PgPool) -> anyhow::Result<HashSet<u32>> {
+    let rows = sqlx::query("SELECT version FROM refinery_schema_history")
+        .fetch_all(pool)
+        .await
+        .context("failed reading applied postgres migration versions")?;
+    rows.iter()
+        .map(|row| row.try_get::<i64, _>(0).map(|value| value as u32))
+        .collect::<Result<HashSet<_>, _>>()
+        .context("failed decoding applied postgres migration versions")
+}
+
+async fn postgres_history_table_exists(pool: &sqlx::PgPool) -> anyhow::Result<bool> {
+    let row = sqlx::query("SELECT to_regclass('public.refinery_schema_history')")
+        .fetch_one(pool)
+        .await
+        .context("failed checking postgres migration history table")?;
+    let table_name: Option<String> = row
+        .try_get(0)
+        .context("failed decoding postgres migration history lookup")?;
+    Ok(table_name.is_some())
 }

@@ -24,6 +24,9 @@ Single-container dual process:
 
 - `PORT`: Gateway bind port (default `8080`)
 - `GATEWAY_CONFIG`: gateway config file path (default `./gateway.yaml`, prod helper uses `./gateway.prod.yaml`)
+- `GATEWAY_RUN_MIGRATIONS`: control `gateway serve --run-migrations` (default `true`)
+- `GATEWAY_BOOTSTRAP_ADMIN`: control `gateway serve --bootstrap-admin` (default `true`)
+- `GATEWAY_SEED_CONFIG`: control `gateway serve --seed-config` (default `true`)
 - `POSTGRES_URL`: PostgreSQL connection string used by production-shaped configs (for example `postgres://oceans:oceans@localhost:5432/oceans_llm`)
 - `ADMIN_UI_BASE_PATH`: UI mount path (default `/admin`)
 - `ADMIN_UI_UPSTREAM`: SSR upstream URL (default `http://localhost:3001`)
@@ -33,7 +36,21 @@ Single-container dual process:
 
 ## Gateway config
 
-`gateway` reads `gateway.yaml` (or `GATEWAY_CONFIG`) at startup, runs SQL migrations, seeds providers/models/api keys, ensures a bootstrap admin exists, then starts serving traffic.
+`gateway` now exposes explicit operational commands:
+
+- `gateway serve`: normal runtime startup
+- `gateway migrate --status|--check|--apply`: inspect or apply database migrations
+- `gateway bootstrap-admin`: ensure the configured bootstrap admin exists
+- `gateway seed-config`: seed providers/models/API keys without starting HTTP
+
+The repo exposes matching `mise` tasks:
+
+- `mise run gateway-serve`
+- `mise run gateway-migrate`
+- `mise run gateway-bootstrap-admin`
+- `mise run gateway-seed-config`
+
+`gateway serve` remains the default command. By default it reads `gateway.yaml` (or `GATEWAY_CONFIG`), runs SQL migrations, seeds providers/models/api keys, ensures a bootstrap admin exists, then starts serving traffic.
 
 Database policy:
 
@@ -143,16 +160,68 @@ Run both UI and gateway together:
 - Admin UI: `http://localhost:8080/admin`
 - Database backend: local libsql/SQLite via `gateway.yaml`
 
+Run the gateway directly with the default startup behavior:
+
+```bash
+mise run gateway-serve
+# or:
+cargo run -p gateway --bin gateway -- serve
+```
+
+Inspect or apply migrations without starting the server:
+
+```bash
+cargo run -p gateway --bin gateway -- migrate --status
+cargo run -p gateway --bin gateway -- migrate --check
+mise run gateway-migrate
+```
+
 ## Production-style local run
 
 ```bash
 docker compose -f compose.local.yaml up -d postgres
 export POSTGRES_URL="postgres://oceans:oceans@localhost:5432/oceans_llm"
+export OPENAI_API_KEY="${OPENAI_API_KEY:-test-openai-key}"
 mise run ui-build
 ./scripts/start-prod.sh
 ```
 
 `start-prod.sh` defaults `GATEWAY_CONFIG` to `./gateway.prod.yaml`, which now expects PostgreSQL through `POSTGRES_URL`, keeps the bootstrap admin enabled for first-time setup, and forces a password change after initial sign-in.
+
+For one-off operational actions against the configured database:
+
+```bash
+mise run gateway-migrate
+mise run gateway-seed-config
+mise run gateway-bootstrap-admin
+cargo run -p gateway --bin gateway -- --config gateway.prod.yaml serve --run-migrations=false --bootstrap-admin=false --seed-config=false
+```
+
+## Postgres validation
+
+Bring up the local Postgres service:
+
+```bash
+docker compose -f compose.local.yaml up -d postgres
+export TEST_POSTGRES_URL="postgres://oceans:oceans@localhost:5432/oceans_llm"
+export POSTGRES_URL="$TEST_POSTGRES_URL"
+export OPENAI_API_KEY="${OPENAI_API_KEY:-test-openai-key}"
+```
+
+Libsql-first local validation:
+
+```bash
+mise run check
+mise run test
+```
+
+Focused Postgres-backed validation:
+
+```bash
+mise run check-rust-postgres
+mise run test-rust-postgres
+mise run test-gateway-postgres-smoke
+```
 
 ## Quality gates
 
@@ -160,7 +229,10 @@ mise run ui-build
 mise run check
 mise run lint
 mise run test
+mise run check-rust-postgres
+mise run test-rust-postgres
+mise run test-gateway-postgres-smoke
 mise run sync-pricing-catalog
 ```
 
-CI also runs the Rust workspace against a PostgreSQL service so the production-shaped database path is exercised before merge.
+CI runs `mise run check-rust-postgres`, `mise run test-rust-postgres`, and `mise run test-gateway-postgres-smoke` so the PostgreSQL path stays visible in the workflow and exercised before merge.

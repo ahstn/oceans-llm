@@ -1,1 +1,2 @@
-SELECT 1;
+-- Compatibility placeholder.
+-- PostgreSQL V1 already includes the audit baseline schema.

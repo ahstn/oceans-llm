@@ -12,6 +12,7 @@ gateway-core.workspace = true
 gateway-providers.workspace = true
 gateway-service.workspace = true
 gateway-store.workspace = true
+clap.workspace = true
 http.workspace = true
 opentelemetry.workspace = true
 opentelemetry-otlp.workspace = true

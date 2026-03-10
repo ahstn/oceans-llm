@@ -1,11 +1,16 @@
 mod libsql_store;
 mod migrate;
+mod migration_registry;
 mod postgres_store;
 mod seed;
+mod shared;
 mod store;
 
 pub use libsql_store::LibsqlStore;
-pub use migrate::{MigrationTestHook, run_migrations, run_migrations_with_options};
+pub use migrate::{
+    MigrationStatus, MigrationStatusEntry, MigrationTestHook, check_migrations_with_options,
+    run_migrations, run_migrations_with_options, status_migrations_with_options,
+};
 pub use postgres_store::PostgresStore;
 pub use store::{AnyStore, GatewayStore, StoreConnectionOptions};
 
@@ -16,8 +21,8 @@ mod tests {
     use gateway_core::{
         ApiKeyOwnerKind, ApiKeyRepository, AuthMode, GlobalRole, IdentityRepository,
         MembershipRole, ModelRepository, PricingCatalogCacheRecord, PricingCatalogRepository,
-        RequestLogRecord, RequestLogRepository, SeedApiKey, SeedModel, SeedModelRoute,
-        SeedProvider, SYSTEM_LEGACY_TEAM_ID, StoreHealth,
+        RequestLogRecord, RequestLogRepository, SYSTEM_LEGACY_TEAM_ID, SeedApiKey, SeedModel,
+        SeedModelRoute, SeedProvider, StoreHealth,
     };
     use serde_json::{Map, json};
     use serial_test::serial;
@@ -28,8 +33,9 @@ mod tests {
     use uuid::Uuid;
 
     use crate::{
-        LibsqlStore, MigrationTestHook, PostgresStore, StoreConnectionOptions, run_migrations,
-        run_migrations_with_options,
+        LibsqlStore, MigrationTestHook, PostgresStore, StoreConnectionOptions,
+        check_migrations_with_options, run_migrations, run_migrations_with_options,
+        status_migrations_with_options,
     };
 
     #[tokio::test]
@@ -50,6 +56,36 @@ mod tests {
             .expect("store");
 
         store.ping().await.expect("ping");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn migration_status_reports_pending_versions_before_first_apply() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+
+        let status = status_migrations_with_options(&StoreConnectionOptions::Libsql {
+            path: db_path.clone(),
+        })
+        .await
+        .expect("status");
+
+        assert_eq!(status.backend, "libsql");
+        assert_eq!(status.pending_count(), 7);
+        assert!(status.entries.iter().all(|entry| !entry.applied));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn migration_check_fails_when_pending_versions_exist() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+
+        let error =
+            check_migrations_with_options(&StoreConnectionOptions::Libsql { path: db_path })
+                .await
+                .expect_err("check should fail");
+        assert!(error.to_string().contains("pending migrations"));
     }
 
     #[tokio::test]
@@ -313,11 +349,13 @@ mod tests {
         assert_eq!(team.team_key, "platform-ops");
         assert_eq!(team.team_name, "Platform Ops");
         assert_eq!(team.status, "active");
-        assert!(store
-            .list_team_memberships(team.team_id)
-            .await
-            .expect("memberships")
-            .is_empty());
+        assert!(
+            store
+                .list_team_memberships(team.team_id)
+                .await
+                .expect("memberships")
+                .is_empty()
+        );
     }
 
     #[tokio::test]
@@ -403,8 +441,14 @@ mod tests {
         let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
             .await
             .expect("store");
-        let first_team = store.create_team("alpha", "Alpha").await.expect("first team");
-        let second_team = store.create_team("beta", "Beta").await.expect("second team");
+        let first_team = store
+            .create_team("alpha", "Alpha")
+            .await
+            .expect("first team");
+        let second_team = store
+            .create_team("beta", "Beta")
+            .await
+            .expect("second team");
 
         let conn = store.connection();
         let now = time::OffsetDateTime::now_utc().unix_timestamp();
@@ -835,7 +879,10 @@ mod tests {
             .expect("get key")
             .expect("api key exists");
         assert_eq!(key.owner_kind, ApiKeyOwnerKind::Team);
-        assert_eq!(key.owner_team_id.expect("team owner").to_string(), SYSTEM_LEGACY_TEAM_ID);
+        assert_eq!(
+            key.owner_team_id.expect("team owner").to_string(),
+            SYSTEM_LEGACY_TEAM_ID
+        );
         assert!(
             store
                 .list_models_for_api_key(key.id)
@@ -962,6 +1009,52 @@ mod tests {
         drop_postgres_test_database(&test_db).await;
     }
 
+    #[tokio::test]
+    #[serial]
+    async fn postgres_migrations_rollback_when_history_write_fails() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres migration rollback test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 2,
+        };
+        run_migrations_with_options(
+            &options,
+            MigrationTestHook {
+                fail_after_apply_version: Some(1),
+            },
+        )
+        .await
+        .expect_err("postgres migration should fail");
+
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&test_db.database_url)
+            .await
+            .expect("postgres pool");
+        let history_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM refinery_schema_history")
+            .fetch_one(&pool)
+            .await
+            .expect("history count");
+        assert_eq!(history_count, 0);
+
+        let providers_exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'providers')",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("providers table exists");
+        assert!(!providers_exists);
+
+        pool.close().await;
+        drop_postgres_test_database(&test_db).await;
+    }
+
     struct PostgresTestDatabase {
         admin_url: String,
         database_url: String,
@@ -1016,10 +1109,13 @@ mod tests {
         .await
         .expect("terminate sessions");
 
-        sqlx::query(&format!("DROP DATABASE IF EXISTS {}", database.database_name))
-            .execute(&admin_pool)
-            .await
-            .expect("drop test database");
+        sqlx::query(&format!(
+            "DROP DATABASE IF EXISTS {}",
+            database.database_name
+        ))
+        .execute(&admin_pool)
+        .await
+        .expect("drop test database");
         admin_pool.close().await;
     }
 }

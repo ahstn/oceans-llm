@@ -21,10 +21,68 @@ description = "Compile Rust targets and verify admin UI builds"
 depends = ["ui-install"]
 run = "cargo check --workspace --all-targets && bun run --cwd crates/admin-ui/web build"
 
+[tasks.check-rust-postgres]
+description = "Compile the Rust Postgres-backed runtime and store targets"
+run = "cargo check -p gateway-store -p gateway --all-targets"
+
 [tasks.test]
 description = "Run Rust and admin UI tests"
 depends = ["ui-install"]
 run = "cargo test --workspace && bun run --cwd crates/admin-ui/web test"
+
+[tasks.test-rust-postgres]
+description = "Run focused Postgres-backed Rust tests"
+env = { TEST_POSTGRES_URL = { required = true } }
+run = "cargo test -p gateway-store postgres_"
+
+[tasks.test-gateway-postgres-smoke]
+description = "Run gateway Postgres smoke checks with explicit CLI commands"
+env = { POSTGRES_URL = { required = true } }
+run = """
+set -euo pipefail
+
+export OPENAI_API_KEY="${OPENAI_API_KEY:-test-openai-key}"
+export PORT="${PORT:-18080}"
+
+cargo run -p gateway --bin gateway -- --config gateway.prod.yaml migrate --apply
+cargo run -p gateway --bin gateway -- --config gateway.prod.yaml seed-config
+cargo run -p gateway --bin gateway -- --config gateway.prod.yaml bootstrap-admin
+
+cargo run -p gateway --bin gateway -- --config gateway.prod.yaml serve --run-migrations false --bootstrap-admin false --seed-config false &
+gateway_pid=$!
+
+cleanup() {
+  kill "$gateway_pid" >/dev/null 2>&1 || true
+}
+
+trap cleanup EXIT INT TERM
+
+for _ in $(seq 1 30); do
+  if curl --fail --silent "http://127.0.0.1:${PORT}/readyz" >/dev/null; then
+    break
+  fi
+  sleep 1
+done
+
+curl --fail --silent "http://127.0.0.1:${PORT}/healthz" >/dev/null
+curl --fail --silent "http://127.0.0.1:${PORT}/readyz" >/dev/null
+"""
+
+[tasks.gateway-serve]
+description = "Run `gateway serve`"
+run = "cargo run -p gateway --bin gateway -- serve"
+
+[tasks.gateway-migrate]
+description = "Run `gateway migrate --apply`"
+run = "cargo run -p gateway --bin gateway -- migrate --apply"
+
+[tasks.gateway-bootstrap-admin]
+description = "Run `gateway bootstrap-admin`"
+run = "cargo run -p gateway --bin gateway -- bootstrap-admin"
+
+[tasks.gateway-seed-config]
+description = "Run `gateway seed-config`"
+run = "cargo run -p gateway --bin gateway -- seed-config"
 
 [tasks.fmt]
 description = "Format Rust sources"
@@ -36,8 +94,8 @@ depends = ["ui-install"]
 run = "cargo clippy --workspace --all-targets -- -D warnings && bun run --cwd crates/admin-ui/web lint"
 
 [tasks.run]
-description = "Run the gateway binary"
-run = "cargo run -p gateway --bin gateway"
+description = "Run `gateway serve`"
+run = "cargo run -p gateway --bin gateway -- serve"
 
 [tasks.sync-pricing-catalog]
 description = "Refresh the vendored pricing catalog fallback snapshot"

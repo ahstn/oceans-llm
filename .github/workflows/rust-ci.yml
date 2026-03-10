@@ -31,6 +31,7 @@ jobs:
           --health-timeout 5s
           --health-retries 12
     env:
+      POSTGRES_URL: postgres://oceans:oceans@localhost:5432/oceans_llm_ci
       TEST_POSTGRES_URL: postgres://oceans:oceans@localhost:5432/oceans_llm_ci
 
     steps:
@@ -43,5 +44,14 @@ jobs:
       - name: Lint Rust workspace
         run: mise exec -- cargo clippy --workspace --all-targets -- -D warnings
 
+      - name: Run `mise run check-rust-postgres`
+        run: mise run check-rust-postgres
+
       - name: Test Rust workspace
         run: mise exec -- cargo test --workspace
+
+      - name: Run `mise run test-rust-postgres`
+        run: mise run test-rust-postgres
+
+      - name: Run `mise run test-gateway-postgres-smoke`
+        run: mise run test-gateway-postgres-smoke

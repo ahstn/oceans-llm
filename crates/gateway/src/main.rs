@@ -1,46 +1,75 @@
+mod cli;
 mod config;
 mod http;
 mod observability;
 
 use std::{env, net::SocketAddr, path::Path, sync::Arc, time::Duration};
 
+use crate::{
+    cli::{Cli, Command, MigrateAction, ServeArgs},
+    config::{BootstrapAdminConfig, GatewayConfig},
+};
 use admin_ui::AdminUiConfig;
 use anyhow::Context;
+use clap::Parser;
 use gateway_core::ProviderRegistry;
 use gateway_providers::{OpenAiCompatProvider, VertexProvider};
 use gateway_service::{
     DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, GatewayService, WeightedRoutePlanner,
     hash_gateway_key_secret,
 };
-use gateway_store::{AnyStore, GatewayStore, MigrationTestHook, run_migrations_with_options};
+use gateway_store::{
+    AnyStore, GatewayStore, MigrationStatus, MigrationTestHook, check_migrations_with_options,
+    run_migrations_with_options, status_migrations_with_options,
+};
 use http::{build_router, state::AppState};
 use tokio::net::TcpListener;
-use crate::config::{BootstrapAdminConfig, GatewayConfig};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let config_path = env::var("GATEWAY_CONFIG").unwrap_or_else(|_| "./gateway.yaml".to_string());
-    let config = GatewayConfig::from_path(Path::new(&config_path))
-        .with_context(|| format!("failed to load gateway configuration from `{config_path}`"))?;
+    let cli = Cli::parse();
+    let config = load_config(&cli.config)?;
 
     observability::init_tracing(&config.server)?;
 
-    let database_options = config
+    match cli.command.unwrap_or(Command::Serve(ServeArgs::default())) {
+        Command::Serve(args) => run_serve(&config, args).await,
+        Command::Migrate(args) => run_migrate(&config, args.action()?).await,
+        Command::BootstrapAdmin => run_bootstrap_admin_command(&config).await,
+        Command::SeedConfig => run_seed_config_command(&config).await,
+    }
+}
+
+fn load_config(config_path: &str) -> anyhow::Result<GatewayConfig> {
+    GatewayConfig::from_path(Path::new(config_path))
+        .with_context(|| format!("failed to load gateway configuration from `{config_path}`"))
+}
+
+fn database_options(
+    config: &GatewayConfig,
+) -> anyhow::Result<gateway_store::StoreConnectionOptions> {
+    config
         .database_options()
-        .context("failed resolving database configuration")?;
+        .context("failed resolving database configuration")
+}
 
-    run_migrations_with_options(&database_options, MigrationTestHook::default())
-        .await
-        .context("failed to run database migrations")?;
-    let store = Arc::new(
-        AnyStore::connect(&database_options)
-            .await
-            .context("failed to initialize gateway store")?,
-    );
-    ensure_bootstrap_admin(&store, &config.auth.bootstrap_admin)
-        .await
-        .context("failed to ensure bootstrap admin access")?;
+async fn maybe_run_migrations(
+    database_options: &gateway_store::StoreConnectionOptions,
+    enabled: bool,
+) -> anyhow::Result<()> {
+    if !enabled {
+        return Ok(());
+    }
 
+    run_migrations_with_options(database_options, MigrationTestHook::default())
+        .await
+        .context("failed to run database migrations")
+}
+
+async fn seed_config<S>(store: &S, config: &GatewayConfig) -> anyhow::Result<()>
+where
+    S: GatewayStore + ?Sized,
+{
     let providers_seed = config.seed_providers()?;
     let models_seed = config.seed_models()?;
     let api_keys_seed = config.seed_api_keys()?;
@@ -48,7 +77,34 @@ async fn main() -> anyhow::Result<()> {
     store
         .seed_from_inputs(&providers_seed, &models_seed, &api_keys_seed)
         .await
-        .context("failed to seed foundational config data")?;
+        .context("failed to seed foundational config data")
+}
+
+async fn run_serve(config: &GatewayConfig, args: ServeArgs) -> anyhow::Result<()> {
+    let database_options = database_options(config)?;
+    maybe_run_migrations(&database_options, args.run_migrations).await?;
+    let store = Arc::new(
+        AnyStore::connect(&database_options)
+            .await
+            .context("failed to initialize gateway store")?,
+    );
+    run_serve_with_store(config, store, args).await
+}
+
+async fn run_serve_with_store(
+    config: &GatewayConfig,
+    store: Arc<AnyStore>,
+    args: ServeArgs,
+) -> anyhow::Result<()> {
+    if args.bootstrap_admin {
+        ensure_bootstrap_admin(&store, &config.auth.bootstrap_admin)
+            .await
+            .context("failed to ensure bootstrap admin access")?;
+    }
+
+    if args.seed_config {
+        seed_config(store.as_ref(), config).await?;
+    }
 
     let planner = Arc::new(WeightedRoutePlanner::default());
     let service = Arc::new(GatewayService::new(store, planner));
@@ -56,7 +112,7 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!(error = %error, "initial pricing catalog refresh failed");
     }
     spawn_pricing_catalog_refresh_loop(service.clone());
-    let providers = build_provider_registry(&config)?;
+    let providers = build_provider_registry(config)?;
 
     let bind_address: SocketAddr = config
         .server
@@ -87,6 +143,66 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+async fn run_migrate(config: &GatewayConfig, action: MigrateAction) -> anyhow::Result<()> {
+    let database_options = database_options(config)?;
+
+    match action {
+        MigrateAction::Apply => {
+            run_migrations_with_options(&database_options, MigrationTestHook::default())
+                .await
+                .context("failed to apply database migrations")?;
+            let status = status_migrations_with_options(&database_options).await?;
+            print_migration_status(&status);
+            Ok(())
+        }
+        MigrateAction::Check => {
+            let status = check_migrations_with_options(&database_options)
+                .await
+                .context("database migration check failed")?;
+            print_migration_status(&status);
+            Ok(())
+        }
+        MigrateAction::Status => {
+            let status = status_migrations_with_options(&database_options).await?;
+            print_migration_status(&status);
+            Ok(())
+        }
+    }
+}
+
+async fn run_bootstrap_admin_command(config: &GatewayConfig) -> anyhow::Result<()> {
+    let database_options = database_options(config)?;
+    maybe_run_migrations(&database_options, true).await?;
+    let store = Arc::new(
+        AnyStore::connect(&database_options)
+            .await
+            .context("failed to initialize gateway store")?,
+    );
+    ensure_bootstrap_admin(&store, &config.auth.bootstrap_admin).await
+}
+
+async fn run_seed_config_command(config: &GatewayConfig) -> anyhow::Result<()> {
+    let database_options = database_options(config)?;
+    maybe_run_migrations(&database_options, true).await?;
+    let store = Arc::new(
+        AnyStore::connect(&database_options)
+            .await
+            .context("failed to initialize gateway store")?,
+    );
+    seed_config(store.as_ref(), config).await
+}
+
+fn print_migration_status(status: &MigrationStatus) {
+    println!("backend: {}", status.backend);
+    for entry in &status.entries {
+        let state = if entry.applied { "applied" } else { "pending" };
+        match entry.backend_note {
+            Some(note) => println!("v{} {} [{}] ({})", entry.version, entry.name, state, note),
+            None => println!("v{} {} [{}]", entry.version, entry.name, state),
+        }
+    }
+}
+
 async fn ensure_bootstrap_admin(
     store: &Arc<AnyStore>,
     config: &BootstrapAdminConfig,
@@ -113,7 +229,11 @@ async fn ensure_bootstrap_admin(
     let password_hash =
         hash_gateway_key_secret(&password).context("failed hashing bootstrap admin password")?;
     store
-        .store_user_password(user.user_id, &password_hash, time::OffsetDateTime::now_utc())
+        .store_user_password(
+            user.user_id,
+            &password_hash,
+            time::OffsetDateTime::now_utc(),
+        )
         .await
         .context("failed storing bootstrap admin password")?;
 
@@ -201,8 +321,8 @@ mod tests {
     use gateway_core::ChatCompletionsRequest;
     use gateway_core::{
         EmbeddingsRequest, ProviderCapabilities, ProviderClient, ProviderError,
-        ProviderRequestContext, ProviderStream, SeedApiKey, SeedModel,
-        SeedModelRoute, SeedProvider, parse_gateway_api_key,
+        ProviderRequestContext, ProviderStream, SeedApiKey, SeedModel, SeedModelRoute,
+        SeedProvider, parse_gateway_api_key,
     };
     use gateway_service::{GatewayService, WeightedRoutePlanner, hash_gateway_key_secret};
     use gateway_store::{
@@ -676,10 +796,13 @@ mod tests {
         .await
         .expect("terminate sessions");
 
-        sqlx::query(&format!("DROP DATABASE IF EXISTS {}", database.database_name))
-            .execute(&admin_pool)
-            .await
-            .expect("drop test database");
+        sqlx::query(&format!(
+            "DROP DATABASE IF EXISTS {}",
+            database.database_name
+        ))
+        .execute(&admin_pool)
+        .await
+        .expect("drop test database");
         admin_pool.close().await;
     }
 
@@ -1129,7 +1252,8 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn admin_identity_routes_require_authenticated_session() {
-        let (app, _, _) = build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;
+        let (app, _, _) =
+            build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;
 
         let response = app
             .oneshot(
@@ -1186,7 +1310,10 @@ mod tests {
         let login_json = read_json(login_response).await;
         assert_eq!(login_json["data"]["user"]["email"], "admin@local");
         assert_eq!(login_json["data"]["user"]["global_role"], "platform_admin");
-        assert_eq!(login_json["data"]["must_change_password"], Value::Bool(false));
+        assert_eq!(
+            login_json["data"]["must_change_password"],
+            Value::Bool(false)
+        );
 
         let session_response = app
             .oneshot(
@@ -1203,7 +1330,10 @@ mod tests {
         assert_eq!(session_response.status(), StatusCode::OK);
         let session_json = read_json(session_response).await;
         assert_eq!(session_json["data"]["user"]["email"], "admin@local");
-        assert_eq!(session_json["data"]["must_change_password"], Value::Bool(false));
+        assert_eq!(
+            session_json["data"]["must_change_password"],
+            Value::Bool(false)
+        );
     }
 
     #[tokio::test]
@@ -1245,7 +1375,10 @@ mod tests {
         assert_eq!(login_response.status(), StatusCode::OK);
         let session_cookie = set_cookie_header(&login_response);
         let login_json = read_json(login_response).await;
-        assert_eq!(login_json["data"]["must_change_password"], Value::Bool(true));
+        assert_eq!(
+            login_json["data"]["must_change_password"],
+            Value::Bool(true)
+        );
 
         let change_response = app
             .clone()
@@ -1269,7 +1402,10 @@ mod tests {
 
         assert_eq!(change_response.status(), StatusCode::OK);
         let change_json = read_json(change_response).await;
-        assert_eq!(change_json["data"]["must_change_password"], Value::Bool(false));
+        assert_eq!(
+            change_json["data"]["must_change_password"],
+            Value::Bool(false)
+        );
 
         let old_login_response = app
             .clone()
