@@ -389,12 +389,18 @@ async fn load_postgres_versions_from_pool(pool: &sqlx::PgPool) -> anyhow::Result
 }
 
 async fn postgres_history_table_exists(pool: &sqlx::PgPool) -> anyhow::Result<bool> {
-    let row = sqlx::query("SELECT to_regclass('public.refinery_schema_history')")
-        .fetch_one(pool)
+    let exists: bool = sqlx::query_scalar(
+        r#"
+        SELECT EXISTS (
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_name = 'refinery_schema_history'
+        )
+        "#,
+    )
+    .fetch_one(pool)
         .await
         .context("failed checking postgres migration history table")?;
-    let table_name: Option<String> = row
-        .try_get(0)
-        .context("failed decoding postgres migration history lookup")?;
-    Ok(table_name.is_some())
+    Ok(exists)
 }

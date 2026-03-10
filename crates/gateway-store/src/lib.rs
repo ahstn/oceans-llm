@@ -1011,6 +1011,40 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn postgres_migration_status_reports_pending_and_applied_versions() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!("skipping postgres migration status test because TEST_POSTGRES_URL is not set");
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 2,
+        };
+
+        let initial_status = status_migrations_with_options(&options)
+            .await
+            .expect("initial postgres status");
+        assert_eq!(initial_status.backend, "postgres");
+        assert_eq!(initial_status.pending_count(), 7);
+        assert!(initial_status.entries.iter().all(|entry| !entry.applied));
+
+        run_migrations_with_options(&options, MigrationTestHook::default())
+            .await
+            .expect("postgres migrations");
+
+        let applied_status = status_migrations_with_options(&options)
+            .await
+            .expect("applied postgres status");
+        assert_eq!(applied_status.backend, "postgres");
+        assert_eq!(applied_status.pending_count(), 0);
+        assert!(applied_status.entries.iter().all(|entry| entry.applied));
+
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn postgres_migrations_rollback_when_history_write_fails() {
         let Some(test_db) = create_postgres_test_database().await else {
             eprintln!(
