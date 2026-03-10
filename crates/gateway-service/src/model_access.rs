@@ -267,6 +267,7 @@ mod tests {
         GatewayModel {
             id: Uuid::new_v4(),
             model_key: model_key.to_string(),
+            alias_target_model_key: None,
             description: None,
             tags: tags.iter().map(ToString::to_string).collect(),
             rank,

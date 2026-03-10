@@ -448,6 +448,7 @@ mod tests {
         user_id: Option<String>,
         team_id: Option<String>,
         model_key: String,
+        resolved_model_key: Option<String>,
         provider_key: String,
         status_code: Option<i64>,
         latency_ms: Option<i64>,
@@ -467,8 +468,8 @@ mod tests {
         let mut rows = connection
             .query(
                 r#"
-                SELECT user_id, team_id, model_key, provider_key, status_code, latency_ms,
-                       prompt_tokens, completion_tokens, total_tokens, error_code, metadata_json
+                SELECT user_id, team_id, model_key, resolved_model_key, provider_key, status_code,
+                       latency_ms, prompt_tokens, completion_tokens, total_tokens, error_code, metadata_json
                 FROM request_logs
                 ORDER BY occurred_at ASC, rowid ASC
                 "#,
@@ -479,18 +480,19 @@ mod tests {
 
         let mut logs = Vec::new();
         while let Some(row) = rows.next().await.expect("request logs row") {
-            let metadata_json: String = row.get(10).expect("metadata json");
+            let metadata_json: String = row.get(11).expect("metadata json");
             logs.push(RequestLogRow {
                 user_id: row.get(0).expect("user_id"),
                 team_id: row.get(1).expect("team_id"),
                 model_key: row.get(2).expect("model_key"),
-                provider_key: row.get(3).expect("provider_key"),
-                status_code: row.get(4).expect("status_code"),
-                latency_ms: row.get(5).expect("latency_ms"),
-                prompt_tokens: row.get(6).expect("prompt_tokens"),
-                completion_tokens: row.get(7).expect("completion_tokens"),
-                total_tokens: row.get(8).expect("total_tokens"),
-                error_code: row.get(9).expect("error_code"),
+                resolved_model_key: row.get(3).expect("resolved_model_key"),
+                provider_key: row.get(4).expect("provider_key"),
+                status_code: row.get(5).expect("status_code"),
+                latency_ms: row.get(6).expect("latency_ms"),
+                prompt_tokens: row.get(7).expect("prompt_tokens"),
+                completion_tokens: row.get(8).expect("completion_tokens"),
+                total_tokens: row.get(9).expect("total_tokens"),
+                error_code: row.get(10).expect("error_code"),
                 metadata: serde_json::from_str(&metadata_json).expect("metadata value"),
             });
         }
@@ -607,6 +609,7 @@ mod tests {
         }];
         let models = vec![SeedModel {
             model_key: "fast".to_string(),
+            alias_target_model_key: None,
             description: Some("Fast tier".to_string()),
             tags: vec!["fast".to_string()],
             rank: 10,
@@ -679,6 +682,7 @@ mod tests {
         }];
         let models = vec![SeedModel {
             model_key: "fast".to_string(),
+            alias_target_model_key: None,
             description: Some("Fast tier".to_string()),
             tags: vec!["fast".to_string()],
             rank: 10,
@@ -933,6 +937,95 @@ mod tests {
         assert_eq!(logs[0].metadata["stream"], Value::Bool(false));
         assert_eq!(logs[0].metadata["fallback_used"], Value::Bool(false));
         assert_eq!(logs[0].metadata["attempt_count"], json!(1));
+        assert_eq!(logs[0].resolved_model_key.as_deref(), Some("fast"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn chat_completions_resolve_alias_models_without_changing_public_model_key() {
+        let (calls, provider) = make_chat_provider(
+            "openai-prod",
+            MockChatResult::Value(json!({
+                "id": "chatcmpl_123",
+                "object": "chat.completion",
+                "model": "gpt-5",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "pong"}, "finish_reason":"stop"}],
+                "usage": {"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18}
+            })),
+            vec![],
+            ProviderCapabilities::openai_compat_baseline(),
+        );
+        let mut registry = gateway_core::ProviderRegistry::new();
+        registry.register(Arc::new(provider));
+
+        let seed_providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: serde_json::json!({"base_url":"https://example.invalid/v1"}),
+            secrets: None,
+        }];
+        let models = vec![
+            SeedModel {
+                model_key: "fast-v2".to_string(),
+                alias_target_model_key: None,
+                description: Some("Fast v2".to_string()),
+                tags: vec!["fast".to_string()],
+                rank: 5,
+                routes: vec![SeedModelRoute {
+                    provider_key: "openai-prod".to_string(),
+                    upstream_model: "gpt-5".to_string(),
+                    priority: 10,
+                    weight: 1.0,
+                    enabled: true,
+                    extra_headers: Map::new(),
+                    extra_body: Map::new(),
+                }],
+            },
+            SeedModel {
+                model_key: "fast".to_string(),
+                alias_target_model_key: Some("fast-v2".to_string()),
+                description: Some("Fast alias".to_string()),
+                tags: vec!["fast".to_string()],
+                rank: 10,
+                routes: Vec::new(),
+            },
+        ];
+        let (app, raw_key, db_path) = build_test_app(seed_providers, models, registry).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .body(Body::from(
+                        serde_json::json!({
+                            "model": "fast",
+                            "messages": [{"role": "user", "content": "ping"}]
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        let json: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(json["model"], "fast");
+        assert_eq!(json["choices"][0]["message"]["content"], "pong");
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        let logs = load_request_logs(&db_path).await;
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].model_key, "fast");
+        assert_eq!(logs[0].provider_key, "openai-prod");
+        assert_eq!(logs[0].resolved_model_key.as_deref(), Some("fast-v2"));
     }
 
     #[tokio::test]
@@ -975,6 +1068,7 @@ mod tests {
         ];
         let models = vec![SeedModel {
             model_key: "fast".to_string(),
+            alias_target_model_key: None,
             description: None,
             tags: vec![],
             rank: 10,
@@ -1039,6 +1133,7 @@ mod tests {
         assert_eq!(logs[0].metadata["stream"], Value::Bool(false));
         assert_eq!(logs[0].metadata["fallback_used"], Value::Bool(true));
         assert_eq!(logs[0].metadata["attempt_count"], json!(2));
+        assert_eq!(logs[0].resolved_model_key.as_deref(), Some("fast"));
     }
 
     #[tokio::test]
@@ -1081,6 +1176,7 @@ mod tests {
         ];
         let models = vec![SeedModel {
             model_key: "fast".to_string(),
+            alias_target_model_key: None,
             description: None,
             tags: vec![],
             rank: 10,

@@ -48,6 +48,11 @@ impl GatewayConfig {
             .iter()
             .map(|provider| (provider.id().to_string(), provider))
             .collect::<BTreeMap<_, _>>();
+        let model_by_id = self
+            .models
+            .iter()
+            .map(|model| (model.id.as_str(), model))
+            .collect::<BTreeMap<_, _>>();
 
         for provider in &self.providers {
             match provider {
@@ -122,12 +127,57 @@ impl GatewayConfig {
         }
 
         for model in &self.models {
+            let has_alias = model.alias_of.is_some();
+            let has_routes = !model.routes.is_empty();
+
+            match (has_alias, has_routes) {
+                (true, true) => bail!(
+                    "model `{}` cannot define both alias_of and routes",
+                    model.id
+                ),
+                (false, false) => bail!(
+                    "model `{}` must define either alias_of or at least one route",
+                    model.id
+                ),
+                _ => {}
+            }
+
+            if let Some(alias_target) = model.alias_of.as_deref() {
+                if alias_target == model.id {
+                    bail!("model `{}` cannot alias itself", model.id);
+                }
+                if !model_by_id.contains_key(alias_target) {
+                    bail!(
+                        "model `{}` aliases unknown model `{alias_target}`",
+                        model.id
+                    );
+                }
+            }
+
             for route in &model.routes {
                 if let Some(provider) = provider_by_id.get(route.provider.as_str())
                     && matches!(provider, ProviderConfig::GcpVertex(_))
                 {
                     validate_vertex_upstream_model_format(&route.upstream_model)?;
                 }
+            }
+        }
+
+        for model in &self.models {
+            let mut seen = std::collections::BTreeSet::new();
+            let mut current = model;
+
+            while let Some(alias_target) = current.alias_of.as_deref() {
+                if !seen.insert(current.id.as_str()) {
+                    bail!("model alias cycle detected starting at `{}`", model.id);
+                }
+
+                current = model_by_id.get(alias_target).copied().ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "model `{}` aliases unknown model `{alias_target}`",
+                        model.id
+                    )
+                })?;
             }
         }
 
@@ -213,6 +263,7 @@ impl GatewayConfig {
             .iter()
             .map(|model| SeedModel {
                 model_key: model.id.clone(),
+                alias_target_model_key: model.alias_of.clone(),
                 description: model.description.clone(),
                 tags: model.tags.clone(),
                 rank: model.rank,
@@ -393,18 +444,13 @@ impl DatabaseConfig {
 
         match kind {
             "libsql" => {
-                let path = self
-                    .path
-                    .as_ref()
-                    .cloned()
-                    .unwrap_or_else(default_db_path);
+                let path = self.path.as_ref().cloned().unwrap_or_else(default_db_path);
                 Ok(StoreConnectionOptions::Libsql { path: path.into() })
             }
             "postgres" => {
-                let raw_url = self
-                    .url
-                    .as_ref()
-                    .ok_or_else(|| anyhow::anyhow!("database.url is required when database.kind=postgres"))?;
+                let raw_url = self.url.as_ref().ok_or_else(|| {
+                    anyhow::anyhow!("database.url is required when database.kind=postgres")
+                })?;
                 let url = resolve_secret_reference(raw_url)?;
                 Ok(StoreConnectionOptions::Postgres {
                     url,
@@ -532,6 +578,8 @@ pub struct ProviderTimeouts {
 #[derive(Debug, Clone, Deserialize)]
 pub struct ModelConfig {
     pub id: String,
+    #[serde(default)]
+    pub alias_of: Option<String>,
     #[serde(default)]
     pub description: Option<String>,
     #[serde(default)]
@@ -718,6 +766,155 @@ models:
     }
 
     #[test]
+    fn accepts_alias_backed_model_config() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+models:
+  - id: fast-v2
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-5
+  - id: fast
+    alias_of: fast-v2
+"#,
+        );
+
+        GatewayConfig::from_path(&config_path).expect("config should parse");
+    }
+
+    #[test]
+    fn rejects_model_with_alias_and_routes() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+models:
+  - id: fast
+    alias_of: fast-v2
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-5
+  - id: fast-v2
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-5
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("cannot define both alias_of and routes"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_model_without_alias_or_routes() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+models:
+  - id: fast
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("must define either alias_of or at least one route"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_alias_to_unknown_model() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+models:
+  - id: fast
+    alias_of: missing
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("aliases unknown model `missing`"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_self_alias() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+models:
+  - id: fast
+    alias_of: fast
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("cannot alias itself"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_alias_cycles() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+models:
+  - id: fast
+    alias_of: fast-v2
+  - id: fast-v2
+    alias_of: fast
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("model alias cycle detected"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
     fn rejects_missing_vertex_service_account_path() {
         let tmp = tempdir().expect("tempdir");
         let config_path = tmp.path().join("gateway.yaml");
@@ -850,10 +1047,12 @@ providers:
 
     #[test]
     fn production_config_requires_bootstrap_password_change() {
-        let config_path =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../gateway.prod.yaml");
+        let config_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../gateway.prod.yaml");
         unsafe {
-            env::set_var("POSTGRES_URL", "postgres://postgres:postgres@localhost/test");
+            env::set_var(
+                "POSTGRES_URL",
+                "postgres://postgres:postgres@localhost/test",
+            );
         }
 
         let config = GatewayConfig::from_path(&config_path).expect("prod config should parse");

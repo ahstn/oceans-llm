@@ -204,7 +204,10 @@ impl AnyStore {
         match options {
             StoreConnectionOptions::Libsql { path } => {
                 let path = path.to_str().ok_or_else(|| {
-                    anyhow::anyhow!("libsql database path must be valid utf-8: {}", path.display())
+                    anyhow::anyhow!(
+                        "libsql database path must be valid utf-8: {}",
+                        path.display()
+                    )
                 })?;
                 Ok(Self::Libsql(LibsqlStore::new_local(path).await?))
             }
@@ -374,7 +377,10 @@ impl PricingCatalogRepository for AnyStore {
         catalog_key: &str,
         fetched_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
-        dispatch_store!(self, touch_pricing_catalog_cache_fetched_at(catalog_key, fetched_at))
+        dispatch_store!(
+            self,
+            touch_pricing_catalog_cache_fetched_at(catalog_key, fetched_at)
+        )
     }
 }
 
@@ -454,7 +460,14 @@ impl GatewayStore for AnyStore {
     ) -> Result<UserRecord, StoreError> {
         dispatch_store!(
             self,
-            create_identity_user(name, email, email_normalized, global_role, auth_mode, status)
+            create_identity_user(
+                name,
+                email,
+                email_normalized,
+                global_role,
+                auth_mode,
+                status
+            )
         )
     }
 
@@ -507,7 +520,10 @@ impl GatewayStore for AnyStore {
         user_id: Uuid,
         revoked_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
-        dispatch_store!(self, revoke_password_invitations_for_user(user_id, revoked_at))
+        dispatch_store!(
+            self,
+            revoke_password_invitations_for_user(user_id, revoked_at)
+        )
     }
 
     async fn create_password_invitation(
@@ -536,7 +552,10 @@ impl GatewayStore for AnyStore {
         invitation_id: Uuid,
         consumed_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
-        dispatch_store!(self, mark_password_invitation_consumed(invitation_id, consumed_at))
+        dispatch_store!(
+            self,
+            mark_password_invitation_consumed(invitation_id, consumed_at)
+        )
     }
 
     async fn store_user_password(
@@ -545,7 +564,10 @@ impl GatewayStore for AnyStore {
         password_hash: &str,
         updated_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
-        dispatch_store!(self, store_user_password(user_id, password_hash, updated_at))
+        dispatch_store!(
+            self,
+            store_user_password(user_id, password_hash, updated_at)
+        )
     }
 
     async fn update_user_status(
@@ -626,7 +648,10 @@ impl GatewayStore for AnyStore {
         oidc_provider_id: &str,
         created_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
-        dispatch_store!(self, set_user_oidc_link(user_id, oidc_provider_id, created_at))
+        dispatch_store!(
+            self,
+            set_user_oidc_link(user_id, oidc_provider_id, created_at)
+        )
     }
 
     async fn find_invited_oidc_user(
@@ -634,7 +659,10 @@ impl GatewayStore for AnyStore {
         email_normalized: &str,
         oidc_provider_id: &str,
     ) -> Result<Option<UserRecord>, StoreError> {
-        dispatch_store!(self, find_invited_oidc_user(email_normalized, oidc_provider_id))
+        dispatch_store!(
+            self,
+            find_invited_oidc_user(email_normalized, oidc_provider_id)
+        )
     }
 
     async fn seed_from_inputs(
