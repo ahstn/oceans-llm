@@ -50,6 +50,8 @@ The repo exposes matching `mise` tasks:
 - `mise run gateway-bootstrap-admin`
 - `mise run gateway-seed-config`
 
+`gateway-serve` keeps the local `gateway.yaml` default. The maintenance tasks default to `gateway.prod.yaml`; set `GATEWAY_CONFIG` if you want them to target a different config file.
+
 `gateway serve` remains the default command. By default it reads `gateway.yaml` (or `GATEWAY_CONFIG`), runs SQL migrations, seeds providers/models/api keys, ensures a bootstrap admin exists, then starts serving traffic.
 
 Database policy:
@@ -171,9 +173,9 @@ cargo run -p gateway --bin gateway -- serve
 Inspect or apply migrations without starting the server:
 
 ```bash
-cargo run -p gateway --bin gateway -- migrate --status
-cargo run -p gateway --bin gateway -- migrate --check
-mise run gateway-migrate
+cargo run -p gateway --bin gateway -- --config gateway.yaml migrate --status
+cargo run -p gateway --bin gateway -- --config gateway.yaml migrate --check
+GATEWAY_CONFIG=./gateway.yaml mise run gateway-migrate
 ```
 
 ## Production-style local run
@@ -196,6 +198,8 @@ mise run gateway-seed-config
 mise run gateway-bootstrap-admin
 cargo run -p gateway --bin gateway -- --config gateway.prod.yaml serve --run-migrations=false --bootstrap-admin=false --seed-config=false
 ```
+
+These maintenance tasks default to `gateway.prod.yaml`. Override `GATEWAY_CONFIG` if you need to point them at another config file.
 
 ## Postgres validation
 
