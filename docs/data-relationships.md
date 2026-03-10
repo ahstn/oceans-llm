@@ -40,8 +40,8 @@ This document catalogs the database tables, key relationships, and policy semant
 ### Existing Foundation Tables
 
 - `providers`: upstream provider config and secret references.
-- `gateway_models`: gateway model alias registry.
-- `model_routes`: route targets per gateway model.
+- `gateway_models`: gateway model registry. Records can be provider-backed or alias-backed.
+- `model_routes`: concrete provider execution targets for provider-backed gateway models only.
 - `api_key_model_grants`: API-key grants to gateway models.
 - `audit_logs`: control-plane audit baseline.
 
@@ -87,9 +87,15 @@ This document catalogs the database tables, key relationships, and policy semant
 - `usage_cost_events`
   - Key columns: `usage_event_id`, `request_id`, `api_key_id`, `user_id`, `team_id`, `model_id`, `estimated_cost_10000`, `occurred_at`
   - Notes: schema foundation for future pricing-backed spend accounting; the current chat request path does not write these rows yet.
+- `gateway_models`
+  - Key columns: `id`, `model_key`, `alias_target_model_id`, `description`, `tags_json`, `rank`
+  - Notes: `alias_target_model_id` is nullable. Alias-backed models point at another `gateway_models.id` and do not own provider routes.
+- `model_routes`
+  - Key columns: `id`, `model_id`, `provider_key`, `upstream_model`, `priority`, `weight`, `enabled`
+  - Notes: provider execution targets only. Multi-provider balancing remains per-route through `priority` and `weight`.
 - `request_logs`
   - Key columns: `request_log_id`, `request_id`, `api_key_id`, `user_id`, `team_id`, `model_key`, `provider_key`, token/latency/status fields, `metadata_json`, `occurred_at`
-  - Notes: chat execution writes one row for the final user-visible outcome of each executed request. User-owned requests honor `users.request_logging_enabled`; team-owned requests are always logged with nullable `user_id`.
+  - Notes: chat execution writes one row for the final user-visible outcome of each executed request. User-owned requests honor `users.request_logging_enabled`; team-owned requests are always logged with nullable `user_id`. When aliases are used, `model_key` stays as the requested gateway model and `metadata_json.resolved_model_key` records the canonical execution model.
 
 ### Pricing Catalog Cache
 

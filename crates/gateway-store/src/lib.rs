@@ -71,7 +71,7 @@ mod tests {
         .expect("status");
 
         assert_eq!(status.backend, "libsql");
-        assert_eq!(status.pending_count(), 7);
+        assert_eq!(status.pending_count(), 8);
         assert!(status.entries.iter().all(|entry| !entry.applied));
     }
 
@@ -162,6 +162,7 @@ mod tests {
 
         let models = vec![SeedModel {
             model_key: "fast".to_string(),
+            alias_target_model_key: None,
             description: Some("fast tier".to_string()),
             tags: vec!["fast".to_string(), "cheap".to_string()],
             rank: 10,
@@ -218,6 +219,105 @@ mod tests {
             .expect("model routes");
         assert_eq!(routes.len(), 1);
         assert_eq!(routes[0].provider_key, "openai-prod");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn alias_backed_models_round_trip_through_store() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        let providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: json!({
+                "base_url": "https://api.openai.com/v1",
+                "timeout_ms": 120_000
+            }),
+            secrets: Some(json!({"token": "env.OPENAI_API_KEY"})),
+        }];
+
+        let models = vec![
+            SeedModel {
+                model_key: "fast-v2".to_string(),
+                alias_target_model_key: None,
+                description: Some("replacement".to_string()),
+                tags: vec!["fast".to_string()],
+                rank: 5,
+                routes: vec![SeedModelRoute {
+                    provider_key: "openai-prod".to_string(),
+                    upstream_model: "gpt-5".to_string(),
+                    priority: 10,
+                    weight: 1.0,
+                    enabled: true,
+                    extra_headers: Map::new(),
+                    extra_body: Map::new(),
+                }],
+            },
+            SeedModel {
+                model_key: "fast".to_string(),
+                alias_target_model_key: Some("fast-v2".to_string()),
+                description: Some("alias".to_string()),
+                tags: vec!["fast".to_string()],
+                rank: 10,
+                routes: Vec::new(),
+            },
+        ];
+
+        let api_keys = vec![SeedApiKey {
+            name: "dev".to_string(),
+            public_id: "dev123".to_string(),
+            secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
+            allowed_models: vec!["fast".to_string()],
+        }];
+
+        store
+            .seed_from_inputs(&providers, &models, &api_keys)
+            .await
+            .expect("seed");
+
+        let alias_model = store
+            .get_model_by_key("fast")
+            .await
+            .expect("query alias")
+            .expect("alias model exists");
+        assert_eq!(
+            alias_model.alias_target_model_key.as_deref(),
+            Some("fast-v2")
+        );
+
+        let api_key = store
+            .get_api_key_by_public_id("dev123")
+            .await
+            .expect("query key")
+            .expect("api key exists");
+        let accessible_models = store
+            .list_models_for_api_key(api_key.id)
+            .await
+            .expect("models by key");
+        assert_eq!(accessible_models.len(), 1);
+        assert_eq!(accessible_models[0].model_key, "fast");
+        assert_eq!(
+            accessible_models[0].alias_target_model_key.as_deref(),
+            Some("fast-v2")
+        );
+
+        let target_model = store
+            .get_model_by_key("fast-v2")
+            .await
+            .expect("query target")
+            .expect("target model exists");
+        let routes = store
+            .list_routes_for_model(target_model.id)
+            .await
+            .expect("target routes");
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].upstream_model, "gpt-5");
     }
 
     #[tokio::test]
@@ -848,6 +948,7 @@ mod tests {
         }];
         let models = vec![SeedModel {
             model_key: "fast".to_string(),
+            alias_target_model_key: None,
             description: Some("fast tier".to_string()),
             tags: vec!["fast".to_string(), "cheap".to_string()],
             rank: 10,
@@ -1026,7 +1127,7 @@ mod tests {
             .await
             .expect("initial postgres status");
         assert_eq!(initial_status.backend, "postgres");
-        assert_eq!(initial_status.pending_count(), 7);
+        assert_eq!(initial_status.pending_count(), 8);
         assert!(initial_status.entries.iter().all(|entry| !entry.applied));
 
         run_migrations_with_options(&options, MigrationTestHook::default())

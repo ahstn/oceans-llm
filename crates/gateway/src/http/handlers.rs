@@ -98,7 +98,7 @@ pub async fn v1_chat_completions(
 
     tracing::info!(
         request_model = %request.model,
-        resolved_model = %resolved.model.model_key,
+        resolved_model = %resolved.execution_model.model_key,
         route_count = resolved.routes.len(),
         eligible_route_count = eligible.len(),
         stream = request.stream,
@@ -122,7 +122,7 @@ pub async fn v1_chat_completions(
 
         let context = build_provider_context(
             &request_id,
-            &resolved.model.model_key,
+            &resolved.requested_model.model_key,
             &route,
             idempotency_key.clone(),
             request_headers,
@@ -137,7 +137,8 @@ pub async fn v1_chat_completions(
                         &state.service,
                         &auth,
                         &request_id,
-                        &resolved.model.model_key,
+                        &resolved.requested_model.model_key,
+                        &resolved.execution_model.model_key,
                         ChatCompletionLogSummary::failure(
                             route.provider_key.clone(),
                             1,
@@ -156,7 +157,8 @@ pub async fn v1_chat_completions(
                 service: state.service.clone(),
                 auth: auth.clone(),
                 request_id: request_id.clone(),
-                model_key: resolved.model.model_key.clone(),
+                model_key: resolved.requested_model.model_key.clone(),
+                resolved_model_key: resolved.execution_model.model_key.clone(),
                 provider_key: route.provider_key.clone(),
                 started_at: request_started_at,
                 finished: false,
@@ -189,13 +191,14 @@ pub async fn v1_chat_completions(
             .await
             .map_err(GatewayError::from);
         let value = match value {
-            Ok(value) => value,
+            Ok(value) => normalize_response_model(value, &resolved.requested_model.model_key),
             Err(error) => {
                 best_effort_log_request(
                     &state.service,
                     &auth,
                     &request_id,
-                    &resolved.model.model_key,
+                    &resolved.requested_model.model_key,
+                    &resolved.execution_model.model_key,
                     ChatCompletionLogSummary::failure(
                         route.provider_key.clone(),
                         1,
@@ -213,7 +216,8 @@ pub async fn v1_chat_completions(
             &state.service,
             &auth,
             &request_id,
-            &resolved.model.model_key,
+            &resolved.requested_model.model_key,
+            &resolved.execution_model.model_key,
             ChatCompletionLogSummary::success(
                 route.provider_key.clone(),
                 1,
@@ -234,7 +238,7 @@ pub async fn v1_chat_completions(
         attempt_count += 1;
         let context = build_provider_context(
             &request_id,
-            &resolved.model.model_key,
+            &resolved.requested_model.model_key,
             &route,
             idempotency_key.clone(),
             request_headers.clone(),
@@ -246,7 +250,8 @@ pub async fn v1_chat_completions(
                     &state.service,
                     &auth,
                     &request_id,
-                    &resolved.model.model_key,
+                    &resolved.requested_model.model_key,
+                    &resolved.execution_model.model_key,
                     ChatCompletionLogSummary::success(
                         route.provider_key.clone(),
                         attempt_count,
@@ -256,7 +261,11 @@ pub async fn v1_chat_completions(
                     ),
                 )
                 .await;
-                return Ok(Json(value).into_response());
+                return Ok(Json(normalize_response_model(
+                    value,
+                    &resolved.requested_model.model_key,
+                ))
+                .into_response());
             }
             Err(error) => {
                 tracing::warn!(
@@ -272,7 +281,8 @@ pub async fn v1_chat_completions(
                         &state.service,
                         &auth,
                         &request_id,
-                        &resolved.model.model_key,
+                        &resolved.requested_model.model_key,
+                        &resolved.execution_model.model_key,
                         ChatCompletionLogSummary::failure(
                             route.provider_key.clone(),
                             attempt_count,
@@ -303,7 +313,8 @@ pub async fn v1_chat_completions(
         &state.service,
         &auth,
         &request_id,
-        &resolved.model.model_key,
+        &resolved.requested_model.model_key,
+        &resolved.execution_model.model_key,
         ChatCompletionLogSummary::failure(
             first_failure_provider_key.unwrap_or_else(|| "unknown".to_string()),
             attempt_count,
@@ -337,7 +348,7 @@ pub async fn v1_embeddings(
 
     tracing::info!(
         request_model = %request.model,
-        resolved_model = %resolved.model.model_key,
+        resolved_model = %resolved.execution_model.model_key,
         route_count = resolved.routes.len(),
         provider_adapter_available = has_adapter,
         "embeddings request resolved"
@@ -462,6 +473,7 @@ struct LoggingBodyStreamState {
     auth: AuthenticatedApiKey,
     request_id: String,
     model_key: String,
+    resolved_model_key: String,
     provider_key: String,
     started_at: Instant,
     finished: bool,
@@ -498,6 +510,7 @@ fn wrap_stream_with_request_logging(
                     &state.auth,
                     &state.request_id,
                     &state.model_key,
+                    &state.resolved_model_key,
                     ChatCompletionLogSummary::failure(
                         state.provider_key.clone(),
                         state.attempt_count,
@@ -534,6 +547,7 @@ fn wrap_stream_with_request_logging(
                     &state.auth,
                     &state.request_id,
                     &state.model_key,
+                    &state.resolved_model_key,
                     summary,
                 )
                 .await;
@@ -548,9 +562,10 @@ async fn best_effort_log_request(
     auth: &AuthenticatedApiKey,
     request_id: &str,
     model_key: &str,
+    resolved_model_key: &str,
     summary: ChatCompletionLogSummary,
 ) {
-    let metadata = request_log_metadata(summary.attempt_count, summary.stream);
+    let metadata = request_log_metadata(summary.attempt_count, summary.stream, resolved_model_key);
     let log = RequestLogRecord {
         request_log_id: Uuid::new_v4(),
         request_id: request_id.to_string(),
@@ -579,7 +594,11 @@ async fn best_effort_log_request(
     }
 }
 
-fn request_log_metadata(attempt_count: usize, stream: bool) -> Map<String, Value> {
+fn request_log_metadata(
+    attempt_count: usize,
+    stream: bool,
+    resolved_model_key: &str,
+) -> Map<String, Value> {
     let mut metadata = Map::new();
     metadata.insert("stream".to_string(), Value::Bool(stream));
     metadata.insert("fallback_used".to_string(), Value::Bool(attempt_count > 1));
@@ -587,7 +606,18 @@ fn request_log_metadata(attempt_count: usize, stream: bool) -> Map<String, Value
         "attempt_count".to_string(),
         Value::Number(i64::try_from(attempt_count).unwrap_or(i64::MAX).into()),
     );
+    metadata.insert(
+        "resolved_model_key".to_string(),
+        Value::String(resolved_model_key.to_string()),
+    );
     metadata
+}
+
+fn normalize_response_model(mut value: Value, model_key: &str) -> Value {
+    if let Some(object) = value.as_object_mut() {
+        object.insert("model".to_string(), Value::String(model_key.to_string()));
+    }
+    value
 }
 
 fn usage_from_response(value: &Value) -> UsageSummary {

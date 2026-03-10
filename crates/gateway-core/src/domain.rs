@@ -511,6 +511,8 @@ pub enum PricingResolution {
 pub struct GatewayModel {
     pub id: Uuid,
     pub model_key: String,
+    #[serde(default)]
+    pub alias_target_model_key: Option<String>,
     pub description: Option<String>,
     pub tags: Vec<String>,
     pub rank: i32,
@@ -611,6 +613,8 @@ pub struct SeedModelRoute {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SeedModel {
     pub model_key: String,
+    #[serde(default)]
+    pub alias_target_model_key: Option<String>,
     pub description: Option<String>,
     #[serde(default)]
     pub tags: Vec<String>,
