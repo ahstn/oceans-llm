@@ -73,16 +73,16 @@ description = "Run `gateway serve`"
 run = "cargo run -p gateway --bin gateway -- serve"
 
 [tasks.gateway-migrate]
-description = "Run `gateway migrate --apply`"
-run = "cargo run -p gateway --bin gateway -- migrate --apply"
+description = "Run `gateway migrate --apply` against `${GATEWAY_CONFIG:-gateway.prod.yaml}`"
+run = "cargo run -p gateway --bin gateway -- --config ${GATEWAY_CONFIG:-gateway.prod.yaml} migrate --apply"
 
 [tasks.gateway-bootstrap-admin]
-description = "Run `gateway bootstrap-admin`"
-run = "cargo run -p gateway --bin gateway -- bootstrap-admin"
+description = "Run `gateway bootstrap-admin` against `${GATEWAY_CONFIG:-gateway.prod.yaml}`"
+run = "cargo run -p gateway --bin gateway -- --config ${GATEWAY_CONFIG:-gateway.prod.yaml} bootstrap-admin"
 
 [tasks.gateway-seed-config]
-description = "Run `gateway seed-config`"
-run = "cargo run -p gateway --bin gateway -- seed-config"
+description = "Run `gateway seed-config` against `${GATEWAY_CONFIG:-gateway.prod.yaml}`"
+run = "cargo run -p gateway --bin gateway -- --config ${GATEWAY_CONFIG:-gateway.prod.yaml} seed-config"
 
 [tasks.fmt]
 description = "Format Rust sources"
