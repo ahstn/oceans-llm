@@ -12,6 +12,7 @@ gateway-core.workspace = true
 gateway-providers.workspace = true
 gateway-service.workspace = true
 gateway-store.workspace = true
+clap.workspace = true
 http.workspace = true
 opentelemetry.workspace = true
 opentelemetry-otlp.workspace = true
@@ -32,6 +33,8 @@ uuid.workspace = true
 [dev-dependencies]
 async-trait.workspace = true
 libsql.workspace = true
+sqlx.workspace = true
 tower = { workspace = true, features = ["util"] }
 tempfile = "3"
 serial_test = "3"
+url.workspace = true

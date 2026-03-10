@@ -4,6 +4,7 @@ use anyhow::{Context, bail};
 use gateway_core::{SeedApiKey, SeedModel, SeedModelRoute, SeedProvider, parse_gateway_api_key};
 use gateway_providers::{OpenAiCompatConfig, VertexAuthConfig, VertexProviderConfig};
 use gateway_service::{hash_gateway_key_secret, is_supported_pricing_provider_id};
+use gateway_store::StoreConnectionOptions;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
@@ -40,6 +41,8 @@ impl GatewayConfig {
     }
 
     fn validate(&self) -> anyhow::Result<()> {
+        let _ = self.database.connection_options()?;
+
         let provider_by_id = self
             .providers
             .iter()
@@ -329,6 +332,10 @@ impl GatewayConfig {
 
         Ok(configs)
     }
+
+    pub fn database_options(&self) -> anyhow::Result<StoreConnectionOptions> {
+        self.database.connection_options()
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -353,14 +360,58 @@ impl Default for ServerConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct DatabaseConfig {
-    #[serde(default = "default_db_path")]
-    pub path: String,
+    #[serde(default)]
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default = "default_postgres_max_connections")]
+    pub max_connections: u32,
 }
 
 impl Default for DatabaseConfig {
     fn default() -> Self {
         Self {
-            path: default_db_path(),
+            kind: Some(default_db_kind()),
+            path: Some(default_db_path()),
+            url: None,
+            max_connections: default_postgres_max_connections(),
+        }
+    }
+}
+
+impl DatabaseConfig {
+    pub fn connection_options(&self) -> anyhow::Result<StoreConnectionOptions> {
+        let kind = self.kind.as_deref().unwrap_or_else(|| {
+            if self.url.is_some() {
+                "postgres"
+            } else {
+                "libsql"
+            }
+        });
+
+        match kind {
+            "libsql" => {
+                let path = self
+                    .path
+                    .as_ref()
+                    .cloned()
+                    .unwrap_or_else(default_db_path);
+                Ok(StoreConnectionOptions::Libsql { path: path.into() })
+            }
+            "postgres" => {
+                let raw_url = self
+                    .url
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("database.url is required when database.kind=postgres"))?;
+                let url = resolve_secret_reference(raw_url)?;
+                Ok(StoreConnectionOptions::Postgres {
+                    url,
+                    max_connections: self.max_connections,
+                })
+            }
+            other => bail!("unsupported database.kind `{other}`; use libsql or postgres"),
         }
     }
 }
@@ -569,6 +620,14 @@ fn default_db_path() -> String {
     "./gateway.db".to_string()
 }
 
+fn default_db_kind() -> String {
+    "libsql".to_string()
+}
+
+const fn default_postgres_max_connections() -> u32 {
+    10
+}
+
 const fn default_provider_timeout_ms() -> u64 {
     120_000
 }
@@ -611,7 +670,7 @@ fn default_vertex_api_host() -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::{env, path::Path};
 
     use tempfile::tempdir;
 
@@ -793,6 +852,9 @@ providers:
     fn production_config_requires_bootstrap_password_change() {
         let config_path =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../gateway.prod.yaml");
+        unsafe {
+            env::set_var("POSTGRES_URL", "postgres://postgres:postgres@localhost/test");
+        }
 
         let config = GatewayConfig::from_path(&config_path).expect("prod config should parse");
 

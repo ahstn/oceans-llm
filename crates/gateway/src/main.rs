@@ -1,42 +1,75 @@
+mod cli;
 mod config;
 mod http;
 mod observability;
 
 use std::{env, net::SocketAddr, path::Path, sync::Arc, time::Duration};
 
+use crate::{
+    cli::{Cli, Command, MigrateAction, ServeArgs},
+    config::{BootstrapAdminConfig, GatewayConfig},
+};
 use admin_ui::AdminUiConfig;
 use anyhow::Context;
+use clap::Parser;
 use gateway_core::ProviderRegistry;
 use gateway_providers::{OpenAiCompatProvider, VertexProvider};
 use gateway_service::{
     DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, GatewayService, WeightedRoutePlanner,
     hash_gateway_key_secret,
 };
-use gateway_store::{LibsqlStore, run_migrations};
+use gateway_store::{
+    AnyStore, GatewayStore, MigrationStatus, MigrationTestHook, check_migrations_with_options,
+    run_migrations_with_options, status_migrations_with_options,
+};
 use http::{build_router, state::AppState};
 use tokio::net::TcpListener;
-use crate::config::{BootstrapAdminConfig, GatewayConfig};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let config_path = env::var("GATEWAY_CONFIG").unwrap_or_else(|_| "./gateway.yaml".to_string());
-    let config = GatewayConfig::from_path(Path::new(&config_path))
-        .with_context(|| format!("failed to load gateway configuration from `{config_path}`"))?;
+    let cli = Cli::parse();
+    let config = load_config(&cli.config)?;
 
     observability::init_tracing(&config.server)?;
 
-    run_migrations(&config.database.path)
-        .await
-        .context("failed to run database migrations")?;
-    let store = Arc::new(
-        LibsqlStore::new_local(&config.database.path)
-            .await
-            .context("failed to initialize local libsql store")?,
-    );
-    ensure_bootstrap_admin(&store, &config.auth.bootstrap_admin)
-        .await
-        .context("failed to ensure bootstrap admin access")?;
+    match cli.command.unwrap_or(Command::Serve(ServeArgs::default())) {
+        Command::Serve(args) => run_serve(&config, args).await,
+        Command::Migrate(args) => run_migrate(&config, args.action()?).await,
+        Command::BootstrapAdmin => run_bootstrap_admin_command(&config).await,
+        Command::SeedConfig => run_seed_config_command(&config).await,
+    }
+}
 
+fn load_config(config_path: &str) -> anyhow::Result<GatewayConfig> {
+    GatewayConfig::from_path(Path::new(config_path))
+        .with_context(|| format!("failed to load gateway configuration from `{config_path}`"))
+}
+
+fn database_options(
+    config: &GatewayConfig,
+) -> anyhow::Result<gateway_store::StoreConnectionOptions> {
+    config
+        .database_options()
+        .context("failed resolving database configuration")
+}
+
+async fn maybe_run_migrations(
+    database_options: &gateway_store::StoreConnectionOptions,
+    enabled: bool,
+) -> anyhow::Result<()> {
+    if !enabled {
+        return Ok(());
+    }
+
+    run_migrations_with_options(database_options, MigrationTestHook::default())
+        .await
+        .context("failed to run database migrations")
+}
+
+async fn seed_config<S>(store: &S, config: &GatewayConfig) -> anyhow::Result<()>
+where
+    S: GatewayStore + ?Sized,
+{
     let providers_seed = config.seed_providers()?;
     let models_seed = config.seed_models()?;
     let api_keys_seed = config.seed_api_keys()?;
@@ -44,7 +77,34 @@ async fn main() -> anyhow::Result<()> {
     store
         .seed_from_inputs(&providers_seed, &models_seed, &api_keys_seed)
         .await
-        .context("failed to seed foundational config data")?;
+        .context("failed to seed foundational config data")
+}
+
+async fn run_serve(config: &GatewayConfig, args: ServeArgs) -> anyhow::Result<()> {
+    let database_options = database_options(config)?;
+    maybe_run_migrations(&database_options, args.run_migrations).await?;
+    let store = Arc::new(
+        AnyStore::connect(&database_options)
+            .await
+            .context("failed to initialize gateway store")?,
+    );
+    run_serve_with_store(config, store, args).await
+}
+
+async fn run_serve_with_store(
+    config: &GatewayConfig,
+    store: Arc<AnyStore>,
+    args: ServeArgs,
+) -> anyhow::Result<()> {
+    if args.bootstrap_admin {
+        ensure_bootstrap_admin(&store, &config.auth.bootstrap_admin)
+            .await
+            .context("failed to ensure bootstrap admin access")?;
+    }
+
+    if args.seed_config {
+        seed_config(store.as_ref(), config).await?;
+    }
 
     let planner = Arc::new(WeightedRoutePlanner::default());
     let service = Arc::new(GatewayService::new(store, planner));
@@ -52,7 +112,7 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!(error = %error, "initial pricing catalog refresh failed");
     }
     spawn_pricing_catalog_refresh_loop(service.clone());
-    let providers = build_provider_registry(&config)?;
+    let providers = build_provider_registry(config)?;
 
     let bind_address: SocketAddr = config
         .server
@@ -83,8 +143,68 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+async fn run_migrate(config: &GatewayConfig, action: MigrateAction) -> anyhow::Result<()> {
+    let database_options = database_options(config)?;
+
+    match action {
+        MigrateAction::Apply => {
+            run_migrations_with_options(&database_options, MigrationTestHook::default())
+                .await
+                .context("failed to apply database migrations")?;
+            let status = status_migrations_with_options(&database_options).await?;
+            print_migration_status(&status);
+            Ok(())
+        }
+        MigrateAction::Check => {
+            let status = check_migrations_with_options(&database_options)
+                .await
+                .context("database migration check failed")?;
+            print_migration_status(&status);
+            Ok(())
+        }
+        MigrateAction::Status => {
+            let status = status_migrations_with_options(&database_options).await?;
+            print_migration_status(&status);
+            Ok(())
+        }
+    }
+}
+
+async fn run_bootstrap_admin_command(config: &GatewayConfig) -> anyhow::Result<()> {
+    let database_options = database_options(config)?;
+    maybe_run_migrations(&database_options, true).await?;
+    let store = Arc::new(
+        AnyStore::connect(&database_options)
+            .await
+            .context("failed to initialize gateway store")?,
+    );
+    ensure_bootstrap_admin(&store, &config.auth.bootstrap_admin).await
+}
+
+async fn run_seed_config_command(config: &GatewayConfig) -> anyhow::Result<()> {
+    let database_options = database_options(config)?;
+    maybe_run_migrations(&database_options, true).await?;
+    let store = Arc::new(
+        AnyStore::connect(&database_options)
+            .await
+            .context("failed to initialize gateway store")?,
+    );
+    seed_config(store.as_ref(), config).await
+}
+
+fn print_migration_status(status: &MigrationStatus) {
+    println!("backend: {}", status.backend);
+    for entry in &status.entries {
+        let state = if entry.applied { "applied" } else { "pending" };
+        match entry.backend_note {
+            Some(note) => println!("v{} {} [{}] ({})", entry.version, entry.name, state, note),
+            None => println!("v{} {} [{}]", entry.version, entry.name, state),
+        }
+    }
+}
+
 async fn ensure_bootstrap_admin(
-    store: &Arc<LibsqlStore>,
+    store: &Arc<AnyStore>,
     config: &BootstrapAdminConfig,
 ) -> anyhow::Result<()> {
     if !config.enabled {
@@ -109,7 +229,11 @@ async fn ensure_bootstrap_admin(
     let password_hash =
         hash_gateway_key_secret(&password).context("failed hashing bootstrap admin password")?;
     store
-        .store_user_password(user.user_id, &password_hash, time::OffsetDateTime::now_utc())
+        .store_user_password(
+            user.user_id,
+            &password_hash,
+            time::OffsetDateTime::now_utc(),
+        )
         .await
         .context("failed storing bootstrap admin password")?;
 
@@ -145,7 +269,7 @@ fn load_admin_ui_config() -> AdminUiConfig {
 }
 
 fn spawn_pricing_catalog_refresh_loop(
-    service: Arc<GatewayService<LibsqlStore, WeightedRoutePlanner>>,
+    service: Arc<GatewayService<AnyStore, WeightedRoutePlanner>>,
 ) {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(pricing_catalog_refresh_interval());
@@ -179,6 +303,7 @@ fn load_identity_token_secret() -> String {
 #[cfg(test)]
 mod tests {
     use std::{
+        env,
         path::{Path, PathBuf},
         sync::{
             Arc,
@@ -196,15 +321,20 @@ mod tests {
     use gateway_core::ChatCompletionsRequest;
     use gateway_core::{
         EmbeddingsRequest, ProviderCapabilities, ProviderClient, ProviderError,
-        ProviderRequestContext, ProviderStream, SeedApiKey, SeedModel,
-        SeedModelRoute, SeedProvider, parse_gateway_api_key,
+        ProviderRequestContext, ProviderStream, SeedApiKey, SeedModel, SeedModelRoute,
+        SeedProvider, parse_gateway_api_key,
     };
     use gateway_service::{GatewayService, WeightedRoutePlanner, hash_gateway_key_secret};
-    use gateway_store::{LibsqlStore, run_migrations};
+    use gateway_store::{
+        AnyStore, GatewayStore, LibsqlStore, MigrationTestHook, StoreConnectionOptions,
+        run_migrations, run_migrations_with_options,
+    };
     use serde_json::{Map, Value, json};
     use serial_test::serial;
+    use sqlx::Row;
     use tempfile::tempdir;
     use tower::ServiceExt;
+    use url::Url;
     use uuid::Uuid;
 
     use crate::{
@@ -428,11 +558,11 @@ mod tests {
 
         run_migrations(&db_path).await.expect("migrations");
 
-        let store = Arc::new(
+        let store = Arc::new(AnyStore::Libsql(
             LibsqlStore::new_local(db_path.to_str().expect("db path"))
                 .await
                 .expect("store"),
-        );
+        ));
 
         let raw_key = "gwk_dev123.super-secret".to_string();
         let parsed = parse_gateway_api_key(&raw_key).expect("parse key");
@@ -496,18 +626,18 @@ mod tests {
 
     async fn build_default_test_app_with_store(
         providers: gateway_core::ProviderRegistry,
-    ) -> (Router, Arc<LibsqlStore>, PathBuf) {
+    ) -> (Router, Arc<AnyStore>, PathBuf) {
         let tmp = tempdir().expect("tempdir");
         let tmp_path = tmp.keep();
         let db_path = tmp_path.join("gateway.db");
 
         run_migrations(&db_path).await.expect("migrations");
 
-        let store = Arc::new(
+        let store = Arc::new(AnyStore::Libsql(
             LibsqlStore::new_local(db_path.to_str().expect("db path"))
                 .await
                 .expect("store"),
-        );
+        ));
 
         let service = Arc::new(GatewayService::new(
             store.clone(),
@@ -527,6 +657,74 @@ mod tests {
         (app, store, db_path)
     }
 
+    async fn build_postgres_test_app(
+        database_url: &str,
+        provider_registry: gateway_core::ProviderRegistry,
+    ) -> (Router, String) {
+        let options = StoreConnectionOptions::Postgres {
+            url: database_url.to_string(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options, MigrationTestHook::default())
+            .await
+            .expect("postgres migrations");
+
+        let store = Arc::new(AnyStore::connect(&options).await.expect("postgres store"));
+
+        let seed_providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: serde_json::json!({"base_url": "https://api.openai.com/v1"}),
+            secrets: None,
+        }];
+        let models = vec![SeedModel {
+            model_key: "fast".to_string(),
+            description: Some("Fast tier".to_string()),
+            tags: vec!["fast".to_string()],
+            rank: 10,
+            routes: vec![SeedModelRoute {
+                provider_key: "openai-prod".to_string(),
+                upstream_model: "gpt-4o-mini".to_string(),
+                priority: 10,
+                weight: 1.0,
+                enabled: true,
+                extra_headers: Map::<String, Value>::new(),
+                extra_body: Map::<String, Value>::new(),
+            }],
+        }];
+
+        let raw_key = "gwk_dev123.super-secret".to_string();
+        let parsed = parse_gateway_api_key(&raw_key).expect("parse key");
+        let api_keys = vec![SeedApiKey {
+            name: "dev".to_string(),
+            public_id: parsed.public_id,
+            secret_hash: hash_gateway_key_secret(&parsed.secret).expect("hash"),
+            allowed_models: vec!["fast".to_string()],
+        }];
+
+        store
+            .seed_from_inputs(&seed_providers, &models, &api_keys)
+            .await
+            .expect("seed");
+
+        let service = Arc::new(GatewayService::new(
+            store.clone(),
+            Arc::new(WeightedRoutePlanner::seeded(11)),
+        ));
+
+        let app = build_router(
+            AppState {
+                service,
+                store,
+                providers: provider_registry,
+                identity_token_secret: Arc::new("local-dev-identity-secret".to_string()),
+            },
+            AdminUiConfig::default(),
+        );
+
+        (app, raw_key)
+    }
+
     fn set_cookie_header(response: &axum::response::Response) -> String {
         response
             .headers()
@@ -542,6 +740,70 @@ mod tests {
             .await
             .expect("body bytes");
         serde_json::from_slice(&body).expect("json body")
+    }
+
+    struct PostgresTestDatabase {
+        admin_url: String,
+        database_url: String,
+        database_name: String,
+    }
+
+    async fn create_postgres_test_database() -> Option<PostgresTestDatabase> {
+        let base_url = env::var("TEST_POSTGRES_URL").ok()?;
+        let mut admin_url = Url::parse(&base_url).expect("valid postgres url");
+        admin_url.set_path("/postgres");
+
+        let admin_pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(admin_url.as_str())
+            .await
+            .expect("admin postgres pool");
+
+        let database_name = format!("gateway_test_{}", Uuid::new_v4().simple());
+        sqlx::query(&format!("CREATE DATABASE {database_name}"))
+            .execute(&admin_pool)
+            .await
+            .expect("create test database");
+        admin_pool.close().await;
+
+        let mut database_url = Url::parse(&base_url).expect("valid postgres url");
+        database_url.set_path(&format!("/{database_name}"));
+
+        Some(PostgresTestDatabase {
+            admin_url: admin_url.to_string(),
+            database_url: database_url.to_string(),
+            database_name,
+        })
+    }
+
+    async fn drop_postgres_test_database(database: &PostgresTestDatabase) {
+        let admin_pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&database.admin_url)
+            .await
+            .expect("admin postgres pool");
+
+        sqlx::query(
+            r#"
+            SELECT pg_terminate_backend(pid)
+            FROM pg_stat_activity
+            WHERE datname = $1
+              AND pid <> pg_backend_pid()
+            "#,
+        )
+        .bind(database.database_name.as_str())
+        .execute(&admin_pool)
+        .await
+        .expect("terminate sessions");
+
+        sqlx::query(&format!(
+            "DROP DATABASE IF EXISTS {}",
+            database.database_name
+        ))
+        .execute(&admin_pool)
+        .await
+        .expect("drop test database");
+        admin_pool.close().await;
     }
 
     #[tokio::test]
@@ -990,7 +1252,8 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn admin_identity_routes_require_authenticated_session() {
-        let (app, _, _) = build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;
+        let (app, _, _) =
+            build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;
 
         let response = app
             .oneshot(
@@ -1047,7 +1310,10 @@ mod tests {
         let login_json = read_json(login_response).await;
         assert_eq!(login_json["data"]["user"]["email"], "admin@local");
         assert_eq!(login_json["data"]["user"]["global_role"], "platform_admin");
-        assert_eq!(login_json["data"]["must_change_password"], Value::Bool(false));
+        assert_eq!(
+            login_json["data"]["must_change_password"],
+            Value::Bool(false)
+        );
 
         let session_response = app
             .oneshot(
@@ -1064,7 +1330,10 @@ mod tests {
         assert_eq!(session_response.status(), StatusCode::OK);
         let session_json = read_json(session_response).await;
         assert_eq!(session_json["data"]["user"]["email"], "admin@local");
-        assert_eq!(session_json["data"]["must_change_password"], Value::Bool(false));
+        assert_eq!(
+            session_json["data"]["must_change_password"],
+            Value::Bool(false)
+        );
     }
 
     #[tokio::test]
@@ -1106,7 +1375,10 @@ mod tests {
         assert_eq!(login_response.status(), StatusCode::OK);
         let session_cookie = set_cookie_header(&login_response);
         let login_json = read_json(login_response).await;
-        assert_eq!(login_json["data"]["must_change_password"], Value::Bool(true));
+        assert_eq!(
+            login_json["data"]["must_change_password"],
+            Value::Bool(true)
+        );
 
         let change_response = app
             .clone()
@@ -1130,7 +1402,10 @@ mod tests {
 
         assert_eq!(change_response.status(), StatusCode::OK);
         let change_json = read_json(change_response).await;
-        assert_eq!(change_json["data"]["must_change_password"], Value::Bool(false));
+        assert_eq!(
+            change_json["data"]["must_change_password"],
+            Value::Bool(false)
+        );
 
         let old_login_response = app
             .clone()
@@ -1269,5 +1544,106 @@ mod tests {
             .await
             .expect("lookup bootstrap admin");
         assert!(bootstrap_admin.is_none());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_runtime_serves_and_logs_requests() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!("skipping postgres gateway smoke test because TEST_POSTGRES_URL is not set");
+            return;
+        };
+
+        let mut providers = gateway_core::ProviderRegistry::new();
+        let (_, mock_provider) = make_chat_provider(
+            "openai-prod",
+            MockChatResult::Value(json!({
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 1,
+                "model": "gpt-4o-mini",
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "hello"},
+                    "finish_reason": "stop"
+                }],
+                "usage": {
+                    "prompt_tokens": 3,
+                    "completion_tokens": 2,
+                    "total_tokens": 5
+                }
+            })),
+            vec![],
+            ProviderCapabilities {
+                chat_completions: true,
+                chat_completions_stream: false,
+                embeddings: false,
+            },
+        );
+        providers.register(Arc::new(mock_provider));
+
+        let (app, raw_key) = build_postgres_test_app(&test_db.database_url, providers).await;
+
+        let ready = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/readyz")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("ready response");
+        assert_eq!(ready.status(), StatusCode::OK);
+
+        let models = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/models")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("models response");
+        assert_eq!(models.status(), StatusCode::OK);
+
+        let chat = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "model": "fast",
+                            "messages": [{"role": "user", "content": "hello"}]
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("chat response");
+        assert_eq!(chat.status(), StatusCode::OK);
+
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&test_db.database_url)
+            .await
+            .expect("postgres pool");
+        let row = sqlx::query("SELECT COUNT(*) FROM request_logs")
+            .fetch_one(&pool)
+            .await
+            .expect("request log count");
+        let count: i64 = row.try_get(0).expect("count");
+        assert_eq!(count, 1);
+        pool.close().await;
+
+        drop_postgres_test_database(&test_db).await;
     }
 }

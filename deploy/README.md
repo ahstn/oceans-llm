@@ -20,6 +20,10 @@ docker compose -f deploy/compose.yaml up -d
 
 The gateway is published on `http://localhost:8080` by default, and the admin UI is available through the gateway at `/admin`.
 
-## Database note
+## Database policy
 
-The stack includes Postgres because the deployment shape requested a Postgres service, but the current gateway runtime still uses a local libsql/SQLite database file configured at `/data/gateway.db`. The mounted `config/gateway.yaml` reflects the current runtime behavior.
+- This deploy stack uses PostgreSQL by default through `POSTGRES_URL`.
+- Local libsql/SQLite remains the supported lightweight option for plain local development, but not for production or pre-production deploys.
+- The gateway applies migrations and idempotent startup seed data on boot; the Postgres container is intentionally not preloaded with application rows through `docker-entrypoint-initdb.d`.
+
+The mounted `config/gateway.yaml` reflects the production-shaped runtime behavior.

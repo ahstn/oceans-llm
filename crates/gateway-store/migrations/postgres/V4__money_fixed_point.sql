@@ -1,0 +1,2 @@
+-- Compatibility placeholder.
+-- PostgreSQL V1 already starts with fixed-point money columns.

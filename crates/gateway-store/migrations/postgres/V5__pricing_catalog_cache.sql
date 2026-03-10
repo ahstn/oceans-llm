@@ -1,0 +1,2 @@
+-- Compatibility placeholder.
+-- PostgreSQL V1 already includes pricing catalog cache support.

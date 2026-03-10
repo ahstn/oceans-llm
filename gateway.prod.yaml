@@ -3,7 +3,8 @@ server:
   log_format: "pretty"
 
 database:
-  path: "./gateway.db"
+  kind: postgres
+  url: env.POSTGRES_URL
 
 auth:
   seed_api_keys: []

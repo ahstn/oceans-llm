@@ -1,23 +1,42 @@
 mod libsql_store;
 mod migrate;
+mod migration_registry;
+mod postgres_store;
 mod seed;
+mod shared;
+mod store;
 
 pub use libsql_store::LibsqlStore;
-pub use migrate::run_migrations;
+pub use migrate::{
+    MigrationStatus, MigrationStatusEntry, MigrationTestHook, check_migrations_with_options,
+    run_migrations, run_migrations_with_options, status_migrations_with_options,
+};
+pub use postgres_store::PostgresStore;
+pub use store::{AnyStore, GatewayStore, StoreConnectionOptions};
 
 #[cfg(test)]
 mod tests {
+    use std::env;
+
     use gateway_core::{
         ApiKeyOwnerKind, ApiKeyRepository, AuthMode, GlobalRole, IdentityRepository,
         MembershipRole, ModelRepository, PricingCatalogCacheRecord, PricingCatalogRepository,
-        SYSTEM_LEGACY_TEAM_ID, SeedApiKey, SeedModel, SeedModelRoute, SeedProvider, StoreHealth,
+        RequestLogRecord, RequestLogRepository, SYSTEM_LEGACY_TEAM_ID, SeedApiKey, SeedModel,
+        SeedModelRoute, SeedProvider, StoreHealth,
     };
     use serde_json::{Map, json};
     use serial_test::serial;
+    use sqlx::Row;
     use tempfile::tempdir;
+    use time::OffsetDateTime;
+    use url::Url;
     use uuid::Uuid;
 
-    use crate::{LibsqlStore, run_migrations};
+    use crate::{
+        LibsqlStore, MigrationTestHook, PostgresStore, StoreConnectionOptions,
+        check_migrations_with_options, run_migrations, run_migrations_with_options,
+        status_migrations_with_options,
+    };
 
     #[tokio::test]
     #[serial]
@@ -37,6 +56,87 @@ mod tests {
             .expect("store");
 
         store.ping().await.expect("ping");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn migration_status_reports_pending_versions_before_first_apply() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+
+        let status = status_migrations_with_options(&StoreConnectionOptions::Libsql {
+            path: db_path.clone(),
+        })
+        .await
+        .expect("status");
+
+        assert_eq!(status.backend, "libsql");
+        assert_eq!(status.pending_count(), 7);
+        assert!(status.entries.iter().all(|entry| !entry.applied));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn migration_check_fails_when_pending_versions_exist() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+
+        let error =
+            check_migrations_with_options(&StoreConnectionOptions::Libsql { path: db_path })
+                .await
+                .expect_err("check should fail");
+        assert!(error.to_string().contains("pending migrations"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn migrations_rollback_when_history_write_fails() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+
+        run_migrations_with_options(
+            &StoreConnectionOptions::Libsql {
+                path: db_path.clone(),
+            },
+            MigrationTestHook {
+                fail_after_apply_version: Some(1),
+            },
+        )
+        .await
+        .expect_err("migration should fail");
+
+        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
+            .build()
+            .await
+            .expect("db");
+        let conn = db.connect().expect("connection");
+
+        let mut history_rows = conn
+            .query("SELECT COUNT(*) FROM refinery_schema_history", ())
+            .await
+            .expect("history count query");
+        let history_row = history_rows
+            .next()
+            .await
+            .expect("history row fetch")
+            .expect("history row");
+        let history_count: i64 = history_row.get(0).expect("history count");
+        assert_eq!(history_count, 0);
+
+        let mut table_rows = conn
+            .query(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'providers'",
+                (),
+            )
+            .await
+            .expect("providers table query");
+        let table_row = table_rows
+            .next()
+            .await
+            .expect("providers row fetch")
+            .expect("providers row");
+        let table_count: i64 = table_row.get(0).expect("providers count");
+        assert_eq!(table_count, 0);
     }
 
     #[tokio::test]
@@ -249,11 +349,13 @@ mod tests {
         assert_eq!(team.team_key, "platform-ops");
         assert_eq!(team.team_name, "Platform Ops");
         assert_eq!(team.status, "active");
-        assert!(store
-            .list_team_memberships(team.team_id)
-            .await
-            .expect("memberships")
-            .is_empty());
+        assert!(
+            store
+                .list_team_memberships(team.team_id)
+                .await
+                .expect("memberships")
+                .is_empty()
+        );
     }
 
     #[tokio::test]
@@ -339,8 +441,14 @@ mod tests {
         let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
             .await
             .expect("store");
-        let first_team = store.create_team("alpha", "Alpha").await.expect("first team");
-        let second_team = store.create_team("beta", "Beta").await.expect("second team");
+        let first_team = store
+            .create_team("alpha", "Alpha")
+            .await
+            .expect("first team");
+        let second_team = store
+            .create_team("beta", "Beta")
+            .await
+            .expect("second team");
 
         let conn = store.connection();
         let now = time::OffsetDateTime::now_utc().unix_timestamp();
@@ -706,5 +814,342 @@ mod tests {
             .expect("reload user")
             .expect("user should exist");
         assert!(!refreshed.must_change_password);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_store_supports_migrations_and_core_operations() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!("skipping postgres store test because TEST_POSTGRES_URL is not set");
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options, MigrationTestHook::default())
+            .await
+            .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+        store.ping().await.expect("ping");
+
+        let providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: json!({
+                "base_url": "https://api.openai.com/v1",
+                "timeout_ms": 120_000
+            }),
+            secrets: Some(json!({"token": "env.OPENAI_API_KEY"})),
+        }];
+        let models = vec![SeedModel {
+            model_key: "fast".to_string(),
+            description: Some("fast tier".to_string()),
+            tags: vec!["fast".to_string(), "cheap".to_string()],
+            rank: 10,
+            routes: vec![SeedModelRoute {
+                provider_key: "openai-prod".to_string(),
+                upstream_model: "gpt-4o-mini".to_string(),
+                priority: 10,
+                weight: 1.0,
+                enabled: true,
+                extra_headers: Map::new(),
+                extra_body: Map::new(),
+            }],
+        }];
+        let api_keys = vec![SeedApiKey {
+            name: "dev".to_string(),
+            public_id: "dev123".to_string(),
+            secret_hash: "hash".to_string(),
+            allowed_models: vec!["fast".to_string()],
+        }];
+
+        store
+            .seed_from_inputs(&providers, &models, &api_keys)
+            .await
+            .expect("seed");
+
+        let key = store
+            .get_api_key_by_public_id("dev123")
+            .await
+            .expect("get key")
+            .expect("api key exists");
+        assert_eq!(key.owner_kind, ApiKeyOwnerKind::Team);
+        assert_eq!(
+            key.owner_team_id.expect("team owner").to_string(),
+            SYSTEM_LEGACY_TEAM_ID
+        );
+        assert!(
+            store
+                .list_models_for_api_key(key.id)
+                .await
+                .expect("list models")
+                .iter()
+                .any(|model| model.model_key == "fast")
+        );
+
+        let user = store
+            .upsert_bootstrap_admin_user("Admin", "admin@local", true)
+            .await
+            .expect("bootstrap admin");
+        store
+            .store_user_password(user.user_id, "hash-1", OffsetDateTime::now_utc())
+            .await
+            .expect("password");
+        assert!(
+            store
+                .get_user_password_auth(user.user_id)
+                .await
+                .expect("password auth")
+                .is_some()
+        );
+
+        let team = store
+            .create_team("platform", "Platform")
+            .await
+            .expect("create team");
+        let member = store
+            .create_identity_user(
+                "Member",
+                "member@example.com",
+                "member@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                "invited",
+            )
+            .await
+            .expect("create user");
+        store
+            .assign_team_membership(member.user_id, team.team_id, MembershipRole::Admin)
+            .await
+            .expect("membership");
+        assert_eq!(
+            store
+                .list_team_memberships(team.team_id)
+                .await
+                .expect("memberships")
+                .len(),
+            1
+        );
+
+        let invitation = store
+            .create_password_invitation(
+                Uuid::new_v4(),
+                member.user_id,
+                "token-hash",
+                OffsetDateTime::now_utc() + time::Duration::days(7),
+                OffsetDateTime::now_utc(),
+            )
+            .await
+            .expect("invitation");
+        assert!(
+            store
+                .get_password_invitation(invitation.invitation_id)
+                .await
+                .expect("load invitation")
+                .is_some()
+        );
+
+        let cache = PricingCatalogCacheRecord {
+            catalog_key: "catalog".to_string(),
+            source: "test".to_string(),
+            etag: Some("etag-1".to_string()),
+            fetched_at: OffsetDateTime::now_utc(),
+            snapshot_json: "{\"providers\":[]}".to_string(),
+        };
+        store
+            .upsert_pricing_catalog_cache(&cache)
+            .await
+            .expect("upsert cache");
+        assert_eq!(
+            store
+                .get_pricing_catalog_cache("catalog")
+                .await
+                .expect("cache lookup")
+                .expect("cache row")
+                .etag
+                .as_deref(),
+            Some("etag-1")
+        );
+
+        let log = RequestLogRecord {
+            request_log_id: Uuid::new_v4(),
+            request_id: "req-1".to_string(),
+            api_key_id: key.id,
+            user_id: Some(member.user_id),
+            team_id: Some(team.team_id),
+            model_key: "fast".to_string(),
+            provider_key: "openai-prod".to_string(),
+            status_code: Some(200),
+            latency_ms: Some(42),
+            prompt_tokens: Some(10),
+            completion_tokens: Some(20),
+            total_tokens: Some(30),
+            error_code: None,
+            metadata: Map::new(),
+            occurred_at: OffsetDateTime::now_utc(),
+        };
+        store
+            .insert_request_log(&log)
+            .await
+            .expect("insert request log");
+
+        let row = sqlx::query("SELECT COUNT(*) FROM request_logs")
+            .fetch_one(store.pool())
+            .await
+            .expect("request log count");
+        let count: i64 = row.try_get(0).expect("count");
+        assert_eq!(count, 1);
+
+        drop(store);
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_migration_status_reports_pending_and_applied_versions() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!("skipping postgres migration status test because TEST_POSTGRES_URL is not set");
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 2,
+        };
+
+        let initial_status = status_migrations_with_options(&options)
+            .await
+            .expect("initial postgres status");
+        assert_eq!(initial_status.backend, "postgres");
+        assert_eq!(initial_status.pending_count(), 7);
+        assert!(initial_status.entries.iter().all(|entry| !entry.applied));
+
+        run_migrations_with_options(&options, MigrationTestHook::default())
+            .await
+            .expect("postgres migrations");
+
+        let applied_status = status_migrations_with_options(&options)
+            .await
+            .expect("applied postgres status");
+        assert_eq!(applied_status.backend, "postgres");
+        assert_eq!(applied_status.pending_count(), 0);
+        assert!(applied_status.entries.iter().all(|entry| entry.applied));
+
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_migrations_rollback_when_history_write_fails() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres migration rollback test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 2,
+        };
+        run_migrations_with_options(
+            &options,
+            MigrationTestHook {
+                fail_after_apply_version: Some(1),
+            },
+        )
+        .await
+        .expect_err("postgres migration should fail");
+
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&test_db.database_url)
+            .await
+            .expect("postgres pool");
+        let history_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM refinery_schema_history")
+            .fetch_one(&pool)
+            .await
+            .expect("history count");
+        assert_eq!(history_count, 0);
+
+        let providers_exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'providers')",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("providers table exists");
+        assert!(!providers_exists);
+
+        pool.close().await;
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    struct PostgresTestDatabase {
+        admin_url: String,
+        database_url: String,
+        database_name: String,
+    }
+
+    async fn create_postgres_test_database() -> Option<PostgresTestDatabase> {
+        let base_url = env::var("TEST_POSTGRES_URL").ok()?;
+        let mut admin_url = Url::parse(&base_url).expect("valid postgres url");
+        admin_url.set_path("/postgres");
+
+        let admin_pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(admin_url.as_str())
+            .await
+            .expect("admin postgres pool");
+
+        let database_name = format!("gateway_store_test_{}", Uuid::new_v4().simple());
+        sqlx::query(&format!("CREATE DATABASE {database_name}"))
+            .execute(&admin_pool)
+            .await
+            .expect("create test database");
+        admin_pool.close().await;
+
+        let mut database_url = Url::parse(&base_url).expect("valid postgres url");
+        database_url.set_path(&format!("/{database_name}"));
+
+        Some(PostgresTestDatabase {
+            admin_url: admin_url.to_string(),
+            database_url: database_url.to_string(),
+            database_name,
+        })
+    }
+
+    async fn drop_postgres_test_database(database: &PostgresTestDatabase) {
+        let admin_pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&database.admin_url)
+            .await
+            .expect("admin postgres pool");
+
+        sqlx::query(
+            r#"
+            SELECT pg_terminate_backend(pid)
+            FROM pg_stat_activity
+            WHERE datname = $1
+              AND pid <> pg_backend_pid()
+            "#,
+        )
+        .bind(database.database_name.as_str())
+        .execute(&admin_pool)
+        .await
+        .expect("terminate sessions");
+
+        sqlx::query(&format!(
+            "DROP DATABASE IF EXISTS {}",
+            database.database_name
+        ))
+        .execute(&admin_pool)
+        .await
+        .expect("drop test database");
+        admin_pool.close().await;
     }
 }
