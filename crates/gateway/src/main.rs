@@ -448,6 +448,7 @@ mod tests {
         user_id: Option<String>,
         team_id: Option<String>,
         model_key: String,
+        resolved_model_key: Option<String>,
         provider_key: String,
         status_code: Option<i64>,
         latency_ms: Option<i64>,
@@ -467,8 +468,8 @@ mod tests {
         let mut rows = connection
             .query(
                 r#"
-                SELECT user_id, team_id, model_key, provider_key, status_code, latency_ms,
-                       prompt_tokens, completion_tokens, total_tokens, error_code, metadata_json
+                SELECT user_id, team_id, model_key, resolved_model_key, provider_key, status_code,
+                       latency_ms, prompt_tokens, completion_tokens, total_tokens, error_code, metadata_json
                 FROM request_logs
                 ORDER BY occurred_at ASC, rowid ASC
                 "#,
@@ -479,18 +480,19 @@ mod tests {
 
         let mut logs = Vec::new();
         while let Some(row) = rows.next().await.expect("request logs row") {
-            let metadata_json: String = row.get(10).expect("metadata json");
+            let metadata_json: String = row.get(11).expect("metadata json");
             logs.push(RequestLogRow {
                 user_id: row.get(0).expect("user_id"),
                 team_id: row.get(1).expect("team_id"),
                 model_key: row.get(2).expect("model_key"),
-                provider_key: row.get(3).expect("provider_key"),
-                status_code: row.get(4).expect("status_code"),
-                latency_ms: row.get(5).expect("latency_ms"),
-                prompt_tokens: row.get(6).expect("prompt_tokens"),
-                completion_tokens: row.get(7).expect("completion_tokens"),
-                total_tokens: row.get(8).expect("total_tokens"),
-                error_code: row.get(9).expect("error_code"),
+                resolved_model_key: row.get(3).expect("resolved_model_key"),
+                provider_key: row.get(4).expect("provider_key"),
+                status_code: row.get(5).expect("status_code"),
+                latency_ms: row.get(6).expect("latency_ms"),
+                prompt_tokens: row.get(7).expect("prompt_tokens"),
+                completion_tokens: row.get(8).expect("completion_tokens"),
+                total_tokens: row.get(9).expect("total_tokens"),
+                error_code: row.get(10).expect("error_code"),
                 metadata: serde_json::from_str(&metadata_json).expect("metadata value"),
             });
         }
@@ -935,7 +937,7 @@ mod tests {
         assert_eq!(logs[0].metadata["stream"], Value::Bool(false));
         assert_eq!(logs[0].metadata["fallback_used"], Value::Bool(false));
         assert_eq!(logs[0].metadata["attempt_count"], json!(1));
-        assert_eq!(logs[0].metadata["resolved_model_key"], json!("fast"));
+        assert_eq!(logs[0].resolved_model_key.as_deref(), Some("fast"));
     }
 
     #[tokio::test]
@@ -1023,7 +1025,7 @@ mod tests {
         assert_eq!(logs.len(), 1);
         assert_eq!(logs[0].model_key, "fast");
         assert_eq!(logs[0].provider_key, "openai-prod");
-        assert_eq!(logs[0].metadata["resolved_model_key"], json!("fast-v2"));
+        assert_eq!(logs[0].resolved_model_key.as_deref(), Some("fast-v2"));
     }
 
     #[tokio::test]
@@ -1131,7 +1133,7 @@ mod tests {
         assert_eq!(logs[0].metadata["stream"], Value::Bool(false));
         assert_eq!(logs[0].metadata["fallback_used"], Value::Bool(true));
         assert_eq!(logs[0].metadata["attempt_count"], json!(2));
-        assert_eq!(logs[0].metadata["resolved_model_key"], json!("fast"));
+        assert_eq!(logs[0].resolved_model_key.as_deref(), Some("fast"));
     }
 
     #[tokio::test]

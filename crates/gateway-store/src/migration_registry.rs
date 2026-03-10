@@ -107,6 +107,17 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
             "../migrations/postgres/V8__model_aliases.sql"
         )),
     },
+    MigrationManifest {
+        version: 9,
+        name: "request_log_resolved_model",
+        checksum: "V9__request_log_resolved_model.sql",
+        libsql: BackendMigrationStep::Sql(include_str!(
+            "../migrations/V9__request_log_resolved_model.sql"
+        )),
+        postgres: BackendMigrationStep::Sql(include_str!(
+            "../migrations/postgres/V9__request_log_resolved_model.sql"
+        )),
+    },
 ];
 
 #[cfg(test)]

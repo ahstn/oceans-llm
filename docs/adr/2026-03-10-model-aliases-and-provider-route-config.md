@@ -43,12 +43,36 @@ Why:
 
 ### 4. Requested model identity remains the public contract
 
-Runtime resolution carries both the requested gateway model and the canonical execution model.
+Runtime resolution is formalized through an explicit model-resolution contract:
+
+- `ResolvedModelSelection` carries the requested gateway model, canonical execution model, and alias chain.
+- `ResolvedGatewayRequest` carries auth, the resolved model selection, and the planned provider routes.
 
 Why:
 - auth and grants should continue to be evaluated against what the client requested,
 - client-visible `response.model` should stay stable across aliases and provider remaps,
-- logs still need the canonical execution model for observability, so it is added to request-log metadata as `resolved_model_key`.
+- the service layer now has one place to enforce alias traversal, cycle detection, and depth limits before provider planning begins.
+
+### 5. Request logs store requested and resolved model identity separately
+
+Request logs now persist both:
+
+- `model_key`: the requested gateway model key
+- `resolved_model_key`: the canonical execution model key
+
+Why:
+- aliasing is now a durable routing feature rather than an ad hoc metadata detail,
+- typed columns are easier to query and reason about than metadata conventions,
+- the public contract stays stable while observability retains the actual execution target.
+
+### 6. Backend parity is a required rule for model-registry features
+
+Alias-related schema, seeding, hydration, and request logging ship on libsql and Postgres together.
+
+Why:
+- the runtime now supports both backends in real workflows,
+- “libsql first, Postgres later” creates drift in model-registry behavior,
+- parity pressure keeps migrations, store modules, and tests aligned as the schema evolves.
 
 ## Consequences
 
@@ -60,13 +84,13 @@ Positive:
 Tradeoffs:
 - runtime resolution needs defensive cycle and depth checks even though config validation rejects bad alias graphs,
 - alias-backed models do not expose their canonical target directly through the public API in this slice,
-- logs now rely on metadata for the resolved target instead of a dedicated request-log column.
+- request logging gains another persisted field that must be kept in sync across both backends.
 
 ## Follow-up Work
 
 - Expose alias/deprecation metadata through admin or public model APIs if needed.
 - Revisit richer routing-policy configuration only when weighted-priority routing becomes insufficient.
-- Mirror alias storage and hydration in the Postgres backend if and when that runtime lands on this branch.
+- Consider whether `resolved_model_key` should become part of downstream spend/accounting tables once usage-cost events are written.
 
 ## Attribution
 

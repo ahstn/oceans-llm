@@ -147,6 +147,7 @@ mod tests {
             user_id: None,
             team_id: None,
             model_key: "fast".to_string(),
+            resolved_model_key: "fast".to_string(),
             provider_key: "openai-prod".to_string(),
             status_code: Some(200),
             latency_ms: Some(120),

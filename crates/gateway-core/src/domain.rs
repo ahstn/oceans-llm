@@ -431,6 +431,7 @@ pub struct RequestLogRecord {
     pub user_id: Option<Uuid>,
     pub team_id: Option<Uuid>,
     pub model_key: String,
+    pub resolved_model_key: String,
     pub provider_key: String,
     pub status_code: Option<i64>,
     pub latency_ms: Option<i64>,

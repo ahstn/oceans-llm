@@ -172,13 +172,12 @@ impl GatewayConfig {
                     bail!("model alias cycle detected starting at `{}`", model.id);
                 }
 
-                current = model_by_id
-                    .get(alias_target)
-                    .copied()
-                    .ok_or_else(|| anyhow::anyhow!(
+                current = model_by_id.get(alias_target).copied().ok_or_else(|| {
+                    anyhow::anyhow!(
                         "model `{}` aliases unknown model `{alias_target}`",
                         model.id
-                    ))?;
+                    )
+                })?;
             }
         }
 
@@ -445,18 +444,13 @@ impl DatabaseConfig {
 
         match kind {
             "libsql" => {
-                let path = self
-                    .path
-                    .as_ref()
-                    .cloned()
-                    .unwrap_or_else(default_db_path);
+                let path = self.path.as_ref().cloned().unwrap_or_else(default_db_path);
                 Ok(StoreConnectionOptions::Libsql { path: path.into() })
             }
             "postgres" => {
-                let raw_url = self
-                    .url
-                    .as_ref()
-                    .ok_or_else(|| anyhow::anyhow!("database.url is required when database.kind=postgres"))?;
+                let raw_url = self.url.as_ref().ok_or_else(|| {
+                    anyhow::anyhow!("database.url is required when database.kind=postgres")
+                })?;
                 let url = resolve_secret_reference(raw_url)?;
                 Ok(StoreConnectionOptions::Postgres {
                     url,
@@ -1053,10 +1047,12 @@ providers:
 
     #[test]
     fn production_config_requires_bootstrap_password_change() {
-        let config_path =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../gateway.prod.yaml");
+        let config_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../gateway.prod.yaml");
         unsafe {
-            env::set_var("POSTGRES_URL", "postgres://postgres:postgres@localhost/test");
+            env::set_var(
+                "POSTGRES_URL",
+                "postgres://postgres:postgres@localhost/test",
+            );
         }
 
         let config = GatewayConfig::from_path(&config_path).expect("prod config should parse");
