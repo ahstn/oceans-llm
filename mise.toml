@@ -39,7 +39,7 @@ run = "cargo test -p gateway-store postgres_"
 description = "Run gateway Postgres smoke checks with explicit CLI commands"
 env = { POSTGRES_URL = { required = true } }
 run = """
-set -euo pipefail
+set -eu
 
 export OPENAI_API_KEY="${OPENAI_API_KEY:-test-openai-key}"
 export PORT="${PORT:-18080}"
