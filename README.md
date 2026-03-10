@@ -106,6 +106,15 @@ database:
 
 `gcp_vertex` routes require `upstream_model` in `<publisher>/<model_id>` format. In this slice, supported publishers are `google` and `anthropic`.
 
+## Request Accounting
+
+- Every `/v1/chat/completions` response includes `x-request-id`. If the caller does not send one, the gateway generates a UUID and uses it as the canonical accounting key.
+- Successful requests write a normalized usage ledger row in `usage_cost_events` using provider-reported token usage when available.
+- Spend is computed at write-time from the matched pricing row and stored in fixed-point USD (`*_10000`) so historical totals do not change when catalog prices refresh.
+- If usage is present but pricing cannot be matched, the request succeeds and the ledger row is marked `unpriced`.
+- If the provider response does not include usage, the request succeeds and the ledger row is marked `usage_missing`.
+- Replay/retry accounting is idempotent per `(request_id, ownership scope)` so the same logical request is not double-charged.
+
 ### Example Vertex config
 
 ```yaml
@@ -242,3 +251,4 @@ mise run sync-pricing-catalog
 ```
 
 CI runs `mise run check-rust-postgres`, `mise run test-rust-postgres`, and `mise run test-gateway-postgres-smoke` so the PostgreSQL path stays visible in the workflow and exercised before merge.
+`mise run sync-pricing-catalog` refreshes the vendored pricing snapshot used to seed model pricing history for deterministic spend accounting.

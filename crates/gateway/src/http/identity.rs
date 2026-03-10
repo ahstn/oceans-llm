@@ -327,7 +327,9 @@ pub async fn create_identity_team(
             .await?;
     }
 
-    Ok(Json(envelope(reload_team_view(&state.store, team.team_id, now).await?)))
+    Ok(Json(envelope(
+        reload_team_view(&state.store, team.team_id, now).await?,
+    )))
 }
 
 pub async fn update_identity_team(
@@ -360,7 +362,9 @@ pub async fn update_identity_team(
     state.store.update_team_name(team_id, name, now).await?;
     sync_team_admins(&state.store, team_id, &selected_admin_ids, now).await?;
 
-    Ok(Json(envelope(reload_team_view(&state.store, team_id, now).await?)))
+    Ok(Json(envelope(
+        reload_team_view(&state.store, team_id, now).await?,
+    )))
 }
 
 pub async fn add_identity_team_members(
@@ -1019,7 +1023,8 @@ fn build_admin_team_views(
     teams: &[gateway_core::TeamRecord],
     users: &[IdentityUserRecord],
 ) -> Vec<AdminTeamManagementView> {
-    teams.iter()
+    teams
+        .iter()
         .map(|team| {
             let mut admins: Vec<_> = users
                 .iter()
@@ -1032,7 +1037,11 @@ fn build_admin_team_views(
                     status: user.user.status.clone(),
                 })
                 .collect();
-            admins.sort_by(|left, right| left.name.cmp(&right.name).then_with(|| left.email.cmp(&right.email)));
+            admins.sort_by(|left, right| {
+                left.name
+                    .cmp(&right.name)
+                    .then_with(|| left.email.cmp(&right.email))
+            });
 
             let member_count = users
                 .iter()
@@ -1163,10 +1172,16 @@ async fn sync_team_admins(
     let memberships = store.list_team_memberships(team_id).await?;
 
     for membership in &memberships {
-        if membership.role == MembershipRole::Admin && !selected_admin_ids.contains(&membership.user_id)
+        if membership.role == MembershipRole::Admin
+            && !selected_admin_ids.contains(&membership.user_id)
         {
             store
-                .update_team_membership_role(team_id, membership.user_id, MembershipRole::Member, now)
+                .update_team_membership_role(
+                    team_id,
+                    membership.user_id,
+                    MembershipRole::Member,
+                    now,
+                )
                 .await?;
         }
     }
@@ -1178,7 +1193,9 @@ async fn sync_team_admins(
 
     for user_id in selected_admin_ids {
         match memberships_by_user.get(&user_id) {
-            Some(existing) if existing.role == MembershipRole::Admin || existing.role == MembershipRole::Owner => {}
+            Some(existing)
+                if existing.role == MembershipRole::Admin
+                    || existing.role == MembershipRole::Owner => {}
             Some(_) => {
                 store
                     .update_team_membership_role(team_id, user_id, MembershipRole::Admin, now)
