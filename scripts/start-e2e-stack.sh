@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MISE_BIN="/Users/ahstn/.local/bin/mise"
+if [[ -n "${MISE_BIN:-}" ]]; then
+  MISE_BIN="$MISE_BIN"
+elif command -v mise >/dev/null 2>&1; then
+  MISE_BIN="$(command -v mise)"
+elif [[ -x "${HOME}/.local/bin/mise" ]]; then
+  MISE_BIN="${HOME}/.local/bin/mise"
+else
+  echo "Unable to locate mise. Set MISE_BIN or ensure mise is on PATH." >&2
+  exit 1
+fi
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WEB_DIR="$ROOT_DIR/crates/admin-ui/web"
