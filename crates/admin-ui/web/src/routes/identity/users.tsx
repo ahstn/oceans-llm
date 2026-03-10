@@ -132,6 +132,49 @@ export function UsersPage() {
     })
   }
 
+  function renderOnboardingActions(user: UserView) {
+    if (user.onboarding?.kind === 'password_invite') {
+      return (
+        <>
+          {user.onboarding.invite_url ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => handleCopy(user.onboarding?.invite_url ?? '', 'Invite URL copied')}
+            >
+              Copy invite
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => handleResend(user)}
+            disabled={isPending}
+          >
+            Resend invite
+          </Button>
+        </>
+      )
+    }
+
+    if (user.onboarding?.kind === 'oidc_sign_in') {
+      return (
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          onClick={() => handleCopy(user.onboarding?.sign_in_url ?? '', 'Sign-in URL copied')}
+        >
+          Copy sign-in URL
+        </Button>
+      )
+    }
+
+    return <span className="text-xs text-[var(--color-text-soft)]">No action available</span>
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <Card>
@@ -412,100 +455,126 @@ export function UsersPage() {
               </EmptyContent>
             </Empty>
           ) : (
-            <div className="overflow-hidden rounded-md border border-[color:var(--color-border)]">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
-                  <tr>
-                    <th className="px-3 py-2 font-semibold">Name</th>
-                    <th className="px-3 py-2 font-semibold">Email</th>
-                    <th className="px-3 py-2 font-semibold">Auth</th>
-                    <th className="px-3 py-2 font-semibold">Global role</th>
-                    <th className="px-3 py-2 font-semibold">Team</th>
-                    <th className="px-3 py-2 font-semibold">Team role</th>
-                    <th className="px-3 py-2 font-semibold">Status</th>
-                    <th className="px-3 py-2 font-semibold">Onboarding</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {users.map((user) => (
-                    <tr
-                      key={user.id}
-                      className="border-t border-[color:var(--color-border)] align-top"
-                    >
-                      <td className="px-3 py-3 text-[var(--color-text)]">{user.name}</td>
-                      <td className="px-3 py-3 text-[var(--color-text-muted)]">{user.email}</td>
-                      <td className="px-3 py-3 text-[var(--color-text-muted)]">{user.auth_mode}</td>
-                      <td className="px-3 py-3 text-[var(--color-text-muted)]">
-                        {user.global_role}
-                      </td>
-                      <td className="px-3 py-3 text-[var(--color-text-muted)]">
-                        {user.team_name ?? '—'}
-                      </td>
-                      <td className="px-3 py-3 text-[var(--color-text-muted)]">
-                        {user.team_role ?? '—'}
-                      </td>
-                      <td className="px-3 py-3">
-                        <Badge
-                          variant={
-                            user.status === 'active'
-                              ? 'success'
-                              : user.status === 'invited'
-                                ? 'warning'
-                                : 'default'
-                          }
-                        >
-                          {user.status}
-                        </Badge>
-                      </td>
-                      <td className="px-3 py-3">
-                        <div className="flex flex-wrap gap-2">
-                          {user.onboarding?.kind === 'password_invite' ? (
-                            <>
-                              {user.onboarding.invite_url ? (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="secondary"
-                                  onClick={() =>
-                                    handleCopy(
-                                      user.onboarding?.invite_url ?? '',
-                                      'Invite URL copied',
-                                    )
-                                  }
-                                >
-                                  Copy invite
-                                </Button>
-                              ) : null}
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => handleResend(user)}
-                                disabled={isPending}
-                              >
-                                Resend invite
-                              </Button>
-                            </>
-                          ) : user.onboarding?.kind === 'oidc_sign_in' ? (
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="secondary"
-                              onClick={() =>
-                                handleCopy(user.onboarding?.sign_in_url ?? '', 'Sign-in URL copied')
-                              }
-                            >
-                              Copy sign-in URL
-                            </Button>
-                          ) : (
-                            <span className="text-xs text-[var(--color-text-soft)]">—</span>
-                          )}
-                        </div>
-                      </td>
+            <div className="flex flex-col gap-4">
+              <div className="grid gap-3 md:hidden">
+                {users.map((user) => (
+                  <article
+                    key={user.id}
+                    className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-[var(--color-text)]">
+                          {user.name}
+                        </p>
+                        <p className="truncate text-sm text-[var(--color-text-muted)]">
+                          {user.email}
+                        </p>
+                      </div>
+                      <Badge
+                        variant={
+                          user.status === 'active'
+                            ? 'success'
+                            : user.status === 'invited'
+                              ? 'warning'
+                              : 'default'
+                        }
+                      >
+                        {user.status}
+                      </Badge>
+                    </div>
+
+                    <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                      <div>
+                        <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                          Auth
+                        </dt>
+                        <dd className="text-[var(--color-text-muted)]">{user.auth_mode}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                          Global role
+                        </dt>
+                        <dd className="text-[var(--color-text-muted)]">{user.global_role}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                          Team
+                        </dt>
+                        <dd className="text-[var(--color-text-muted)]">
+                          {user.team_name ?? 'No team'}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                          Team role
+                        </dt>
+                        <dd className="text-[var(--color-text-muted)]">{user.team_role ?? '—'}</dd>
+                      </div>
+                    </dl>
+
+                    <div className="mt-4 flex flex-wrap gap-2">{renderOnboardingActions(user)}</div>
+                  </article>
+                ))}
+              </div>
+
+              <div className="hidden overflow-hidden rounded-md border border-[color:var(--color-border)] md:block">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
+                    <tr>
+                      <th className="px-3 py-2 font-semibold">Name</th>
+                      <th className="px-3 py-2 font-semibold">Email</th>
+                      <th className="px-3 py-2 font-semibold">Auth</th>
+                      <th className="px-3 py-2 font-semibold">Global role</th>
+                      <th className="px-3 py-2 font-semibold">Team</th>
+                      <th className="px-3 py-2 font-semibold">Team role</th>
+                      <th className="px-3 py-2 font-semibold">Status</th>
+                      <th className="px-3 py-2 font-semibold">Onboarding</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {users.map((user) => (
+                      <tr
+                        key={user.id}
+                        className="border-t border-[color:var(--color-border)] align-top"
+                      >
+                        <td className="px-3 py-3 text-[var(--color-text)]">{user.name}</td>
+                        <td className="px-3 py-3 text-[var(--color-text-muted)]">{user.email}</td>
+                        <td className="px-3 py-3 text-[var(--color-text-muted)]">
+                          {user.auth_mode}
+                        </td>
+                        <td className="px-3 py-3 text-[var(--color-text-muted)]">
+                          {user.global_role}
+                        </td>
+                        <td className="px-3 py-3 text-[var(--color-text-muted)]">
+                          {user.team_name ?? '—'}
+                        </td>
+                        <td className="px-3 py-3 text-[var(--color-text-muted)]">
+                          {user.team_role ?? '—'}
+                        </td>
+                        <td className="px-3 py-3">
+                          <Badge
+                            variant={
+                              user.status === 'active'
+                                ? 'success'
+                                : user.status === 'invited'
+                                  ? 'warning'
+                                  : 'default'
+                            }
+                          >
+                            {user.status}
+                          </Badge>
+                        </td>
+                        <td className="px-3 py-3">
+                          <div className="flex flex-wrap gap-2">
+                            {renderOnboardingActions(user)}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </CardContent>

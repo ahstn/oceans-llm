@@ -303,72 +303,141 @@ export function TeamsPage() {
               </EmptyContent>
             </Empty>
           ) : (
-            <div className="overflow-hidden rounded-md border border-[color:var(--color-border)]">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
-                  <tr>
-                    <th className="px-3 py-2 font-semibold">Team</th>
-                    <th className="px-3 py-2 font-semibold">Admins</th>
-                    <th className="px-3 py-2 font-semibold">Members</th>
-                    <th className="px-3 py-2 font-semibold">Status</th>
-                    <th className="px-3 py-2 font-semibold">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {teams.map((team) => (
-                    <tr
-                      key={team.id}
-                      className="border-t border-[color:var(--color-border)] align-top"
-                    >
-                      <td className="px-3 py-3">
-                        <div className="flex flex-col gap-1">
-                          <p className="text-[var(--color-text)]">{team.name}</p>
-                          <p className="text-xs text-[var(--color-text-soft)]">{team.key}</p>
-                        </div>
-                      </td>
-                      <td className="px-3 py-3">
-                        {team.admins.length > 0 ? (
-                          <div className="flex flex-wrap gap-2">
-                            {team.admins.map((admin) => (
-                              <Badge key={admin.id}>{admin.name}</Badge>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-xs text-[var(--color-text-soft)]">No admins</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-3 text-[var(--color-text-muted)]">
-                        {team.member_count}
-                      </td>
-                      <td className="px-3 py-3">
-                        <Badge variant={team.status === 'active' ? 'success' : 'warning'}>
-                          {team.status}
-                        </Badge>
-                      </td>
-                      <td className="px-3 py-3">
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => openEditTeamDialog(team)}
-                          >
-                            Edit team
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => openMembersDialog(team)}
-                          >
-                            Add members
-                          </Button>
-                        </div>
-                      </td>
+            <div className="flex flex-col gap-4">
+              <div className="grid gap-3 md:hidden">
+                {teams.map((team) => (
+                  <article
+                    key={team.id}
+                    className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-[var(--color-text)]">
+                          {team.name}
+                        </p>
+                        <p className="truncate text-xs text-[var(--color-text-soft)]">{team.key}</p>
+                      </div>
+                      <Badge variant={team.status === 'active' ? 'success' : 'warning'}>
+                        {team.status}
+                      </Badge>
+                    </div>
+
+                    <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                      <div>
+                        <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                          Members
+                        </dt>
+                        <dd className="text-[var(--color-text-muted)]">{team.member_count}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                          Admins
+                        </dt>
+                        <dd className="text-[var(--color-text-muted)]">
+                          {team.admins.length > 0 ? team.admins.length : 'None'}
+                        </dd>
+                      </div>
+                    </dl>
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {team.admins.length > 0 ? (
+                        team.admins.map((admin) => <Badge key={admin.id}>{admin.name}</Badge>)
+                      ) : (
+                        <span className="text-xs text-[var(--color-text-soft)]">
+                          No admins assigned
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => openEditTeamDialog(team)}
+                      >
+                        Edit team
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => openMembersDialog(team)}
+                      >
+                        Add members
+                      </Button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+
+              <div className="hidden overflow-hidden rounded-md border border-[color:var(--color-border)] md:block">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
+                    <tr>
+                      <th className="px-3 py-2 font-semibold">Team</th>
+                      <th className="px-3 py-2 font-semibold">Admins</th>
+                      <th className="px-3 py-2 font-semibold">Members</th>
+                      <th className="px-3 py-2 font-semibold">Status</th>
+                      <th className="px-3 py-2 font-semibold">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {teams.map((team) => (
+                      <tr
+                        key={team.id}
+                        className="border-t border-[color:var(--color-border)] align-top"
+                      >
+                        <td className="px-3 py-3">
+                          <div className="flex flex-col gap-1">
+                            <p className="text-[var(--color-text)]">{team.name}</p>
+                            <p className="text-xs text-[var(--color-text-soft)]">{team.key}</p>
+                          </div>
+                        </td>
+                        <td className="px-3 py-3">
+                          {team.admins.length > 0 ? (
+                            <div className="flex flex-wrap gap-2">
+                              {team.admins.map((admin) => (
+                                <Badge key={admin.id}>{admin.name}</Badge>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-[var(--color-text-soft)]">No admins</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 text-[var(--color-text-muted)]">
+                          {team.member_count}
+                        </td>
+                        <td className="px-3 py-3">
+                          <Badge variant={team.status === 'active' ? 'success' : 'warning'}>
+                            {team.status}
+                          </Badge>
+                        </td>
+                        <td className="px-3 py-3">
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => openEditTeamDialog(team)}
+                            >
+                              Edit team
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => openMembersDialog(team)}
+                            >
+                              Add members
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </CardContent>

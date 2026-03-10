@@ -124,9 +124,7 @@ export async function listTeams(): Promise<ApiEnvelope<IdentityTeamsPayload>> {
   return fetchGatewayJson<ApiEnvelope<IdentityTeamsPayload>>('/api/v1/admin/identity/teams')
 }
 
-export async function createTeam(
-  input: CreateTeamInput,
-): Promise<ApiEnvelope<TeamManagementView>> {
+export async function createTeam(input: CreateTeamInput): Promise<ApiEnvelope<TeamManagementView>> {
   return fetchGatewayJson<ApiEnvelope<TeamManagementView>>('/api/v1/admin/identity/teams', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
