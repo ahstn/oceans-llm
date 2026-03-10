@@ -14,14 +14,14 @@ const SelectTrigger = React.forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      'flex h-10 w-full items-center justify-between rounded-md border border-neutral-800 bg-neutral-950/80 px-3 py-2 text-sm text-neutral-100 transition-colors outline-none focus:border-neutral-600 focus:ring-1 focus:ring-neutral-600 data-[placeholder]:text-neutral-500',
+      'flex h-11 w-full items-center justify-between rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] px-3.5 py-2.5 text-sm text-[var(--color-text)] transition-colors outline-none focus:border-[color:var(--color-border-strong)] focus:ring-2 focus:ring-[var(--color-primary-soft)] data-[placeholder]:text-[var(--color-text-soft)]',
       className,
     )}
     {...props}
   >
     {children}
     <SelectPrimitive.Icon asChild>
-      <span className="text-xs text-neutral-500">▼</span>
+      <span className="text-xs text-[var(--color-text-soft)]">▼</span>
     </SelectPrimitive.Icon>
   </SelectPrimitive.Trigger>
 ))
@@ -35,7 +35,7 @@ const SelectContent = React.forwardRef<
     <SelectPrimitive.Content
       ref={ref}
       className={cn(
-        'z-50 min-w-[var(--radix-select-trigger-width)] rounded-md border border-neutral-800 bg-[#171717] p-1 text-neutral-100 shadow-2xl',
+        'z-50 min-w-[var(--radix-select-trigger-width)] rounded-md border border-[color:var(--color-border)] bg-[var(--color-surface)] p-1 text-[var(--color-text)] shadow-[var(--shadow-soft)]',
         className,
       )}
       position="popper"
@@ -54,7 +54,7 @@ const SelectItem = React.forwardRef<
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      'relative flex cursor-default items-center rounded-sm px-3 py-2 text-sm text-neutral-200 outline-none select-none data-[highlighted]:bg-neutral-900 data-[highlighted]:text-neutral-100',
+      'relative flex cursor-default items-center rounded-sm px-3 py-2 text-sm text-[var(--color-text-muted)] outline-none select-none data-[highlighted]:bg-[color:var(--color-surface-contrast)] data-[highlighted]:text-[var(--color-text)]',
       className,
     )}
     {...props}

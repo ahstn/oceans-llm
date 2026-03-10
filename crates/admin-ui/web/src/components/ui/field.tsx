@@ -16,7 +16,10 @@ export const FieldLabel = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <label
     ref={ref}
-    className={cn('text-xs font-medium tracking-[0.04em] text-neutral-300 uppercase', className)}
+    className={cn(
+      'text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase',
+      className,
+    )}
     {...props}
   />
 ))
@@ -26,6 +29,6 @@ export const FieldDescription = React.forwardRef<
   HTMLParagraphElement,
   React.HTMLAttributes<HTMLParagraphElement>
 >(({ className, ...props }, ref) => (
-  <p ref={ref} className={cn('text-xs text-neutral-500', className)} {...props} />
+  <p ref={ref} className={cn('text-xs text-[var(--color-text-soft)]', className)} {...props} />
 ))
 FieldDescription.displayName = 'FieldDescription'

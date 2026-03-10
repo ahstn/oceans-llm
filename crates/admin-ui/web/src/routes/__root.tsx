@@ -21,9 +21,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   beforeLoad: async ({ location }) => {
     const currentPath = normalizeAdminPath(location.pathname)
     const isPublicRoute = isPublicAdminRoute(currentPath)
-    const {
-      data: session,
-    } = await getAuthSession()
+    const { data: session } = await getAuthSession()
 
     if (isPublicRoute) {
       if (currentPath === '/login' && session) {
@@ -137,9 +135,9 @@ function RootDocument({ children }: { children: ReactNode }) {
           theme="dark"
           toastOptions={{
             style: {
-              background: '#151515',
-              border: '1px solid #2a2a2a',
-              color: '#f5f5f5',
+              background: 'var(--color-card)',
+              border: '1px solid var(--color-border)',
+              color: 'var(--color-text)',
             },
           }}
         />
