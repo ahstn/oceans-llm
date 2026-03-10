@@ -1,0 +1,44 @@
+name: e2e-ci
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  MISE_EXPERIMENTAL: true
+
+jobs:
+  e2e-contract-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Setup mise + tools
+        uses: jdx/mise-action@e79ddf65a11cec7b0e882bedced08d6e976efb2d
+
+      - name: Run end-to-end contract tests
+        run: mise run e2e-test
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808
+        with:
+          name: playwright-report
+          path: crates/admin-ui/web/playwright-report
+          if-no-files-found: ignore
+
+      - name: Upload Playwright test results
+        if: failure()
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808
+        with:
+          name: playwright-test-results
+          path: crates/admin-ui/web/test-results
+          if-no-files-found: ignore
