@@ -16,13 +16,13 @@ Rust-first gateway workspace with an embedded `admin-ui` crate that hosts a TanS
 
 Single-container dual process:
 
-1. Gateway (Rust) listens on `PORT` (default `8080`)
+1. Gateway (Rust) listens on the `server.bind` address from the active config file (the checked-in configs default to `0.0.0.0:8080`)
 2. Admin UI SSR process (Bun/TanStack Start) runs on internal `3001`
 3. Gateway reverse-proxies `/admin*` to `ADMIN_UI_UPSTREAM`
 
 ## Environment
 
-- `PORT`: Gateway bind port (default `8080`)
+- `PORT`: helper-script/container env used when launching the gateway process (the gateway listener itself comes from `server.bind` in the active config)
 - `GATEWAY_CONFIG`: gateway config file path (default `./gateway.yaml`, prod helper uses `./gateway.prod.yaml`)
 - `GATEWAY_RUN_MIGRATIONS`: control `gateway serve --run-migrations` (default `true`)
 - `GATEWAY_BOOTSTRAP_ADMIN`: control `gateway serve --bootstrap-admin` (default `true`)
@@ -53,6 +53,8 @@ The repo exposes matching `mise` tasks:
 `gateway-serve` keeps the local `gateway.yaml` default. The maintenance tasks default to `gateway.prod.yaml`; set `GATEWAY_CONFIG` if you want them to target a different config file.
 
 `gateway serve` remains the default command. By default it reads `gateway.yaml` (or `GATEWAY_CONFIG`), runs SQL migrations, seeds providers/models/api keys, ensures a bootstrap admin exists, then starts serving traffic.
+
+The listener address is configured via `server.bind` in the active YAML config. The helper scripts and compose files still pass `PORT`, but the checked-in configs currently already bind `0.0.0.0:8080`.
 
 Database policy:
 
