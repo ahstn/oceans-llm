@@ -42,30 +42,39 @@ run = """
 set -eu
 
 export OPENAI_API_KEY="${OPENAI_API_KEY:-test-openai-key}"
-export PORT="${PORT:-18080}"
+gateway_port=8080
+gateway_log="${TMPDIR:-/tmp}/gateway-postgres-smoke.log"
+
+: > "$gateway_log"
 
 cargo run -p gateway --bin gateway -- --config gateway.prod.yaml migrate --apply
 cargo run -p gateway --bin gateway -- --config gateway.prod.yaml seed-config
 cargo run -p gateway --bin gateway -- --config gateway.prod.yaml bootstrap-admin
 
-cargo run -p gateway --bin gateway -- --config gateway.prod.yaml serve --run-migrations false --bootstrap-admin false --seed-config false &
+cargo run -p gateway --bin gateway -- --config gateway.prod.yaml serve --run-migrations false --bootstrap-admin false --seed-config false >"$gateway_log" 2>&1 &
 gateway_pid=$!
 
 cleanup() {
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    echo "--- gateway smoke log ---" >&2
+    cat "$gateway_log" >&2 || true
+  fi
   kill "$gateway_pid" >/dev/null 2>&1 || true
+  wait "$gateway_pid" >/dev/null 2>&1 || true
 }
 
 trap cleanup EXIT INT TERM
 
 for _ in $(seq 1 30); do
-  if curl --fail --silent "http://127.0.0.1:${PORT}/readyz" >/dev/null; then
+  if curl --fail --silent --show-error "http://127.0.0.1:${gateway_port}/readyz" >/dev/null; then
     break
   fi
   sleep 1
 done
 
-curl --fail --silent "http://127.0.0.1:${PORT}/healthz" >/dev/null
-curl --fail --silent "http://127.0.0.1:${PORT}/readyz" >/dev/null
+curl --fail --silent --show-error "http://127.0.0.1:${gateway_port}/healthz" >/dev/null
+curl --fail --silent --show-error "http://127.0.0.1:${gateway_port}/readyz" >/dev/null
 """
 
 [tasks.gateway-serve]
