@@ -62,7 +62,7 @@ impl BudgetRepository for PostgresStore {
     ) -> Result<Money4, StoreError> {
         let row = sqlx::query(
             r#"
-            SELECT COALESCE(SUM(computed_cost_10000), 0)
+            SELECT COALESCE(SUM(computed_cost_10000), 0)::BIGINT
             FROM usage_cost_events
             WHERE user_id = $1
               AND pricing_status IN ('priced', 'legacy_estimated')
