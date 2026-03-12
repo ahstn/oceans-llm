@@ -20,7 +20,7 @@ export function RequestLogsPage() {
   const rowVirtualizer = useVirtualizer({
     count: data.items.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 36,
+    estimateSize: () => 48,
     overscan: 12,
   })
 
@@ -120,24 +120,26 @@ export function RequestLogsPage() {
                       transform: `translateY(${virtualRow.start}px)`,
                     }}
                   >
-                    <span className="truncate px-3 py-3 font-mono text-xs text-[var(--color-text-soft)]">
+                    <span className="truncate px-3 py-3.5 font-mono text-xs text-[var(--color-text-soft)]">
                       {item.id}
                     </span>
-                    <span className="truncate px-3 py-3 text-[var(--color-text)]">
+                    <span className="truncate px-3 py-3.5 text-[var(--color-text)]">
                       {item.model}
                     </span>
-                    <span className="truncate px-3 py-3 text-[var(--color-text-muted)]">
+                    <span className="truncate px-3 py-3.5 text-[var(--color-text-muted)]">
                       {item.provider}
                     </span>
-                    <span className="px-3 py-3">
+                    <span className="px-3 py-3.5">
                       <Badge variant={item.statusCode >= 400 ? 'warning' : 'success'}>
                         {item.statusCode}
                       </Badge>
                     </span>
-                    <span className="px-3 py-3 text-[var(--color-text-muted)]">
+                    <span className="px-3 py-3.5 text-[var(--color-text-muted)]">
                       {item.latencyMs}ms
                     </span>
-                    <span className="px-3 py-3 text-[var(--color-text-muted)]">{item.tokens}</span>
+                    <span className="px-3 py-3.5 text-[var(--color-text-muted)]">
+                      {item.tokens}
+                    </span>
                   </div>
                 )
               })}
