@@ -36,9 +36,9 @@ export function AppShell({ children }: AppShellProps) {
 
   return (
     <div className="min-h-screen px-3 py-3 text-[var(--color-text)] sm:px-6 sm:py-6">
-      <div className="mx-auto flex h-[calc(100vh-24px)] max-w-[1500px] overflow-hidden rounded-[1.3rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] shadow-[var(--shadow-panel)] sm:h-[calc(100vh-48px)]">
+      <div className="mx-auto flex h-[calc(100vh-24px)] max-w-[1500px] overflow-hidden rounded-[1.3rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] sm:h-[calc(100vh-48px)]">
         <aside className="hidden w-[292px] shrink-0 border-r border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4 sm:flex sm:flex-col">
-          <div className="flex items-center gap-3 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 py-3">
+          <div className="flex items-center gap-3 px-2 py-1">
             <span className="inline-flex size-9 items-center justify-center rounded-md bg-[var(--color-primary)] text-[11px] font-bold tracking-[0.08em] text-[var(--color-primary-foreground)] uppercase">
               OC
             </span>
@@ -57,7 +57,7 @@ export function AppShell({ children }: AppShellProps) {
           <NavGroup label="Observability" items={observabilityItems} currentPath={currentPath} />
           <NavGroup label="Identity Management" items={identityItems} currentPath={currentPath} />
 
-          <div className="mt-auto rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4">
+          <div className="mt-auto border-t border-[color:var(--color-border)] pt-4">
             <p className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
               Local-only preview mode
             </p>

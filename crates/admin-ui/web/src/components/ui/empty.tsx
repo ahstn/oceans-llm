@@ -7,7 +7,7 @@ export function Empty({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
       className={cn(
-        'flex w-full min-w-0 flex-1 flex-col items-center justify-center rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] px-6 py-10 text-center text-balance shadow-[var(--shadow-soft)]',
+        'flex w-full min-w-0 flex-1 flex-col items-center justify-center rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] px-6 py-10 text-center text-balance',
         className,
       )}
       {...props}

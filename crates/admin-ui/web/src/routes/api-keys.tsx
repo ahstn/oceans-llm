@@ -27,11 +27,13 @@ function ApiKeysPage() {
   return (
     <div className="flex flex-col gap-4">
       <Card>
-        <CardHeader className="gap-2">
-          <CardTitle>API Keys</CardTitle>
-          <CardDescription>
-            Server-function-backed mock data using v1 envelope contracts.
-          </CardDescription>
+        <CardHeader className="flex flex-row items-start justify-between gap-4">
+          <div className="flex flex-col gap-1">
+            <CardTitle>API Keys</CardTitle>
+            <CardDescription>
+              Server-function-backed mock data using v1 envelope contracts.
+            </CardDescription>
+          </div>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {data.items.length === 0 ? (

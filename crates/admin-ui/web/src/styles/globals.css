@@ -11,8 +11,8 @@
   --color-surface-muted: oklch(24% 0.018 258);
   --color-surface-strong: oklch(27% 0.021 258);
   --color-surface-contrast: oklch(31% 0.028 248);
-  --color-card: color-mix(in oklch, var(--color-surface) 84%, white 4%);
-  --color-card-auth: color-mix(in oklch, var(--color-surface) 76%, var(--color-bg-accent) 24%);
+  --color-card: color-mix(in oklch, var(--color-surface) 93%, white 2%);
+  --color-card-auth: color-mix(in oklch, var(--color-surface) 88%, var(--color-bg-accent) 12%);
   --color-border: oklch(34% 0.018 255 / 0.88);
   --color-border-strong: oklch(46% 0.032 246 / 0.92);
   --color-text: oklch(94% 0.008 255);
@@ -29,8 +29,8 @@
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 12px;
-  --shadow-panel: 0 32px 90px color-mix(in oklch, black 78%, var(--color-bg-accent) 22%);
-  --shadow-soft: 0 18px 48px color-mix(in oklch, black 82%, var(--color-bg-accent) 18%);
+  --shadow-panel: 0 14px 38px color-mix(in oklch, black 88%, var(--color-bg-accent) 12% / 0.32);
+  --shadow-soft: 0 8px 18px color-mix(in oklch, black 90%, var(--color-bg-accent) 10% / 0.16);
 }
 
 * {
@@ -70,17 +70,12 @@ body {
   background:
     radial-gradient(
       circle at top left,
-      color-mix(in oklch, var(--color-bg-accent) 56%, transparent) 0%,
-      transparent 38%
-    ),
-    radial-gradient(
-      circle at top right,
-      color-mix(in oklch, var(--color-primary) 12%, transparent) 0%,
-      transparent 24%
+      color-mix(in oklch, var(--color-bg-accent) 38%, transparent) 0%,
+      transparent 34%
     ),
     linear-gradient(
       180deg,
-      color-mix(in oklch, var(--color-bg) 82%, black 18%) 0%,
+      color-mix(in oklch, var(--color-bg) 88%, black 12%) 0%,
       var(--color-bg) 100%
     );
 }

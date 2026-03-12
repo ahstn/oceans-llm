@@ -27,11 +27,11 @@ function ModelsPage() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight text-[var(--color-text)]">Models</h1>
-        <p className="max-w-2xl text-sm text-[var(--color-text-muted)]">
+        <CardTitle>Models</CardTitle>
+        <CardDescription>
           Review the routed models available to operators, along with upstream targets and current
           health.
-        </p>
+        </CardDescription>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">

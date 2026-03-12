@@ -28,11 +28,13 @@ export function RequestLogsPage() {
 
   return (
     <Card>
-      <CardHeader className="gap-2">
-        <CardTitle>Request Logs</CardTitle>
-        <CardDescription>
-          Inspect request IDs, routing, latency, and token usage without dropping into raw traces.
-        </CardDescription>
+      <CardHeader className="flex flex-row items-start justify-between gap-4">
+        <div className="flex flex-col gap-1">
+          <CardTitle>Request Logs</CardTitle>
+          <CardDescription>
+            Inspect request IDs, routing, latency, and token usage without dropping into raw traces.
+          </CardDescription>
+        </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <div
@@ -88,19 +90,19 @@ export function RequestLogsPage() {
           </div>
         </div>
 
-        <div className="hidden lg:block" data-testid="request-log-desktop-table">
-          <div className="grid grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)_minmax(0,1fr)_88px_96px_88px] gap-3 border-b border-[color:var(--color-border)] pb-3 text-[11px] font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
-            <span>Request</span>
-            <span>Model</span>
-            <span>Provider</span>
-            <span>Status</span>
-            <span>Latency</span>
-            <span>Tokens</span>
+        <div
+          className="hidden overflow-hidden rounded-md border border-[color:var(--color-border)] lg:block"
+          data-testid="request-log-desktop-table"
+        >
+          <div className="grid grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)_minmax(0,1fr)_88px_96px_88px] bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
+            <span className="px-3 py-2 font-semibold">Request</span>
+            <span className="px-3 py-2 font-semibold">Model</span>
+            <span className="px-3 py-2 font-semibold">Provider</span>
+            <span className="px-3 py-2 font-semibold">Status</span>
+            <span className="px-3 py-2 font-semibold">Latency</span>
+            <span className="px-3 py-2 font-semibold">Tokens</span>
           </div>
-          <div
-            ref={parentRef}
-            className="mt-3 h-[430px] overflow-auto rounded-md border border-[color:var(--color-border)]"
-          >
+          <div ref={parentRef} className="h-[430px] overflow-auto">
             <div
               className="relative"
               style={{
@@ -112,24 +114,30 @@ export function RequestLogsPage() {
                 return (
                   <div
                     key={item.id}
-                    className="absolute top-0 left-0 grid w-full grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)_minmax(0,1fr)_88px_96px_88px] gap-3 border-b border-[color:var(--color-border)] px-4 text-sm text-[var(--color-text-muted)]"
+                    className="absolute top-0 left-0 grid w-full grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)_minmax(0,1fr)_88px_96px_88px] border-t border-[color:var(--color-border)] align-top text-sm"
                     style={{
                       height: `${virtualRow.size}px`,
                       transform: `translateY(${virtualRow.start}px)`,
                     }}
                   >
-                    <span className="truncate py-3 font-mono text-xs text-[var(--color-text-soft)]">
+                    <span className="truncate px-3 py-3 font-mono text-xs text-[var(--color-text-soft)]">
                       {item.id}
                     </span>
-                    <span className="truncate py-3 text-[var(--color-text)]">{item.model}</span>
-                    <span className="truncate py-3">{item.provider}</span>
-                    <span className="py-3">
+                    <span className="truncate px-3 py-3 text-[var(--color-text)]">
+                      {item.model}
+                    </span>
+                    <span className="truncate px-3 py-3 text-[var(--color-text-muted)]">
+                      {item.provider}
+                    </span>
+                    <span className="px-3 py-3">
                       <Badge variant={item.statusCode >= 400 ? 'warning' : 'success'}>
                         {item.statusCode}
                       </Badge>
                     </span>
-                    <span className="py-3">{item.latencyMs}ms</span>
-                    <span className="py-3">{item.tokens}</span>
+                    <span className="px-3 py-3 text-[var(--color-text-muted)]">
+                      {item.latencyMs}ms
+                    </span>
+                    <span className="px-3 py-3 text-[var(--color-text-muted)]">{item.tokens}</span>
                   </div>
                 )
               })}

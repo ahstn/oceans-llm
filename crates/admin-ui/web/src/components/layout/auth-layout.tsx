@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
 interface AuthLayoutProps {
@@ -46,10 +46,7 @@ export function AuthLayout({
                 'Every screen should communicate the next safe action immediately.',
               ],
             ].map(([label, copy]) => (
-              <div
-                key={label}
-                className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4 shadow-[var(--shadow-soft)]"
-              >
+              <div key={label} className="rounded-lg border border-[color:var(--color-border)] p-4">
                 <p className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
                   {label}
                 </p>
@@ -59,15 +56,14 @@ export function AuthLayout({
           </div>
         </div>
 
-        <div className="relative">
-          <div className="absolute inset-x-[10%] top-[-4rem] h-48 rounded-full bg-[var(--color-primary-soft)] blur-3xl" />
+        <div>
           <Card
             className={cn(
-              'relative w-full border-[color:var(--color-border-strong)] bg-[var(--color-card-auth)] backdrop-blur-md',
+              'w-full border-[color:var(--color-border-strong)] bg-[var(--color-card-auth)]',
               cardClassName,
             )}
           >
-            <CardHeader className="gap-3">
+            <CardHeader className="gap-4">
               <div className="flex items-center justify-between gap-4">
                 <span className="text-xs font-semibold tracking-[0.18em] text-[var(--color-primary)] uppercase">
                   Admin access
@@ -76,12 +72,12 @@ export function AuthLayout({
                   Control plane
                 </span>
               </div>
-              <CardTitle className="text-[clamp(1.9rem,2vw,2.6rem)] leading-tight font-[var(--font-display)]">
-                {title}
-              </CardTitle>
-              <CardDescription className="max-w-xl text-sm sm:text-base">
-                {description}
-              </CardDescription>
+              <div className="flex flex-col gap-3">
+                <h2 className="text-[clamp(1.9rem,2vw,2.6rem)] leading-tight font-[var(--font-display)] text-[var(--color-text)]">
+                  {title}
+                </h2>
+                <CardDescription className="max-w-xl">{description}</CardDescription>
+              </div>
             </CardHeader>
             <CardContent className="flex flex-col gap-5">{children}</CardContent>
           </Card>

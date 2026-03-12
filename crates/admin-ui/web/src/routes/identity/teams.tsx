@@ -520,49 +520,53 @@ export function TeamsPage() {
 
           {membersTeam ? (
             <div className="flex flex-col gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Existing users</CardTitle>
-                  <CardDescription>
+              <section className="flex flex-col gap-4 rounded-lg border border-[color:var(--color-border)] p-5">
+                <div className="flex flex-col gap-1">
+                  <h3 className="text-base font-semibold text-[var(--color-text)]">
+                    Existing users
+                  </h3>
+                  <p className="text-sm text-[var(--color-text-muted)]">
                     Only teamless users can be newly added. Users already on another team remain
                     unavailable in this flow.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <form className="flex flex-col gap-4" onSubmit={handleAddExistingMembers}>
-                    <UserMultiSelectField
-                      label="Users"
-                      description="Select existing users to add as members."
-                      placeholder="Select existing users"
-                      users={existingMemberOptions}
-                      selectedUserIds={selectedExistingMemberIds}
-                      onChange={setSelectedExistingMemberIds}
-                      emptyTitle="No existing users available"
-                      emptyDescription="Create or invite a new user below if the team is being set up first."
-                    />
+                  </p>
+                </div>
 
-                    <div className="flex justify-end">
-                      <Button
-                        type="submit"
-                        variant="secondary"
-                        disabled={isPending || selectedExistingMemberIds.length === 0}
-                      >
-                        {isPending ? 'Adding…' : 'Add selected users'}
-                      </Button>
-                    </div>
-                  </form>
-                </CardContent>
-              </Card>
+                <form className="flex flex-col gap-4" onSubmit={handleAddExistingMembers}>
+                  <UserMultiSelectField
+                    label="Users"
+                    description="Select existing users to add as members."
+                    placeholder="Select existing users"
+                    users={existingMemberOptions}
+                    selectedUserIds={selectedExistingMemberIds}
+                    onChange={setSelectedExistingMemberIds}
+                    emptyTitle="No existing users available"
+                    emptyDescription="Create or invite a new user below if the team is being set up first."
+                  />
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>Invite a new member</CardTitle>
-                  <CardDescription>
+                  <div className="flex justify-end">
+                    <Button
+                      type="submit"
+                      variant="secondary"
+                      disabled={isPending || selectedExistingMemberIds.length === 0}
+                    >
+                      {isPending ? 'Adding…' : 'Add selected users'}
+                    </Button>
+                  </div>
+                </form>
+              </section>
+
+              <section className="flex flex-col gap-4 rounded-lg border border-[color:var(--color-border)] p-5">
+                <div className="flex flex-col gap-1">
+                  <h3 className="text-base font-semibold text-[var(--color-text)]">
+                    Invite a new member
+                  </h3>
+                  <p className="text-sm text-[var(--color-text-muted)]">
                     This uses the same onboarding flow as the users page and preassigns the new user
                     to {membersTeam.name} as a member.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="flex flex-col gap-4">
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-4">
                   {inviteResult ? (
                     <Alert>
                       <AlertTitle>
@@ -710,8 +714,8 @@ export function TeamsPage() {
                       </Button>
                     </div>
                   </form>
-                </CardContent>
-              </Card>
+                </div>
+              </section>
 
               <DialogFooter>
                 <Button type="button" variant="secondary" onClick={closeMembersDialog}>
