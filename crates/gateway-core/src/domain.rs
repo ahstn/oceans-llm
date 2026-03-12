@@ -412,15 +412,71 @@ pub struct UserBudgetRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UsageCostEventRecord {
+pub struct UsageLedgerRecord {
     pub usage_event_id: Uuid,
     pub request_id: String,
+    pub ownership_scope_key: String,
     pub api_key_id: Uuid,
     pub user_id: Option<Uuid>,
     pub team_id: Option<Uuid>,
+    pub actor_user_id: Option<Uuid>,
     pub model_id: Option<Uuid>,
-    pub estimated_cost_usd: Money4,
+    pub provider_key: String,
+    pub upstream_model: String,
+    pub prompt_tokens: Option<i64>,
+    pub completion_tokens: Option<i64>,
+    pub total_tokens: Option<i64>,
+    pub provider_usage: Value,
+    pub pricing_status: UsagePricingStatus,
+    pub unpriced_reason: Option<String>,
+    pub pricing_row_id: Option<Uuid>,
+    pub pricing_provider_id: Option<String>,
+    pub pricing_model_id: Option<String>,
+    pub pricing_source: Option<String>,
+    pub pricing_source_etag: Option<String>,
+    pub pricing_source_fetched_at: Option<OffsetDateTime>,
+    pub pricing_last_updated: Option<String>,
+    pub input_cost_per_million_tokens: Option<Money4>,
+    pub output_cost_per_million_tokens: Option<Money4>,
+    pub computed_cost_usd: Money4,
     pub occurred_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UsagePricingStatus {
+    Priced,
+    Unpriced,
+    UsageMissing,
+    LegacyEstimated,
+}
+
+impl UsagePricingStatus {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Priced => "priced",
+            Self::Unpriced => "unpriced",
+            Self::UsageMissing => "usage_missing",
+            Self::LegacyEstimated => "legacy_estimated",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "priced" => Some(Self::Priced),
+            "unpriced" => Some(Self::Unpriced),
+            "usage_missing" => Some(Self::UsageMissing),
+            "legacy_estimated" => Some(Self::LegacyEstimated),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn counts_toward_spend(self) -> bool {
+        matches!(self, Self::Priced | Self::LegacyEstimated)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -473,6 +529,7 @@ pub struct PricingProvenance {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ResolvedModelPricing {
+    pub model_pricing_id: Uuid,
     pub pricing_provider_id: String,
     pub model_id: String,
     pub display_name: String,
@@ -484,9 +541,34 @@ pub struct ResolvedModelPricing {
     pub output_audio_cost_per_million_tokens: Option<Money4>,
     pub release_date: String,
     pub last_updated: String,
+    pub effective_start_at: OffsetDateTime,
+    pub effective_end_at: Option<OffsetDateTime>,
     pub limits: PricingLimits,
     pub modalities: PricingModalities,
     pub provenance: PricingProvenance,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ModelPricingRecord {
+    pub model_pricing_id: Uuid,
+    pub pricing_provider_id: String,
+    pub pricing_model_id: String,
+    pub display_name: String,
+    pub input_cost_per_million_tokens: Option<Money4>,
+    pub output_cost_per_million_tokens: Option<Money4>,
+    pub cache_read_cost_per_million_tokens: Option<Money4>,
+    pub cache_write_cost_per_million_tokens: Option<Money4>,
+    pub input_audio_cost_per_million_tokens: Option<Money4>,
+    pub output_audio_cost_per_million_tokens: Option<Money4>,
+    pub release_date: String,
+    pub last_updated: String,
+    pub effective_start_at: OffsetDateTime,
+    pub effective_end_at: Option<OffsetDateTime>,
+    pub limits: PricingLimits,
+    pub modalities: PricingModalities,
+    pub provenance: PricingProvenance,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

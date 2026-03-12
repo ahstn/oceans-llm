@@ -1201,7 +1201,9 @@ impl JsonObjectParser {
                 b'}' => {
                     if depth > 0 {
                         depth -= 1;
-                        if depth == 0 && let Some(start) = object_start.take() {
+                        if depth == 0
+                            && let Some(start) = object_start.take()
+                        {
                             let end = index + 1;
                             let object_json = &self.buffer[start..end];
                             let value: Value =

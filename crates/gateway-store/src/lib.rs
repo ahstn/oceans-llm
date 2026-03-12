@@ -19,10 +19,12 @@ mod tests {
     use std::env;
 
     use gateway_core::{
-        ApiKeyOwnerKind, ApiKeyRepository, AuthMode, GlobalRole, IdentityRepository,
-        MembershipRole, ModelRepository, PricingCatalogCacheRecord, PricingCatalogRepository,
-        RequestLogRecord, RequestLogRepository, SYSTEM_LEGACY_TEAM_ID, SeedApiKey, SeedModel,
-        SeedModelRoute, SeedProvider, StoreHealth,
+        ApiKeyOwnerKind, ApiKeyRepository, AuthMode, BudgetRepository, GlobalRole,
+        IdentityRepository, MembershipRole, ModelPricingRecord, ModelRepository, Money4,
+        PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
+        PricingProvenance, RequestLogRecord, RequestLogRepository, SYSTEM_LEGACY_TEAM_ID,
+        SeedApiKey, SeedModel, SeedModelRoute, SeedProvider, StoreHealth, UsageLedgerRecord,
+        UsagePricingStatus,
     };
     use serde_json::{Map, json};
     use serial_test::serial;
@@ -71,7 +73,7 @@ mod tests {
         .expect("status");
 
         assert_eq!(status.backend, "libsql");
-        assert_eq!(status.pending_count(), 7);
+        assert_eq!(status.pending_count(), 8);
         assert!(status.entries.iter().all(|entry| !entry.applied));
     }
 
@@ -741,7 +743,7 @@ mod tests {
 
         let mut usage_rows = conn
             .query(
-                "SELECT estimated_cost_10000 FROM usage_cost_events WHERE usage_event_id = ?1",
+                "SELECT computed_cost_10000, pricing_status, ownership_scope_key, provider_key, upstream_model FROM usage_cost_events WHERE usage_event_id = ?1",
                 [usage_event_id.to_string()],
             )
             .await
@@ -751,8 +753,16 @@ mod tests {
             .await
             .expect("fetch usage row")
             .expect("usage row");
-        let estimated_cost_10000: i64 = usage_row.get(0).expect("decode usage amount");
-        assert_eq!(estimated_cost_10000, 6_789);
+        let computed_cost_10000: i64 = usage_row.get(0).expect("decode usage amount");
+        let pricing_status: String = usage_row.get(1).expect("decode pricing status");
+        let ownership_scope_key: String = usage_row.get(2).expect("decode scope key");
+        let provider_key: String = usage_row.get(3).expect("decode provider key");
+        let upstream_model: String = usage_row.get(4).expect("decode upstream model");
+        assert_eq!(computed_cost_10000, 6_789);
+        assert_eq!(pricing_status, "legacy_estimated");
+        assert_eq!(ownership_scope_key, format!("user:{user_id}"));
+        assert_eq!(provider_key, "legacy");
+        assert_eq!(upstream_model, "legacy");
 
         let mut budget_columns = conn
             .query("PRAGMA table_info(user_budgets)", ())
@@ -771,6 +781,343 @@ mod tests {
             let column_name: String = column.get(1).expect("column name");
             assert_ne!(column_name, "estimated_cost_usd");
         }
+
+        let mut pricing_columns = conn
+            .query("PRAGMA table_info(model_pricing)", ())
+            .await
+            .expect("pricing table info");
+        let mut saw_effective_start_at = false;
+        while let Some(column) = pricing_columns.next().await.expect("column row") {
+            let column_name: String = column.get(1).expect("column name");
+            if column_name == "effective_start_at" {
+                saw_effective_start_at = true;
+            }
+        }
+        assert!(
+            saw_effective_start_at,
+            "model_pricing should be created by v8"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn v8_migration_deduplicates_legacy_usage_rows_into_archive() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
+            .build()
+            .await
+            .expect("db");
+        let conn = db.connect().expect("connection");
+        let now = time::OffsetDateTime::now_utc().unix_timestamp();
+        let user_id = Uuid::new_v4();
+        let api_key_id = Uuid::new_v4();
+        let first_usage_event_id = Uuid::new_v4();
+        let second_usage_event_id = Uuid::new_v4();
+
+        conn.execute(
+            r#"
+            CREATE TABLE refinery_schema_history (
+                version INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                applied_on INTEGER NOT NULL,
+                checksum TEXT NOT NULL
+            )
+            "#,
+            (),
+        )
+        .await
+        .expect("schema history");
+        conn.execute_batch(include_str!("../migrations/V1__init.sql"))
+            .await
+            .expect("v1 schema");
+        conn.execute_batch(include_str!("../migrations/V2__audit_baseline.sql"))
+            .await
+            .expect("v2 schema");
+        conn.execute_batch(include_str!("../migrations/V3__identity_foundation.sql"))
+            .await
+            .expect("v3 schema");
+        conn.execute_batch(include_str!("../migrations/V4__money_fixed_point.sql"))
+            .await
+            .expect("v4 schema");
+        for (version, name, checksum) in [
+            (1_i64, "init", "v1"),
+            (2_i64, "audit_baseline", "v2"),
+            (3_i64, "identity_foundation", "v3"),
+            (4_i64, "money_fixed_point", "v4"),
+        ] {
+            conn.execute(
+                "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) VALUES (?1, ?2, unixepoch(), ?3)",
+                libsql::params![version, name, checksum],
+            )
+            .await
+            .expect("history row");
+        }
+
+        conn.execute(
+            r#"
+            INSERT INTO users (
+              user_id, name, email, email_normalized, global_role, auth_mode, status,
+              request_logging_enabled, model_access_mode, created_at, updated_at
+            ) VALUES (?1, 'Money User', 'money@example.com', 'money@example.com', 'user', 'password', 'active', 1, 'all', ?2, ?2)
+            "#,
+            libsql::params![user_id.to_string(), now],
+        )
+        .await
+        .expect("user");
+        conn.execute(
+            r#"
+            INSERT INTO api_keys (
+                id, public_id, secret_hash, name, status, owner_kind, owner_user_id, owner_team_id, created_at
+            ) VALUES (?1, 'money_key', 'hash', 'money key', 'active', 'user', ?2, NULL, ?3)
+            "#,
+            libsql::params![api_key_id.to_string(), user_id.to_string(), now],
+        )
+        .await
+        .expect("api key");
+        for usage_event_id in [first_usage_event_id, second_usage_event_id] {
+            conn.execute(
+                r#"
+                INSERT INTO usage_cost_events (
+                    usage_event_id, request_id, api_key_id, user_id, team_id, model_id,
+                    estimated_cost_10000, occurred_at
+                ) VALUES (?1, 'req_dupe', ?2, ?3, NULL, NULL, 6789, ?4)
+                "#,
+                libsql::params![
+                    usage_event_id.to_string(),
+                    api_key_id.to_string(),
+                    user_id.to_string(),
+                    now
+                ],
+            )
+            .await
+            .expect("usage event");
+        }
+
+        run_migrations(&db_path).await.expect("migrate to v8");
+
+        let mut deduped_rows = conn
+            .query(
+                "SELECT request_id, ownership_scope_key, pricing_status FROM usage_cost_events",
+                (),
+            )
+            .await
+            .expect("deduped rows");
+        let deduped = deduped_rows
+            .next()
+            .await
+            .expect("fetch deduped")
+            .expect("deduped row");
+        let request_id: String = deduped.get(0).expect("request id");
+        let ownership_scope_key: String = deduped.get(1).expect("scope key");
+        let pricing_status: String = deduped.get(2).expect("pricing status");
+        assert_eq!(request_id, "req_dupe");
+        assert_eq!(ownership_scope_key, format!("user:{user_id}"));
+        assert_eq!(pricing_status, "legacy_estimated");
+        assert!(
+            deduped_rows
+                .next()
+                .await
+                .expect("second deduped row")
+                .is_none()
+        );
+
+        let mut archived_rows = conn
+            .query(
+                "SELECT original_usage_event_id, request_id, ownership_scope_key FROM usage_cost_event_duplicates_archive",
+                (),
+            )
+            .await
+            .expect("archive rows");
+        let archived = archived_rows
+            .next()
+            .await
+            .expect("fetch archive")
+            .expect("archive row");
+        let archived_request_id: String = archived.get(1).expect("archived request id");
+        let archived_scope_key: String = archived.get(2).expect("archived scope key");
+        assert_eq!(archived_request_id, "req_dupe");
+        assert_eq!(archived_scope_key, format!("user:{user_id}"));
+        assert!(
+            archived_rows
+                .next()
+                .await
+                .expect("second archive row")
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_v8_migration_deduplicates_legacy_usage_rows_into_archive() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!("skipping postgres v8 migration test because TEST_POSTGRES_URL is not set");
+            return;
+        };
+
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&test_db.database_url)
+            .await
+            .expect("postgres pool");
+        let now = OffsetDateTime::now_utc().unix_timestamp();
+        let user_id = Uuid::new_v4();
+        let api_key_id = Uuid::new_v4();
+        let first_usage_event_id = Uuid::new_v4();
+        let second_usage_event_id = Uuid::new_v4();
+
+        sqlx::raw_sql(include_str!("../migrations/postgres/V1__init.sql"))
+            .execute(&pool)
+            .await
+            .expect("v1 schema");
+        sqlx::query(
+            r#"
+            CREATE TABLE refinery_schema_history (
+                version BIGINT PRIMARY KEY,
+                name TEXT NOT NULL,
+                applied_on BIGINT NOT NULL,
+                checksum TEXT NOT NULL
+            )
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .expect("schema history");
+        for (version, name, checksum) in [
+            (1_i64, "init", "V1__init.sql"),
+            (2_i64, "audit_baseline", "V2__audit_baseline.sql"),
+            (3_i64, "identity_foundation", "V3__identity_foundation.sql"),
+            (4_i64, "money_fixed_point", "V4__money_fixed_point.sql"),
+            (
+                5_i64,
+                "pricing_catalog_cache",
+                "V5__pricing_catalog_cache.sql",
+            ),
+            (6_i64, "identity_onboarding", "V6__identity_onboarding.sql"),
+            (
+                7_i64,
+                "user_password_rotation",
+                "V7__user_password_rotation.sql",
+            ),
+        ] {
+            sqlx::query(
+                "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) VALUES ($1, $2, $3, $4)",
+            )
+            .bind(version)
+            .bind(name)
+            .bind(now)
+            .bind(checksum)
+            .execute(&pool)
+            .await
+            .expect("history row");
+        }
+        sqlx::query(
+            r#"
+            INSERT INTO users (
+                user_id, name, email, email_normalized, global_role, auth_mode, status,
+                must_change_password, request_logging_enabled, model_access_mode, created_at, updated_at
+            ) VALUES ($1, 'Money User', 'money@example.com', 'money@example.com', 'user', 'password', 'active', 0, 1, 'all', $2, $2)
+            "#,
+        )
+        .bind(user_id.to_string())
+        .bind(now)
+        .execute(&pool)
+        .await
+        .expect("user");
+        sqlx::query(
+            r#"
+            INSERT INTO api_keys (
+                id, public_id, secret_hash, name, status, owner_kind, owner_user_id, owner_team_id, created_at
+            ) VALUES ($1, 'money_key', 'hash', 'money key', 'active', 'user', $2, NULL, $3)
+            "#,
+        )
+        .bind(api_key_id.to_string())
+        .bind(user_id.to_string())
+        .bind(now)
+        .execute(&pool)
+        .await
+        .expect("api key");
+        for usage_event_id in [first_usage_event_id, second_usage_event_id] {
+            sqlx::query(
+                r#"
+                INSERT INTO usage_cost_events (
+                    usage_event_id, request_id, api_key_id, user_id, team_id, model_id,
+                    estimated_cost_10000, occurred_at
+                ) VALUES ($1, 'req_dupe', $2, $3, NULL, NULL, 6789, $4)
+                "#,
+            )
+            .bind(usage_event_id.to_string())
+            .bind(api_key_id.to_string())
+            .bind(user_id.to_string())
+            .bind(now)
+            .execute(&pool)
+            .await
+            .expect("usage row");
+        }
+        pool.close().await;
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 2,
+        };
+        run_migrations_with_options(&options, MigrationTestHook::default())
+            .await
+            .expect("migrate to v8");
+
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&test_db.database_url)
+            .await
+            .expect("postgres pool");
+        let deduped = sqlx::query(
+            "SELECT request_id, ownership_scope_key, pricing_status FROM usage_cost_events",
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("deduped rows");
+        assert_eq!(deduped.len(), 1);
+        assert_eq!(
+            deduped[0].try_get::<String, _>(0).expect("request id"),
+            "req_dupe"
+        );
+        assert_eq!(
+            deduped[0]
+                .try_get::<String, _>(1)
+                .expect("ownership scope key"),
+            format!("user:{user_id}")
+        );
+        assert_eq!(
+            deduped[0].try_get::<String, _>(2).expect("pricing status"),
+            "legacy_estimated"
+        );
+
+        let archived = sqlx::query(
+            "SELECT request_id, ownership_scope_key FROM usage_cost_event_duplicates_archive",
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("archived rows");
+        assert_eq!(archived.len(), 1);
+        assert_eq!(
+            archived[0].try_get::<String, _>(0).expect("request id"),
+            "req_dupe"
+        );
+        assert_eq!(
+            archived[0]
+                .try_get::<String, _>(1)
+                .expect("ownership scope key"),
+            format!("user:{user_id}")
+        );
+        let model_pricing_exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'model_pricing')",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("model_pricing exists");
+        assert!(model_pricing_exists);
+
+        pool.close().await;
+        drop_postgres_test_database(&test_db).await;
     }
 
     #[tokio::test]
@@ -976,6 +1323,149 @@ mod tests {
             Some("etag-1")
         );
 
+        let pricing_time = OffsetDateTime::now_utc();
+        let pricing_record = ModelPricingRecord {
+            model_pricing_id: Uuid::new_v4(),
+            pricing_provider_id: "openai".to_string(),
+            pricing_model_id: "gpt-5".to_string(),
+            display_name: "GPT-5".to_string(),
+            input_cost_per_million_tokens: Some(Money4::from_scaled(1_250)),
+            output_cost_per_million_tokens: Some(Money4::from_scaled(10_000)),
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: None,
+            input_audio_cost_per_million_tokens: None,
+            output_audio_cost_per_million_tokens: None,
+            release_date: "2025-01-01".to_string(),
+            last_updated: "2025-01-01".to_string(),
+            effective_start_at: pricing_time,
+            effective_end_at: None,
+            limits: PricingLimits {
+                context: Some(128_000),
+                input: None,
+                output: None,
+            },
+            modalities: PricingModalities {
+                input: vec!["text".to_string()],
+                output: vec!["text".to_string()],
+            },
+            provenance: PricingProvenance {
+                source: "test".to_string(),
+                etag: Some("etag-1".to_string()),
+                fetched_at: pricing_time,
+            },
+            created_at: pricing_time,
+            updated_at: pricing_time,
+        };
+        store
+            .insert_model_pricing(&pricing_record)
+            .await
+            .expect("insert model pricing");
+        assert!(
+            store
+                .resolve_model_pricing_at("openai", "gpt-5", pricing_time)
+                .await
+                .expect("resolve model pricing")
+                .is_some()
+        );
+
+        let priced_event = UsageLedgerRecord {
+            usage_event_id: Uuid::new_v4(),
+            request_id: "req-postgres-priced".to_string(),
+            ownership_scope_key: format!("user:{}", member.user_id),
+            api_key_id: key.id,
+            user_id: Some(member.user_id),
+            team_id: Some(team.team_id),
+            actor_user_id: None,
+            model_id: None,
+            provider_key: "openai-prod".to_string(),
+            upstream_model: "gpt-5".to_string(),
+            prompt_tokens: Some(10),
+            completion_tokens: Some(5),
+            total_tokens: Some(15),
+            provider_usage: json!({"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}),
+            pricing_status: UsagePricingStatus::Priced,
+            unpriced_reason: None,
+            pricing_row_id: Some(pricing_record.model_pricing_id),
+            pricing_provider_id: Some("openai".to_string()),
+            pricing_model_id: Some("gpt-5".to_string()),
+            pricing_source: Some("test".to_string()),
+            pricing_source_etag: Some("etag-1".to_string()),
+            pricing_source_fetched_at: Some(pricing_time),
+            pricing_last_updated: Some("2025-01-01".to_string()),
+            input_cost_per_million_tokens: pricing_record.input_cost_per_million_tokens,
+            output_cost_per_million_tokens: pricing_record.output_cost_per_million_tokens,
+            computed_cost_usd: Money4::from_scaled(25),
+            occurred_at: pricing_time,
+        };
+        let unpriced_event = UsageLedgerRecord {
+            usage_event_id: Uuid::new_v4(),
+            request_id: "req-postgres-unpriced".to_string(),
+            ownership_scope_key: format!("user:{}", member.user_id),
+            api_key_id: key.id,
+            user_id: Some(member.user_id),
+            team_id: Some(team.team_id),
+            actor_user_id: None,
+            model_id: None,
+            provider_key: "openai-prod".to_string(),
+            upstream_model: "gpt-5".to_string(),
+            prompt_tokens: Some(10),
+            completion_tokens: Some(5),
+            total_tokens: Some(15),
+            provider_usage: json!({"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}),
+            pricing_status: UsagePricingStatus::Unpriced,
+            unpriced_reason: Some("missing_pricing".to_string()),
+            pricing_row_id: None,
+            pricing_provider_id: None,
+            pricing_model_id: None,
+            pricing_source: None,
+            pricing_source_etag: None,
+            pricing_source_fetched_at: None,
+            pricing_last_updated: None,
+            input_cost_per_million_tokens: None,
+            output_cost_per_million_tokens: None,
+            computed_cost_usd: Money4::ZERO,
+            occurred_at: pricing_time,
+        };
+        assert!(
+            store
+                .insert_usage_ledger_if_absent(&priced_event)
+                .await
+                .expect("insert priced ledger")
+        );
+        assert!(
+            !store
+                .insert_usage_ledger_if_absent(&priced_event)
+                .await
+                .expect("insert duplicate ledger")
+        );
+        assert!(
+            store
+                .insert_usage_ledger_if_absent(&unpriced_event)
+                .await
+                .expect("insert unpriced ledger")
+        );
+        assert!(
+            store
+                .get_usage_ledger_by_request_and_scope(
+                    &priced_event.request_id,
+                    &priced_event.ownership_scope_key,
+                )
+                .await
+                .expect("load usage ledger")
+                .is_some()
+        );
+        assert_eq!(
+            store
+                .sum_usage_cost_for_user_in_window(
+                    member.user_id,
+                    pricing_time - time::Duration::minutes(1),
+                    pricing_time + time::Duration::minutes(1),
+                )
+                .await
+                .expect("sum usage cost"),
+            Money4::from_scaled(25)
+        );
+
         let log = RequestLogRecord {
             request_log_id: Uuid::new_v4(),
             request_id: "req-1".to_string(),
@@ -1013,7 +1503,9 @@ mod tests {
     #[serial]
     async fn postgres_migration_status_reports_pending_and_applied_versions() {
         let Some(test_db) = create_postgres_test_database().await else {
-            eprintln!("skipping postgres migration status test because TEST_POSTGRES_URL is not set");
+            eprintln!(
+                "skipping postgres migration status test because TEST_POSTGRES_URL is not set"
+            );
             return;
         };
 
@@ -1026,7 +1518,7 @@ mod tests {
             .await
             .expect("initial postgres status");
         assert_eq!(initial_status.backend, "postgres");
-        assert_eq!(initial_status.pending_count(), 7);
+        assert_eq!(initial_status.pending_count(), 8);
         assert!(initial_status.entries.iter().all(|entry| !entry.applied));
 
         run_migrations_with_options(&options, MigrationTestHook::default())

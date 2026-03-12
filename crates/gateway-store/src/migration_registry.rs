@@ -98,6 +98,17 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
             reason: "PostgreSQL V1 already includes user password rotation fields.",
         },
     },
+    MigrationManifest {
+        version: 8,
+        name: "usage_ledger_and_model_pricing",
+        checksum: "V8__usage_ledger_and_model_pricing.sql",
+        libsql: BackendMigrationStep::Sql(include_str!(
+            "../migrations/V8__usage_ledger_and_model_pricing.sql"
+        )),
+        postgres: BackendMigrationStep::Sql(include_str!(
+            "../migrations/postgres/V8__usage_ledger_and_model_pricing.sql"
+        )),
+    },
 ];
 
 #[cfg(test)]

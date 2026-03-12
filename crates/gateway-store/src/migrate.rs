@@ -400,7 +400,7 @@ async fn postgres_history_table_exists(pool: &sqlx::PgPool) -> anyhow::Result<bo
         "#,
     )
     .fetch_one(pool)
-        .await
-        .context("failed checking postgres migration history table")?;
+    .await
+    .context("failed checking postgres migration history table")?;
     Ok(exists)
 }

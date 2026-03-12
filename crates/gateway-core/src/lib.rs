@@ -9,14 +9,14 @@ pub use auth::{
 };
 pub use domain::{
     ApiKeyOwnerKind, ApiKeyRecord, AuthMode, BudgetCadence, GatewayModel, GlobalRole,
-    IdentityUserRecord, MembershipRole, ModelAccessMode, ModelRoute, Money4, OidcProviderRecord,
-    PasswordInvitationRecord, PricingCatalogCacheRecord, PricingLimits, PricingModalities,
-    PricingProvenance, PricingResolution, PricingUnpricedReason, ProviderCapabilities,
-    ProviderConnection, ProviderRequestContext, RequestLogRecord, ResolvedModelPricing,
-    SYSTEM_BOOTSTRAP_ADMIN_EMAIL, SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SYSTEM_LEGACY_TEAM_ID,
-    SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedModel, SeedModelRoute, SeedProvider,
-    TeamMembershipRecord, TeamRecord, UsageCostEventRecord, UserBudgetRecord, UserOidcAuthRecord,
-    UserPasswordAuthRecord, UserRecord, UserSessionRecord,
+    IdentityUserRecord, MembershipRole, ModelAccessMode, ModelPricingRecord, ModelRoute, Money4,
+    OidcProviderRecord, PasswordInvitationRecord, PricingCatalogCacheRecord, PricingLimits,
+    PricingModalities, PricingProvenance, PricingResolution, PricingUnpricedReason,
+    ProviderCapabilities, ProviderConnection, ProviderRequestContext, RequestLogRecord,
+    ResolvedModelPricing, SYSTEM_BOOTSTRAP_ADMIN_EMAIL, SYSTEM_BOOTSTRAP_ADMIN_USER_ID,
+    SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedModel, SeedModelRoute,
+    SeedProvider, TeamMembershipRecord, TeamRecord, UsageLedgerRecord, UsagePricingStatus,
+    UserBudgetRecord, UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord,
 };
 pub use error::{AuthError, GatewayError, ProviderError, RouteError, StoreError};
 pub use protocol::openai::{

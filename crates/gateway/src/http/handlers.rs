@@ -77,7 +77,7 @@ pub async fn v1_chat_completions(
     let resolved = state.service.resolve_request(&auth, &request.model).await?;
 
     let idempotency_key = extract_idempotency_key(&headers).map(str::to_string);
-    let request_id = extract_request_id(&headers).to_string();
+    let request_id = extract_request_id(&headers);
     let request_headers = extract_request_headers(&headers);
     let allow_fallback = !request.stream && idempotency_key.is_some();
 
@@ -156,12 +156,14 @@ pub async fn v1_chat_completions(
                 service: state.service.clone(),
                 auth: auth.clone(),
                 request_id: request_id.clone(),
-                model_key: resolved.model.model_key.clone(),
+                model: resolved.model.clone(),
+                route: route.clone(),
                 provider_key: route.provider_key.clone(),
                 started_at: request_started_at,
                 finished: false,
                 failure: None,
                 attempt_count: 1,
+                usage: None,
             });
 
             let mut response = Response::builder()
@@ -209,6 +211,17 @@ pub async fn v1_chat_completions(
                 return Err(AppError(error));
             }
         };
+        state
+            .service
+            .record_chat_usage(
+                &auth,
+                &resolved.model,
+                &route,
+                &request_id,
+                usage_value_from_response(&value),
+                OffsetDateTime::now_utc(),
+            )
+            .await?;
         best_effort_log_request(
             &state.service,
             &auth,
@@ -223,7 +236,13 @@ pub async fn v1_chat_completions(
             ),
         )
         .await;
-        return Ok(Json(value).into_response());
+        let mut response = Json(value).into_response();
+        if let Ok(request_id_header) = HeaderValue::from_str(&request_id) {
+            response
+                .headers_mut()
+                .insert("x-request-id", request_id_header);
+        }
+        return Ok(response);
     }
 
     let mut first_failure: Option<GatewayError> = None;
@@ -256,7 +275,24 @@ pub async fn v1_chat_completions(
                     ),
                 )
                 .await;
-                return Ok(Json(value).into_response());
+                state
+                    .service
+                    .record_chat_usage(
+                        &auth,
+                        &resolved.model,
+                        &route,
+                        &request_id,
+                        usage_value_from_response(&value),
+                        OffsetDateTime::now_utc(),
+                    )
+                    .await?;
+                let mut response = Json(value).into_response();
+                if let Ok(request_id_header) = HeaderValue::from_str(&request_id) {
+                    response
+                        .headers_mut()
+                        .insert("x-request-id", request_id_header);
+                }
+                return Ok(response);
             }
             Err(error) => {
                 tracing::warn!(
@@ -461,12 +497,14 @@ struct LoggingBodyStreamState {
     service: std::sync::Arc<AppGatewayService>,
     auth: AuthenticatedApiKey,
     request_id: String,
-    model_key: String,
+    model: gateway_core::GatewayModel,
+    route: gateway_core::ModelRoute,
     provider_key: String,
     started_at: Instant,
     finished: bool,
     failure: Option<StreamFailure>,
     attempt_count: usize,
+    usage: Option<Value>,
 }
 
 fn wrap_stream_with_request_logging(
@@ -487,6 +525,11 @@ fn wrap_stream_with_request_logging(
                         error_code,
                     });
                 }
+                if state.failure.is_none()
+                    && let Some(usage) = extract_stream_usage(chunk.as_ref())
+                {
+                    state.usage = Some(usage);
+                }
 
                 Some((Ok(chunk), state))
             }
@@ -497,7 +540,7 @@ fn wrap_stream_with_request_logging(
                     &state.service,
                     &state.auth,
                     &state.request_id,
-                    &state.model_key,
+                    &state.model.model_key,
                     ChatCompletionLogSummary::failure(
                         state.provider_key.clone(),
                         state.attempt_count,
@@ -521,19 +564,41 @@ fn wrap_stream_with_request_logging(
                         failure.status_code,
                         failure.error_code.clone(),
                     ),
-                    None => ChatCompletionLogSummary::success(
-                        state.provider_key.clone(),
-                        state.attempt_count,
-                        true,
-                        latency_ms_since(state.started_at),
-                        UsageSummary::default(),
-                    ),
+                    None => {
+                        let usage_summary = usage_summary_from_value(state.usage.as_ref());
+                        if let Err(error) = state
+                            .service
+                            .record_chat_usage(
+                                &state.auth,
+                                &state.model,
+                                &state.route,
+                                &state.request_id,
+                                state.usage.clone(),
+                                OffsetDateTime::now_utc(),
+                            )
+                            .await
+                        {
+                            tracing::warn!(
+                                request_id = %state.request_id,
+                                model_key = %state.model.model_key,
+                                error = %error,
+                                "usage ledger write failed after stream completion"
+                            );
+                        }
+                        ChatCompletionLogSummary::success(
+                            state.provider_key.clone(),
+                            state.attempt_count,
+                            true,
+                            latency_ms_since(state.started_at),
+                            usage_summary,
+                        )
+                    }
                 };
                 best_effort_log_request(
                     &state.service,
                     &state.auth,
                     &state.request_id,
-                    &state.model_key,
+                    &state.model.model_key,
                     summary,
                 )
                 .await;
@@ -591,14 +656,32 @@ fn request_log_metadata(attempt_count: usize, stream: bool) -> Map<String, Value
 }
 
 fn usage_from_response(value: &Value) -> UsageSummary {
-    let Some(usage) = value.get("usage").and_then(Value::as_object) else {
+    usage_summary_from_value(value.get("usage"))
+}
+
+fn usage_value_from_response(value: &Value) -> Option<Value> {
+    value.get("usage").cloned()
+}
+
+fn usage_summary_from_value(value: Option<&Value>) -> UsageSummary {
+    let Some(usage) = value.and_then(Value::as_object) else {
         return UsageSummary::default();
     };
 
+    let prompt_tokens = usage.get("prompt_tokens").and_then(Value::as_i64);
+    let completion_tokens = usage.get("completion_tokens").and_then(Value::as_i64);
+    let total_tokens = match usage.get("total_tokens").and_then(Value::as_i64) {
+        some @ Some(_) => some,
+        None => match (prompt_tokens, completion_tokens) {
+            (Some(prompt), Some(completion)) => prompt.checked_add(completion),
+            _ => None,
+        },
+    };
+
     UsageSummary {
-        prompt_tokens: usage.get("prompt_tokens").and_then(Value::as_i64),
-        completion_tokens: usage.get("completion_tokens").and_then(Value::as_i64),
-        total_tokens: usage.get("total_tokens").and_then(Value::as_i64),
+        prompt_tokens,
+        completion_tokens,
+        total_tokens,
     }
 }
 
@@ -644,11 +727,12 @@ fn extract_idempotency_key(headers: &HeaderMap) -> Option<&str> {
         .and_then(|value| value.to_str().ok())
 }
 
-fn extract_request_id(headers: &HeaderMap) -> &str {
+fn extract_request_id(headers: &HeaderMap) -> String {
     headers
         .get("x-request-id")
         .and_then(|value| value.to_str().ok())
-        .unwrap_or("missing-request-id")
+        .map(str::to_string)
+        .unwrap_or_else(|| Uuid::new_v4().to_string())
 }
 
 fn extract_request_headers(headers: &HeaderMap) -> BTreeMap<String, String> {
@@ -661,4 +745,24 @@ fn extract_request_headers(headers: &HeaderMap) -> BTreeMap<String, String> {
                 .map(|value| (name.as_str().to_ascii_lowercase(), value.to_string()))
         })
         .collect::<BTreeMap<_, _>>()
+}
+
+fn extract_stream_usage(chunk: &[u8]) -> Option<Value> {
+    let text = std::str::from_utf8(chunk).ok()?;
+    for line in text.lines() {
+        let Some(payload) = line.strip_prefix("data: ") else {
+            continue;
+        };
+        let payload = payload.trim();
+        if payload.is_empty() || payload == "[DONE]" {
+            continue;
+        }
+
+        let value: Value = serde_json::from_str(payload).ok()?;
+        if let Some(usage) = value.get("usage") {
+            return Some(usage.clone());
+        }
+    }
+
+    None
 }

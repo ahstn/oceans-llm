@@ -313,6 +313,130 @@ pub(super) fn decode_user_budget_record(row: &libsql::Row) -> Result<UserBudgetR
     })
 }
 
+pub(super) fn decode_pricing_catalog_cache_record(
+    row: &libsql::Row,
+) -> Result<PricingCatalogCacheRecord, StoreError> {
+    let fetched_at: i64 = row.get(3).map_err(to_query_error)?;
+    Ok(PricingCatalogCacheRecord {
+        catalog_key: row.get(0).map_err(to_query_error)?,
+        source: row.get(1).map_err(to_query_error)?,
+        etag: row.get(2).map_err(to_query_error)?,
+        fetched_at: unix_to_datetime(fetched_at)?,
+        snapshot_json: row.get(4).map_err(to_query_error)?,
+    })
+}
+
+pub(super) fn decode_usage_ledger_record(
+    row: &libsql::Row,
+) -> Result<UsageLedgerRecord, StoreError> {
+    let usage_event_id: String = row.get(0).map_err(to_query_error)?;
+    let api_key_id: String = row.get(3).map_err(to_query_error)?;
+    let user_id: Option<String> = row.get(4).map_err(to_query_error)?;
+    let team_id: Option<String> = row.get(5).map_err(to_query_error)?;
+    let actor_user_id: Option<String> = row.get(6).map_err(to_query_error)?;
+    let model_id: Option<String> = row.get(7).map_err(to_query_error)?;
+    let provider_usage_json: String = row.get(13).map_err(to_query_error)?;
+    let pricing_status: String = row.get(14).map_err(to_query_error)?;
+    let pricing_row_id: Option<String> = row.get(16).map_err(to_query_error)?;
+    let pricing_source_fetched_at: Option<i64> = row.get(21).map_err(to_query_error)?;
+    let input_cost_per_million_tokens_10000: Option<i64> = row.get(23).map_err(to_query_error)?;
+    let output_cost_per_million_tokens_10000: Option<i64> = row.get(24).map_err(to_query_error)?;
+    let computed_cost_10000: i64 = row.get(25).map_err(to_query_error)?;
+    let occurred_at: i64 = row.get(26).map_err(to_query_error)?;
+
+    Ok(UsageLedgerRecord {
+        usage_event_id: parse_uuid(&usage_event_id)?,
+        request_id: row.get(1).map_err(to_query_error)?,
+        ownership_scope_key: row.get(2).map_err(to_query_error)?,
+        api_key_id: parse_uuid(&api_key_id)?,
+        user_id: user_id.as_deref().map(parse_uuid).transpose()?,
+        team_id: team_id.as_deref().map(parse_uuid).transpose()?,
+        actor_user_id: actor_user_id.as_deref().map(parse_uuid).transpose()?,
+        model_id: model_id.as_deref().map(parse_uuid).transpose()?,
+        provider_key: row.get(8).map_err(to_query_error)?,
+        upstream_model: row.get(9).map_err(to_query_error)?,
+        prompt_tokens: row.get(10).map_err(to_query_error)?,
+        completion_tokens: row.get(11).map_err(to_query_error)?,
+        total_tokens: row.get(12).map_err(to_query_error)?,
+        provider_usage: serde_json::from_str(&provider_usage_json)
+            .map_err(|error| StoreError::Serialization(error.to_string()))?,
+        pricing_status: UsagePricingStatus::from_db(&pricing_status).ok_or_else(|| {
+            StoreError::Serialization(format!("unknown usage pricing status `{pricing_status}`"))
+        })?,
+        unpriced_reason: row.get(15).map_err(to_query_error)?,
+        pricing_row_id: pricing_row_id.as_deref().map(parse_uuid).transpose()?,
+        pricing_provider_id: row.get(17).map_err(to_query_error)?,
+        pricing_model_id: row.get(18).map_err(to_query_error)?,
+        pricing_source: row.get(19).map_err(to_query_error)?,
+        pricing_source_etag: row.get(20).map_err(to_query_error)?,
+        pricing_source_fetched_at: pricing_source_fetched_at
+            .map(unix_to_datetime)
+            .transpose()?,
+        pricing_last_updated: row.get(22).map_err(to_query_error)?,
+        input_cost_per_million_tokens: input_cost_per_million_tokens_10000.map(Money4::from_scaled),
+        output_cost_per_million_tokens: output_cost_per_million_tokens_10000
+            .map(Money4::from_scaled),
+        computed_cost_usd: Money4::from_scaled(computed_cost_10000),
+        occurred_at: unix_to_datetime(occurred_at)?,
+    })
+}
+
+pub(super) fn decode_model_pricing_record(
+    row: &libsql::Row,
+) -> Result<ModelPricingRecord, StoreError> {
+    let model_pricing_id: String = row.get(0).map_err(to_query_error)?;
+    let input_cost_per_million_tokens_10000: Option<i64> = row.get(4).map_err(to_query_error)?;
+    let output_cost_per_million_tokens_10000: Option<i64> = row.get(5).map_err(to_query_error)?;
+    let cache_read_cost_per_million_tokens_10000: Option<i64> =
+        row.get(6).map_err(to_query_error)?;
+    let cache_write_cost_per_million_tokens_10000: Option<i64> =
+        row.get(7).map_err(to_query_error)?;
+    let input_audio_cost_per_million_tokens_10000: Option<i64> =
+        row.get(8).map_err(to_query_error)?;
+    let output_audio_cost_per_million_tokens_10000: Option<i64> =
+        row.get(9).map_err(to_query_error)?;
+    let effective_start_at: i64 = row.get(12).map_err(to_query_error)?;
+    let effective_end_at: Option<i64> = row.get(13).map_err(to_query_error)?;
+    let limits_json: String = row.get(14).map_err(to_query_error)?;
+    let modalities_json: String = row.get(15).map_err(to_query_error)?;
+    let provenance_fetched_at: i64 = row.get(18).map_err(to_query_error)?;
+    let created_at: i64 = row.get(19).map_err(to_query_error)?;
+    let updated_at: i64 = row.get(20).map_err(to_query_error)?;
+
+    Ok(ModelPricingRecord {
+        model_pricing_id: parse_uuid(&model_pricing_id)?,
+        pricing_provider_id: row.get(1).map_err(to_query_error)?,
+        pricing_model_id: row.get(2).map_err(to_query_error)?,
+        display_name: row.get(3).map_err(to_query_error)?,
+        input_cost_per_million_tokens: input_cost_per_million_tokens_10000.map(Money4::from_scaled),
+        output_cost_per_million_tokens: output_cost_per_million_tokens_10000
+            .map(Money4::from_scaled),
+        cache_read_cost_per_million_tokens: cache_read_cost_per_million_tokens_10000
+            .map(Money4::from_scaled),
+        cache_write_cost_per_million_tokens: cache_write_cost_per_million_tokens_10000
+            .map(Money4::from_scaled),
+        input_audio_cost_per_million_tokens: input_audio_cost_per_million_tokens_10000
+            .map(Money4::from_scaled),
+        output_audio_cost_per_million_tokens: output_audio_cost_per_million_tokens_10000
+            .map(Money4::from_scaled),
+        release_date: row.get(10).map_err(to_query_error)?,
+        last_updated: row.get(11).map_err(to_query_error)?,
+        effective_start_at: unix_to_datetime(effective_start_at)?,
+        effective_end_at: effective_end_at.map(unix_to_datetime).transpose()?,
+        limits: serde_json::from_str::<PricingLimits>(&limits_json)
+            .map_err(|error| StoreError::Serialization(error.to_string()))?,
+        modalities: serde_json::from_str::<PricingModalities>(&modalities_json)
+            .map_err(|error| StoreError::Serialization(error.to_string()))?,
+        provenance: PricingProvenance {
+            source: row.get(16).map_err(to_query_error)?,
+            etag: row.get(17).map_err(to_query_error)?,
+            fetched_at: unix_to_datetime(provenance_fetched_at)?,
+        },
+        created_at: unix_to_datetime(created_at)?,
+        updated_at: unix_to_datetime(updated_at)?,
+    })
+}
+
 pub(super) fn to_query_error(error: libsql::Error) -> StoreError {
     StoreError::Query(error.to_string())
 }

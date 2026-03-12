@@ -9,9 +9,10 @@ use uuid::Uuid;
 
 use crate::{
     domain::{
-        ApiKeyRecord, GatewayModel, ModelRoute, Money4, PricingCatalogCacheRecord,
-        ProviderCapabilities, ProviderConnection, ProviderRequestContext, RequestLogRecord,
-        TeamMembershipRecord, TeamRecord, UsageCostEventRecord, UserBudgetRecord, UserRecord,
+        ApiKeyRecord, GatewayModel, ModelPricingRecord, ModelRoute, Money4,
+        PricingCatalogCacheRecord, ProviderCapabilities, ProviderConnection,
+        ProviderRequestContext, RequestLogRecord, TeamMembershipRecord, TeamRecord,
+        UsageLedgerRecord, UserBudgetRecord, UserRecord,
     },
     error::{ProviderError, RouteError, StoreError},
     protocol::openai::{ChatCompletionsRequest, EmbeddingsRequest},
@@ -69,14 +70,21 @@ pub trait BudgetRepository: Send + Sync {
         &self,
         user_id: Uuid,
     ) -> Result<Option<UserBudgetRecord>, StoreError>;
+    async fn get_usage_ledger_by_request_and_scope(
+        &self,
+        request_id: &str,
+        ownership_scope_key: &str,
+    ) -> Result<Option<UsageLedgerRecord>, StoreError>;
     async fn sum_usage_cost_for_user_in_window(
         &self,
         user_id: Uuid,
         window_start: OffsetDateTime,
         window_end: OffsetDateTime,
     ) -> Result<Money4, StoreError>;
-    async fn insert_usage_cost_event(&self, event: &UsageCostEventRecord)
-    -> Result<(), StoreError>;
+    async fn insert_usage_ledger_if_absent(
+        &self,
+        event: &UsageLedgerRecord,
+    ) -> Result<bool, StoreError>;
 }
 
 #[async_trait]
@@ -101,6 +109,20 @@ pub trait PricingCatalogRepository: Send + Sync {
         catalog_key: &str,
         fetched_at: OffsetDateTime,
     ) -> Result<(), StoreError>;
+    async fn list_active_model_pricing(&self) -> Result<Vec<ModelPricingRecord>, StoreError>;
+    async fn insert_model_pricing(&self, record: &ModelPricingRecord) -> Result<(), StoreError>;
+    async fn close_model_pricing(
+        &self,
+        model_pricing_id: Uuid,
+        effective_end_at: OffsetDateTime,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError>;
+    async fn resolve_model_pricing_at(
+        &self,
+        pricing_provider_id: &str,
+        pricing_model_id: &str,
+        occurred_at: OffsetDateTime,
+    ) -> Result<Option<ModelPricingRecord>, StoreError>;
 }
 
 #[async_trait]

@@ -458,6 +458,21 @@ mod tests {
         metadata: Value,
     }
 
+    #[derive(Debug)]
+    struct UsageLedgerRow {
+        request_id: String,
+        ownership_scope_key: String,
+        provider_key: String,
+        upstream_model: String,
+        pricing_status: String,
+        prompt_tokens: Option<i64>,
+        completion_tokens: Option<i64>,
+        total_tokens: Option<i64>,
+        pricing_provider_id: Option<String>,
+        pricing_model_id: Option<String>,
+        computed_cost_10000: i64,
+    }
+
     async fn load_request_logs(db_path: &Path) -> Vec<RequestLogRow> {
         let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
             .build()
@@ -496,6 +511,46 @@ mod tests {
         }
 
         logs
+    }
+
+    async fn load_usage_ledger(db_path: &Path) -> Vec<UsageLedgerRow> {
+        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
+            .build()
+            .await
+            .expect("libsql db");
+        let connection = db.connect().expect("libsql connection");
+        let mut rows = connection
+            .query(
+                r#"
+                SELECT request_id, ownership_scope_key, provider_key, upstream_model,
+                       pricing_status, prompt_tokens, completion_tokens, total_tokens,
+                       pricing_provider_id, pricing_model_id, computed_cost_10000
+                FROM usage_cost_events
+                ORDER BY occurred_at ASC, rowid ASC
+                "#,
+                (),
+            )
+            .await
+            .expect("usage ledger query");
+
+        let mut ledgers = Vec::new();
+        while let Some(row) = rows.next().await.expect("usage ledger row") {
+            ledgers.push(UsageLedgerRow {
+                request_id: row.get(0).expect("request_id"),
+                ownership_scope_key: row.get(1).expect("ownership_scope_key"),
+                provider_key: row.get(2).expect("provider_key"),
+                upstream_model: row.get(3).expect("upstream_model"),
+                pricing_status: row.get(4).expect("pricing_status"),
+                prompt_tokens: row.get(5).expect("prompt_tokens"),
+                completion_tokens: row.get(6).expect("completion_tokens"),
+                total_tokens: row.get(7).expect("total_tokens"),
+                pricing_provider_id: row.get(8).expect("pricing_provider_id"),
+                pricing_model_id: row.get(9).expect("pricing_model_id"),
+                computed_cost_10000: row.get(10).expect("computed_cost_10000"),
+            });
+        }
+
+        ledgers
     }
 
     async fn set_api_key_owner_to_user(
@@ -602,7 +657,10 @@ mod tests {
         let seed_providers = vec![SeedProvider {
             provider_key: "openai-prod".to_string(),
             provider_type: "openai_compat".to_string(),
-            config: serde_json::json!({"base_url": "https://api.openai.com/v1"}),
+            config: serde_json::json!({
+                "base_url": "https://api.openai.com/v1",
+                "pricing_provider_id": "openai"
+            }),
             secrets: None,
         }];
         let models = vec![SeedModel {
@@ -612,7 +670,7 @@ mod tests {
             rank: 10,
             routes: vec![SeedModelRoute {
                 provider_key: "openai-prod".to_string(),
-                upstream_model: "gpt-4o-mini".to_string(),
+                upstream_model: "gpt-5".to_string(),
                 priority: 10,
                 weight: 1.0,
                 enabled: true,
@@ -674,7 +732,10 @@ mod tests {
         let seed_providers = vec![SeedProvider {
             provider_key: "openai-prod".to_string(),
             provider_type: "openai_compat".to_string(),
-            config: serde_json::json!({"base_url": "https://api.openai.com/v1"}),
+            config: serde_json::json!({
+                "base_url": "https://api.openai.com/v1",
+                "pricing_provider_id": "openai"
+            }),
             secrets: None,
         }];
         let models = vec![SeedModel {
@@ -684,7 +745,7 @@ mod tests {
             rank: 10,
             routes: vec![SeedModelRoute {
                 provider_key: "openai-prod".to_string(),
-                upstream_model: "gpt-4o-mini".to_string(),
+                upstream_model: "gpt-5".to_string(),
                 priority: 10,
                 weight: 1.0,
                 enabled: true,
@@ -909,6 +970,13 @@ mod tests {
             .await
             .expect("response");
 
+        let request_id = response
+            .headers()
+            .get("x-request-id")
+            .expect("x-request-id header")
+            .to_str()
+            .expect("request id value")
+            .to_string();
         assert_eq!(response.status(), StatusCode::OK);
 
         let body = to_bytes(response.into_body(), usize::MAX)
@@ -933,6 +1001,70 @@ mod tests {
         assert_eq!(logs[0].metadata["stream"], Value::Bool(false));
         assert_eq!(logs[0].metadata["fallback_used"], Value::Bool(false));
         assert_eq!(logs[0].metadata["attempt_count"], json!(1));
+
+        let ledgers = load_usage_ledger(&db_path).await;
+        assert_eq!(ledgers.len(), 1);
+        assert_eq!(ledgers[0].request_id, request_id);
+        assert_eq!(ledgers[0].provider_key, "openai-prod");
+        assert_eq!(ledgers[0].upstream_model, "gpt-5");
+        assert_eq!(ledgers[0].pricing_status, "priced");
+        assert_eq!(ledgers[0].prompt_tokens, Some(11));
+        assert_eq!(ledgers[0].completion_tokens, Some(7));
+        assert_eq!(ledgers[0].total_tokens, Some(18));
+        assert_eq!(ledgers[0].pricing_provider_id.as_deref(), Some("openai"));
+        assert_eq!(ledgers[0].pricing_model_id.as_deref(), Some("gpt-5"));
+        assert!(ledgers[0].computed_cost_10000 >= 0);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn repeated_request_id_is_accounted_once_per_scope() {
+        let (_, provider) = make_chat_provider(
+            "openai-prod",
+            MockChatResult::Value(json!({
+                "id": "chatcmpl_123",
+                "object": "chat.completion",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "pong"}, "finish_reason":"stop"}],
+                "usage": {"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18}
+            })),
+            vec![],
+            ProviderCapabilities::openai_compat_baseline(),
+        );
+        let mut registry = gateway_core::ProviderRegistry::new();
+        registry.register(Arc::new(provider));
+
+        let (app, raw_key, db_path) = build_default_test_app(registry).await;
+
+        for _ in 0..2 {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/v1/chat/completions")
+                        .header("content-type", "application/json")
+                        .header("authorization", format!("Bearer {raw_key}"))
+                        .header("x-request-id", "req-dedupe")
+                        .body(Body::from(
+                            serde_json::json!({
+                                "model": "fast",
+                                "messages": [{"role": "user", "content": "ping"}]
+                            })
+                            .to_string(),
+                        ))
+                        .expect("request"),
+                )
+                .await
+                .expect("response");
+
+            assert_eq!(response.status(), StatusCode::OK);
+        }
+
+        let ledgers = load_usage_ledger(&db_path).await;
+        assert_eq!(ledgers.len(), 1);
+        assert_eq!(ledgers[0].request_id, "req-dedupe");
+        assert!(ledgers[0].ownership_scope_key.starts_with("team:"));
+        assert_eq!(ledgers[0].pricing_status, "priced");
     }
 
     #[tokio::test]
@@ -963,13 +1095,19 @@ mod tests {
             SeedProvider {
                 provider_key: "primary".to_string(),
                 provider_type: "openai_compat".to_string(),
-                config: serde_json::json!({"base_url":"https://example.invalid/v1"}),
+                config: serde_json::json!({
+                    "base_url":"https://example.invalid/v1",
+                    "pricing_provider_id":"openai"
+                }),
                 secrets: None,
             },
             SeedProvider {
                 provider_key: "fallback".to_string(),
                 provider_type: "openai_compat".to_string(),
-                config: serde_json::json!({"base_url":"https://example.invalid/v1"}),
+                config: serde_json::json!({
+                    "base_url":"https://example.invalid/v1",
+                    "pricing_provider_id":"openai"
+                }),
                 secrets: None,
             },
         ];
@@ -1069,13 +1207,19 @@ mod tests {
             SeedProvider {
                 provider_key: "primary".to_string(),
                 provider_type: "openai_compat".to_string(),
-                config: serde_json::json!({"base_url":"https://example.invalid/v1"}),
+                config: serde_json::json!({
+                    "base_url":"https://example.invalid/v1",
+                    "pricing_provider_id":"openai"
+                }),
                 secrets: None,
             },
             SeedProvider {
                 provider_key: "fallback".to_string(),
                 provider_type: "openai_compat".to_string(),
-                config: serde_json::json!({"base_url":"https://example.invalid/v1"}),
+                config: serde_json::json!({
+                    "base_url":"https://example.invalid/v1",
+                    "pricing_provider_id":"openai"
+                }),
                 secrets: None,
             },
         ];
@@ -1142,6 +1286,7 @@ mod tests {
         assert_eq!(logs[0].metadata["stream"], Value::Bool(false));
         assert_eq!(logs[0].metadata["fallback_used"], Value::Bool(false));
         assert_eq!(logs[0].metadata["attempt_count"], json!(1));
+        assert!(load_usage_ledger(&db_path).await.is_empty());
     }
 
     #[tokio::test]
@@ -1182,10 +1327,21 @@ mod tests {
             .await
             .expect("response");
 
+        let request_id = response
+            .headers()
+            .get("x-request-id")
+            .expect("x-request-id header")
+            .to_str()
+            .expect("request id value")
+            .to_string();
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         assert_eq!(user_id.to_string().len(), 36);
         assert!(load_request_logs(&db_path).await.is_empty());
+        let ledgers = load_usage_ledger(&db_path).await;
+        assert_eq!(ledgers.len(), 1);
+        assert_eq!(ledgers[0].pricing_status, "usage_missing");
+        assert_eq!(ledgers[0].request_id, request_id);
     }
 
     #[tokio::test]
@@ -1229,6 +1385,13 @@ mod tests {
             .await
             .expect("response");
 
+        let request_id = response
+            .headers()
+            .get("x-request-id")
+            .expect("x-request-id header")
+            .to_str()
+            .expect("request id value")
+            .to_string();
         assert_eq!(response.status(), StatusCode::OK);
         let body = to_bytes(response.into_body(), usize::MAX)
             .await
@@ -1247,6 +1410,12 @@ mod tests {
         assert_eq!(logs[0].metadata["stream"], Value::Bool(true));
         assert_eq!(logs[0].metadata["fallback_used"], Value::Bool(false));
         assert_eq!(logs[0].metadata["attempt_count"], json!(1));
+
+        let ledgers = load_usage_ledger(&db_path).await;
+        assert_eq!(ledgers.len(), 1);
+        assert_eq!(ledgers[0].request_id, request_id);
+        assert_eq!(ledgers[0].pricing_status, "usage_missing");
+        assert_eq!(ledgers[0].computed_cost_10000, 0);
     }
 
     #[tokio::test]
@@ -1612,12 +1781,14 @@ mod tests {
         assert_eq!(models.status(), StatusCode::OK);
 
         let chat = app
+            .clone()
             .oneshot(
                 Request::builder()
                     .method("POST")
                     .uri("/v1/chat/completions")
                     .header("authorization", format!("Bearer {raw_key}"))
                     .header("content-type", "application/json")
+                    .header("x-request-id", "req-postgres-ledger")
                     .body(Body::from(
                         json!({
                             "model": "fast",
@@ -1630,6 +1801,34 @@ mod tests {
             .await
             .expect("chat response");
         assert_eq!(chat.status(), StatusCode::OK);
+        let request_id = chat
+            .headers()
+            .get("x-request-id")
+            .expect("x-request-id header")
+            .to_str()
+            .expect("request id value");
+        assert_eq!(request_id, "req-postgres-ledger");
+
+        let replay = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .header("content-type", "application/json")
+                    .header("x-request-id", "req-postgres-ledger")
+                    .body(Body::from(
+                        json!({
+                            "model": "fast",
+                            "messages": [{"role": "user", "content": "hello"}]
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("replay response");
+        assert_eq!(replay.status(), StatusCode::OK);
 
         let pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(1)
@@ -1641,7 +1840,131 @@ mod tests {
             .await
             .expect("request log count");
         let count: i64 = row.try_get(0).expect("count");
-        assert_eq!(count, 1);
+        assert_eq!(count, 2);
+        let ledger_row = sqlx::query(
+            r#"
+            SELECT request_id, pricing_status, provider_key, upstream_model, computed_cost_10000
+            FROM usage_cost_events
+            "#,
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("usage ledger rows");
+        assert_eq!(ledger_row.len(), 1);
+        assert_eq!(
+            ledger_row[0].try_get::<String, _>(0).expect("request id"),
+            "req-postgres-ledger"
+        );
+        assert_eq!(
+            ledger_row[0]
+                .try_get::<String, _>(1)
+                .expect("pricing status"),
+            "priced"
+        );
+        assert_eq!(
+            ledger_row[0].try_get::<String, _>(2).expect("provider key"),
+            "openai-prod"
+        );
+        assert_eq!(
+            ledger_row[0]
+                .try_get::<String, _>(3)
+                .expect("upstream model"),
+            "gpt-5"
+        );
+        assert!(ledger_row[0].try_get::<i64, _>(4).expect("computed cost") >= 0);
+        let model_pricing_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM model_pricing")
+            .fetch_one(&pool)
+            .await
+            .expect("model pricing count");
+        assert!(model_pricing_count >= 1);
+        pool.close().await;
+
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_stream_without_usage_records_usage_missing() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres gateway stream smoke test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        let mut providers = gateway_core::ProviderRegistry::new();
+        let (_, mock_provider) = make_chat_provider(
+            "openai-prod",
+            MockChatResult::Value(json!({
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "unused"},
+                    "finish_reason": "stop"
+                }]
+            })),
+            vec![
+                "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"hi\"},\"finish_reason\":null}]}\n\n".to_string(),
+                "data: [DONE]\n\n".to_string(),
+            ],
+            ProviderCapabilities::new(true, true, false),
+        );
+        providers.register(Arc::new(mock_provider));
+
+        let (app, raw_key) = build_postgres_test_app(&test_db.database_url, providers).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .header("content-type", "application/json")
+                    .header("x-request-id", "req-postgres-stream")
+                    .body(Body::from(
+                        json!({
+                            "model": "fast",
+                            "stream": true,
+                            "messages": [{"role": "user", "content": "hello"}]
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("stream response");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        assert!(
+            String::from_utf8(body.to_vec())
+                .expect("utf8")
+                .contains("data: [DONE]")
+        );
+
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&test_db.database_url)
+            .await
+            .expect("postgres pool");
+        let row = sqlx::query(
+            "SELECT request_id, pricing_status, computed_cost_10000 FROM usage_cost_events",
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("usage ledger rows");
+        assert_eq!(row.len(), 1);
+        assert_eq!(
+            row[0].try_get::<String, _>(0).expect("request id"),
+            "req-postgres-stream"
+        );
+        assert_eq!(
+            row[0].try_get::<String, _>(1).expect("pricing status"),
+            "usage_missing"
+        );
+        assert_eq!(row[0].try_get::<i64, _>(2).expect("computed cost"), 0);
         pool.close().await;
 
         drop_postgres_test_database(&test_db).await;
