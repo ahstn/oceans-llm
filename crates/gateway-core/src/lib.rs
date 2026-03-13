@@ -21,7 +21,7 @@ pub use domain::{
 pub use error::{AuthError, GatewayError, ProviderError, RouteError, StoreError};
 pub use protocol::core::{
     ChatMessage as CoreChatMessage, ChatRequest as CoreChatRequest,
-    EmbeddingsRequest as CoreEmbeddingsRequest,
+    EmbeddingsRequest as CoreEmbeddingsRequest, RequestRequirements as CoreRequestRequirements,
 };
 pub use protocol::openai::{
     ChatCompletionsRequest, EmbeddingsRequest, ModelsListResponse, OpenAiErrorBody,

@@ -12,9 +12,10 @@ use axum::{
 };
 use futures_util::{StreamExt, stream};
 use gateway_core::{
-    AuthenticatedApiKey, ChatCompletionsRequest, EmbeddingsRequest, GatewayError,
-    ModelsListResponse, ProviderError, ProviderRequestContext, RequestLogRecord,
-    openai_chat_request_to_core, openai_embeddings_request_to_core, protocol::openai::ModelCard,
+    AuthenticatedApiKey, ChatCompletionsRequest, CoreRequestRequirements, EmbeddingsRequest,
+    GatewayError, ModelsListResponse, ProviderCapabilities, ProviderError, ProviderRequestContext,
+    RequestLogRecord, openai_chat_request_to_core, openai_embeddings_request_to_core,
+    protocol::openai::ModelCard,
 };
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
@@ -75,6 +76,7 @@ pub async fn v1_chat_completions(
         .authenticate(extract_authorization_header(&headers))
         .await?;
     let core_request = openai_chat_request_to_core(&request);
+    let requirements = core_request.requirements();
     let resolved = state
         .service
         .resolve_request(&auth, &core_request.model)
@@ -90,12 +92,8 @@ pub async fn v1_chat_completions(
         let Some(provider) = state.providers.get(&route.provider_key) else {
             continue;
         };
-        let caps = provider.capabilities();
-        if core_request.stream {
-            if caps.chat_completions_stream {
-                eligible.push((route.clone(), provider));
-            }
-        } else if caps.chat_completions {
+        let effective_capabilities = provider.capabilities().intersect(route.capabilities);
+        if supports_requirements(effective_capabilities, requirements) {
             eligible.push((route.clone(), provider));
         }
     }
@@ -106,16 +104,13 @@ pub async fn v1_chat_completions(
         route_count = resolved.routes.len(),
         eligible_route_count = eligible.len(),
         stream = core_request.stream,
+        required_capabilities = ?requirements.required_capability_names(),
         fallback_allowed = allow_fallback,
         "chat completion request resolved"
     );
 
     if eligible.is_empty() {
-        return Err(AppError(GatewayError::Provider(
-            ProviderError::NotImplemented(
-                "no registered provider supports chat completions for resolved routes".to_string(),
-            ),
-        )));
+        return Err(AppError(no_compatible_route_error(requirements)));
     }
 
     if core_request.stream || !allow_fallback {
@@ -371,49 +366,64 @@ pub async fn v1_embeddings(
         .authenticate(extract_authorization_header(&headers))
         .await?;
     let core_request = openai_embeddings_request_to_core(&request);
+    let requirements = core_request.requirements();
     let resolved = state
         .service
         .resolve_request(&auth, &core_request.model)
         .await?;
 
-    let has_adapter = resolved
-        .routes
-        .first()
-        .and_then(|route| state.providers.get(&route.provider_key))
-        .is_some();
+    let mut eligible = Vec::new();
+    for route in &resolved.routes {
+        let Some(provider) = state.providers.get(&route.provider_key) else {
+            continue;
+        };
+        let effective_capabilities = provider.capabilities().intersect(route.capabilities);
+        if supports_requirements(effective_capabilities, requirements) {
+            eligible.push((route, provider));
+        }
+    }
 
     tracing::info!(
         request_model = %core_request.model,
         resolved_model = %resolved.model.model_key,
         route_count = resolved.routes.len(),
-        provider_adapter_available = has_adapter,
+        eligible_route_count = eligible.len(),
+        required_capabilities = ?requirements.required_capability_names(),
         "embeddings request resolved"
     );
 
-    for route in &resolved.routes {
-        let Some(provider) = state.providers.get(&route.provider_key) else {
-            continue;
-        };
-
-        if !provider.capabilities().embeddings {
-            return Err(AppError(GatewayError::Provider(
-                ProviderError::NotImplemented(format!(
-                    "provider `{}` does not implement embeddings in this slice",
-                    route.provider_key
-                )),
-            )));
-        }
-
-        return Err(AppError(GatewayError::NotImplemented(
-            "embeddings execution is intentionally deferred in this foundation phase".to_string(),
-        )));
+    if eligible.is_empty() {
+        return Err(AppError(no_compatible_route_error(requirements)));
     }
 
-    Err(AppError(GatewayError::Provider(
-        ProviderError::NotImplemented(
-            "no registered provider supports embeddings for resolved routes".to_string(),
-        ),
+    Err(AppError(GatewayError::NotImplemented(
+        "embeddings execution is intentionally deferred in this foundation phase".to_string(),
     )))
+}
+
+fn supports_requirements(
+    capabilities: ProviderCapabilities,
+    requirements: CoreRequestRequirements,
+) -> bool {
+    (!requirements.chat_completions || capabilities.chat_completions)
+        && (!requirements.stream || capabilities.stream)
+        && (!requirements.embeddings || capabilities.embeddings)
+        && (!requirements.tools || capabilities.tools)
+        && (!requirements.vision || capabilities.vision)
+        && (!requirements.json_schema || capabilities.json_schema)
+        && (!requirements.developer_role || capabilities.developer_role)
+}
+
+fn no_compatible_route_error(requirements: CoreRequestRequirements) -> GatewayError {
+    let required = requirements.required_capability_names();
+    let required = if required.is_empty() {
+        "none".to_string()
+    } else {
+        required.join(", ")
+    };
+    GatewayError::InvalidRequest(format!(
+        "no configured route supports requested capabilities ({required})"
+    ))
 }
 
 fn build_provider_context(

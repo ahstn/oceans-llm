@@ -752,8 +752,8 @@ mod tests {
     };
     use gateway_core::{
         ModelPricingRecord, ModelRoute, Money4, PricingCatalogCacheRecord,
-        PricingCatalogRepository, PricingResolution, PricingUnpricedReason, ProviderConnection,
-        StoreError,
+        PricingCatalogRepository, PricingResolution, PricingUnpricedReason, ProviderCapabilities,
+        ProviderConnection, StoreError,
     };
     use serde_json::{json, to_string_pretty};
     use time::OffsetDateTime;
@@ -908,6 +908,7 @@ mod tests {
             enabled: true,
             extra_headers: serde_json::Map::new(),
             extra_body: serde_json::Map::new(),
+            capabilities: ProviderCapabilities::all_enabled(),
         }
     }
 

@@ -675,6 +675,7 @@ mod tests {
                 enabled: true,
                 extra_headers: Map::<String, Value>::new(),
                 extra_body: Map::<String, Value>::new(),
+                capabilities: ProviderCapabilities::all_enabled(),
             }],
         }];
 
@@ -750,6 +751,7 @@ mod tests {
                 enabled: true,
                 extra_headers: Map::<String, Value>::new(),
                 extra_body: Map::<String, Value>::new(),
+                capabilities: ProviderCapabilities::all_enabled(),
             }],
         }];
 
@@ -1124,6 +1126,7 @@ mod tests {
                     enabled: true,
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
+                    capabilities: ProviderCapabilities::all_enabled(),
                 },
                 SeedModelRoute {
                     provider_key: "fallback".to_string(),
@@ -1133,6 +1136,7 @@ mod tests {
                     enabled: true,
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
+                    capabilities: ProviderCapabilities::all_enabled(),
                 },
             ],
         }];
@@ -1236,6 +1240,7 @@ mod tests {
                     enabled: true,
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
+                    capabilities: ProviderCapabilities::all_enabled(),
                 },
                 SeedModelRoute {
                     provider_key: "fallback".to_string(),
@@ -1245,6 +1250,7 @@ mod tests {
                     enabled: true,
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
+                    capabilities: ProviderCapabilities::all_enabled(),
                 },
             ],
         }];
@@ -1286,6 +1292,200 @@ mod tests {
         assert_eq!(logs[0].metadata["fallback_used"], Value::Bool(false));
         assert_eq!(logs[0].metadata["attempt_count"], json!(1));
         assert!(load_usage_ledger(&db_path).await.is_empty());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn rejects_requests_when_routes_lack_required_capabilities() {
+        let (calls, provider) = make_chat_provider(
+            "openai-prod",
+            MockChatResult::Value(json!({
+                "id": "chatcmpl_vision",
+                "object": "chat.completion",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "should-not-run"}, "finish_reason":"stop"}]
+            })),
+            vec![],
+            ProviderCapabilities::openai_compat_baseline(),
+        );
+        let mut registry = gateway_core::ProviderRegistry::new();
+        registry.register(Arc::new(provider));
+
+        let seed_providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: serde_json::json!({
+                "base_url": "https://example.invalid/v1",
+                "pricing_provider_id": "openai"
+            }),
+            secrets: None,
+        }];
+        let models = vec![SeedModel {
+            model_key: "fast".to_string(),
+            description: None,
+            tags: vec![],
+            rank: 10,
+            routes: vec![SeedModelRoute {
+                provider_key: "openai-prod".to_string(),
+                upstream_model: "gpt-4o-mini".to_string(),
+                priority: 10,
+                weight: 1.0,
+                enabled: true,
+                extra_headers: Map::new(),
+                extra_body: Map::new(),
+                capabilities: ProviderCapabilities::with_dimensions(
+                    true, true, true, true, false, true, true,
+                ),
+            }],
+        }];
+
+        let (app, raw_key, _) = build_test_app(seed_providers, models, registry).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .body(Body::from(
+                        json!({
+                            "model": "fast",
+                            "messages": [{
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": "describe this"},
+                                    {"type": "image_url", "image_url": {"url": "https://example.com/cat.png"}}
+                                ]
+                            }]
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        let payload: Value = serde_json::from_slice(&body).expect("json body");
+        assert_eq!(payload["error"]["code"], "invalid_request");
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn route_selection_prefers_capability_compatible_target() {
+        let (primary_calls, primary_provider) = make_chat_provider(
+            "primary",
+            MockChatResult::Value(json!({
+                "id": "chatcmpl_primary",
+                "object": "chat.completion",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "from-primary"}, "finish_reason":"stop"}]
+            })),
+            vec![],
+            ProviderCapabilities::openai_compat_baseline(),
+        );
+        let (tools_calls, tools_provider) = make_chat_provider(
+            "tools",
+            MockChatResult::Value(json!({
+                "id": "chatcmpl_tools",
+                "object": "chat.completion",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "from-tools"}, "finish_reason":"stop"}]
+            })),
+            vec![],
+            ProviderCapabilities::openai_compat_baseline(),
+        );
+
+        let mut registry = gateway_core::ProviderRegistry::new();
+        registry.register(Arc::new(primary_provider));
+        registry.register(Arc::new(tools_provider));
+
+        let seed_providers = vec![
+            SeedProvider {
+                provider_key: "primary".to_string(),
+                provider_type: "openai_compat".to_string(),
+                config: serde_json::json!({
+                    "base_url":"https://example.invalid/v1",
+                    "pricing_provider_id":"openai"
+                }),
+                secrets: None,
+            },
+            SeedProvider {
+                provider_key: "tools".to_string(),
+                provider_type: "openai_compat".to_string(),
+                config: serde_json::json!({
+                    "base_url":"https://example.invalid/v1",
+                    "pricing_provider_id":"openai"
+                }),
+                secrets: None,
+            },
+        ];
+        let models = vec![SeedModel {
+            model_key: "fast".to_string(),
+            description: None,
+            tags: vec![],
+            rank: 10,
+            routes: vec![
+                SeedModelRoute {
+                    provider_key: "primary".to_string(),
+                    upstream_model: "gpt-4o-mini".to_string(),
+                    priority: 10,
+                    weight: 1.0,
+                    enabled: true,
+                    extra_headers: Map::new(),
+                    extra_body: Map::new(),
+                    capabilities: ProviderCapabilities::with_dimensions(
+                        true, true, true, false, true, true, true,
+                    ),
+                },
+                SeedModelRoute {
+                    provider_key: "tools".to_string(),
+                    upstream_model: "gpt-4o-mini".to_string(),
+                    priority: 20,
+                    weight: 1.0,
+                    enabled: true,
+                    extra_headers: Map::new(),
+                    extra_body: Map::new(),
+                    capabilities: ProviderCapabilities::all_enabled(),
+                },
+            ],
+        }];
+
+        let (app, raw_key, _) = build_test_app(seed_providers, models, registry).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .body(Body::from(
+                        json!({
+                            "model": "fast",
+                            "messages": [{"role": "user", "content": "ping"}],
+                            "tools": [{
+                                "type": "function",
+                                "function": {"name": "ping", "parameters": {"type": "object"}}
+                            }]
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        let payload: Value = serde_json::from_slice(&body).expect("json body");
+        assert_eq!(payload["choices"][0]["message"]["content"], "from-tools");
+        assert_eq!(primary_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(tools_calls.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]
@@ -1742,11 +1942,7 @@ mod tests {
                 }
             })),
             vec![],
-            ProviderCapabilities {
-                chat_completions: true,
-                chat_completions_stream: false,
-                embeddings: false,
-            },
+            ProviderCapabilities::new(true, false, false),
         );
         providers.register(Arc::new(mock_provider));
 
