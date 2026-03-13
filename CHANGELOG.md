@@ -12,22 +12,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(auth)* Add bootstrap admin login flow by @ahstn
 - *(identity)* Add user signup and onboarding flow by @ahstn in [#12](https://github.com/ahstn/oceans-llm/pull/12)
 - *(admin-ui)* Add team management flow by @ahstn in [#13](https://github.com/ahstn/oceans-llm/pull/13)
+- *(deploy)* Add local and GHCR compose stacks by @ahstn
+- *(deploy)* Add local and GHCR compose stacks by @ahstn in [#15](https://github.com/ahstn/oceans-llm/pull/15)
+- *(gateway)* Add postgres runtime backend by @ahstn
+- *(gateway)* Harden store migrations and runtime cli by @ahstn
+- *(gateway)* Harden store migrations and runtime cli by @ahstn
+- *(gateway)* Add durable usage ledger accounting by @ahstn
+- *(gateway)* Add durable usage ledger accounting by @ahstn in [#41](https://github.com/ahstn/oceans-llm/pull/41)
+- *(admin-ui)* Refresh theme shell and auth surfaces by @ahstn
+- *(admin-ui)* Add identity empty states and share flows by @ahstn
+- *(admin-ui)* Improve responsive data surfaces by @ahstn
+- *(ui)* Updating requests logs page by @ahstn
+- *(admin-ui)* Refresh admin control plane surfaces by @ahstn in [#42](https://github.com/ahstn/oceans-llm/pull/42)
 
 ### :bug: Bug fixes
 - *(gateway)* Restore lint and test green by @ahstn
 - *(gateway)* Restore lint and test green by @ahstn in [#36](https://github.com/ahstn/oceans-llm/pull/36)
+- *(e2e)* Resolve mise from environment by @ahstn
+- *(gateway)* Default maintenance task config by @ahstn
+- *(smoke)* Make test task shell-compatible by @ahstn
+- *(postgres)* Correct migration status lookup by @ahstn
+- *(smoke)* Check gateway port by @ahstn
+- *(gateway-store)* Cast Postgres spend sums to bigint by @ahstn
 
 ### Build
 - Disable ARM builds until we have better gha runners by @ahstn
+- Post release tasks - v0.2.0 by @ahstn
 
 ### Changed
 - Implement user signup and onboarding flow by @ahstn
 - Fix local admin UI gateway routing by @ahstn
 - Merge origin/main into feat/team-creation by @ahstn
+- *(ui)* Request log table padding fixes by @ahstn
+
+### Documentation
+- Adding adr by @ahstn
 
 ### Miscellaneous
 - Post release tasks by @ahstn
 - Removing old semantic release setup by @ahstn
+
+### Testing
+- *(admin-ui)* Add end-to-end contract harness by @ahstn
+- *(admin-ui)* Add end-to-end contract harness by @ahstn in [#37](https://github.com/ahstn/oceans-llm/pull/37)
 
 
 
