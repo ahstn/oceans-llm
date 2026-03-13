@@ -318,11 +318,10 @@ mod tests {
         body::{Body, Bytes, to_bytes},
         http::{Request, StatusCode},
     };
-    use gateway_core::ChatCompletionsRequest;
     use gateway_core::{
-        EmbeddingsRequest, ProviderCapabilities, ProviderClient, ProviderError,
-        ProviderRequestContext, ProviderStream, SeedApiKey, SeedModel, SeedModelRoute,
-        SeedProvider, parse_gateway_api_key,
+        CoreChatRequest, CoreEmbeddingsRequest, ProviderCapabilities, ProviderClient,
+        ProviderError, ProviderRequestContext, ProviderStream, SeedApiKey, SeedModel,
+        SeedModelRoute, SeedProvider, parse_gateway_api_key,
     };
     use gateway_service::{GatewayService, WeightedRoutePlanner, hash_gateway_key_secret};
     use gateway_store::{
@@ -388,7 +387,7 @@ mod tests {
 
         async fn chat_completions(
             &self,
-            _request: &ChatCompletionsRequest,
+            _request: &CoreChatRequest,
             _context: &ProviderRequestContext,
         ) -> Result<Value, ProviderError> {
             self.chat_calls.fetch_add(1, Ordering::SeqCst);
@@ -400,7 +399,7 @@ mod tests {
 
         async fn chat_completions_stream(
             &self,
-            _request: &ChatCompletionsRequest,
+            _request: &CoreChatRequest,
             _context: &ProviderRequestContext,
         ) -> Result<ProviderStream, ProviderError> {
             let stream = futures_util::stream::iter(
@@ -414,7 +413,7 @@ mod tests {
 
         async fn embeddings(
             &self,
-            _request: &EmbeddingsRequest,
+            _request: &CoreEmbeddingsRequest,
             _context: &ProviderRequestContext,
         ) -> Result<Value, ProviderError> {
             Err(ProviderError::NotImplemented(

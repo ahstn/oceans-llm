@@ -14,7 +14,7 @@ use futures_util::{StreamExt, stream};
 use gateway_core::{
     AuthenticatedApiKey, ChatCompletionsRequest, EmbeddingsRequest, GatewayError,
     ModelsListResponse, ProviderError, ProviderRequestContext, RequestLogRecord,
-    protocol::openai::ModelCard,
+    openai_chat_request_to_core, openai_embeddings_request_to_core, protocol::openai::ModelCard,
 };
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
@@ -74,12 +74,16 @@ pub async fn v1_chat_completions(
         .service
         .authenticate(extract_authorization_header(&headers))
         .await?;
-    let resolved = state.service.resolve_request(&auth, &request.model).await?;
+    let core_request = openai_chat_request_to_core(&request);
+    let resolved = state
+        .service
+        .resolve_request(&auth, &core_request.model)
+        .await?;
 
     let idempotency_key = extract_idempotency_key(&headers).map(str::to_string);
     let request_id = extract_request_id(&headers);
     let request_headers = extract_request_headers(&headers);
-    let allow_fallback = !request.stream && idempotency_key.is_some();
+    let allow_fallback = !core_request.stream && idempotency_key.is_some();
 
     let mut eligible = Vec::new();
     for route in &resolved.routes {
@@ -87,7 +91,7 @@ pub async fn v1_chat_completions(
             continue;
         };
         let caps = provider.capabilities();
-        if request.stream {
+        if core_request.stream {
             if caps.chat_completions_stream {
                 eligible.push((route.clone(), provider));
             }
@@ -97,11 +101,11 @@ pub async fn v1_chat_completions(
     }
 
     tracing::info!(
-        request_model = %request.model,
+        request_model = %core_request.model,
         resolved_model = %resolved.model.model_key,
         route_count = resolved.routes.len(),
         eligible_route_count = eligible.len(),
-        stream = request.stream,
+        stream = core_request.stream,
         fallback_allowed = allow_fallback,
         "chat completion request resolved"
     );
@@ -114,7 +118,7 @@ pub async fn v1_chat_completions(
         )));
     }
 
-    if request.stream || !allow_fallback {
+    if core_request.stream || !allow_fallback {
         let (route, provider) = eligible
             .into_iter()
             .next()
@@ -128,8 +132,11 @@ pub async fn v1_chat_completions(
             request_headers,
         );
 
-        if request.stream {
-            let stream = match provider.chat_completions_stream(&request, &context).await {
+        if core_request.stream {
+            let stream = match provider
+                .chat_completions_stream(&core_request, &context)
+                .await
+            {
                 Ok(stream) => stream,
                 Err(error) => {
                     let gateway_error = GatewayError::from(error);
@@ -187,7 +194,7 @@ pub async fn v1_chat_completions(
         }
 
         let value = provider
-            .chat_completions(&request, &context)
+            .chat_completions(&core_request, &context)
             .await
             .map_err(GatewayError::from);
         let value = match value {
@@ -259,7 +266,7 @@ pub async fn v1_chat_completions(
             request_headers.clone(),
         );
 
-        match provider.chat_completions(&request, &context).await {
+        match provider.chat_completions(&core_request, &context).await {
             Ok(value) => {
                 best_effort_log_request(
                     &state.service,
@@ -297,7 +304,7 @@ pub async fn v1_chat_completions(
             Err(error) => {
                 tracing::warn!(
                     provider_key = %route.provider_key,
-                    request_model = %request.model,
+                    request_model = %core_request.model,
                     retryable = error.is_retryable(),
                     "chat completion attempt failed"
                 );
@@ -363,7 +370,11 @@ pub async fn v1_embeddings(
         .service
         .authenticate(extract_authorization_header(&headers))
         .await?;
-    let resolved = state.service.resolve_request(&auth, &request.model).await?;
+    let core_request = openai_embeddings_request_to_core(&request);
+    let resolved = state
+        .service
+        .resolve_request(&auth, &core_request.model)
+        .await?;
 
     let has_adapter = resolved
         .routes
@@ -372,7 +383,7 @@ pub async fn v1_embeddings(
         .is_some();
 
     tracing::info!(
-        request_model = %request.model,
+        request_model = %core_request.model,
         resolved_model = %resolved.model.model_key,
         route_count = resolved.routes.len(),
         provider_adapter_available = has_adapter,

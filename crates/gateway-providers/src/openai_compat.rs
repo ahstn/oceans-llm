@@ -2,8 +2,9 @@ use std::{collections::BTreeMap, time::Duration};
 
 use async_trait::async_trait;
 use gateway_core::{
-    ChatCompletionsRequest, EmbeddingsRequest, ProviderCapabilities, ProviderClient, ProviderError,
-    ProviderRequestContext, ProviderStream,
+    CoreChatRequest, CoreEmbeddingsRequest, ProviderCapabilities, ProviderClient, ProviderError,
+    ProviderRequestContext, ProviderStream, core_chat_request_to_openai,
+    core_embeddings_request_to_openai,
 };
 use serde_json::Value;
 
@@ -49,10 +50,11 @@ impl OpenAiCompatProvider {
 
     pub fn build_chat_request(
         &self,
-        request: &ChatCompletionsRequest,
+        request: &CoreChatRequest,
         context: &ProviderRequestContext,
     ) -> Result<reqwest::Request, ProviderError> {
-        let mut body = serde_json::to_value(request)
+        let wire_request = core_chat_request_to_openai(request);
+        let mut body = serde_json::to_value(wire_request)
             .map_err(|error| ProviderError::Transport(error.to_string()))?;
 
         if let Some(object) = body.as_object_mut() {
@@ -67,10 +69,11 @@ impl OpenAiCompatProvider {
 
     pub fn build_embeddings_request(
         &self,
-        request: &EmbeddingsRequest,
+        request: &CoreEmbeddingsRequest,
         context: &ProviderRequestContext,
     ) -> Result<reqwest::Request, ProviderError> {
-        let mut body = serde_json::to_value(request)
+        let wire_request = core_embeddings_request_to_openai(request);
+        let mut body = serde_json::to_value(wire_request)
             .map_err(|error| ProviderError::Transport(error.to_string()))?;
 
         if let Some(object) = body.as_object_mut() {
@@ -159,7 +162,7 @@ impl ProviderClient for OpenAiCompatProvider {
 
     async fn chat_completions(
         &self,
-        request: &ChatCompletionsRequest,
+        request: &CoreChatRequest,
         context: &ProviderRequestContext,
     ) -> Result<Value, ProviderError> {
         let request = self.build_chat_request(request, context)?;
@@ -168,7 +171,7 @@ impl ProviderClient for OpenAiCompatProvider {
 
     async fn chat_completions_stream(
         &self,
-        _request: &ChatCompletionsRequest,
+        _request: &CoreChatRequest,
         _context: &ProviderRequestContext,
     ) -> Result<ProviderStream, ProviderError> {
         Err(ProviderError::NotImplemented(
@@ -178,7 +181,7 @@ impl ProviderClient for OpenAiCompatProvider {
 
     async fn embeddings(
         &self,
-        request: &EmbeddingsRequest,
+        request: &CoreEmbeddingsRequest,
         context: &ProviderRequestContext,
     ) -> Result<Value, ProviderError> {
         let request = self.build_embeddings_request(request, context)?;
@@ -192,8 +195,7 @@ mod tests {
 
     use axum::{Json, Router, http::StatusCode, routing::post};
     use gateway_core::{
-        ChatCompletionsRequest, ProviderClient, ProviderError, ProviderRequestContext,
-        protocol::openai::ChatMessage,
+        CoreChatMessage, CoreChatRequest, ProviderClient, ProviderError, ProviderRequestContext,
     };
     use serde_json::{Map, Value, json};
     use tokio::net::TcpListener;
@@ -214,9 +216,9 @@ mod tests {
         })
         .expect("provider");
 
-        let request = ChatCompletionsRequest {
+        let request = CoreChatRequest {
             model: "fast".to_string(),
-            messages: vec![ChatMessage {
+            messages: vec![CoreChatMessage {
                 role: "user".to_string(),
                 content: Value::String("ping".to_string()),
                 name: None,
@@ -298,7 +300,7 @@ mod tests {
         })
         .expect("provider");
 
-        let request = ChatCompletionsRequest {
+        let request = CoreChatRequest {
             model: "fast".to_string(),
             messages: vec![],
             stream: false,

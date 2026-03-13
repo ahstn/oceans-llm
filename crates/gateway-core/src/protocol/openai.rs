@@ -47,7 +47,7 @@ pub struct ModelCard {
     pub owned_by: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ChatCompletionsRequest {
     pub model: String,
     #[serde(default)]
@@ -58,7 +58,7 @@ pub struct ChatCompletionsRequest {
     pub extra: BTreeMap<String, Value>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ChatMessage {
     pub role: String,
     pub content: Value,
@@ -68,7 +68,7 @@ pub struct ChatMessage {
     pub extra: BTreeMap<String, Value>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EmbeddingsRequest {
     pub model: String,
     pub input: Value,
