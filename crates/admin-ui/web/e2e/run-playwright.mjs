@@ -44,24 +44,20 @@ const baseURL = process.env.E2E_BASE_URL ?? `http://127.0.0.1:${gatewayPort}`
 const playwrightRoot = path.dirname(require.resolve('playwright/package.json'))
 const playwrightCli = path.join(playwrightRoot, 'cli.js')
 
-const child = spawn(
-  process.execPath,
-  [playwrightCli, 'test'],
-  {
-    stdio: 'inherit',
-    env: {
-      ...process.env,
-      E2E_GATEWAY_PORT: gatewayPort,
-      E2E_UI_PORT: uiPort,
-      E2E_UPSTREAM_PORT: upstreamPort,
-      E2E_BASE_URL: baseURL,
-      E2E_GATEWAY_API_KEY: process.env.E2E_GATEWAY_API_KEY ?? 'gwk_e2e.secret-value',
-      E2E_ADMIN_EMAIL: process.env.E2E_ADMIN_EMAIL ?? 'admin@local',
-      E2E_ADMIN_PASSWORD: process.env.E2E_ADMIN_PASSWORD ?? 'admin',
-      E2E_ADMIN_NEW_PASSWORD: process.env.E2E_ADMIN_NEW_PASSWORD ?? 's3cur3-passw0rd',
-    },
+const child = spawn(process.execPath, [playwrightCli, 'test'], {
+  stdio: 'inherit',
+  env: {
+    ...process.env,
+    E2E_GATEWAY_PORT: gatewayPort,
+    E2E_UI_PORT: uiPort,
+    E2E_UPSTREAM_PORT: upstreamPort,
+    E2E_BASE_URL: baseURL,
+    E2E_GATEWAY_API_KEY: process.env.E2E_GATEWAY_API_KEY ?? 'gwk_e2e.secret-value',
+    E2E_ADMIN_EMAIL: process.env.E2E_ADMIN_EMAIL ?? 'admin@local',
+    E2E_ADMIN_PASSWORD: process.env.E2E_ADMIN_PASSWORD ?? 'admin',
+    E2E_ADMIN_NEW_PASSWORD: process.env.E2E_ADMIN_NEW_PASSWORD ?? 's3cur3-passw0rd',
   },
-)
+})
 
 child.on('exit', (code, signal) => {
   if (signal) {

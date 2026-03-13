@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { requireAdminSession } from '@/routes/-admin-guard'
 import { getUsageCosts } from '@/server/admin-data.functions'
 
@@ -16,21 +16,28 @@ function UsageCostsPage() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Usage Costs</CardTitle>
+      <CardHeader className="flex flex-row items-start justify-between gap-4">
+        <div className="flex flex-col gap-1">
+          <CardTitle>Usage Costs</CardTitle>
+          <CardDescription>
+            Weekly spend by day, kept intentionally lightweight for quick operator scans.
+          </CardDescription>
+        </div>
       </CardHeader>
       <CardContent>
-        <div className="space-y-3">
+        <div className="flex flex-col gap-4">
           {data.map((point) => (
-            <div key={point.day} className="grid grid-cols-[48px_1fr_80px] items-center gap-3">
-              <span className="text-xs text-neutral-500">{point.day}</span>
-              <div className="h-2 rounded-full bg-neutral-800">
+            <div key={point.day} className="grid grid-cols-[56px_1fr_88px] items-center gap-4">
+              <span className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                {point.day}
+              </span>
+              <div className="h-3 rounded-full bg-[color:var(--color-surface-muted)]">
                 <div
-                  className="h-2 rounded-full bg-[var(--color-primary)]"
+                  className="h-3 rounded-full bg-[var(--color-primary)]"
                   style={{ width: `${(point.amountUsd / max) * 100}%` }}
                 />
               </div>
-              <span className="text-right text-xs text-neutral-300">
+              <span className="text-right text-sm font-semibold text-[var(--color-text)]">
                 ${point.amountUsd.toFixed(2)}
               </span>
             </div>

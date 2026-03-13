@@ -9,7 +9,10 @@ const Command = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <CommandPrimitive
     ref={ref}
-    className={cn('flex h-full w-full flex-col overflow-hidden rounded-md bg-transparent', className)}
+    className={cn(
+      'flex h-full w-full flex-col overflow-hidden rounded-md bg-transparent',
+      className,
+    )}
     {...props}
   />
 ))
@@ -23,7 +26,7 @@ const CommandInput = React.forwardRef<
     <CommandPrimitive.Input
       ref={ref}
       className={cn(
-        'flex h-10 w-full bg-transparent text-sm text-neutral-100 outline-none placeholder:text-neutral-500',
+        'flex h-11 w-full bg-transparent text-sm text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-soft)]',
         className,
       )}
       {...props}
@@ -38,7 +41,7 @@ const CommandList = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <CommandPrimitive.List
     ref={ref}
-    className={cn('max-h-64 overflow-y-auto overflow-x-hidden', className)}
+    className={cn('max-h-64 overflow-x-hidden overflow-y-auto', className)}
     {...props}
   />
 ))
@@ -50,7 +53,7 @@ const CommandEmpty = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <CommandPrimitive.Empty
     ref={ref}
-    className={cn('px-3 py-6 text-center text-sm text-neutral-500', className)}
+    className={cn('px-3 py-6 text-center text-sm text-[var(--color-text-soft)]', className)}
     {...props}
   />
 ))
@@ -63,7 +66,7 @@ const CommandGroup = React.forwardRef<
   <CommandPrimitive.Group
     ref={ref}
     className={cn(
-      'overflow-hidden p-1 text-neutral-200 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:tracking-[0.08em] [&_[cmdk-group-heading]]:text-neutral-500 [&_[cmdk-group-heading]]:uppercase',
+      'overflow-hidden p-1 text-[var(--color-text-muted)] [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:tracking-[0.08em] [&_[cmdk-group-heading]]:text-[var(--color-text-soft)] [&_[cmdk-group-heading]]:uppercase',
       className,
     )}
     {...props}
@@ -78,7 +81,7 @@ const CommandItem = React.forwardRef<
   <CommandPrimitive.Item
     ref={ref}
     className={cn(
-      'flex cursor-default items-center gap-2 rounded-sm px-2 py-2 text-sm text-neutral-200 outline-none select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-40 data-[selected=true]:bg-neutral-900 data-[selected=true]:text-neutral-100',
+      'flex cursor-default items-center gap-2 rounded-sm px-2 py-2 text-sm text-[var(--color-text-muted)] outline-none select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-40 data-[selected=true]:bg-[color:var(--color-surface-contrast)] data-[selected=true]:text-[var(--color-text)]',
       className,
     )}
     {...props}

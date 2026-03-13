@@ -1,7 +1,9 @@
 import { useState, useTransition, type FormEvent } from 'react'
+import { UserIcon } from '@hugeicons/core-free-icons'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
+import { AppIcon } from '@/components/icons/app-icon'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -15,8 +17,17 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty'
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group'
 import { requireAdminSession } from '@/routes/-admin-guard'
 import {
   Select,
@@ -49,7 +60,7 @@ const initialForm: CreateUserInput = {
   oidc_provider_key: null,
 }
 
-function UsersPage() {
+export function UsersPage() {
   const router = useRouter()
   const {
     data: { users, teams, oidc_providers: oidcProviders },
@@ -121,6 +132,49 @@ function UsersPage() {
     })
   }
 
+  function renderOnboardingActions(user: UserView) {
+    if (user.onboarding?.kind === 'password_invite') {
+      return (
+        <>
+          {user.onboarding.invite_url ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => handleCopy(user.onboarding?.invite_url ?? '', 'Invite URL copied')}
+            >
+              Copy invite
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => handleResend(user)}
+            disabled={isPending}
+          >
+            Resend invite
+          </Button>
+        </>
+      )
+    }
+
+    if (user.onboarding?.kind === 'oidc_sign_in') {
+      return (
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          onClick={() => handleCopy(user.onboarding?.sign_in_url ?? '', 'Sign-in URL copied')}
+        >
+          Copy sign-in URL
+        </Button>
+      )
+    }
+
+    return <span className="text-xs text-[var(--color-text-soft)]">No action available</span>
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <Card>
@@ -170,8 +224,8 @@ function UsersPage() {
                   <FieldGroup>
                     <Field>
                       <FieldLabel htmlFor="generated-url">Generated URL</FieldLabel>
-                      <div className="flex gap-2">
-                        <Input
+                      <InputGroup>
+                        <InputGroupInput
                           id="generated-url"
                           readOnly
                           value={
@@ -180,21 +234,24 @@ function UsersPage() {
                               : result.sign_in_url
                           }
                         />
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          onClick={() =>
-                            handleCopy(
-                              result.kind === 'password_invite'
-                                ? result.invite_url
-                                : result.sign_in_url,
-                              'URL copied',
-                            )
-                          }
-                        >
-                          Copy
-                        </Button>
-                      </div>
+                        <InputGroupAddon align="inline-end">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() =>
+                              handleCopy(
+                                result.kind === 'password_invite'
+                                  ? result.invite_url
+                                  : result.sign_in_url,
+                                'URL copied',
+                              )
+                            }
+                          >
+                            Copy
+                          </Button>
+                        </InputGroupAddon>
+                      </InputGroup>
                     </Field>
                   </FieldGroup>
 
@@ -255,8 +312,8 @@ function UsersPage() {
                           <Alert>
                             <AlertTitle>No SSO providers configured</AlertTitle>
                             <AlertDescription>
-                              Add an OIDC provider in the gateway before inviting users with SSO,
-                              or use password onboarding for now.
+                              Add an OIDC provider in the gateway before inviting users with SSO, or
+                              use password onboarding for now.
                             </AlertDescription>
                           </Alert>
                         ) : null}
@@ -379,30 +436,41 @@ function UsersPage() {
         </CardHeader>
 
         <CardContent>
-          <div className="overflow-hidden rounded-md border border-neutral-800">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-neutral-900/70 text-neutral-400">
-                <tr>
-                  <th className="px-3 py-2 font-medium">Name</th>
-                  <th className="px-3 py-2 font-medium">Email</th>
-                  <th className="px-3 py-2 font-medium">Auth</th>
-                  <th className="px-3 py-2 font-medium">Global role</th>
-                  <th className="px-3 py-2 font-medium">Team</th>
-                  <th className="px-3 py-2 font-medium">Team role</th>
-                  <th className="px-3 py-2 font-medium">Status</th>
-                  <th className="px-3 py-2 font-medium">Onboarding</th>
-                </tr>
-              </thead>
-              <tbody>
+          {users.length === 0 ? (
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <AppIcon icon={UserIcon} size={22} stroke={1.5} />
+                </EmptyMedia>
+                <EmptyTitle>No users provisioned yet</EmptyTitle>
+                <EmptyDescription>
+                  Create the first platform or team user, then share the generated onboarding URL
+                  directly from the dialog.
+                </EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent>
+                <Button type="button" onClick={() => setIsOpen(true)}>
+                  Create first user
+                </Button>
+              </EmptyContent>
+            </Empty>
+          ) : (
+            <div className="flex flex-col gap-4">
+              <div className="grid gap-3 md:hidden">
                 {users.map((user) => (
-                  <tr key={user.id} className="border-t border-neutral-800 align-top">
-                    <td className="px-3 py-3 text-neutral-100">{user.name}</td>
-                    <td className="px-3 py-3 text-neutral-300">{user.email}</td>
-                    <td className="px-3 py-3 text-neutral-300">{user.auth_mode}</td>
-                    <td className="px-3 py-3 text-neutral-300">{user.global_role}</td>
-                    <td className="px-3 py-3 text-neutral-300">{user.team_name ?? '—'}</td>
-                    <td className="px-3 py-3 text-neutral-300">{user.team_role ?? '—'}</td>
-                    <td className="px-3 py-3">
+                  <article
+                    key={user.id}
+                    className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-[var(--color-text)]">
+                          {user.name}
+                        </p>
+                        <p className="truncate text-sm text-[var(--color-text-muted)]">
+                          {user.email}
+                        </p>
+                      </div>
                       <Badge
                         variant={
                           user.status === 'active'
@@ -414,54 +482,101 @@ function UsersPage() {
                       >
                         {user.status}
                       </Badge>
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="flex flex-wrap gap-2">
-                        {user.onboarding?.kind === 'password_invite' ? (
-                          <>
-                            {user.onboarding.invite_url ? (
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="secondary"
-                                onClick={() =>
-                                  handleCopy(user.onboarding?.invite_url ?? '', 'Invite URL copied')
-                                }
-                              >
-                                Copy invite
-                              </Button>
-                            ) : null}
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => handleResend(user)}
-                              disabled={isPending}
-                            >
-                              Resend invite
-                            </Button>
-                          </>
-                        ) : user.onboarding?.kind === 'oidc_sign_in' ? (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="secondary"
-                            onClick={() =>
-                              handleCopy(user.onboarding?.sign_in_url ?? '', 'Sign-in URL copied')
+                    </div>
+
+                    <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                      <div>
+                        <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                          Auth
+                        </dt>
+                        <dd className="text-[var(--color-text-muted)]">{user.auth_mode}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                          Global role
+                        </dt>
+                        <dd className="text-[var(--color-text-muted)]">{user.global_role}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                          Team
+                        </dt>
+                        <dd className="text-[var(--color-text-muted)]">
+                          {user.team_name ?? 'No team'}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                          Team role
+                        </dt>
+                        <dd className="text-[var(--color-text-muted)]">{user.team_role ?? '—'}</dd>
+                      </div>
+                    </dl>
+
+                    <div className="mt-4 flex flex-wrap gap-2">{renderOnboardingActions(user)}</div>
+                  </article>
+                ))}
+              </div>
+
+              <div className="hidden overflow-hidden rounded-md border border-[color:var(--color-border)] md:block">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
+                    <tr>
+                      <th className="px-3 py-2 font-semibold">Name</th>
+                      <th className="px-3 py-2 font-semibold">Email</th>
+                      <th className="px-3 py-2 font-semibold">Auth</th>
+                      <th className="px-3 py-2 font-semibold">Global role</th>
+                      <th className="px-3 py-2 font-semibold">Team</th>
+                      <th className="px-3 py-2 font-semibold">Team role</th>
+                      <th className="px-3 py-2 font-semibold">Status</th>
+                      <th className="px-3 py-2 font-semibold">Onboarding</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {users.map((user) => (
+                      <tr
+                        key={user.id}
+                        className="border-t border-[color:var(--color-border)] align-top"
+                      >
+                        <td className="px-3 py-3 text-[var(--color-text)]">{user.name}</td>
+                        <td className="px-3 py-3 text-[var(--color-text-muted)]">{user.email}</td>
+                        <td className="px-3 py-3 text-[var(--color-text-muted)]">
+                          {user.auth_mode}
+                        </td>
+                        <td className="px-3 py-3 text-[var(--color-text-muted)]">
+                          {user.global_role}
+                        </td>
+                        <td className="px-3 py-3 text-[var(--color-text-muted)]">
+                          {user.team_name ?? '—'}
+                        </td>
+                        <td className="px-3 py-3 text-[var(--color-text-muted)]">
+                          {user.team_role ?? '—'}
+                        </td>
+                        <td className="px-3 py-3">
+                          <Badge
+                            variant={
+                              user.status === 'active'
+                                ? 'success'
+                                : user.status === 'invited'
+                                  ? 'warning'
+                                  : 'default'
                             }
                           >
-                            Copy sign-in URL
-                          </Button>
-                        ) : (
-                          <span className="text-xs text-neutral-500">—</span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                            {user.status}
+                          </Badge>
+                        </td>
+                        <td className="px-3 py-3">
+                          <div className="flex flex-wrap gap-2">
+                            {renderOnboardingActions(user)}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
