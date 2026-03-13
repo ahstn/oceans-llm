@@ -1,4 +1,5 @@
 **/.DS_Store
+mise.local.toml
 
 target/
 node_modules/
