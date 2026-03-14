@@ -22,9 +22,9 @@ mod tests {
         ApiKeyOwnerKind, ApiKeyRepository, AuthMode, BudgetRepository, GlobalRole,
         IdentityRepository, MembershipRole, ModelPricingRecord, ModelRepository, Money4,
         PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
-        PricingProvenance, RequestLogRecord, RequestLogRepository, SYSTEM_LEGACY_TEAM_ID,
-        SeedApiKey, SeedModel, SeedModelRoute, SeedProvider, StoreHealth, UsageLedgerRecord,
-        UsagePricingStatus,
+        PricingProvenance, ProviderCapabilities, RequestLogRecord, RequestLogRepository,
+        SYSTEM_LEGACY_TEAM_ID, SeedApiKey, SeedModel, SeedModelRoute, SeedProvider, StoreHealth,
+        UsageLedgerRecord, UsagePricingStatus,
     };
     use serde_json::{Map, json};
     use serial_test::serial;
@@ -73,7 +73,7 @@ mod tests {
         .expect("status");
 
         assert_eq!(status.backend, "libsql");
-        assert_eq!(status.pending_count(), 8);
+        assert_eq!(status.pending_count(), 9);
         assert!(status.entries.iter().all(|entry| !entry.applied));
     }
 
@@ -175,6 +175,9 @@ mod tests {
                 enabled: true,
                 extra_headers: Map::new(),
                 extra_body: Map::new(),
+                capabilities: ProviderCapabilities::with_dimensions(
+                    true, false, true, false, false, true, true,
+                ),
             }],
         }];
 
@@ -220,6 +223,9 @@ mod tests {
             .expect("model routes");
         assert_eq!(routes.len(), 1);
         assert_eq!(routes[0].provider_key, "openai-prod");
+        assert!(!routes[0].capabilities.stream);
+        assert!(!routes[0].capabilities.tools);
+        assert!(!routes[0].capabilities.vision);
     }
 
     #[tokio::test]
@@ -1206,6 +1212,9 @@ mod tests {
                 enabled: true,
                 extra_headers: Map::new(),
                 extra_body: Map::new(),
+                capabilities: ProviderCapabilities::with_dimensions(
+                    true, false, true, true, false, true, true,
+                ),
             }],
         }];
         let api_keys = vec![SeedApiKey {
@@ -1238,6 +1247,21 @@ mod tests {
                 .iter()
                 .any(|model| model.model_key == "fast")
         );
+
+        let model_id = store
+            .list_models_for_api_key(key.id)
+            .await
+            .expect("list models")
+            .into_iter()
+            .find(|model| model.model_key == "fast")
+            .expect("fast model")
+            .id;
+        let routes = store
+            .list_routes_for_model(model_id)
+            .await
+            .expect("list routes");
+        assert_eq!(routes.len(), 1);
+        assert!(!routes[0].capabilities.vision);
 
         let user = store
             .upsert_bootstrap_admin_user("Admin", "admin@local", true)
@@ -1518,7 +1542,7 @@ mod tests {
             .await
             .expect("initial postgres status");
         assert_eq!(initial_status.backend, "postgres");
-        assert_eq!(initial_status.pending_count(), 8);
+        assert_eq!(initial_status.pending_count(), 9);
         assert!(initial_status.entries.iter().all(|entry| !entry.applied));
 
         run_migrations_with_options(&options, MigrationTestHook::default())

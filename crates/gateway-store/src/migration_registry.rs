@@ -109,6 +109,17 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
             "../migrations/postgres/V8__usage_ledger_and_model_pricing.sql"
         )),
     },
+    MigrationManifest {
+        version: 9,
+        name: "model_route_capabilities",
+        checksum: "V9__model_route_capabilities.sql",
+        libsql: BackendMigrationStep::Sql(include_str!(
+            "../migrations/V9__model_route_capabilities.sql"
+        )),
+        postgres: BackendMigrationStep::Sql(include_str!(
+            "../migrations/postgres/V9__model_route_capabilities.sql"
+        )),
+    },
 ];
 
 #[cfg(test)]
