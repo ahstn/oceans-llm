@@ -441,7 +441,7 @@ enum RequestOperation {
 }
 
 impl RequestOperation {
-    const fn as_str(self) -> &'static str {
+    const fn as_str(&self) -> &'static str {
         match self {
             Self::ChatCompletions => "chat_completions",
             Self::Embeddings => "embeddings",
