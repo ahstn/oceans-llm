@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SpendControlsRouteImport } from './routes/spend-controls'
 import { Route as ModelsRouteImport } from './routes/models'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ChangePasswordRouteImport } from './routes/change-password'
@@ -21,6 +22,11 @@ import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as IdentityUsersRouteImport } from './routes/identity/users'
 import { Route as IdentityTeamsRouteImport } from './routes/identity/teams'
 
+const SpendControlsRoute = SpendControlsRouteImport.update({
+  id: '/spend-controls',
+  path: '/spend-controls',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ModelsRoute = ModelsRouteImport.update({
   id: '/models',
   path: '/models',
@@ -85,6 +91,7 @@ export interface FileRoutesByFullPath {
   '/change-password': typeof ChangePasswordRoute
   '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
+  '/spend-controls': typeof SpendControlsRoute
   '/identity/teams': typeof IdentityTeamsRoute
   '/identity/users': typeof IdentityUsersRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -98,6 +105,7 @@ export interface FileRoutesByTo {
   '/change-password': typeof ChangePasswordRoute
   '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
+  '/spend-controls': typeof SpendControlsRoute
   '/identity/teams': typeof IdentityTeamsRoute
   '/identity/users': typeof IdentityUsersRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -112,6 +120,7 @@ export interface FileRoutesById {
   '/change-password': typeof ChangePasswordRoute
   '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
+  '/spend-controls': typeof SpendControlsRoute
   '/identity/teams': typeof IdentityTeamsRoute
   '/identity/users': typeof IdentityUsersRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -127,6 +136,7 @@ export interface FileRouteTypes {
     | '/change-password'
     | '/login'
     | '/models'
+    | '/spend-controls'
     | '/identity/teams'
     | '/identity/users'
     | '/invite/$token'
@@ -140,6 +150,7 @@ export interface FileRouteTypes {
     | '/change-password'
     | '/login'
     | '/models'
+    | '/spend-controls'
     | '/identity/teams'
     | '/identity/users'
     | '/invite/$token'
@@ -153,6 +164,7 @@ export interface FileRouteTypes {
     | '/change-password'
     | '/login'
     | '/models'
+    | '/spend-controls'
     | '/identity/teams'
     | '/identity/users'
     | '/invite/$token'
@@ -167,6 +179,7 @@ export interface RootRouteChildren {
   ChangePasswordRoute: typeof ChangePasswordRoute
   LoginRoute: typeof LoginRoute
   ModelsRoute: typeof ModelsRoute
+  SpendControlsRoute: typeof SpendControlsRoute
   IdentityTeamsRoute: typeof IdentityTeamsRoute
   IdentityUsersRoute: typeof IdentityUsersRoute
   InviteTokenRoute: typeof InviteTokenRoute
@@ -176,6 +189,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/spend-controls': {
+      id: '/spend-controls'
+      path: '/spend-controls'
+      fullPath: '/spend-controls'
+      preLoaderRoute: typeof SpendControlsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/models': {
       id: '/models'
       path: '/models'
@@ -263,6 +283,7 @@ const rootRouteChildren: RootRouteChildren = {
   ChangePasswordRoute: ChangePasswordRoute,
   LoginRoute: LoginRoute,
   ModelsRoute: ModelsRoute,
+  SpendControlsRoute: SpendControlsRoute,
   IdentityTeamsRoute: IdentityTeamsRoute,
   IdentityUsersRoute: IdentityUsersRoute,
   InviteTokenRoute: InviteTokenRoute,

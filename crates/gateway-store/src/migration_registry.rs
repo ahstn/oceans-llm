@@ -124,9 +124,7 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         version: 10,
         name: "model_aliases",
         checksum: "V10__model_aliases.sql",
-        libsql: BackendMigrationStep::Sql(include_str!(
-            "../migrations/V10__model_aliases.sql"
-        )),
+        libsql: BackendMigrationStep::Sql(include_str!("../migrations/V10__model_aliases.sql")),
         postgres: BackendMigrationStep::Sql(include_str!(
             "../migrations/postgres/V10__model_aliases.sql"
         )),
@@ -140,6 +138,17 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         )),
         postgres: BackendMigrationStep::Sql(include_str!(
             "../migrations/postgres/V11__request_log_resolved_model.sql"
+        )),
+    },
+    MigrationManifest {
+        version: 12,
+        name: "team_budgets_and_spend_reporting",
+        checksum: "V12__team_budgets_and_spend_reporting.sql",
+        libsql: BackendMigrationStep::Sql(include_str!(
+            "../migrations/V12__team_budgets_and_spend_reporting.sql"
+        )),
+        postgres: BackendMigrationStep::Sql(include_str!(
+            "../migrations/postgres/V12__team_budgets_and_spend_reporting.sql"
         )),
     },
 ];

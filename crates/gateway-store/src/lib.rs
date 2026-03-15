@@ -19,7 +19,7 @@ mod tests {
     use std::env;
 
     use gateway_core::{
-        ApiKeyOwnerKind, ApiKeyRepository, AuthMode, BudgetRepository, GlobalRole,
+        ApiKeyOwnerKind, ApiKeyRepository, AuthMode, BudgetCadence, BudgetRepository, GlobalRole,
         IdentityRepository, MembershipRole, ModelPricingRecord, ModelRepository, Money4,
         PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
         PricingProvenance, ProviderCapabilities, RequestLogRecord, RequestLogRepository,
@@ -30,7 +30,7 @@ mod tests {
     use serial_test::serial;
     use sqlx::Row;
     use tempfile::tempdir;
-    use time::OffsetDateTime;
+    use time::{Duration, OffsetDateTime};
     use url::Url;
     use uuid::Uuid;
 
@@ -40,6 +40,58 @@ mod tests {
         migration_registry::{BackendMigrationStep, MIGRATION_REGISTRY, MigrationBackend},
         run_migrations, run_migrations_with_options, status_migrations_with_options,
     };
+
+    fn build_usage_ledger_record(
+        request_id: &str,
+        ownership_scope_key: String,
+        api_key_id: Uuid,
+        user_id: Option<Uuid>,
+        team_id: Option<Uuid>,
+        model_id: Option<Uuid>,
+        upstream_model: &str,
+        pricing_status: UsagePricingStatus,
+        computed_cost_10000: i64,
+        occurred_at: OffsetDateTime,
+    ) -> UsageLedgerRecord {
+        let unpriced_reason = match pricing_status {
+            UsagePricingStatus::Unpriced => Some("missing_pricing".to_string()),
+            _ => None,
+        };
+
+        UsageLedgerRecord {
+            usage_event_id: Uuid::new_v4(),
+            request_id: request_id.to_string(),
+            ownership_scope_key,
+            api_key_id,
+            user_id,
+            team_id,
+            actor_user_id: None,
+            model_id,
+            provider_key: "openai-prod".to_string(),
+            upstream_model: upstream_model.to_string(),
+            prompt_tokens: Some(100),
+            completion_tokens: Some(50),
+            total_tokens: Some(150),
+            provider_usage: json!({
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "total_tokens": 150
+            }),
+            pricing_status,
+            unpriced_reason,
+            pricing_row_id: None,
+            pricing_provider_id: Some("openai".to_string()),
+            pricing_model_id: Some(upstream_model.to_string()),
+            pricing_source: Some("test".to_string()),
+            pricing_source_etag: Some("etag-1".to_string()),
+            pricing_source_fetched_at: Some(occurred_at),
+            pricing_last_updated: Some("2026-03-15".to_string()),
+            input_cost_per_million_tokens: Some(Money4::from_scaled(1_250)),
+            output_cost_per_million_tokens: Some(Money4::from_scaled(10_000)),
+            computed_cost_usd: Money4::from_scaled(computed_cost_10000),
+            occurred_at,
+        }
+    }
 
     #[tokio::test]
     #[serial]
@@ -74,7 +126,7 @@ mod tests {
         .expect("status");
 
         assert_eq!(status.backend, "libsql");
-        assert_eq!(status.pending_count(), 11);
+        assert_eq!(status.pending_count(), 12);
         assert!(status.entries.iter().all(|entry| !entry.applied));
     }
 
@@ -804,6 +856,66 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn team_budget_enforces_single_active_record_per_team() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
+            .build()
+            .await
+            .expect("db");
+        let conn = db.connect().expect("connection");
+        let now = time::OffsetDateTime::now_utc().unix_timestamp();
+        let team_id = Uuid::new_v4();
+
+        conn.execute(
+            r#"
+            INSERT INTO teams (
+              team_id, team_key, team_name, status, model_access_mode, created_at, updated_at
+            ) VALUES (?1, 'platform', 'Platform', 'active', 'all', ?2, ?2)
+            "#,
+            libsql::params![team_id.to_string(), now],
+        )
+        .await
+        .expect("team");
+
+        conn.execute(
+            r#"
+            INSERT INTO team_budgets (
+                team_budget_id, team_id, cadence, amount_10000, hard_limit, timezone, is_active, created_at, updated_at
+            ) VALUES (?1, ?2, 'daily', 100000, 1, 'UTC', 1, ?3, ?3)
+            "#,
+            libsql::params![Uuid::new_v4().to_string(), team_id.to_string(), now],
+        )
+        .await
+        .expect("first budget");
+
+        let duplicate_active_result = conn
+            .execute(
+                r#"
+                INSERT INTO team_budgets (
+                    team_budget_id, team_id, cadence, amount_10000, hard_limit, timezone, is_active, created_at, updated_at
+                ) VALUES (?1, ?2, 'weekly', 200000, 1, 'UTC', 1, ?3, ?3)
+                "#,
+                libsql::params![Uuid::new_v4().to_string(), team_id.to_string(), now],
+            )
+            .await;
+        assert!(duplicate_active_result.is_err());
+
+        conn.execute(
+            r#"
+            INSERT INTO team_budgets (
+                team_budget_id, team_id, cadence, amount_10000, hard_limit, timezone, is_active, created_at, updated_at
+            ) VALUES (?1, ?2, 'weekly', 200000, 1, 'UTC', 0, ?3, ?3)
+            "#,
+            libsql::params![Uuid::new_v4().to_string(), team_id.to_string(), now],
+        )
+        .await
+        .expect("inactive budget should be allowed");
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn v4_migration_converts_money_columns_to_scaled_integers() {
         let tmp = tempdir().expect("tempdir");
         let db_path = tmp.path().join("gateway.db");
@@ -1347,6 +1459,246 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn libsql_spend_reporting_aggregates_and_team_window_sum_filter_chargeable_statuses() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        let providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: json!({
+                "base_url": "https://api.openai.com/v1",
+                "timeout_ms": 120_000
+            }),
+            secrets: Some(json!({"token": "env.OPENAI_API_KEY"})),
+        }];
+        let models = vec![SeedModel {
+            model_key: "fast".to_string(),
+            alias_target_model_key: None,
+            description: Some("fast tier".to_string()),
+            tags: vec!["fast".to_string()],
+            rank: 10,
+            routes: vec![SeedModelRoute {
+                provider_key: "openai-prod".to_string(),
+                upstream_model: "gpt-4o-mini".to_string(),
+                priority: 10,
+                weight: 1.0,
+                enabled: true,
+                extra_headers: Map::new(),
+                extra_body: Map::new(),
+                capabilities: ProviderCapabilities::all_enabled(),
+            }],
+        }];
+        let api_keys = vec![SeedApiKey {
+            name: "dev".to_string(),
+            public_id: "dev123".to_string(),
+            secret_hash: "hash".to_string(),
+            allowed_models: vec!["fast".to_string()],
+        }];
+        store
+            .seed_from_inputs(&providers, &models, &api_keys)
+            .await
+            .expect("seed");
+
+        let api_key = store
+            .get_api_key_by_public_id("dev123")
+            .await
+            .expect("load api key")
+            .expect("api key");
+        let model = store
+            .get_model_by_key("fast")
+            .await
+            .expect("load model")
+            .expect("model");
+        let team = store
+            .create_team("platform", "Platform")
+            .await
+            .expect("create team");
+        let user = store
+            .create_identity_user(
+                "Member",
+                "member@example.com",
+                "member@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                "active",
+            )
+            .await
+            .expect("create user");
+
+        let now = OffsetDateTime::from_unix_timestamp(1_773_484_800).expect("timestamp");
+        let budget = store
+            .upsert_active_budget_for_team(
+                team.team_id,
+                BudgetCadence::Daily,
+                Money4::from_scaled(100_000),
+                true,
+                "UTC",
+                now,
+            )
+            .await
+            .expect("upsert team budget");
+        assert_eq!(budget.amount_usd, Money4::from_scaled(100_000));
+
+        let day_one = OffsetDateTime::from_unix_timestamp(1_773_486_600).expect("day one");
+        let day_two = day_one + Duration::days(1);
+
+        for event in [
+            build_usage_ledger_record(
+                "req-user-priced",
+                format!("user:{}", user.user_id),
+                api_key.id,
+                Some(user.user_id),
+                None,
+                Some(model.id),
+                "gpt-4o-mini",
+                UsagePricingStatus::Priced,
+                11_000,
+                day_one,
+            ),
+            build_usage_ledger_record(
+                "req-user-unpriced",
+                format!("user:{}", user.user_id),
+                api_key.id,
+                Some(user.user_id),
+                None,
+                Some(model.id),
+                "gpt-4o-mini",
+                UsagePricingStatus::Unpriced,
+                0,
+                day_one,
+            ),
+            build_usage_ledger_record(
+                "req-team-legacy",
+                format!("team:{}:actor:none", team.team_id),
+                api_key.id,
+                None,
+                Some(team.team_id),
+                None,
+                "claude-3-5-sonnet",
+                UsagePricingStatus::LegacyEstimated,
+                22_000,
+                day_two,
+            ),
+            build_usage_ledger_record(
+                "req-team-unpriced",
+                format!("team:{}:actor:none", team.team_id),
+                api_key.id,
+                None,
+                Some(team.team_id),
+                None,
+                "claude-3-5-sonnet",
+                UsagePricingStatus::Unpriced,
+                0,
+                day_two,
+            ),
+            build_usage_ledger_record(
+                "req-team-usage-missing",
+                format!("team:{}:actor:none", team.team_id),
+                api_key.id,
+                None,
+                Some(team.team_id),
+                None,
+                "claude-3-5-sonnet",
+                UsagePricingStatus::UsageMissing,
+                0,
+                day_two,
+            ),
+        ] {
+            assert!(
+                store
+                    .insert_usage_ledger_if_absent(&event)
+                    .await
+                    .expect("insert usage ledger")
+            );
+        }
+
+        let window_start = day_one - Duration::hours(1);
+        let window_end = day_two + Duration::days(1);
+        let team_sum = store
+            .sum_usage_cost_for_team_in_window(team.team_id, window_start, window_end)
+            .await
+            .expect("team sum");
+        assert_eq!(team_sum, Money4::from_scaled(22_000));
+
+        let daily = store
+            .list_usage_daily_aggregates(window_start, window_end, None)
+            .await
+            .expect("daily aggregates");
+        assert_eq!(daily.len(), 2);
+        let day_one_bucket = (day_one.unix_timestamp() / 86_400) * 86_400;
+        let day_two_bucket = (day_two.unix_timestamp() / 86_400) * 86_400;
+        let first = daily
+            .iter()
+            .find(|row| row.day_start.unix_timestamp() == day_one_bucket)
+            .expect("day one aggregate");
+        assert_eq!(first.priced_cost_usd, Money4::from_scaled(11_000));
+        assert_eq!(first.priced_request_count, 1);
+        assert_eq!(first.unpriced_request_count, 1);
+        assert_eq!(first.usage_missing_request_count, 0);
+        let second = daily
+            .iter()
+            .find(|row| row.day_start.unix_timestamp() == day_two_bucket)
+            .expect("day two aggregate");
+        assert_eq!(second.priced_cost_usd, Money4::from_scaled(22_000));
+        assert_eq!(second.priced_request_count, 1);
+        assert_eq!(second.unpriced_request_count, 1);
+        assert_eq!(second.usage_missing_request_count, 1);
+
+        let owners = store
+            .list_usage_owner_aggregates(window_start, window_end, None)
+            .await
+            .expect("owner aggregates");
+        assert_eq!(owners.len(), 2);
+        let user_owner = owners
+            .iter()
+            .find(|row| row.owner_kind == ApiKeyOwnerKind::User)
+            .expect("user owner aggregate");
+        assert_eq!(user_owner.owner_id, user.user_id);
+        assert_eq!(user_owner.priced_cost_usd, Money4::from_scaled(11_000));
+        assert_eq!(user_owner.priced_request_count, 1);
+        assert_eq!(user_owner.unpriced_request_count, 1);
+        assert_eq!(user_owner.usage_missing_request_count, 0);
+        let team_owner = owners
+            .iter()
+            .find(|row| row.owner_kind == ApiKeyOwnerKind::Team)
+            .expect("team owner aggregate");
+        assert_eq!(team_owner.owner_id, team.team_id);
+        assert_eq!(team_owner.priced_cost_usd, Money4::from_scaled(22_000));
+        assert_eq!(team_owner.priced_request_count, 1);
+        assert_eq!(team_owner.unpriced_request_count, 1);
+        assert_eq!(team_owner.usage_missing_request_count, 1);
+
+        let models = store
+            .list_usage_model_aggregates(window_start, window_end, None)
+            .await
+            .expect("model aggregates");
+        assert_eq!(models.len(), 2);
+        let gateway_model = models
+            .iter()
+            .find(|row| row.model_key == "fast")
+            .expect("gateway model aggregate");
+        assert_eq!(gateway_model.priced_cost_usd, Money4::from_scaled(11_000));
+        assert_eq!(gateway_model.priced_request_count, 1);
+        assert_eq!(gateway_model.unpriced_request_count, 1);
+        assert_eq!(gateway_model.usage_missing_request_count, 0);
+        let upstream_model = models
+            .iter()
+            .find(|row| row.model_key == "claude-3-5-sonnet")
+            .expect("upstream model aggregate");
+        assert_eq!(upstream_model.priced_cost_usd, Money4::from_scaled(22_000));
+        assert_eq!(upstream_model.priced_request_count, 1);
+        assert_eq!(upstream_model.unpriced_request_count, 1);
+        assert_eq!(upstream_model.usage_missing_request_count, 1);
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn postgres_store_supports_migrations_and_core_operations() {
         let Some(test_db) = create_postgres_test_database().await else {
             eprintln!("skipping postgres store test because TEST_POSTGRES_URL is not set");
@@ -1709,6 +2061,345 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn postgres_team_budget_enforces_single_active_record_per_team() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres team budget uniqueness test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 2,
+        };
+        run_migrations_with_options(&options, MigrationTestHook::default())
+            .await
+            .expect("postgres migrations");
+
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&test_db.database_url)
+            .await
+            .expect("postgres pool");
+        let now = OffsetDateTime::now_utc().unix_timestamp();
+        let team_id = Uuid::new_v4();
+
+        sqlx::query(
+            r#"
+            INSERT INTO teams (
+              team_id, team_key, team_name, status, model_access_mode, created_at, updated_at
+            ) VALUES ($1, 'platform', 'Platform', 'active', 'all', $2, $2)
+            "#,
+        )
+        .bind(team_id.to_string())
+        .bind(now)
+        .execute(&pool)
+        .await
+        .expect("team");
+
+        sqlx::query(
+            r#"
+            INSERT INTO team_budgets (
+                team_budget_id, team_id, cadence, amount_10000, hard_limit, timezone, is_active, created_at, updated_at
+            ) VALUES ($1, $2, 'daily', 100000, 1, 'UTC', 1, $3, $3)
+            "#,
+        )
+        .bind(Uuid::new_v4().to_string())
+        .bind(team_id.to_string())
+        .bind(now)
+        .execute(&pool)
+        .await
+        .expect("first budget");
+
+        let duplicate_active_result = sqlx::query(
+            r#"
+            INSERT INTO team_budgets (
+                team_budget_id, team_id, cadence, amount_10000, hard_limit, timezone, is_active, created_at, updated_at
+            ) VALUES ($1, $2, 'weekly', 200000, 1, 'UTC', 1, $3, $3)
+            "#,
+        )
+        .bind(Uuid::new_v4().to_string())
+        .bind(team_id.to_string())
+        .bind(now)
+        .execute(&pool)
+        .await;
+        assert!(duplicate_active_result.is_err());
+
+        sqlx::query(
+            r#"
+            INSERT INTO team_budgets (
+                team_budget_id, team_id, cadence, amount_10000, hard_limit, timezone, is_active, created_at, updated_at
+            ) VALUES ($1, $2, 'weekly', 200000, 1, 'UTC', 0, $3, $3)
+            "#,
+        )
+        .bind(Uuid::new_v4().to_string())
+        .bind(team_id.to_string())
+        .bind(now)
+        .execute(&pool)
+        .await
+        .expect("inactive budget should be allowed");
+
+        pool.close().await;
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_spend_reporting_aggregates_and_team_window_sum_filter_chargeable_statuses() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres spend reporting parity test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options, MigrationTestHook::default())
+            .await
+            .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        let providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: json!({
+                "base_url": "https://api.openai.com/v1",
+                "timeout_ms": 120_000
+            }),
+            secrets: Some(json!({"token": "env.OPENAI_API_KEY"})),
+        }];
+        let models = vec![SeedModel {
+            model_key: "fast".to_string(),
+            alias_target_model_key: None,
+            description: Some("fast tier".to_string()),
+            tags: vec!["fast".to_string()],
+            rank: 10,
+            routes: vec![SeedModelRoute {
+                provider_key: "openai-prod".to_string(),
+                upstream_model: "gpt-4o-mini".to_string(),
+                priority: 10,
+                weight: 1.0,
+                enabled: true,
+                extra_headers: Map::new(),
+                extra_body: Map::new(),
+                capabilities: ProviderCapabilities::all_enabled(),
+            }],
+        }];
+        let api_keys = vec![SeedApiKey {
+            name: "dev".to_string(),
+            public_id: "dev123".to_string(),
+            secret_hash: "hash".to_string(),
+            allowed_models: vec!["fast".to_string()],
+        }];
+        store
+            .seed_from_inputs(&providers, &models, &api_keys)
+            .await
+            .expect("seed");
+
+        let api_key = store
+            .get_api_key_by_public_id("dev123")
+            .await
+            .expect("load api key")
+            .expect("api key");
+        let model = store
+            .get_model_by_key("fast")
+            .await
+            .expect("load model")
+            .expect("model");
+        let team = store
+            .create_team("platform", "Platform")
+            .await
+            .expect("create team");
+        let user = store
+            .create_identity_user(
+                "Member",
+                "member@example.com",
+                "member@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                "active",
+            )
+            .await
+            .expect("create user");
+
+        let now = OffsetDateTime::from_unix_timestamp(1_773_484_800).expect("timestamp");
+        let budget = store
+            .upsert_active_budget_for_team(
+                team.team_id,
+                BudgetCadence::Daily,
+                Money4::from_scaled(100_000),
+                true,
+                "UTC",
+                now,
+            )
+            .await
+            .expect("upsert team budget");
+        assert_eq!(budget.amount_usd, Money4::from_scaled(100_000));
+
+        let day_one = OffsetDateTime::from_unix_timestamp(1_773_486_600).expect("day one");
+        let day_two = day_one + Duration::days(1);
+
+        for event in [
+            build_usage_ledger_record(
+                "req-user-priced",
+                format!("user:{}", user.user_id),
+                api_key.id,
+                Some(user.user_id),
+                None,
+                Some(model.id),
+                "gpt-4o-mini",
+                UsagePricingStatus::Priced,
+                11_000,
+                day_one,
+            ),
+            build_usage_ledger_record(
+                "req-user-unpriced",
+                format!("user:{}", user.user_id),
+                api_key.id,
+                Some(user.user_id),
+                None,
+                Some(model.id),
+                "gpt-4o-mini",
+                UsagePricingStatus::Unpriced,
+                0,
+                day_one,
+            ),
+            build_usage_ledger_record(
+                "req-team-legacy",
+                format!("team:{}:actor:none", team.team_id),
+                api_key.id,
+                None,
+                Some(team.team_id),
+                None,
+                "claude-3-5-sonnet",
+                UsagePricingStatus::LegacyEstimated,
+                22_000,
+                day_two,
+            ),
+            build_usage_ledger_record(
+                "req-team-unpriced",
+                format!("team:{}:actor:none", team.team_id),
+                api_key.id,
+                None,
+                Some(team.team_id),
+                None,
+                "claude-3-5-sonnet",
+                UsagePricingStatus::Unpriced,
+                0,
+                day_two,
+            ),
+            build_usage_ledger_record(
+                "req-team-usage-missing",
+                format!("team:{}:actor:none", team.team_id),
+                api_key.id,
+                None,
+                Some(team.team_id),
+                None,
+                "claude-3-5-sonnet",
+                UsagePricingStatus::UsageMissing,
+                0,
+                day_two,
+            ),
+        ] {
+            assert!(
+                store
+                    .insert_usage_ledger_if_absent(&event)
+                    .await
+                    .expect("insert usage ledger")
+            );
+        }
+
+        let window_start = day_one - Duration::hours(1);
+        let window_end = day_two + Duration::days(1);
+        let team_sum = store
+            .sum_usage_cost_for_team_in_window(team.team_id, window_start, window_end)
+            .await
+            .expect("team sum");
+        assert_eq!(team_sum, Money4::from_scaled(22_000));
+
+        let daily = store
+            .list_usage_daily_aggregates(window_start, window_end, None)
+            .await
+            .expect("daily aggregates");
+        assert_eq!(daily.len(), 2);
+        let day_one_bucket = (day_one.unix_timestamp() / 86_400) * 86_400;
+        let day_two_bucket = (day_two.unix_timestamp() / 86_400) * 86_400;
+        let first = daily
+            .iter()
+            .find(|row| row.day_start.unix_timestamp() == day_one_bucket)
+            .expect("day one aggregate");
+        assert_eq!(first.priced_cost_usd, Money4::from_scaled(11_000));
+        assert_eq!(first.priced_request_count, 1);
+        assert_eq!(first.unpriced_request_count, 1);
+        assert_eq!(first.usage_missing_request_count, 0);
+        let second = daily
+            .iter()
+            .find(|row| row.day_start.unix_timestamp() == day_two_bucket)
+            .expect("day two aggregate");
+        assert_eq!(second.priced_cost_usd, Money4::from_scaled(22_000));
+        assert_eq!(second.priced_request_count, 1);
+        assert_eq!(second.unpriced_request_count, 1);
+        assert_eq!(second.usage_missing_request_count, 1);
+
+        let owners = store
+            .list_usage_owner_aggregates(window_start, window_end, None)
+            .await
+            .expect("owner aggregates");
+        assert_eq!(owners.len(), 2);
+        let user_owner = owners
+            .iter()
+            .find(|row| row.owner_kind == ApiKeyOwnerKind::User)
+            .expect("user owner aggregate");
+        assert_eq!(user_owner.owner_id, user.user_id);
+        assert_eq!(user_owner.priced_cost_usd, Money4::from_scaled(11_000));
+        assert_eq!(user_owner.priced_request_count, 1);
+        assert_eq!(user_owner.unpriced_request_count, 1);
+        assert_eq!(user_owner.usage_missing_request_count, 0);
+        let team_owner = owners
+            .iter()
+            .find(|row| row.owner_kind == ApiKeyOwnerKind::Team)
+            .expect("team owner aggregate");
+        assert_eq!(team_owner.owner_id, team.team_id);
+        assert_eq!(team_owner.priced_cost_usd, Money4::from_scaled(22_000));
+        assert_eq!(team_owner.priced_request_count, 1);
+        assert_eq!(team_owner.unpriced_request_count, 1);
+        assert_eq!(team_owner.usage_missing_request_count, 1);
+
+        let models = store
+            .list_usage_model_aggregates(window_start, window_end, None)
+            .await
+            .expect("model aggregates");
+        assert_eq!(models.len(), 2);
+        let gateway_model = models
+            .iter()
+            .find(|row| row.model_key == "fast")
+            .expect("gateway model aggregate");
+        assert_eq!(gateway_model.priced_cost_usd, Money4::from_scaled(11_000));
+        assert_eq!(gateway_model.priced_request_count, 1);
+        assert_eq!(gateway_model.unpriced_request_count, 1);
+        assert_eq!(gateway_model.usage_missing_request_count, 0);
+        let upstream_model = models
+            .iter()
+            .find(|row| row.model_key == "claude-3-5-sonnet")
+            .expect("upstream model aggregate");
+        assert_eq!(upstream_model.priced_cost_usd, Money4::from_scaled(22_000));
+        assert_eq!(upstream_model.priced_request_count, 1);
+        assert_eq!(upstream_model.unpriced_request_count, 1);
+        assert_eq!(upstream_model.usage_missing_request_count, 1);
+
+        drop(store);
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn postgres_alias_backed_models_round_trip_through_store() {
         let Some(test_db) = create_postgres_test_database().await else {
             eprintln!("skipping postgres alias store test because TEST_POSTGRES_URL is not set");
@@ -1928,7 +2619,7 @@ mod tests {
             .await
             .expect("initial postgres status");
         assert_eq!(initial_status.backend, "postgres");
-        assert_eq!(initial_status.pending_count(), 11);
+        assert_eq!(initial_status.pending_count(), 12);
         assert!(initial_status.entries.iter().all(|entry| !entry.applied));
 
         run_migrations_with_options(&options, MigrationTestHook::default())

@@ -17,8 +17,9 @@ use gateway_core::{
     PasswordInvitationRecord, PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits,
     PricingModalities, PricingProvenance, ProviderConnection, ProviderRepository, RequestLogRecord,
     RequestLogRepository, SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SYSTEM_LEGACY_TEAM_ID,
-    SYSTEM_LEGACY_TEAM_KEY, StoreError, StoreHealth, TeamMembershipRecord, TeamRecord,
-    UsageLedgerRecord, UsagePricingStatus, UserBudgetRecord, UserOidcAuthRecord,
+    SYSTEM_LEGACY_TEAM_KEY, SpendDailyAggregateRecord, SpendModelAggregateRecord,
+    SpendOwnerAggregateRecord, StoreError, StoreHealth, TeamBudgetRecord, TeamMembershipRecord,
+    TeamRecord, UsageLedgerRecord, UsagePricingStatus, UserBudgetRecord, UserOidcAuthRecord,
     UserPasswordAuthRecord, UserRecord, UserSessionRecord,
 };
 use sqlx::{

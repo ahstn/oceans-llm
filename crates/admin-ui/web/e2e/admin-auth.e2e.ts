@@ -33,7 +33,7 @@ test('bootstrap admin must rotate the password before accessing the control plan
   await expect(page.getByText('Oceans Gateway')).toBeVisible()
   await expect(page.getByText('Identity onboarding is wired to the gateway.')).toBeVisible()
   await expect(
-    page.getByText('Server-function-backed mock data using v1 envelope contracts.'),
+    page.getByText('Other control-plane pages may still use local preview data.'),
   ).toBeVisible()
 
   const sessionPayload = await page.evaluate(async () => {

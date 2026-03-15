@@ -322,9 +322,10 @@ mod tests {
         routing::post,
     };
     use gateway_core::{
-        CoreChatRequest, CoreEmbeddingsRequest, ProviderCapabilities, ProviderClient,
-        ProviderError, ProviderRequestContext, ProviderStream, SeedApiKey, SeedModel,
-        SeedModelRoute, SeedProvider, parse_gateway_api_key,
+        ApiKeyRepository, AuthMode, BudgetRepository, CoreChatRequest, CoreEmbeddingsRequest,
+        GlobalRole, ModelRepository, Money4, ProviderCapabilities, ProviderClient, ProviderError,
+        ProviderRequestContext, ProviderStream, SeedApiKey, SeedModel, SeedModelRoute,
+        SeedProvider, UsageLedgerRecord, UsagePricingStatus, parse_gateway_api_key,
     };
     use gateway_providers::{OpenAiCompatConfig, OpenAiCompatProvider};
     use gateway_service::{GatewayService, WeightedRoutePlanner, hash_gateway_key_secret};
@@ -893,6 +894,91 @@ mod tests {
             .await
             .expect("body bytes");
         serde_json::from_slice(&body).expect("json body")
+    }
+
+    async fn bootstrap_admin_session_cookie(app: &Router, store: &Arc<AnyStore>) -> String {
+        ensure_bootstrap_admin(
+            store,
+            &BootstrapAdminConfig {
+                enabled: true,
+                email: "admin@local".to_string(),
+                password: "literal.admin".to_string(),
+                require_password_change: false,
+            },
+        )
+        .await
+        .expect("bootstrap admin");
+
+        let login_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/auth/login/password")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "email": "admin@local",
+                            "password": "admin"
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("login response");
+        assert_eq!(login_response.status(), StatusCode::OK);
+        set_cookie_header(&login_response)
+    }
+
+    fn usage_ledger_record(
+        request_id: &str,
+        ownership_scope_key: String,
+        api_key_id: Uuid,
+        user_id: Option<Uuid>,
+        team_id: Option<Uuid>,
+        model_id: Option<Uuid>,
+        upstream_model: &str,
+        pricing_status: UsagePricingStatus,
+        computed_cost_10000: i64,
+        occurred_at: time::OffsetDateTime,
+    ) -> UsageLedgerRecord {
+        UsageLedgerRecord {
+            usage_event_id: Uuid::new_v4(),
+            request_id: request_id.to_string(),
+            ownership_scope_key,
+            api_key_id,
+            user_id,
+            team_id,
+            actor_user_id: None,
+            model_id,
+            provider_key: "openai-prod".to_string(),
+            upstream_model: upstream_model.to_string(),
+            prompt_tokens: Some(100),
+            completion_tokens: Some(50),
+            total_tokens: Some(150),
+            provider_usage: json!({
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "total_tokens": 150
+            }),
+            pricing_status: pricing_status.clone(),
+            unpriced_reason: match pricing_status {
+                UsagePricingStatus::Unpriced => Some("missing_pricing".to_string()),
+                _ => None,
+            },
+            pricing_row_id: None,
+            pricing_provider_id: Some("openai".to_string()),
+            pricing_model_id: Some(upstream_model.to_string()),
+            pricing_source: Some("test".to_string()),
+            pricing_source_etag: Some("etag-1".to_string()),
+            pricing_source_fetched_at: Some(occurred_at),
+            pricing_last_updated: Some("2026-03-15".to_string()),
+            input_cost_per_million_tokens: Some(Money4::from_scaled(1_250)),
+            output_cost_per_million_tokens: Some(Money4::from_scaled(10_000)),
+            computed_cost_usd: Money4::from_scaled(computed_cost_10000),
+            occurred_at,
+        }
     }
 
     struct PostgresTestDatabase {
@@ -2203,6 +2289,530 @@ mod tests {
             .expect("response");
 
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn admin_spend_routes_require_authenticated_session() {
+        let (app, _, _) =
+            build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;
+        let owner_id = Uuid::new_v4();
+        let payload = json!({
+            "cadence": "daily",
+            "amount_usd": "10.0000",
+            "hard_limit": true,
+            "timezone": "UTC"
+        })
+        .to_string();
+
+        let report = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/v1/admin/spend/report")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(report.status(), StatusCode::UNAUTHORIZED);
+
+        let budgets = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/v1/admin/spend/budgets")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(budgets.status(), StatusCode::UNAUTHORIZED);
+
+        let user_upsert = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/api/v1/admin/spend/budgets/users/{owner_id}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(payload.clone()))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(user_upsert.status(), StatusCode::UNAUTHORIZED);
+
+        let user_deactivate = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri(format!("/api/v1/admin/spend/budgets/users/{owner_id}"))
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(user_deactivate.status(), StatusCode::UNAUTHORIZED);
+
+        let team_upsert = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/api/v1/admin/spend/budgets/teams/{owner_id}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(payload))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(team_upsert.status(), StatusCode::UNAUTHORIZED);
+
+        let team_deactivate = app
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri(format!("/api/v1/admin/spend/budgets/teams/{owner_id}"))
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(team_deactivate.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn admin_spend_report_returns_live_ledger_aggregates_and_honors_filters() {
+        let (app, store, _) =
+            build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;
+        let session_cookie = bootstrap_admin_session_cookie(&app, &store).await;
+
+        let providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: serde_json::json!({
+                "base_url": "https://api.openai.com/v1",
+                "pricing_provider_id": "openai"
+            }),
+            secrets: None,
+        }];
+        let models = vec![SeedModel {
+            model_key: "fast".to_string(),
+            alias_target_model_key: None,
+            description: Some("Fast tier".to_string()),
+            tags: vec!["fast".to_string()],
+            rank: 10,
+            routes: vec![SeedModelRoute {
+                provider_key: "openai-prod".to_string(),
+                upstream_model: "gpt-5".to_string(),
+                priority: 10,
+                weight: 1.0,
+                enabled: true,
+                extra_headers: Map::<String, Value>::new(),
+                extra_body: Map::<String, Value>::new(),
+                capabilities: ProviderCapabilities::all_enabled(),
+            }],
+        }];
+        let api_keys = vec![SeedApiKey {
+            name: "dev".to_string(),
+            public_id: "dev123".to_string(),
+            secret_hash: "hash".to_string(),
+            allowed_models: vec!["fast".to_string()],
+        }];
+        store
+            .seed_from_inputs(&providers, &models, &api_keys)
+            .await
+            .expect("seed");
+        let api_key = store
+            .get_api_key_by_public_id("dev123")
+            .await
+            .expect("load api key")
+            .expect("api key");
+        let model = store
+            .get_model_by_key("fast")
+            .await
+            .expect("load model")
+            .expect("model");
+        let user = store
+            .create_identity_user(
+                "Member",
+                "member@example.com",
+                "member@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                "active",
+            )
+            .await
+            .expect("create user");
+        let team = store
+            .create_team("platform", "Platform")
+            .await
+            .expect("create team");
+
+        let now = time::OffsetDateTime::now_utc();
+        for event in [
+            usage_ledger_record(
+                "req-user-priced",
+                format!("user:{}", user.user_id),
+                api_key.id,
+                Some(user.user_id),
+                None,
+                Some(model.id),
+                "gpt-5",
+                UsagePricingStatus::Priced,
+                10_000,
+                now - time::Duration::hours(2),
+            ),
+            usage_ledger_record(
+                "req-user-unpriced",
+                format!("user:{}", user.user_id),
+                api_key.id,
+                Some(user.user_id),
+                None,
+                Some(model.id),
+                "gpt-5",
+                UsagePricingStatus::Unpriced,
+                0,
+                now - time::Duration::hours(2),
+            ),
+            usage_ledger_record(
+                "req-team-legacy",
+                format!("team:{}:actor:none", team.team_id),
+                api_key.id,
+                None,
+                Some(team.team_id),
+                None,
+                "claude-3-5-sonnet",
+                UsagePricingStatus::LegacyEstimated,
+                20_000,
+                now - time::Duration::hours(26),
+            ),
+            usage_ledger_record(
+                "req-team-usage-missing",
+                format!("team:{}:actor:none", team.team_id),
+                api_key.id,
+                None,
+                Some(team.team_id),
+                None,
+                "claude-3-5-sonnet",
+                UsagePricingStatus::UsageMissing,
+                0,
+                now - time::Duration::hours(26),
+            ),
+        ] {
+            assert!(
+                store
+                    .insert_usage_ledger_if_absent(&event)
+                    .await
+                    .expect("insert usage ledger")
+            );
+        }
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/v1/admin/spend/report?days=7&owner_kind=all")
+                    .header("cookie", &session_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = read_json(response).await;
+        assert_eq!(body["data"]["window_days"], 7);
+        assert_eq!(body["data"]["owner_kind"], "all");
+        assert_eq!(body["data"]["daily"].as_array().expect("daily").len(), 7);
+        assert_eq!(body["data"]["totals"]["priced_cost_usd_10000"], 30_000);
+        assert_eq!(body["data"]["totals"]["priced_request_count"], 2);
+        assert_eq!(body["data"]["totals"]["unpriced_request_count"], 1);
+        assert_eq!(body["data"]["totals"]["usage_missing_request_count"], 1);
+        let owners = body["data"]["owners"].as_array().expect("owners");
+        assert_eq!(owners.len(), 2);
+        assert!(owners.iter().any(|owner| owner["owner_kind"] == "user"));
+        assert!(owners.iter().any(|owner| owner["owner_kind"] == "team"));
+        let models = body["data"]["models"].as_array().expect("models");
+        assert!(
+            models
+                .iter()
+                .any(|item| item["model_key"] == "fast" && item["unpriced_request_count"] == 1)
+        );
+        assert!(
+            models
+                .iter()
+                .any(|item| item["model_key"] == "claude-3-5-sonnet"
+                    && item["usage_missing_request_count"] == 1)
+        );
+
+        let user_only = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/v1/admin/spend/report?days=7&owner_kind=user")
+                    .header("cookie", &session_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(user_only.status(), StatusCode::OK);
+        let user_only_body = read_json(user_only).await;
+        assert_eq!(user_only_body["data"]["owner_kind"], "user");
+        assert_eq!(
+            user_only_body["data"]["totals"]["priced_cost_usd_10000"],
+            10_000
+        );
+        assert_eq!(
+            user_only_body["data"]["owners"]
+                .as_array()
+                .expect("owners")
+                .len(),
+            1
+        );
+        assert_eq!(
+            user_only_body["data"]["owners"][0]["owner_kind"],
+            Value::String("user".to_string())
+        );
+
+        let invalid_days = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/v1/admin/spend/report?days=14")
+                    .header("cookie", &session_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(invalid_days.status(), StatusCode::BAD_REQUEST);
+
+        let invalid_owner_kind = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/v1/admin/spend/report?owner_kind=provider")
+                    .header("cookie", &session_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(invalid_owner_kind.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn admin_spend_budget_endpoints_validate_and_support_upsert_and_deactivate() {
+        let (app, store, _) =
+            build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;
+        let session_cookie = bootstrap_admin_session_cookie(&app, &store).await;
+
+        let user = store
+            .create_identity_user(
+                "Member",
+                "member@example.com",
+                "member@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                "active",
+            )
+            .await
+            .expect("create user");
+        let team = store
+            .create_team("platform", "Platform")
+            .await
+            .expect("create team");
+
+        let invalid_cadence = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!(
+                        "/api/v1/admin/spend/budgets/users/{}",
+                        user.user_id
+                    ))
+                    .header("cookie", &session_cookie)
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "cadence": "monthly",
+                            "amount_usd": "25.0000",
+                            "hard_limit": true,
+                            "timezone": "UTC"
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(invalid_cadence.status(), StatusCode::BAD_REQUEST);
+
+        let upsert_user = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!(
+                        "/api/v1/admin/spend/budgets/users/{}",
+                        user.user_id
+                    ))
+                    .header("cookie", &session_cookie)
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "cadence": "daily",
+                            "amount_usd": "25.0000",
+                            "hard_limit": true,
+                            "timezone": "UTC"
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(upsert_user.status(), StatusCode::OK);
+        let upsert_user_body = read_json(upsert_user).await;
+        assert_eq!(upsert_user_body["data"]["owner_kind"], "user");
+        assert_eq!(
+            upsert_user_body["data"]["owner_id"],
+            user.user_id.to_string()
+        );
+        assert_eq!(upsert_user_body["data"]["budget"]["amount_usd"], "25.0000");
+        assert_eq!(upsert_user_body["data"]["budget"]["hard_limit"], true);
+
+        let upsert_team = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!(
+                        "/api/v1/admin/spend/budgets/teams/{}",
+                        team.team_id
+                    ))
+                    .header("cookie", &session_cookie)
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "cadence": "weekly",
+                            "amount_usd": "100.0000",
+                            "hard_limit": false,
+                            "timezone": "UTC"
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(upsert_team.status(), StatusCode::OK);
+        let upsert_team_body = read_json(upsert_team).await;
+        assert_eq!(upsert_team_body["data"]["owner_kind"], "team");
+        assert_eq!(
+            upsert_team_body["data"]["owner_id"],
+            team.team_id.to_string()
+        );
+        assert_eq!(upsert_team_body["data"]["budget"]["cadence"], "weekly");
+        assert_eq!(upsert_team_body["data"]["budget"]["hard_limit"], false);
+
+        let list_budgets = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/v1/admin/spend/budgets")
+                    .header("cookie", &session_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(list_budgets.status(), StatusCode::OK);
+        let list_body = read_json(list_budgets).await;
+        let user_rows = list_body["data"]["users"].as_array().expect("users");
+        assert!(user_rows.iter().any(|row| {
+            row["user_id"] == user.user_id.to_string()
+                && row["budget"]["amount_usd_10000"] == 250_000
+        }));
+        let team_rows = list_body["data"]["teams"].as_array().expect("teams");
+        assert!(team_rows.iter().any(|row| {
+            row["team_id"] == team.team_id.to_string()
+                && row["budget"]["amount_usd_10000"] == 1_000_000
+        }));
+
+        let remove_user = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri(format!(
+                        "/api/v1/admin/spend/budgets/users/{}",
+                        user.user_id
+                    ))
+                    .header("cookie", &session_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(remove_user.status(), StatusCode::OK);
+        assert_eq!(read_json(remove_user).await["data"]["deactivated"], true);
+
+        let remove_user_again = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri(format!(
+                        "/api/v1/admin/spend/budgets/users/{}",
+                        user.user_id
+                    ))
+                    .header("cookie", &session_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(remove_user_again.status(), StatusCode::OK);
+        assert_eq!(
+            read_json(remove_user_again).await["data"]["deactivated"],
+            false
+        );
+
+        let unknown_team = Uuid::new_v4();
+        let upsert_unknown_team = app
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/api/v1/admin/spend/budgets/teams/{unknown_team}"))
+                    .header("cookie", &session_cookie)
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "cadence": "daily",
+                            "amount_usd": "10.0000",
+                            "hard_limit": true,
+                            "timezone": "UTC"
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(upsert_unknown_team.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]

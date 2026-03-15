@@ -326,6 +326,63 @@ impl BudgetRepository for AnyStore {
         dispatch_store!(self, get_active_budget_for_user(user_id))
     }
 
+    async fn get_active_budget_for_team(
+        &self,
+        team_id: Uuid,
+    ) -> Result<Option<gateway_core::TeamBudgetRecord>, StoreError> {
+        dispatch_store!(self, get_active_budget_for_team(team_id))
+    }
+
+    async fn upsert_active_budget_for_user(
+        &self,
+        user_id: Uuid,
+        cadence: gateway_core::BudgetCadence,
+        amount_usd: gateway_core::Money4,
+        hard_limit: bool,
+        timezone: &str,
+        updated_at: OffsetDateTime,
+    ) -> Result<gateway_core::UserBudgetRecord, StoreError> {
+        dispatch_store!(
+            self,
+            upsert_active_budget_for_user(
+                user_id, cadence, amount_usd, hard_limit, timezone, updated_at
+            )
+        )
+    }
+
+    async fn deactivate_active_budget_for_user(
+        &self,
+        user_id: Uuid,
+        updated_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        dispatch_store!(self, deactivate_active_budget_for_user(user_id, updated_at))
+    }
+
+    async fn upsert_active_budget_for_team(
+        &self,
+        team_id: Uuid,
+        cadence: gateway_core::BudgetCadence,
+        amount_usd: gateway_core::Money4,
+        hard_limit: bool,
+        timezone: &str,
+        updated_at: OffsetDateTime,
+    ) -> Result<gateway_core::TeamBudgetRecord, StoreError> {
+        dispatch_store!(
+            self,
+            upsert_active_budget_for_team(
+                team_id, cadence, amount_usd, hard_limit, timezone, updated_at
+            )
+        )
+    }
+
+    async fn deactivate_active_budget_for_team(
+        &self,
+        team_id: Uuid,
+        updated_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        dispatch_store!(self, deactivate_active_budget_for_team(team_id, updated_at))
+    }
+
     async fn get_usage_ledger_by_request_and_scope(
         &self,
         request_id: &str,
@@ -346,6 +403,54 @@ impl BudgetRepository for AnyStore {
         dispatch_store!(
             self,
             sum_usage_cost_for_user_in_window(user_id, window_start, window_end)
+        )
+    }
+
+    async fn sum_usage_cost_for_team_in_window(
+        &self,
+        team_id: Uuid,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+    ) -> Result<gateway_core::Money4, StoreError> {
+        dispatch_store!(
+            self,
+            sum_usage_cost_for_team_in_window(team_id, window_start, window_end)
+        )
+    }
+
+    async fn list_usage_daily_aggregates(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        owner_kind: Option<gateway_core::ApiKeyOwnerKind>,
+    ) -> Result<Vec<gateway_core::SpendDailyAggregateRecord>, StoreError> {
+        dispatch_store!(
+            self,
+            list_usage_daily_aggregates(window_start, window_end, owner_kind)
+        )
+    }
+
+    async fn list_usage_owner_aggregates(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        owner_kind: Option<gateway_core::ApiKeyOwnerKind>,
+    ) -> Result<Vec<gateway_core::SpendOwnerAggregateRecord>, StoreError> {
+        dispatch_store!(
+            self,
+            list_usage_owner_aggregates(window_start, window_end, owner_kind)
+        )
+    }
+
+    async fn list_usage_model_aggregates(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        owner_kind: Option<gateway_core::ApiKeyOwnerKind>,
+    ) -> Result<Vec<gateway_core::SpendModelAggregateRecord>, StoreError> {
+        dispatch_store!(
+            self,
+            list_usage_model_aggregates(window_start, window_end, owner_kind)
         )
     }
 

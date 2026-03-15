@@ -18,6 +18,7 @@ interface NavItem {
 const topItems: NavItem[] = [
   { label: 'API Keys', to: '/api-keys', icon: SearchIcon },
   { label: 'Models', to: '/models', icon: HomeIcon },
+  { label: 'Spend Controls', to: '/spend-controls', icon: Notification03Icon },
 ]
 
 const observabilityItems: NavItem[] = [

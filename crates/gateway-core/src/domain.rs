@@ -412,6 +412,48 @@ pub struct UserBudgetRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TeamBudgetRecord {
+    pub team_budget_id: Uuid,
+    pub team_id: Uuid,
+    pub cadence: BudgetCadence,
+    pub amount_usd: Money4,
+    pub hard_limit: bool,
+    pub timezone: String,
+    pub is_active: bool,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpendDailyAggregateRecord {
+    pub day_start: OffsetDateTime,
+    pub priced_cost_usd: Money4,
+    pub priced_request_count: i64,
+    pub unpriced_request_count: i64,
+    pub usage_missing_request_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpendOwnerAggregateRecord {
+    pub owner_kind: ApiKeyOwnerKind,
+    pub owner_id: Uuid,
+    pub owner_name: String,
+    pub priced_cost_usd: Money4,
+    pub priced_request_count: i64,
+    pub unpriced_request_count: i64,
+    pub usage_missing_request_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpendModelAggregateRecord {
+    pub model_key: String,
+    pub priced_cost_usd: Money4,
+    pub priced_request_count: i64,
+    pub unpriced_request_count: i64,
+    pub usage_missing_request_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsageLedgerRecord {
     pub usage_event_id: Uuid,
     pub request_id: String,

@@ -86,9 +86,9 @@ const server = createServer(async (req, res) => {
         },
       ],
       usage: {
-        prompt_tokens: 8,
-        completion_tokens: 4,
-        total_tokens: 12,
+        prompt_tokens: 80_000,
+        completion_tokens: 40_000,
+        total_tokens: 120_000,
       },
     })
     return
