@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use futures_util::StreamExt;
 use gateway_core::{
-    ChatCompletionsRequest, EmbeddingsRequest, ProviderCapabilities, ProviderClient, ProviderError,
+    CoreChatRequest, CoreEmbeddingsRequest, ProviderCapabilities, ProviderClient, ProviderError,
     ProviderRequestContext, ProviderStream,
 };
 use serde_json::{Map, Value, json};
@@ -169,7 +169,7 @@ impl ProviderClient for VertexProvider {
 
     async fn chat_completions(
         &self,
-        request: &ChatCompletionsRequest,
+        request: &CoreChatRequest,
         context: &ProviderRequestContext,
     ) -> Result<Value, ProviderError> {
         let (family, publisher, model_id) = parse_upstream_model(&context.upstream_model)?;
@@ -212,7 +212,7 @@ impl ProviderClient for VertexProvider {
 
     async fn chat_completions_stream(
         &self,
-        request: &ChatCompletionsRequest,
+        request: &CoreChatRequest,
         context: &ProviderRequestContext,
     ) -> Result<ProviderStream, ProviderError> {
         let (family, publisher, model_id) = parse_upstream_model(&context.upstream_model)?;
@@ -261,7 +261,7 @@ impl ProviderClient for VertexProvider {
 
     async fn embeddings(
         &self,
-        _request: &EmbeddingsRequest,
+        _request: &CoreEmbeddingsRequest,
         _context: &ProviderRequestContext,
     ) -> Result<Value, ProviderError> {
         Err(ProviderError::NotImplemented(
@@ -271,7 +271,7 @@ impl ProviderClient for VertexProvider {
 }
 
 fn map_google_request(
-    request: &ChatCompletionsRequest,
+    request: &CoreChatRequest,
     context: &ProviderRequestContext,
     stream: bool,
 ) -> Result<Value, ProviderError> {
@@ -347,7 +347,7 @@ fn map_google_request(
 }
 
 fn map_anthropic_request(
-    request: &ChatCompletionsRequest,
+    request: &CoreChatRequest,
     context: &ProviderRequestContext,
     stream: bool,
 ) -> Result<Value, ProviderError> {
@@ -1399,7 +1399,7 @@ mod tests {
     use bytes::Bytes;
     use futures_util::StreamExt;
     use futures_util::stream;
-    use gateway_core::{ChatCompletionsRequest, ProviderClient, ProviderRequestContext};
+    use gateway_core::{CoreChatMessage, CoreChatRequest, ProviderClient, ProviderRequestContext};
     use serde_json::{Map, Value, json};
     use tokio::{net::TcpListener, sync::Mutex};
 
@@ -1446,9 +1446,9 @@ mod tests {
 
     #[test]
     fn maps_openai_request_to_google_payload() {
-        let request = gateway_core::ChatCompletionsRequest {
+        let request = CoreChatRequest {
             model: "fast".to_string(),
-            messages: vec![gateway_core::protocol::openai::ChatMessage {
+            messages: vec![CoreChatMessage {
                 role: "user".to_string(),
                 content: json!([
                     {"type":"text","text":"Describe this"},
@@ -1472,9 +1472,9 @@ mod tests {
 
     #[test]
     fn rejects_google_streaming_multiple_candidates_from_n() {
-        let mut request = gateway_core::ChatCompletionsRequest {
+        let mut request = CoreChatRequest {
             model: "fast".to_string(),
-            messages: vec![gateway_core::protocol::openai::ChatMessage {
+            messages: vec![CoreChatMessage {
                 role: "user".to_string(),
                 content: Value::String("ping".to_string()),
                 name: None,
@@ -1498,9 +1498,9 @@ mod tests {
 
     #[test]
     fn rejects_google_streaming_multiple_candidates_from_route_override() {
-        let request = gateway_core::ChatCompletionsRequest {
+        let request = CoreChatRequest {
             model: "fast".to_string(),
-            messages: vec![gateway_core::protocol::openai::ChatMessage {
+            messages: vec![CoreChatMessage {
                 role: "user".to_string(),
                 content: Value::String("ping".to_string()),
                 name: None,
@@ -1528,9 +1528,9 @@ mod tests {
 
     #[test]
     fn allows_google_non_streaming_multiple_candidates() {
-        let mut request = gateway_core::ChatCompletionsRequest {
+        let mut request = CoreChatRequest {
             model: "fast".to_string(),
-            messages: vec![gateway_core::protocol::openai::ChatMessage {
+            messages: vec![CoreChatMessage {
                 role: "user".to_string(),
                 content: Value::String("ping".to_string()),
                 name: None,
@@ -1549,16 +1549,16 @@ mod tests {
 
     #[test]
     fn maps_openai_request_to_anthropic_payload_with_default_version() {
-        let request = gateway_core::ChatCompletionsRequest {
+        let request = CoreChatRequest {
             model: "fast".to_string(),
             messages: vec![
-                gateway_core::protocol::openai::ChatMessage {
+                CoreChatMessage {
                     role: "system".to_string(),
                     content: Value::String("be concise".to_string()),
                     name: None,
                     extra: std::collections::BTreeMap::new(),
                 },
-                gateway_core::protocol::openai::ChatMessage {
+                CoreChatMessage {
                     role: "user".to_string(),
                     content: Value::String("ping".to_string()),
                     name: None,
@@ -1769,10 +1769,8 @@ data: {"type":"vertex_event"}
         .expect("provider")
     }
 
-    fn chat_request(
-        messages: Vec<gateway_core::protocol::openai::ChatMessage>,
-    ) -> ChatCompletionsRequest {
-        ChatCompletionsRequest {
+    fn chat_request(messages: Vec<CoreChatMessage>) -> CoreChatRequest {
+        CoreChatRequest {
             model: "fast".to_string(),
             messages,
             stream: false,
@@ -1825,7 +1823,7 @@ data: {"type":"vertex_event"}
         let host = start_router(app).await;
         let provider = vertex_provider_for_test(format!("http://{host}"));
 
-        let mut request = chat_request(vec![gateway_core::protocol::openai::ChatMessage {
+        let mut request = chat_request(vec![CoreChatMessage {
             role: "user".to_string(),
             content: Value::String("ping".to_string()),
             name: None,
@@ -1897,7 +1895,7 @@ data: {"type":"vertex_event"}
 
         let host = start_router(app).await;
         let provider = vertex_provider_for_test(format!("http://{host}"));
-        let mut request = chat_request(vec![gateway_core::protocol::openai::ChatMessage {
+        let mut request = chat_request(vec![CoreChatMessage {
             role: "user".to_string(),
             content: Value::String("ping".to_string()),
             name: None,

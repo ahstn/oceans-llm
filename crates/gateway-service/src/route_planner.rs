@@ -76,7 +76,7 @@ impl RoutePlanner for WeightedRoutePlanner {
 
 #[cfg(test)]
 mod tests {
-    use gateway_core::{ModelRoute, RoutePlanner};
+    use gateway_core::{ModelRoute, ProviderCapabilities, RoutePlanner};
     use serde_json::Map;
     use uuid::Uuid;
 
@@ -93,6 +93,7 @@ mod tests {
             enabled: true,
             extra_headers: Map::new(),
             extra_body: Map::new(),
+            capabilities: ProviderCapabilities::all_enabled(),
         }
     }
 

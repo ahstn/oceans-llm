@@ -611,6 +611,8 @@ pub struct ModelRoute {
     pub extra_headers: Map<String, Value>,
     #[serde(default)]
     pub extra_body: Map<String, Value>,
+    #[serde(default = "ProviderCapabilities::all_enabled")]
+    pub capabilities: ProviderCapabilities,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -639,34 +641,94 @@ pub struct ProviderRequestContext {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProviderCapabilities {
+    #[serde(default = "default_true")]
     pub chat_completions: bool,
-    pub chat_completions_stream: bool,
+    #[serde(default = "default_true")]
+    pub stream: bool,
+    #[serde(default = "default_true")]
     pub embeddings: bool,
+    #[serde(default = "default_true")]
+    pub tools: bool,
+    #[serde(default = "default_true")]
+    pub vision: bool,
+    #[serde(default = "default_true")]
+    pub json_schema: bool,
+    #[serde(default = "default_true")]
+    pub developer_role: bool,
 }
 
 impl ProviderCapabilities {
     #[must_use]
-    pub const fn new(
+    pub const fn new(chat_completions: bool, stream: bool, embeddings: bool) -> Self {
+        Self::with_dimensions(
+            chat_completions,
+            stream,
+            embeddings,
+            false,
+            false,
+            false,
+            false,
+        )
+    }
+
+    #[must_use]
+    pub const fn with_dimensions(
         chat_completions: bool,
-        chat_completions_stream: bool,
+        stream: bool,
         embeddings: bool,
+        tools: bool,
+        vision: bool,
+        json_schema: bool,
+        developer_role: bool,
     ) -> Self {
         Self {
             chat_completions,
-            chat_completions_stream,
+            stream,
             embeddings,
+            tools,
+            vision,
+            json_schema,
+            developer_role,
         }
     }
 
     #[must_use]
     pub const fn chat_only_streaming() -> Self {
-        Self::new(true, true, false)
+        Self::with_dimensions(true, true, false, false, true, false, true)
     }
 
     #[must_use]
     pub const fn openai_compat_baseline() -> Self {
-        Self::new(true, false, true)
+        Self::with_dimensions(true, false, true, true, true, true, true)
     }
+
+    #[must_use]
+    pub const fn all_enabled() -> Self {
+        Self::with_dimensions(true, true, true, true, true, true, true)
+    }
+
+    #[must_use]
+    pub const fn intersect(self, other: Self) -> Self {
+        Self::with_dimensions(
+            self.chat_completions && other.chat_completions,
+            self.stream && other.stream,
+            self.embeddings && other.embeddings,
+            self.tools && other.tools,
+            self.vision && other.vision,
+            self.json_schema && other.json_schema,
+            self.developer_role && other.developer_role,
+        )
+    }
+}
+
+impl Default for ProviderCapabilities {
+    fn default() -> Self {
+        Self::all_enabled()
+    }
+}
+
+const fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -688,6 +750,8 @@ pub struct SeedModelRoute {
     pub extra_headers: Map<String, Value>,
     #[serde(default)]
     pub extra_body: Map<String, Value>,
+    #[serde(default = "ProviderCapabilities::all_enabled")]
+    pub capabilities: ProviderCapabilities,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

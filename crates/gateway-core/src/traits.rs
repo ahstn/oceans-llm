@@ -15,7 +15,7 @@ use crate::{
         UsageLedgerRecord, UserBudgetRecord, UserRecord,
     },
     error::{ProviderError, RouteError, StoreError},
-    protocol::openai::{ChatCompletionsRequest, EmbeddingsRequest},
+    protocol::core::{ChatRequest, EmbeddingsRequest},
 };
 
 #[async_trait]
@@ -144,13 +144,13 @@ pub trait ProviderClient: Send + Sync {
 
     async fn chat_completions(
         &self,
-        request: &ChatCompletionsRequest,
+        request: &ChatRequest,
         context: &ProviderRequestContext,
     ) -> Result<Value, ProviderError>;
 
     async fn chat_completions_stream(
         &self,
-        request: &ChatCompletionsRequest,
+        request: &ChatRequest,
         context: &ProviderRequestContext,
     ) -> Result<ProviderStream, ProviderError>;
 
