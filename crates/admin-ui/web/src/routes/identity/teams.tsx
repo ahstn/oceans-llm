@@ -1,7 +1,9 @@
 import { useMemo, useState, useTransition, type FormEvent } from 'react'
+import { UserIcon } from '@hugeicons/core-free-icons'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
+import { AppIcon } from '@/components/icons/app-icon'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -22,8 +24,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty'
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { requireAdminSession } from '@/routes/-admin-guard'
 import {
@@ -71,16 +82,11 @@ const initialInviteForm: CreateUserInput = {
   oidc_provider_key: null,
 }
 
-type TeamDialogState =
-  | { mode: 'closed' }
-  | { mode: 'create' }
-  | { mode: 'edit'; teamId: string }
+type TeamDialogState = { mode: 'closed' } | { mode: 'create' } | { mode: 'edit'; teamId: string }
 
-type MembersDialogState =
-  | { mode: 'closed' }
-  | { mode: 'open'; teamId: string }
+type MembersDialogState = { mode: 'closed' } | { mode: 'open'; teamId: string }
 
-function TeamsPage() {
+export function TeamsPage() {
   const router = useRouter()
   const {
     data: { teams, users, oidc_providers: oidcProviders },
@@ -94,19 +100,19 @@ function TeamsPage() {
   const [isPending, startTransition] = useTransition()
 
   const editingTeam =
-    teamDialog.mode === 'edit' ? teams.find((team) => team.id === teamDialog.teamId) ?? null : null
+    teamDialog.mode === 'edit'
+      ? (teams.find((team) => team.id === teamDialog.teamId) ?? null)
+      : null
   const membersTeam =
     membersDialog.mode === 'open'
-      ? teams.find((team) => team.id === membersDialog.teamId) ?? null
+      ? (teams.find((team) => team.id === membersDialog.teamId) ?? null)
       : null
 
   const adminOptions = useMemo(
     () =>
       users.map((user) => ({
         user,
-        disabled:
-          user.team_id !== null &&
-          (editingTeam ? user.team_id !== editingTeam.id : true),
+        disabled: user.team_id !== null && (editingTeam ? user.team_id !== editingTeam.id : true),
         reason:
           user.team_id !== null && (!editingTeam || user.team_id !== editingTeam.id)
             ? `Already in ${user.team_name ?? 'another team'}`
@@ -119,9 +125,7 @@ function TeamsPage() {
     () =>
       users.map((user) => ({
         user,
-        disabled:
-          user.team_id !== null &&
-          (!membersTeam || user.team_id !== membersTeam.id),
+        disabled: user.team_id !== null && (!membersTeam || user.team_id !== membersTeam.id),
         reason:
           user.team_id !== null && (!membersTeam || user.team_id !== membersTeam.id)
             ? `Already in ${user.team_name ?? 'another team'}`
@@ -178,7 +182,8 @@ function TeamsPage() {
       auth_mode: authMode,
       oidc_provider_key:
         authMode === 'oidc'
-          ? (current.oidc_provider_key ?? (oidcProviders.length === 1 ? oidcProviders[0].key : null))
+          ? (current.oidc_provider_key ??
+            (oidcProviders.length === 1 ? oidcProviders[0].key : null))
           : null,
     }))
   }
@@ -279,72 +284,169 @@ function TeamsPage() {
           </Button>
         </CardHeader>
         <CardContent>
-          <div className="overflow-hidden rounded-md border border-neutral-800">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-neutral-900/70 text-neutral-400">
-                <tr>
-                  <th className="px-3 py-2 font-medium">Team</th>
-                  <th className="px-3 py-2 font-medium">Admins</th>
-                  <th className="px-3 py-2 font-medium">Members</th>
-                  <th className="px-3 py-2 font-medium">Status</th>
-                  <th className="px-3 py-2 font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
+          {teams.length === 0 ? (
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <AppIcon icon={UserIcon} size={22} stroke={1.5} />
+                </EmptyMedia>
+                <EmptyTitle>No teams created yet</EmptyTitle>
+                <EmptyDescription>
+                  Create the first team, assign admins if you already have users, and return later
+                  to add more members as onboarding begins.
+                </EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent>
+                <Button type="button" onClick={openCreateTeamDialog}>
+                  Create first team
+                </Button>
+              </EmptyContent>
+            </Empty>
+          ) : (
+            <div className="flex flex-col gap-4">
+              <div className="grid gap-3 md:hidden">
                 {teams.map((team) => (
-                  <tr key={team.id} className="border-t border-neutral-800 align-top">
-                    <td className="px-3 py-3">
-                      <div className="flex flex-col gap-1">
-                        <p className="text-neutral-100">{team.name}</p>
-                        <p className="text-xs text-neutral-500">{team.key}</p>
+                  <article
+                    key={team.id}
+                    className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-[var(--color-text)]">
+                          {team.name}
+                        </p>
+                        <p className="truncate text-xs text-[var(--color-text-soft)]">{team.key}</p>
                       </div>
-                    </td>
-                    <td className="px-3 py-3">
-                      {team.admins.length > 0 ? (
-                        <div className="flex flex-wrap gap-2">
-                          {team.admins.map((admin) => (
-                            <Badge key={admin.id}>{admin.name}</Badge>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-neutral-500">No admins</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-3 text-neutral-300">{team.member_count}</td>
-                    <td className="px-3 py-3">
                       <Badge variant={team.status === 'active' ? 'success' : 'warning'}>
                         {team.status}
                       </Badge>
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => openEditTeamDialog(team)}
-                        >
-                          Edit team
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => openMembersDialog(team)}
-                        >
-                          Add members
-                        </Button>
+                    </div>
+
+                    <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                      <div>
+                        <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                          Members
+                        </dt>
+                        <dd className="text-[var(--color-text-muted)]">{team.member_count}</dd>
                       </div>
-                    </td>
-                  </tr>
+                      <div>
+                        <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                          Admins
+                        </dt>
+                        <dd className="text-[var(--color-text-muted)]">
+                          {team.admins.length > 0 ? team.admins.length : 'None'}
+                        </dd>
+                      </div>
+                    </dl>
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {team.admins.length > 0 ? (
+                        team.admins.map((admin) => <Badge key={admin.id}>{admin.name}</Badge>)
+                      ) : (
+                        <span className="text-xs text-[var(--color-text-soft)]">
+                          No admins assigned
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => openEditTeamDialog(team)}
+                      >
+                        Edit team
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => openMembersDialog(team)}
+                      >
+                        Add members
+                      </Button>
+                    </div>
+                  </article>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </div>
+
+              <div className="hidden overflow-hidden rounded-md border border-[color:var(--color-border)] md:block">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
+                    <tr>
+                      <th className="px-3 py-2 font-semibold">Team</th>
+                      <th className="px-3 py-2 font-semibold">Admins</th>
+                      <th className="px-3 py-2 font-semibold">Members</th>
+                      <th className="px-3 py-2 font-semibold">Status</th>
+                      <th className="px-3 py-2 font-semibold">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {teams.map((team) => (
+                      <tr
+                        key={team.id}
+                        className="border-t border-[color:var(--color-border)] align-top"
+                      >
+                        <td className="px-3 py-3">
+                          <div className="flex flex-col gap-1">
+                            <p className="text-[var(--color-text)]">{team.name}</p>
+                            <p className="text-xs text-[var(--color-text-soft)]">{team.key}</p>
+                          </div>
+                        </td>
+                        <td className="px-3 py-3">
+                          {team.admins.length > 0 ? (
+                            <div className="flex flex-wrap gap-2">
+                              {team.admins.map((admin) => (
+                                <Badge key={admin.id}>{admin.name}</Badge>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-[var(--color-text-soft)]">No admins</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 text-[var(--color-text-muted)]">
+                          {team.member_count}
+                        </td>
+                        <td className="px-3 py-3">
+                          <Badge variant={team.status === 'active' ? 'success' : 'warning'}>
+                            {team.status}
+                          </Badge>
+                        </td>
+                        <td className="px-3 py-3">
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => openEditTeamDialog(team)}
+                            >
+                              Edit team
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => openMembersDialog(team)}
+                            >
+                              Add members
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      <Dialog open={teamDialog.mode !== 'closed'} onOpenChange={(open) => !open && closeTeamDialog()}>
+      <Dialog
+        open={teamDialog.mode !== 'closed'}
+        onOpenChange={(open) => !open && closeTeamDialog()}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{teamDialog.mode === 'edit' ? 'Edit team' : 'Add team'}</DialogTitle>
@@ -418,49 +520,53 @@ function TeamsPage() {
 
           {membersTeam ? (
             <div className="flex flex-col gap-6">
-              <Card className="bg-neutral-950/40">
-                <CardHeader>
-                  <CardTitle className="text-sm">Existing users</CardTitle>
-                  <CardDescription>
+              <section className="flex flex-col gap-4 rounded-lg border border-[color:var(--color-border)] p-5">
+                <div className="flex flex-col gap-1">
+                  <h3 className="text-base font-semibold text-[var(--color-text)]">
+                    Existing users
+                  </h3>
+                  <p className="text-sm text-[var(--color-text-muted)]">
                     Only teamless users can be newly added. Users already on another team remain
                     unavailable in this flow.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <form className="flex flex-col gap-4" onSubmit={handleAddExistingMembers}>
-                    <UserMultiSelectField
-                      label="Users"
-                      description="Select existing users to add as members."
-                      placeholder="Select existing users"
-                      users={existingMemberOptions}
-                      selectedUserIds={selectedExistingMemberIds}
-                      onChange={setSelectedExistingMemberIds}
-                      emptyTitle="No existing users available"
-                      emptyDescription="Create or invite a new user below if the team is being set up first."
-                    />
+                  </p>
+                </div>
 
-                    <div className="flex justify-end">
-                      <Button
-                        type="submit"
-                        variant="secondary"
-                        disabled={isPending || selectedExistingMemberIds.length === 0}
-                      >
-                        {isPending ? 'Adding…' : 'Add selected users'}
-                      </Button>
-                    </div>
-                  </form>
-                </CardContent>
-              </Card>
+                <form className="flex flex-col gap-4" onSubmit={handleAddExistingMembers}>
+                  <UserMultiSelectField
+                    label="Users"
+                    description="Select existing users to add as members."
+                    placeholder="Select existing users"
+                    users={existingMemberOptions}
+                    selectedUserIds={selectedExistingMemberIds}
+                    onChange={setSelectedExistingMemberIds}
+                    emptyTitle="No existing users available"
+                    emptyDescription="Create or invite a new user below if the team is being set up first."
+                  />
 
-              <Card className="bg-neutral-950/40">
-                <CardHeader>
-                  <CardTitle className="text-sm">Invite a new member</CardTitle>
-                  <CardDescription>
-                    This uses the same onboarding flow as the users page and preassigns the new
-                    user to {membersTeam.name} as a member.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="flex flex-col gap-4">
+                  <div className="flex justify-end">
+                    <Button
+                      type="submit"
+                      variant="secondary"
+                      disabled={isPending || selectedExistingMemberIds.length === 0}
+                    >
+                      {isPending ? 'Adding…' : 'Add selected users'}
+                    </Button>
+                  </div>
+                </form>
+              </section>
+
+              <section className="flex flex-col gap-4 rounded-lg border border-[color:var(--color-border)] p-5">
+                <div className="flex flex-col gap-1">
+                  <h3 className="text-base font-semibold text-[var(--color-text)]">
+                    Invite a new member
+                  </h3>
+                  <p className="text-sm text-[var(--color-text-muted)]">
+                    This uses the same onboarding flow as the users page and preassigns the new user
+                    to {membersTeam.name} as a member.
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-4">
                   {inviteResult ? (
                     <Alert>
                       <AlertTitle>
@@ -567,8 +673,8 @@ function TeamsPage() {
                       {inviteResult ? (
                         <Field>
                           <FieldLabel htmlFor="generated-member-url">Generated URL</FieldLabel>
-                          <div className="flex gap-2">
-                            <Input
+                          <InputGroup>
+                            <InputGroupInput
                               id="generated-member-url"
                               readOnly
                               value={
@@ -577,21 +683,24 @@ function TeamsPage() {
                                   : inviteResult.sign_in_url
                               }
                             />
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              onClick={() =>
-                                handleCopy(
-                                  inviteResult.kind === 'password_invite'
-                                    ? inviteResult.invite_url
-                                    : inviteResult.sign_in_url,
-                                  'URL copied',
-                                )
-                              }
-                            >
-                              Copy
-                            </Button>
-                          </div>
+                            <InputGroupAddon align="inline-end">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  handleCopy(
+                                    inviteResult.kind === 'password_invite'
+                                      ? inviteResult.invite_url
+                                      : inviteResult.sign_in_url,
+                                    'URL copied',
+                                  )
+                                }
+                              >
+                                Copy
+                              </Button>
+                            </InputGroupAddon>
+                          </InputGroup>
                         </Field>
                       ) : null}
                     </FieldGroup>
@@ -605,8 +714,8 @@ function TeamsPage() {
                       </Button>
                     </div>
                   </form>
-                </CardContent>
-              </Card>
+                </div>
+              </section>
 
               <DialogFooter>
                 <Button type="button" variant="secondary" onClick={closeMembersDialog}>
@@ -673,7 +782,7 @@ function UserMultiSelectField({
                   ? placeholder
                   : emptyTitle}
             </span>
-            <span className="text-xs text-neutral-500">▼</span>
+            <span className="text-xs text-[var(--color-text-soft)]">▼</span>
           </Button>
         </PopoverTrigger>
         <PopoverContent className="p-0">
@@ -693,12 +802,12 @@ function UserMultiSelectField({
                       }
                     }}
                   >
-                    <span className="w-4 text-neutral-400">
+                    <span className="w-4 text-[var(--color-text-soft)]">
                       {selectedUserIds.includes(user.id) ? '✓' : ''}
                     </span>
                     <div className="flex min-w-0 flex-1 flex-col gap-1">
                       <span className="truncate">{user.name}</span>
-                      <span className="truncate text-xs text-neutral-500">
+                      <span className="truncate text-xs text-[var(--color-text-soft)]">
                         {user.email}
                         {reason ? ` · ${reason}` : ''}
                       </span>

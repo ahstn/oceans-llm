@@ -104,18 +104,20 @@ impl PostgresStore {
                 );
                 let extra_headers_json = serialize_json(&route.extra_headers)?;
                 let extra_body_json = serialize_json(&route.extra_body)?;
+                let capabilities_json = serialize_json(&route.capabilities)?;
 
                 sqlx::query(
                     r#"
                     INSERT INTO model_routes (
                         id, model_id, provider_key, upstream_model, priority, weight, enabled,
-                        extra_headers_json, extra_body_json, created_at, updated_at
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
+                        extra_headers_json, extra_body_json, capabilities_json, created_at, updated_at
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
                     ON CONFLICT(id) DO UPDATE SET
                         weight = excluded.weight,
                         enabled = excluded.enabled,
                         extra_headers_json = excluded.extra_headers_json,
                         extra_body_json = excluded.extra_body_json,
+                        capabilities_json = excluded.capabilities_json,
                         updated_at = excluded.updated_at
                     "#,
                 )
@@ -128,6 +130,7 @@ impl PostgresStore {
                 .bind(if route.enabled { 1_i64 } else { 0_i64 })
                 .bind(extra_headers_json)
                 .bind(extra_body_json)
+                .bind(capabilities_json)
                 .bind(now)
                 .execute(&self.pool)
                 .await

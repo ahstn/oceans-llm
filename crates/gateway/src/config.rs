@@ -1,7 +1,10 @@
 use std::{collections::BTreeMap, env, fs, path::Path};
 
 use anyhow::{Context, bail};
-use gateway_core::{SeedApiKey, SeedModel, SeedModelRoute, SeedProvider, parse_gateway_api_key};
+use gateway_core::{
+    ProviderCapabilities, SeedApiKey, SeedModel, SeedModelRoute, SeedProvider,
+    parse_gateway_api_key,
+};
 use gateway_providers::{OpenAiCompatConfig, VertexAuthConfig, VertexProviderConfig};
 use gateway_service::{hash_gateway_key_secret, is_supported_pricing_provider_id};
 use gateway_store::StoreConnectionOptions;
@@ -282,6 +285,7 @@ impl GatewayConfig {
                             .map(|(key, value)| (key.clone(), Value::String(value.clone())))
                             .collect::<Map<String, Value>>(),
                         extra_body: route.extra_body.clone(),
+                        capabilities: route.capabilities.clone().into_capabilities(),
                     })
                     .collect(),
             })
@@ -604,6 +608,54 @@ pub struct ModelRouteConfig {
     pub extra_headers: BTreeMap<String, String>,
     #[serde(default)]
     pub extra_body: Map<String, Value>,
+    #[serde(default)]
+    pub capabilities: RouteCapabilitiesConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RouteCapabilitiesConfig {
+    #[serde(default = "default_enabled")]
+    pub chat_completions: bool,
+    #[serde(default = "default_enabled")]
+    pub stream: bool,
+    #[serde(default = "default_enabled")]
+    pub embeddings: bool,
+    #[serde(default = "default_enabled")]
+    pub tools: bool,
+    #[serde(default = "default_enabled")]
+    pub vision: bool,
+    #[serde(default = "default_enabled")]
+    pub json_schema: bool,
+    #[serde(default = "default_enabled")]
+    pub developer_role: bool,
+}
+
+impl RouteCapabilitiesConfig {
+    fn into_capabilities(self) -> ProviderCapabilities {
+        ProviderCapabilities::with_dimensions(
+            self.chat_completions,
+            self.stream,
+            self.embeddings,
+            self.tools,
+            self.vision,
+            self.json_schema,
+            self.developer_role,
+        )
+    }
+}
+
+impl Default for RouteCapabilitiesConfig {
+    fn default() -> Self {
+        Self {
+            chat_completions: true,
+            stream: true,
+            embeddings: true,
+            tools: true,
+            vision: true,
+            json_schema: true,
+            developer_role: true,
+        }
+    }
 }
 
 fn resolve_env_reference(value: &str) -> anyhow::Result<String> {
@@ -1043,6 +1095,44 @@ providers:
             error_text.contains("pricing_provider_id `azure` is not supported"),
             "unexpected error: {error_text}"
         );
+    }
+
+    #[test]
+    fn parses_route_capability_metadata_into_seed_models() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+models:
+  - id: fast
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-5
+        capabilities:
+          stream: false
+          tools: false
+          vision: false
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let seeded = config.seed_models().expect("seed models");
+
+        let route = &seeded[0].routes[0];
+        assert!(route.capabilities.chat_completions);
+        assert!(!route.capabilities.stream);
+        assert!(route.capabilities.embeddings);
+        assert!(!route.capabilities.tools);
+        assert!(!route.capabilities.vision);
+        assert!(route.capabilities.json_schema);
+        assert!(route.capabilities.developer_role);
     }
 
     #[test]

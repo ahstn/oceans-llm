@@ -46,7 +46,7 @@ impl ModelRepository for PostgresStore {
         let rows = sqlx::query(
             r#"
             SELECT id, model_id, provider_key, upstream_model, priority, weight, enabled,
-                   extra_headers_json, extra_body_json
+                   extra_headers_json, extra_body_json, capabilities_json
             FROM model_routes
             WHERE model_id = $1
             ORDER BY priority ASC

@@ -412,15 +412,71 @@ pub struct UserBudgetRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UsageCostEventRecord {
+pub struct UsageLedgerRecord {
     pub usage_event_id: Uuid,
     pub request_id: String,
+    pub ownership_scope_key: String,
     pub api_key_id: Uuid,
     pub user_id: Option<Uuid>,
     pub team_id: Option<Uuid>,
+    pub actor_user_id: Option<Uuid>,
     pub model_id: Option<Uuid>,
-    pub estimated_cost_usd: Money4,
+    pub provider_key: String,
+    pub upstream_model: String,
+    pub prompt_tokens: Option<i64>,
+    pub completion_tokens: Option<i64>,
+    pub total_tokens: Option<i64>,
+    pub provider_usage: Value,
+    pub pricing_status: UsagePricingStatus,
+    pub unpriced_reason: Option<String>,
+    pub pricing_row_id: Option<Uuid>,
+    pub pricing_provider_id: Option<String>,
+    pub pricing_model_id: Option<String>,
+    pub pricing_source: Option<String>,
+    pub pricing_source_etag: Option<String>,
+    pub pricing_source_fetched_at: Option<OffsetDateTime>,
+    pub pricing_last_updated: Option<String>,
+    pub input_cost_per_million_tokens: Option<Money4>,
+    pub output_cost_per_million_tokens: Option<Money4>,
+    pub computed_cost_usd: Money4,
     pub occurred_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UsagePricingStatus {
+    Priced,
+    Unpriced,
+    UsageMissing,
+    LegacyEstimated,
+}
+
+impl UsagePricingStatus {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Priced => "priced",
+            Self::Unpriced => "unpriced",
+            Self::UsageMissing => "usage_missing",
+            Self::LegacyEstimated => "legacy_estimated",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "priced" => Some(Self::Priced),
+            "unpriced" => Some(Self::Unpriced),
+            "usage_missing" => Some(Self::UsageMissing),
+            "legacy_estimated" => Some(Self::LegacyEstimated),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn counts_toward_spend(self) -> bool {
+        matches!(self, Self::Priced | Self::LegacyEstimated)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -474,6 +530,7 @@ pub struct PricingProvenance {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ResolvedModelPricing {
+    pub model_pricing_id: Uuid,
     pub pricing_provider_id: String,
     pub model_id: String,
     pub display_name: String,
@@ -485,9 +542,34 @@ pub struct ResolvedModelPricing {
     pub output_audio_cost_per_million_tokens: Option<Money4>,
     pub release_date: String,
     pub last_updated: String,
+    pub effective_start_at: OffsetDateTime,
+    pub effective_end_at: Option<OffsetDateTime>,
     pub limits: PricingLimits,
     pub modalities: PricingModalities,
     pub provenance: PricingProvenance,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ModelPricingRecord {
+    pub model_pricing_id: Uuid,
+    pub pricing_provider_id: String,
+    pub pricing_model_id: String,
+    pub display_name: String,
+    pub input_cost_per_million_tokens: Option<Money4>,
+    pub output_cost_per_million_tokens: Option<Money4>,
+    pub cache_read_cost_per_million_tokens: Option<Money4>,
+    pub cache_write_cost_per_million_tokens: Option<Money4>,
+    pub input_audio_cost_per_million_tokens: Option<Money4>,
+    pub output_audio_cost_per_million_tokens: Option<Money4>,
+    pub release_date: String,
+    pub last_updated: String,
+    pub effective_start_at: OffsetDateTime,
+    pub effective_end_at: Option<OffsetDateTime>,
+    pub limits: PricingLimits,
+    pub modalities: PricingModalities,
+    pub provenance: PricingProvenance,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -532,6 +614,8 @@ pub struct ModelRoute {
     pub extra_headers: Map<String, Value>,
     #[serde(default)]
     pub extra_body: Map<String, Value>,
+    #[serde(default = "ProviderCapabilities::all_enabled")]
+    pub capabilities: ProviderCapabilities,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -560,34 +644,94 @@ pub struct ProviderRequestContext {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProviderCapabilities {
+    #[serde(default = "default_true")]
     pub chat_completions: bool,
-    pub chat_completions_stream: bool,
+    #[serde(default = "default_true")]
+    pub stream: bool,
+    #[serde(default = "default_true")]
     pub embeddings: bool,
+    #[serde(default = "default_true")]
+    pub tools: bool,
+    #[serde(default = "default_true")]
+    pub vision: bool,
+    #[serde(default = "default_true")]
+    pub json_schema: bool,
+    #[serde(default = "default_true")]
+    pub developer_role: bool,
 }
 
 impl ProviderCapabilities {
     #[must_use]
-    pub const fn new(
+    pub const fn new(chat_completions: bool, stream: bool, embeddings: bool) -> Self {
+        Self::with_dimensions(
+            chat_completions,
+            stream,
+            embeddings,
+            false,
+            false,
+            false,
+            false,
+        )
+    }
+
+    #[must_use]
+    pub const fn with_dimensions(
         chat_completions: bool,
-        chat_completions_stream: bool,
+        stream: bool,
         embeddings: bool,
+        tools: bool,
+        vision: bool,
+        json_schema: bool,
+        developer_role: bool,
     ) -> Self {
         Self {
             chat_completions,
-            chat_completions_stream,
+            stream,
             embeddings,
+            tools,
+            vision,
+            json_schema,
+            developer_role,
         }
     }
 
     #[must_use]
     pub const fn chat_only_streaming() -> Self {
-        Self::new(true, true, false)
+        Self::with_dimensions(true, true, false, false, true, false, true)
     }
 
     #[must_use]
     pub const fn openai_compat_baseline() -> Self {
-        Self::new(true, false, true)
+        Self::with_dimensions(true, false, true, true, true, true, true)
     }
+
+    #[must_use]
+    pub const fn all_enabled() -> Self {
+        Self::with_dimensions(true, true, true, true, true, true, true)
+    }
+
+    #[must_use]
+    pub const fn intersect(self, other: Self) -> Self {
+        Self::with_dimensions(
+            self.chat_completions && other.chat_completions,
+            self.stream && other.stream,
+            self.embeddings && other.embeddings,
+            self.tools && other.tools,
+            self.vision && other.vision,
+            self.json_schema && other.json_schema,
+            self.developer_role && other.developer_role,
+        )
+    }
+}
+
+impl Default for ProviderCapabilities {
+    fn default() -> Self {
+        Self::all_enabled()
+    }
+}
+
+const fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -609,6 +753,8 @@ pub struct SeedModelRoute {
     pub extra_headers: Map<String, Value>,
     #[serde(default)]
     pub extra_body: Map<String, Value>,
+    #[serde(default = "ProviderCapabilities::all_enabled")]
+    pub capabilities: ProviderCapabilities,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

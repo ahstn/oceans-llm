@@ -12,8 +12,9 @@ use axum::{
 };
 use futures_util::{StreamExt, stream};
 use gateway_core::{
-    AuthenticatedApiKey, ChatCompletionsRequest, EmbeddingsRequest, GatewayError,
-    ModelsListResponse, ProviderError, ProviderRequestContext, RequestLogRecord,
+    AuthenticatedApiKey, ChatCompletionsRequest, CoreRequestRequirements, EmbeddingsRequest,
+    GatewayError, ModelsListResponse, ProviderCapabilities, ProviderError, ProviderRequestContext,
+    RequestLogRecord, openai_chat_request_to_core, openai_embeddings_request_to_core,
     protocol::openai::ModelCard,
 };
 use serde_json::{Map, Value, json};
@@ -74,47 +75,45 @@ pub async fn v1_chat_completions(
         .service
         .authenticate(extract_authorization_header(&headers))
         .await?;
-    let resolved = state.service.resolve_request(&auth, &request.model).await?;
+    let core_request = openai_chat_request_to_core(&request);
+    let requirements = core_request.requirements();
+    let resolved = state
+        .service
+        .resolve_request(&auth, &core_request.model)
+        .await?;
 
     let idempotency_key = extract_idempotency_key(&headers).map(str::to_string);
-    let request_id = extract_request_id(&headers).to_string();
+    let request_id = extract_request_id(&headers);
     let request_headers = extract_request_headers(&headers);
-    let allow_fallback = !request.stream && idempotency_key.is_some();
+    let allow_fallback = !core_request.stream && idempotency_key.is_some();
 
     let mut eligible = Vec::new();
     for route in &resolved.routes {
         let Some(provider) = state.providers.get(&route.provider_key) else {
             continue;
         };
-        let caps = provider.capabilities();
-        if request.stream {
-            if caps.chat_completions_stream {
-                eligible.push((route.clone(), provider));
-            }
-        } else if caps.chat_completions {
+        let effective_capabilities = provider.capabilities().intersect(route.capabilities);
+        if supports_requirements(effective_capabilities, requirements) {
             eligible.push((route.clone(), provider));
         }
     }
 
     tracing::info!(
-        request_model = %request.model,
+        request_model = %core_request.model,
         resolved_model = %resolved.selection.execution_model.model_key,
         route_count = resolved.routes.len(),
         eligible_route_count = eligible.len(),
-        stream = request.stream,
+        stream = core_request.stream,
+        required_capabilities = ?requirements.required_capability_names(),
         fallback_allowed = allow_fallback,
         "chat completion request resolved"
     );
 
     if eligible.is_empty() {
-        return Err(AppError(GatewayError::Provider(
-            ProviderError::NotImplemented(
-                "no registered provider supports chat completions for resolved routes".to_string(),
-            ),
-        )));
+        return Err(AppError(no_compatible_route_error(requirements)));
     }
 
-    if request.stream || !allow_fallback {
+    if core_request.stream || !allow_fallback {
         let (route, provider) = eligible
             .into_iter()
             .next()
@@ -128,8 +127,11 @@ pub async fn v1_chat_completions(
             request_headers,
         );
 
-        if request.stream {
-            let stream = match provider.chat_completions_stream(&request, &context).await {
+        if core_request.stream {
+            let stream = match provider
+                .chat_completions_stream(&core_request, &context)
+                .await
+            {
                 Ok(stream) => stream,
                 Err(error) => {
                     let gateway_error = GatewayError::from(error);
@@ -157,13 +159,16 @@ pub async fn v1_chat_completions(
                 service: state.service.clone(),
                 auth: auth.clone(),
                 request_id: request_id.clone(),
-                model_key: resolved.selection.requested_model.model_key.clone(),
+                requested_model_key: resolved.selection.requested_model.model_key.clone(),
                 resolved_model_key: resolved.selection.execution_model.model_key.clone(),
+                execution_model: resolved.selection.execution_model.clone(),
+                route: route.clone(),
                 provider_key: route.provider_key.clone(),
                 started_at: request_started_at,
                 finished: false,
                 failure: None,
                 attempt_count: 1,
+                usage: None,
             });
 
             let mut response = Response::builder()
@@ -187,7 +192,7 @@ pub async fn v1_chat_completions(
         }
 
         let value = provider
-            .chat_completions(&request, &context)
+            .chat_completions(&core_request, &context)
             .await
             .map_err(GatewayError::from);
         let value = match value {
@@ -214,6 +219,17 @@ pub async fn v1_chat_completions(
                 return Err(AppError(error));
             }
         };
+        state
+            .service
+            .record_chat_usage(
+                &auth,
+                &resolved.selection.execution_model,
+                &route,
+                &request_id,
+                usage_value_from_response(&value),
+                OffsetDateTime::now_utc(),
+            )
+            .await?;
         best_effort_log_request(
             &state.service,
             &auth,
@@ -229,7 +245,13 @@ pub async fn v1_chat_completions(
             ),
         )
         .await;
-        return Ok(Json(value).into_response());
+        let mut response = Json(value).into_response();
+        if let Ok(request_id_header) = HeaderValue::from_str(&request_id) {
+            response
+                .headers_mut()
+                .insert("x-request-id", request_id_header);
+        }
+        return Ok(response);
     }
 
     let mut first_failure: Option<GatewayError> = None;
@@ -246,7 +268,7 @@ pub async fn v1_chat_completions(
             request_headers.clone(),
         );
 
-        match provider.chat_completions(&request, &context).await {
+        match provider.chat_completions(&core_request, &context).await {
             Ok(value) => {
                 best_effort_log_request(
                     &state.service,
@@ -263,16 +285,33 @@ pub async fn v1_chat_completions(
                     ),
                 )
                 .await;
-                return Ok(Json(normalize_response_model(
+                state
+                    .service
+                    .record_chat_usage(
+                        &auth,
+                        &resolved.selection.execution_model,
+                        &route,
+                        &request_id,
+                        usage_value_from_response(&value),
+                        OffsetDateTime::now_utc(),
+                    )
+                    .await?;
+                let mut response = Json(normalize_response_model(
                     value,
                     &resolved.selection.requested_model.model_key,
                 ))
-                .into_response());
+                .into_response();
+                if let Ok(request_id_header) = HeaderValue::from_str(&request_id) {
+                    response
+                        .headers_mut()
+                        .insert("x-request-id", request_id_header);
+                }
+                return Ok(response);
             }
             Err(error) => {
                 tracing::warn!(
                     provider_key = %route.provider_key,
-                    request_model = %request.model,
+                    request_model = %core_request.model,
                     retryable = error.is_retryable(),
                     "chat completion attempt failed"
                 );
@@ -340,46 +379,65 @@ pub async fn v1_embeddings(
         .service
         .authenticate(extract_authorization_header(&headers))
         .await?;
-    let resolved = state.service.resolve_request(&auth, &request.model).await?;
+    let core_request = openai_embeddings_request_to_core(&request);
+    let requirements = core_request.requirements();
+    let resolved = state
+        .service
+        .resolve_request(&auth, &core_request.model)
+        .await?;
 
-    let has_adapter = resolved
-        .routes
-        .first()
-        .and_then(|route| state.providers.get(&route.provider_key))
-        .is_some();
-
-    tracing::info!(
-        request_model = %request.model,
-        resolved_model = %resolved.selection.execution_model.model_key,
-        route_count = resolved.routes.len(),
-        provider_adapter_available = has_adapter,
-        "embeddings request resolved"
-    );
-
+    let mut eligible = Vec::new();
     for route in &resolved.routes {
         let Some(provider) = state.providers.get(&route.provider_key) else {
             continue;
         };
-
-        if !provider.capabilities().embeddings {
-            return Err(AppError(GatewayError::Provider(
-                ProviderError::NotImplemented(format!(
-                    "provider `{}` does not implement embeddings in this slice",
-                    route.provider_key
-                )),
-            )));
+        let effective_capabilities = provider.capabilities().intersect(route.capabilities);
+        if supports_requirements(effective_capabilities, requirements) {
+            eligible.push((route, provider));
         }
-
-        return Err(AppError(GatewayError::NotImplemented(
-            "embeddings execution is intentionally deferred in this foundation phase".to_string(),
-        )));
     }
 
-    Err(AppError(GatewayError::Provider(
-        ProviderError::NotImplemented(
-            "no registered provider supports embeddings for resolved routes".to_string(),
-        ),
+    tracing::info!(
+        request_model = %core_request.model,
+        resolved_model = %resolved.selection.execution_model.model_key,
+        route_count = resolved.routes.len(),
+        eligible_route_count = eligible.len(),
+        required_capabilities = ?requirements.required_capability_names(),
+        "embeddings request resolved"
+    );
+
+    if eligible.is_empty() {
+        return Err(AppError(no_compatible_route_error(requirements)));
+    }
+
+    Err(AppError(GatewayError::NotImplemented(
+        "embeddings execution is intentionally deferred in this foundation phase".to_string(),
     )))
+}
+
+fn supports_requirements(
+    capabilities: ProviderCapabilities,
+    requirements: CoreRequestRequirements,
+) -> bool {
+    (!requirements.chat_completions || capabilities.chat_completions)
+        && (!requirements.stream || capabilities.stream)
+        && (!requirements.embeddings || capabilities.embeddings)
+        && (!requirements.tools || capabilities.tools)
+        && (!requirements.vision || capabilities.vision)
+        && (!requirements.json_schema || capabilities.json_schema)
+        && (!requirements.developer_role || capabilities.developer_role)
+}
+
+fn no_compatible_route_error(requirements: CoreRequestRequirements) -> GatewayError {
+    let required = requirements.required_capability_names();
+    let required = if required.is_empty() {
+        "none".to_string()
+    } else {
+        required.join(", ")
+    };
+    GatewayError::InvalidRequest(format!(
+        "no configured route supports requested capabilities ({required})"
+    ))
 }
 
 fn build_provider_context(
@@ -474,13 +532,16 @@ struct LoggingBodyStreamState {
     service: std::sync::Arc<AppGatewayService>,
     auth: AuthenticatedApiKey,
     request_id: String,
-    model_key: String,
+    requested_model_key: String,
     resolved_model_key: String,
+    execution_model: gateway_core::GatewayModel,
+    route: gateway_core::ModelRoute,
     provider_key: String,
     started_at: Instant,
     finished: bool,
     failure: Option<StreamFailure>,
     attempt_count: usize,
+    usage: Option<Value>,
 }
 
 fn wrap_stream_with_request_logging(
@@ -501,6 +562,11 @@ fn wrap_stream_with_request_logging(
                         error_code,
                     });
                 }
+                if state.failure.is_none()
+                    && let Some(usage) = extract_stream_usage(chunk.as_ref())
+                {
+                    state.usage = Some(usage);
+                }
 
                 Some((Ok(chunk), state))
             }
@@ -511,7 +577,7 @@ fn wrap_stream_with_request_logging(
                     &state.service,
                     &state.auth,
                     &state.request_id,
-                    &state.model_key,
+                    &state.requested_model_key,
                     &state.resolved_model_key,
                     ChatCompletionLogSummary::failure(
                         state.provider_key.clone(),
@@ -536,19 +602,41 @@ fn wrap_stream_with_request_logging(
                         failure.status_code,
                         failure.error_code.clone(),
                     ),
-                    None => ChatCompletionLogSummary::success(
-                        state.provider_key.clone(),
-                        state.attempt_count,
-                        true,
-                        latency_ms_since(state.started_at),
-                        UsageSummary::default(),
-                    ),
+                    None => {
+                        let usage_summary = usage_summary_from_value(state.usage.as_ref());
+                        if let Err(error) = state
+                            .service
+                            .record_chat_usage(
+                                &state.auth,
+                                &state.execution_model,
+                                &state.route,
+                                &state.request_id,
+                                state.usage.clone(),
+                                OffsetDateTime::now_utc(),
+                            )
+                            .await
+                        {
+                            tracing::warn!(
+                                request_id = %state.request_id,
+                                model_key = %state.execution_model.model_key,
+                                error = %error,
+                                "usage ledger write failed after stream completion"
+                            );
+                        }
+                        ChatCompletionLogSummary::success(
+                            state.provider_key.clone(),
+                            state.attempt_count,
+                            true,
+                            latency_ms_since(state.started_at),
+                            usage_summary,
+                        )
+                    }
                 };
                 best_effort_log_request(
                     &state.service,
                     &state.auth,
                     &state.request_id,
-                    &state.model_key,
+                    &state.requested_model_key,
                     &state.resolved_model_key,
                     summary,
                 )
@@ -616,14 +704,32 @@ fn normalize_response_model(mut value: Value, model_key: &str) -> Value {
 }
 
 fn usage_from_response(value: &Value) -> UsageSummary {
-    let Some(usage) = value.get("usage").and_then(Value::as_object) else {
+    usage_summary_from_value(value.get("usage"))
+}
+
+fn usage_value_from_response(value: &Value) -> Option<Value> {
+    value.get("usage").cloned()
+}
+
+fn usage_summary_from_value(value: Option<&Value>) -> UsageSummary {
+    let Some(usage) = value.and_then(Value::as_object) else {
         return UsageSummary::default();
     };
 
+    let prompt_tokens = usage.get("prompt_tokens").and_then(Value::as_i64);
+    let completion_tokens = usage.get("completion_tokens").and_then(Value::as_i64);
+    let total_tokens = match usage.get("total_tokens").and_then(Value::as_i64) {
+        some @ Some(_) => some,
+        None => match (prompt_tokens, completion_tokens) {
+            (Some(prompt), Some(completion)) => prompt.checked_add(completion),
+            _ => None,
+        },
+    };
+
     UsageSummary {
-        prompt_tokens: usage.get("prompt_tokens").and_then(Value::as_i64),
-        completion_tokens: usage.get("completion_tokens").and_then(Value::as_i64),
-        total_tokens: usage.get("total_tokens").and_then(Value::as_i64),
+        prompt_tokens,
+        completion_tokens,
+        total_tokens,
     }
 }
 
@@ -669,11 +775,12 @@ fn extract_idempotency_key(headers: &HeaderMap) -> Option<&str> {
         .and_then(|value| value.to_str().ok())
 }
 
-fn extract_request_id(headers: &HeaderMap) -> &str {
+fn extract_request_id(headers: &HeaderMap) -> String {
     headers
         .get("x-request-id")
         .and_then(|value| value.to_str().ok())
-        .unwrap_or("missing-request-id")
+        .map(str::to_string)
+        .unwrap_or_else(|| Uuid::new_v4().to_string())
 }
 
 fn extract_request_headers(headers: &HeaderMap) -> BTreeMap<String, String> {
@@ -686,4 +793,24 @@ fn extract_request_headers(headers: &HeaderMap) -> BTreeMap<String, String> {
                 .map(|value| (name.as_str().to_ascii_lowercase(), value.to_string()))
         })
         .collect::<BTreeMap<_, _>>()
+}
+
+fn extract_stream_usage(chunk: &[u8]) -> Option<Value> {
+    let text = std::str::from_utf8(chunk).ok()?;
+    for line in text.lines() {
+        let Some(payload) = line.strip_prefix("data: ") else {
+            continue;
+        };
+        let payload = payload.trim();
+        if payload.is_empty() || payload == "[DONE]" {
+            continue;
+        }
+
+        let value: Value = serde_json::from_str(payload).ok()?;
+        if let Some(usage) = value.get("usage") {
+            return Some(usage.clone());
+        }
+    }
+
+    None
 }

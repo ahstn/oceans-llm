@@ -326,6 +326,17 @@ impl BudgetRepository for AnyStore {
         dispatch_store!(self, get_active_budget_for_user(user_id))
     }
 
+    async fn get_usage_ledger_by_request_and_scope(
+        &self,
+        request_id: &str,
+        ownership_scope_key: &str,
+    ) -> Result<Option<gateway_core::UsageLedgerRecord>, StoreError> {
+        dispatch_store!(
+            self,
+            get_usage_ledger_by_request_and_scope(request_id, ownership_scope_key)
+        )
+    }
+
     async fn sum_usage_cost_for_user_in_window(
         &self,
         user_id: Uuid,
@@ -338,11 +349,11 @@ impl BudgetRepository for AnyStore {
         )
     }
 
-    async fn insert_usage_cost_event(
+    async fn insert_usage_ledger_if_absent(
         &self,
-        event: &gateway_core::UsageCostEventRecord,
-    ) -> Result<(), StoreError> {
-        dispatch_store!(self, insert_usage_cost_event(event))
+        event: &gateway_core::UsageLedgerRecord,
+    ) -> Result<bool, StoreError> {
+        dispatch_store!(self, insert_usage_ledger_if_absent(event))
     }
 }
 
@@ -380,6 +391,43 @@ impl PricingCatalogRepository for AnyStore {
         dispatch_store!(
             self,
             touch_pricing_catalog_cache_fetched_at(catalog_key, fetched_at)
+        )
+    }
+
+    async fn list_active_model_pricing(
+        &self,
+    ) -> Result<Vec<gateway_core::ModelPricingRecord>, StoreError> {
+        dispatch_store!(self, list_active_model_pricing())
+    }
+
+    async fn insert_model_pricing(
+        &self,
+        record: &gateway_core::ModelPricingRecord,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(self, insert_model_pricing(record))
+    }
+
+    async fn close_model_pricing(
+        &self,
+        model_pricing_id: Uuid,
+        effective_end_at: OffsetDateTime,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(
+            self,
+            close_model_pricing(model_pricing_id, effective_end_at, updated_at)
+        )
+    }
+
+    async fn resolve_model_pricing_at(
+        &self,
+        pricing_provider_id: &str,
+        pricing_model_id: &str,
+        occurred_at: OffsetDateTime,
+    ) -> Result<Option<gateway_core::ModelPricingRecord>, StoreError> {
+        dispatch_store!(
+            self,
+            resolve_model_pricing_at(pricing_provider_id, pricing_model_id, occurred_at)
         )
     }
 }

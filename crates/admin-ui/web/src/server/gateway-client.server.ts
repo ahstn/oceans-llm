@@ -41,8 +41,10 @@ function resolveGatewayOrigin() {
 export function forwardRequestHeadersFromRequest(request: Request, initHeaders?: HeadersInit) {
   const headers = new Headers(initHeaders)
   const requestUrl = new URL(request.url)
-  const requestProto = request.headers.get('x-forwarded-proto') ?? requestUrl.protocol.replace(/:$/, '')
-  const requestHost = request.headers.get('x-forwarded-host') ?? request.headers.get('host') ?? requestUrl.host
+  const requestProto =
+    request.headers.get('x-forwarded-proto') ?? requestUrl.protocol.replace(/:$/, '')
+  const requestHost =
+    request.headers.get('x-forwarded-host') ?? request.headers.get('host') ?? requestUrl.host
   const requestOrigin = request.headers.get('x-forwarded-origin') ?? requestUrl.origin
 
   const cookie = request.headers.get('cookie')

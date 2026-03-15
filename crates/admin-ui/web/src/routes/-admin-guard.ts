@@ -24,9 +24,7 @@ export async function requireAdminSession(location: {
   pathname: string
   search: Record<string, unknown>
 }) {
-  const {
-    data: session,
-  } = await getAuthSession()
+  const { data: session } = await getAuthSession()
 
   if (!session) {
     throw redirect({

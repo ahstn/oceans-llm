@@ -2,14 +2,19 @@ use std::sync::Arc;
 
 use gateway_core::{
     ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, BudgetCadence, BudgetRepository, GatewayError,
-    Money4, UsageCostEventRecord,
+    UsageLedgerRecord,
 };
 use time::{Duration, OffsetDateTime, UtcOffset};
-use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct BudgetGuard<R> {
     repo: Arc<R>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BudgetGuardDisposition {
+    Inserted,
+    Duplicate,
 }
 
 impl<R> BudgetGuard<R>
@@ -24,27 +29,35 @@ where
     pub async fn enforce_and_record_usage(
         &self,
         api_key: &AuthenticatedApiKey,
-        request_id: &str,
-        model_id: Option<Uuid>,
-        estimated_cost_usd: Money4,
-        occurred_at: OffsetDateTime,
-    ) -> Result<(), GatewayError> {
-        if estimated_cost_usd.is_negative() {
+        ledger: &UsageLedgerRecord,
+    ) -> Result<BudgetGuardDisposition, GatewayError> {
+        if ledger.computed_cost_usd.is_negative() {
             return Err(GatewayError::InvalidRequest(
-                "estimated_cost_usd must be >= 0".to_string(),
+                "computed_cost_usd must be >= 0".to_string(),
             ));
+        }
+
+        if self
+            .repo
+            .get_usage_ledger_by_request_and_scope(&ledger.request_id, &ledger.ownership_scope_key)
+            .await?
+            .is_some()
+        {
+            return Ok(BudgetGuardDisposition::Duplicate);
         }
 
         if api_key.owner_kind == ApiKeyOwnerKind::User {
             let user_id = api_key.owner_user_id.ok_or(AuthError::ApiKeyOwnerInvalid)?;
-            if let Some(budget) = self.repo.get_active_budget_for_user(user_id).await? {
+            if ledger.pricing_status.counts_toward_spend()
+                && let Some(budget) = self.repo.get_active_budget_for_user(user_id).await?
+            {
                 let (window_start, window_end) =
-                    budget_window_bounds_utc(budget.cadence, occurred_at)?;
+                    budget_window_bounds_utc(budget.cadence, ledger.occurred_at)?;
                 let spent = self
                     .repo
                     .sum_usage_cost_for_user_in_window(user_id, window_start, window_end)
                     .await?;
-                let projected = spent.checked_add(estimated_cost_usd).ok_or_else(|| {
+                let projected = spent.checked_add(ledger.computed_cost_usd).ok_or_else(|| {
                     GatewayError::Internal("budget projection overflow".to_string())
                 })?;
                 if budget.hard_limit && projected > budget.amount_usd {
@@ -57,20 +70,11 @@ where
             }
         }
 
-        self.repo
-            .insert_usage_cost_event(&UsageCostEventRecord {
-                usage_event_id: Uuid::new_v4(),
-                request_id: request_id.to_string(),
-                api_key_id: api_key.id,
-                user_id: api_key.owner_user_id,
-                team_id: api_key.owner_team_id,
-                model_id,
-                estimated_cost_usd,
-                occurred_at,
-            })
-            .await?;
-
-        Ok(())
+        if self.repo.insert_usage_ledger_if_absent(ledger).await? {
+            Ok(BudgetGuardDisposition::Inserted)
+        } else {
+            Ok(BudgetGuardDisposition::Duplicate)
+        }
     }
 }
 
@@ -108,18 +112,19 @@ mod tests {
     use async_trait::async_trait;
     use gateway_core::{
         ApiKeyOwnerKind, AuthenticatedApiKey, BudgetCadence, BudgetRepository, Money4, StoreError,
-        UsageCostEventRecord, UserBudgetRecord,
+        UsageLedgerRecord, UsagePricingStatus, UserBudgetRecord,
     };
+    use serde_json::json;
     use time::{Date, Month, OffsetDateTime};
     use uuid::Uuid;
 
-    use super::{BudgetGuard, budget_window_bounds_utc};
+    use super::{BudgetGuard, BudgetGuardDisposition, budget_window_bounds_utc};
 
     #[derive(Clone, Default)]
     struct InMemoryBudgetRepo {
         active_budget: Option<UserBudgetRecord>,
         current_spend: Money4,
-        inserted_events: Arc<Mutex<Vec<UsageCostEventRecord>>>,
+        inserted_events: Arc<Mutex<Vec<UsageLedgerRecord>>>,
     }
 
     #[async_trait]
@@ -131,6 +136,23 @@ mod tests {
             Ok(self.active_budget.clone())
         }
 
+        async fn get_usage_ledger_by_request_and_scope(
+            &self,
+            request_id: &str,
+            ownership_scope_key: &str,
+        ) -> Result<Option<UsageLedgerRecord>, StoreError> {
+            Ok(self
+                .inserted_events
+                .lock()
+                .expect("events lock")
+                .iter()
+                .find(|event| {
+                    event.request_id == request_id
+                        && event.ownership_scope_key == ownership_scope_key
+                })
+                .cloned())
+        }
+
         async fn sum_usage_cost_for_user_in_window(
             &self,
             _user_id: Uuid,
@@ -140,15 +162,20 @@ mod tests {
             Ok(self.current_spend)
         }
 
-        async fn insert_usage_cost_event(
+        async fn insert_usage_ledger_if_absent(
             &self,
-            event: &UsageCostEventRecord,
-        ) -> Result<(), StoreError> {
-            self.inserted_events
-                .lock()
-                .expect("events lock")
-                .push(event.clone());
-            Ok(())
+            event: &UsageLedgerRecord,
+        ) -> Result<bool, StoreError> {
+            let mut events = self.inserted_events.lock().expect("events lock");
+            if events.iter().any(|existing| {
+                existing.request_id == event.request_id
+                    && existing.ownership_scope_key == event.ownership_scope_key
+            }) {
+                return Ok(false);
+            }
+
+            events.push(event.clone());
+            Ok(true)
         }
     }
 
@@ -174,6 +201,57 @@ mod tests {
         }
     }
 
+    fn sample_usage_ledger(
+        api_key: &AuthenticatedApiKey,
+        request_id: &str,
+        pricing_status: UsagePricingStatus,
+        computed_cost_usd: Money4,
+        occurred_at: OffsetDateTime,
+    ) -> UsageLedgerRecord {
+        let ownership_scope_key = match api_key.owner_kind {
+            ApiKeyOwnerKind::User => {
+                format!(
+                    "user:{}",
+                    api_key.owner_user_id.expect("user owner").simple()
+                )
+            }
+            ApiKeyOwnerKind::Team => format!(
+                "team:{}:actor:none",
+                api_key.owner_team_id.expect("team owner").simple()
+            ),
+        };
+
+        UsageLedgerRecord {
+            usage_event_id: Uuid::new_v4(),
+            request_id: request_id.to_string(),
+            ownership_scope_key,
+            api_key_id: api_key.id,
+            user_id: api_key.owner_user_id,
+            team_id: api_key.owner_team_id,
+            actor_user_id: None,
+            model_id: None,
+            provider_key: "openai-prod".to_string(),
+            upstream_model: "gpt-4o-mini".to_string(),
+            prompt_tokens: Some(100),
+            completion_tokens: Some(50),
+            total_tokens: Some(150),
+            provider_usage: json!({"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150}),
+            pricing_status,
+            unpriced_reason: None,
+            pricing_row_id: None,
+            pricing_provider_id: Some("openai".to_string()),
+            pricing_model_id: Some("gpt-4o-mini".to_string()),
+            pricing_source: Some("models_dev_api".to_string()),
+            pricing_source_etag: None,
+            pricing_source_fetched_at: Some(occurred_at),
+            pricing_last_updated: Some("2026-01-01".to_string()),
+            input_cost_per_million_tokens: Some(Money4::from_scaled(50_000)),
+            output_cost_per_million_tokens: Some(Money4::from_scaled(200_000)),
+            computed_cost_usd,
+            occurred_at,
+        }
+    }
+
     #[tokio::test]
     async fn blocks_when_hard_limit_would_be_exceeded() {
         let user_id = Uuid::new_v4();
@@ -194,14 +272,16 @@ mod tests {
         });
 
         let guard = BudgetGuard::new(repo.clone());
+        let auth = user_auth(user_id);
+        let ledger = sample_usage_ledger(
+            &auth,
+            "req_1",
+            UsagePricingStatus::Priced,
+            Money4::from_scaled(10_000),
+            OffsetDateTime::now_utc(),
+        );
         let error = guard
-            .enforce_and_record_usage(
-                &user_auth(user_id),
-                "req_1",
-                None,
-                Money4::from_scaled(10_000),
-                OffsetDateTime::now_utc(),
-            )
+            .enforce_and_record_usage(&auth, &ledger)
             .await
             .expect_err("budget should block request");
 
@@ -219,17 +299,54 @@ mod tests {
         });
 
         let guard = BudgetGuard::new(repo.clone());
-        guard
+        let auth = team_auth(team_id);
+        let outcome = guard
             .enforce_and_record_usage(
-                &team_auth(team_id),
-                "req_2",
-                None,
-                Money4::from_scaled(125_000),
-                OffsetDateTime::now_utc(),
+                &auth,
+                &sample_usage_ledger(
+                    &auth,
+                    "req_2",
+                    UsagePricingStatus::Priced,
+                    Money4::from_scaled(125_000),
+                    OffsetDateTime::now_utc(),
+                ),
             )
             .await
             .expect("team-owned keys should not be blocked by user budget policy");
 
+        assert_eq!(outcome, BudgetGuardDisposition::Inserted);
+        assert_eq!(repo.inserted_events.lock().expect("events lock").len(), 1);
+    }
+
+    #[tokio::test]
+    async fn duplicate_request_is_a_no_op() {
+        let user_id = Uuid::new_v4();
+        let repo = Arc::new(InMemoryBudgetRepo {
+            active_budget: None,
+            current_spend: Money4::ZERO,
+            inserted_events: Arc::new(Mutex::new(Vec::new())),
+        });
+        let guard = BudgetGuard::new(repo.clone());
+        let auth = user_auth(user_id);
+        let ledger = sample_usage_ledger(
+            &auth,
+            "req_dup",
+            UsagePricingStatus::Priced,
+            Money4::from_scaled(1_000),
+            OffsetDateTime::now_utc(),
+        );
+
+        let first = guard
+            .enforce_and_record_usage(&auth, &ledger)
+            .await
+            .expect("first insert");
+        let second = guard
+            .enforce_and_record_usage(&auth, &ledger)
+            .await
+            .expect("duplicate insert should succeed");
+
+        assert_eq!(first, BudgetGuardDisposition::Inserted);
+        assert_eq!(second, BudgetGuardDisposition::Duplicate);
         assert_eq!(repo.inserted_events.lock().expect("events lock").len(), 1);
     }
 

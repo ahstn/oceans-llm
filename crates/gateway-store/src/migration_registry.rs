@@ -100,22 +100,46 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
     },
     MigrationManifest {
         version: 8,
-        name: "model_aliases",
-        checksum: "V8__model_aliases.sql",
-        libsql: BackendMigrationStep::Sql(include_str!("../migrations/V8__model_aliases.sql")),
+        name: "usage_ledger_and_model_pricing",
+        checksum: "V8__usage_ledger_and_model_pricing.sql",
+        libsql: BackendMigrationStep::Sql(include_str!(
+            "../migrations/V8__usage_ledger_and_model_pricing.sql"
+        )),
         postgres: BackendMigrationStep::Sql(include_str!(
-            "../migrations/postgres/V8__model_aliases.sql"
+            "../migrations/postgres/V8__usage_ledger_and_model_pricing.sql"
         )),
     },
     MigrationManifest {
         version: 9,
-        name: "request_log_resolved_model",
-        checksum: "V9__request_log_resolved_model.sql",
+        name: "model_route_capabilities",
+        checksum: "V9__model_route_capabilities.sql",
         libsql: BackendMigrationStep::Sql(include_str!(
-            "../migrations/V9__request_log_resolved_model.sql"
+            "../migrations/V9__model_route_capabilities.sql"
         )),
         postgres: BackendMigrationStep::Sql(include_str!(
-            "../migrations/postgres/V9__request_log_resolved_model.sql"
+            "../migrations/postgres/V9__model_route_capabilities.sql"
+        )),
+    },
+    MigrationManifest {
+        version: 10,
+        name: "model_aliases",
+        checksum: "V10__model_aliases.sql",
+        libsql: BackendMigrationStep::Sql(include_str!(
+            "../migrations/V10__model_aliases.sql"
+        )),
+        postgres: BackendMigrationStep::Sql(include_str!(
+            "../migrations/postgres/V10__model_aliases.sql"
+        )),
+    },
+    MigrationManifest {
+        version: 11,
+        name: "request_log_resolved_model",
+        checksum: "V11__request_log_resolved_model.sql",
+        libsql: BackendMigrationStep::Sql(include_str!(
+            "../migrations/V11__request_log_resolved_model.sql"
+        )),
+        postgres: BackendMigrationStep::Sql(include_str!(
+            "../migrations/postgres/V11__request_log_resolved_model.sql"
         )),
     },
 ];
