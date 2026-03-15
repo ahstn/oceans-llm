@@ -20,8 +20,7 @@ This left capability metadata ahead of runtime behavior and reduced confidence i
 
 - authenticate and resolve model/routes,
 - filter by capability-aware requirements,
-- execute against the selected provider route,
-- preserve deterministic fallback policy (retry/fallback only with `Idempotency-Key`),
+- execute against the first eligible provider route (single-route execution),
 - record usage and request logs through existing service paths.
 
 ### 2. Implement SSE streaming for OpenAI-compatible providers
@@ -30,21 +29,25 @@ This left capability metadata ahead of runtime behavior and reduced confidence i
 
 - forces stream request shape for upstream calls,
 - maps upstream non-success HTTP responses to `ProviderError::UpstreamHttp`,
+- requires upstream `Content-Type: text/event-stream`,
 - proxies valid SSE data events,
 - appends `[DONE]` if upstream closes without emitting it,
-- emits OpenAI-style stream error chunks for mid-stream transport/parse failures.
+- emits OpenAI-style stream error chunks for mid-stream transport/parse failures,
+- emits deterministic stream errors for malformed/empty/incomplete SSE finalization.
 
 ### 3. Promote OpenAI-compatible stream capability to runtime truth
 
 `ProviderCapabilities::openai_compat_baseline()` now advertises stream support, aligning capability metadata with actual runtime behavior.
 
-### 4. Keep Vertex embeddings deferred in this slice
+### 4. Use capability-gated unsupported behavior for v1
 
-Vertex embeddings remains explicitly deferred (`provider_not_implemented`) to keep scope focused on closing #21 and #22 with deterministic behavior, without introducing provider-specific embeddings mapping in this delivery.
+Unsupported runtime behavior for chat/embeddings is now surfaced through capability filtering (`400 invalid_request` for no compatible route) instead of runtime `provider_not_implemented` branches.
+
+For Vertex embeddings in this slice, routes are expected to advertise `embeddings=false`, so unsupported behavior is deterministic at route selection time.
 
 ### 5. Add operation-aware request-log metadata
 
-Request log metadata now includes an `operation` key (`chat_completions` or `embeddings`) while preserving existing `stream`, `fallback_used`, and `attempt_count` fields.
+Request log metadata now includes `operation` (`chat_completions` or `embeddings`) and `stream`. Fallback-era metadata fields were removed with single-route execution.
 
 ## Consequences
 
@@ -52,12 +55,13 @@ Positive:
 
 - `/v1/embeddings` now executes for supported routes instead of blanket deferral.
 - OpenAI-compatible streaming is available across the gateway contract, not only Vertex.
-- Capability-aware routing now better reflects runtime reality for stream + embeddings.
+- Capability-aware routing now deterministically controls unsupported behavior for stream + embeddings.
 - Observability can distinguish chat vs embeddings without schema changes.
+- Runtime execution is simpler (no idempotency-gated fallback path).
 
 Tradeoffs:
 
-- OpenAI-compatible stream normalization adds parser/adapter complexity.
+- OpenAI-compatible stream normalization adds stricter parser/adapter checks.
 - Embeddings usage accounting remains on the existing token model; provider-specific embeddings usage nuance may require future refinements.
 - Vertex embeddings still requires dedicated follow-up implementation work.
 
@@ -65,7 +69,7 @@ Tradeoffs:
 
 - Implement Vertex embeddings mapping and normalization when provider contract details are finalized.
 - Reuse shared stream parsing utilities in future provider adapters to avoid parser drift.
-- Update issue checklists for #21 and #22 when the merge that ships this ADR lands.
+- Keep provider capability metadata aligned with runtime support to avoid reintroducing runtime `NotImplemented` branches for chat/embeddings.
 
 ## Attribution
 

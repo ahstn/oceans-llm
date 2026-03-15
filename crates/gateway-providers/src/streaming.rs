@@ -47,6 +47,16 @@ impl SseEventParser {
 
         Ok(events)
     }
+
+    pub(crate) fn finish(&mut self) -> Result<(), ProviderError> {
+        self.utf8.finish()?;
+        if !self.buffer.trim().is_empty() {
+            return Err(ProviderError::Transport(
+                "stream ended with an incomplete sse event".to_string(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -92,6 +102,15 @@ impl Utf8ChunkDecoder {
                 Ok(owned)
             }
         }
+    }
+
+    pub(crate) fn finish(&self) -> Result<(), ProviderError> {
+        if !self.pending.is_empty() {
+            return Err(ProviderError::Transport(
+                "stream ended with incomplete utf8 bytes".to_string(),
+            ));
+        }
+        Ok(())
     }
 }
 

@@ -362,14 +362,14 @@ mod tests {
     #[derive(Clone)]
     enum MockError {
         UpstreamHttp(u16, String),
-        NotImplemented(String),
+        InvalidRequest(String),
     }
 
     impl MockError {
         fn into_provider_error(self) -> ProviderError {
             match self {
                 Self::UpstreamHttp(status, body) => ProviderError::UpstreamHttp { status, body },
-                Self::NotImplemented(message) => ProviderError::NotImplemented(message),
+                Self::InvalidRequest(message) => ProviderError::InvalidRequest(message),
             }
         }
     }
@@ -429,8 +429,8 @@ mod tests {
             _request: &CoreEmbeddingsRequest,
             _context: &ProviderRequestContext,
         ) -> Result<Value, ProviderError> {
-            Err(ProviderError::NotImplemented(
-                "mock embeddings not implemented".to_string(),
+            Err(ProviderError::InvalidRequest(
+                "mock embeddings unsupported for this provider".to_string(),
             ))
         }
     }
@@ -483,8 +483,8 @@ mod tests {
             _request: &CoreChatRequest,
             _context: &ProviderRequestContext,
         ) -> Result<Value, ProviderError> {
-            Err(ProviderError::NotImplemented(
-                "mock chat completions not implemented".to_string(),
+            Err(ProviderError::InvalidRequest(
+                "mock chat completions unsupported for this provider".to_string(),
             ))
         }
 
@@ -493,8 +493,8 @@ mod tests {
             _request: &CoreChatRequest,
             _context: &ProviderRequestContext,
         ) -> Result<ProviderStream, ProviderError> {
-            Err(ProviderError::NotImplemented(
-                "mock chat stream not implemented".to_string(),
+            Err(ProviderError::InvalidRequest(
+                "mock chat stream unsupported for this provider".to_string(),
             ))
         }
 
@@ -1091,8 +1091,6 @@ mod tests {
         assert_eq!(logs[0].total_tokens, Some(18));
         assert_eq!(logs[0].error_code, None);
         assert_eq!(logs[0].metadata["stream"], Value::Bool(false));
-        assert_eq!(logs[0].metadata["fallback_used"], Value::Bool(false));
-        assert_eq!(logs[0].metadata["attempt_count"], json!(1));
         assert_eq!(logs[0].metadata["operation"], "chat_completions");
         assert_eq!(logs[0].resolved_model_key.as_deref(), Some("fast"));
 
@@ -1252,7 +1250,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn fallback_retries_when_idempotency_key_is_present() {
+    async fn idempotency_header_does_not_enable_retry_fallback() {
         let (primary_calls, primary_provider) = make_chat_provider(
             "primary",
             MockChatResult::Error(MockError::UpstreamHttp(503, "unavailable".to_string())),
@@ -1346,30 +1344,24 @@ mod tests {
             .await
             .expect("response");
 
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = to_bytes(response.into_body(), usize::MAX)
-            .await
-            .expect("body");
-        let payload: Value = serde_json::from_slice(&body).expect("json");
-        assert_eq!(payload["choices"][0]["message"]["content"], "from-fallback");
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(primary_calls.load(Ordering::SeqCst), 1);
-        assert_eq!(fallback_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(fallback_calls.load(Ordering::SeqCst), 0);
 
         let logs = load_request_logs(&db_path).await;
         assert_eq!(logs.len(), 1);
-        assert_eq!(logs[0].provider_key, "fallback");
-        assert_eq!(logs[0].status_code, Some(200));
-        assert_eq!(logs[0].error_code, None);
+        assert_eq!(logs[0].provider_key, "primary");
+        assert_eq!(logs[0].status_code, Some(503));
+        assert_eq!(logs[0].error_code.as_deref(), Some("upstream_http_error"));
         assert_eq!(logs[0].metadata["stream"], Value::Bool(false));
-        assert_eq!(logs[0].metadata["fallback_used"], Value::Bool(true));
-        assert_eq!(logs[0].metadata["attempt_count"], json!(2));
         assert_eq!(logs[0].metadata["operation"], "chat_completions");
         assert_eq!(logs[0].resolved_model_key.as_deref(), Some("fast"));
+        assert!(load_usage_ledger(&db_path).await.is_empty());
     }
 
     #[tokio::test]
     #[serial]
-    async fn no_retry_without_idempotency_key() {
+    async fn single_route_execution_without_idempotency_key() {
         let (primary_calls, primary_provider) = make_chat_provider(
             "primary",
             MockChatResult::Error(MockError::UpstreamHttp(503, "unavailable".to_string())),
@@ -1475,8 +1467,6 @@ mod tests {
         assert_eq!(logs[0].total_tokens, None);
         assert_eq!(logs[0].error_code.as_deref(), Some("upstream_http_error"));
         assert_eq!(logs[0].metadata["stream"], Value::Bool(false));
-        assert_eq!(logs[0].metadata["fallback_used"], Value::Bool(false));
-        assert_eq!(logs[0].metadata["attempt_count"], json!(1));
         assert_eq!(logs[0].metadata["operation"], "chat_completions");
         assert!(load_usage_ledger(&db_path).await.is_empty());
     }
@@ -1796,8 +1786,6 @@ mod tests {
         assert_eq!(logs[0].total_tokens, None);
         assert_eq!(logs[0].error_code, None);
         assert_eq!(logs[0].metadata["stream"], Value::Bool(true));
-        assert_eq!(logs[0].metadata["fallback_used"], Value::Bool(false));
-        assert_eq!(logs[0].metadata["attempt_count"], json!(1));
         assert_eq!(logs[0].metadata["operation"], "chat_completions");
 
         let ledgers = load_usage_ledger(&db_path).await;
@@ -1873,8 +1861,6 @@ mod tests {
         assert_eq!(logs[0].completion_tokens, None);
         assert_eq!(logs[0].total_tokens, Some(4));
         assert_eq!(logs[0].metadata["stream"], Value::Bool(false));
-        assert_eq!(logs[0].metadata["fallback_used"], Value::Bool(false));
-        assert_eq!(logs[0].metadata["attempt_count"], json!(1));
         assert_eq!(logs[0].metadata["operation"], "embeddings");
 
         let ledgers = load_usage_ledger(&db_path).await;
@@ -1961,11 +1947,11 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn embeddings_provider_not_implemented_is_deterministic() {
+    async fn embeddings_provider_invalid_request_is_deterministic() {
         let (calls, provider) = make_embeddings_provider(
             "openai-prod",
-            MockEmbeddingsResult::Error(MockError::NotImplemented(
-                "embeddings deferred".to_string(),
+            MockEmbeddingsResult::Error(MockError::InvalidRequest(
+                "embeddings input was invalid".to_string(),
             )),
             ProviderCapabilities::with_dimensions(false, false, true, false, false, false, false),
         );
@@ -1993,17 +1979,17 @@ mod tests {
             .await
             .expect("response");
 
-        assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let body = to_bytes(response.into_body(), usize::MAX)
             .await
             .expect("body bytes");
         let payload: Value = serde_json::from_slice(&body).expect("json body");
-        assert_eq!(payload["error"]["code"], "provider_not_implemented");
+        assert_eq!(payload["error"]["code"], "invalid_request");
         assert_eq!(calls.load(Ordering::SeqCst), 1);
 
         let logs = load_request_logs(&db_path).await;
         assert_eq!(logs.len(), 1);
-        assert_eq!(logs[0].status_code, Some(501));
+        assert_eq!(logs[0].status_code, Some(400));
         assert_eq!(logs[0].metadata["operation"], "embeddings");
     }
 

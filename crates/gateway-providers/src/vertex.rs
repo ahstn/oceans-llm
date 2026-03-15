@@ -89,9 +89,6 @@ impl VertexProvider {
             .json(body);
 
         request = request.header("x-request-id", &context.request_id);
-        if let Some(idempotency_key) = &context.idempotency_key {
-            request = request.header("Idempotency-Key", idempotency_key);
-        }
 
         for (name, value) in &self.config.default_headers {
             request = request.header(name, value);
@@ -145,7 +142,7 @@ fn parse_upstream_model(
         "google" => PublisherFamily::Google,
         "anthropic" => PublisherFamily::Anthropic,
         other => {
-            return Err(ProviderError::NotImplemented(format!(
+            return Err(ProviderError::InvalidRequest(format!(
                 "vertex publisher `{other}` is not supported in this slice"
             )));
         }
@@ -265,8 +262,8 @@ impl ProviderClient for VertexProvider {
         _request: &CoreEmbeddingsRequest,
         _context: &ProviderRequestContext,
     ) -> Result<Value, ProviderError> {
-        Err(ProviderError::NotImplemented(
-            "vertex embeddings are not implemented in this slice".to_string(),
+        Err(ProviderError::InvalidRequest(
+            "vertex embeddings are not supported in this v1 runtime".to_string(),
         ))
     }
 }
@@ -1305,7 +1302,6 @@ mod tests {
             upstream_model: upstream_model.to_string(),
             extra_headers: Map::new(),
             extra_body: Map::new(),
-            idempotency_key: None,
             request_headers: std::collections::BTreeMap::new(),
         }
     }

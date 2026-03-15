@@ -637,8 +637,6 @@ pub struct ProviderRequestContext {
     #[serde(default)]
     pub extra_body: Map<String, Value>,
     #[serde(default)]
-    pub idempotency_key: Option<String>,
-    #[serde(default)]
     pub request_headers: BTreeMap<String, String>,
 }
 

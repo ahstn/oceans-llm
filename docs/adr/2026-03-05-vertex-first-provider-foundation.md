@@ -106,7 +106,8 @@ Why:
 
 ### 9. Defer embeddings for Vertex in this slice
 
-Embeddings execution remains deferred; capability checks now return `provider_not_implemented` where appropriate.
+Embeddings execution remains deferred in this initial slice.
+Later runtime simplification work (2026-03-15 parity ADR update) moved unsupported embeddings behavior to capability-gated `400 invalid_request` instead of runtime `provider_not_implemented`.
 
 Why:
 - keeps first slice focused and shippable,
