@@ -176,12 +176,15 @@ export async function listRequestLogs(): Promise<ApiEnvelope<Paginated<RequestLo
     }>
   >('/api/v1/admin/observability/request-logs')
 
-  return envelope({
-    items: response.data.items.map(mapRequestLogSummary),
-    page: response.data.page,
-    pageSize: response.data.page_size,
-    total: response.data.total,
-  })
+  return {
+    data: {
+      items: response.data.items.map(mapRequestLogSummary),
+      page: response.data.page,
+      pageSize: response.data.page_size,
+      total: response.data.total,
+    },
+    meta: response.meta,
+  }
 }
 
 export async function getRequestLogDetail(
@@ -191,7 +194,10 @@ export async function getRequestLogDetail(
     `/api/v1/admin/observability/request-logs/${encodeURIComponent(requestLogId)}`,
   )
 
-  return envelope(response.data ? mapRequestLogDetail(response.data) : null)
+  return {
+    data: response.data ? mapRequestLogDetail(response.data) : null,
+    meta: response.meta,
+  }
 }
 
 export async function listTeams(): Promise<ApiEnvelope<IdentityTeamsPayload>> {
