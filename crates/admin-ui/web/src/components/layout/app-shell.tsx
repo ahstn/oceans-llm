@@ -63,8 +63,8 @@ export function AppShell({ children }: AppShellProps) {
               Local-only preview mode
             </p>
             <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-              Identity onboarding is wired to the gateway. Other control-plane pages may still use
-              local preview data.
+              Identity and spend controls are gateway-backed. API keys and model inventory still use
+              local preview data in this environment.
             </p>
           </div>
         </aside>

@@ -31,7 +31,8 @@ function ApiKeysPage() {
           <div className="flex flex-col gap-1">
             <CardTitle>API Keys</CardTitle>
             <CardDescription>
-              Server-function-backed mock data using v1 envelope contracts.
+              Review gateway key identifiers, issuance time, and status before distributing
+              credentials.
             </CardDescription>
           </div>
         </CardHeader>
