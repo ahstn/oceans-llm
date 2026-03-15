@@ -1,6 +1,9 @@
 use std::{collections::BTreeMap, time::Duration};
 
+use async_stream::stream;
 use async_trait::async_trait;
+use bytes::Bytes;
+use futures_util::StreamExt;
 use gateway_core::{
     CoreChatRequest, CoreEmbeddingsRequest, ProviderCapabilities, ProviderClient, ProviderError,
     ProviderRequestContext, ProviderStream, core_chat_request_to_openai,
@@ -9,6 +12,9 @@ use gateway_core::{
 use serde_json::Value;
 
 use crate::http::{join_base_url, map_reqwest_error};
+use crate::streaming::{
+    SseEventParser, done_sse_chunk, openai_sse_error_chunk, render_sse_event_chunk,
+};
 
 #[derive(Debug, Clone)]
 pub struct OpenAiCompatConfig {
@@ -65,6 +71,16 @@ impl OpenAiCompatProvider {
         }
 
         self.build_request("chat/completions", body, context)
+    }
+
+    pub fn build_chat_stream_request(
+        &self,
+        request: &CoreChatRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<reqwest::Request, ProviderError> {
+        let mut stream_request = request.clone();
+        stream_request.stream = true;
+        self.build_chat_request(&stream_request, context)
     }
 
     pub fn build_embeddings_request(
@@ -144,6 +160,27 @@ impl OpenAiCompatProvider {
 
         serde_json::from_str(&text).map_err(|error| ProviderError::Transport(error.to_string()))
     }
+
+    async fn execute_stream_request(
+        &self,
+        request: reqwest::Request,
+    ) -> Result<reqwest::Response, ProviderError> {
+        let response = self
+            .client
+            .execute(request)
+            .await
+            .map_err(map_reqwest_error)?;
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.map_err(map_reqwest_error)?;
+            return Err(ProviderError::UpstreamHttp {
+                status: status.as_u16(),
+                body,
+            });
+        }
+
+        Ok(response)
+    }
 }
 
 #[async_trait]
@@ -171,12 +208,13 @@ impl ProviderClient for OpenAiCompatProvider {
 
     async fn chat_completions_stream(
         &self,
-        _request: &CoreChatRequest,
-        _context: &ProviderRequestContext,
+        request: &CoreChatRequest,
+        context: &ProviderRequestContext,
     ) -> Result<ProviderStream, ProviderError> {
-        Err(ProviderError::NotImplemented(
-            "streaming adapter is deferred to the next phase".to_string(),
-        ))
+        let request = self.build_chat_stream_request(request, context)?;
+        let response = self.execute_stream_request(request).await?;
+
+        Ok(normalize_openai_compat_stream(response.bytes_stream()))
     }
 
     async fn embeddings(
@@ -189,11 +227,76 @@ impl ProviderClient for OpenAiCompatProvider {
     }
 }
 
+fn normalize_openai_compat_stream<S>(upstream: S) -> ProviderStream
+where
+    S: futures_util::stream::Stream<Item = Result<Bytes, reqwest::Error>> + Send + 'static,
+{
+    Box::pin(stream! {
+        let mut parser = SseEventParser::default();
+        let mut done_emitted = false;
+        let mut stream_failed = false;
+        futures_util::pin_mut!(upstream);
+
+        while let Some(chunk) = upstream.next().await {
+            let chunk = match chunk {
+                Ok(chunk) => chunk,
+                Err(error) => {
+                    yield Ok(openai_sse_error_chunk(
+                        "upstream_openai_compat_stream_error",
+                        &error.to_string(),
+                    ));
+                    stream_failed = true;
+                    break;
+                }
+            };
+
+            let events = match parser.push_bytes(&chunk) {
+                Ok(events) => events,
+                Err(error) => {
+                    yield Ok(openai_sse_error_chunk(
+                        "openai_compat_sse_parse_error",
+                        &error.to_string(),
+                    ));
+                    stream_failed = true;
+                    break;
+                }
+            };
+
+            for event in events {
+                let data = event.data.trim();
+                if data == "[DONE]" {
+                    done_emitted = true;
+                    yield Ok(done_sse_chunk());
+                    continue;
+                }
+
+                if data.is_empty() && event.event.is_none() {
+                    continue;
+                }
+
+                yield Ok(render_sse_event_chunk(event.event.as_deref(), &event.data));
+            }
+        }
+
+        if !stream_failed && !done_emitted {
+            yield Ok(done_sse_chunk());
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
 
-    use axum::{Json, Router, http::StatusCode, routing::post};
+    use axum::{
+        Json, Router,
+        body::Body,
+        http::StatusCode,
+        response::{IntoResponse, Response},
+        routing::post,
+    };
+    use bytes::Bytes;
+    use futures_util::{StreamExt, stream};
     use gateway_core::{
         CoreChatMessage, CoreChatRequest, ProviderClient, ProviderError, ProviderRequestContext,
     };
@@ -326,5 +429,256 @@ mod tests {
             ProviderError::UpstreamHttp { status, .. } => assert_eq!(status, 429),
             other => panic!("unexpected error variant: {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn streams_openai_compat_sse_transcript() {
+        let app = Router::new().route(
+            "/v1/chat/completions",
+            post(|| async move {
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .header("content-type", "text/event-stream")
+                    .body(Body::from(
+                        "data: {\"id\":\"chatcmpl-1\",\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n\
+                         data: [DONE]\n\n",
+                    ))
+                    .expect("response")
+            }),
+        );
+
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve app");
+        });
+
+        let provider = OpenAiCompatProvider::new(OpenAiCompatConfig {
+            provider_key: "openai-prod".to_string(),
+            base_url: format!("http://{addr}/v1"),
+            bearer_token: None,
+            default_headers: BTreeMap::new(),
+            request_timeout_ms: 10_000,
+        })
+        .expect("provider");
+
+        let request = CoreChatRequest {
+            model: "fast".to_string(),
+            messages: vec![],
+            stream: true,
+            extra: BTreeMap::new(),
+        };
+        let context = ProviderRequestContext {
+            request_id: "req-123".to_string(),
+            model_key: "fast".to_string(),
+            provider_key: "openai-prod".to_string(),
+            upstream_model: "gpt-4o-mini".to_string(),
+            extra_headers: Map::new(),
+            extra_body: Map::new(),
+            idempotency_key: None,
+            request_headers: BTreeMap::new(),
+        };
+
+        let mut stream = provider
+            .chat_completions_stream(&request, &context)
+            .await
+            .expect("stream");
+
+        let mut rendered = String::new();
+        while let Some(chunk) = stream.next().await {
+            rendered.push_str(std::str::from_utf8(chunk.expect("chunk").as_ref()).expect("utf8"));
+        }
+
+        assert!(rendered.contains("\"content\":\"hi\""));
+        assert!(rendered.contains("data: [DONE]\n\n"));
+    }
+
+    #[tokio::test]
+    async fn appends_done_when_upstream_omits_done_marker() {
+        let app = Router::new().route(
+            "/v1/chat/completions",
+            post(|| async move {
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .header("content-type", "text/event-stream")
+                    .body(Body::from(
+                        "data: {\"id\":\"chatcmpl-1\",\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n",
+                    ))
+                    .expect("response")
+            }),
+        );
+
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve app");
+        });
+
+        let provider = OpenAiCompatProvider::new(OpenAiCompatConfig {
+            provider_key: "openai-prod".to_string(),
+            base_url: format!("http://{addr}/v1"),
+            bearer_token: None,
+            default_headers: BTreeMap::new(),
+            request_timeout_ms: 10_000,
+        })
+        .expect("provider");
+
+        let request = CoreChatRequest {
+            model: "fast".to_string(),
+            messages: vec![],
+            stream: true,
+            extra: BTreeMap::new(),
+        };
+        let context = ProviderRequestContext {
+            request_id: "req-123".to_string(),
+            model_key: "fast".to_string(),
+            provider_key: "openai-prod".to_string(),
+            upstream_model: "gpt-4o-mini".to_string(),
+            extra_headers: Map::new(),
+            extra_body: Map::new(),
+            idempotency_key: None,
+            request_headers: BTreeMap::new(),
+        };
+
+        let mut stream = provider
+            .chat_completions_stream(&request, &context)
+            .await
+            .expect("stream");
+
+        let mut rendered = String::new();
+        while let Some(chunk) = stream.next().await {
+            rendered.push_str(std::str::from_utf8(chunk.expect("chunk").as_ref()).expect("utf8"));
+        }
+
+        assert_eq!(rendered.matches("data: [DONE]").count(), 1);
+    }
+
+    #[tokio::test]
+    async fn stream_maps_upstream_http_errors() {
+        let app = Router::new().route(
+            "/v1/chat/completions",
+            post(|| async {
+                (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    Json(json!({"error":"temporarily_unavailable"})),
+                )
+            }),
+        );
+
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve app");
+        });
+
+        let provider = OpenAiCompatProvider::new(OpenAiCompatConfig {
+            provider_key: "openai-prod".to_string(),
+            base_url: format!("http://{addr}/v1"),
+            bearer_token: None,
+            default_headers: BTreeMap::new(),
+            request_timeout_ms: 10_000,
+        })
+        .expect("provider");
+
+        let request = CoreChatRequest {
+            model: "fast".to_string(),
+            messages: vec![],
+            stream: true,
+            extra: BTreeMap::new(),
+        };
+        let context = ProviderRequestContext {
+            request_id: "req-123".to_string(),
+            model_key: "fast".to_string(),
+            provider_key: "openai-prod".to_string(),
+            upstream_model: "gpt-4o-mini".to_string(),
+            extra_headers: Map::new(),
+            extra_body: Map::new(),
+            idempotency_key: None,
+            request_headers: BTreeMap::new(),
+        };
+
+        let error = match provider.chat_completions_stream(&request, &context).await {
+            Err(error) => error,
+            Ok(_) => panic!("stream should fail"),
+        };
+
+        match error {
+            ProviderError::UpstreamHttp { status, .. } => assert_eq!(status, 503),
+            other => panic!("unexpected error variant: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn stream_emits_error_chunk_on_midstream_parse_failure() {
+        let app = Router::new().route(
+            "/v1/chat/completions",
+            post(|| async move {
+                let chunks = stream::iter(vec![
+                    Ok::<Bytes, std::io::Error>(Bytes::from_static(
+                        b"data: {\"id\":\"chatcmpl-1\",\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n",
+                    )),
+                    Ok(Bytes::from_static(&[0xff])),
+                ]);
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .header("content-type", "text/event-stream")
+                    .body(Body::from_stream(chunks))
+                    .expect("response")
+                    .into_response()
+            }),
+        );
+
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve app");
+        });
+
+        let provider = OpenAiCompatProvider::new(OpenAiCompatConfig {
+            provider_key: "openai-prod".to_string(),
+            base_url: format!("http://{addr}/v1"),
+            bearer_token: None,
+            default_headers: BTreeMap::new(),
+            request_timeout_ms: 10_000,
+        })
+        .expect("provider");
+
+        let request = CoreChatRequest {
+            model: "fast".to_string(),
+            messages: vec![],
+            stream: true,
+            extra: BTreeMap::new(),
+        };
+        let context = ProviderRequestContext {
+            request_id: "req-123".to_string(),
+            model_key: "fast".to_string(),
+            provider_key: "openai-prod".to_string(),
+            upstream_model: "gpt-4o-mini".to_string(),
+            extra_headers: Map::new(),
+            extra_body: Map::new(),
+            idempotency_key: None,
+            request_headers: BTreeMap::new(),
+        };
+
+        let mut stream = provider
+            .chat_completions_stream(&request, &context)
+            .await
+            .expect("stream");
+
+        let mut rendered = String::new();
+        while let Some(chunk) = stream.next().await {
+            rendered.push_str(std::str::from_utf8(chunk.expect("chunk").as_ref()).expect("utf8"));
+        }
+
+        assert!(rendered.contains("\"code\":\"openai_compat_sse_parse_error\""));
+        assert!(!rendered.contains("data: [DONE]"));
     }
 }

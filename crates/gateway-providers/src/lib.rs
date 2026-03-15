@@ -1,5 +1,6 @@
 mod http;
 mod openai_compat;
+mod streaming;
 mod token;
 mod vertex;
 

@@ -141,7 +141,8 @@ pub async fn v1_chat_completions(
                         &request_id,
                         &resolved.selection.requested_model.model_key,
                         &resolved.selection.execution_model.model_key,
-                        ChatCompletionLogSummary::failure(
+                        RequestLogSummary::failure(
+                            RequestOperation::ChatCompletions,
                             route.provider_key.clone(),
                             1,
                             true,
@@ -206,7 +207,8 @@ pub async fn v1_chat_completions(
                     &request_id,
                     &resolved.selection.requested_model.model_key,
                     &resolved.selection.execution_model.model_key,
-                    ChatCompletionLogSummary::failure(
+                    RequestLogSummary::failure(
+                        RequestOperation::ChatCompletions,
                         route.provider_key.clone(),
                         1,
                         false,
@@ -236,7 +238,8 @@ pub async fn v1_chat_completions(
             &request_id,
             &resolved.selection.requested_model.model_key,
             &resolved.selection.execution_model.model_key,
-            ChatCompletionLogSummary::success(
+            RequestLogSummary::success(
+                RequestOperation::ChatCompletions,
                 route.provider_key.clone(),
                 1,
                 false,
@@ -276,7 +279,8 @@ pub async fn v1_chat_completions(
                     &request_id,
                     &resolved.selection.requested_model.model_key,
                     &resolved.selection.execution_model.model_key,
-                    ChatCompletionLogSummary::success(
+                    RequestLogSummary::success(
+                        RequestOperation::ChatCompletions,
                         route.provider_key.clone(),
                         attempt_count,
                         false,
@@ -324,7 +328,8 @@ pub async fn v1_chat_completions(
                         &request_id,
                         &resolved.selection.requested_model.model_key,
                         &resolved.selection.execution_model.model_key,
-                        ChatCompletionLogSummary::failure(
+                        RequestLogSummary::failure(
+                            RequestOperation::ChatCompletions,
                             route.provider_key.clone(),
                             attempt_count,
                             false,
@@ -356,7 +361,8 @@ pub async fn v1_chat_completions(
         &request_id,
         &resolved.selection.requested_model.model_key,
         &resolved.selection.execution_model.model_key,
-        ChatCompletionLogSummary::failure(
+        RequestLogSummary::failure(
+            RequestOperation::ChatCompletions,
             first_failure_provider_key.unwrap_or_else(|| "unknown".to_string()),
             attempt_count,
             false,
@@ -374,7 +380,8 @@ pub async fn v1_embeddings(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(request): Json<EmbeddingsRequest>,
-) -> Result<Json<serde_json::Value>, AppError> {
+) -> Result<Response, AppError> {
+    let request_started_at = Instant::now();
     let auth = state
         .service
         .authenticate(extract_authorization_header(&headers))
@@ -385,6 +392,10 @@ pub async fn v1_embeddings(
         .service
         .resolve_request(&auth, &core_request.model)
         .await?;
+    let idempotency_key = extract_idempotency_key(&headers).map(str::to_string);
+    let request_id = extract_request_id(&headers);
+    let request_headers = extract_request_headers(&headers);
+    let allow_fallback = idempotency_key.is_some();
 
     let mut eligible = Vec::new();
     for route in &resolved.routes {
@@ -393,7 +404,7 @@ pub async fn v1_embeddings(
         };
         let effective_capabilities = provider.capabilities().intersect(route.capabilities);
         if supports_requirements(effective_capabilities, requirements) {
-            eligible.push((route, provider));
+            eligible.push((route.clone(), provider));
         }
     }
 
@@ -403,6 +414,7 @@ pub async fn v1_embeddings(
         route_count = resolved.routes.len(),
         eligible_route_count = eligible.len(),
         required_capabilities = ?requirements.required_capability_names(),
+        fallback_allowed = allow_fallback,
         "embeddings request resolved"
     );
 
@@ -410,9 +422,204 @@ pub async fn v1_embeddings(
         return Err(AppError(no_compatible_route_error(requirements)));
     }
 
-    Err(AppError(GatewayError::NotImplemented(
-        "embeddings execution is intentionally deferred in this foundation phase".to_string(),
-    )))
+    if !allow_fallback {
+        let (route, provider) = eligible
+            .into_iter()
+            .next()
+            .expect("eligible routes checked as non-empty");
+        let context = build_provider_context(
+            &request_id,
+            &resolved.selection.requested_model.model_key,
+            &route,
+            idempotency_key.clone(),
+            request_headers,
+        );
+
+        let value = provider
+            .embeddings(&core_request, &context)
+            .await
+            .map_err(GatewayError::from);
+        let value = match value {
+            Ok(value) => {
+                normalize_response_model(value, &resolved.selection.requested_model.model_key)
+            }
+            Err(error) => {
+                best_effort_log_request(
+                    &state.service,
+                    &auth,
+                    &request_id,
+                    &resolved.selection.requested_model.model_key,
+                    &resolved.selection.execution_model.model_key,
+                    RequestLogSummary::failure(
+                        RequestOperation::Embeddings,
+                        route.provider_key.clone(),
+                        1,
+                        false,
+                        latency_ms_since(request_started_at),
+                        error.http_status_code().into(),
+                        error.error_code().to_string(),
+                    ),
+                )
+                .await;
+                return Err(AppError(error));
+            }
+        };
+
+        state
+            .service
+            .record_chat_usage(
+                &auth,
+                &resolved.selection.execution_model,
+                &route,
+                &request_id,
+                usage_value_from_response(&value),
+                OffsetDateTime::now_utc(),
+            )
+            .await?;
+        best_effort_log_request(
+            &state.service,
+            &auth,
+            &request_id,
+            &resolved.selection.requested_model.model_key,
+            &resolved.selection.execution_model.model_key,
+            RequestLogSummary::success(
+                RequestOperation::Embeddings,
+                route.provider_key.clone(),
+                1,
+                false,
+                latency_ms_since(request_started_at),
+                usage_from_response(&value),
+            ),
+        )
+        .await;
+
+        let mut response = Json(value).into_response();
+        if let Ok(request_id_header) = HeaderValue::from_str(&request_id) {
+            response
+                .headers_mut()
+                .insert("x-request-id", request_id_header);
+        }
+        return Ok(response);
+    }
+
+    let mut first_failure: Option<GatewayError> = None;
+    let mut first_failure_provider_key: Option<String> = None;
+    let mut attempt_count = 0usize;
+
+    for (route, provider) in eligible {
+        attempt_count += 1;
+        let context = build_provider_context(
+            &request_id,
+            &resolved.selection.requested_model.model_key,
+            &route,
+            idempotency_key.clone(),
+            request_headers.clone(),
+        );
+
+        match provider.embeddings(&core_request, &context).await {
+            Ok(value) => {
+                let value =
+                    normalize_response_model(value, &resolved.selection.requested_model.model_key);
+                state
+                    .service
+                    .record_chat_usage(
+                        &auth,
+                        &resolved.selection.execution_model,
+                        &route,
+                        &request_id,
+                        usage_value_from_response(&value),
+                        OffsetDateTime::now_utc(),
+                    )
+                    .await?;
+                best_effort_log_request(
+                    &state.service,
+                    &auth,
+                    &request_id,
+                    &resolved.selection.requested_model.model_key,
+                    &resolved.selection.execution_model.model_key,
+                    RequestLogSummary::success(
+                        RequestOperation::Embeddings,
+                        route.provider_key.clone(),
+                        attempt_count,
+                        false,
+                        latency_ms_since(request_started_at),
+                        usage_from_response(&value),
+                    ),
+                )
+                .await;
+
+                let mut response = Json(value).into_response();
+                if let Ok(request_id_header) = HeaderValue::from_str(&request_id) {
+                    response
+                        .headers_mut()
+                        .insert("x-request-id", request_id_header);
+                }
+                return Ok(response);
+            }
+            Err(error) => {
+                tracing::warn!(
+                    provider_key = %route.provider_key,
+                    request_model = %core_request.model,
+                    retryable = error.is_retryable(),
+                    attempt_count = attempt_count,
+                    fallback_allowed = allow_fallback,
+                    "embeddings attempt failed"
+                );
+
+                if !error.is_retryable() {
+                    let gateway_error = GatewayError::from(error);
+                    best_effort_log_request(
+                        &state.service,
+                        &auth,
+                        &request_id,
+                        &resolved.selection.requested_model.model_key,
+                        &resolved.selection.execution_model.model_key,
+                        RequestLogSummary::failure(
+                            RequestOperation::Embeddings,
+                            route.provider_key.clone(),
+                            attempt_count,
+                            false,
+                            latency_ms_since(request_started_at),
+                            gateway_error.http_status_code().into(),
+                            gateway_error.error_code().to_string(),
+                        ),
+                    )
+                    .await;
+                    return Err(AppError(gateway_error));
+                }
+
+                if first_failure.is_none() {
+                    first_failure = Some(error.into());
+                    first_failure_provider_key = Some(route.provider_key.clone());
+                }
+            }
+        }
+    }
+
+    let final_error = first_failure.unwrap_or_else(|| {
+        GatewayError::Provider(ProviderError::Transport(
+            "all fallback routes failed without a terminal error".to_string(),
+        ))
+    });
+    best_effort_log_request(
+        &state.service,
+        &auth,
+        &request_id,
+        &resolved.selection.requested_model.model_key,
+        &resolved.selection.execution_model.model_key,
+        RequestLogSummary::failure(
+            RequestOperation::Embeddings,
+            first_failure_provider_key.unwrap_or_else(|| "unknown".to_string()),
+            attempt_count,
+            false,
+            latency_ms_since(request_started_at),
+            final_error.http_status_code().into(),
+            final_error.error_code().to_string(),
+        ),
+    )
+    .await;
+
+    Err(AppError(final_error))
 }
 
 fn supports_requirements(
@@ -467,7 +674,23 @@ struct UsageSummary {
 }
 
 #[derive(Debug, Clone)]
-struct ChatCompletionLogSummary {
+enum RequestOperation {
+    ChatCompletions,
+    Embeddings,
+}
+
+impl RequestOperation {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::ChatCompletions => "chat_completions",
+            Self::Embeddings => "embeddings",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct RequestLogSummary {
+    operation: RequestOperation,
     provider_key: String,
     attempt_count: usize,
     stream: bool,
@@ -479,8 +702,9 @@ struct ChatCompletionLogSummary {
     total_tokens: Option<i64>,
 }
 
-impl ChatCompletionLogSummary {
+impl RequestLogSummary {
     fn success(
+        operation: RequestOperation,
         provider_key: String,
         attempt_count: usize,
         stream: bool,
@@ -488,6 +712,7 @@ impl ChatCompletionLogSummary {
         usage: UsageSummary,
     ) -> Self {
         Self {
+            operation,
             provider_key,
             attempt_count,
             stream,
@@ -501,6 +726,7 @@ impl ChatCompletionLogSummary {
     }
 
     fn failure(
+        operation: RequestOperation,
         provider_key: String,
         attempt_count: usize,
         stream: bool,
@@ -509,6 +735,7 @@ impl ChatCompletionLogSummary {
         error_code: String,
     ) -> Self {
         Self {
+            operation,
             provider_key,
             attempt_count,
             stream,
@@ -573,13 +800,20 @@ fn wrap_stream_with_request_logging(
             Some(Err(error)) => {
                 let error_message = error.to_string();
                 let gateway_error = GatewayError::from(error);
+                tracing::warn!(
+                    request_id = %state.request_id,
+                    provider_key = %state.provider_key,
+                    termination_reason = "stream_transport_error",
+                    "chat completion stream terminated with transport error"
+                );
                 best_effort_log_request(
                     &state.service,
                     &state.auth,
                     &state.request_id,
                     &state.requested_model_key,
                     &state.resolved_model_key,
-                    ChatCompletionLogSummary::failure(
+                    RequestLogSummary::failure(
+                        RequestOperation::ChatCompletions,
                         state.provider_key.clone(),
                         state.attempt_count,
                         true,
@@ -594,7 +828,8 @@ fn wrap_stream_with_request_logging(
             }
             None => {
                 let summary = match &state.failure {
-                    Some(failure) => ChatCompletionLogSummary::failure(
+                    Some(failure) => RequestLogSummary::failure(
+                        RequestOperation::ChatCompletions,
                         state.provider_key.clone(),
                         state.attempt_count,
                         true,
@@ -623,7 +858,8 @@ fn wrap_stream_with_request_logging(
                                 "usage ledger write failed after stream completion"
                             );
                         }
-                        ChatCompletionLogSummary::success(
+                        RequestLogSummary::success(
+                            RequestOperation::ChatCompletions,
                             state.provider_key.clone(),
                             state.attempt_count,
                             true,
@@ -632,6 +868,12 @@ fn wrap_stream_with_request_logging(
                         )
                     }
                 };
+                tracing::info!(
+                    request_id = %state.request_id,
+                    provider_key = %state.provider_key,
+                    termination_reason = if state.failure.is_some() { "stream_error_chunk" } else { "complete" },
+                    "chat completion stream terminated"
+                );
                 best_effort_log_request(
                     &state.service,
                     &state.auth,
@@ -653,9 +895,9 @@ async fn best_effort_log_request(
     request_id: &str,
     model_key: &str,
     resolved_model_key: &str,
-    summary: ChatCompletionLogSummary,
+    summary: RequestLogSummary,
 ) {
-    let metadata = request_log_metadata(summary.attempt_count, summary.stream);
+    let metadata = request_log_metadata(summary.attempt_count, summary.stream, summary.operation);
     let log = RequestLogRecord {
         request_log_id: Uuid::new_v4(),
         request_id: request_id.to_string(),
@@ -685,8 +927,16 @@ async fn best_effort_log_request(
     }
 }
 
-fn request_log_metadata(attempt_count: usize, stream: bool) -> Map<String, Value> {
+fn request_log_metadata(
+    attempt_count: usize,
+    stream: bool,
+    operation: RequestOperation,
+) -> Map<String, Value> {
     let mut metadata = Map::new();
+    metadata.insert(
+        "operation".to_string(),
+        Value::String(operation.as_str().to_string()),
+    );
     metadata.insert("stream".to_string(), Value::Bool(stream));
     metadata.insert("fallback_used".to_string(), Value::Bool(attempt_count > 1));
     metadata.insert(

@@ -702,7 +702,7 @@ impl ProviderCapabilities {
 
     #[must_use]
     pub const fn openai_compat_baseline() -> Self {
-        Self::with_dimensions(true, false, true, true, true, true, true)
+        Self::with_dimensions(true, true, true, true, true, true, true)
     }
 
     #[must_use]
