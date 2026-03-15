@@ -1,0 +1,19 @@
+#:schema https://pitchfork.jdx.dev/schema.json
+
+[daemons.postgres]
+run = "mise run postgres-up"
+mise = true
+auto = ["start", "stop"]
+ready_port = 5432
+env = {
+  POSTGRES_DATA_DIR = ".data/postgres",
+  POSTGRES_HOST = "127.0.0.1",
+  POSTGRES_PORT = "5432",
+  POSTGRES_USER = "oceans",
+  POSTGRES_DB = "oceans_llm",
+  POSTGRES_URL = "postgres://oceans@127.0.0.1:5432/oceans_llm",
+  GATEWAY_CONFIG = "gateway.prod.yaml"
+}
+
+[daemons.postgres.hooks]
+on_ready = "mise run postgres-ensure-db && mise run gateway-migrate"
