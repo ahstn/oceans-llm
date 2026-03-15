@@ -120,6 +120,28 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
             "../migrations/postgres/V9__model_route_capabilities.sql"
         )),
     },
+    MigrationManifest {
+        version: 10,
+        name: "model_aliases",
+        checksum: "V10__model_aliases.sql",
+        libsql: BackendMigrationStep::Sql(include_str!(
+            "../migrations/V10__model_aliases.sql"
+        )),
+        postgres: BackendMigrationStep::Sql(include_str!(
+            "../migrations/postgres/V10__model_aliases.sql"
+        )),
+    },
+    MigrationManifest {
+        version: 11,
+        name: "request_log_resolved_model",
+        checksum: "V11__request_log_resolved_model.sql",
+        libsql: BackendMigrationStep::Sql(include_str!(
+            "../migrations/V11__request_log_resolved_model.sql"
+        )),
+        postgres: BackendMigrationStep::Sql(include_str!(
+            "../migrations/postgres/V11__request_log_resolved_model.sql"
+        )),
+    },
 ];
 
 #[cfg(test)]

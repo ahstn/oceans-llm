@@ -14,6 +14,7 @@ This document catalogs the database tables, key relationships, and policy semant
 - Auth/model/logging/pricing behavior:
   - [`crates/gateway-service/src/authenticator.rs`](/Users/ahstn/git/oceans-llm.feat-ui-init/crates/gateway-service/src/authenticator.rs)
   - [`crates/gateway-service/src/model_access.rs`](/Users/ahstn/git/oceans-llm.feat-ui-init/crates/gateway-service/src/model_access.rs)
+  - [`crates/gateway-service/src/model_resolution.rs`](/Users/ahstn/.codex/worktrees/ad1a/oceans-llm/crates/gateway-service/src/model_resolution.rs)
   - [`crates/gateway-service/src/pricing_catalog.rs`](/Users/ahstn/git/oceans-llm.feat-ui-init/crates/gateway-service/src/pricing_catalog.rs)
   - [`crates/gateway-service/src/request_logging.rs`](/Users/ahstn/git/oceans-llm.feat-ui-init/crates/gateway-service/src/request_logging.rs)
 - User-facing policy guide: [`docs/budgets-and-spending.md`](/Users/ahstn/git/oceans-llm.feat-ui-init/docs/budgets-and-spending.md)
@@ -40,8 +41,8 @@ This document catalogs the database tables, key relationships, and policy semant
 ### Existing Foundation Tables
 
 - `providers`: upstream provider config and secret references.
-- `gateway_models`: gateway model alias registry.
-- `model_routes`: route targets per gateway model.
+- `gateway_models`: gateway model registry. Records can be provider-backed or alias-backed.
+- `model_routes`: concrete provider execution targets for provider-backed gateway models only.
 - `api_key_model_grants`: API-key grants to gateway models.
 - `audit_logs`: control-plane audit baseline.
 
@@ -87,9 +88,15 @@ This document catalogs the database tables, key relationships, and policy semant
 - `usage_cost_events`
   - Key columns: `usage_event_id`, `request_id`, `api_key_id`, `user_id`, `team_id`, `model_id`, `estimated_cost_10000`, `occurred_at`
   - Notes: schema foundation for future pricing-backed spend accounting; the current chat request path does not write these rows yet.
+- `gateway_models`
+  - Key columns: `id`, `model_key`, `alias_target_model_id`, `description`, `tags_json`, `rank`
+  - Notes: `alias_target_model_id` is nullable. Alias-backed models point at another `gateway_models.id` and do not own provider routes. Model resolution happens after requested-model access control but before provider-route planning, so the requested model key remains the public contract while the alias target becomes the execution model.
+- `model_routes`
+  - Key columns: `id`, `model_id`, `provider_key`, `upstream_model`, `priority`, `weight`, `enabled`
+  - Notes: provider execution targets only. Multi-provider balancing remains per-route through `priority` and `weight`.
 - `request_logs`
-  - Key columns: `request_log_id`, `request_id`, `api_key_id`, `user_id`, `team_id`, `model_key`, `provider_key`, token/latency/status fields, `metadata_json`, `occurred_at`
-  - Notes: chat execution writes one row for the final user-visible outcome of each executed request. User-owned requests honor `users.request_logging_enabled`; team-owned requests are always logged with nullable `user_id`.
+  - Key columns: `request_log_id`, `request_id`, `api_key_id`, `user_id`, `team_id`, `model_key`, `resolved_model_key`, `provider_key`, token/latency/status fields, `metadata_json`, `occurred_at`
+  - Notes: chat execution writes one row for the final user-visible outcome of each executed request. User-owned requests honor `users.request_logging_enabled`; team-owned requests are always logged with nullable `user_id`. `model_key` stores the requested gateway model and `resolved_model_key` stores the canonical execution model after alias resolution.
 
 ### Pricing Catalog Cache
 
@@ -129,12 +136,9 @@ If no restriction mode applies, grants remain unchanged.
 
 ## PostgreSQL Mapping Notes
 
-Current runtime is SQLite/libsql. For PostgreSQL migration/dual-write planning:
+Current runtime supports both libsql and Postgres. Model-registry features, including aliases and request-log model identity, should ship with backend parity rather than landing on one backend first and the other later.
 
-1. Keep snake_case naming and equivalent FK/index strategy.
-2. For `request_logs`, use:
-   - BRIN index on `occurred_at` for large append-heavy scans.
-   - Additional btree indexes for frequent filters (for example `(user_id, occurred_at)`, `(team_id, occurred_at)`).
-3. For monetary values, SQLite stores exact scaled integers (`amount_10000`, `estimated_cost_10000`).
-4. PostgreSQL mapping should use `NUMERIC(18,4)` for these values.
-5. For timestamps, prefer `TIMESTAMPTZ` in PostgreSQL.
+1. Keep snake_case naming and equivalent FK/index strategy across both backends.
+2. `request_logs.model_key` is the requested model and `request_logs.resolved_model_key` is the canonical execution model on both backends.
+3. For monetary values, the current schema stores exact scaled integers (`amount_10000`, `estimated_cost_10000`) across both backends.
+4. Future schema work should preserve parity in migrations, store hydration, and seed behavior when adding model-registry fields.

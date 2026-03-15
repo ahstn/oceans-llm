@@ -11,9 +11,10 @@ impl RequestLogRepository for LibsqlStore {
                 r#"
                 INSERT INTO request_logs (
                     request_log_id, request_id, api_key_id, user_id, team_id, model_key,
+                    resolved_model_key,
                     provider_key, status_code, latency_ms, prompt_tokens, completion_tokens,
                     total_tokens, error_code, metadata_json, occurred_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
                 "#,
                 libsql::params![
                     log.request_log_id.to_string(),
@@ -22,6 +23,7 @@ impl RequestLogRepository for LibsqlStore {
                     log.user_id.map(|value| value.to_string()),
                     log.team_id.map(|value| value.to_string()),
                     log.model_key.as_str(),
+                    log.resolved_model_key.as_str(),
                     log.provider_key.as_str(),
                     log.status_code,
                     log.latency_ms,

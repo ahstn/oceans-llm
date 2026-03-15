@@ -42,6 +42,7 @@ run = """
 set -eu
 
 export OPENAI_API_KEY="${OPENAI_API_KEY:-test-openai-key}"
+export OPENAI_API_KEY_SECONDARY="${OPENAI_API_KEY_SECONDARY:-test-openai-key-secondary}"
 gateway_port=8080
 gateway_log="${TMPDIR:-/tmp}/gateway-postgres-smoke.log"
 

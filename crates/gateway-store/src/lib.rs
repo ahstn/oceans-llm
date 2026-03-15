@@ -23,8 +23,8 @@ mod tests {
         IdentityRepository, MembershipRole, ModelPricingRecord, ModelRepository, Money4,
         PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
         PricingProvenance, ProviderCapabilities, RequestLogRecord, RequestLogRepository,
-        SYSTEM_LEGACY_TEAM_ID, SeedApiKey, SeedModel, SeedModelRoute, SeedProvider, StoreHealth,
-        UsageLedgerRecord, UsagePricingStatus,
+        SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedModel, SeedModelRoute,
+        SeedProvider, StoreHealth, UsageLedgerRecord, UsagePricingStatus,
     };
     use serde_json::{Map, json};
     use serial_test::serial;
@@ -36,8 +36,9 @@ mod tests {
 
     use crate::{
         LibsqlStore, MigrationTestHook, PostgresStore, StoreConnectionOptions,
-        check_migrations_with_options, run_migrations, run_migrations_with_options,
-        status_migrations_with_options,
+        check_migrations_with_options,
+        migration_registry::{BackendMigrationStep, MIGRATION_REGISTRY, MigrationBackend},
+        run_migrations, run_migrations_with_options, status_migrations_with_options,
     };
 
     #[tokio::test]
@@ -73,7 +74,7 @@ mod tests {
         .expect("status");
 
         assert_eq!(status.backend, "libsql");
-        assert_eq!(status.pending_count(), 9);
+        assert_eq!(status.pending_count(), 11);
         assert!(status.entries.iter().all(|entry| !entry.applied));
     }
 
@@ -164,6 +165,7 @@ mod tests {
 
         let models = vec![SeedModel {
             model_key: "fast".to_string(),
+            alias_target_model_key: None,
             description: Some("fast tier".to_string()),
             tags: vec!["fast".to_string(), "cheap".to_string()],
             rank: 10,
@@ -226,6 +228,180 @@ mod tests {
         assert!(!routes[0].capabilities.stream);
         assert!(!routes[0].capabilities.tools);
         assert!(!routes[0].capabilities.vision);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_alias_backed_models_round_trip_through_store() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        let providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: json!({
+                "base_url": "https://api.openai.com/v1",
+                "timeout_ms": 120_000
+            }),
+            secrets: Some(json!({"token": "env.OPENAI_API_KEY"})),
+        }];
+
+        let models = vec![
+            SeedModel {
+                model_key: "fast".to_string(),
+                alias_target_model_key: Some("fast-v2".to_string()),
+                description: Some("alias".to_string()),
+                tags: vec!["fast".to_string()],
+                rank: 10,
+                routes: Vec::new(),
+            },
+            SeedModel {
+                model_key: "fast-v2".to_string(),
+                alias_target_model_key: None,
+                description: Some("replacement".to_string()),
+                tags: vec!["fast".to_string()],
+                rank: 5,
+                routes: vec![SeedModelRoute {
+                    provider_key: "openai-prod".to_string(),
+                    upstream_model: "gpt-5".to_string(),
+                    priority: 10,
+                    weight: 1.0,
+                    enabled: true,
+                    extra_headers: Map::new(),
+                    extra_body: Map::new(),
+                    capabilities: ProviderCapabilities::all_enabled(),
+                }],
+            },
+        ];
+
+        let api_keys = vec![SeedApiKey {
+            name: "dev".to_string(),
+            public_id: "dev123".to_string(),
+            secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
+            allowed_models: vec!["fast".to_string()],
+        }];
+
+        store
+            .seed_from_inputs(&providers, &models, &api_keys)
+            .await
+            .expect("seed");
+
+        let alias_model = store
+            .get_model_by_key("fast")
+            .await
+            .expect("query alias")
+            .expect("alias model exists");
+        assert_eq!(
+            alias_model.alias_target_model_key.as_deref(),
+            Some("fast-v2")
+        );
+
+        let api_key = store
+            .get_api_key_by_public_id("dev123")
+            .await
+            .expect("query key")
+            .expect("api key exists");
+        let accessible_models = store
+            .list_models_for_api_key(api_key.id)
+            .await
+            .expect("models by key");
+        assert_eq!(accessible_models.len(), 1);
+        assert_eq!(accessible_models[0].model_key, "fast");
+        assert_eq!(
+            accessible_models[0].alias_target_model_key.as_deref(),
+            Some("fast-v2")
+        );
+
+        let target_model = store
+            .get_model_by_key("fast-v2")
+            .await
+            .expect("query target")
+            .expect("target model exists");
+        let routes = store
+            .list_routes_for_model(target_model.id)
+            .await
+            .expect("target routes");
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].upstream_model, "gpt-5");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_request_log_migration_backfills_resolved_model_key() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+
+        apply_libsql_migrations_through(&db_path, 10)
+            .await
+            .expect("migrations through v10");
+
+        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
+            .build()
+            .await
+            .expect("db");
+        let conn = db.connect().expect("connection");
+
+        conn.execute(
+            r#"
+            INSERT INTO api_keys (
+                id, public_id, secret_hash, name, status,
+                owner_kind, owner_user_id, owner_team_id, created_at
+            ) VALUES (?1, 'legacy', 'hash', 'Legacy', 'active', 'team', NULL, ?2, unixepoch())
+            "#,
+            libsql::params!["api-key-legacy", SYSTEM_LEGACY_TEAM_ID],
+        )
+        .await
+        .expect("insert api key");
+
+        conn.execute(
+            r#"
+            INSERT INTO request_logs (
+                request_log_id, request_id, api_key_id, user_id, team_id, model_key,
+                provider_key, status_code, latency_ms, prompt_tokens, completion_tokens,
+                total_tokens, error_code, metadata_json, occurred_at
+            ) VALUES (?1, ?2, ?3, NULL, NULL, ?4, ?5, 200, 42, 10, 20, 30, NULL, '{}', unixepoch())
+            "#,
+            libsql::params![
+                Uuid::new_v4().to_string(),
+                "req-legacy",
+                "api-key-legacy",
+                "fast",
+                "openai-prod"
+            ],
+        )
+        .await
+        .expect("insert legacy row");
+
+        run_migrations_with_options(
+            &StoreConnectionOptions::Libsql {
+                path: db_path.clone(),
+            },
+            MigrationTestHook::default(),
+        )
+        .await
+        .expect("apply v11");
+
+        let mut rows = conn
+            .query(
+                "SELECT model_key, resolved_model_key FROM request_logs WHERE request_id = 'req-legacy'",
+                (),
+            )
+            .await
+            .expect("query request logs");
+        let row = rows
+            .next()
+            .await
+            .expect("row fetch")
+            .expect("row should exist");
+        let model_key: String = row.get(0).expect("model key");
+        let resolved_model_key: Option<String> = row.get(1).expect("resolved model key");
+        assert_eq!(model_key, "fast");
+        assert_eq!(resolved_model_key.as_deref(), Some("fast"));
     }
 
     #[tokio::test]
@@ -1201,6 +1377,7 @@ mod tests {
         }];
         let models = vec![SeedModel {
             model_key: "fast".to_string(),
+            alias_target_model_key: None,
             description: Some("fast tier".to_string()),
             tags: vec!["fast".to_string(), "cheap".to_string()],
             rank: 10,
@@ -1497,6 +1674,7 @@ mod tests {
             user_id: Some(member.user_id),
             team_id: Some(team.team_id),
             model_key: "fast".to_string(),
+            resolved_model_key: "fast-v2".to_string(),
             provider_key: "openai-prod".to_string(),
             status_code: Some(200),
             latency_ms: Some(42),
@@ -1512,14 +1690,222 @@ mod tests {
             .await
             .expect("insert request log");
 
-        let row = sqlx::query("SELECT COUNT(*) FROM request_logs")
-            .fetch_one(store.pool())
-            .await
-            .expect("request log count");
+        let row = sqlx::query(
+            "SELECT COUNT(*), MIN(model_key), MIN(resolved_model_key) FROM request_logs",
+        )
+        .fetch_one(store.pool())
+        .await
+        .expect("request log count");
         let count: i64 = row.try_get(0).expect("count");
         assert_eq!(count, 1);
+        let model_key: String = row.try_get(1).expect("model key");
+        let resolved_model_key: String = row.try_get(2).expect("resolved model key");
+        assert_eq!(model_key, "fast");
+        assert_eq!(resolved_model_key, "fast-v2");
 
         drop(store);
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_alias_backed_models_round_trip_through_store() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!("skipping postgres alias store test because TEST_POSTGRES_URL is not set");
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options, MigrationTestHook::default())
+            .await
+            .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        let providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: json!({
+                "base_url": "https://api.openai.com/v1",
+                "timeout_ms": 120_000
+            }),
+            secrets: Some(json!({"token": "env.OPENAI_API_KEY"})),
+        }];
+        let models = vec![
+            SeedModel {
+                model_key: "fast".to_string(),
+                alias_target_model_key: Some("fast-v2".to_string()),
+                description: Some("alias".to_string()),
+                tags: vec!["fast".to_string()],
+                rank: 10,
+                routes: Vec::new(),
+            },
+            SeedModel {
+                model_key: "fast-v2".to_string(),
+                alias_target_model_key: None,
+                description: Some("replacement".to_string()),
+                tags: vec!["fast".to_string()],
+                rank: 5,
+                routes: vec![SeedModelRoute {
+                    provider_key: "openai-prod".to_string(),
+                    upstream_model: "gpt-5".to_string(),
+                    priority: 10,
+                    weight: 1.0,
+                    enabled: true,
+                    extra_headers: Map::new(),
+                    extra_body: Map::new(),
+                    capabilities: ProviderCapabilities::all_enabled(),
+                }],
+            },
+        ];
+        let api_keys = vec![SeedApiKey {
+            name: "dev".to_string(),
+            public_id: "dev123".to_string(),
+            secret_hash: "hash".to_string(),
+            allowed_models: vec!["fast".to_string()],
+        }];
+
+        store
+            .seed_from_inputs(&providers, &models, &api_keys)
+            .await
+            .expect("seed");
+
+        let alias_model = store
+            .get_model_by_key("fast")
+            .await
+            .expect("query alias")
+            .expect("alias model exists");
+        assert_eq!(
+            alias_model.alias_target_model_key.as_deref(),
+            Some("fast-v2")
+        );
+
+        let api_key = store
+            .get_api_key_by_public_id("dev123")
+            .await
+            .expect("query key")
+            .expect("api key exists");
+        let accessible_models = store
+            .list_models_for_api_key(api_key.id)
+            .await
+            .expect("models by key");
+        assert_eq!(accessible_models.len(), 1);
+        assert_eq!(accessible_models[0].model_key, "fast");
+        assert_eq!(
+            accessible_models[0].alias_target_model_key.as_deref(),
+            Some("fast-v2")
+        );
+
+        let target_model = store
+            .get_model_by_key("fast-v2")
+            .await
+            .expect("query target")
+            .expect("target model exists");
+        let routes = store
+            .list_routes_for_model(target_model.id)
+            .await
+            .expect("target routes");
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].upstream_model, "gpt-5");
+
+        drop(store);
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_request_log_migration_backfills_resolved_model_key() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres request log backfill test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        apply_postgres_migrations_through(&test_db.database_url, 10)
+            .await
+            .expect("migrations through v10");
+
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&test_db.database_url)
+            .await
+            .expect("postgres pool");
+
+        sqlx::query(
+            r#"
+            INSERT INTO teams (
+                team_id, team_key, team_name, status, model_access_mode, created_at, updated_at
+            ) VALUES ($1, $2, $3, 'active', 'all', extract(epoch from now())::bigint, extract(epoch from now())::bigint)
+            "#,
+        )
+        .bind(SYSTEM_LEGACY_TEAM_ID)
+        .bind(SYSTEM_LEGACY_TEAM_KEY)
+        .bind("System Legacy")
+        .execute(&pool)
+        .await
+        .expect("insert team");
+
+        sqlx::query(
+            r#"
+            INSERT INTO api_keys (
+                id, public_id, secret_hash, name, status,
+                owner_kind, owner_user_id, owner_team_id, created_at
+            ) VALUES ($1, 'legacy', 'hash', 'Legacy', 'active', 'team', NULL, $2, extract(epoch from now())::bigint)
+            "#,
+        )
+        .bind("api-key-legacy")
+        .bind(SYSTEM_LEGACY_TEAM_ID)
+        .execute(&pool)
+        .await
+        .expect("insert api key");
+
+        sqlx::query(
+            r#"
+            INSERT INTO request_logs (
+                request_log_id, request_id, api_key_id, user_id, team_id, model_key,
+                provider_key, status_code, latency_ms, prompt_tokens, completion_tokens,
+                total_tokens, error_code, metadata_json, occurred_at
+            ) VALUES ($1, $2, $3, NULL, NULL, $4, $5, 200, 42, 10, 20, 30, NULL, '{}', extract(epoch from now())::bigint)
+            "#,
+        )
+        .bind(Uuid::new_v4().to_string())
+        .bind("req-legacy")
+        .bind("api-key-legacy")
+        .bind("fast")
+        .bind("openai-prod")
+        .execute(&pool)
+        .await
+        .expect("insert legacy row");
+
+        run_migrations_with_options(
+            &StoreConnectionOptions::Postgres {
+                url: test_db.database_url.clone(),
+                max_connections: 2,
+            },
+            MigrationTestHook::default(),
+        )
+        .await
+        .expect("apply v11");
+
+        let row = sqlx::query(
+            "SELECT model_key, resolved_model_key FROM request_logs WHERE request_id = $1",
+        )
+        .bind("req-legacy")
+        .fetch_one(&pool)
+        .await
+        .expect("load request log");
+        let model_key: String = row.try_get(0).expect("model key");
+        let resolved_model_key: Option<String> = row.try_get(1).expect("resolved model key");
+        assert_eq!(model_key, "fast");
+        assert_eq!(resolved_model_key.as_deref(), Some("fast"));
+
+        pool.close().await;
         drop_postgres_test_database(&test_db).await;
     }
 
@@ -1542,7 +1928,7 @@ mod tests {
             .await
             .expect("initial postgres status");
         assert_eq!(initial_status.backend, "postgres");
-        assert_eq!(initial_status.pending_count(), 9);
+        assert_eq!(initial_status.pending_count(), 11);
         assert!(initial_status.entries.iter().all(|entry| !entry.applied));
 
         run_migrations_with_options(&options, MigrationTestHook::default())
@@ -1603,6 +1989,105 @@ mod tests {
 
         pool.close().await;
         drop_postgres_test_database(&test_db).await;
+    }
+
+    async fn apply_libsql_migrations_through(
+        db_path: &std::path::Path,
+        target_version: u32,
+    ) -> anyhow::Result<()> {
+        let db = libsql::Builder::new_local(db_path)
+            .build()
+            .await
+            .expect("libsql db");
+        let conn = db.connect().expect("libsql connection");
+        conn.execute(
+            r#"
+            CREATE TABLE IF NOT EXISTS refinery_schema_history (
+                version INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                applied_on INTEGER NOT NULL,
+                checksum TEXT NOT NULL
+            )
+            "#,
+            (),
+        )
+        .await
+        .expect("schema history");
+
+        for migration in MIGRATION_REGISTRY
+            .iter()
+            .filter(|migration| migration.version <= target_version)
+        {
+            let tx = conn.transaction().await.expect("migration tx");
+            if let BackendMigrationStep::Sql(sql) = migration.step_for(MigrationBackend::Libsql) {
+                tx.execute_batch(sql).await.expect("apply migration");
+            }
+            tx.execute(
+                r#"
+                INSERT INTO refinery_schema_history (version, name, applied_on, checksum)
+                VALUES (?1, ?2, unixepoch(), ?3)
+                "#,
+                libsql::params![migration.version as i64, migration.name, migration.checksum],
+            )
+            .await
+            .expect("history row");
+            tx.commit().await.expect("commit");
+        }
+
+        Ok(())
+    }
+
+    async fn apply_postgres_migrations_through(
+        database_url: &str,
+        target_version: u32,
+    ) -> anyhow::Result<()> {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(database_url)
+            .await
+            .expect("postgres pool");
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS refinery_schema_history (
+                version BIGINT PRIMARY KEY,
+                name TEXT NOT NULL,
+                applied_on BIGINT NOT NULL,
+                checksum TEXT NOT NULL
+            )
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .expect("schema history");
+
+        for migration in MIGRATION_REGISTRY
+            .iter()
+            .filter(|migration| migration.version <= target_version)
+        {
+            let mut tx = pool.begin().await.expect("migration tx");
+            if let BackendMigrationStep::Sql(sql) = migration.step_for(MigrationBackend::Postgres) {
+                sqlx::raw_sql(sql)
+                    .execute(&mut *tx)
+                    .await
+                    .expect("apply migration");
+            }
+            sqlx::query(
+                r#"
+                INSERT INTO refinery_schema_history (version, name, applied_on, checksum)
+                VALUES ($1, $2, extract(epoch from now())::bigint, $3)
+                "#,
+            )
+            .bind(i64::from(migration.version))
+            .bind(migration.name)
+            .bind(migration.checksum)
+            .execute(&mut *tx)
+            .await
+            .expect("history row");
+            tx.commit().await.expect("commit");
+        }
+
+        pool.close().await;
+        Ok(())
     }
 
     struct PostgresTestDatabase {

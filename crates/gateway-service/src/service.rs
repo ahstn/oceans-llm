@@ -13,16 +13,10 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::{
-    Authenticator, ModelAccess, PricingCatalog, RequestLogging,
+    Authenticator, ModelAccess, ModelResolver, PricingCatalog, RequestLogging,
+    ResolvedGatewayRequest,
     budget_guard::{BudgetGuard, BudgetGuardDisposition},
 };
-
-#[derive(Debug, Clone)]
-pub struct ResolvedRequest {
-    pub auth: AuthenticatedApiKey,
-    pub model: GatewayModel,
-    pub routes: Vec<ModelRoute>,
-}
 
 #[derive(Clone)]
 pub struct GatewayService<S, P> {
@@ -30,6 +24,7 @@ pub struct GatewayService<S, P> {
     authenticator: Authenticator<S>,
     budget_guard: BudgetGuard<S>,
     model_access: ModelAccess<S>,
+    model_resolver: ModelResolver<S>,
     pricing_catalog: PricingCatalog<S>,
     request_logging: RequestLogging<S>,
     planner: Arc<P>,
@@ -55,6 +50,7 @@ where
         let authenticator = Authenticator::new(store.clone());
         let budget_guard = BudgetGuard::new(store.clone());
         let model_access = ModelAccess::new(store.clone());
+        let model_resolver = ModelResolver::new(store.clone());
         let pricing_catalog = PricingCatalog::new(store.clone());
         let request_logging = RequestLogging::new(store.clone());
 
@@ -63,6 +59,7 @@ where
             authenticator,
             budget_guard,
             model_access,
+            model_resolver,
             pricing_catalog,
             request_logging,
             planner,
@@ -99,13 +96,20 @@ where
         &self,
         auth: &AuthenticatedApiKey,
         requested_model: &str,
-    ) -> Result<ResolvedRequest, GatewayError> {
-        let model = self
+    ) -> Result<ResolvedGatewayRequest, GatewayError> {
+        let requested_model = self
             .model_access
             .resolve_requested_model(auth, requested_model)
             .await?;
+        let selection = self
+            .model_resolver
+            .canonicalize_requested_model(requested_model)
+            .await?;
 
-        let routes = self.store.list_routes_for_model(model.id).await?;
+        let routes = self
+            .store
+            .list_routes_for_model(selection.execution_model.id)
+            .await?;
         let planned_routes = self.planner.plan_routes(&routes)?;
 
         let mut viable_routes = Vec::new();
@@ -120,19 +124,22 @@ where
             } else {
                 warn!(
                     provider_key = %route.provider_key,
-                    model_key = %model.model_key,
+                    requested_model_key = %selection.requested_model.model_key,
+                    execution_model_key = %selection.execution_model.model_key,
                     "route references missing provider"
                 );
             }
         }
 
         if viable_routes.is_empty() {
-            return Err(RouteError::NoRoutesAvailable(model.model_key.clone()).into());
+            return Err(
+                RouteError::NoRoutesAvailable(selection.requested_model.model_key.clone()).into(),
+            );
         }
 
-        Ok(ResolvedRequest {
+        Ok(ResolvedGatewayRequest {
             auth: auth.clone(),
-            model,
+            selection,
             routes: viable_routes,
         })
     }

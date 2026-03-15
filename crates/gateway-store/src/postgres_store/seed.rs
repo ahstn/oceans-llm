@@ -53,16 +53,24 @@ impl PostgresStore {
 
         let mut model_ids = std::collections::HashMap::new();
         for model in models {
-            let model_id = model_uuid(&model.model_key);
-            model_ids.insert(model.model_key.clone(), model_id);
+            model_ids.insert(model.model_key.clone(), model_uuid(&model.model_key));
+        }
+
+        // Insert model rows first with a null alias target so config order does not
+        // matter for self-referential alias foreign keys.
+        for model in models {
+            let model_id = *model_ids
+                .get(&model.model_key)
+                .expect("model ids populated before insert");
             let tags_json = serialize_json(&model.tags)?;
 
             sqlx::query(
                 r#"
                 INSERT INTO gateway_models (
-                    id, model_key, description, tags_json, rank, created_at, updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $6)
+                    id, model_key, alias_target_model_id, description, tags_json, rank, created_at, updated_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
                 ON CONFLICT(model_key) DO UPDATE SET
+                    alias_target_model_id = excluded.alias_target_model_id,
                     description = excluded.description,
                     tags_json = excluded.tags_json,
                     rank = excluded.rank,
@@ -71,6 +79,7 @@ impl PostgresStore {
             )
             .bind(model_id.to_string())
             .bind(model.model_key.as_str())
+            .bind(Option::<String>::None)
             .bind(model.description.clone())
             .bind(tags_json)
             .bind(model.rank)
@@ -127,6 +136,38 @@ impl PostgresStore {
                 .await
                 .map_err(to_query_error)?;
             }
+        }
+
+        for model in models {
+            let model_id = *model_ids
+                .get(&model.model_key)
+                .expect("model ids populated before alias update");
+            let alias_target_model_id = model
+                .alias_target_model_key
+                .as_ref()
+                .map(|model_key| {
+                    model_ids.get(model_key).copied().ok_or_else(|| {
+                        StoreError::NotFound(format!(
+                            "seed model `{}` aliases unknown model `{model_key}`",
+                            model.model_key
+                        ))
+                    })
+                })
+                .transpose()?;
+
+            sqlx::query(
+                r#"
+                UPDATE gateway_models
+                SET alias_target_model_id = $1, updated_at = $2
+                WHERE id = $3
+                "#,
+            )
+            .bind(alias_target_model_id.map(|value| value.to_string()))
+            .bind(now)
+            .bind(model_id.to_string())
+            .execute(&self.pool)
+            .await
+            .map_err(to_query_error)?;
         }
 
         for api_key in api_keys {
