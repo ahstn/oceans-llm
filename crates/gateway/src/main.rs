@@ -303,6 +303,7 @@ fn load_identity_token_secret() -> String {
 #[cfg(test)]
 mod tests {
     use std::{
+        collections::BTreeMap,
         env,
         path::{Path, PathBuf},
         sync::{
@@ -317,12 +318,15 @@ mod tests {
         Router,
         body::{Body, Bytes, to_bytes},
         http::{Request, StatusCode},
+        response::Response,
+        routing::post,
     };
     use gateway_core::{
         CoreChatRequest, CoreEmbeddingsRequest, ProviderCapabilities, ProviderClient,
         ProviderError, ProviderRequestContext, ProviderStream, SeedApiKey, SeedModel,
         SeedModelRoute, SeedProvider, parse_gateway_api_key,
     };
+    use gateway_providers::{OpenAiCompatConfig, OpenAiCompatProvider};
     use gateway_service::{GatewayService, WeightedRoutePlanner, hash_gateway_key_secret};
     use gateway_store::{
         AnyStore, GatewayStore, LibsqlStore, MigrationTestHook, StoreConnectionOptions,
@@ -332,6 +336,7 @@ mod tests {
     use serial_test::serial;
     use sqlx::Row;
     use tempfile::tempdir;
+    use tokio::net::TcpListener;
     use tower::ServiceExt;
     use url::Url;
     use uuid::Uuid;
@@ -349,14 +354,22 @@ mod tests {
     }
 
     #[derive(Clone)]
+    enum MockEmbeddingsResult {
+        Value(Value),
+        Error(MockError),
+    }
+
+    #[derive(Clone)]
     enum MockError {
         UpstreamHttp(u16, String),
+        InvalidRequest(String),
     }
 
     impl MockError {
         fn into_provider_error(self) -> ProviderError {
             match self {
                 Self::UpstreamHttp(status, body) => ProviderError::UpstreamHttp { status, body },
+                Self::InvalidRequest(message) => ProviderError::InvalidRequest(message),
             }
         }
     }
@@ -416,8 +429,8 @@ mod tests {
             _request: &CoreEmbeddingsRequest,
             _context: &ProviderRequestContext,
         ) -> Result<Value, ProviderError> {
-            Err(ProviderError::NotImplemented(
-                "mock embeddings not implemented".to_string(),
+            Err(ProviderError::InvalidRequest(
+                "mock embeddings unsupported for this provider".to_string(),
             ))
         }
     }
@@ -438,6 +451,80 @@ mod tests {
                 chat_result,
                 stream_chunks,
                 chat_calls: calls,
+            },
+        )
+    }
+
+    #[derive(Clone)]
+    struct MockEmbeddingsProvider {
+        key: String,
+        provider_type: &'static str,
+        caps: ProviderCapabilities,
+        embeddings_result: MockEmbeddingsResult,
+        embeddings_calls: Arc<AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl ProviderClient for MockEmbeddingsProvider {
+        fn provider_key(&self) -> &str {
+            &self.key
+        }
+
+        fn provider_type(&self) -> &str {
+            self.provider_type
+        }
+
+        fn capabilities(&self) -> ProviderCapabilities {
+            self.caps
+        }
+
+        async fn chat_completions(
+            &self,
+            _request: &CoreChatRequest,
+            _context: &ProviderRequestContext,
+        ) -> Result<Value, ProviderError> {
+            Err(ProviderError::InvalidRequest(
+                "mock chat completions unsupported for this provider".to_string(),
+            ))
+        }
+
+        async fn chat_completions_stream(
+            &self,
+            _request: &CoreChatRequest,
+            _context: &ProviderRequestContext,
+        ) -> Result<ProviderStream, ProviderError> {
+            Err(ProviderError::InvalidRequest(
+                "mock chat stream unsupported for this provider".to_string(),
+            ))
+        }
+
+        async fn embeddings(
+            &self,
+            _request: &CoreEmbeddingsRequest,
+            _context: &ProviderRequestContext,
+        ) -> Result<Value, ProviderError> {
+            self.embeddings_calls.fetch_add(1, Ordering::SeqCst);
+            match self.embeddings_result.clone() {
+                MockEmbeddingsResult::Value(value) => Ok(value),
+                MockEmbeddingsResult::Error(error) => Err(error.into_provider_error()),
+            }
+        }
+    }
+
+    fn make_embeddings_provider(
+        key: &str,
+        embeddings_result: MockEmbeddingsResult,
+        caps: ProviderCapabilities,
+    ) -> (Arc<AtomicUsize>, MockEmbeddingsProvider) {
+        let calls = Arc::new(AtomicUsize::new(0));
+        (
+            calls.clone(),
+            MockEmbeddingsProvider {
+                key: key.to_string(),
+                provider_type: "mock_embeddings",
+                caps,
+                embeddings_result,
+                embeddings_calls: calls,
             },
         )
     }
@@ -1004,8 +1091,7 @@ mod tests {
         assert_eq!(logs[0].total_tokens, Some(18));
         assert_eq!(logs[0].error_code, None);
         assert_eq!(logs[0].metadata["stream"], Value::Bool(false));
-        assert_eq!(logs[0].metadata["fallback_used"], Value::Bool(false));
-        assert_eq!(logs[0].metadata["attempt_count"], json!(1));
+        assert_eq!(logs[0].metadata["operation"], "chat_completions");
         assert_eq!(logs[0].resolved_model_key.as_deref(), Some("fast"));
 
         let ledgers = load_usage_ledger(&db_path).await;
@@ -1164,7 +1250,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn fallback_retries_when_idempotency_key_is_present() {
+    async fn idempotency_header_does_not_enable_retry_fallback() {
         let (primary_calls, primary_provider) = make_chat_provider(
             "primary",
             MockChatResult::Error(MockError::UpstreamHttp(503, "unavailable".to_string())),
@@ -1258,29 +1344,24 @@ mod tests {
             .await
             .expect("response");
 
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = to_bytes(response.into_body(), usize::MAX)
-            .await
-            .expect("body");
-        let payload: Value = serde_json::from_slice(&body).expect("json");
-        assert_eq!(payload["choices"][0]["message"]["content"], "from-fallback");
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(primary_calls.load(Ordering::SeqCst), 1);
-        assert_eq!(fallback_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(fallback_calls.load(Ordering::SeqCst), 0);
 
         let logs = load_request_logs(&db_path).await;
         assert_eq!(logs.len(), 1);
-        assert_eq!(logs[0].provider_key, "fallback");
-        assert_eq!(logs[0].status_code, Some(200));
-        assert_eq!(logs[0].error_code, None);
+        assert_eq!(logs[0].provider_key, "primary");
+        assert_eq!(logs[0].status_code, Some(503));
+        assert_eq!(logs[0].error_code.as_deref(), Some("upstream_http_error"));
         assert_eq!(logs[0].metadata["stream"], Value::Bool(false));
-        assert_eq!(logs[0].metadata["fallback_used"], Value::Bool(true));
-        assert_eq!(logs[0].metadata["attempt_count"], json!(2));
+        assert_eq!(logs[0].metadata["operation"], "chat_completions");
         assert_eq!(logs[0].resolved_model_key.as_deref(), Some("fast"));
+        assert!(load_usage_ledger(&db_path).await.is_empty());
     }
 
     #[tokio::test]
     #[serial]
-    async fn no_retry_without_idempotency_key() {
+    async fn single_route_execution_without_idempotency_key() {
         let (primary_calls, primary_provider) = make_chat_provider(
             "primary",
             MockChatResult::Error(MockError::UpstreamHttp(503, "unavailable".to_string())),
@@ -1386,8 +1467,7 @@ mod tests {
         assert_eq!(logs[0].total_tokens, None);
         assert_eq!(logs[0].error_code.as_deref(), Some("upstream_http_error"));
         assert_eq!(logs[0].metadata["stream"], Value::Bool(false));
-        assert_eq!(logs[0].metadata["fallback_used"], Value::Bool(false));
-        assert_eq!(logs[0].metadata["attempt_count"], json!(1));
+        assert_eq!(logs[0].metadata["operation"], "chat_completions");
         assert!(load_usage_ledger(&db_path).await.is_empty());
     }
 
@@ -1706,14 +1786,403 @@ mod tests {
         assert_eq!(logs[0].total_tokens, None);
         assert_eq!(logs[0].error_code, None);
         assert_eq!(logs[0].metadata["stream"], Value::Bool(true));
-        assert_eq!(logs[0].metadata["fallback_used"], Value::Bool(false));
-        assert_eq!(logs[0].metadata["attempt_count"], json!(1));
+        assert_eq!(logs[0].metadata["operation"], "chat_completions");
 
         let ledgers = load_usage_ledger(&db_path).await;
         assert_eq!(ledgers.len(), 1);
         assert_eq!(ledgers[0].request_id, request_id);
         assert_eq!(ledgers[0].pricing_status, "usage_missing");
         assert_eq!(ledgers[0].computed_cost_10000, 0);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn embeddings_executes_and_records_usage() {
+        let (calls, provider) = make_embeddings_provider(
+            "openai-prod",
+            MockEmbeddingsResult::Value(json!({
+                "object": "list",
+                "data": [{
+                    "object": "embedding",
+                    "index": 0,
+                    "embedding": [0.1, 0.2, 0.3]
+                }],
+                "model": "text-embedding-3-small",
+                "usage": {"prompt_tokens": 4, "total_tokens": 4}
+            })),
+            ProviderCapabilities::with_dimensions(false, false, true, false, false, false, false),
+        );
+        let mut registry = gateway_core::ProviderRegistry::new();
+        registry.register(Arc::new(provider));
+
+        let (app, raw_key, db_path) = build_default_test_app(registry).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/embeddings")
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .body(Body::from(
+                        json!({
+                            "model": "fast",
+                            "input": "hello"
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        let request_id = response
+            .headers()
+            .get("x-request-id")
+            .expect("x-request-id header")
+            .to_str()
+            .expect("request id value")
+            .to_string();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        let payload: Value = serde_json::from_slice(&body).expect("json body");
+        assert_eq!(payload["model"], "fast");
+        assert_eq!(payload["data"][0]["object"], "embedding");
+
+        let logs = load_request_logs(&db_path).await;
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].provider_key, "openai-prod");
+        assert_eq!(logs[0].status_code, Some(200));
+        assert_eq!(logs[0].prompt_tokens, Some(4));
+        assert_eq!(logs[0].completion_tokens, None);
+        assert_eq!(logs[0].total_tokens, Some(4));
+        assert_eq!(logs[0].metadata["stream"], Value::Bool(false));
+        assert_eq!(logs[0].metadata["operation"], "embeddings");
+
+        let ledgers = load_usage_ledger(&db_path).await;
+        assert_eq!(ledgers.len(), 1);
+        assert_eq!(ledgers[0].request_id, request_id);
+        assert_eq!(ledgers[0].provider_key, "openai-prod");
+        assert_eq!(ledgers[0].prompt_tokens, Some(4));
+        assert_eq!(ledgers[0].completion_tokens, None);
+        assert_eq!(ledgers[0].total_tokens, Some(4));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn embeddings_rejects_when_no_route_supports_embeddings() {
+        let (calls, provider) = make_embeddings_provider(
+            "openai-prod",
+            MockEmbeddingsResult::Value(json!({
+                "object": "list",
+                "data": [],
+                "model": "text-embedding-3-small"
+            })),
+            ProviderCapabilities::all_enabled(),
+        );
+        let mut registry = gateway_core::ProviderRegistry::new();
+        registry.register(Arc::new(provider));
+
+        let seed_providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: serde_json::json!({
+                "base_url":"https://example.invalid/v1",
+                "pricing_provider_id":"openai"
+            }),
+            secrets: None,
+        }];
+        let models = vec![SeedModel {
+            model_key: "fast".to_string(),
+            alias_target_model_key: None,
+            description: None,
+            tags: vec![],
+            rank: 10,
+            routes: vec![SeedModelRoute {
+                provider_key: "openai-prod".to_string(),
+                upstream_model: "text-embedding-3-small".to_string(),
+                priority: 10,
+                weight: 1.0,
+                enabled: true,
+                extra_headers: Map::new(),
+                extra_body: Map::new(),
+                capabilities: ProviderCapabilities::with_dimensions(
+                    true, true, false, true, true, true, true,
+                ),
+            }],
+        }];
+        let (app, raw_key, _) = build_test_app(seed_providers, models, registry).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/embeddings")
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .body(Body::from(
+                        json!({
+                            "model": "fast",
+                            "input": "hello"
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        let payload: Value = serde_json::from_slice(&body).expect("json body");
+        assert_eq!(payload["error"]["code"], "invalid_request");
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn embeddings_provider_invalid_request_is_deterministic() {
+        let (calls, provider) = make_embeddings_provider(
+            "openai-prod",
+            MockEmbeddingsResult::Error(MockError::InvalidRequest(
+                "embeddings input was invalid".to_string(),
+            )),
+            ProviderCapabilities::with_dimensions(false, false, true, false, false, false, false),
+        );
+        let mut registry = gateway_core::ProviderRegistry::new();
+        registry.register(Arc::new(provider));
+
+        let (app, raw_key, db_path) = build_default_test_app(registry).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/embeddings")
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .body(Body::from(
+                        json!({
+                            "model": "fast",
+                            "input": "hello"
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        let payload: Value = serde_json::from_slice(&body).expect("json body");
+        assert_eq!(payload["error"]["code"], "invalid_request");
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        let logs = load_request_logs(&db_path).await;
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].status_code, Some(400));
+        assert_eq!(logs[0].metadata["operation"], "embeddings");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn embeddings_requires_authorization_header() {
+        let (app, _, _) = build_default_test_app(gateway_core::ProviderRegistry::new()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/embeddings")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "model": "fast",
+                            "input": "hello"
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        let payload: Value = serde_json::from_slice(&body).expect("json body");
+        assert_eq!(payload["error"]["code"], "missing_authorization_header");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn embeddings_respects_model_access_controls() {
+        let (_, provider) = make_embeddings_provider(
+            "openai-prod",
+            MockEmbeddingsResult::Value(json!({
+                "object": "list",
+                "data": [],
+                "model": "text-embedding-3-small"
+            })),
+            ProviderCapabilities::all_enabled(),
+        );
+        let mut registry = gateway_core::ProviderRegistry::new();
+        registry.register(Arc::new(provider));
+
+        let seed_providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: serde_json::json!({
+                "base_url":"https://example.invalid/v1",
+                "pricing_provider_id":"openai"
+            }),
+            secrets: None,
+        }];
+        let models = vec![
+            SeedModel {
+                model_key: "fast".to_string(),
+                alias_target_model_key: None,
+                description: None,
+                tags: vec![],
+                rank: 10,
+                routes: vec![SeedModelRoute {
+                    provider_key: "openai-prod".to_string(),
+                    upstream_model: "text-embedding-3-small".to_string(),
+                    priority: 10,
+                    weight: 1.0,
+                    enabled: true,
+                    extra_headers: Map::new(),
+                    extra_body: Map::new(),
+                    capabilities: ProviderCapabilities::all_enabled(),
+                }],
+            },
+            SeedModel {
+                model_key: "restricted".to_string(),
+                alias_target_model_key: None,
+                description: None,
+                tags: vec![],
+                rank: 20,
+                routes: vec![SeedModelRoute {
+                    provider_key: "openai-prod".to_string(),
+                    upstream_model: "text-embedding-3-small".to_string(),
+                    priority: 10,
+                    weight: 1.0,
+                    enabled: true,
+                    extra_headers: Map::new(),
+                    extra_body: Map::new(),
+                    capabilities: ProviderCapabilities::all_enabled(),
+                }],
+            },
+        ];
+
+        let (app, raw_key, _) = build_test_app(seed_providers, models, registry).await;
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/embeddings")
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .body(Body::from(
+                        json!({
+                            "model": "restricted",
+                            "input": "hello"
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        let payload: Value = serde_json::from_slice(&body).expect("json body");
+        assert_eq!(payload["error"]["code"], "model_not_granted");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn openai_compat_streaming_works_through_gateway() {
+        let upstream = Router::new().route(
+            "/v1/chat/completions",
+            post(|| async move {
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .header("content-type", "text/event-stream")
+                    .body(Body::from(
+                        "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"hello\"},\"finish_reason\":null}]}\n\n",
+                    ))
+                    .expect("response")
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+        tokio::spawn(async move {
+            axum::serve(listener, upstream)
+                .await
+                .expect("serve upstream");
+        });
+
+        let provider = OpenAiCompatProvider::new(OpenAiCompatConfig {
+            provider_key: "openai-prod".to_string(),
+            base_url: format!("http://{addr}/v1"),
+            bearer_token: None,
+            default_headers: BTreeMap::new(),
+            request_timeout_ms: 10_000,
+        })
+        .expect("provider");
+        let mut registry = gateway_core::ProviderRegistry::new();
+        registry.register(Arc::new(provider));
+
+        let (app, raw_key, db_path) = build_default_test_app(registry).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .body(Body::from(
+                        json!({
+                            "model": "fast",
+                            "stream": true,
+                            "messages": [{"role":"user","content":"ping"}]
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        let transcript = String::from_utf8(body.to_vec()).expect("utf8");
+        assert!(transcript.contains("\"content\":\"hello\""));
+        assert!(transcript.contains("data: [DONE]"));
+
+        let logs = load_request_logs(&db_path).await;
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].metadata["stream"], Value::Bool(true));
+        assert_eq!(logs[0].metadata["operation"], "chat_completions");
     }
 
     #[tokio::test]

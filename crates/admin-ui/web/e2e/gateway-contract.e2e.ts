@@ -36,7 +36,6 @@ test('gateway exposes the seeded model and forwards chat completions to the stub
     headers: {
       authorization: `Bearer ${gatewayApiKey}`,
       'content-type': 'application/json',
-      'idempotency-key': 'e2e-contract-test',
     },
     data: {
       model: 'fast',

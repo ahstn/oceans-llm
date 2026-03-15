@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, time::Instant};
+use std::{collections::BTreeMap, sync::Arc, time::Instant};
 
 use axum::{
     Json,
@@ -13,9 +13,9 @@ use axum::{
 use futures_util::{StreamExt, stream};
 use gateway_core::{
     AuthenticatedApiKey, ChatCompletionsRequest, CoreRequestRequirements, EmbeddingsRequest,
-    GatewayError, ModelsListResponse, ProviderCapabilities, ProviderError, ProviderRequestContext,
-    RequestLogRecord, openai_chat_request_to_core, openai_embeddings_request_to_core,
-    protocol::openai::ModelCard,
+    GatewayError, ModelsListResponse, ProviderCapabilities, ProviderClient, ProviderError,
+    ProviderRequestContext, RequestLogRecord, openai_chat_request_to_core,
+    openai_embeddings_request_to_core, protocol::openai::ModelCard,
 };
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
@@ -25,6 +25,8 @@ use crate::http::{
     error::AppError,
     state::{AppGatewayService, AppState},
 };
+
+type SelectedProviderRoute = (gateway_core::ModelRoute, Arc<dyn ProviderClient>);
 
 pub async fn healthz() -> Json<serde_json::Value> {
     Json(json!({ "status": "ok" }))
@@ -82,299 +84,172 @@ pub async fn v1_chat_completions(
         .resolve_request(&auth, &core_request.model)
         .await?;
 
-    let idempotency_key = extract_idempotency_key(&headers).map(str::to_string);
     let request_id = extract_request_id(&headers);
     let request_headers = extract_request_headers(&headers);
-    let allow_fallback = !core_request.stream && idempotency_key.is_some();
-
-    let mut eligible = Vec::new();
-    for route in &resolved.routes {
-        let Some(provider) = state.providers.get(&route.provider_key) else {
-            continue;
-        };
-        let effective_capabilities = provider.capabilities().intersect(route.capabilities);
-        if supports_requirements(effective_capabilities, requirements) {
-            eligible.push((route.clone(), provider));
-        }
-    }
+    let (eligible_route_count, selected) =
+        select_first_eligible_route(&state.providers, &resolved.routes, requirements);
 
     tracing::info!(
         request_model = %core_request.model,
         resolved_model = %resolved.selection.execution_model.model_key,
         route_count = resolved.routes.len(),
-        eligible_route_count = eligible.len(),
+        eligible_route_count,
         stream = core_request.stream,
         required_capabilities = ?requirements.required_capability_names(),
-        fallback_allowed = allow_fallback,
         "chat completion request resolved"
     );
 
-    if eligible.is_empty() {
-        return Err(AppError(no_compatible_route_error(requirements)));
-    }
-
-    if core_request.stream || !allow_fallback {
-        let (route, provider) = eligible
-            .into_iter()
-            .next()
-            .expect("eligible routes checked as non-empty");
-
-        let context = build_provider_context(
-            &request_id,
-            &resolved.selection.requested_model.model_key,
-            &route,
-            idempotency_key.clone(),
-            request_headers,
-        );
-
-        if core_request.stream {
-            let stream = match provider
-                .chat_completions_stream(&core_request, &context)
-                .await
-            {
-                Ok(stream) => stream,
-                Err(error) => {
-                    let gateway_error = GatewayError::from(error);
-                    best_effort_log_request(
-                        &state.service,
-                        &auth,
-                        &request_id,
-                        &resolved.selection.requested_model.model_key,
-                        &resolved.selection.execution_model.model_key,
-                        ChatCompletionLogSummary::failure(
-                            route.provider_key.clone(),
-                            1,
-                            true,
-                            latency_ms_since(request_started_at),
-                            gateway_error.http_status_code().into(),
-                            gateway_error.error_code().to_string(),
-                        ),
-                    )
-                    .await;
-                    return Err(AppError(gateway_error));
-                }
-            };
-            let body_stream = wrap_stream_with_request_logging(LoggingBodyStreamState {
-                upstream: stream,
-                service: state.service.clone(),
-                auth: auth.clone(),
-                request_id: request_id.clone(),
-                requested_model_key: resolved.selection.requested_model.model_key.clone(),
-                resolved_model_key: resolved.selection.execution_model.model_key.clone(),
-                execution_model: resolved.selection.execution_model.clone(),
-                route: route.clone(),
-                provider_key: route.provider_key.clone(),
-                started_at: request_started_at,
-                finished: false,
-                failure: None,
-                attempt_count: 1,
-                usage: None,
-            });
-
-            let mut response = Response::builder()
-                .status(axum::http::StatusCode::OK)
-                .header(CONTENT_TYPE, "text/event-stream; charset=utf-8")
-                .header(CACHE_CONTROL, "no-cache")
-                .body(Body::from_stream(body_stream))
-                .map_err(|error| {
-                    AppError(GatewayError::Internal(format!(
-                        "failed to build streaming response: {error}"
-                    )))
-                })?;
-
-            if let Ok(request_id_header) = HeaderValue::from_str(&request_id) {
-                response
-                    .headers_mut()
-                    .insert("x-request-id", request_id_header);
-            }
-
-            return Ok(response);
+    let (route, provider) = match selected {
+        Some(selection) => selection,
+        None => {
+            return Err(AppError(no_compatible_route_error(requirements)));
         }
+    };
 
-        let value = provider
-            .chat_completions(&core_request, &context)
+    let context = build_provider_context(
+        &request_id,
+        &resolved.selection.requested_model.model_key,
+        &route,
+        request_headers,
+    );
+
+    if core_request.stream {
+        let stream = match provider
+            .chat_completions_stream(&core_request, &context)
             .await
-            .map_err(GatewayError::from);
-        let value = match value {
-            Ok(value) => {
-                normalize_response_model(value, &resolved.selection.requested_model.model_key)
-            }
+        {
+            Ok(stream) => stream,
             Err(error) => {
+                let gateway_error = map_operation_provider_error(error, requirements);
+                tracing::warn!(
+                    request_id = %request_id,
+                    provider_key = %route.provider_key,
+                    termination_reason = "provider_stream_start_error",
+                    error_code = %gateway_error.error_code(),
+                    "chat completion stream start failed"
+                );
                 best_effort_log_request(
                     &state.service,
                     &auth,
                     &request_id,
                     &resolved.selection.requested_model.model_key,
                     &resolved.selection.execution_model.model_key,
-                    ChatCompletionLogSummary::failure(
+                    RequestLogSummary::failure(
+                        RequestOperation::ChatCompletions,
                         route.provider_key.clone(),
-                        1,
-                        false,
+                        true,
                         latency_ms_since(request_started_at),
-                        error.http_status_code().into(),
-                        error.error_code().to_string(),
+                        gateway_error.http_status_code().into(),
+                        gateway_error.error_code().to_string(),
                     ),
                 )
                 .await;
-                return Err(AppError(error));
+                return Err(AppError(gateway_error));
             }
         };
-        state
-            .service
-            .record_chat_usage(
-                &auth,
-                &resolved.selection.execution_model,
-                &route,
-                &request_id,
-                usage_value_from_response(&value),
-                OffsetDateTime::now_utc(),
-            )
-            .await?;
-        best_effort_log_request(
-            &state.service,
-            &auth,
-            &request_id,
-            &resolved.selection.requested_model.model_key,
-            &resolved.selection.execution_model.model_key,
-            ChatCompletionLogSummary::success(
-                route.provider_key.clone(),
-                1,
-                false,
-                latency_ms_since(request_started_at),
-                usage_from_response(&value),
-            ),
-        )
-        .await;
-        let mut response = Json(value).into_response();
+        let body_stream = wrap_stream_with_request_logging(LoggingBodyStreamState {
+            upstream: stream,
+            service: state.service.clone(),
+            auth: auth.clone(),
+            request_id: request_id.clone(),
+            requested_model_key: resolved.selection.requested_model.model_key.clone(),
+            resolved_model_key: resolved.selection.execution_model.model_key.clone(),
+            execution_model: resolved.selection.execution_model.clone(),
+            route: route.clone(),
+            provider_key: route.provider_key.clone(),
+            started_at: request_started_at,
+            finished: false,
+            failure: None,
+            usage: None,
+        });
+
+        let mut response = Response::builder()
+            .status(axum::http::StatusCode::OK)
+            .header(CONTENT_TYPE, "text/event-stream; charset=utf-8")
+            .header(CACHE_CONTROL, "no-cache")
+            .body(Body::from_stream(body_stream))
+            .map_err(|error| {
+                AppError(GatewayError::Internal(format!(
+                    "failed to build streaming response: {error}"
+                )))
+            })?;
+
         if let Ok(request_id_header) = HeaderValue::from_str(&request_id) {
             response
                 .headers_mut()
                 .insert("x-request-id", request_id_header);
         }
+
         return Ok(response);
     }
 
-    let mut first_failure: Option<GatewayError> = None;
-    let mut first_failure_provider_key: Option<String> = None;
-    let mut attempt_count = 0usize;
-
-    for (route, provider) in eligible {
-        attempt_count += 1;
-        let context = build_provider_context(
-            &request_id,
-            &resolved.selection.requested_model.model_key,
-            &route,
-            idempotency_key.clone(),
-            request_headers.clone(),
-        );
-
-        match provider.chat_completions(&core_request, &context).await {
-            Ok(value) => {
-                best_effort_log_request(
-                    &state.service,
-                    &auth,
-                    &request_id,
-                    &resolved.selection.requested_model.model_key,
-                    &resolved.selection.execution_model.model_key,
-                    ChatCompletionLogSummary::success(
-                        route.provider_key.clone(),
-                        attempt_count,
-                        false,
-                        latency_ms_since(request_started_at),
-                        usage_from_response(&value),
-                    ),
-                )
-                .await;
-                state
-                    .service
-                    .record_chat_usage(
-                        &auth,
-                        &resolved.selection.execution_model,
-                        &route,
-                        &request_id,
-                        usage_value_from_response(&value),
-                        OffsetDateTime::now_utc(),
-                    )
-                    .await?;
-                let mut response = Json(normalize_response_model(
-                    value,
-                    &resolved.selection.requested_model.model_key,
-                ))
-                .into_response();
-                if let Ok(request_id_header) = HeaderValue::from_str(&request_id) {
-                    response
-                        .headers_mut()
-                        .insert("x-request-id", request_id_header);
-                }
-                return Ok(response);
-            }
-            Err(error) => {
-                tracing::warn!(
-                    provider_key = %route.provider_key,
-                    request_model = %core_request.model,
-                    retryable = error.is_retryable(),
-                    "chat completion attempt failed"
-                );
-
-                if !error.is_retryable() {
-                    let gateway_error = GatewayError::from(error);
-                    best_effort_log_request(
-                        &state.service,
-                        &auth,
-                        &request_id,
-                        &resolved.selection.requested_model.model_key,
-                        &resolved.selection.execution_model.model_key,
-                        ChatCompletionLogSummary::failure(
-                            route.provider_key.clone(),
-                            attempt_count,
-                            false,
-                            latency_ms_since(request_started_at),
-                            gateway_error.http_status_code().into(),
-                            gateway_error.error_code().to_string(),
-                        ),
-                    )
-                    .await;
-                    return Err(AppError(gateway_error));
-                }
-
-                if first_failure.is_none() {
-                    first_failure = Some(error.into());
-                    first_failure_provider_key = Some(route.provider_key.clone());
-                }
-            }
+    let value = provider
+        .chat_completions(&core_request, &context)
+        .await
+        .map_err(|error| map_operation_provider_error(error, requirements));
+    let value = match value {
+        Ok(value) => normalize_response_model(value, &resolved.selection.requested_model.model_key),
+        Err(error) => {
+            best_effort_log_request(
+                &state.service,
+                &auth,
+                &request_id,
+                &resolved.selection.requested_model.model_key,
+                &resolved.selection.execution_model.model_key,
+                RequestLogSummary::failure(
+                    RequestOperation::ChatCompletions,
+                    route.provider_key.clone(),
+                    false,
+                    latency_ms_since(request_started_at),
+                    error.http_status_code().into(),
+                    error.error_code().to_string(),
+                ),
+            )
+            .await;
+            return Err(AppError(error));
         }
-    }
-
-    let final_error = first_failure.unwrap_or_else(|| {
-        GatewayError::Provider(ProviderError::Transport(
-            "all fallback routes failed without a terminal error".to_string(),
-        ))
-    });
+    };
+    state
+        .service
+        .record_chat_usage(
+            &auth,
+            &resolved.selection.execution_model,
+            &route,
+            &request_id,
+            usage_value_from_response(&value),
+            OffsetDateTime::now_utc(),
+        )
+        .await?;
     best_effort_log_request(
         &state.service,
         &auth,
         &request_id,
         &resolved.selection.requested_model.model_key,
         &resolved.selection.execution_model.model_key,
-        ChatCompletionLogSummary::failure(
-            first_failure_provider_key.unwrap_or_else(|| "unknown".to_string()),
-            attempt_count,
+        RequestLogSummary::success(
+            RequestOperation::ChatCompletions,
+            route.provider_key.clone(),
             false,
             latency_ms_since(request_started_at),
-            final_error.http_status_code().into(),
-            final_error.error_code().to_string(),
+            usage_from_response(&value),
         ),
     )
     .await;
-
-    Err(AppError(final_error))
+    let mut response = Json(value).into_response();
+    if let Ok(request_id_header) = HeaderValue::from_str(&request_id) {
+        response
+            .headers_mut()
+            .insert("x-request-id", request_id_header);
+    }
+    Ok(response)
 }
 
 pub async fn v1_embeddings(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(request): Json<EmbeddingsRequest>,
-) -> Result<Json<serde_json::Value>, AppError> {
+) -> Result<Response, AppError> {
+    let request_started_at = Instant::now();
     let auth = state
         .service
         .authenticate(extract_authorization_header(&headers))
@@ -385,34 +260,129 @@ pub async fn v1_embeddings(
         .service
         .resolve_request(&auth, &core_request.model)
         .await?;
-
-    let mut eligible = Vec::new();
-    for route in &resolved.routes {
-        let Some(provider) = state.providers.get(&route.provider_key) else {
-            continue;
-        };
-        let effective_capabilities = provider.capabilities().intersect(route.capabilities);
-        if supports_requirements(effective_capabilities, requirements) {
-            eligible.push((route, provider));
-        }
-    }
+    let request_id = extract_request_id(&headers);
+    let request_headers = extract_request_headers(&headers);
+    let (eligible_route_count, selected) =
+        select_first_eligible_route(&state.providers, &resolved.routes, requirements);
 
     tracing::info!(
         request_model = %core_request.model,
         resolved_model = %resolved.selection.execution_model.model_key,
         route_count = resolved.routes.len(),
-        eligible_route_count = eligible.len(),
+        eligible_route_count,
         required_capabilities = ?requirements.required_capability_names(),
         "embeddings request resolved"
     );
 
-    if eligible.is_empty() {
-        return Err(AppError(no_compatible_route_error(requirements)));
+    let (route, provider) = match selected {
+        Some(selection) => selection,
+        None => {
+            return Err(AppError(no_compatible_route_error(requirements)));
+        }
+    };
+
+    let context = build_provider_context(
+        &request_id,
+        &resolved.selection.requested_model.model_key,
+        &route,
+        request_headers,
+    );
+
+    let value = provider
+        .embeddings(&core_request, &context)
+        .await
+        .map_err(|error| map_operation_provider_error(error, requirements));
+    let value = match value {
+        Ok(value) => normalize_response_model(value, &resolved.selection.requested_model.model_key),
+        Err(error) => {
+            best_effort_log_request(
+                &state.service,
+                &auth,
+                &request_id,
+                &resolved.selection.requested_model.model_key,
+                &resolved.selection.execution_model.model_key,
+                RequestLogSummary::failure(
+                    RequestOperation::Embeddings,
+                    route.provider_key.clone(),
+                    false,
+                    latency_ms_since(request_started_at),
+                    error.http_status_code().into(),
+                    error.error_code().to_string(),
+                ),
+            )
+            .await;
+            return Err(AppError(error));
+        }
+    };
+
+    state
+        .service
+        .record_chat_usage(
+            &auth,
+            &resolved.selection.execution_model,
+            &route,
+            &request_id,
+            usage_value_from_response(&value),
+            OffsetDateTime::now_utc(),
+        )
+        .await?;
+    best_effort_log_request(
+        &state.service,
+        &auth,
+        &request_id,
+        &resolved.selection.requested_model.model_key,
+        &resolved.selection.execution_model.model_key,
+        RequestLogSummary::success(
+            RequestOperation::Embeddings,
+            route.provider_key.clone(),
+            false,
+            latency_ms_since(request_started_at),
+            usage_from_response(&value),
+        ),
+    )
+    .await;
+
+    let mut response = Json(value).into_response();
+    if let Ok(request_id_header) = HeaderValue::from_str(&request_id) {
+        response
+            .headers_mut()
+            .insert("x-request-id", request_id_header);
+    }
+    Ok(response)
+}
+
+fn select_first_eligible_route(
+    providers: &gateway_core::ProviderRegistry,
+    routes: &[gateway_core::ModelRoute],
+    requirements: CoreRequestRequirements,
+) -> (usize, Option<SelectedProviderRoute>) {
+    let mut eligible_route_count = 0usize;
+    let mut selected = None;
+
+    for route in routes {
+        let Some(provider) = providers.get(&route.provider_key) else {
+            continue;
+        };
+        let effective_capabilities = provider.capabilities().intersect(route.capabilities);
+        if supports_requirements(effective_capabilities, requirements) {
+            eligible_route_count += 1;
+            if selected.is_none() {
+                selected = Some((route.clone(), provider));
+            }
+        }
     }
 
-    Err(AppError(GatewayError::NotImplemented(
-        "embeddings execution is intentionally deferred in this foundation phase".to_string(),
-    )))
+    (eligible_route_count, selected)
+}
+
+fn map_operation_provider_error(
+    error: ProviderError,
+    requirements: CoreRequestRequirements,
+) -> GatewayError {
+    match error {
+        ProviderError::NotImplemented(_) => no_compatible_route_error(requirements),
+        other => GatewayError::Provider(other),
+    }
 }
 
 fn supports_requirements(
@@ -444,7 +414,6 @@ fn build_provider_context(
     request_id: &str,
     model_key: &str,
     route: &gateway_core::ModelRoute,
-    idempotency_key: Option<String>,
     request_headers: BTreeMap<String, String>,
 ) -> ProviderRequestContext {
     ProviderRequestContext {
@@ -454,7 +423,6 @@ fn build_provider_context(
         upstream_model: route.upstream_model.clone(),
         extra_headers: route.extra_headers.clone(),
         extra_body: route.extra_body.clone(),
-        idempotency_key,
         request_headers,
     }
 }
@@ -467,9 +435,24 @@ struct UsageSummary {
 }
 
 #[derive(Debug, Clone)]
-struct ChatCompletionLogSummary {
+enum RequestOperation {
+    ChatCompletions,
+    Embeddings,
+}
+
+impl RequestOperation {
+    const fn as_str(&self) -> &'static str {
+        match self {
+            Self::ChatCompletions => "chat_completions",
+            Self::Embeddings => "embeddings",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct RequestLogSummary {
+    operation: RequestOperation,
     provider_key: String,
-    attempt_count: usize,
     stream: bool,
     status_code: i64,
     error_code: Option<String>,
@@ -479,17 +462,17 @@ struct ChatCompletionLogSummary {
     total_tokens: Option<i64>,
 }
 
-impl ChatCompletionLogSummary {
+impl RequestLogSummary {
     fn success(
+        operation: RequestOperation,
         provider_key: String,
-        attempt_count: usize,
         stream: bool,
         latency_ms: i64,
         usage: UsageSummary,
     ) -> Self {
         Self {
+            operation,
             provider_key,
-            attempt_count,
             stream,
             status_code: 200,
             error_code: None,
@@ -501,16 +484,16 @@ impl ChatCompletionLogSummary {
     }
 
     fn failure(
+        operation: RequestOperation,
         provider_key: String,
-        attempt_count: usize,
         stream: bool,
         latency_ms: i64,
         status_code: i64,
         error_code: String,
     ) -> Self {
         Self {
+            operation,
             provider_key,
-            attempt_count,
             stream,
             status_code,
             error_code: Some(error_code),
@@ -540,7 +523,6 @@ struct LoggingBodyStreamState {
     started_at: Instant,
     finished: bool,
     failure: Option<StreamFailure>,
-    attempt_count: usize,
     usage: Option<Value>,
 }
 
@@ -573,15 +555,21 @@ fn wrap_stream_with_request_logging(
             Some(Err(error)) => {
                 let error_message = error.to_string();
                 let gateway_error = GatewayError::from(error);
+                tracing::warn!(
+                    request_id = %state.request_id,
+                    provider_key = %state.provider_key,
+                    termination_reason = "stream_transport_error",
+                    "chat completion stream terminated with transport error"
+                );
                 best_effort_log_request(
                     &state.service,
                     &state.auth,
                     &state.request_id,
                     &state.requested_model_key,
                     &state.resolved_model_key,
-                    ChatCompletionLogSummary::failure(
+                    RequestLogSummary::failure(
+                        RequestOperation::ChatCompletions,
                         state.provider_key.clone(),
-                        state.attempt_count,
                         true,
                         latency_ms_since(state.started_at),
                         gateway_error.http_status_code().into(),
@@ -594,9 +582,9 @@ fn wrap_stream_with_request_logging(
             }
             None => {
                 let summary = match &state.failure {
-                    Some(failure) => ChatCompletionLogSummary::failure(
+                    Some(failure) => RequestLogSummary::failure(
+                        RequestOperation::ChatCompletions,
                         state.provider_key.clone(),
-                        state.attempt_count,
                         true,
                         latency_ms_since(state.started_at),
                         failure.status_code,
@@ -623,15 +611,21 @@ fn wrap_stream_with_request_logging(
                                 "usage ledger write failed after stream completion"
                             );
                         }
-                        ChatCompletionLogSummary::success(
+                        RequestLogSummary::success(
+                            RequestOperation::ChatCompletions,
                             state.provider_key.clone(),
-                            state.attempt_count,
                             true,
                             latency_ms_since(state.started_at),
                             usage_summary,
                         )
                     }
                 };
+                tracing::info!(
+                    request_id = %state.request_id,
+                    provider_key = %state.provider_key,
+                    termination_reason = if state.failure.is_some() { "stream_error_chunk" } else { "complete" },
+                    "chat completion stream terminated"
+                );
                 best_effort_log_request(
                     &state.service,
                     &state.auth,
@@ -653,9 +647,9 @@ async fn best_effort_log_request(
     request_id: &str,
     model_key: &str,
     resolved_model_key: &str,
-    summary: ChatCompletionLogSummary,
+    summary: RequestLogSummary,
 ) {
-    let metadata = request_log_metadata(summary.attempt_count, summary.stream);
+    let metadata = request_log_metadata(summary.stream, summary.operation);
     let log = RequestLogRecord {
         request_log_id: Uuid::new_v4(),
         request_id: request_id.to_string(),
@@ -685,14 +679,13 @@ async fn best_effort_log_request(
     }
 }
 
-fn request_log_metadata(attempt_count: usize, stream: bool) -> Map<String, Value> {
+fn request_log_metadata(stream: bool, operation: RequestOperation) -> Map<String, Value> {
     let mut metadata = Map::new();
-    metadata.insert("stream".to_string(), Value::Bool(stream));
-    metadata.insert("fallback_used".to_string(), Value::Bool(attempt_count > 1));
     metadata.insert(
-        "attempt_count".to_string(),
-        Value::Number(i64::try_from(attempt_count).unwrap_or(i64::MAX).into()),
+        "operation".to_string(),
+        Value::String(operation.as_str().to_string()),
     );
+    metadata.insert("stream".to_string(), Value::Bool(stream));
     metadata
 }
 
@@ -740,7 +733,7 @@ fn latency_ms_since(started_at: Instant) -> i64 {
 fn extract_stream_error_code(chunk: &[u8]) -> Option<String> {
     let text = std::str::from_utf8(chunk).ok()?;
     for line in text.lines() {
-        let Some(payload) = line.strip_prefix("data: ") else {
+        let Some(payload) = extract_sse_data_payload(line) else {
             continue;
         };
         let payload = payload.trim();
@@ -769,12 +762,6 @@ fn extract_authorization_header(headers: &HeaderMap) -> Option<&str> {
         .and_then(|value| value.to_str().ok())
 }
 
-fn extract_idempotency_key(headers: &HeaderMap) -> Option<&str> {
-    headers
-        .get("idempotency-key")
-        .and_then(|value| value.to_str().ok())
-}
-
 fn extract_request_id(headers: &HeaderMap) -> String {
     headers
         .get("x-request-id")
@@ -798,7 +785,7 @@ fn extract_request_headers(headers: &HeaderMap) -> BTreeMap<String, String> {
 fn extract_stream_usage(chunk: &[u8]) -> Option<Value> {
     let text = std::str::from_utf8(chunk).ok()?;
     for line in text.lines() {
-        let Some(payload) = line.strip_prefix("data: ") else {
+        let Some(payload) = extract_sse_data_payload(line) else {
             continue;
         };
         let payload = payload.trim();
@@ -813,4 +800,9 @@ fn extract_stream_usage(chunk: &[u8]) -> Option<Value> {
     }
 
     None
+}
+
+fn extract_sse_data_payload(line: &str) -> Option<&str> {
+    line.strip_prefix("data: ")
+        .or_else(|| line.strip_prefix("data:"))
 }

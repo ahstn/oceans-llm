@@ -14,6 +14,7 @@ use uuid::Uuid;
 
 use crate::{
     http::map_reqwest_error,
+    streaming::{SseEventParser, Utf8ChunkDecoder, done_sse_chunk, openai_sse_error_chunk},
     token::{
         AccessTokenSource, AdcTokenSource, CLOUD_PLATFORM_SCOPE, CachedAccessTokenSource,
         ServiceAccountTokenSource, StaticBearerTokenSource,
@@ -88,9 +89,6 @@ impl VertexProvider {
             .json(body);
 
         request = request.header("x-request-id", &context.request_id);
-        if let Some(idempotency_key) = &context.idempotency_key {
-            request = request.header("Idempotency-Key", idempotency_key);
-        }
 
         for (name, value) in &self.config.default_headers {
             request = request.header(name, value);
@@ -144,7 +142,7 @@ fn parse_upstream_model(
         "google" => PublisherFamily::Google,
         "anthropic" => PublisherFamily::Anthropic,
         other => {
-            return Err(ProviderError::NotImplemented(format!(
+            return Err(ProviderError::InvalidRequest(format!(
                 "vertex publisher `{other}` is not supported in this slice"
             )));
         }
@@ -264,8 +262,8 @@ impl ProviderClient for VertexProvider {
         _request: &CoreEmbeddingsRequest,
         _context: &ProviderRequestContext,
     ) -> Result<Value, ProviderError> {
-        Err(ProviderError::NotImplemented(
-            "vertex embeddings are not implemented in this slice".to_string(),
+        Err(ProviderError::InvalidRequest(
+            "vertex embeddings are not supported in this v1 runtime".to_string(),
         ))
     }
 }
@@ -997,7 +995,7 @@ where
             yield Ok(openai_sse_chunk(&finish));
         }
         if !stream_failed {
-            yield Ok(Bytes::from("data: [DONE]\n\n"));
+            yield Ok(done_sse_chunk());
         }
     })
 }
@@ -1151,7 +1149,7 @@ where
             yield Ok(openai_sse_chunk(&finish));
         }
         if !stream_failed {
-            yield Ok(Bytes::from("data: [DONE]\n\n"));
+            yield Ok(done_sse_chunk());
         }
     })
 }
@@ -1231,107 +1229,6 @@ impl JsonObjectParser {
     }
 }
 
-#[derive(Debug, Clone)]
-struct ParsedSseEvent {
-    event: Option<String>,
-    data: String,
-}
-
-#[derive(Debug, Clone, Default)]
-struct SseEventParser {
-    utf8: Utf8ChunkDecoder,
-    buffer: String,
-}
-
-impl SseEventParser {
-    fn push_bytes(&mut self, chunk: &[u8]) -> Result<Vec<ParsedSseEvent>, ProviderError> {
-        let text = self.utf8.push_bytes(chunk)?;
-        self.buffer.push_str(&text);
-
-        let mut events = Vec::new();
-        while let Some((delimiter_index, delimiter_len)) = find_sse_delimiter(&self.buffer) {
-            let block = self.buffer[..delimiter_index]
-                .replace("\r\n", "\n")
-                .replace('\r', "\n");
-            self.buffer.drain(..delimiter_index + delimiter_len);
-
-            let mut event_type = None;
-            let mut data_lines = Vec::new();
-            for line in block.lines() {
-                if let Some(rest) = line.strip_prefix("event:") {
-                    event_type = Some(rest.trim().to_string());
-                } else if let Some(rest) = line.strip_prefix("data:") {
-                    data_lines.push(rest.trim_start().to_string());
-                }
-            }
-
-            events.push(ParsedSseEvent {
-                event: event_type,
-                data: data_lines.join("\n"),
-            });
-        }
-
-        Ok(events)
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-struct Utf8ChunkDecoder {
-    pending: Vec<u8>,
-}
-
-impl Utf8ChunkDecoder {
-    fn push_bytes(&mut self, chunk: &[u8]) -> Result<String, ProviderError> {
-        if self.pending.is_empty() {
-            match std::str::from_utf8(chunk) {
-                Ok(text) => return Ok(text.to_string()),
-                Err(error) if error.error_len().is_some() => {
-                    return Err(ProviderError::Transport(format!(
-                        "stream chunk was not utf8: {error}"
-                    )));
-                }
-                Err(_) => {}
-            }
-        }
-
-        self.pending.extend_from_slice(chunk);
-        match std::str::from_utf8(&self.pending) {
-            Ok(text) => {
-                let owned = text.to_string();
-                self.pending.clear();
-                Ok(owned)
-            }
-            Err(error) if error.error_len().is_some() => Err(ProviderError::Transport(format!(
-                "stream chunk was not utf8: {error}"
-            ))),
-            Err(error) => {
-                let valid_up_to = error.valid_up_to();
-                if valid_up_to == 0 {
-                    return Ok(String::new());
-                }
-
-                let valid = std::str::from_utf8(&self.pending[..valid_up_to]).map_err(|error| {
-                    ProviderError::Transport(format!("stream chunk was not utf8: {error}"))
-                })?;
-                let owned = valid.to_string();
-                self.pending.drain(..valid_up_to);
-                Ok(owned)
-            }
-        }
-    }
-}
-
-fn find_sse_delimiter(input: &str) -> Option<(usize, usize)> {
-    [
-        input.find("\r\n\r\n").map(|index| (index, 4)),
-        input.find("\n\n").map(|index| (index, 2)),
-        input.find("\r\r").map(|index| (index, 2)),
-    ]
-    .into_iter()
-    .flatten()
-    .min_by_key(|(index, _)| *index)
-}
-
 fn openai_chunk(
     id: &str,
     created: i64,
@@ -1371,19 +1268,6 @@ fn openai_sse_chunk(value: &Value) -> Bytes {
     Bytes::from(format!("data: {value}\n\n"))
 }
 
-fn openai_sse_error_chunk(kind: &str, message: &str) -> Bytes {
-    Bytes::from(format!(
-        "data: {}\n\n",
-        json!({
-            "error": {
-                "message": message,
-                "type": "upstream_error",
-                "code": kind
-            }
-        })
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use std::{collections::BTreeMap, convert::Infallible, sync::Arc};
@@ -1418,7 +1302,6 @@ mod tests {
             upstream_model: upstream_model.to_string(),
             extra_headers: Map::new(),
             extra_body: Map::new(),
-            idempotency_key: None,
             request_headers: std::collections::BTreeMap::new(),
         }
     }
