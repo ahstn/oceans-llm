@@ -537,8 +537,44 @@ pub struct RequestLogRecord {
     pub completion_tokens: Option<i64>,
     pub total_tokens: Option<i64>,
     pub error_code: Option<String>,
+    pub has_payload: bool,
+    pub request_payload_truncated: bool,
+    pub response_payload_truncated: bool,
     pub metadata: Map<String, Value>,
     pub occurred_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RequestLogPayloadRecord {
+    pub request_log_id: Uuid,
+    pub request_json: Value,
+    pub response_json: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RequestLogQuery {
+    pub page: u32,
+    pub page_size: u32,
+    pub request_id: Option<String>,
+    pub model_key: Option<String>,
+    pub provider_key: Option<String>,
+    pub status_code: Option<i64>,
+    pub user_id: Option<Uuid>,
+    pub team_id: Option<Uuid>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RequestLogPage {
+    pub items: Vec<RequestLogRecord>,
+    pub page: u32,
+    pub page_size: u32,
+    pub total: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RequestLogDetail {
+    pub log: RequestLogRecord,
+    pub payload: Option<RequestLogPayloadRecord>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

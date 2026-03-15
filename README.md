@@ -56,6 +56,25 @@ The repo exposes matching `mise` tasks:
 
 The listener address is configured via `server.bind` in the active YAML config. The helper scripts and compose files still pass `PORT`, but the checked-in configs currently already bind `0.0.0.0:8080`.
 
+### OpenTelemetry config
+
+The gateway can export tracing spans and runtime metrics over OTLP.
+
+```yaml
+server:
+  bind: "0.0.0.0:8080"
+  log_format: "pretty"
+  otel_endpoint: "http://otel-collector:4317"
+  otel_metrics_endpoint: "http://otel-collector:4317" # optional override
+  otel_export_interval_secs: 30
+```
+
+- `otel_endpoint`: shared OTLP endpoint for traces and, by default, metrics
+- `otel_metrics_endpoint`: optional metrics-only OTLP override
+- `otel_export_interval_secs`: periodic metrics export cadence
+
+Supported metrics currently include chat request totals and latency, provider attempts, fallback counts, token totals, operational cost totals, and usage-record totals. OTLP collection via an OpenTelemetry Collector or Prometheus OTLP ingest is the supported deployment path for this slice.
+
 Database policy:
 
 - `gateway.yaml` remains the local-development default and uses the libsql/SQLite backend.
@@ -114,6 +133,20 @@ database:
 - If usage is present but pricing cannot be matched, the request succeeds and the ledger row is marked `unpriced`.
 - If the provider response does not include usage, the request succeeds and the ledger row is marked `usage_missing`.
 - Replay/retry accounting is idempotent per `(request_id, ownership scope)` so the same logical request is not double-charged.
+
+## Request Logs
+
+- `request_logs` stores the hot summary row for each persisted request outcome.
+- `request_log_payloads` stores sanitized request and response payload bodies separately from the summary table.
+- User-owned keys still honor the request-logging toggle; team-owned keys always persist logs.
+- Streaming requests persist a sanitized transcript payload with bounded event capture and truncation markers.
+
+Platform admins can inspect logs through the admin UI or the underlying JSON APIs:
+
+- `GET /api/v1/admin/observability/request-logs`
+- `GET /api/v1/admin/observability/request-logs/{request_log_id}`
+
+The list endpoint supports `page`, `page_size`, `request_id`, `model_key`, `provider_key`, `status_code`, `user_id`, and `team_id` query parameters.
 
 ### Example Vertex config
 

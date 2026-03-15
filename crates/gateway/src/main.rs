@@ -30,14 +30,16 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let config = load_config(&cli.config)?;
 
-    observability::init_tracing(&config.server)?;
+    let observability = observability::init_observability(&config.server)?;
 
-    match cli.command.unwrap_or(Command::Serve(ServeArgs::default())) {
-        Command::Serve(args) => run_serve(&config, args).await,
+    let result = match cli.command.unwrap_or(Command::Serve(ServeArgs::default())) {
+        Command::Serve(args) => run_serve(&config, observability.metrics.clone(), args).await,
         Command::Migrate(args) => run_migrate(&config, args.action()?).await,
         Command::BootstrapAdmin => run_bootstrap_admin_command(&config).await,
         Command::SeedConfig => run_seed_config_command(&config).await,
-    }
+    };
+    observability.shutdown()?;
+    result
 }
 
 fn load_config(config_path: &str) -> anyhow::Result<GatewayConfig> {
@@ -80,7 +82,11 @@ where
         .context("failed to seed foundational config data")
 }
 
-async fn run_serve(config: &GatewayConfig, args: ServeArgs) -> anyhow::Result<()> {
+async fn run_serve(
+    config: &GatewayConfig,
+    metrics: Arc<observability::GatewayMetrics>,
+    args: ServeArgs,
+) -> anyhow::Result<()> {
     let database_options = database_options(config)?;
     maybe_run_migrations(&database_options, args.run_migrations).await?;
     let store = Arc::new(
@@ -88,12 +94,13 @@ async fn run_serve(config: &GatewayConfig, args: ServeArgs) -> anyhow::Result<()
             .await
             .context("failed to initialize gateway store")?,
     );
-    run_serve_with_store(config, store, args).await
+    run_serve_with_store(config, store, metrics, args).await
 }
 
 async fn run_serve_with_store(
     config: &GatewayConfig,
     store: Arc<AnyStore>,
+    metrics: Arc<observability::GatewayMetrics>,
     args: ServeArgs,
 ) -> anyhow::Result<()> {
     if args.bootstrap_admin {
@@ -125,6 +132,7 @@ async fn run_serve_with_store(
             service: service.clone(),
             store: service.store().clone(),
             providers,
+            metrics,
             identity_token_secret: Arc::new(load_identity_token_secret()),
         },
         load_admin_ui_config(),
@@ -733,6 +741,7 @@ mod tests {
                 service,
                 store,
                 providers: provider_registry,
+                metrics: Arc::new(crate::observability::GatewayMetrics::default()),
                 identity_token_secret: Arc::new("local-dev-identity-secret".to_string()),
             },
             AdminUiConfig::default(),
@@ -799,6 +808,7 @@ mod tests {
                 service,
                 store: store.clone(),
                 providers,
+                metrics: Arc::new(crate::observability::GatewayMetrics::default()),
                 identity_token_secret: Arc::new("local-dev-identity-secret".to_string()),
             },
             AdminUiConfig::default(),
@@ -872,6 +882,7 @@ mod tests {
                 service,
                 store,
                 providers: provider_registry,
+                metrics: Arc::new(crate::observability::GatewayMetrics::default()),
                 identity_token_secret: Arc::new("local-dev-identity-secret".to_string()),
             },
             AdminUiConfig::default(),

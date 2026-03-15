@@ -2035,11 +2035,14 @@ mod tests {
             completion_tokens: Some(20),
             total_tokens: Some(30),
             error_code: None,
+            has_payload: false,
+            request_payload_truncated: false,
+            response_payload_truncated: false,
             metadata: Map::new(),
             occurred_at: OffsetDateTime::now_utc(),
         };
         store
-            .insert_request_log(&log)
+            .insert_request_log(&log, None)
             .await
             .expect("insert request log");
 

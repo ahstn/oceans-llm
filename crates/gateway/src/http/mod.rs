@@ -3,6 +3,7 @@ pub mod error;
 pub mod handlers;
 pub mod identity;
 pub mod spend;
+pub mod observability;
 pub mod state;
 
 use admin_ui::{AdminUiConfig, mount_admin_ui};
@@ -16,7 +17,7 @@ use tower_http::{
     trace::TraceLayer,
 };
 
-use self::{handlers::*, identity::*, spend::*, state::AppState};
+use self::{handlers::*, identity::*, observability::*, spend::*, state::AppState};
 
 pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
     let request_id_header = HeaderName::from_static("x-request-id");
@@ -55,6 +56,14 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
             "/api/v1/admin/spend/budgets/teams/{team_id}",
             axum::routing::put(upsert_team_budget).delete(deactivate_team_budget),
         )
+        .route(
+            "/api/v1/admin/observability/request-logs",
+            get(list_request_logs),
+        )
+        .route(
+            "/api/v1/admin/observability/request-logs/{request_log_id}",
+            get(get_request_log_detail),
+        )
         .route("/api/v1/auth/session", get(get_auth_session))
         .route("/api/v1/auth/login/password", post(login_with_password))
         .route("/api/v1/auth/password/change", post(change_password))
@@ -84,7 +93,15 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
                     "http_request",
                     method = %request.method(),
                     uri = %request.uri(),
-                    request_id = %request_id
+                    request_id = %request_id,
+                    http.route = tracing::field::Empty,
+                    requested_model = tracing::field::Empty,
+                    resolved_model = tracing::field::Empty,
+                    provider = tracing::field::Empty,
+                    stream = tracing::field::Empty,
+                    attempt_count = tracing::field::Empty,
+                    fallback_used = tracing::field::Empty,
+                    ownership_kind = tracing::field::Empty
                 )
             }),
         )

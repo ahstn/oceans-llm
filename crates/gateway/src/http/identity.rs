@@ -851,7 +851,7 @@ pub async fn oidc_callback(
     Ok(response)
 }
 
-fn envelope<T>(data: T) -> Envelope<T> {
+pub(crate) fn envelope<T>(data: T) -> Envelope<T> {
     Envelope {
         data,
         meta: ResponseMeta {
@@ -1452,7 +1452,7 @@ fn oidc_subject(provider: &OidcProviderRecord, email: &str) -> String {
     format!("mock:{}:{email}", provider.provider_key)
 }
 
-fn format_timestamp(value: OffsetDateTime) -> String {
+pub(crate) fn format_timestamp(value: OffsetDateTime) -> String {
     value
         .format(&Rfc3339)
         .unwrap_or_else(|_| value.unix_timestamp().to_string())
