@@ -260,7 +260,6 @@ where
 {
     Box::pin(stream! {
         let mut parser = SseEventParser::default();
-        let mut done_emitted = false;
         let mut saw_payload_event = false;
         let mut stream_failed = false;
         futures_util::pin_mut!(upstream);
@@ -293,9 +292,6 @@ where
             for event in events {
                 let data = event.data.trim();
                 if data == "[DONE]" {
-                    done_emitted = true;
-                    saw_payload_event = true;
-                    yield Ok(done_sse_chunk());
                     continue;
                 }
 
@@ -308,14 +304,12 @@ where
             }
         }
 
-        if !stream_failed {
-            if let Err(error) = parser.finish() {
-                yield Ok(openai_sse_error_chunk(
-                    "openai_compat_sse_finalization_error",
-                    &error.to_string(),
-                ));
-                stream_failed = true;
-            }
+        if !stream_failed && let Err(error) = parser.finish() {
+            yield Ok(openai_sse_error_chunk(
+                "openai_compat_sse_finalization_error",
+                &error.to_string(),
+            ));
+            stream_failed = true;
         }
 
         if !stream_failed && !saw_payload_event {
@@ -326,7 +320,7 @@ where
             stream_failed = true;
         }
 
-        if !stream_failed && !done_emitted {
+        if !stream_failed {
             yield Ok(done_sse_chunk());
         }
     })
@@ -895,6 +889,66 @@ mod tests {
         }
 
         assert!(rendered.contains("\"code\":\"openai_compat_sse_finalization_error\""));
+        assert!(!rendered.contains("data: [DONE]"));
+    }
+
+    #[tokio::test]
+    async fn stream_rejects_done_only_transcript_as_empty_stream() {
+        let app = Router::new().route(
+            "/v1/chat/completions",
+            post(|| async move {
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .header("content-type", "text/event-stream")
+                    .body(Body::from("data: [DONE]\n\n"))
+                    .expect("response")
+            }),
+        );
+
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve app");
+        });
+
+        let provider = OpenAiCompatProvider::new(OpenAiCompatConfig {
+            provider_key: "openai-prod".to_string(),
+            base_url: format!("http://{addr}/v1"),
+            bearer_token: None,
+            default_headers: BTreeMap::new(),
+            request_timeout_ms: 10_000,
+        })
+        .expect("provider");
+
+        let request = CoreChatRequest {
+            model: "fast".to_string(),
+            messages: vec![],
+            stream: true,
+            extra: BTreeMap::new(),
+        };
+        let context = ProviderRequestContext {
+            request_id: "req-123".to_string(),
+            model_key: "fast".to_string(),
+            provider_key: "openai-prod".to_string(),
+            upstream_model: "gpt-4o-mini".to_string(),
+            extra_headers: Map::new(),
+            extra_body: Map::new(),
+            request_headers: BTreeMap::new(),
+        };
+
+        let mut stream = provider
+            .chat_completions_stream(&request, &context)
+            .await
+            .expect("stream");
+
+        let mut rendered = String::new();
+        while let Some(chunk) = stream.next().await {
+            rendered.push_str(std::str::from_utf8(chunk.expect("chunk").as_ref()).expect("utf8"));
+        }
+
+        assert!(rendered.contains("\"code\":\"openai_compat_empty_stream\""));
         assert!(!rendered.contains("data: [DONE]"));
     }
 }
