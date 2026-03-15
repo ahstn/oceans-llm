@@ -245,6 +245,14 @@ mod tests {
 
         let models = vec![
             SeedModel {
+                model_key: "fast".to_string(),
+                alias_target_model_key: Some("fast-v2".to_string()),
+                description: Some("alias".to_string()),
+                tags: vec!["fast".to_string()],
+                rank: 10,
+                routes: Vec::new(),
+            },
+            SeedModel {
                 model_key: "fast-v2".to_string(),
                 alias_target_model_key: None,
                 description: Some("replacement".to_string()),
@@ -259,14 +267,6 @@ mod tests {
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
                 }],
-            },
-            SeedModel {
-                model_key: "fast".to_string(),
-                alias_target_model_key: Some("fast-v2".to_string()),
-                description: Some("alias".to_string()),
-                tags: vec!["fast".to_string()],
-                rank: 10,
-                routes: Vec::new(),
             },
         ];
 
@@ -1223,6 +1223,14 @@ mod tests {
         }];
         let models = vec![
             SeedModel {
+                model_key: "fast".to_string(),
+                alias_target_model_key: Some("fast-v2".to_string()),
+                description: Some("alias".to_string()),
+                tags: vec!["fast".to_string()],
+                rank: 10,
+                routes: Vec::new(),
+            },
+            SeedModel {
                 model_key: "fast-v2".to_string(),
                 alias_target_model_key: None,
                 description: Some("replacement".to_string()),
@@ -1237,14 +1245,6 @@ mod tests {
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
                 }],
-            },
-            SeedModel {
-                model_key: "fast".to_string(),
-                alias_target_model_key: Some("fast-v2".to_string()),
-                description: Some("alias".to_string()),
-                tags: vec!["fast".to_string()],
-                rank: 10,
-                routes: Vec::new(),
             },
         ];
         let api_keys = vec![SeedApiKey {
@@ -1533,7 +1533,7 @@ mod tests {
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS refinery_schema_history (
-                version INTEGER PRIMARY KEY,
+                version BIGINT PRIMARY KEY,
                 name TEXT NOT NULL,
                 applied_on BIGINT NOT NULL,
                 checksum TEXT NOT NULL
@@ -1561,7 +1561,7 @@ mod tests {
                 VALUES ($1, $2, extract(epoch from now())::bigint, $3)
                 "#,
             )
-            .bind(i32::try_from(migration.version).expect("version fits i32"))
+            .bind(i64::from(migration.version))
             .bind(migration.name)
             .bind(migration.checksum)
             .execute(&mut *tx)

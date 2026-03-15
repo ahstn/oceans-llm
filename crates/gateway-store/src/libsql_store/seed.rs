@@ -56,22 +56,12 @@ impl LibsqlStore {
             model_ids.insert(model.model_key.clone(), model_uuid(&model.model_key));
         }
 
+        // Insert model rows first with a null alias target so config order does not
+        // matter for self-referential alias foreign keys.
         for model in models {
             let model_id = *model_ids
                 .get(&model.model_key)
                 .expect("model ids populated before insert");
-            let alias_target_model_id = model
-                .alias_target_model_key
-                .as_ref()
-                .map(|model_key| {
-                    model_ids.get(model_key).copied().ok_or_else(|| {
-                        StoreError::NotFound(format!(
-                            "seed model `{}` aliases unknown model `{model_key}`",
-                            model.model_key
-                        ))
-                    })
-                })
-                .transpose()?;
             let tags_json = serialize_json(&model.tags)?;
 
             self.connection
@@ -90,7 +80,7 @@ impl LibsqlStore {
                     libsql::params![
                         model_id.to_string(),
                         model.model_key.as_str(),
-                        alias_target_model_id.map(|value| value.to_string()),
+                        Option::<String>::None,
                         model.description.clone(),
                         tags_json,
                         model.rank,
@@ -149,6 +139,40 @@ impl LibsqlStore {
                     .await
                     .map_err(to_query_error)?;
             }
+        }
+
+        for model in models {
+            let model_id = *model_ids
+                .get(&model.model_key)
+                .expect("model ids populated before alias update");
+            let alias_target_model_id = model
+                .alias_target_model_key
+                .as_ref()
+                .map(|model_key| {
+                    model_ids.get(model_key).copied().ok_or_else(|| {
+                        StoreError::NotFound(format!(
+                            "seed model `{}` aliases unknown model `{model_key}`",
+                            model.model_key
+                        ))
+                    })
+                })
+                .transpose()?;
+
+            self.connection
+                .execute(
+                    r#"
+                    UPDATE gateway_models
+                    SET alias_target_model_id = ?1, updated_at = ?2
+                    WHERE id = ?3
+                    "#,
+                    libsql::params![
+                        alias_target_model_id.map(|value| value.to_string()),
+                        now,
+                        model_id.to_string()
+                    ],
+                )
+                .await
+                .map_err(to_query_error)?;
         }
 
         for api_key in api_keys {

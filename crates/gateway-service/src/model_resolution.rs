@@ -40,8 +40,9 @@ where
         let mut current = requested_model.clone();
         let mut seen_keys = BTreeSet::from([requested_model.model_key.clone()]);
         let mut alias_chain = vec![requested_model.model_key.clone()];
+        let mut alias_hops = 0usize;
 
-        for _ in 0..Self::MAX_ALIAS_DEPTH {
+        loop {
             let Some(alias_target_model_key) = current.alias_target_model_key.clone() else {
                 return Ok(ResolvedModelSelection {
                     requested_model,
@@ -49,6 +50,10 @@ where
                     alias_chain,
                 });
             };
+
+            if alias_hops >= Self::MAX_ALIAS_DEPTH {
+                break;
+            }
 
             let next = self
                 .repo
@@ -65,6 +70,7 @@ where
 
             alias_chain.push(next.model_key.clone());
             current = next;
+            alias_hops += 1;
         }
 
         Err(RouteError::Policy(format!(
@@ -312,6 +318,38 @@ mod tests {
             .expect_err("excessive alias depth should fail");
 
         assert!(matches!(error, GatewayError::Route(RouteError::Policy(_))));
+    }
+
+    #[tokio::test]
+    async fn alias_depth_limit_allows_exact_boundary_hops() {
+        let mut repo = InMemoryRepo::default();
+        let requested = model("fast", Some("fast-v1"));
+        repo.models
+            .insert(requested.model_key.clone(), requested.clone());
+        for index in 1..=8 {
+            let model_key = format!("fast-v{index}");
+            let alias_target_model_key = (index < 8).then(|| format!("fast-v{}", index + 1));
+            repo.models.insert(
+                model_key.clone(),
+                GatewayModel {
+                    id: Uuid::new_v4(),
+                    model_key,
+                    alias_target_model_key,
+                    description: None,
+                    tags: Vec::new(),
+                    rank: 10,
+                },
+            );
+        }
+
+        let resolver = ModelResolver::new(Arc::new(repo));
+        let resolved = resolver
+            .canonicalize_requested_model(requested)
+            .await
+            .expect("boundary alias depth should resolve");
+
+        assert_eq!(resolved.execution_model.model_key, "fast-v8");
+        assert_eq!(resolved.alias_chain.len(), 9);
     }
 
     #[tokio::test]

@@ -50,7 +50,7 @@ test('gateway exposes the seeded model and forwards chat completions to the stub
     id: 'chatcmpl-e2e-1',
     object: 'chat.completion',
     created: 1_741_510_000,
-    model: 'gpt-4o-mini',
+    model: 'fast',
     choices: [
       {
         index: 0,
