@@ -4,7 +4,8 @@
 run = "mise run postgres-up"
 mise = true
 auto = ["start", "stop"]
-ready_port = 5432
+# ready_port = 5432
+ready_cmd = "pg_isready -h localhost"
 env = {
   POSTGRES_DATA_DIR = ".data/postgres",
   POSTGRES_HOST = "127.0.0.1",
@@ -16,4 +17,4 @@ env = {
 }
 
 [daemons.postgres.hooks]
-on_ready = "mise run postgres-ensure-db && mise run gateway-migrate"
+on_ready = "mise run gateway-migrate"
