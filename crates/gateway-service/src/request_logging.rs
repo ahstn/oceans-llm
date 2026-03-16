@@ -30,6 +30,15 @@ pub struct StreamFailureSummary {
     pub error_code: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct StreamLogResultInput {
+    pub provider_key: String,
+    pub attempt_count: usize,
+    pub latency_ms: i64,
+    pub collector: StreamResponseCollector,
+    pub failure: Option<StreamFailureSummary>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct StreamResponseCollector {
     events: Vec<Value>,
@@ -307,17 +316,20 @@ where
         &self,
         api_key: &AuthenticatedApiKey,
         context: &ChatRequestLogContext,
-        provider_key: &str,
-        attempt_count: usize,
-        latency_ms: i64,
-        collector: StreamResponseCollector,
-        failure: Option<StreamFailureSummary>,
+        stream_result: StreamLogResultInput,
     ) -> Result<LoggedRequest, GatewayError> {
+        let StreamLogResultInput {
+            provider_key,
+            attempt_count,
+            latency_ms,
+            collector,
+            failure,
+        } = stream_result;
         let usage = usage_summary_from_value(collector.usage());
         let (response_json, response_payload_truncated) = collector.into_payload(failure.as_ref());
         let summary = match failure {
             Some(failure) => ChatCompletionLogSummary::failure(
-                provider_key.to_string(),
+                provider_key,
                 attempt_count,
                 true,
                 latency_ms,
@@ -325,7 +337,7 @@ where
                 failure.error_code,
             ),
             None => ChatCompletionLogSummary::success(
-                provider_key.to_string(),
+                provider_key,
                 attempt_count,
                 true,
                 latency_ms,
@@ -484,7 +496,7 @@ mod tests {
     use time::OffsetDateTime;
     use uuid::Uuid;
 
-    use super::{RequestLogging, StreamFailureSummary};
+    use super::{RequestLogging, StreamFailureSummary, StreamLogResultInput};
 
     #[derive(Clone, Default)]
     struct InMemoryRepo {
@@ -736,14 +748,16 @@ mod tests {
             .log_stream_result(
                 &auth,
                 &context,
-                "openai-prod",
-                1,
-                120,
-                collector,
-                Some(StreamFailureSummary {
-                    status_code: 502,
-                    error_code: "stream_error".to_string(),
-                }),
+                StreamLogResultInput {
+                    provider_key: "openai-prod".to_string(),
+                    attempt_count: 1,
+                    latency_ms: 120,
+                    collector,
+                    failure: Some(StreamFailureSummary {
+                        status_code: 502,
+                        error_code: "stream_error".to_string(),
+                    }),
+                },
             )
             .await
             .expect("stream failure log");

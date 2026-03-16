@@ -51,6 +51,7 @@ impl RequestLogRepository for PostgresStore {
         payload: Option<&RequestLogPayloadRecord>,
     ) -> Result<(), StoreError> {
         let metadata_json = serialize_json(&log.metadata)?;
+        let mut tx = self.pool.begin().await.map_err(to_query_error)?;
 
         sqlx::query(
             r#"
@@ -89,7 +90,7 @@ impl RequestLogRepository for PostgresStore {
         .bind(log.error_code.as_deref())
         .bind(metadata_json)
         .bind(log.occurred_at.unix_timestamp())
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(to_query_error)?;
 
@@ -103,11 +104,12 @@ impl RequestLogRepository for PostgresStore {
             .bind(payload.request_log_id.to_string())
             .bind(&payload.request_json)
             .bind(&payload.response_json)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .map_err(to_query_error)?;
         }
 
+        tx.commit().await.map_err(to_query_error)?;
         Ok(())
     }
 

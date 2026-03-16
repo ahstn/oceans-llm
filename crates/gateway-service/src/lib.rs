@@ -18,7 +18,7 @@ pub use pricing_catalog::{
 };
 pub use request_logging::{
     ChatRequestLogContext, LoggedRequest, RequestLogging, StreamFailureSummary,
-    StreamResponseCollector, UsageSummary,
+    StreamLogResultInput, StreamResponseCollector, UsageSummary,
 };
 pub use route_planner::WeightedRoutePlanner;
 pub use service::{GatewayService, RecordedChatUsage};

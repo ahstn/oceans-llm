@@ -515,14 +515,12 @@ struct UsageSummary {
 
 #[derive(Debug, Clone)]
 enum RequestOperation {
-    ChatCompletions,
     Embeddings,
 }
 
 impl RequestOperation {
     const fn as_str(&self) -> &'static str {
         match self {
-            Self::ChatCompletions => "chat_completions",
             Self::Embeddings => "embeddings",
         }
     }
@@ -852,6 +850,9 @@ async fn best_effort_log_request(
         prompt_tokens: summary.prompt_tokens,
         completion_tokens: summary.completion_tokens,
         total_tokens: summary.total_tokens,
+        has_payload: false,
+        request_payload_truncated: false,
+        response_payload_truncated: false,
         error_code: summary.error_code,
         metadata,
         occurred_at: OffsetDateTime::now_utc(),

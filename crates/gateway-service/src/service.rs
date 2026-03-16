@@ -4,8 +4,9 @@ use gateway_core::{
     ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, BudgetRepository, ChatCompletionsRequest,
     GatewayError, GatewayModel, IdentityRepository, ModelRepository, ModelRoute, Money4,
     PricingCatalogRepository, PricingResolution, PricingUnpricedReason, ProviderRepository,
-    RequestLogDetail, RequestLogPage, RequestLogQuery, RequestLogRepository, ResolvedModelPricing,
-    RouteError, RoutePlanner, StoreHealth, UsageLedgerRecord, UsagePricingStatus,
+    RequestLogDetail, RequestLogPage, RequestLogQuery, RequestLogRecord, RequestLogRepository,
+    ResolvedModelPricing, RouteError, RoutePlanner, StoreHealth, UsageLedgerRecord,
+    UsagePricingStatus,
 };
 use serde_json::{Value, json};
 use time::OffsetDateTime;
@@ -14,7 +15,7 @@ use uuid::Uuid;
 
 use crate::{
     Authenticator, ChatRequestLogContext, LoggedRequest, ModelAccess, ModelResolver,
-    PricingCatalog, RequestLogging, ResolvedGatewayRequest, StreamFailureSummary,
+    PricingCatalog, RequestLogging, ResolvedGatewayRequest, StreamLogResultInput,
     StreamResponseCollector,
     budget_guard::{BudgetGuard, BudgetGuardDisposition},
 };
@@ -224,23 +225,24 @@ where
         &self,
         auth: &AuthenticatedApiKey,
         context: &ChatRequestLogContext,
-        provider_key: &str,
-        attempt_count: usize,
-        latency_ms: i64,
-        collector: StreamResponseCollector,
-        failure: Option<StreamFailureSummary>,
+        stream_result: StreamLogResultInput,
     ) -> Result<LoggedRequest, GatewayError> {
         self.request_logging
-            .log_stream_result(
-                auth,
-                context,
-                provider_key,
-                attempt_count,
-                latency_ms,
-                collector,
-                failure,
-            )
+            .log_stream_result(auth, context, stream_result)
             .await
+    }
+
+    pub async fn log_request_if_enabled(
+        &self,
+        auth: &AuthenticatedApiKey,
+        log: RequestLogRecord,
+    ) -> Result<(), GatewayError> {
+        if !self.request_logging.should_log_request(auth).await? {
+            return Ok(());
+        }
+
+        self.store.insert_request_log(&log, None).await?;
+        Ok(())
     }
 
     pub async fn list_request_logs(
