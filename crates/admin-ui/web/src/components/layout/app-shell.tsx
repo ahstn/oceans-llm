@@ -18,6 +18,7 @@ interface NavItem {
 const topItems: NavItem[] = [
   { label: 'API Keys', to: '/api-keys', icon: SearchIcon },
   { label: 'Models', to: '/models', icon: HomeIcon },
+  { label: 'Spend Controls', to: '/spend-controls', icon: Notification03Icon },
 ]
 
 const observabilityItems: NavItem[] = [
@@ -62,8 +63,8 @@ export function AppShell({ children }: AppShellProps) {
               Local-only preview mode
             </p>
             <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-              Identity onboarding is wired to the gateway. Other control-plane pages may still use
-              local preview data.
+              Identity and spend controls are gateway-backed. API keys and model inventory still use
+              local preview data in this environment.
             </p>
           </div>
         </aside>

@@ -1,46 +1,72 @@
 # Budgets and Spending
 
-This document describes the current runtime behavior, the live pricing catalog foundation, and the schema groundwork for future spend controls.
+This document describes live spend accounting, reporting, and budget enforcement behavior in the gateway.
 
-## Current Pricing Source
+## Pricing and Accounting Source of Truth
 
-- The gateway now resolves pricing from an internal catalog built from `https://models.dev/api.json`.
-- Runtime pricing uses a hybrid source strategy:
-  - vendored normalized fallback snapshot in the repo,
-  - persisted cache in `pricing_catalog_cache`,
-  - best-effort conditional refresh every 15 minutes using `ETag`.
-- Supported internal pricing provider ids in this slice are:
-  - `openai`
-  - `google-vertex`
-  - `google-vertex-anthropic`
-- `openai_compat` providers must declare `pricing_provider_id`; `gcp_vertex` derives pricing source from `upstream_model` publisher prefix.
-- Pricing resolution is exact-only in this slice. Requests that depend on unsupported billing modifiers or unknown model mappings resolve as `unpriced`.
-- Unpriced requests must not be charged or budget-blocked.
+- `usage_cost_events` is the canonical usage and spend ledger.
+- Request accounting is idempotent on `(request_id, ownership_scope_key)`.
+- Pricing is resolved from the hybrid models.dev-backed catalog and persisted as effective-dated pricing metadata in ledger rows.
+- Spend math uses fixed-point money (`usd * 10_000`) and integer arithmetic.
+- Pricing states are explicit:
+  - `priced`
+  - `legacy_estimated`
+  - `unpriced`
+  - `usage_missing`
 
-## Current Runtime Behavior
+Only `priced` and `legacy_estimated` rows count toward spend totals and budget windows.
 
-- `/v1/chat/completions` does not enforce user budgets in this slice.
-- `/v1/chat/completions` does not write `usage_cost_events` in this slice.
-- `budget_exceeded` is therefore not part of the live chat request path yet.
-- Request logging is separate from budget accounting. When enabled, request logs capture the final user-visible outcome of an executed chat request.
+## Runtime Budget Enforcement
 
-## Persisted Schema Foundation
+- `/v1/chat/completions` writes usage ledger rows for successful request handling.
+- Budget checks are enforced on the request path for both owner scopes:
+  - user-owned API keys use active user budgets,
+  - team-owned API keys use active team budgets.
+- Hard-limit behavior:
+  - if projected window spend exceeds budget amount and `hard_limit = true`, the request fails with `budget_exceeded` (`HTTP 429`).
+- Idempotent replay behavior:
+  - duplicate `(request_id, ownership_scope_key)` is a no-op for charging and enforcement.
+- Ownership scope keys:
+  - user: `user:<user_id>`
+  - team: `team:<team_id>:actor:none` (acting-user attribution remains deferred)
 
-- `user_budgets` stores per-user budget settings, including cadence, amount, timezone, and `hard_limit`.
-- `usage_cost_events` is reserved for future pricing-ledger and spend-accounting work.
-- `pricing_catalog_cache` stores the last successful normalized pricing snapshot plus source metadata (`source`, `etag`, `fetched_at`).
-- The current schema keeps daily and weekly cadence fields so a later pricing-backed implementation does not require schema churn.
+## Budget Configuration Model
 
-## Planned Budget Semantics Once Pricing Exists
+- `user_budgets` stores active/inactive user budget configs.
+- `team_budgets` stores active/inactive team budget configs.
+- Both tables enforce one active budget per owner via partial unique indexes.
+- Budget fields include:
+  - `cadence`: `daily` or `weekly`
+  - `amount_10000`
+  - `hard_limit`
+  - `timezone` (stored for future timezone-aware policy; runtime windows currently UTC-anchored)
 
-- User-owned requests are the initial enforcement target.
-- Team-owned keys are not planned to be budget-blocked by user budgets in the initial rollout.
-- Daily windows are intended to start at `00:00:00 UTC`.
-- Weekly windows are intended to start at `Monday 00:00:00 UTC`.
-- `Sunday 23:59:59 UTC` remains part of the previous weekly window.
-- `Monday 00:00:00 UTC` starts a new weekly window.
+## Spend Reporting and Admin APIs
 
-## Notes
+Live admin spend APIs are exposed under `/api/v1/admin/spend/...`:
 
-- This document does not promise active runtime enforcement until pricing, token usage, and spend attribution are wired end to end.
-- Schema presence should not be interpreted as live policy enforcement.
+- `GET /api/v1/admin/spend/report`
+  - windowed daily series
+  - owner breakdown (`user`/`team`)
+  - model breakdown
+  - totals for priced cost and request counts by pricing state
+- `GET /api/v1/admin/spend/budgets`
+  - current user/team budget state and current-window spend
+- `PUT/DELETE /api/v1/admin/spend/budgets/users/{user_id}`
+- `PUT/DELETE /api/v1/admin/spend/budgets/teams/{team_id}`
+
+Admin spend routes require an authenticated platform-admin session.
+
+## Window Semantics
+
+- Budget and reporting windows are UTC-based.
+- Daily windows start at `00:00:00 UTC`.
+- Weekly windows start at `Monday 00:00:00 UTC`.
+- `Sunday 23:59:59 UTC` is included in the previous weekly window.
+
+## Scope and Deferrals
+
+- Spend reporting v1 includes owner and model breakdowns.
+- Provider breakdown is intentionally deferred.
+- Acting-user attribution for team keys is deferred; scope remains `actor:none`.
+- Request-log payload design/performance work remains separate from spend accounting.

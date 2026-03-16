@@ -17,7 +17,11 @@ use time::{Duration, OffsetDateTime, format_description::well_known::Rfc3339};
 use url::form_urlencoded;
 use uuid::Uuid;
 
-use crate::http::{error::AppError, state::AppState};
+use crate::http::{
+    admin_auth::{require_authenticated_session, require_platform_admin},
+    error::AppError,
+    state::AppState,
+};
 
 const SESSION_COOKIE_NAME: &str = "ogw_session";
 const INVITE_TTL_DAYS: i64 = 7;
@@ -866,36 +870,7 @@ fn request_origin(headers: &HeaderMap) -> String {
     format!("{proto}://{host}")
 }
 
-async fn require_platform_admin(
-    state: &AppState,
-    headers: &HeaderMap,
-) -> Result<UserRecord, AppError> {
-    let current_user = require_authenticated_session(state, headers).await?;
-
-    if current_user.global_role != GlobalRole::PlatformAdmin {
-        return Err(AppError(GatewayError::Auth(
-            AuthError::InsufficientPrivileges,
-        )));
-    }
-    if current_user.status != "active" {
-        return Err(AppError(GatewayError::InvalidRequest(
-            "only active admins can manage identity".to_string(),
-        )));
-    }
-
-    Ok(current_user)
-}
-
-async fn require_authenticated_session(
-    state: &AppState,
-    headers: &HeaderMap,
-) -> Result<UserRecord, AppError> {
-    resolve_session_user(state, headers)
-        .await?
-        .ok_or(AppError(GatewayError::Auth(AuthError::SessionRequired)))
-}
-
-async fn resolve_session_user(
+pub(crate) async fn resolve_session_user(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<Option<UserRecord>, AppError> {

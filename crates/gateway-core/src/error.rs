@@ -98,10 +98,10 @@ pub enum GatewayError {
     #[error(transparent)]
     Provider(#[from] ProviderError),
     #[error(
-        "budget exceeded for user `{user_id}`: projected {projected_cost_usd} exceeds limit {limit_usd}"
+        "budget exceeded for ownership scope `{ownership_scope}`: projected {projected_cost_usd} exceeds limit {limit_usd}"
     )]
     BudgetExceeded {
-        user_id: String,
+        ownership_scope: String,
         projected_cost_usd: Money4,
         limit_usd: Money4,
     },

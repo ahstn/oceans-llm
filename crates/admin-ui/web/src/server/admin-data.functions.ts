@@ -6,16 +6,21 @@ import {
   completeInvitation,
   createTeam,
   createUser,
+  deactivateTeamBudget,
+  deactivateUserBudget,
   getSession,
+  getSpendReport,
+  getInvitation,
   listApiKeys,
   listModels,
   listRequestLogs,
+  listSpendBudgets,
   listTeams,
-  listUsageCosts,
   listUsers,
-  getInvitation,
   loginWithPassword,
   resendPasswordInvite,
+  upsertTeamBudget,
+  upsertUserBudget,
   updateTeam,
 } from '@/server/admin-data.server'
 
@@ -28,8 +33,63 @@ export const getModels = createServerFn({ method: 'GET' }).handler(async () => {
 })
 
 export const getUsageCosts = createServerFn({ method: 'GET' }).handler(async () => {
-  return listUsageCosts()
+  return getSpendReport({ days: 7, owner_kind: 'all' })
 })
+
+export const getSpendUsageReport = createServerFn({ method: 'POST' }).handler(
+  async ({
+    data,
+  }: {
+    data: {
+      days: 7 | 30
+      owner_kind: 'all' | 'user' | 'team'
+    }
+  }) => {
+    return getSpendReport(data)
+  },
+)
+
+export const getSpendBudgets = createServerFn({ method: 'GET' }).handler(async () => {
+  return listSpendBudgets()
+})
+
+export const saveUserBudget = createServerFn({ method: 'POST' }).handler(
+  async ({
+    data,
+  }: {
+    data: {
+      userId: string
+      input: Parameters<typeof upsertUserBudget>[1]
+    }
+  }) => {
+    return upsertUserBudget(data.userId, data.input)
+  },
+)
+
+export const removeUserBudget = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: { userId: string } }) => {
+    return deactivateUserBudget(data.userId)
+  },
+)
+
+export const saveTeamBudget = createServerFn({ method: 'POST' }).handler(
+  async ({
+    data,
+  }: {
+    data: {
+      teamId: string
+      input: Parameters<typeof upsertTeamBudget>[1]
+    }
+  }) => {
+    return upsertTeamBudget(data.teamId, data.input)
+  },
+)
+
+export const removeTeamBudget = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: { teamId: string } }) => {
+    return deactivateTeamBudget(data.teamId)
+  },
+)
 
 export const getRequestLogs = createServerFn({ method: 'GET' }).handler(async () => {
   return listRequestLogs()

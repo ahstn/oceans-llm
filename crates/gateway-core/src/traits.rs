@@ -11,8 +11,9 @@ use crate::{
     domain::{
         ApiKeyRecord, GatewayModel, ModelPricingRecord, ModelRoute, Money4,
         PricingCatalogCacheRecord, ProviderCapabilities, ProviderConnection,
-        ProviderRequestContext, RequestLogRecord, TeamMembershipRecord, TeamRecord,
-        UsageLedgerRecord, UserBudgetRecord, UserRecord,
+        ProviderRequestContext, RequestLogRecord, SpendDailyAggregateRecord,
+        SpendModelAggregateRecord, SpendOwnerAggregateRecord, TeamBudgetRecord,
+        TeamMembershipRecord, TeamRecord, UsageLedgerRecord, UserBudgetRecord, UserRecord,
     },
     error::{ProviderError, RouteError, StoreError},
     protocol::core::{ChatRequest, EmbeddingsRequest},
@@ -70,6 +71,67 @@ pub trait BudgetRepository: Send + Sync {
         &self,
         user_id: Uuid,
     ) -> Result<Option<UserBudgetRecord>, StoreError>;
+    async fn get_active_budget_for_team(
+        &self,
+        team_id: Uuid,
+    ) -> Result<Option<TeamBudgetRecord>, StoreError> {
+        let _ = team_id;
+        Err(StoreError::Unexpected(
+            "team budgets are not implemented for this repository".to_string(),
+        ))
+    }
+    async fn upsert_active_budget_for_user(
+        &self,
+        user_id: Uuid,
+        cadence: crate::BudgetCadence,
+        amount_usd: Money4,
+        hard_limit: bool,
+        timezone: &str,
+        updated_at: OffsetDateTime,
+    ) -> Result<UserBudgetRecord, StoreError> {
+        let _ = (
+            user_id, cadence, amount_usd, hard_limit, timezone, updated_at,
+        );
+        Err(StoreError::Unexpected(
+            "upsert_active_budget_for_user is not implemented for this repository".to_string(),
+        ))
+    }
+    async fn deactivate_active_budget_for_user(
+        &self,
+        user_id: Uuid,
+        updated_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        let _ = (user_id, updated_at);
+        Err(StoreError::Unexpected(
+            "deactivate_active_budget_for_user is not implemented for this repository".to_string(),
+        ))
+    }
+    async fn upsert_active_budget_for_team(
+        &self,
+        team_id: Uuid,
+        cadence: crate::BudgetCadence,
+        amount_usd: Money4,
+        hard_limit: bool,
+        timezone: &str,
+        updated_at: OffsetDateTime,
+    ) -> Result<TeamBudgetRecord, StoreError> {
+        let _ = (
+            team_id, cadence, amount_usd, hard_limit, timezone, updated_at,
+        );
+        Err(StoreError::Unexpected(
+            "upsert_active_budget_for_team is not implemented for this repository".to_string(),
+        ))
+    }
+    async fn deactivate_active_budget_for_team(
+        &self,
+        team_id: Uuid,
+        updated_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        let _ = (team_id, updated_at);
+        Err(StoreError::Unexpected(
+            "deactivate_active_budget_for_team is not implemented for this repository".to_string(),
+        ))
+    }
     async fn get_usage_ledger_by_request_and_scope(
         &self,
         request_id: &str,
@@ -81,6 +143,50 @@ pub trait BudgetRepository: Send + Sync {
         window_start: OffsetDateTime,
         window_end: OffsetDateTime,
     ) -> Result<Money4, StoreError>;
+    async fn sum_usage_cost_for_team_in_window(
+        &self,
+        team_id: Uuid,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+    ) -> Result<Money4, StoreError> {
+        let _ = (team_id, window_start, window_end);
+        Err(StoreError::Unexpected(
+            "sum_usage_cost_for_team_in_window is not implemented for this repository".to_string(),
+        ))
+    }
+    async fn list_usage_daily_aggregates(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        owner_kind: Option<crate::ApiKeyOwnerKind>,
+    ) -> Result<Vec<SpendDailyAggregateRecord>, StoreError> {
+        let _ = (window_start, window_end, owner_kind);
+        Err(StoreError::Unexpected(
+            "list_usage_daily_aggregates is not implemented for this repository".to_string(),
+        ))
+    }
+    async fn list_usage_owner_aggregates(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        owner_kind: Option<crate::ApiKeyOwnerKind>,
+    ) -> Result<Vec<SpendOwnerAggregateRecord>, StoreError> {
+        let _ = (window_start, window_end, owner_kind);
+        Err(StoreError::Unexpected(
+            "list_usage_owner_aggregates is not implemented for this repository".to_string(),
+        ))
+    }
+    async fn list_usage_model_aggregates(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        owner_kind: Option<crate::ApiKeyOwnerKind>,
+    ) -> Result<Vec<SpendModelAggregateRecord>, StoreError> {
+        let _ = (window_start, window_end, owner_kind);
+        Err(StoreError::Unexpected(
+            "list_usage_model_aggregates is not implemented for this repository".to_string(),
+        ))
+    }
     async fn insert_usage_ledger_if_absent(
         &self,
         event: &UsageLedgerRecord,

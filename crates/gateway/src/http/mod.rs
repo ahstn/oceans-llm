@@ -1,6 +1,8 @@
+pub mod admin_auth;
 pub mod error;
 pub mod handlers;
 pub mod identity;
+pub mod spend;
 pub mod state;
 
 use admin_ui::{AdminUiConfig, mount_admin_ui};
@@ -14,7 +16,7 @@ use tower_http::{
     trace::TraceLayer,
 };
 
-use self::{handlers::*, identity::*, state::AppState};
+use self::{handlers::*, identity::*, spend::*, state::AppState};
 
 pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
     let request_id_header = HeaderName::from_static("x-request-id");
@@ -42,6 +44,16 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
         .route(
             "/api/v1/admin/identity/users/{user_id}/password-invite",
             post(regenerate_password_invite),
+        )
+        .route("/api/v1/admin/spend/report", get(get_spend_report))
+        .route("/api/v1/admin/spend/budgets", get(list_spend_budgets))
+        .route(
+            "/api/v1/admin/spend/budgets/users/{user_id}",
+            axum::routing::put(upsert_user_budget).delete(deactivate_user_budget),
+        )
+        .route(
+            "/api/v1/admin/spend/budgets/teams/{team_id}",
+            axum::routing::put(upsert_team_budget).delete(deactivate_team_budget),
         )
         .route("/api/v1/auth/session", get(get_auth_session))
         .route("/api/v1/auth/login/password", post(login_with_password))

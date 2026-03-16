@@ -284,6 +284,29 @@ pub(super) fn decode_user_budget_record(row: &PgRow) -> Result<UserBudgetRecord,
     })
 }
 
+pub(super) fn decode_team_budget_record(row: &PgRow) -> Result<TeamBudgetRecord, StoreError> {
+    let cadence: String = row.try_get(2).map_err(to_query_error)?;
+    let amount_10000: i64 = row.try_get(3).map_err(to_query_error)?;
+    let hard_limit: i64 = row.try_get(4).map_err(to_query_error)?;
+    let is_active: i64 = row.try_get(6).map_err(to_query_error)?;
+    let created_at: i64 = row.try_get(7).map_err(to_query_error)?;
+    let updated_at: i64 = row.try_get(8).map_err(to_query_error)?;
+
+    Ok(TeamBudgetRecord {
+        team_budget_id: parse_uuid(&row.try_get::<String, _>(0).map_err(to_query_error)?)?,
+        team_id: parse_uuid(&row.try_get::<String, _>(1).map_err(to_query_error)?)?,
+        cadence: BudgetCadence::from_db(&cadence).ok_or_else(|| {
+            StoreError::Serialization(format!("unknown budget cadence `{cadence}`"))
+        })?,
+        amount_usd: Money4::from_scaled(amount_10000),
+        hard_limit: hard_limit == 1,
+        timezone: row.try_get(5).map_err(to_query_error)?,
+        is_active: is_active == 1,
+        created_at: unix_to_datetime(created_at)?,
+        updated_at: unix_to_datetime(updated_at)?,
+    })
+}
+
 pub(super) fn decode_pricing_catalog_cache_record(
     row: &PgRow,
 ) -> Result<PricingCatalogCacheRecord, StoreError> {

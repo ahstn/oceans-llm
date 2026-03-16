@@ -4,8 +4,9 @@ import {
   listApiKeys,
   listModels,
   listRequestLogs,
+  getSpendReport,
+  listSpendBudgets,
   listTeams,
-  listUsageCosts,
   listUsers,
 } from '@/server/admin-data.server'
 
@@ -75,16 +76,46 @@ vi.mock('@/server/gateway-client.server', () => ({
       }
     }
 
+    if (path.startsWith('/api/v1/admin/spend/report')) {
+      return {
+        data: {
+          window_days: 7,
+          owner_kind: 'all',
+          window_start: '2026-03-01T00:00:00Z',
+          window_end: '2026-03-08T00:00:00Z',
+          totals: {
+            priced_cost_usd_10000: 123_450,
+            priced_request_count: 42,
+            unpriced_request_count: 2,
+            usage_missing_request_count: 1,
+          },
+          daily: [],
+          owners: [],
+          models: [],
+        },
+      }
+    }
+
+    if (path === '/api/v1/admin/spend/budgets') {
+      return {
+        data: {
+          users: [],
+          teams: [],
+        },
+      }
+    }
+
     throw new Error(`Unexpected path: ${path}`)
   }),
 }))
 
 describe('server-side mock repositories', () => {
   it('returns stable API envelopes for phase-1 views', async () => {
-    const [apiKeys, models, costs, logs, teams, users] = await Promise.all([
+    const [apiKeys, models, spendReport, spendBudgets, logs, teams, users] = await Promise.all([
       listApiKeys(),
       listModels(),
-      listUsageCosts(),
+      getSpendReport(),
+      listSpendBudgets(),
       listRequestLogs(),
       listTeams(),
       listUsers(),
@@ -92,7 +123,8 @@ describe('server-side mock repositories', () => {
 
     expect(apiKeys.data.items.length).toBeGreaterThan(0)
     expect(models.data.length).toBeGreaterThan(0)
-    expect(costs.data.length).toBeGreaterThan(0)
+    expect(spendReport.data.window_days).toBeGreaterThan(0)
+    expect(spendBudgets.data.users.length).toBe(0)
     expect(logs.data.items.length).toBeGreaterThan(100)
     expect(teams.data.teams.length).toBeGreaterThan(0)
     expect(teams.data.users.length).toBeGreaterThan(0)

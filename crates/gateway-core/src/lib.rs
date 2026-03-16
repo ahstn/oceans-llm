@@ -15,7 +15,8 @@ pub use domain::{
     ProviderCapabilities, ProviderConnection, ProviderRequestContext, RequestLogRecord,
     ResolvedModelPricing, SYSTEM_BOOTSTRAP_ADMIN_EMAIL, SYSTEM_BOOTSTRAP_ADMIN_USER_ID,
     SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedModel, SeedModelRoute,
-    SeedProvider, TeamMembershipRecord, TeamRecord, UsageLedgerRecord, UsagePricingStatus,
+    SeedProvider, SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord,
+    TeamBudgetRecord, TeamMembershipRecord, TeamRecord, UsageLedgerRecord, UsagePricingStatus,
     UserBudgetRecord, UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord,
 };
 pub use error::{AuthError, GatewayError, ProviderError, RouteError, StoreError};

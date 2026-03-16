@@ -34,6 +34,103 @@ export interface UsageCostPoint {
   amountUsd: number
 }
 
+export type SpendOwnerKind = 'all' | 'user' | 'team'
+
+export interface SpendTotalsView {
+  priced_cost_usd_10000: number
+  priced_request_count: number
+  unpriced_request_count: number
+  usage_missing_request_count: number
+}
+
+export interface SpendDailyPointView {
+  day_start: string
+  priced_cost_usd_10000: number
+  priced_request_count: number
+  unpriced_request_count: number
+  usage_missing_request_count: number
+}
+
+export interface SpendOwnerBreakdownView {
+  owner_kind: 'user' | 'team'
+  owner_id: string
+  owner_name: string
+  priced_cost_usd_10000: number
+  priced_request_count: number
+  unpriced_request_count: number
+  usage_missing_request_count: number
+}
+
+export interface SpendModelBreakdownView {
+  model_key: string
+  priced_cost_usd_10000: number
+  priced_request_count: number
+  unpriced_request_count: number
+  usage_missing_request_count: number
+}
+
+export interface SpendReportView {
+  window_days: number
+  owner_kind: SpendOwnerKind
+  window_start: string
+  window_end: string
+  totals: SpendTotalsView
+  daily: SpendDailyPointView[]
+  owners: SpendOwnerBreakdownView[]
+  models: SpendModelBreakdownView[]
+}
+
+export interface BudgetSettingsView {
+  cadence: 'daily' | 'weekly'
+  amount_usd: string
+  amount_usd_10000: number
+  hard_limit: boolean
+  timezone: string
+}
+
+export interface SpendBudgetUserView {
+  user_id: string
+  name: string
+  email: string
+  team_id: string | null
+  team_name: string | null
+  budget: BudgetSettingsView | null
+  current_window_spend_usd_10000: number
+}
+
+export interface SpendBudgetTeamView {
+  team_id: string
+  team_name: string
+  team_key: string
+  budget: BudgetSettingsView | null
+  current_window_spend_usd_10000: number
+}
+
+export interface SpendBudgetsView {
+  users: SpendBudgetUserView[]
+  teams: SpendBudgetTeamView[]
+}
+
+export interface UpsertBudgetInput {
+  cadence: 'daily' | 'weekly'
+  amount_usd: string
+  hard_limit: boolean
+  timezone?: string | null
+}
+
+export interface UpsertBudgetResultView {
+  owner_kind: 'user' | 'team'
+  owner_id: string
+  budget: BudgetSettingsView
+  current_window_spend_usd_10000: number
+}
+
+export interface DeactivateBudgetResultView {
+  owner_kind: 'user' | 'team'
+  owner_id: string
+  deactivated: boolean
+}
+
 export interface RequestLogView {
   id: string
   model: string

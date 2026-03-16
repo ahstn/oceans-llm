@@ -174,6 +174,17 @@ where
             .await
     }
 
+    pub async fn enforce_pre_provider_budget(
+        &self,
+        auth: &AuthenticatedApiKey,
+        request_id: &str,
+        occurred_at: OffsetDateTime,
+    ) -> Result<(), GatewayError> {
+        self.budget_guard
+            .enforce_pre_provider_budget(auth, request_id, occurred_at)
+            .await
+    }
+
     pub async fn record_chat_usage(
         &self,
         auth: &AuthenticatedApiKey,

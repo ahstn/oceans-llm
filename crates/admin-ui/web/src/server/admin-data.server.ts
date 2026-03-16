@@ -14,7 +14,12 @@ import type {
   Paginated,
   PasswordInviteResult,
   RequestLogView,
-  UsageCostPoint,
+  SpendBudgetsView,
+  SpendOwnerKind,
+  SpendReportView,
+  UpsertBudgetInput,
+  UpsertBudgetResultView,
+  DeactivateBudgetResultView,
   CreateTeamInput,
   PasswordLoginInput,
   UpdateTeamInput,
@@ -89,16 +94,75 @@ export async function listModels(): Promise<ApiEnvelope<ModelView[]>> {
   ])
 }
 
-export async function listUsageCosts(): Promise<ApiEnvelope<UsageCostPoint[]>> {
-  return envelope([
-    { day: 'Mon', amountUsd: 312.4 },
-    { day: 'Tue', amountUsd: 298.2 },
-    { day: 'Wed', amountUsd: 344.1 },
-    { day: 'Thu', amountUsd: 367.7 },
-    { day: 'Fri', amountUsd: 352.8 },
-    { day: 'Sat', amountUsd: 276.6 },
-    { day: 'Sun', amountUsd: 241.9 },
-  ])
+export async function getSpendReport(params?: {
+  days?: number
+  owner_kind?: SpendOwnerKind
+}): Promise<ApiEnvelope<SpendReportView>> {
+  const query = new URLSearchParams()
+  if (params?.days) {
+    query.set('days', String(params.days))
+  }
+  if (params?.owner_kind && params.owner_kind !== 'all') {
+    query.set('owner_kind', params.owner_kind)
+  } else if (params?.owner_kind === 'all') {
+    query.set('owner_kind', 'all')
+  }
+  const suffix = query.toString() ? `?${query.toString()}` : ''
+  return fetchGatewayJson<ApiEnvelope<SpendReportView>>(`/api/v1/admin/spend/report${suffix}`)
+}
+
+export async function listSpendBudgets(): Promise<ApiEnvelope<SpendBudgetsView>> {
+  return fetchGatewayJson<ApiEnvelope<SpendBudgetsView>>('/api/v1/admin/spend/budgets')
+}
+
+export async function upsertUserBudget(
+  userId: string,
+  input: UpsertBudgetInput,
+): Promise<ApiEnvelope<UpsertBudgetResultView>> {
+  return fetchGatewayJson<ApiEnvelope<UpsertBudgetResultView>>(
+    `/api/v1/admin/spend/budgets/users/${userId}`,
+    {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  )
+}
+
+export async function deactivateUserBudget(
+  userId: string,
+): Promise<ApiEnvelope<DeactivateBudgetResultView>> {
+  return fetchGatewayJson<ApiEnvelope<DeactivateBudgetResultView>>(
+    `/api/v1/admin/spend/budgets/users/${userId}`,
+    {
+      method: 'DELETE',
+    },
+  )
+}
+
+export async function upsertTeamBudget(
+  teamId: string,
+  input: UpsertBudgetInput,
+): Promise<ApiEnvelope<UpsertBudgetResultView>> {
+  return fetchGatewayJson<ApiEnvelope<UpsertBudgetResultView>>(
+    `/api/v1/admin/spend/budgets/teams/${teamId}`,
+    {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  )
+}
+
+export async function deactivateTeamBudget(
+  teamId: string,
+): Promise<ApiEnvelope<DeactivateBudgetResultView>> {
+  return fetchGatewayJson<ApiEnvelope<DeactivateBudgetResultView>>(
+    `/api/v1/admin/spend/budgets/teams/${teamId}`,
+    {
+      method: 'DELETE',
+    },
+  )
 }
 
 export async function listRequestLogs(): Promise<ApiEnvelope<Paginated<RequestLogView>>> {
