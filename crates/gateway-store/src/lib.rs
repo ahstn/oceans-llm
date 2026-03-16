@@ -41,6 +41,7 @@ mod tests {
         run_migrations, run_migrations_with_options, status_migrations_with_options,
     };
 
+    #[allow(clippy::too_many_arguments)]
     fn build_usage_ledger_record(
         request_id: &str,
         ownership_scope_key: String,

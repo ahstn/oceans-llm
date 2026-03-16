@@ -511,7 +511,7 @@ impl BudgetRepository for PostgresStore {
                 WHERE u.occurred_at >= $1
                   AND u.occurred_at < $2
                   AND u.user_id IS NOT NULL
-                GROUP BY model_key
+                GROUP BY COALESCE(g.model_key, u.upstream_model)
                 ORDER BY priced_cost_10000 DESC, model_key ASC
                 "#
             }
@@ -532,7 +532,7 @@ impl BudgetRepository for PostgresStore {
                 WHERE u.occurred_at >= $1
                   AND u.occurred_at < $2
                   AND u.team_id IS NOT NULL
-                GROUP BY model_key
+                GROUP BY COALESCE(g.model_key, u.upstream_model)
                 ORDER BY priced_cost_10000 DESC, model_key ASC
                 "#
             }
@@ -552,7 +552,7 @@ impl BudgetRepository for PostgresStore {
                 LEFT JOIN gateway_models g ON g.id = u.model_id
                 WHERE u.occurred_at >= $1
                   AND u.occurred_at < $2
-                GROUP BY model_key
+                GROUP BY COALESCE(g.model_key, u.upstream_model)
                 ORDER BY priced_cost_10000 DESC, model_key ASC
                 "#
             }

@@ -322,10 +322,11 @@ mod tests {
         routing::post,
     };
     use gateway_core::{
-        ApiKeyRepository, AuthMode, BudgetRepository, CoreChatRequest, CoreEmbeddingsRequest,
-        GlobalRole, ModelRepository, Money4, ProviderCapabilities, ProviderClient, ProviderError,
-        ProviderRequestContext, ProviderStream, SeedApiKey, SeedModel, SeedModelRoute,
-        SeedProvider, UsageLedgerRecord, UsagePricingStatus, parse_gateway_api_key,
+        ApiKeyRepository, AuthMode, BudgetCadence, BudgetRepository, CoreChatRequest,
+        CoreEmbeddingsRequest, GlobalRole, ModelRepository, Money4, ProviderCapabilities,
+        ProviderClient, ProviderError, ProviderRequestContext, ProviderStream, SeedApiKey,
+        SeedModel, SeedModelRoute, SeedProvider, UsageLedgerRecord, UsagePricingStatus,
+        parse_gateway_api_key,
     };
     use gateway_providers::{OpenAiCompatConfig, OpenAiCompatProvider};
     use gateway_service::{GatewayService, WeightedRoutePlanner, hash_gateway_key_secret};
@@ -931,6 +932,7 @@ mod tests {
         set_cookie_header(&login_response)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn usage_ledger_record(
         request_id: &str,
         ownership_scope_key: String,
@@ -962,7 +964,7 @@ mod tests {
                 "completion_tokens": 50,
                 "total_tokens": 150
             }),
-            pricing_status: pricing_status.clone(),
+            pricing_status,
             unpriced_reason: match pricing_status {
                 UsagePricingStatus::Unpriced => Some("missing_pricing".to_string()),
                 _ => None,
@@ -1243,6 +1245,190 @@ mod tests {
         assert_eq!(ledgers[0].request_id, "req-dedupe");
         assert!(ledgers[0].ownership_scope_key.starts_with("team:"));
         assert_eq!(ledgers[0].pricing_status, "priced");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn team_hard_limit_blocks_before_provider_call() {
+        let (calls, provider) = make_chat_provider(
+            "openai-prod",
+            MockChatResult::Value(json!({
+                "id": "chatcmpl_blocked_team",
+                "object": "chat.completion",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "should-not-run"}, "finish_reason":"stop"}],
+                "usage": {"prompt_tokens": 5, "completion_tokens": 5, "total_tokens": 10}
+            })),
+            vec![],
+            ProviderCapabilities::openai_compat_baseline(),
+        );
+        let mut registry = gateway_core::ProviderRegistry::new();
+        registry.register(Arc::new(provider));
+
+        let (app, raw_key, db_path) = build_default_test_app(registry).await;
+        let parsed = parse_gateway_api_key(&raw_key).expect("parse key");
+        let store = AnyStore::Libsql(
+            LibsqlStore::new_local(db_path.to_str().expect("db path"))
+                .await
+                .expect("store"),
+        );
+        let api_key = store
+            .get_api_key_by_public_id(&parsed.public_id)
+            .await
+            .expect("load api key")
+            .expect("api key");
+        let team_id = api_key.owner_team_id.expect("team owner");
+        let model = store
+            .get_model_by_key("fast")
+            .await
+            .expect("load model")
+            .expect("model");
+        let now = time::OffsetDateTime::now_utc();
+
+        store
+            .upsert_active_budget_for_team(
+                team_id,
+                BudgetCadence::Daily,
+                Money4::from_scaled(10_000),
+                true,
+                "UTC",
+                now,
+            )
+            .await
+            .expect("upsert team budget");
+        assert!(
+            store
+                .insert_usage_ledger_if_absent(&usage_ledger_record(
+                    "seed-team-over-limit",
+                    format!("team:{team_id}:actor:none"),
+                    api_key.id,
+                    None,
+                    Some(team_id),
+                    Some(model.id),
+                    "gpt-5",
+                    UsagePricingStatus::Priced,
+                    10_000,
+                    now - time::Duration::minutes(1),
+                ))
+                .await
+                .expect("insert seed spend")
+        );
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .body(Body::from(
+                        json!({
+                            "model": "fast",
+                            "messages": [{"role": "user", "content": "ping"}]
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        let payload: Value = read_json(response).await;
+        assert_eq!(payload["error"]["code"], "budget_exceeded");
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert_eq!(load_usage_ledger(&db_path).await.len(), 1);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn user_hard_limit_blocks_before_provider_call() {
+        let (calls, provider) = make_chat_provider(
+            "openai-prod",
+            MockChatResult::Value(json!({
+                "id": "chatcmpl_blocked_user",
+                "object": "chat.completion",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "should-not-run"}, "finish_reason":"stop"}],
+                "usage": {"prompt_tokens": 5, "completion_tokens": 5, "total_tokens": 10}
+            })),
+            vec![],
+            ProviderCapabilities::openai_compat_baseline(),
+        );
+        let mut registry = gateway_core::ProviderRegistry::new();
+        registry.register(Arc::new(provider));
+
+        let (app, raw_key, db_path) = build_default_test_app(registry).await;
+        let user_id = set_api_key_owner_to_user(&db_path, &raw_key, false).await;
+        let parsed = parse_gateway_api_key(&raw_key).expect("parse key");
+        let store = AnyStore::Libsql(
+            LibsqlStore::new_local(db_path.to_str().expect("db path"))
+                .await
+                .expect("store"),
+        );
+        let api_key = store
+            .get_api_key_by_public_id(&parsed.public_id)
+            .await
+            .expect("load api key")
+            .expect("api key");
+        let model = store
+            .get_model_by_key("fast")
+            .await
+            .expect("load model")
+            .expect("model");
+        let now = time::OffsetDateTime::now_utc();
+
+        store
+            .upsert_active_budget_for_user(
+                user_id,
+                BudgetCadence::Daily,
+                Money4::from_scaled(8_000),
+                true,
+                "UTC",
+                now,
+            )
+            .await
+            .expect("upsert user budget");
+        assert!(
+            store
+                .insert_usage_ledger_if_absent(&usage_ledger_record(
+                    "seed-user-over-limit",
+                    format!("user:{user_id}"),
+                    api_key.id,
+                    Some(user_id),
+                    None,
+                    Some(model.id),
+                    "gpt-5",
+                    UsagePricingStatus::Priced,
+                    8_000,
+                    now - time::Duration::minutes(1),
+                ))
+                .await
+                .expect("insert seed spend")
+        );
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .body(Body::from(
+                        json!({
+                            "model": "fast",
+                            "messages": [{"role": "user", "content": "ping"}]
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        let payload: Value = read_json(response).await;
+        assert_eq!(payload["error"]["code"], "budget_exceeded");
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert_eq!(load_usage_ledger(&db_path).await.len(), 1);
     }
 
     #[tokio::test]

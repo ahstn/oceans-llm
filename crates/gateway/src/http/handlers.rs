@@ -106,6 +106,11 @@ pub async fn v1_chat_completions(
         }
     };
 
+    state
+        .service
+        .enforce_pre_provider_budget(&auth, &request_id, OffsetDateTime::now_utc())
+        .await?;
+
     let context = build_provider_context(
         &request_id,
         &resolved.selection.requested_model.model_key,
@@ -280,6 +285,11 @@ pub async fn v1_embeddings(
             return Err(AppError(no_compatible_route_error(requirements)));
         }
     };
+
+    state
+        .service
+        .enforce_pre_provider_budget(&auth, &request_id, OffsetDateTime::now_utc())
+        .await?;
 
     let context = build_provider_context(
         &request_id,
