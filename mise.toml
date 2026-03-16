@@ -6,6 +6,7 @@ gh = "latest"
 opentofu = "latest"
 git-cliff = "latest"
 cocogitto = "latest"
+prek = "latest"
 
 [tasks.install]
 description = "Install or update tool versions from mise.toml"
