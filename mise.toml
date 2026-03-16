@@ -11,15 +11,23 @@ cocogitto = "latest"
 description = "Install or update tool versions from mise.toml"
 run = "mise install"
 
+[tasks.fmt]
+description = "Format Rust sources"
+run = "cargo fmt --all"
+
+[tasks.lint]
+description = "Run Rust and admin UI linting"
+depends = ["ui-install"]
+run = "cargo clippy --workspace --all-targets -- -D warnings && bun run --cwd crates/admin-ui/web lint"
+
 [tasks.build]
 description = "Build Rust crates and admin UI bundle"
-depends = ["ui-install"]
+depends = ["ui-install", "fmt", "lint"]
 run = "cargo build --workspace && bun run --cwd crates/admin-ui/web build"
 
-[tasks.check]
-description = "Compile Rust targets and verify admin UI builds"
-depends = ["ui-install"]
-run = "cargo check --workspace --all-targets && bun run --cwd crates/admin-ui/web build"
+[tasks.run]
+description = "Run `gateway serve`"
+run = "cargo run -p gateway --bin gateway -- serve"
 
 [tasks.check-rust-postgres]
 description = "Compile the Rust Postgres-backed runtime and store targets"
@@ -94,18 +102,6 @@ run = "cargo run -p gateway --bin gateway -- --config ${GATEWAY_CONFIG:-gateway.
 description = "Run `gateway seed-config` against `${GATEWAY_CONFIG:-gateway.prod.yaml}`"
 run = "cargo run -p gateway --bin gateway -- --config ${GATEWAY_CONFIG:-gateway.prod.yaml} seed-config"
 
-[tasks.fmt]
-description = "Format Rust sources"
-run = "cargo fmt --all"
-
-[tasks.lint]
-description = "Run Rust and admin UI linting"
-depends = ["ui-install"]
-run = "cargo clippy --workspace --all-targets -- -D warnings && bun run --cwd crates/admin-ui/web lint"
-
-[tasks.run]
-description = "Run `gateway serve`"
-run = "cargo run -p gateway --bin gateway -- serve"
 
 [tasks.sync-pricing-catalog]
 description = "Refresh the vendored pricing catalog fallback snapshot"
