@@ -127,7 +127,7 @@ mod tests {
         .expect("status");
 
         assert_eq!(status.backend, "libsql");
-        assert_eq!(status.pending_count(), 12);
+        assert_eq!(status.pending_count(), MIGRATION_REGISTRY.len());
         assert!(status.entries.iter().all(|entry| !entry.applied));
     }
 
@@ -2623,7 +2623,7 @@ mod tests {
             .await
             .expect("initial postgres status");
         assert_eq!(initial_status.backend, "postgres");
-        assert_eq!(initial_status.pending_count(), 12);
+        assert_eq!(initial_status.pending_count(), MIGRATION_REGISTRY.len());
         assert!(initial_status.entries.iter().all(|entry| !entry.applied));
 
         run_migrations_with_options(&options, MigrationTestHook::default())

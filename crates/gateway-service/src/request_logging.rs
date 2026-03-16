@@ -448,6 +448,10 @@ pub fn usage_summary_from_value(value: Option<&Value>) -> UsageSummary {
 
 fn request_log_metadata(attempt_count: usize, stream: bool) -> Map<String, Value> {
     let mut metadata = Map::new();
+    metadata.insert(
+        "operation".to_string(),
+        Value::String("chat_completions".to_string()),
+    );
     metadata.insert("stream".to_string(), Value::Bool(stream));
     metadata.insert("fallback_used".to_string(), Value::Bool(attempt_count > 1));
     metadata.insert(
