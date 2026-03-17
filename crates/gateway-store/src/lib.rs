@@ -8,11 +8,14 @@ mod store;
 
 pub use libsql_store::LibsqlStore;
 pub use migrate::{
-    MigrationStatus, MigrationStatusEntry, MigrationTestHook, check_migrations_with_options,
-    run_migrations, run_migrations_with_options, status_migrations_with_options,
+    MigrationStatus, MigrationStatusEntry, check_migrations_with_options, run_migrations,
+    run_migrations_with_options, status_migrations_with_options,
 };
 pub use postgres_store::PostgresStore;
 pub use store::{AnyStore, GatewayStore, StoreConnectionOptions};
+
+#[cfg(test)]
+pub(crate) use migrate::{MigrationTestHook, run_migrations_with_options_for_test};
 
 #[cfg(test)]
 mod tests {
@@ -38,7 +41,8 @@ mod tests {
         LibsqlStore, MigrationTestHook, PostgresStore, StoreConnectionOptions,
         check_migrations_with_options,
         migration_registry::{BackendMigrationStep, MIGRATION_REGISTRY, MigrationBackend},
-        run_migrations, run_migrations_with_options, status_migrations_with_options,
+        run_migrations, run_migrations_with_options, run_migrations_with_options_for_test,
+        status_migrations_with_options,
     };
 
     #[allow(clippy::too_many_arguments)]
@@ -150,7 +154,7 @@ mod tests {
         let tmp = tempdir().expect("tempdir");
         let db_path = tmp.path().join("gateway.db");
 
-        run_migrations_with_options(
+        run_migrations_with_options_for_test(
             &StoreConnectionOptions::Libsql {
                 path: db_path.clone(),
             },
@@ -202,7 +206,7 @@ mod tests {
         let tmp = tempdir().expect("tempdir");
         let db_path = tmp.path().join("gateway.db");
 
-        run_migrations_with_options(
+        run_migrations_with_options_for_test(
             &StoreConnectionOptions::Libsql {
                 path: db_path.clone(),
             },
@@ -264,7 +268,7 @@ mod tests {
         assert_eq!(initial_status.pending_count(), MIGRATION_REGISTRY.len());
         assert!(initial_status.entries.iter().all(|entry| !entry.applied));
 
-        run_migrations_with_options(
+        run_migrations_with_options_for_test(
             &options,
             MigrationTestHook {
                 fail_history_insert_version: Some(1),
@@ -280,7 +284,7 @@ mod tests {
         assert_eq!(failed_status.pending_count(), MIGRATION_REGISTRY.len());
         assert!(failed_status.entries.iter().all(|entry| !entry.applied));
 
-        run_migrations_with_options(&options, MigrationTestHook::default())
+        run_migrations_with_options(&options)
             .await
             .expect("retry migrations");
 
@@ -530,7 +534,6 @@ mod tests {
             &StoreConnectionOptions::Libsql {
                 path: db_path.clone(),
             },
-            MigrationTestHook::default(),
         )
         .await
         .expect("apply v11");
@@ -1451,7 +1454,7 @@ mod tests {
             url: test_db.database_url.clone(),
             max_connections: 2,
         };
-        run_migrations_with_options(&options, MigrationTestHook::default())
+        run_migrations_with_options(&options)
             .await
             .expect("migrate to v8");
 
@@ -1806,7 +1809,7 @@ mod tests {
             url: test_db.database_url.clone(),
             max_connections: 4,
         };
-        run_migrations_with_options(&options, MigrationTestHook::default())
+        run_migrations_with_options(&options)
             .await
             .expect("postgres migrations");
 
@@ -2173,7 +2176,7 @@ mod tests {
             url: test_db.database_url.clone(),
             max_connections: 2,
         };
-        run_migrations_with_options(&options, MigrationTestHook::default())
+        run_migrations_with_options(&options)
             .await
             .expect("postgres migrations");
 
@@ -2258,7 +2261,7 @@ mod tests {
             url: test_db.database_url.clone(),
             max_connections: 4,
         };
-        run_migrations_with_options(&options, MigrationTestHook::default())
+        run_migrations_with_options(&options)
             .await
             .expect("postgres migrations");
 
@@ -2510,7 +2513,7 @@ mod tests {
             url: test_db.database_url.clone(),
             max_connections: 4,
         };
-        run_migrations_with_options(&options, MigrationTestHook::default())
+        run_migrations_with_options(&options)
             .await
             .expect("postgres migrations");
 
@@ -2679,7 +2682,6 @@ mod tests {
                 url: test_db.database_url.clone(),
                 max_connections: 2,
             },
-            MigrationTestHook::default(),
         )
         .await
         .expect("apply v11");
@@ -2722,7 +2724,7 @@ mod tests {
         assert_eq!(initial_status.pending_count(), MIGRATION_REGISTRY.len());
         assert!(initial_status.entries.iter().all(|entry| !entry.applied));
 
-        run_migrations_with_options(&options, MigrationTestHook::default())
+        run_migrations_with_options(&options)
             .await
             .expect("postgres migrations");
 
@@ -2750,7 +2752,7 @@ mod tests {
             url: test_db.database_url.clone(),
             max_connections: 2,
         };
-        run_migrations_with_options(
+        run_migrations_with_options_for_test(
             &options,
             MigrationTestHook {
                 fail_after_apply_version: Some(1),
@@ -2797,7 +2799,7 @@ mod tests {
             url: test_db.database_url.clone(),
             max_connections: 2,
         };
-        run_migrations_with_options(
+        run_migrations_with_options_for_test(
             &options,
             MigrationTestHook {
                 fail_history_insert_version: Some(1),
@@ -2851,7 +2853,7 @@ mod tests {
         assert_eq!(initial_status.pending_count(), MIGRATION_REGISTRY.len());
         assert!(initial_status.entries.iter().all(|entry| !entry.applied));
 
-        run_migrations_with_options(
+        run_migrations_with_options_for_test(
             &options,
             MigrationTestHook {
                 fail_history_insert_version: Some(1),
@@ -2867,7 +2869,7 @@ mod tests {
         assert_eq!(failed_status.pending_count(), MIGRATION_REGISTRY.len());
         assert!(failed_status.entries.iter().all(|entry| !entry.applied));
 
-        run_migrations_with_options(&options, MigrationTestHook::default())
+        run_migrations_with_options(&options)
             .await
             .expect("postgres retry migrations");
 

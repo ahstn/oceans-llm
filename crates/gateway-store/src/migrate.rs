@@ -32,21 +32,35 @@ impl MigrationStatus {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct MigrationTestHook {
+pub(crate) struct MigrationTestHook {
+    #[cfg(test)]
     pub fail_after_apply_version: Option<u32>,
+    #[cfg(test)]
     pub fail_history_insert_version: Option<u32>,
 }
 
 impl MigrationTestHook {
+    #[cfg(test)]
     fn maybe_fail_after_apply(&self, version: u32) -> anyhow::Result<()> {
         if self.fail_after_apply_version == Some(version) {
-            bail!("forced migration failure after applying version {version}");
+            anyhow::bail!("forced migration failure after applying version {version}");
         }
         Ok(())
     }
 
+    #[cfg(not(test))]
+    fn maybe_fail_after_apply(&self, _version: u32) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[cfg(test)]
     fn should_fail_history_insert(&self, version: u32) -> bool {
         self.fail_history_insert_version == Some(version)
+    }
+
+    #[cfg(not(test))]
+    fn should_fail_history_insert(&self, _version: u32) -> bool {
+        false
     }
 }
 
@@ -55,18 +69,29 @@ pub async fn run_migrations(path: impl AsRef<Path>) -> anyhow::Result<()> {
         &StoreConnectionOptions::Libsql {
             path: path.as_ref().to_path_buf(),
         },
-        MigrationTestHook::default(),
     )
     .await
 }
 
-pub async fn run_migrations_with_options(
+pub async fn run_migrations_with_options(options: &StoreConnectionOptions) -> anyhow::Result<()> {
+    run_migrations_with_hook(options, MigrationTestHook::default()).await
+}
+
+#[cfg(test)]
+pub(crate) async fn run_migrations_with_options_for_test(
+    options: &StoreConnectionOptions,
+    hook: MigrationTestHook,
+) -> anyhow::Result<()> {
+    run_migrations_with_hook(options, hook).await
+}
+
+async fn run_migrations_with_hook(
     options: &StoreConnectionOptions,
     hook: MigrationTestHook,
 ) -> anyhow::Result<()> {
     match options {
-        StoreConnectionOptions::Libsql { path } => run_libsql_migrations(path, &hook).await,
-        StoreConnectionOptions::Postgres { url, .. } => run_postgres_migrations(url, &hook).await,
+        StoreConnectionOptions::Libsql { path } => run_libsql_migrations(path, hook).await,
+        StoreConnectionOptions::Postgres { url, .. } => run_postgres_migrations(url, hook).await,
     }
 }
 
@@ -125,7 +150,7 @@ pub async fn check_migrations_with_options(
     Ok(status)
 }
 
-async fn run_libsql_migrations(path: &Path, hook: &MigrationTestHook) -> anyhow::Result<()> {
+async fn run_libsql_migrations(path: &Path, hook: MigrationTestHook) -> anyhow::Result<()> {
     let db = libsql::Builder::new_local(path)
         .build()
         .await
@@ -165,9 +190,9 @@ async fn run_libsql_migrations(path: &Path, hook: &MigrationTestHook) -> anyhow:
                         migration_event = "apply",
                         "applying migration SQL"
                     );
-                    tx.execute_batch(sql).await.with_context(|| {
-                        format!("failed applying migration {}", migration.version)
-                    })?;
+                    tx.execute_batch(sql)
+                        .await
+                        .with_context(|| format!("failed applying migration {}", migration.version))?;
                 }
                 BackendMigrationStep::Compatibility { reason } => {
                     tracing::debug!(
@@ -227,13 +252,6 @@ async fn run_libsql_migrations(path: &Path, hook: &MigrationTestHook) -> anyhow:
 
         match migration_result {
             Ok(()) => {
-                tracing::info!(
-                    backend = "libsql",
-                    migration_version = migration.version,
-                    migration_name = migration.name,
-                    migration_event = "commit",
-                    "committing migration transaction"
-                );
                 tx.commit().await.with_context(|| {
                     format!("failed committing migration {}", migration.version)
                 })?;
@@ -273,7 +291,7 @@ async fn run_libsql_migrations(path: &Path, hook: &MigrationTestHook) -> anyhow:
     Ok(())
 }
 
-async fn run_postgres_migrations(url: &str, hook: &MigrationTestHook) -> anyhow::Result<()> {
+async fn run_postgres_migrations(url: &str, hook: MigrationTestHook) -> anyhow::Result<()> {
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(1)
         .connect(url)
@@ -386,13 +404,6 @@ async fn run_postgres_migrations(url: &str, hook: &MigrationTestHook) -> anyhow:
 
         match migration_result {
             Ok(()) => {
-                tracing::info!(
-                    backend = "postgres",
-                    migration_version = migration.version,
-                    migration_name = migration.name,
-                    migration_event = "commit",
-                    "committing migration transaction"
-                );
                 tx.commit().await.with_context(|| {
                     format!("failed committing postgres migration {}", migration.version)
                 })?;

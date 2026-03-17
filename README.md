@@ -243,14 +243,6 @@ Default local values emitted by `mise run postgres-env`:
 
 `start-prod.sh` defaults `GATEWAY_CONFIG` to `./gateway.prod.yaml`, which now expects PostgreSQL through `POSTGRES_URL`, keeps the bootstrap admin enabled for first-time setup, and forces a password change after initial sign-in.
 
-Docker fallback (if you cannot run local Postgres binaries):
-
-```bash
-docker compose -f compose.local.yaml up -d postgres
-export POSTGRES_URL="postgres://oceans:oceans@localhost:5432/oceans_llm"
-export TEST_POSTGRES_URL="$POSTGRES_URL"
-```
-
 For one-off operational actions against the configured database:
 
 ```bash
@@ -270,14 +262,6 @@ Bring up local Postgres (pitchfork-first):
 mise run postgres-start
 eval "$(mise run postgres-env)"
 export OPENAI_API_KEY="${OPENAI_API_KEY:-test-openai-key}"
-```
-
-Docker fallback:
-
-```bash
-docker compose -f compose.local.yaml up -d postgres
-export POSTGRES_URL="postgres://oceans:oceans@localhost:5432/oceans_llm"
-export TEST_POSTGRES_URL="$POSTGRES_URL"
 ```
 
 Libsql-first local validation:
