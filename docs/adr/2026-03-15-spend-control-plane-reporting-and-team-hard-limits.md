@@ -3,6 +3,12 @@
 - Date: 2026-03-15
 - Status: Accepted
 
+## Implemented By
+
+- Canonical docs:
+  - [../budgets-and-spending.md](../budgets-and-spending.md)
+  - [../admin-control-plane.md](../admin-control-plane.md)
+
 ## Context
 
 Issues #4 and #7 established a durable, idempotent usage ledger and exact fixed-point pricing/accounting behavior. That work made `usage_cost_events` trustworthy as a charging source, but the control plane still lacked spend-facing capabilities needed by operations:

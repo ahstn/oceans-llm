@@ -148,7 +148,7 @@ This keeps versioning and changelog generation explicit and easy to inspect befo
 
 ### GitHub Actions release step
 
-1. The pushed `vX.Y.Z` tag triggers [.github/workflows/release.yml](/Users/ahstn/git/oceans-llm/.github/workflows/release.yml).
+1. The pushed `vX.Y.Z` tag triggers [../../.github/workflows/release.yml](../../.github/workflows/release.yml).
 2. The workflow builds and publishes the gateway and admin UI images to GHCR for `linux/amd64` and `linux/arm64`.
 3. The workflow applies the release image tags and provenance attestations.
 4. The workflow publishes or updates the GitHub release associated with the tag.
