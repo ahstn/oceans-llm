@@ -28,13 +28,17 @@ Use the canonical docs for behavior and policy details:
 
 - [Contributing](CONTRIBUTING.md)
 - [Documentation Hub](docs/README.md)
+- [Configuration Reference](docs/configuration-reference.md)
 - [Identity and Access](docs/identity-and-access.md)
 - [Model Routing and API Behavior](docs/model-routing-and-api-behavior.md)
 - [Budgets and Spending](docs/budgets-and-spending.md)
+- [Pricing Catalog and Accounting](docs/pricing-catalog-and-accounting.md)
 - [Observability and Request Logs](docs/observability-and-request-logs.md)
 - [Data Relationships](docs/data-relationships.md)
 - [Admin Control Plane](docs/admin-control-plane.md)
 - [End-to-End Contract Tests](docs/e2e-contract-tests.md)
+- [Deploy and Operations](docs/deploy-and-operations.md)
+- [Release Process](docs/release-process.md)
 - [Deploy Compose](deploy/README.md)
 
 ## Quick Start
@@ -93,7 +97,7 @@ Important env vars:
 - `ADMIN_UI_UPSTREAM`
 - `ADMIN_UI_INTERNAL_PORT`
 
-For config semantics, model routing, aliases, capability gating, pricing-provider requirements, and request behavior, see [Model Routing and API Behavior](docs/model-routing-and-api-behavior.md).
+For config shape, defaults, provider-specific constraints, and env-backed secret references, see [Configuration Reference](docs/configuration-reference.md). For request behavior and routing semantics, see [Model Routing and API Behavior](docs/model-routing-and-api-behavior.md).
 
 ## Production-Shaped Local Run
 

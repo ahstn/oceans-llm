@@ -5,6 +5,11 @@
 
 ## Context
 
+Implemented by:
+
+- [../pricing-catalog-and-accounting.md](../pricing-catalog-and-accounting.md)
+- [../budgets-and-spending.md](../budgets-and-spending.md)
+
 We added budget and spend-accounting schema groundwork (`user_budgets`, `usage_cost_events`), but the gateway still lacked a reliable pricing source for live enforcement. Provider `/v1/models` endpoints were not sufficient because they do not expose stable billing data, and provider pricing pages are documented separately and can change independently of model discovery APIs.
 
 We needed a pricing source that:
@@ -93,6 +98,16 @@ Why:
 - pricing coverage is intentionally exact-only and not yet complete for all billing variants,
 - request-path spend attribution is still follow-up work,
 - unpriced requests must not be blocked or charged.
+
+## Current Implementation Status
+
+This ADR reflects the initial pricing-catalog slice. The live system has moved beyond that initial boundary:
+
+- budget enforcement is now active on live request paths
+- `usage_cost_events` writes are live
+- pricing coverage still remains intentionally exact-only
+
+Treat [../pricing-catalog-and-accounting.md](../pricing-catalog-and-accounting.md) and [../budgets-and-spending.md](../budgets-and-spending.md) as the canonical current-state docs.
 
 ## Consequences
 

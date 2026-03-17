@@ -36,6 +36,16 @@ Current intended coverage:
 - live `/v1/*` request handling
 - additional admin flows only when the page is backed by a real gateway contract
 
+## Covered Today
+
+The current suite already covers more than a browser-only smoke pass:
+
+- browser auth and forced password-rotation flow
+- public `/v1/models`
+- public `/v1/chat/completions`
+- live spend report API behavior
+- team hard-limit enforcement for team-owned keys
+
 ## Preview-Backed Surface Rule
 
 Preview-backed pages may appear in smoke or landing assertions, but they are not treated as business-flow coverage until the underlying data is live.
@@ -55,9 +65,17 @@ When adding new browser scenarios:
 - keep the suite contract-focused rather than broad UI regression coverage
 - avoid treating mock or preview-only pages as durable product workflows
 
-## Near-Term Good Additions
+## Coverage Shape
+
+The harness is intentionally mixed:
+
+- browser-admin flows for same-origin control-plane behavior
+- raw API contract assertions for gateway and admin endpoints
+
+That split is intentional because some critical contracts are better asserted directly at the HTTP boundary than through page interactions.
+
+## Still Missing
 
 - password invite completion coverage
 - user and team management flows
-- spend-control workflows that depend on live gateway state
 - request-log detail and filtering flows as that surface hardens

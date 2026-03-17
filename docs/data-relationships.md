@@ -34,6 +34,8 @@ This document is schema-oriented. It describes the persistent relationships that
 8. `request_logs` records the final user-visible request outcome
 9. `request_log_payloads` stores sanitized request and response bodies separately from the summary row
 10. `pricing_catalog_cache` stores normalized pricing snapshots used by runtime pricing resolution
+11. `model_pricing` stores effective-dated pricing rows used for historical charging
+12. `usage_cost_event_duplicates_archive` preserves duplicate-ledger migration/archive context
 
 ## Table Catalog
 
@@ -89,7 +91,7 @@ This document is schema-oriented. It describes the persistent relationships that
   - Key columns: `team_budget_id`, `team_id`, `cadence`, `amount_10000`, `hard_limit`, `timezone`, `is_active`
   - Constraint: one active team budget per team
 - `usage_cost_events`
-  - Key columns: `usage_event_id`, `request_id`, `ownership_scope_key`, `api_key_id`, `user_id`, `team_id`, `model_id`, `pricing_status`, `computed_cost_10000`, `occurred_at`
+  - Key columns: `usage_event_id`, `request_id`, `ownership_scope_key`, `api_key_id`, `user_id`, `team_id`, `actor_user_id`, `model_id`, `provider_key`, `upstream_model`, `pricing_status`, `unpriced_reason`, `pricing_row_id`, `pricing_provider_id`, `computed_cost_10000`, `provider_usage`, `occurred_at`
   - Notes: this is the canonical spend ledger used for enforcement and reporting
 - `request_logs`
   - Key columns: `request_log_id`, `request_id`, `api_key_id`, `user_id`, `team_id`, `model_key`, `resolved_model_key`, `provider_key`, `status_code`, `metadata_json`, `occurred_at`
@@ -103,6 +105,11 @@ This document is schema-oriented. It describes the persistent relationships that
 - `pricing_catalog_cache`
   - Key columns: `catalog_key`, `source`, `etag`, `fetched_at`, `snapshot_json`
   - Notes: runtime uses the cached snapshot together with the vendored fallback in the repo
+- `model_pricing`
+  - Key columns: `model_pricing_id`, `pricing_provider_id`, `pricing_model_id`, `effective_start_at`, `effective_end_at`
+  - Notes: effective-dated pricing rows are the durable historical charging source
+- `usage_cost_event_duplicates_archive`
+  - Purpose: preserves duplicate-ledger rows during pricing/ledger migration cleanup and audit backfill flows
 
 ## Authorization Semantics
 
@@ -121,6 +128,19 @@ If neither the team nor the user is restricted, grants remain unchanged.
 - `request_logs.resolved_model_key` stores the canonical execution model after alias resolution
 
 This distinction matters for operator-facing observability and historical debugging. See [model-routing-and-api-behavior.md](model-routing-and-api-behavior.md).
+
+## Route Viability Note
+
+Schema alone does not determine whether a model can execute.
+
+Operational viability also depends on:
+
+- provider existence
+- route `enabled` state
+- positive route weights
+- capability filtering
+
+Those rules are owned by [configuration-reference.md](configuration-reference.md) and [model-routing-and-api-behavior.md](model-routing-and-api-behavior.md).
 
 ## Ownership Notes
 

@@ -2,7 +2,7 @@
 
 `Owns`: OTLP observability model, request-log storage shape, payload redaction and truncation boundaries, and admin observability API behavior.
 `Depends on`: [data-relationships.md](data-relationships.md), [model-routing-and-api-behavior.md](model-routing-and-api-behavior.md)
-`See also`: [admin-control-plane.md](admin-control-plane.md), [budgets-and-spending.md](budgets-and-spending.md), [adr/2026-03-15-otlp-observability-and-request-log-payloads.md](adr/2026-03-15-otlp-observability-and-request-log-payloads.md)
+`See also`: [admin-control-plane.md](admin-control-plane.md), [budgets-and-spending.md](budgets-and-spending.md), [deploy-and-operations.md](deploy-and-operations.md), [adr/2026-03-15-otlp-observability-and-request-log-payloads.md](adr/2026-03-15-otlp-observability-and-request-log-payloads.md)
 
 This document describes the live observability contract for the gateway.
 
@@ -38,6 +38,13 @@ The runtime emits bounded request-level signals for:
 - usage-record totals by pricing status
 
 The request path also records tracing spans enriched with routing and ownership context.
+
+Request correlation is anchored on `x-request-id`:
+
+- the gateway generates or propagates it at the HTTP edge
+- public `/v1/*` responses return it
+- provider adapters forward it upstream
+- admin request-log lookup can use it as the operator-visible correlation key
 
 ## Request Log Storage Shape
 
@@ -84,6 +91,14 @@ Sensitive JSON keys include common fields such as:
 - `password`
 
 Current payload policy is intentionally heuristic and bounded. It is not yet a deployment-configurable policy surface. That hardening follow-up is tracked in [issue #18](https://github.com/ahstn/oceans-llm/issues/18).
+
+## Current Limits and Gaps
+
+Operationally important limits that are not configurable today:
+
+- there is no documented retention or archival policy yet for `request_log_payloads`
+- deploy examples do not ship an OTLP collector by default
+- request-log payload policy is bounded and heuristic rather than operator-configurable
 
 ## Admin Observability APIs
 

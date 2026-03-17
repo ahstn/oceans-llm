@@ -44,6 +44,15 @@ Tracked follow-ups:
 - [issue #26](https://github.com/ahstn/oceans-llm/issues/26): replace preview API-key data with live management
 - [issue #27](https://github.com/ahstn/oceans-llm/issues/27): replace preview model inventory with live routing and provider state
 
+## Operator-Visible Maturity Cues
+
+The admin UI currently teaches this maturity split in live copy and tests:
+
+- identity and spend surfaces are live gateway-backed contracts
+- API keys and models are intentionally preview-backed in this slice
+
+That message is part of the operator contract and should be treated as owned by this page rather than only by UI fixture code or E2E assertions.
+
 ## Identity Workflows Available Today
 
 Operators can currently:
@@ -61,6 +70,14 @@ Current scope limits:
 - no admin logout/session-management flow yet
 - no general team-member removal or transfer workflow yet
 - OIDC remains development-style, not hardened
+
+## Auth And Session UX Limits
+
+Current session state is mostly implicit:
+
+- browser cookie state carries the admin session
+- `/api/v1/auth/session` is the main machine-readable session lookup
+- there is not yet a dedicated logout/session-management shell in the control plane
 
 Related follow-ups:
 

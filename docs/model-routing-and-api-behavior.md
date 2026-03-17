@@ -1,8 +1,8 @@
 # Model Routing and API Behavior
 
 `Owns`: model identity, aliases, `tag:` selectors, route planning inputs, capability gating, and `/v1/*` behavior.
-`Depends on`: [data-relationships.md](data-relationships.md), [identity-and-access.md](identity-and-access.md)
-`See also`: [budgets-and-spending.md](budgets-and-spending.md), [observability-and-request-logs.md](observability-and-request-logs.md), [adr/2026-03-10-model-aliases-and-provider-route-config.md](adr/2026-03-10-model-aliases-and-provider-route-config.md), [adr/2026-03-13-capability-aware-route-gating.md](adr/2026-03-13-capability-aware-route-gating.md), [adr/2026-03-15-v1-runtime-simplification.md](adr/2026-03-15-v1-runtime-simplification.md)
+`Depends on`: [configuration-reference.md](configuration-reference.md), [data-relationships.md](data-relationships.md), [identity-and-access.md](identity-and-access.md)
+`See also`: [budgets-and-spending.md](budgets-and-spending.md), [pricing-catalog-and-accounting.md](pricing-catalog-and-accounting.md), [observability-and-request-logs.md](observability-and-request-logs.md), [adr/2026-03-10-model-aliases-and-provider-route-config.md](adr/2026-03-10-model-aliases-and-provider-route-config.md), [adr/2026-03-13-capability-aware-route-gating.md](adr/2026-03-13-capability-aware-route-gating.md), [adr/2026-03-15-v1-runtime-simplification.md](adr/2026-03-15-v1-runtime-simplification.md)
 
 This document describes how requests move from the public `/v1/*` surface to a concrete provider route.
 
@@ -23,6 +23,8 @@ The gateway exposes:
 - `POST /v1/embeddings`
 
 All three endpoints are authenticated.
+
+The router also sets and propagates `x-request-id` across the public `/v1/*` surface and into provider calls.
 
 ## Requested vs Resolved Model Identity
 
@@ -54,6 +56,9 @@ Tag selectors use AND semantics:
 - every requested tag must be present on the chosen model
 - selection only considers models already allowed for the authenticated API key
 - candidates are ordered by model `rank`, then model key
+- empty tag fragments are ignored
+
+If no effective model matches the requested tag set, the runtime returns `ModelNotFound("tag:...")`.
 
 ## Routes, Priority, and Weight
 
@@ -73,6 +78,12 @@ Current planner behavior:
 - lower `priority` is attempted first
 - weights apply only within the same priority bucket
 - disabled routes or routes with non-positive weight are excluded
+
+Important runtime nuance:
+
+- weighted routing is not multi-route fallback in v1
+- the planner produces an ordered route list by priority, then weighted random choice within each priority bucket
+- the handler executes only the first capability-compatible viable route
 
 ## Capability-Aware Gating
 
@@ -109,6 +120,21 @@ This means the request flow is:
 6. execute the first eligible route
 7. record usage and logs
 
+## Defaults and Validation
+
+Important config defaults and validation rules are owned by [configuration-reference.md](configuration-reference.md). The defaults that materially shape runtime behavior are:
+
+- model `rank` default `100`
+- route `priority` default `100`
+- route `weight` default `1.0`
+- route capability defaults all enabled
+
+Alias handling also has runtime safeguards:
+
+- alias references are validated at config load
+- runtime still detects cycles defensively
+- runtime alias depth is capped at `8`
+
 ## `/v1/models`
 
 `GET /v1/models` returns the models visible to the authenticated API key after grants and access overlays are applied.
@@ -117,6 +143,7 @@ Important notes:
 
 - it reflects gateway model identity, not raw upstream provider catalogs
 - it does not expose `tag:` selectors directly; tags remain a request-time convenience
+- it returns effective granted gateway model keys, not provider catalog entries
 
 ## `/v1/chat/completions`
 
@@ -152,5 +179,16 @@ Current limitation:
 - `openai_compat` providers must declare a supported `pricing_provider_id`
 - `gcp_vertex` routes require `upstream_model` in `<publisher>/<model_id>` form
 - route capabilities default permissively unless explicitly constrained in config
+
+For the full config contract, use [configuration-reference.md](configuration-reference.md). For pricing coverage and unpriced routes, use [pricing-catalog-and-accounting.md](pricing-catalog-and-accounting.md).
+
+## Failure Modes That Matter
+
+Two failure classes are easy to confuse operationally:
+
+- `invalid_request`: the model resolved, but capability filtering left no compatible route for the requested operation
+- `no_routes_available`: the model exists, but provider existence filtering and route viability filtering left no usable route at all
+
+That distinction matters when debugging a model that is visible in `/v1/models` but cannot actually serve traffic.
 
 For the operator-facing admin view built on top of these rules, see [admin-control-plane.md](admin-control-plane.md).

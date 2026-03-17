@@ -1,7 +1,7 @@
 # Budgets and Spending
 
 `Owns`: spend ledger semantics, budget enforcement rules, spend APIs, and current spend-policy deferrals.
-`Depends on`: [data-relationships.md](data-relationships.md), [model-routing-and-api-behavior.md](model-routing-and-api-behavior.md)
+`Depends on`: [data-relationships.md](data-relationships.md), [model-routing-and-api-behavior.md](model-routing-and-api-behavior.md), [pricing-catalog-and-accounting.md](pricing-catalog-and-accounting.md)
 `See also`: [identity-and-access.md](identity-and-access.md), [admin-control-plane.md](admin-control-plane.md), [adr/2026-03-15-spend-control-plane-reporting-and-team-hard-limits.md](adr/2026-03-15-spend-control-plane-reporting-and-team-hard-limits.md)
 
 This document describes the live spend contract in the gateway.
@@ -29,6 +29,8 @@ Pricing states are explicit:
 
 Only `priced` and `legacy_estimated` rows count toward spend totals and budget windows.
 
+For why successful requests can still become `unpriced` or `usage_missing`, see [pricing-catalog-and-accounting.md](pricing-catalog-and-accounting.md).
+
 ## Runtime Enforcement
 
 Pre-provider hard-limit checks run on the live request path for both current write paths:
@@ -50,6 +52,15 @@ Idempotent replay behavior:
 
 - duplicate `(request_id, ownership_scope_key)` is a no-op for charging and enforcement
 
+## Two-Phase Enforcement Contract
+
+Budget enforcement has two important phases:
+
+1. pre-provider blocking against the current priced spend in the active window
+2. post-provider projected-cost blocking before the priced ledger row is inserted
+
+This matters because duplicate `(request_id, ownership_scope_key)` requests bypass both phases as a no-op and because post-provider ledger-write behavior is where the current stream/non-stream inconsistency still exists.
+
 Ownership scope keys:
 
 - user: `user:<user_id>`
@@ -63,6 +74,13 @@ Ownership scope keys:
 - If usage is missing, the ledger row is marked `usage_missing`
 - If pricing cannot be matched exactly, the ledger row is marked `unpriced`
 - `unpriced` and `usage_missing` rows remain visible in reporting but do not count toward spend totals
+
+Common `unpriced` causes include:
+
+- missing or unsupported pricing-provider mapping
+- unsupported Vertex publisher or location
+- unsupported billing modifiers such as `service_tier` / `serviceTier`
+- missing exact pricing-rate coverage
 
 One important known rough edge remains:
 

@@ -40,6 +40,14 @@ Use [`mise.toml`](mise.toml) as the task catalog instead of memorizing ad hoc co
 
 For local stack startup and runtime entry points, see [README.md](README.md). For deploy-oriented runs, see [deploy/README.md](deploy/README.md).
 
+## Admin UI Local Development
+
+The admin UI dev loop is more coupled to the gateway than a standalone SPA:
+
+- direct `:3001` development still depends on gateway-backed admin APIs
+- same-origin gateway proxying is the normal production contract
+- backend route changes can require a gateway restart even when the UI server is already running
+
 ## System Primer
 
 The workspace is split into a small set of Rust crates plus one web app. The gateway is the source of truth for API behavior, identity, budgets, routing, and admin APIs.

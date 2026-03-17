@@ -58,6 +58,16 @@ OIDC onboarding:
 - the admin UI can pre-provision an invited OIDC user against an enabled provider
 - first successful callback activates the user and creates the durable provider subject link
 
+## Onboarding Handoff Model
+
+Admin onboarding is intentionally operator-mediated today:
+
+- admins create users or invite them into teams
+- the control plane generates password invite URLs or OIDC sign-in URLs
+- the admin then shares that onboarding link out of band
+
+That handoff model is part of the current product contract. There is no separate self-service discovery flow in this slice.
+
 ## Important Current Limitation: OIDC Is Still Development-Style
 
 Current OIDC behavior is intentionally not a hardened standards-complete provider flow.
@@ -79,6 +89,15 @@ Current team-management rules:
 - the admin UI can add existing teamless users or invite new members directly into a team
 - cross-team reassignment is rejected in this slice
 - `owner` remains a backend concept and is not exposed as a general admin-UI lifecycle today
+
+## Current Team Lifecycle Boundaries
+
+Additional boundaries that are easy to miss from one page or one API response:
+
+- `team_key` is server-generated and durable
+- empty teams are valid and expected
+- current edit flows primarily synchronize the admin subset, not a full membership lifecycle model
+- removal and transfer flows remain deferred follow-up work
 
 ## Model Access Overlays
 
