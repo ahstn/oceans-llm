@@ -1,228 +1,107 @@
 # Oceans LLM Gateway
 
-Rust-first gateway workspace with an embedded `admin-ui` crate that hosts a TanStack Start control-plane UI.
+Rust-first LLM gateway workspace with an embedded TanStack Start admin control plane.
 
-## Workspace layout
+## Overview
 
-- `crates/gateway`: Rust API binary (`/healthz`, `/readyz`, `/v1/*`)
-- `crates/gateway-core`: shared domain types, traits, OpenAI-compatible DTOs, typed errors
-- `crates/gateway-store`: libsql + PostgreSQL store implementations, migrations, seed upserts
-- `crates/gateway-service`: auth, model resolution, route planning, orchestration
-- `crates/gateway-providers`: reqwest provider transport scaffolding
+- `crates/gateway`: Rust HTTP runtime for `/healthz`, `/readyz`, `/v1/*`, and `/api/v1/admin/*`
+- `crates/gateway-core`: shared domain types, traits, OpenAI-compatible DTOs, and errors
+- `crates/gateway-store`: libsql/SQLite and PostgreSQL stores, migrations, and seed behavior
+- `crates/gateway-service`: auth, model resolution, routing, accounting, and request logging
+- `crates/gateway-providers`: provider adapters and transport helpers
 - `crates/admin-ui`: Rust reverse proxy integration for `/admin*`
-- `crates/admin-ui/web`: TanStack Start + React + shadcn-style UI implementation
+- `crates/admin-ui/web`: TanStack Start + React admin UI
 
-## Runtime model
+## Runtime Model
 
-Single-container dual process:
+The repo runs as a same-origin control plane:
 
-1. Gateway (Rust) listens on the `server.bind` address from the active config file (the checked-in configs default to `0.0.0.0:8080`)
-2. Admin UI SSR process (Bun/TanStack Start) runs on internal `3001`
-3. Gateway reverse-proxies `/admin*` to `ADMIN_UI_UPSTREAM`
+1. The gateway listens on `server.bind` from the active config file.
+2. The admin UI SSR process runs separately, typically on internal port `3001`.
+3. The gateway reverse-proxies `/admin*` to `ADMIN_UI_UPSTREAM`.
 
-## Environment
+Checked-in configs keep the local-development default on libsql/SQLite and the production-shaped default on PostgreSQL.
 
-- `PORT`: helper-script/container env used when launching the gateway process (the gateway listener itself comes from `server.bind` in the active config)
-- `GATEWAY_CONFIG`: gateway config file path (default `./gateway.yaml`, prod helper uses `./gateway.prod.yaml`)
-- `GATEWAY_RUN_MIGRATIONS`: control `gateway serve --run-migrations` (default `true`)
-- `GATEWAY_BOOTSTRAP_ADMIN`: control `gateway serve --bootstrap-admin` (default `true`)
-- `GATEWAY_SEED_CONFIG`: control `gateway serve --seed-config` (default `true`)
-- `POSTGRES_URL`: PostgreSQL connection string used by production-shaped configs (for example `postgres://oceans:oceans@localhost:5432/oceans_llm`)
-- `ADMIN_UI_BASE_PATH`: UI mount path (default `/admin`)
-- `ADMIN_UI_UPSTREAM`: SSR upstream URL (default `http://localhost:3001`)
-- `ADMIN_UI_CONNECT_TIMEOUT_MS`: Proxy connect timeout (default `750`)
-- `ADMIN_UI_REQUEST_TIMEOUT_MS`: Proxy request timeout (default `10000`)
-- `ADMIN_UI_INTERNAL_PORT`: Internal Bun SSR port used by helper scripts (default `3001`)
+## Docs Map
 
-## Gateway config
+Use the canonical docs for behavior and policy details:
 
-`gateway` now exposes explicit operational commands:
+- [Contributing](CONTRIBUTING.md)
+- [Documentation Hub](docs/README.md)
+- [Configuration Reference](docs/configuration-reference.md)
+- [Identity and Access](docs/identity-and-access.md)
+- [Model Routing and API Behavior](docs/model-routing-and-api-behavior.md)
+- [Budgets and Spending](docs/budgets-and-spending.md)
+- [Pricing Catalog and Accounting](docs/pricing-catalog-and-accounting.md)
+- [Observability and Request Logs](docs/observability-and-request-logs.md)
+- [Data Relationships](docs/data-relationships.md)
+- [Admin Control Plane](docs/admin-control-plane.md)
+- [End-to-End Contract Tests](docs/e2e-contract-tests.md)
+- [Deploy and Operations](docs/deploy-and-operations.md)
+- [Release Process](docs/release-process.md)
+- [Deploy Compose](deploy/README.md)
 
-- `gateway serve`: normal runtime startup
-- `gateway migrate --status|--check|--apply`: inspect or apply database migrations
-- `gateway bootstrap-admin`: ensure the configured bootstrap admin exists
-- `gateway seed-config`: seed providers/models/API keys without starting HTTP
+## Quick Start
 
-The repo exposes matching `mise` tasks:
+Install the repo toolchain:
+
+```bash
+eval "$(mise activate zsh)"
+mise install
+mise run ui-install
+```
+
+Run the local development stack:
+
+```bash
+./scripts/start-dev-stack.sh
+```
+
+Default local endpoints:
+
+- Gateway API: `http://localhost:8080`
+- Admin UI: `http://localhost:8080/admin`
+- Active config: `./gateway.yaml`
+- Database backend: local libsql/SQLite
+
+For contributor setup, workspace layout, task conventions, CI workflow references, and editor recommendations, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Gateway Commands
+
+The runtime exposes explicit operational commands:
+
+- `gateway serve`
+- `gateway migrate --status|--check|--apply`
+- `gateway bootstrap-admin`
+- `gateway seed-config`
+
+Matching `mise` tasks:
 
 - `mise run gateway-serve`
 - `mise run gateway-migrate`
 - `mise run gateway-bootstrap-admin`
 - `mise run gateway-seed-config`
 
-`gateway-serve` keeps the local `gateway.yaml` default. The maintenance tasks default to `gateway.prod.yaml`; set `GATEWAY_CONFIG` if you want them to target a different config file.
+`gateway serve` remains the default startup path. It reads `GATEWAY_CONFIG` or `./gateway.yaml`, runs migrations, seeds providers and models, ensures the bootstrap admin exists, and then starts serving traffic.
 
-`gateway serve` remains the default command. By default it reads `gateway.yaml` (or `GATEWAY_CONFIG`), runs SQL migrations, seeds providers/models/api keys, ensures a bootstrap admin exists, then starts serving traffic.
+## Configuration Entry Points
 
-The listener address is configured via `server.bind` in the active YAML config. The helper scripts and compose files still pass `PORT`, but the checked-in configs currently already bind `0.0.0.0:8080`.
+Important env vars:
 
-### OpenTelemetry config
+- `GATEWAY_CONFIG`: config file path, default `./gateway.yaml`
+- `PORT`: helper-script/container port input
+- `POSTGRES_URL`: PostgreSQL connection string for production-shaped configs
+- `GATEWAY_RUN_MIGRATIONS`
+- `GATEWAY_BOOTSTRAP_ADMIN`
+- `GATEWAY_SEED_CONFIG`
+- `ADMIN_UI_UPSTREAM`
+- `ADMIN_UI_INTERNAL_PORT`
 
-The gateway can export tracing spans and runtime metrics over OTLP.
+For config shape, defaults, provider-specific constraints, and env-backed secret references, see [Configuration Reference](docs/configuration-reference.md). For request behavior and routing semantics, see [Model Routing and API Behavior](docs/model-routing-and-api-behavior.md).
 
-```yaml
-server:
-  bind: "0.0.0.0:8080"
-  log_format: "pretty"
-  otel_endpoint: "http://otel-collector:4317"
-  otel_metrics_endpoint: "http://otel-collector:4317" # optional override
-  otel_export_interval_secs: 30
-```
+## Production-Shaped Local Run
 
-- `otel_endpoint`: shared OTLP endpoint for traces and, by default, metrics
-- `otel_metrics_endpoint`: optional metrics-only OTLP override
-- `otel_export_interval_secs`: periodic metrics export cadence
-
-Supported metrics currently include chat request totals and latency, provider attempts, fallback counts, token totals, operational cost totals, and usage-record totals. OTLP collection via an OpenTelemetry Collector or Prometheus OTLP ingest is the supported deployment path for this slice.
-
-Database policy:
-
-- `gateway.yaml` remains the local-development default and uses the libsql/SQLite backend.
-- `gateway.prod.yaml` and deploy-facing configs use PostgreSQL by default.
-- Fresh PostgreSQL environments are bootstrapped by the gateway on startup; application seed data is not preloaded into the Postgres container.
-
-Bootstrap admin defaults:
-
-- local config (`gateway.yaml`): `admin@local` / `admin`, no forced password change
-- production helper config (`gateway.prod.yaml`): `admin@local` / `admin`, forced password change on first login
-
-### Database config
-
-Local libsql/SQLite example:
-
-```yaml
-database:
-  kind: libsql
-  path: "./gateway.db"
-```
-
-Production/pre-production PostgreSQL example:
-
-```yaml
-database:
-  kind: postgres
-  url: env.POSTGRES_URL
-```
-
-### Provider types
-
-`providers[*].type` currently supports:
-
-- `openai_compat`
-- `gcp_vertex`
-
-`openai_compat` requires a `pricing_provider_id` so the gateway can resolve exact pricing from the internal catalog. In this slice, supported values are:
-
-- `openai`
-- `google-vertex`
-- `google-vertex-anthropic`
-
-`gcp_vertex` supports three auth modes:
-
-- `adc`
-- `service_account` (`credentials_path`)
-- `bearer` (`token`)
-
-`gcp_vertex` routes require `upstream_model` in `<publisher>/<model_id>` format. In this slice, supported publishers are `google` and `anthropic`.
-
-## Request Accounting
-
-- Every `/v1/chat/completions` response includes `x-request-id`. If the caller does not send one, the gateway generates a UUID and uses it as the canonical accounting key.
-- Successful requests write a normalized usage ledger row in `usage_cost_events` using provider-reported token usage when available.
-- Spend is computed at write-time from the matched pricing row and stored in fixed-point USD (`*_10000`) so historical totals do not change when catalog prices refresh.
-- If usage is present but pricing cannot be matched, the request succeeds and the ledger row is marked `unpriced`.
-- If the provider response does not include usage, the request succeeds and the ledger row is marked `usage_missing`.
-- Replay/retry accounting is idempotent per `(request_id, ownership scope)` so the same logical request is not double-charged.
-
-## Request Logs
-
-- `request_logs` stores the hot summary row for each persisted request outcome.
-- `request_log_payloads` stores sanitized request and response payload bodies separately from the summary table.
-- User-owned keys still honor the request-logging toggle; team-owned keys always persist logs.
-- Streaming requests persist a sanitized transcript payload with bounded event capture and truncation markers.
-
-Platform admins can inspect logs through the admin UI or the underlying JSON APIs:
-
-- `GET /api/v1/admin/observability/request-logs`
-- `GET /api/v1/admin/observability/request-logs/{request_log_id}`
-
-The list endpoint supports `page`, `page_size`, `request_id`, `model_key`, `provider_key`, `status_code`, `user_id`, and `team_id` query parameters.
-
-### Example Vertex config
-
-```yaml
-providers:
-  - id: openai-prod
-    type: openai_compat
-    base_url: https://api.openai.com/v1
-    pricing_provider_id: openai
-    auth:
-      kind: bearer
-      token: env.OPENAI_API_KEY
-  - id: vertex-adc
-    type: gcp_vertex
-    project_id: your-gcp-project
-    location: global
-    auth:
-      mode: adc
-  - id: vertex-bearer
-    type: gcp_vertex
-    project_id: your-gcp-project
-    location: global
-    auth:
-      mode: bearer
-      token: env.GCP_VERTEX_BEARER_TOKEN
-
-models:
-  - id: fast
-    description: Gemini on Vertex
-    routes:
-      - provider: vertex-adc
-        upstream_model: google/gemini-2.0-flash
-  - id: claude
-    description: Claude on Vertex
-    routes:
-      - provider: vertex-bearer
-        upstream_model: anthropic/claude-sonnet-4-6
-```
-
-## Setup
-
-```bash
-eval "$(/Users/ahstn/.local/bin/mise activate zsh)"
-mise install
-mise run ui-install
-```
-
-## Development
-
-Run both UI and gateway together:
-
-```bash
-./scripts/start-dev-stack.sh
-```
-
-- Gateway/API: `http://localhost:8080`
-- Admin UI: `http://localhost:8080/admin`
-- Database backend: local libsql/SQLite via `gateway.yaml`
-
-Run the gateway directly with the default startup behavior:
-
-```bash
-mise run gateway-serve
-# or:
-cargo run -p gateway --bin gateway -- serve
-```
-
-Inspect or apply migrations without starting the server:
-
-```bash
-cargo run -p gateway --bin gateway -- --config gateway.yaml migrate --status
-cargo run -p gateway --bin gateway -- --config gateway.yaml migrate --check
-GATEWAY_CONFIG=./gateway.yaml mise run gateway-migrate
-```
-
-## Production-style local run
+Start PostgreSQL and run the production-shaped config locally:
 
 ```bash
 docker compose -f compose.local.yaml up -d postgres
@@ -232,56 +111,28 @@ mise run ui-build
 ./scripts/start-prod.sh
 ```
 
-`start-prod.sh` defaults `GATEWAY_CONFIG` to `./gateway.prod.yaml`, which now expects PostgreSQL through `POSTGRES_URL`, keeps the bootstrap admin enabled for first-time setup, and forces a password change after initial sign-in.
+`start-prod.sh` defaults `GATEWAY_CONFIG` to `./gateway.prod.yaml`, uses PostgreSQL, keeps bootstrap-admin creation enabled, and forces password rotation for the default admin on first login.
 
-For one-off operational actions against the configured database:
+For deploy-oriented usage, image tags, and compose layout, see [deploy/README.md](deploy/README.md).
+
+## Validation
+
+Libsql-first local validation:
 
 ```bash
-mise run gateway-migrate
-mise run gateway-seed-config
-mise run gateway-bootstrap-admin
-cargo run -p gateway --bin gateway -- --config gateway.prod.yaml serve --run-migrations=false --bootstrap-admin=false --seed-config=false
+mise run check
+mise run lint
+mise run test
 ```
 
-These maintenance tasks default to `gateway.prod.yaml`. Override `GATEWAY_CONFIG` if you need to point them at another config file.
-
-## Postgres validation
-
-Bring up the local Postgres service:
+Focused PostgreSQL validation:
 
 ```bash
 docker compose -f compose.local.yaml up -d postgres
 export TEST_POSTGRES_URL="postgres://oceans:oceans@localhost:5432/oceans_llm"
 export POSTGRES_URL="$TEST_POSTGRES_URL"
 export OPENAI_API_KEY="${OPENAI_API_KEY:-test-openai-key}"
-```
-
-Libsql-first local validation:
-
-```bash
-mise run check
-mise run test
-```
-
-Focused Postgres-backed validation:
-
-```bash
 mise run check-rust-postgres
 mise run test-rust-postgres
 mise run test-gateway-postgres-smoke
 ```
-
-## Quality gates
-
-```bash
-mise run check
-mise run lint
-mise run test
-mise run check-rust-postgres
-mise run test-rust-postgres
-mise run test-gateway-postgres-smoke
-mise run sync-pricing-catalog
-```
-
-CI runs `mise run check-rust-postgres`, `mise run test-rust-postgres`, and `mise run test-gateway-postgres-smoke` so the PostgreSQL path stays visible in the workflow and exercised before merge.
-`mise run sync-pricing-catalog` refreshes the vendored pricing snapshot used to seed model pricing history for deterministic spend accounting.

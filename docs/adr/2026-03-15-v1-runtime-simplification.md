@@ -3,6 +3,12 @@
 - Date: 2026-03-15
 - Status: Accepted
 
+## Implemented By
+
+- Canonical docs:
+  - [../model-routing-and-api-behavior.md](../model-routing-and-api-behavior.md)
+  - [../observability-and-request-logs.md](../observability-and-request-logs.md)
+
 ## Context
 
 After closing the initial runtime gaps for embeddings and OpenAI-compatible streaming, the request path still contained compatibility-era complexity:
