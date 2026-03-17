@@ -121,6 +121,26 @@ Effective model access is the intersection of:
 
 If neither the team nor the user is restricted, grants remain unchanged.
 
+## Budget and Pricing Notes
+
+- Pricing lookup comes from the internal pricing catalog layer, not from provider `/v1/models` responses
+- Supported pricing source ids in this slice are `openai`, `google-vertex`, and `google-vertex-anthropic`
+- `openai_compat` providers must declare `pricing_provider_id`
+- `gcp_vertex` derives pricing source from the `upstream_model` publisher prefix
+- Pricing is exact-only in this slice; unsupported billing modifiers, unsupported publisher/location combinations, and unknown model ids resolve as `unpriced`
+- Chargeable requests write usage ledger rows and participate in budget enforcement
+- Unpriced requests are not charged and must not be budget-blocked
+- Supported budget cadence values are `daily|weekly|monthly`
+- Current UTC window semantics:
+  - Daily windows start at `00:00:00 UTC`
+  - Weekly windows start at `Monday 00:00:00 UTC`
+  - Monthly windows start at the first day of the month at `00:00:00 UTC`
+  - `Sunday 23:59:59 UTC` remains in the previous weekly window
+- Budget threshold alerts persist audit rows plus per-recipient delivery rows and currently deliver owner-only email alerts when remaining budget crosses to `20%` or less
+- Team attribution remains `actor:none` today:
+  - team key + acting user context attribution is still deferred
+  - team key without acting user context is attributed to team only
+
 ## Requested vs Resolved Model Identity
 
 - `gateway_models` can either point directly to provider routes or alias another model

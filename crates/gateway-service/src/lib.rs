@@ -1,4 +1,5 @@
 pub mod authenticator;
+pub mod budget_alerts;
 pub mod budget_guard;
 pub mod model_access;
 pub mod model_resolution;
@@ -9,6 +10,10 @@ pub mod route_planner;
 pub mod service;
 
 pub use authenticator::{Authenticator, hash_gateway_key_secret, verify_gateway_key_secret};
+pub use budget_alerts::{
+    BUDGET_ALERT_THRESHOLD_BPS, BudgetAlertEmail, BudgetAlertSendResult, BudgetAlertSender,
+    BudgetAlertService, SinkBudgetAlertSender,
+};
 pub use model_access::ModelAccess;
 pub use model_resolution::{ModelResolver, ResolvedGatewayRequest, ResolvedModelSelection};
 pub use pricing_catalog::{

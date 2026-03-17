@@ -81,7 +81,7 @@ export interface SpendReportView {
 }
 
 export interface BudgetSettingsView {
-  cadence: 'daily' | 'weekly'
+  cadence: 'daily' | 'weekly' | 'monthly'
   amount_usd: string
   amount_usd_10000: number
   hard_limit: boolean
@@ -96,6 +96,8 @@ export interface SpendBudgetUserView {
   team_name: string | null
   budget: BudgetSettingsView | null
   current_window_spend_usd_10000: number
+  alert_email_ready: boolean
+  alert_recipient_summary: string
 }
 
 export interface SpendBudgetTeamView {
@@ -104,6 +106,8 @@ export interface SpendBudgetTeamView {
   team_key: string
   budget: BudgetSettingsView | null
   current_window_spend_usd_10000: number
+  alert_email_ready: boolean
+  alert_recipient_summary: string
 }
 
 export interface SpendBudgetsView {
@@ -112,10 +116,38 @@ export interface SpendBudgetsView {
 }
 
 export interface UpsertBudgetInput {
-  cadence: 'daily' | 'weekly'
+  cadence: 'daily' | 'weekly' | 'monthly'
   amount_usd: string
   hard_limit: boolean
   timezone?: string | null
+}
+
+export interface BudgetAlertHistoryItemView {
+  budget_alert_id: string
+  owner_kind: 'user' | 'team'
+  owner_id: string
+  owner_name: string
+  channel: 'email'
+  delivery_status: 'pending' | 'sent' | 'failed'
+  recipient_summary: string
+  threshold_bps: number
+  cadence: 'daily' | 'weekly' | 'monthly'
+  window_start: string
+  window_end: string
+  spend_before_usd_10000: number
+  spend_after_usd_10000: number
+  remaining_budget_usd_10000: number
+  created_at: string
+  last_attempted_at: string | null
+  sent_at: string | null
+  failure_reason: string | null
+}
+
+export interface BudgetAlertHistoryView {
+  items: BudgetAlertHistoryItemView[]
+  page: number
+  page_size: number
+  total: number
 }
 
 export interface UpsertBudgetResultView {

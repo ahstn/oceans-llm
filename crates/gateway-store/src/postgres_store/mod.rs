@@ -1,4 +1,5 @@
 mod api_keys;
+mod budget_alerts;
 mod budgets;
 mod identity;
 mod models;
@@ -11,17 +12,20 @@ mod support;
 use anyhow::Context;
 use async_trait::async_trait;
 use gateway_core::{
-    ApiKeyOwnerKind, ApiKeyRecord, ApiKeyRepository, AuthMode, BudgetCadence, BudgetRepository,
-    GatewayModel, GlobalRole, IdentityRepository, IdentityUserRecord, MembershipRole,
-    ModelAccessMode, ModelPricingRecord, ModelRepository, ModelRoute, Money4, OidcProviderRecord,
-    PasswordInvitationRecord, PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits,
-    PricingModalities, PricingProvenance, ProviderConnection, ProviderRepository, RequestLogDetail,
-    RequestLogPage, RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord,
-    RequestLogRepository, SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SYSTEM_LEGACY_TEAM_ID,
-    SYSTEM_LEGACY_TEAM_KEY, SpendDailyAggregateRecord, SpendModelAggregateRecord,
-    SpendOwnerAggregateRecord, StoreError, StoreHealth, TeamBudgetRecord, TeamMembershipRecord,
-    TeamRecord, UsageLedgerRecord, UsagePricingStatus, UserBudgetRecord, UserOidcAuthRecord,
-    UserPasswordAuthRecord, UserRecord, UserSessionRecord,
+    ApiKeyOwnerKind, ApiKeyRecord, ApiKeyRepository, AuthMode, BudgetAlertChannel,
+    BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus, BudgetAlertDispatchTask,
+    BudgetAlertHistoryPage, BudgetAlertHistoryQuery, BudgetAlertHistoryRecord,
+    BudgetAlertRecord, BudgetAlertRepository, BudgetCadence, BudgetRepository, GatewayModel,
+    GlobalRole, IdentityRepository, IdentityUserRecord, MembershipRole, ModelAccessMode,
+    ModelPricingRecord, ModelRepository, ModelRoute, Money4, OidcProviderRecord,
+    PasswordInvitationRecord, PricingCatalogCacheRecord, PricingCatalogRepository,
+    PricingLimits, PricingModalities, PricingProvenance, ProviderConnection,
+    ProviderRepository, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
+    RequestLogQuery, RequestLogRecord, RequestLogRepository, SYSTEM_BOOTSTRAP_ADMIN_USER_ID,
+    SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY, SpendDailyAggregateRecord,
+    SpendModelAggregateRecord, SpendOwnerAggregateRecord, StoreError, StoreHealth,
+    TeamBudgetRecord, TeamMembershipRecord, TeamRecord, UsageLedgerRecord, UsagePricingStatus,
+    UserBudgetRecord, UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord,
 };
 use sqlx::{
     PgPool, Row,
