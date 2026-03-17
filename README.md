@@ -28,6 +28,8 @@ Single-container dual process:
 - `GATEWAY_BOOTSTRAP_ADMIN`: control `gateway serve --bootstrap-admin` (default `true`)
 - `GATEWAY_SEED_CONFIG`: control `gateway serve --seed-config` (default `true`)
 - `POSTGRES_URL`: PostgreSQL connection string used by production-shaped configs (for example `postgres://oceans:oceans@localhost:5432/oceans_llm`)
+- `TEST_POSTGRES_URL`: PostgreSQL connection string used by Postgres-focused test helpers (defaults to `POSTGRES_URL` in the local pitchfork flow)
+- `OCEANS_POSTGRES_HOST` / `OCEANS_POSTGRES_PORT` / `OCEANS_POSTGRES_DB` / `OCEANS_POSTGRES_USER` / `OCEANS_POSTGRES_PASSWORD`: local pitchfork Postgres defaults used to derive `POSTGRES_URL` and `TEST_POSTGRES_URL`
 - `ADMIN_UI_BASE_PATH`: UI mount path (default `/admin`)
 - `ADMIN_UI_UPSTREAM`: SSR upstream URL (default `http://localhost:3001`)
 - `ADMIN_UI_CONNECT_TIMEOUT_MS`: Proxy connect timeout (default `750`)
@@ -224,13 +226,20 @@ GATEWAY_CONFIG=./gateway.yaml mise run gateway-migrate
 
 ## Production-style local run
 
+Pitchfork-first local Postgres:
+
 ```bash
-docker compose -f compose.local.yaml up -d postgres
-export POSTGRES_URL="postgres://oceans:oceans@localhost:5432/oceans_llm"
+mise run postgres-start
+eval "$(mise run postgres-env)"
 export OPENAI_API_KEY="${OPENAI_API_KEY:-test-openai-key}"
 mise run ui-build
 ./scripts/start-prod.sh
 ```
+
+Default local values emitted by `mise run postgres-env`:
+
+- `POSTGRES_URL=postgres://oceans:oceans@127.0.0.1:5432/oceans_llm`
+- `TEST_POSTGRES_URL=postgres://oceans:oceans@127.0.0.1:5432/oceans_llm`
 
 `start-prod.sh` defaults `GATEWAY_CONFIG` to `./gateway.prod.yaml`, which now expects PostgreSQL through `POSTGRES_URL`, keeps the bootstrap admin enabled for first-time setup, and forces a password change after initial sign-in.
 
@@ -247,19 +256,18 @@ These maintenance tasks default to `gateway.prod.yaml`. Override `GATEWAY_CONFIG
 
 ## Postgres validation
 
-Bring up the local Postgres service:
+Bring up local Postgres (pitchfork-first):
 
 ```bash
-docker compose -f compose.local.yaml up -d postgres
-export TEST_POSTGRES_URL="postgres://oceans:oceans@localhost:5432/oceans_llm"
-export POSTGRES_URL="$TEST_POSTGRES_URL"
+mise run postgres-start
+eval "$(mise run postgres-env)"
 export OPENAI_API_KEY="${OPENAI_API_KEY:-test-openai-key}"
 ```
 
 Libsql-first local validation:
 
 ```bash
-mise run check
+mise run lint
 mise run test
 ```
 
@@ -274,7 +282,6 @@ mise run test-gateway-postgres-smoke
 ## Quality gates
 
 ```bash
-mise run check
 mise run lint
 mise run test
 mise run check-rust-postgres
@@ -285,3 +292,9 @@ mise run sync-pricing-catalog
 
 CI runs `mise run check-rust-postgres`, `mise run test-rust-postgres`, and `mise run test-gateway-postgres-smoke` so the PostgreSQL path stays visible in the workflow and exercised before merge.
 `mise run sync-pricing-catalog` refreshes the vendored pricing snapshot used to seed model pricing history for deterministic spend accounting.
+
+Release-readiness checklist for Postgres runtime parity:
+
+- `mise run check-rust-postgres`
+- `mise run test-rust-postgres`
+- `mise run test-gateway-postgres-smoke`

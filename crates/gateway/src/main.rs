@@ -19,7 +19,7 @@ use gateway_service::{
     hash_gateway_key_secret,
 };
 use gateway_store::{
-    AnyStore, GatewayStore, MigrationStatus, MigrationTestHook, check_migrations_with_options,
+    AnyStore, GatewayStore, MigrationStatus, check_migrations_with_options,
     run_migrations_with_options, status_migrations_with_options,
 };
 use http::{build_router, state::AppState};
@@ -63,7 +63,7 @@ async fn maybe_run_migrations(
         return Ok(());
     }
 
-    run_migrations_with_options(database_options, MigrationTestHook::default())
+    run_migrations_with_options(database_options)
         .await
         .context("failed to run database migrations")
 }
@@ -156,7 +156,7 @@ async fn run_migrate(config: &GatewayConfig, action: MigrateAction) -> anyhow::R
 
     match action {
         MigrateAction::Apply => {
-            run_migrations_with_options(&database_options, MigrationTestHook::default())
+            run_migrations_with_options(&database_options)
                 .await
                 .context("failed to apply database migrations")?;
             let status = status_migrations_with_options(&database_options).await?;
@@ -339,7 +339,7 @@ mod tests {
     use gateway_providers::{OpenAiCompatConfig, OpenAiCompatProvider};
     use gateway_service::{GatewayService, WeightedRoutePlanner, hash_gateway_key_secret};
     use gateway_store::{
-        AnyStore, GatewayStore, LibsqlStore, MigrationTestHook, StoreConnectionOptions,
+        AnyStore, GatewayStore, LibsqlStore, StoreConnectionOptions,
         run_migrations, run_migrations_with_options,
     };
     use serde_json::{Map, Value, json};
@@ -825,7 +825,7 @@ mod tests {
             url: database_url.to_string(),
             max_connections: 4,
         };
-        run_migrations_with_options(&options, MigrationTestHook::default())
+        run_migrations_with_options(&options)
             .await
             .expect("postgres migrations");
 
