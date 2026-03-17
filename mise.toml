@@ -103,7 +103,6 @@ run = "cargo run -p gateway --bin gateway -- --config ${GATEWAY_CONFIG:-gateway.
 description = "Run `gateway seed-config` against `${GATEWAY_CONFIG:-gateway.prod.yaml}`"
 run = "cargo run -p gateway --bin gateway -- --config ${GATEWAY_CONFIG:-gateway.prod.yaml} seed-config"
 
-
 [tasks.sync-pricing-catalog]
 description = "Refresh the vendored pricing catalog fallback snapshot"
 run = "cargo run -p gateway --bin sync_pricing_catalog"
