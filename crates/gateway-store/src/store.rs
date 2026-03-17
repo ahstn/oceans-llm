@@ -482,7 +482,7 @@ impl RequestLogRepository for AnyStore {
     async fn get_request_log_detail(
         &self,
         request_log_id: Uuid,
-    ) -> Result<Option<gateway_core::RequestLogDetail>, StoreError> {
+    ) -> Result<gateway_core::RequestLogDetail, StoreError> {
         dispatch_store!(self, get_request_log_detail(request_log_id))
     }
 }

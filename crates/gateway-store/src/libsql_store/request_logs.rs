@@ -211,7 +211,7 @@ impl RequestLogRepository for LibsqlStore {
     async fn get_request_log_detail(
         &self,
         request_log_id: Uuid,
-    ) -> Result<Option<RequestLogDetail>, StoreError> {
+    ) -> Result<RequestLogDetail, StoreError> {
         let mut rows = self
             .connection
             .query(
@@ -237,7 +237,9 @@ impl RequestLogRepository for LibsqlStore {
             .await
             .map_err(|error| StoreError::Query(error.to_string()))?
         else {
-            return Ok(None);
+            return Err(StoreError::NotFound(format!(
+                "request log `{request_log_id}` not found"
+            )));
         };
 
         let log = decode_request_log_row(&row)?;
@@ -254,6 +256,6 @@ impl RequestLogRepository for LibsqlStore {
             _ => None,
         };
 
-        Ok(Some(RequestLogDetail { log, payload }))
+        Ok(RequestLogDetail { log, payload })
     }
 }

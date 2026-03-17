@@ -75,6 +75,13 @@ export function RequestLogsPage() {
 
   const rows = rowVirtualizer.getVirtualItems()
 
+  function openDetail(requestLogId: string) {
+    setSelectedLogId(requestLogId)
+    setSelectedDetail(null)
+    setDetailPending(true)
+    setDetailError(null)
+  }
+
   return (
     <>
       <Card>
@@ -159,7 +166,7 @@ export function RequestLogsPage() {
                     <Button
                       type="button"
                       variant="secondary"
-                      onClick={() => setSelectedLogId(item.requestLogId)}
+                      onClick={() => openDetail(item.requestLogId)}
                     >
                       Inspect
                     </Button>
@@ -230,7 +237,7 @@ export function RequestLogsPage() {
                           type="button"
                           variant="secondary"
                           className="w-full"
-                          onClick={() => setSelectedLogId(item.requestLogId)}
+                          onClick={() => openDetail(item.requestLogId)}
                         >
                           Inspect
                         </Button>
@@ -320,7 +327,9 @@ export function RequestLogsPage() {
               </div>
             </div>
           ) : (
-            <div className="text-sm text-[var(--color-text-soft)]">Request log not found.</div>
+            <div className="text-sm text-[var(--color-text-soft)]">
+              Loading request log detail…
+            </div>
           )}
         </DialogContent>
       </Dialog>

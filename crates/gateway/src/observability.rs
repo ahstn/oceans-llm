@@ -25,6 +25,7 @@ pub struct GatewayMetrics {
     tokens: Counter<u64>,
     cost_usd: Counter<f64>,
     usage_records: Counter<u64>,
+    usage_record_failures: Counter<u64>,
 }
 
 pub struct ObservabilityGuard {
@@ -90,6 +91,10 @@ impl GatewayMetrics {
                 .u64_counter("gateway.chat.usage_records")
                 .with_description("Chat usage records by pricing status")
                 .build(),
+            usage_record_failures: meter
+                .u64_counter("gateway.chat.usage_record_failures")
+                .with_description("Post-success chat usage record failures")
+                .build(),
         }
     }
 
@@ -146,6 +151,12 @@ impl GatewayMetrics {
         {
             self.cost_usd.add(cost_usd, &attrs);
         }
+    }
+
+    pub fn record_usage_record_failure(&self, labels: &ChatMetricLabels<'_>, operation: &str) {
+        let mut attrs = base_attrs(labels);
+        attrs.push(KeyValue::new("operation", operation.to_string()));
+        self.usage_record_failures.add(1, &attrs);
     }
 }
 

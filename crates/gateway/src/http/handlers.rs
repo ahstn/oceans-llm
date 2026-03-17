@@ -280,18 +280,19 @@ pub async fn v1_chat_completions(
             return Err(AppError(error));
         }
     };
-    let usage = state
-        .service
-        .record_chat_usage(
-            &auth,
-            &resolved.selection.execution_model,
-            &route,
-            &request_id,
-            usage_value_from_response(&value),
-            OffsetDateTime::now_utc(),
-        )
-        .await?;
-    record_usage_metrics(&state, &labels, &usage);
+    finalize_successful_usage_accounting(
+        &state,
+        UsageAccountingContext {
+            auth: &auth,
+            model: &resolved.selection.execution_model,
+            route: &route,
+            request_id: &request_id,
+            labels: labels.clone(),
+            operation: "chat_completions",
+        },
+        usage_value_from_response(&value),
+    )
+    .await;
     best_effort_log_non_stream_success(
         &state.service,
         &auth,
@@ -354,6 +355,12 @@ pub async fn v1_embeddings(
             return Err(AppError(no_compatible_route_error(requirements)));
         }
     };
+    let labels = ChatMetricLabels {
+        requested_model: &resolved.selection.requested_model.model_key,
+        resolved_model: &resolved.selection.execution_model.model_key,
+        provider_key: &route.provider_key,
+        stream: false,
+    };
 
     state
         .service
@@ -394,17 +401,19 @@ pub async fn v1_embeddings(
         }
     };
 
-    state
-        .service
-        .record_chat_usage(
-            &auth,
-            &resolved.selection.execution_model,
-            &route,
-            &request_id,
-            usage_value_from_response(&value),
-            OffsetDateTime::now_utc(),
-        )
-        .await?;
+    finalize_successful_usage_accounting(
+        &state,
+        UsageAccountingContext {
+            auth: &auth,
+            model: &resolved.selection.execution_model,
+            route: &route,
+            request_id: &request_id,
+            labels: labels.clone(),
+            operation: "embeddings",
+        },
+        usage_value_from_response(&value),
+    )
+    .await;
     best_effort_log_request(
         &state.service,
         &auth,
@@ -605,6 +614,15 @@ struct LoggingBodyStreamState {
     collector: gateway_service::StreamResponseCollector,
 }
 
+struct UsageAccountingContext<'a> {
+    auth: &'a AuthenticatedApiKey,
+    model: &'a gateway_core::GatewayModel,
+    route: &'a gateway_core::ModelRoute,
+    request_id: &'a str,
+    labels: ChatMetricLabels<'a>,
+    operation: &'static str,
+}
+
 fn wrap_stream_with_request_logging(
     state: LoggingBodyStreamState,
 ) -> impl futures_util::Stream<Item = Result<axum::body::Bytes, std::io::Error>> {
@@ -677,37 +695,26 @@ fn wrap_stream_with_request_logging(
                             error_code: failure.error_code.clone(),
                         });
                 if failure.is_none() {
-                    match state
-                        .service
-                        .record_chat_usage(
-                            &state.auth,
-                            &state.execution_model,
-                            &state.route,
-                            &state.request_log_context.request_id,
-                            state.collector.usage().cloned(),
-                            OffsetDateTime::now_utc(),
-                        )
-                        .await
-                    {
-                        Ok(usage) => record_usage_metrics_from_ref(
-                            &state.metrics,
-                            &ChatMetricLabels {
-                                requested_model: &state.requested_model_key,
-                                resolved_model: &state.resolved_model_key,
-                                provider_key: &state.provider_key,
-                                stream: true,
-                            },
-                            &usage,
-                        ),
-                        Err(error) => {
-                            tracing::warn!(
-                                request_id = %state.request_log_context.request_id,
-                                model_key = %state.execution_model.model_key,
-                                error = %error,
-                                "usage ledger write failed after stream completion"
-                            );
-                        }
-                    }
+                    let labels = ChatMetricLabels {
+                        requested_model: &state.requested_model_key,
+                        resolved_model: &state.resolved_model_key,
+                        provider_key: &state.provider_key,
+                        stream: true,
+                    };
+                    finalize_successful_usage_accounting_from_parts(
+                        &state.service,
+                        &state.metrics,
+                        UsageAccountingContext {
+                            auth: &state.auth,
+                            model: &state.execution_model,
+                            route: &state.route,
+                            request_id: &state.request_log_context.request_id,
+                            labels,
+                            operation: "chat_completions",
+                        },
+                        state.collector.usage().cloned(),
+                    )
+                    .await;
                 }
                 tracing::info!(
                     request_id = %state.request_log_context.request_id,
@@ -957,14 +964,6 @@ fn record_attempt_span_fields(
     span.record("fallback_used", fallback_used);
 }
 
-fn record_usage_metrics(
-    state: &AppState,
-    labels: &ChatMetricLabels<'_>,
-    usage: &gateway_service::RecordedChatUsage,
-) {
-    record_usage_metrics_from_ref(&state.metrics, labels, usage);
-}
-
 fn record_usage_metrics_from_ref(
     metrics: &crate::observability::GatewayMetrics,
     labels: &ChatMetricLabels<'_>,
@@ -982,6 +981,54 @@ fn record_usage_metrics_from_ref(
             usage.total_tokens,
             usage.cost_usd,
         );
+    }
+}
+
+async fn finalize_successful_usage_accounting(
+    state: &AppState,
+    context: UsageAccountingContext<'_>,
+    provider_usage: Option<Value>,
+) {
+    finalize_successful_usage_accounting_from_parts(
+        &state.service,
+        &state.metrics,
+        context,
+        provider_usage,
+    )
+    .await;
+}
+
+async fn finalize_successful_usage_accounting_from_parts(
+    service: &std::sync::Arc<AppGatewayService>,
+    metrics: &crate::observability::GatewayMetrics,
+    context: UsageAccountingContext<'_>,
+    provider_usage: Option<Value>,
+) {
+    match service
+        .record_chat_usage(
+            context.auth,
+            context.model,
+            context.route,
+            context.request_id,
+            provider_usage,
+            OffsetDateTime::now_utc(),
+        )
+        .await
+    {
+        Ok(usage) => record_usage_metrics_from_ref(metrics, &context.labels, &usage),
+        Err(error) => {
+            tracing::warn!(
+                request_id = %context.request_id,
+                requested_model = %context.labels.requested_model,
+                resolved_model = %context.labels.resolved_model,
+                provider_key = %context.labels.provider_key,
+                stream = context.labels.stream,
+                operation = context.operation,
+                error = %error,
+                "post-success usage accounting failed"
+            );
+            metrics.record_usage_record_failure(&context.labels, context.operation);
+        }
     }
 }
 

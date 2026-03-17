@@ -189,13 +189,13 @@ export async function listRequestLogs(): Promise<ApiEnvelope<Paginated<RequestLo
 
 export async function getRequestLogDetail(
   requestLogId: string,
-): Promise<ApiEnvelope<RequestLogDetailView | null>> {
-  const response = await fetchGatewayJson<ApiEnvelope<GatewayRequestLogDetail | null>>(
+): Promise<ApiEnvelope<RequestLogDetailView>> {
+  const response = await fetchGatewayJson<ApiEnvelope<GatewayRequestLogDetail>>(
     `/api/v1/admin/observability/request-logs/${encodeURIComponent(requestLogId)}`,
   )
 
   return {
-    data: response.data ? mapRequestLogDetail(response.data) : null,
+    data: mapRequestLogDetail(response.data),
     meta: response.meta,
   }
 }

@@ -651,6 +651,18 @@ mod tests {
         ledgers
     }
 
+    async fn drop_model_pricing_table(db_path: &Path) {
+        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
+            .build()
+            .await
+            .expect("libsql db");
+        let connection = db.connect().expect("libsql connection");
+        connection
+            .execute("DROP TABLE model_pricing", ())
+            .await
+            .expect("drop model_pricing table");
+    }
+
     async fn set_api_key_owner_to_user(
         db_path: &Path,
         raw_key: &str,
@@ -1256,6 +1268,117 @@ mod tests {
         assert_eq!(ledgers[0].request_id, "req-dedupe");
         assert!(ledgers[0].ownership_scope_key.starts_with("team:"));
         assert_eq!(ledgers[0].pricing_status, "priced");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn non_stream_success_remains_200_when_post_success_accounting_fails() {
+        let (_, provider) = make_chat_provider(
+            "openai-prod",
+            MockChatResult::Value(json!({
+                "id": "chatcmpl_123",
+                "object": "chat.completion",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "pong"}, "finish_reason":"stop"}],
+                "usage": {"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18}
+            })),
+            vec![],
+            ProviderCapabilities::openai_compat_baseline(),
+        );
+        let mut registry = gateway_core::ProviderRegistry::new();
+        registry.register(Arc::new(provider));
+
+        let (app, raw_key, db_path) = build_default_test_app(registry).await;
+        drop_model_pricing_table(&db_path).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .header("x-request-id", "req-accounting-fail-open")
+                    .body(Body::from(
+                        json!({
+                            "model": "fast",
+                            "messages": [{"role": "user", "content": "ping"}]
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let payload = read_json(response).await;
+        assert_eq!(payload["choices"][0]["message"]["content"], "pong");
+
+        let logs = load_request_logs(&db_path).await;
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].status_code, Some(200));
+        assert_eq!(logs[0].provider_key, "openai-prod");
+
+        assert!(load_usage_ledger(&db_path).await.is_empty());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn stream_success_remains_200_when_post_success_accounting_fails() {
+        let (_, provider) = make_chat_provider(
+            "openai-prod",
+            MockChatResult::Value(json!({
+                "id": "chatcmpl_unused",
+                "object": "chat.completion",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "unused"}, "finish_reason":"stop"}]
+            })),
+            vec![
+                "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"hi\"},\"finish_reason\":null}],\"usage\":{\"prompt_tokens\":11,\"completion_tokens\":7,\"total_tokens\":18}}\n\n".to_string(),
+                "data: [DONE]\n\n".to_string(),
+            ],
+            ProviderCapabilities::new(true, true, false),
+        );
+        let mut registry = gateway_core::ProviderRegistry::new();
+        registry.register(Arc::new(provider));
+
+        let (app, raw_key, db_path) = build_default_test_app(registry).await;
+        drop_model_pricing_table(&db_path).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .header("x-request-id", "req-stream-accounting-fail-open")
+                    .body(Body::from(
+                        json!({
+                            "model": "fast",
+                            "stream": true,
+                            "messages": [{"role": "user", "content": "ping"}]
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        let transcript = String::from_utf8(body.to_vec()).expect("utf8");
+        assert!(transcript.contains("\"content\":\"hi\""));
+        assert!(transcript.contains("data: [DONE]"));
+
+        let logs = load_request_logs(&db_path).await;
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].status_code, Some(200));
+        assert_eq!(logs[0].metadata["stream"], Value::Bool(true));
+
+        assert!(load_usage_ledger(&db_path).await.is_empty());
     }
 
     #[tokio::test]
@@ -2580,6 +2703,33 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(team_deactivate.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn admin_request_log_detail_returns_404_for_unknown_id() {
+        let (app, store, _) =
+            build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;
+        let session_cookie = bootstrap_admin_session_cookie(&app, &store).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!(
+                        "/api/v1/admin/observability/request-logs/{}",
+                        Uuid::new_v4()
+                    ))
+                    .header("cookie", session_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let body = read_json(response).await;
+        assert_eq!(body["error"]["code"], "not_found");
     }
 
     #[tokio::test]

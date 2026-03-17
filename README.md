@@ -129,6 +129,7 @@ database:
 
 - Every `/v1/chat/completions` response includes `x-request-id`. If the caller does not send one, the gateway generates a UUID and uses it as the canonical accounting key.
 - Successful requests write a normalized usage ledger row in `usage_cost_events` using provider-reported token usage when available.
+- If the upstream response already succeeded but post-success accounting fails, the request still returns success and the accounting failure is surfaced through structured logs and observability metrics instead of being converted into a client error.
 - Spend is computed at write-time from the matched pricing row and stored in fixed-point USD (`*_10000`) so historical totals do not change when catalog prices refresh.
 - If usage is present but pricing cannot be matched, the request succeeds and the ledger row is marked `unpriced`.
 - If the provider response does not include usage, the request succeeds and the ledger row is marked `usage_missing`.
@@ -147,6 +148,7 @@ Platform admins can inspect logs through the admin UI or the underlying JSON API
 - `GET /api/v1/admin/observability/request-logs/{request_log_id}`
 
 The list endpoint supports `page`, `page_size`, `request_id`, `model_key`, `provider_key`, `status_code`, `user_id`, and `team_id` query parameters.
+The detail endpoint is a strict lookup and returns `404` for unknown request-log ids.
 
 ### Example Vertex config
 

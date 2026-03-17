@@ -2,8 +2,8 @@ pub mod admin_auth;
 pub mod error;
 pub mod handlers;
 pub mod identity;
-pub mod spend;
 pub mod observability;
+pub mod spend;
 pub mod state;
 
 use admin_ui::{AdminUiConfig, mount_admin_ui};

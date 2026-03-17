@@ -11,10 +11,10 @@ use crate::{
     domain::{
         ApiKeyRecord, GatewayModel, ModelPricingRecord, ModelRoute, Money4,
         PricingCatalogCacheRecord, ProviderCapabilities, ProviderConnection,
-        ProviderRequestContext, RequestLogRecord, SpendDailyAggregateRecord,
-        SpendModelAggregateRecord, SpendOwnerAggregateRecord, TeamBudgetRecord,
-        RequestLogDetail, RequestLogPage, RequestLogPayloadRecord, RequestLogQuery,
-        TeamMembershipRecord, TeamRecord, UsageLedgerRecord, UserBudgetRecord, UserRecord,
+        ProviderRequestContext, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
+        RequestLogQuery, RequestLogRecord, SpendDailyAggregateRecord, SpendModelAggregateRecord,
+        SpendOwnerAggregateRecord, TeamBudgetRecord, TeamMembershipRecord, TeamRecord,
+        UsageLedgerRecord, UserBudgetRecord, UserRecord,
     },
     error::{ProviderError, RouteError, StoreError},
     protocol::core::{ChatRequest, EmbeddingsRequest},
@@ -208,7 +208,7 @@ pub trait RequestLogRepository: Send + Sync {
     async fn get_request_log_detail(
         &self,
         request_log_id: Uuid,
-    ) -> Result<Option<RequestLogDetail>, StoreError>;
+    ) -> Result<RequestLogDetail, StoreError>;
 }
 
 #[async_trait]

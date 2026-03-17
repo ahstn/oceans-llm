@@ -1,7 +1,9 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { RequestLogView } from '@/types/api'
+
+const getObservabilityRequestLogDetailMock = vi.fn()
 
 const routeMock = {
   useLoaderData: vi.fn(),
@@ -16,6 +18,12 @@ vi.mock('@tanstack/react-virtual', () => ({
     getVirtualItems: () => [{ index: 0, size: 36, start: 0 }],
     getTotalSize: () => 36,
   }),
+}))
+
+vi.mock('@/server/admin-data.functions', () => ({
+  getRequestLogs: vi.fn(),
+  getObservabilityRequestLogDetail: (...args: unknown[]) =>
+    getObservabilityRequestLogDetailMock(...args),
 }))
 
 const items: RequestLogView[] = [
@@ -49,6 +57,7 @@ const items: RequestLogView[] = [
 describe('RequestLogsPage', () => {
   beforeEach(() => {
     routeMock.useLoaderData.mockReset()
+    getObservabilityRequestLogDetailMock.mockReset()
   })
 
   it('renders dedicated mobile and desktop log layouts from the same payload', async () => {
@@ -63,5 +72,20 @@ describe('RequestLogsPage', () => {
     expect(screen.getAllByText('gpt-4.1-mini')).toHaveLength(2)
     expect(screen.getAllByText('openai')).toHaveLength(2)
     expect(screen.getAllByText('req_1')).toHaveLength(2)
+  })
+
+  it('renders an error banner when detail lookup fails', async () => {
+    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
+    getObservabilityRequestLogDetailMock.mockRejectedValue(new Error('request log missing'))
+
+    const { RequestLogsPage } = await import('@/routes/observability/request-logs')
+
+    render(<RequestLogsPage />)
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Inspect' })[0])
+
+    await waitFor(() => {
+      expect(screen.getByText('request log missing')).toBeInTheDocument()
+    })
   })
 })
