@@ -3,6 +3,12 @@
 - Date: 2026-03-15
 - Status: Accepted
 
+## Implemented By
+
+- Canonical docs:
+  - [../observability-and-request-logs.md](../observability-and-request-logs.md)
+  - [../admin-control-plane.md](../admin-control-plane.md)
+
 ## Context
 
 The gateway already had:

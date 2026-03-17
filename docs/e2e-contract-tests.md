@@ -1,10 +1,14 @@
 # End-to-End Contract Tests
 
-The E2E harness boots three processes:
+`Owns`: the E2E harness shape, scope rules, and extension rules for cross-layer contract coverage.
+`Depends on`: [admin-control-plane.md](admin-control-plane.md), [model-routing-and-api-behavior.md](model-routing-and-api-behavior.md)
+`See also`: [../crates/admin-ui/web/e2e/](../crates/admin-ui/web/e2e/), [../mise.toml](../mise.toml)
 
-- A deterministic OpenAI-compatible stub upstream.
-- The built admin UI SSR server.
-- The real gateway, with `/admin/*` served through the gateway proxy.
+The E2E harness boots three real processes:
+
+- a deterministic OpenAI-compatible stub upstream
+- the built admin UI SSR server
+- the real gateway, with `/admin/*` served through the gateway proxy
 
 Run it locally with:
 
@@ -12,25 +16,66 @@ Run it locally with:
 mise run e2e-test
 ```
 
-The harness uses fixed seed credentials so the browser and API assertions stay deterministic:
+## Fixed Test Credentials
 
-- Bootstrap admin email: `admin@local`
-- Bootstrap admin password: `admin`
-- Bootstrap admin replacement password: `s3cur3-passw0rd`
-- Seed gateway API key: `gwk_e2e.secret-value`
+The harness uses deterministic seed values:
 
-Scope rule:
+- bootstrap admin email: `admin@local`
+- bootstrap admin password: `admin`
+- bootstrap admin replacement password: `s3cur3-passw0rd`
+- seed gateway API key: `gwk_e2e.secret-value`
 
-- Treat the harness as a contract suite for live gateway-backed flows.
-- Today that means admin auth/session/password rotation and `/v1/*` gateway requests.
-- Preview-data pages such as API keys, models, and observability can appear as landing assertions, but they should not become standalone business-flow tests until their data is live.
+## Scope Rule
 
-Extension rule:
+Treat the harness as a contract suite for live gateway-backed flows.
 
-- Add new browser scenarios only when the page is backed by a real gateway contract.
-- Prefer one critical cross-layer flow per new live surface instead of broad UI coverage.
+Current intended coverage:
 
-Next recommended additions:
+- admin auth and session behavior
+- password rotation
+- live `/v1/*` request handling
+- additional admin flows only when the page is backed by a real gateway contract
 
-- Password invite completion.
-- Team and user management flows once the first harness slice is stable.
+## Covered Today
+
+The current suite already covers more than a browser-only smoke pass:
+
+- browser auth and forced password-rotation flow
+- public `/v1/models`
+- public `/v1/chat/completions`
+- live spend report API behavior
+- team hard-limit enforcement for team-owned keys
+
+## Preview-Backed Surface Rule
+
+Preview-backed pages may appear in smoke or landing assertions, but they are not treated as business-flow coverage until the underlying data is live.
+
+Today that matters for:
+
+- API Keys
+- Models
+
+Those pages still use local preview data in the admin UI. See [admin-control-plane.md](admin-control-plane.md).
+
+## Extension Rule
+
+When adding new browser scenarios:
+
+- prefer one critical cross-layer flow per newly live surface
+- keep the suite contract-focused rather than broad UI regression coverage
+- avoid treating mock or preview-only pages as durable product workflows
+
+## Coverage Shape
+
+The harness is intentionally mixed:
+
+- browser-admin flows for same-origin control-plane behavior
+- raw API contract assertions for gateway and admin endpoints
+
+That split is intentional because some critical contracts are better asserted directly at the HTTP boundary than through page interactions.
+
+## Still Missing
+
+- password invite completion coverage
+- user and team management flows
+- request-log detail and filtering flows as that surface hardens

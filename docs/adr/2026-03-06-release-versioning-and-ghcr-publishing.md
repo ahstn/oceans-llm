@@ -5,6 +5,11 @@
 
 ## Context
 
+Implemented by:
+
+- [../release-process.md](../release-process.md)
+- [../deploy-and-operations.md](../deploy-and-operations.md)
+
 The repository had a single Rust CI workflow, no release workflow, no Docker image publishing, no release tags, and no structured release-note configuration. The codebase also ships two deployable applications:
 
 - the Rust gateway on port `8080`,
@@ -30,7 +35,7 @@ We also needed to account for current repo reality:
 
 ### 1. Create releases locally from `main`, then publish from the tag workflow
 
-Releases are created locally from `main` with `mise run release`. That task computes the next version, creates the release commit and tag, regenerates `CHANGELOG.md`, and pushes the release artifacts to GitHub. The pushed tag then triggers the GitHub Actions release workflow.
+Releases are created locally from `main` with `mise run release`. That task computes the next version, creates the release commit and tag, regenerates `CHANGELOG.md`, and prepares the release metadata. Maintainers then push the release commit and tag to GitHub, which triggers the GitHub Actions release workflow.
 
 Why:
 - every merge to `main` should not automatically become a public release,
@@ -111,22 +116,14 @@ Why:
 - image publishing stays in CI where registry credentials and attestations already live,
 - local release creation stays small while CI handles distribution.
 
-### 9. Publish multi-arch GHCR images for both deployables
+### 9. Publish GHCR images for both deployables
 
 Each release publishes:
 
 - `ghcr.io/ahstn/oceans-llm-gateway`
 - `ghcr.io/ahstn/oceans-llm-admin-ui`
 
-for:
-- `linux/amd64`
-- `linux/arm64`
-
-with tags:
-- full release tag, such as `v0.1.0`,
-- floating `X.Y`,
-- `sha-<shortsha>`,
-- `latest`.
+with release and moving tags.
 
 Why:
 - GHCR is a natural fit for a GitHub-hosted repo,
@@ -148,8 +145,8 @@ This keeps versioning and changelog generation explicit and easy to inspect befo
 
 ### GitHub Actions release step
 
-1. The pushed `vX.Y.Z` tag triggers [.github/workflows/release.yml](/Users/ahstn/git/oceans-llm/.github/workflows/release.yml).
-2. The workflow builds and publishes the gateway and admin UI images to GHCR for `linux/amd64` and `linux/arm64`.
+1. The pushed `vX.Y.Z` tag triggers [../../.github/workflows/release.yml](../../.github/workflows/release.yml).
+2. The workflow builds and publishes the gateway and admin UI images to GHCR.
 3. The workflow applies the release image tags and provenance attestations.
 4. The workflow publishes or updates the GitHub release associated with the tag.
 
@@ -231,6 +228,17 @@ Tradeoffs:
 - changelog generation and tag creation now happen locally rather than entirely in CI,
 - Cargo package versions are not the public release identity for now,
 - branch governance must be kept aligned with the workflow assumptions.
+
+## Current Implementation Status
+
+The live workflow is slightly narrower than the original ADR language:
+
+- `mise run release` does not push automatically
+- the current workflow publishes `vX.Y.Z`, `sha-<sha>`, and `latest`
+- the gateway image is currently `linux/amd64` only
+- the admin UI image is currently `linux/amd64` and `linux/arm64`
+
+Treat [../release-process.md](../release-process.md) as the canonical operational description.
 
 ## Follow-up Work
 
