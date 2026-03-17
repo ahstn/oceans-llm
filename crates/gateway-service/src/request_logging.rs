@@ -364,7 +364,7 @@ where
     pub async fn get_request_log_detail(
         &self,
         request_log_id: Uuid,
-    ) -> Result<Option<RequestLogDetail>, GatewayError> {
+    ) -> Result<RequestLogDetail, GatewayError> {
         self.repo
             .get_request_log_detail(request_log_id)
             .await
@@ -579,14 +579,16 @@ mod tests {
         async fn get_request_log_detail(
             &self,
             request_log_id: Uuid,
-        ) -> Result<Option<RequestLogDetail>, StoreError> {
+        ) -> Result<RequestLogDetail, StoreError> {
             let logs = self.logs.lock().expect("logs lock");
             let Some(log) = logs
                 .iter()
                 .find(|log| log.request_log_id == request_log_id)
                 .cloned()
             else {
-                return Ok(None);
+                return Err(StoreError::NotFound(format!(
+                    "request log `{request_log_id}` not found"
+                )));
             };
             let payload = self
                 .payloads
@@ -595,7 +597,7 @@ mod tests {
                 .iter()
                 .find(|payload| payload.request_log_id == request_log_id)
                 .cloned();
-            Ok(Some(RequestLogDetail { log, payload }))
+            Ok(RequestLogDetail { log, payload })
         }
     }
 

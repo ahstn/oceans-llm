@@ -255,7 +255,7 @@ where
     pub async fn get_request_log_detail(
         &self,
         request_log_id: Uuid,
-    ) -> Result<Option<RequestLogDetail>, GatewayError> {
+    ) -> Result<RequestLogDetail, GatewayError> {
         self.request_logging
             .get_request_log_detail(request_log_id)
             .await

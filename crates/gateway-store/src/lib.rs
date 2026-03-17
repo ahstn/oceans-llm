@@ -24,7 +24,7 @@ mod tests {
         PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
         PricingProvenance, ProviderCapabilities, RequestLogRecord, RequestLogRepository,
         SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedModel, SeedModelRoute,
-        SeedProvider, StoreHealth, UsageLedgerRecord, UsagePricingStatus,
+        SeedProvider, StoreError, StoreHealth, UsageLedgerRecord, UsagePricingStatus,
     };
     use serde_json::{Map, json};
     use serial_test::serial;
@@ -455,6 +455,24 @@ mod tests {
         let resolved_model_key: Option<String> = row.get(1).expect("resolved model key");
         assert_eq!(model_key, "fast");
         assert_eq!(resolved_model_key.as_deref(), Some("fast"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_request_log_detail_missing_returns_not_found() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        let error = store
+            .get_request_log_detail(Uuid::new_v4())
+            .await
+            .expect_err("missing request log should fail");
+        assert!(matches!(error, StoreError::NotFound(_)));
     }
 
     #[tokio::test]
@@ -2601,6 +2619,40 @@ mod tests {
         assert_eq!(resolved_model_key.as_deref(), Some("fast"));
 
         pool.close().await;
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_request_log_detail_missing_returns_not_found() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres request log detail missing test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        run_migrations_with_options(
+            &StoreConnectionOptions::Postgres {
+                url: test_db.database_url.clone(),
+                max_connections: 2,
+            },
+            MigrationTestHook::default(),
+        )
+        .await
+        .expect("apply postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 2)
+            .await
+            .expect("postgres store");
+
+        let error = store
+            .get_request_log_detail(Uuid::new_v4())
+            .await
+            .expect_err("missing request log should fail");
+        assert!(matches!(error, StoreError::NotFound(_)));
+
+        drop(store);
         drop_postgres_test_database(&test_db).await;
     }
 

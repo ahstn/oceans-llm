@@ -110,15 +110,11 @@ pub async fn get_request_log_detail(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(request_log_id): Path<Uuid>,
-) -> Result<Json<Envelope<Option<RequestLogDetailView>>>, AppError> {
+) -> Result<Json<Envelope<RequestLogDetailView>>, AppError> {
     require_platform_admin(&state, &headers).await?;
 
-    let detail = state
-        .service
-        .get_request_log_detail(request_log_id)
-        .await?
-        .map(detail_view);
-    Ok(Json(envelope(detail)))
+    let detail = state.service.get_request_log_detail(request_log_id).await?;
+    Ok(Json(envelope(detail_view(detail))))
 }
 
 fn summary_view(log: &RequestLogRecord) -> RequestLogSummaryView {
