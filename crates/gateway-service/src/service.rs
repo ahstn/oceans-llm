@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
 use gateway_core::{
-    ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, BudgetRepository, GatewayError, GatewayModel,
-    IdentityRepository, ModelRepository, ModelRoute, Money4, PricingCatalogRepository,
-    PricingResolution, PricingUnpricedReason, ProviderRepository, RequestLogRecord,
-    RequestLogRepository, ResolvedModelPricing, RouteError, RoutePlanner, StoreHealth,
-    UsageLedgerRecord, UsagePricingStatus,
+    ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, BudgetRepository, ChatCompletionsRequest,
+    GatewayError, GatewayModel, IdentityRepository, ModelRepository, ModelRoute, Money4,
+    PricingCatalogRepository, PricingResolution, PricingUnpricedReason, ProviderRepository,
+    RequestLogDetail, RequestLogPage, RequestLogQuery, RequestLogRecord, RequestLogRepository,
+    ResolvedModelPricing, RouteError, RoutePlanner, StoreHealth, UsageLedgerRecord,
+    UsagePricingStatus,
 };
 use serde_json::{Value, json};
 use time::OffsetDateTime;
@@ -13,10 +14,21 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::{
-    Authenticator, ModelAccess, ModelResolver, PricingCatalog, RequestLogging,
-    ResolvedGatewayRequest,
+    Authenticator, ChatRequestLogContext, LoggedRequest, ModelAccess, ModelResolver,
+    PricingCatalog, RequestLogging, ResolvedGatewayRequest, StreamLogResultInput,
+    StreamResponseCollector,
     budget_guard::{BudgetGuard, BudgetGuardDisposition},
 };
+
+#[derive(Debug, Clone)]
+pub struct RecordedChatUsage {
+    pub disposition: BudgetGuardDisposition,
+    pub pricing_status: UsagePricingStatus,
+    pub prompt_tokens: Option<i64>,
+    pub completion_tokens: Option<i64>,
+    pub total_tokens: Option<i64>,
+    pub cost_usd: Option<f64>,
+}
 
 #[derive(Clone)]
 pub struct GatewayService<S, P> {
@@ -144,12 +156,109 @@ where
         })
     }
 
+    #[must_use]
+    pub fn begin_chat_request_log(
+        &self,
+        request_id: &str,
+        requested_model_key: &str,
+        resolved_model_key: &str,
+        request: &ChatCompletionsRequest,
+        request_headers: &std::collections::BTreeMap<String, String>,
+    ) -> ChatRequestLogContext {
+        self.request_logging.begin_chat_request(
+            request_id,
+            requested_model_key,
+            resolved_model_key,
+            request,
+            request_headers,
+        )
+    }
+
+    #[must_use]
+    pub fn new_stream_response_collector(&self) -> StreamResponseCollector {
+        self.request_logging.new_stream_response_collector()
+    }
+
+    pub async fn log_non_stream_success(
+        &self,
+        auth: &AuthenticatedApiKey,
+        context: &ChatRequestLogContext,
+        provider_key: &str,
+        attempt_count: usize,
+        latency_ms: i64,
+        response_body: &Value,
+    ) -> Result<LoggedRequest, GatewayError> {
+        self.request_logging
+            .log_non_stream_success(
+                auth,
+                context,
+                provider_key,
+                attempt_count,
+                latency_ms,
+                response_body,
+            )
+            .await
+    }
+
+    pub async fn log_non_stream_failure(
+        &self,
+        auth: &AuthenticatedApiKey,
+        context: &ChatRequestLogContext,
+        provider_key: &str,
+        attempt_count: usize,
+        latency_ms: i64,
+        gateway_error: &GatewayError,
+    ) -> Result<LoggedRequest, GatewayError> {
+        self.request_logging
+            .log_non_stream_failure(
+                auth,
+                context,
+                provider_key,
+                attempt_count,
+                latency_ms,
+                gateway_error,
+            )
+            .await
+    }
+
+    pub async fn log_stream_result(
+        &self,
+        auth: &AuthenticatedApiKey,
+        context: &ChatRequestLogContext,
+        stream_result: StreamLogResultInput,
+    ) -> Result<LoggedRequest, GatewayError> {
+        self.request_logging
+            .log_stream_result(auth, context, stream_result)
+            .await
+    }
+
     pub async fn log_request_if_enabled(
         &self,
         auth: &AuthenticatedApiKey,
         log: RequestLogRecord,
-    ) -> Result<bool, GatewayError> {
-        self.request_logging.log_request_if_enabled(auth, log).await
+    ) -> Result<(), GatewayError> {
+        if !self.request_logging.should_log_request(auth).await? {
+            return Ok(());
+        }
+
+        self.store.insert_request_log(&log, None).await?;
+        Ok(())
+    }
+
+    pub async fn list_request_logs(
+        &self,
+        query: &RequestLogQuery,
+    ) -> Result<RequestLogPage, GatewayError> {
+        self.request_logging.list_request_logs(query).await
+    }
+
+    pub async fn get_request_log_detail(
+        &self,
+        request_log_id: Uuid,
+    ) -> Result<Option<RequestLogDetail>, GatewayError> {
+        self.request_logging
+            .get_request_log_detail(request_log_id)
+            .await
     }
 
     pub async fn refresh_pricing_catalog_if_stale(&self) -> Result<(), GatewayError> {
@@ -193,7 +302,7 @@ where
         request_id: &str,
         provider_usage: Option<Value>,
         occurred_at: OffsetDateTime,
-    ) -> Result<BudgetGuardDisposition, GatewayError> {
+    ) -> Result<RecordedChatUsage, GatewayError> {
         let ownership_scope_key = ownership_scope_key(auth, None)?;
         let usage_summary = usage_summary_from_value(provider_usage.as_ref())?;
         let provider_usage = provider_usage.unwrap_or_else(|| json!({}));
@@ -264,7 +373,14 @@ where
             );
         }
 
-        Ok(disposition)
+        Ok(RecordedChatUsage {
+            disposition,
+            pricing_status: record.pricing_status,
+            prompt_tokens: record.prompt_tokens,
+            completion_tokens: record.completion_tokens,
+            total_tokens: record.total_tokens,
+            cost_usd: money_to_f64(record.computed_cost_usd),
+        })
     }
 }
 
@@ -306,6 +422,14 @@ fn usage_summary_from_value(value: Option<&Value>) -> Result<UsageSummary, Gatew
         completion_tokens,
         total_tokens,
     })
+}
+
+fn money_to_f64(value: Money4) -> Option<f64> {
+    if value == Money4::ZERO {
+        None
+    } else {
+        Some(value.as_scaled_i64() as f64 / Money4::SCALE as f64)
+    }
 }
 
 fn ownership_scope_key(

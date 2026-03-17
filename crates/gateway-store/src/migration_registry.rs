@@ -151,6 +151,17 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
             "../migrations/postgres/V12__team_budgets_and_spend_reporting.sql"
         )),
     },
+    MigrationManifest {
+        version: 13,
+        name: "request_log_payloads_and_indexes",
+        checksum: "V13__request_log_payloads_and_indexes.sql",
+        libsql: BackendMigrationStep::Sql(include_str!(
+            "../migrations/V13__request_log_payloads_and_indexes.sql"
+        )),
+        postgres: BackendMigrationStep::Sql(include_str!(
+            "../migrations/postgres/V13__request_log_payloads_and_indexes.sql"
+        )),
+    },
 ];
 
 #[cfg(test)]

@@ -127,7 +127,7 @@ mod tests {
         .expect("status");
 
         assert_eq!(status.backend, "libsql");
-        assert_eq!(status.pending_count(), 12);
+        assert_eq!(status.pending_count(), MIGRATION_REGISTRY.len());
         assert!(status.entries.iter().all(|entry| !entry.applied));
     }
 
@@ -2035,11 +2035,14 @@ mod tests {
             completion_tokens: Some(20),
             total_tokens: Some(30),
             error_code: None,
+            has_payload: false,
+            request_payload_truncated: false,
+            response_payload_truncated: false,
             metadata: Map::new(),
             occurred_at: OffsetDateTime::now_utc(),
         };
         store
-            .insert_request_log(&log)
+            .insert_request_log(&log, None)
             .await
             .expect("insert request log");
 
@@ -2620,7 +2623,7 @@ mod tests {
             .await
             .expect("initial postgres status");
         assert_eq!(initial_status.backend, "postgres");
-        assert_eq!(initial_status.pending_count(), 12);
+        assert_eq!(initial_status.pending_count(), MIGRATION_REGISTRY.len());
         assert!(initial_status.entries.iter().all(|entry| !entry.applied));
 
         run_migrations_with_options(&options, MigrationTestHook::default())

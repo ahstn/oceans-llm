@@ -26,9 +26,9 @@ futures-util = "0.3"
 http = "1"
 itertools = "0.14"
 libsql = "0.9"
-opentelemetry = { version = "0.31", features = ["trace"] }
-opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic", "trace"] }
-opentelemetry_sdk = { version = "0.31", features = ["rt-tokio", "trace"] }
+opentelemetry = { version = "0.31", features = ["metrics", "trace"] }
+opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic", "metrics", "trace"] }
+opentelemetry_sdk = { version = "0.31", features = ["metrics", "rt-tokio", "trace"] }
 rand = "0.8"
 refinery = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }

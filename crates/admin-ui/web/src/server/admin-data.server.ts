@@ -13,6 +13,7 @@ import type {
   ModelView,
   Paginated,
   PasswordInviteResult,
+  RequestLogDetailView,
   RequestLogView,
   SpendBudgetsView,
   SpendOwnerKind,
@@ -166,22 +167,37 @@ export async function deactivateTeamBudget(
 }
 
 export async function listRequestLogs(): Promise<ApiEnvelope<Paginated<RequestLogView>>> {
-  const items: RequestLogView[] = Array.from({ length: 500 }, (_, index) => ({
-    id: `req_${index + 1}`,
-    model: index % 3 === 0 ? 'fast' : index % 3 === 1 ? 'reasoning' : 'backup-fast',
-    provider: index % 2 === 0 ? 'openrouter' : 'openai-prod',
-    statusCode: index % 11 === 0 ? 500 : 200,
-    latencyMs: 120 + (index % 9) * 35,
-    tokens: 256 + (index % 7) * 64,
-    timestamp: `2026-02-26T${String(index % 24).padStart(2, '0')}:${String(index % 60).padStart(2, '0')}:00Z`,
-  }))
+  const response = await fetchGatewayJson<
+    ApiEnvelope<{
+      items: GatewayRequestLogSummary[]
+      page: number
+      page_size: number
+      total: number
+    }>
+  >('/api/v1/admin/observability/request-logs')
 
-  return envelope({
-    items,
-    page: 1,
-    pageSize: items.length,
-    total: items.length,
-  })
+  return {
+    data: {
+      items: response.data.items.map(mapRequestLogSummary),
+      page: response.data.page,
+      pageSize: response.data.page_size,
+      total: response.data.total,
+    },
+    meta: response.meta,
+  }
+}
+
+export async function getRequestLogDetail(
+  requestLogId: string,
+): Promise<ApiEnvelope<RequestLogDetailView | null>> {
+  const response = await fetchGatewayJson<ApiEnvelope<GatewayRequestLogDetail | null>>(
+    `/api/v1/admin/observability/request-logs/${encodeURIComponent(requestLogId)}`,
+  )
+
+  return {
+    data: response.data ? mapRequestLogDetail(response.data) : null,
+    meta: response.meta,
+  }
 }
 
 export async function listTeams(): Promise<ApiEnvelope<IdentityTeamsPayload>> {
@@ -289,4 +305,70 @@ export async function completeInvitation(
       body: JSON.stringify({ password }),
     },
   )
+}
+
+interface GatewayRequestLogSummary {
+  request_log_id: string
+  request_id: string
+  api_key_id: string
+  user_id: string | null
+  team_id: string | null
+  model_key: string
+  resolved_model_key: string
+  provider_key: string
+  status_code: number | null
+  latency_ms: number | null
+  prompt_tokens: number | null
+  completion_tokens: number | null
+  total_tokens: number | null
+  error_code: string | null
+  has_payload: boolean
+  request_payload_truncated: boolean
+  response_payload_truncated: boolean
+  metadata: Record<string, unknown>
+  occurred_at: string
+}
+
+interface GatewayRequestLogDetail {
+  log: GatewayRequestLogSummary
+  payload: {
+    request_json: unknown
+    response_json: unknown
+  } | null
+}
+
+function mapRequestLogSummary(summary: GatewayRequestLogSummary): RequestLogView {
+  return {
+    requestLogId: summary.request_log_id,
+    requestId: summary.request_id,
+    apiKeyId: summary.api_key_id,
+    userId: summary.user_id,
+    teamId: summary.team_id,
+    modelKey: summary.model_key,
+    resolvedModelKey: summary.resolved_model_key,
+    providerKey: summary.provider_key,
+    statusCode: summary.status_code,
+    latencyMs: summary.latency_ms,
+    promptTokens: summary.prompt_tokens,
+    completionTokens: summary.completion_tokens,
+    totalTokens: summary.total_tokens,
+    errorCode: summary.error_code,
+    hasPayload: summary.has_payload,
+    requestPayloadTruncated: summary.request_payload_truncated,
+    responsePayloadTruncated: summary.response_payload_truncated,
+    metadata: summary.metadata,
+    occurredAt: summary.occurred_at,
+  }
+}
+
+function mapRequestLogDetail(detail: GatewayRequestLogDetail): RequestLogDetailView {
+  return {
+    log: mapRequestLogSummary(detail.log),
+    payload: detail.payload
+      ? {
+          requestJson: detail.payload.request_json,
+          responseJson: detail.payload.response_json,
+        }
+      : null,
+  }
 }

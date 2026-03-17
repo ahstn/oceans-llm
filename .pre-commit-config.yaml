@@ -1,0 +1,23 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+repos:
+  - repo: "https://github.com/pre-commit/pre-commit-hooks"
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+
+  - repo: local
+    hooks:
+      - id: lint
+        name: lint
+        language: system
+        entry: mise lint
+        files:
+          glob:
+            - "crates/**/src/**/*.rs"
+            - "crates/admin-ui/web/src/**/*.ts"
+            - "crates/admin-ui/web/src/**/*.tsx"

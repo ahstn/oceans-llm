@@ -16,6 +16,9 @@ pub use pricing_catalog::{
     PRICING_CATALOG_CACHE_KEY, PricingCatalog, PricingCatalogSnapshotFile, fetch_vendored_snapshot,
     is_supported_pricing_provider_id, snapshot_to_pretty_json,
 };
-pub use request_logging::RequestLogging;
+pub use request_logging::{
+    ChatRequestLogContext, LoggedRequest, RequestLogging, StreamFailureSummary,
+    StreamLogResultInput, StreamResponseCollector, UsageSummary,
+};
 pub use route_planner::WeightedRoutePlanner;
-pub use service::GatewayService;
+pub use service::{GatewayService, RecordedChatUsage};

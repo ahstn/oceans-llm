@@ -20,13 +20,29 @@ vi.mock('@tanstack/react-virtual', () => ({
 
 const items: RequestLogView[] = [
   {
-    id: 'req_1',
-    model: 'gpt-4.1-mini',
-    provider: 'openai',
+    requestLogId: 'reqlog_1',
+    requestId: 'req_1',
+    apiKeyId: 'api_key_1',
+    userId: 'user_1',
+    teamId: null,
+    modelKey: 'gpt-4.1-mini',
+    resolvedModelKey: 'gpt-4.1-mini',
+    providerKey: 'openai',
     statusCode: 200,
     latencyMs: 482,
-    tokens: 1342,
-    timestamp: '2026-03-10T11:32:00Z',
+    promptTokens: 400,
+    completionTokens: 942,
+    totalTokens: 1342,
+    errorCode: null,
+    hasPayload: true,
+    requestPayloadTruncated: false,
+    responsePayloadTruncated: false,
+    metadata: {
+      stream: false,
+      fallback_used: false,
+      attempt_count: 1,
+    },
+    occurredAt: '2026-03-10T11:32:00Z',
   },
 ]
 
@@ -46,5 +62,6 @@ describe('RequestLogsPage', () => {
     expect(screen.getByTestId('request-log-desktop-table')).toBeInTheDocument()
     expect(screen.getAllByText('gpt-4.1-mini')).toHaveLength(2)
     expect(screen.getAllByText('openai')).toHaveLength(2)
+    expect(screen.getAllByText('req_1')).toHaveLength(2)
   })
 })

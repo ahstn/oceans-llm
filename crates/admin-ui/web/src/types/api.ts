@@ -132,13 +132,35 @@ export interface DeactivateBudgetResultView {
 }
 
 export interface RequestLogView {
-  id: string
-  model: string
-  provider: string
-  statusCode: number
-  latencyMs: number
-  tokens: number
-  timestamp: string
+  requestLogId: string
+  requestId: string
+  apiKeyId: string
+  userId: string | null
+  teamId: string | null
+  modelKey: string
+  resolvedModelKey: string
+  providerKey: string
+  statusCode: number | null
+  latencyMs: number | null
+  promptTokens: number | null
+  completionTokens: number | null
+  totalTokens: number | null
+  errorCode: string | null
+  hasPayload: boolean
+  requestPayloadTruncated: boolean
+  responsePayloadTruncated: boolean
+  metadata: Record<string, unknown>
+  occurredAt: string
+}
+
+export interface RequestLogPayloadView {
+  requestJson: unknown
+  responseJson: unknown
+}
+
+export interface RequestLogDetailView {
+  log: RequestLogView
+  payload: RequestLogPayloadView | null
 }
 
 export interface TeamAdminView {

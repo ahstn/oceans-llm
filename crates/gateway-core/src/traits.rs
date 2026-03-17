@@ -13,6 +13,7 @@ use crate::{
         PricingCatalogCacheRecord, ProviderCapabilities, ProviderConnection,
         ProviderRequestContext, RequestLogRecord, SpendDailyAggregateRecord,
         SpendModelAggregateRecord, SpendOwnerAggregateRecord, TeamBudgetRecord,
+        RequestLogDetail, RequestLogPage, RequestLogPayloadRecord, RequestLogQuery,
         TeamMembershipRecord, TeamRecord, UsageLedgerRecord, UserBudgetRecord, UserRecord,
     },
     error::{ProviderError, RouteError, StoreError},
@@ -195,7 +196,19 @@ pub trait BudgetRepository: Send + Sync {
 
 #[async_trait]
 pub trait RequestLogRepository: Send + Sync {
-    async fn insert_request_log(&self, log: &RequestLogRecord) -> Result<(), StoreError>;
+    async fn insert_request_log(
+        &self,
+        log: &RequestLogRecord,
+        payload: Option<&RequestLogPayloadRecord>,
+    ) -> Result<(), StoreError>;
+    async fn list_request_logs(
+        &self,
+        query: &RequestLogQuery,
+    ) -> Result<RequestLogPage, StoreError>;
+    async fn get_request_log_detail(
+        &self,
+        request_log_id: Uuid,
+    ) -> Result<Option<RequestLogDetail>, StoreError>;
 }
 
 #[async_trait]

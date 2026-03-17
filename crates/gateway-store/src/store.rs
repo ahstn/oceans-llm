@@ -467,8 +467,23 @@ impl RequestLogRepository for AnyStore {
     async fn insert_request_log(
         &self,
         log: &gateway_core::RequestLogRecord,
+        payload: Option<&gateway_core::RequestLogPayloadRecord>,
     ) -> Result<(), StoreError> {
-        dispatch_store!(self, insert_request_log(log))
+        dispatch_store!(self, insert_request_log(log, payload))
+    }
+
+    async fn list_request_logs(
+        &self,
+        query: &gateway_core::RequestLogQuery,
+    ) -> Result<gateway_core::RequestLogPage, StoreError> {
+        dispatch_store!(self, list_request_logs(query))
+    }
+
+    async fn get_request_log_detail(
+        &self,
+        request_log_id: Uuid,
+    ) -> Result<Option<gateway_core::RequestLogDetail>, StoreError> {
+        dispatch_store!(self, get_request_log_detail(request_log_id))
     }
 }
 

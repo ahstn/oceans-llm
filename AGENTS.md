@@ -8,6 +8,9 @@ Use `mise` for all repo tooling and task execution.
 - Install configured tool versions:
   - `mise install`
 - Tool versions and shared tasks live in [`mise.toml`](/Users/ahstn/git/oceans-llm/mise.toml).
+- When code changes are introduced, run linting before handing work off:
+  - `mise run lint` for mixed Rust/UI changes.
+  - `cargo clippy --workspace --all-targets -- -D warnings` if only Rust changed.
 
 ## GitHub
 - Use `gh` CLI for creating pull requests.

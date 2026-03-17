@@ -105,6 +105,43 @@ vi.mock('@/server/gateway-client.server', () => ({
       }
     }
 
+    if (path === '/api/v1/admin/observability/request-logs') {
+      return {
+        data: {
+          items: [
+            {
+              request_log_id: 'reqlog_1',
+              request_id: 'req_1',
+              api_key_id: 'api_key_1',
+              user_id: 'user_1',
+              team_id: 'team_1',
+              model_key: 'gpt-4.1-mini',
+              resolved_model_key: 'gpt-4.1-mini',
+              provider_key: 'openai',
+              status_code: 200,
+              latency_ms: 482,
+              prompt_tokens: 400,
+              completion_tokens: 942,
+              total_tokens: 1342,
+              error_code: null,
+              has_payload: true,
+              request_payload_truncated: false,
+              response_payload_truncated: false,
+              metadata: {
+                stream: false,
+                fallback_used: false,
+                attempt_count: 1,
+              },
+              occurred_at: '2026-03-10T11:32:00Z',
+            },
+          ],
+          page: 1,
+          page_size: 1,
+          total: 1,
+        },
+      }
+    }
+
     throw new Error(`Unexpected path: ${path}`)
   }),
 }))
@@ -125,7 +162,7 @@ describe('server-side mock repositories', () => {
     expect(models.data.length).toBeGreaterThan(0)
     expect(spendReport.data.window_days).toBeGreaterThan(0)
     expect(spendBudgets.data.users.length).toBe(0)
-    expect(logs.data.items.length).toBeGreaterThan(100)
+    expect(logs.data.items.length).toBeGreaterThan(0)
     expect(teams.data.teams.length).toBeGreaterThan(0)
     expect(teams.data.users.length).toBeGreaterThan(0)
     expect(users.data.users.length).toBeGreaterThan(0)

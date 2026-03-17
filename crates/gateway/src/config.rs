@@ -401,6 +401,10 @@ pub struct ServerConfig {
     pub log_format: String,
     #[serde(default)]
     pub otel_endpoint: Option<String>,
+    #[serde(default)]
+    pub otel_metrics_endpoint: Option<String>,
+    #[serde(default = "default_otel_export_interval_secs")]
+    pub otel_export_interval_secs: u64,
 }
 
 impl Default for ServerConfig {
@@ -409,6 +413,8 @@ impl Default for ServerConfig {
             bind: default_bind(),
             log_format: default_log_format(),
             otel_endpoint: None,
+            otel_metrics_endpoint: None,
+            otel_export_interval_secs: default_otel_export_interval_secs(),
         }
     }
 }
@@ -714,6 +720,10 @@ fn default_bind() -> String {
 
 fn default_log_format() -> String {
     "pretty".to_string()
+}
+
+const fn default_otel_export_interval_secs() -> u64 {
+    30
 }
 
 fn default_db_path() -> String {

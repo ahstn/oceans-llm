@@ -8,6 +8,7 @@ import {
   createUser,
   deactivateTeamBudget,
   deactivateUserBudget,
+  getRequestLogDetail,
   getSession,
   getSpendReport,
   getInvitation,
@@ -94,6 +95,12 @@ export const removeTeamBudget = createServerFn({ method: 'POST' }).handler(
 export const getRequestLogs = createServerFn({ method: 'GET' }).handler(async () => {
   return listRequestLogs()
 })
+
+export const getObservabilityRequestLogDetail = createServerFn({ method: 'GET' }).handler(
+  async ({ data }: { data: { requestLogId: string } }) => {
+    return getRequestLogDetail(data.requestLogId)
+  },
+)
 
 export const getTeams = createServerFn({ method: 'GET' }).handler(async () => {
   return listTeams()
