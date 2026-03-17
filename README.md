@@ -26,6 +26,7 @@ Checked-in configs keep the local-development default on libsql/SQLite and the p
 
 Use the canonical docs for behavior and policy details:
 
+- [Contributing](CONTRIBUTING.md)
 - [Documentation Hub](docs/README.md)
 - [Identity and Access](docs/identity-and-access.md)
 - [Model Routing and API Behavior](docs/model-routing-and-api-behavior.md)
@@ -58,6 +59,8 @@ Default local endpoints:
 - Admin UI: `http://localhost:8080/admin`
 - Active config: `./gateway.yaml`
 - Database backend: local libsql/SQLite
+
+For contributor setup, workspace layout, task conventions, CI workflow references, and editor recommendations, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Gateway Commands
 

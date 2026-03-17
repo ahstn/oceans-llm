@@ -14,6 +14,7 @@ This repository uses a documentation graph instead of repeating the same policy 
 
 | Type | Document | Owns |
 | --- | --- | --- |
+| Guide | [../CONTRIBUTING.md](../CONTRIBUTING.md) | contributor setup, task workflow, CI map, workspace primer |
 | Guide | [Identity and Access](identity-and-access.md) | bootstrap admin, users, teams, onboarding, OIDC status, access overlays |
 | Guide | [Model Routing and API Behavior](model-routing-and-api-behavior.md) | model aliases, `tag:` selection, capabilities, `/v1/*` behavior |
 | Guide | [Budgets and Spending](budgets-and-spending.md) | ledger semantics, budget enforcement, spend APIs, current deferrals |
@@ -29,6 +30,7 @@ This repository uses a documentation graph instead of repeating the same policy 
 graph TD
     root["README.md"]
     hub["docs/README.md"]
+    contributing["CONTRIBUTING.md"]
     identity["identity-and-access.md"]
     routing["model-routing-and-api-behavior.md"]
     spend["budgets-and-spending.md"]
@@ -41,6 +43,7 @@ graph TD
     internal["docs/internal/*"]
 
     root --> hub
+    root --> contributing
     hub --> identity
     hub --> routing
     hub --> spend
@@ -49,6 +52,7 @@ graph TD
     hub --> admin
     hub --> e2e
     hub --> deploy
+    hub --> contributing
 
     identity --> data
     routing --> data
