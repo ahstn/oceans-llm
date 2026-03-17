@@ -156,6 +156,7 @@ mod tests {
             },
             MigrationTestHook {
                 fail_after_apply_version: Some(1),
+                ..MigrationTestHook::default()
             },
         )
         .await
@@ -193,6 +194,101 @@ mod tests {
             .expect("providers row");
         let table_count: i64 = table_row.get(0).expect("providers count");
         assert_eq!(table_count, 0);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn migrations_rollback_when_schema_history_insert_fails() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+
+        run_migrations_with_options(
+            &StoreConnectionOptions::Libsql {
+                path: db_path.clone(),
+            },
+            MigrationTestHook {
+                fail_history_insert_version: Some(1),
+                ..MigrationTestHook::default()
+            },
+        )
+        .await
+        .expect_err("migration should fail when history insert fails");
+
+        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
+            .build()
+            .await
+            .expect("db");
+        let conn = db.connect().expect("connection");
+
+        let mut history_rows = conn
+            .query("SELECT COUNT(*) FROM refinery_schema_history", ())
+            .await
+            .expect("history count query");
+        let history_row = history_rows
+            .next()
+            .await
+            .expect("history row fetch")
+            .expect("history row");
+        let history_count: i64 = history_row.get(0).expect("history count");
+        assert_eq!(history_count, 0);
+
+        let mut table_rows = conn
+            .query(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'providers'",
+                (),
+            )
+            .await
+            .expect("providers table query");
+        let table_row = table_rows
+            .next()
+            .await
+            .expect("providers row fetch")
+            .expect("providers row");
+        let table_count: i64 = table_row.get(0).expect("providers count");
+        assert_eq!(table_count, 0);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_migration_status_recovers_after_failure_and_retry() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        let options = StoreConnectionOptions::Libsql {
+            path: db_path.clone(),
+        };
+
+        let initial_status = status_migrations_with_options(&options)
+            .await
+            .expect("initial migration status");
+        assert_eq!(initial_status.backend, "libsql");
+        assert_eq!(initial_status.pending_count(), MIGRATION_REGISTRY.len());
+        assert!(initial_status.entries.iter().all(|entry| !entry.applied));
+
+        run_migrations_with_options(
+            &options,
+            MigrationTestHook {
+                fail_history_insert_version: Some(1),
+                ..MigrationTestHook::default()
+            },
+        )
+        .await
+        .expect_err("migration should fail when history insert fails");
+
+        let failed_status = status_migrations_with_options(&options)
+            .await
+            .expect("status after failed migration");
+        assert_eq!(failed_status.pending_count(), MIGRATION_REGISTRY.len());
+        assert!(failed_status.entries.iter().all(|entry| !entry.applied));
+
+        run_migrations_with_options(&options, MigrationTestHook::default())
+            .await
+            .expect("retry migrations");
+
+        let applied_status = status_migrations_with_options(&options)
+            .await
+            .expect("status after retry");
+        assert_eq!(applied_status.pending_count(), 0);
+        assert!(applied_status.entries.iter().all(|entry| entry.applied));
     }
 
     #[tokio::test]
@@ -2658,6 +2754,7 @@ mod tests {
             &options,
             MigrationTestHook {
                 fail_after_apply_version: Some(1),
+                ..MigrationTestHook::default()
             },
         )
         .await
@@ -2683,6 +2780,103 @@ mod tests {
         assert!(!providers_exists);
 
         pool.close().await;
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_migrations_rollback_when_schema_history_insert_fails() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres migration rollback test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 2,
+        };
+        run_migrations_with_options(
+            &options,
+            MigrationTestHook {
+                fail_history_insert_version: Some(1),
+                ..MigrationTestHook::default()
+            },
+        )
+        .await
+        .expect_err("postgres migration should fail when history insert fails");
+
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&test_db.database_url)
+            .await
+            .expect("postgres pool");
+        let history_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM refinery_schema_history")
+            .fetch_one(&pool)
+            .await
+            .expect("history count");
+        assert_eq!(history_count, 0);
+
+        let providers_exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'providers')",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("providers table exists");
+        assert!(!providers_exists);
+
+        pool.close().await;
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_migration_status_recovers_after_failure_and_retry() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres migration status retry test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 2,
+        };
+
+        let initial_status = status_migrations_with_options(&options)
+            .await
+            .expect("initial postgres status");
+        assert_eq!(initial_status.pending_count(), MIGRATION_REGISTRY.len());
+        assert!(initial_status.entries.iter().all(|entry| !entry.applied));
+
+        run_migrations_with_options(
+            &options,
+            MigrationTestHook {
+                fail_history_insert_version: Some(1),
+                ..MigrationTestHook::default()
+            },
+        )
+        .await
+        .expect_err("postgres migration should fail when history insert fails");
+
+        let failed_status = status_migrations_with_options(&options)
+            .await
+            .expect("status after failed migration");
+        assert_eq!(failed_status.pending_count(), MIGRATION_REGISTRY.len());
+        assert!(failed_status.entries.iter().all(|entry| !entry.applied));
+
+        run_migrations_with_options(&options, MigrationTestHook::default())
+            .await
+            .expect("postgres retry migrations");
+
+        let applied_status = status_migrations_with_options(&options)
+            .await
+            .expect("status after retry");
+        assert_eq!(applied_status.pending_count(), 0);
+        assert!(applied_status.entries.iter().all(|entry| entry.applied));
+
         drop_postgres_test_database(&test_db).await;
     }
 

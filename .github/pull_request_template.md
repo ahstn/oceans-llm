@@ -11,3 +11,11 @@ Use this section for review hints, explanations, discussion points, and follow-u
 - How it works
 - Risks, tradeoffs, and alternatives considered
 - Additional context for reviewers
+
+## Release Readiness Checklist
+
+- [ ] `mise run lint`
+- [ ] `mise run test`
+- [ ] If this PR touches runtime, store, migration, or release behavior: `mise run check-rust-postgres`
+- [ ] If this PR touches runtime, store, migration, or release behavior: `mise run test-rust-postgres`
+- [ ] If this PR touches runtime, store, migration, or release behavior: `mise run test-gateway-postgres-smoke`

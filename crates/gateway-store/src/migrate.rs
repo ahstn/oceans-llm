@@ -34,14 +34,19 @@ impl MigrationStatus {
 #[derive(Debug, Clone, Default)]
 pub struct MigrationTestHook {
     pub fail_after_apply_version: Option<u32>,
+    pub fail_history_insert_version: Option<u32>,
 }
 
 impl MigrationTestHook {
-    fn maybe_fail(&self, version: u32) -> anyhow::Result<()> {
+    fn maybe_fail_after_apply(&self, version: u32) -> anyhow::Result<()> {
         if self.fail_after_apply_version == Some(version) {
             bail!("forced migration failure after applying version {version}");
         }
         Ok(())
+    }
+
+    fn should_fail_history_insert(&self, version: u32) -> bool {
+        self.fail_history_insert_version == Some(version)
     }
 }
 
@@ -135,6 +140,14 @@ async fn run_libsql_migrations(path: &Path, hook: &MigrationTestHook) -> anyhow:
             continue;
         }
 
+        tracing::info!(
+            backend = "libsql",
+            migration_version = migration.version,
+            migration_name = migration.name,
+            migration_event = "begin",
+            "starting migration transaction"
+        );
+
         let tx = conn.transaction().await.with_context(|| {
             format!(
                 "failed starting transaction for migration {}",
@@ -143,40 +156,111 @@ async fn run_libsql_migrations(path: &Path, hook: &MigrationTestHook) -> anyhow:
         })?;
 
         let migration_result = async {
-            if let BackendMigrationStep::Sql(sql) = migration.step_for(MigrationBackend::Libsql) {
-                tx.execute_batch(sql)
-                    .await
-                    .with_context(|| format!("failed applying migration {}", migration.version))?;
+            match migration.step_for(MigrationBackend::Libsql) {
+                BackendMigrationStep::Sql(sql) => {
+                    tracing::debug!(
+                        backend = "libsql",
+                        migration_version = migration.version,
+                        migration_name = migration.name,
+                        migration_event = "apply",
+                        "applying migration SQL"
+                    );
+                    tx.execute_batch(sql).await.with_context(|| {
+                        format!("failed applying migration {}", migration.version)
+                    })?;
+                }
+                BackendMigrationStep::Compatibility { reason } => {
+                    tracing::debug!(
+                        backend = "libsql",
+                        migration_version = migration.version,
+                        migration_name = migration.name,
+                        migration_event = "apply",
+                        compatibility_reason = reason,
+                        "migration SQL is a compatibility no-op for this backend"
+                    );
+                }
             }
-            hook.maybe_fail(migration.version)?;
-            tx.execute(
-                r#"
-                INSERT INTO refinery_schema_history (version, name, applied_on, checksum)
-                VALUES (?1, ?2, unixepoch(), ?3)
-                "#,
-                libsql::params![migration.version as i64, migration.name, migration.checksum],
-            )
-            .await
-            .with_context(|| {
-                format!(
-                    "failed recording migration {} in refinery_schema_history",
-                    migration.version
+            hook.maybe_fail_after_apply(migration.version)?;
+
+            tracing::debug!(
+                backend = "libsql",
+                migration_version = migration.version,
+                migration_name = migration.name,
+                migration_event = "history_insert",
+                "recording migration in schema history"
+            );
+
+            if hook.should_fail_history_insert(migration.version) {
+                tx.execute(
+                    r#"
+                    INSERT INTO refinery_schema_history_missing (version, name, applied_on, checksum)
+                    VALUES (?1, ?2, unixepoch(), ?3)
+                    "#,
+                    libsql::params![migration.version as i64, migration.name, migration.checksum],
                 )
-            })?;
+                .await
+                .with_context(|| {
+                    format!(
+                        "failed recording migration {} in refinery_schema_history",
+                        migration.version
+                    )
+                })?;
+            } else {
+                tx.execute(
+                    r#"
+                    INSERT INTO refinery_schema_history (version, name, applied_on, checksum)
+                    VALUES (?1, ?2, unixepoch(), ?3)
+                    "#,
+                    libsql::params![migration.version as i64, migration.name, migration.checksum],
+                )
+                .await
+                .with_context(|| {
+                    format!(
+                        "failed recording migration {} in refinery_schema_history",
+                        migration.version
+                    )
+                })?;
+            }
             Ok::<(), anyhow::Error>(())
         }
         .await;
 
         match migration_result {
-            Ok(()) => tx
-                .commit()
-                .await
-                .with_context(|| format!("failed committing migration {}", migration.version))?,
+            Ok(()) => {
+                tracing::info!(
+                    backend = "libsql",
+                    migration_version = migration.version,
+                    migration_name = migration.name,
+                    migration_event = "commit",
+                    "committing migration transaction"
+                );
+                tx.commit().await.with_context(|| {
+                    format!("failed committing migration {}", migration.version)
+                })?;
+                tracing::info!(
+                    backend = "libsql",
+                    migration_version = migration.version,
+                    migration_name = migration.name,
+                    migration_event = "commit",
+                    "migration transaction committed"
+                );
+            }
             Err(error) => {
+                tracing::warn!(
+                    backend = "libsql",
+                    migration_version = migration.version,
+                    migration_name = migration.name,
+                    migration_event = "rollback",
+                    error = %error,
+                    "migration failed, rolling back transaction"
+                );
                 let rollback_error = tx.rollback().await.err();
                 if let Some(rollback_error) = rollback_error {
                     tracing::warn!(
+                        backend = "libsql",
                         migration_version = migration.version,
+                        migration_name = migration.name,
+                        migration_event = "rollback",
                         error = %rollback_error,
                         "failed rolling back libsql migration transaction"
                     );
@@ -204,6 +288,14 @@ async fn run_postgres_migrations(url: &str, hook: &MigrationTestHook) -> anyhow:
             continue;
         }
 
+        tracing::info!(
+            backend = "postgres",
+            migration_version = migration.version,
+            migration_name = migration.name,
+            migration_event = "begin",
+            "starting migration transaction"
+        );
+
         let mut tx = pool.begin().await.with_context(|| {
             format!(
                 "failed starting postgres transaction for migration {}",
@@ -212,46 +304,122 @@ async fn run_postgres_migrations(url: &str, hook: &MigrationTestHook) -> anyhow:
         })?;
 
         let migration_result = async {
-            if let BackendMigrationStep::Sql(sql) = migration.step_for(MigrationBackend::Postgres) {
-                sqlx::raw_sql(sql)
-                    .execute(&mut *tx)
-                    .await
-                    .with_context(|| {
-                        format!("failed applying postgres migration {}", migration.version)
-                    })?;
+            match migration.step_for(MigrationBackend::Postgres) {
+                BackendMigrationStep::Sql(sql) => {
+                    tracing::debug!(
+                        backend = "postgres",
+                        migration_version = migration.version,
+                        migration_name = migration.name,
+                        migration_event = "apply",
+                        "applying migration SQL"
+                    );
+                    sqlx::raw_sql(sql)
+                        .execute(&mut *tx)
+                        .await
+                        .with_context(|| {
+                            format!("failed applying postgres migration {}", migration.version)
+                        })?;
+                }
+                BackendMigrationStep::Compatibility { reason } => {
+                    tracing::debug!(
+                        backend = "postgres",
+                        migration_version = migration.version,
+                        migration_name = migration.name,
+                        migration_event = "apply",
+                        compatibility_reason = reason,
+                        "migration SQL is a compatibility no-op for this backend"
+                    );
+                }
             }
-            hook.maybe_fail(migration.version)?;
-            sqlx::query(
-                r#"
-                INSERT INTO refinery_schema_history (version, name, applied_on, checksum)
-                VALUES ($1, $2, $3, $4)
-                "#,
-            )
-            .bind(migration.version as i64)
-            .bind(migration.name)
-            .bind(OffsetDateTime::now_utc().unix_timestamp())
-            .bind(migration.checksum)
-            .execute(&mut *tx)
-            .await
-            .with_context(|| {
-                format!(
-                    "failed recording postgres migration {} in refinery_schema_history",
-                    migration.version
+            hook.maybe_fail_after_apply(migration.version)?;
+
+            tracing::debug!(
+                backend = "postgres",
+                migration_version = migration.version,
+                migration_name = migration.name,
+                migration_event = "history_insert",
+                "recording migration in schema history"
+            );
+
+            if hook.should_fail_history_insert(migration.version) {
+                sqlx::query(
+                    r#"
+                    INSERT INTO refinery_schema_history_missing (version, name, applied_on, checksum)
+                    VALUES ($1, $2, $3, $4)
+                    "#,
                 )
-            })?;
+                .bind(migration.version as i64)
+                .bind(migration.name)
+                .bind(OffsetDateTime::now_utc().unix_timestamp())
+                .bind(migration.checksum)
+                .execute(&mut *tx)
+                .await
+                .with_context(|| {
+                    format!(
+                        "failed recording postgres migration {} in refinery_schema_history",
+                        migration.version
+                    )
+                })?;
+            } else {
+                sqlx::query(
+                    r#"
+                    INSERT INTO refinery_schema_history (version, name, applied_on, checksum)
+                    VALUES ($1, $2, $3, $4)
+                    "#,
+                )
+                .bind(migration.version as i64)
+                .bind(migration.name)
+                .bind(OffsetDateTime::now_utc().unix_timestamp())
+                .bind(migration.checksum)
+                .execute(&mut *tx)
+                .await
+                .with_context(|| {
+                    format!(
+                        "failed recording postgres migration {} in refinery_schema_history",
+                        migration.version
+                    )
+                })?;
+            }
             Ok::<(), anyhow::Error>(())
         }
         .await;
 
         match migration_result {
-            Ok(()) => tx.commit().await.with_context(|| {
-                format!("failed committing postgres migration {}", migration.version)
-            })?,
+            Ok(()) => {
+                tracing::info!(
+                    backend = "postgres",
+                    migration_version = migration.version,
+                    migration_name = migration.name,
+                    migration_event = "commit",
+                    "committing migration transaction"
+                );
+                tx.commit().await.with_context(|| {
+                    format!("failed committing postgres migration {}", migration.version)
+                })?;
+                tracing::info!(
+                    backend = "postgres",
+                    migration_version = migration.version,
+                    migration_name = migration.name,
+                    migration_event = "commit",
+                    "migration transaction committed"
+                );
+            }
             Err(error) => {
+                tracing::warn!(
+                    backend = "postgres",
+                    migration_version = migration.version,
+                    migration_name = migration.name,
+                    migration_event = "rollback",
+                    error = %error,
+                    "migration failed, rolling back transaction"
+                );
                 let rollback_error = tx.rollback().await.err();
                 if let Some(rollback_error) = rollback_error {
                     tracing::warn!(
+                        backend = "postgres",
                         migration_version = migration.version,
+                        migration_name = migration.name,
+                        migration_event = "rollback",
                         error = %rollback_error,
                         "failed rolling back postgres migration transaction"
                     );

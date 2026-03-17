@@ -1,7 +1,9 @@
 **/.DS_Store
 mise.local.toml
+pitchfork.local.toml
 
 target/
+.local/
 node_modules/
 crates/admin-ui/web/node_modules/
 crates/admin-ui/web/dist/
