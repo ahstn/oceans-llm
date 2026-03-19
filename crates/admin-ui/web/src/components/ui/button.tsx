@@ -5,19 +5,15 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/utils'
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-2 rounded-md text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-border-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)] disabled:pointer-events-none disabled:opacity-50',
+  'inline-flex items-center justify-center gap-2 rounded-md text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50',
   {
     variants: {
       variant: {
-        default:
-          'bg-[var(--color-primary)] text-[var(--color-primary-foreground)] hover:bg-[var(--color-primary-strong)]',
-        secondary:
-          'bg-[var(--color-surface-strong)] text-[var(--color-text)] hover:bg-[color:var(--color-surface-contrast)]',
-        ghost:
-          'text-[var(--color-text-muted)] hover:bg-[color:var(--color-surface-muted)] hover:text-[var(--color-text)]',
-        outline:
-          'border border-[color:var(--color-border)] bg-transparent text-[var(--color-text)] hover:bg-[color:var(--color-surface-muted)]',
-        link: 'text-[var(--color-text-muted)] underline-offset-4 hover:text-[var(--color-text)] hover:underline',
+        default: 'bg-primary text-primary-foreground hover:bg-primary/90',
+        secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
+        ghost: 'text-muted-foreground hover:bg-muted hover:text-foreground',
+        outline: 'border border-border bg-transparent text-foreground hover:bg-muted',
+        link: 'text-muted-foreground underline-offset-4 hover:text-foreground hover:underline',
       },
       size: {
         default: 'h-10 px-4',

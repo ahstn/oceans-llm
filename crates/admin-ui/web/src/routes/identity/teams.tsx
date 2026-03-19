@@ -306,16 +306,11 @@ export function TeamsPage() {
             <div className="flex flex-col gap-4">
               <div className="grid gap-3 md:hidden">
                 {teams.map((team) => (
-                  <article
-                    key={team.id}
-                    className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4"
-                  >
+                  <article key={team.id} className="border-border bg-muted rounded-lg border p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="truncate font-semibold text-[var(--color-text)]">
-                          {team.name}
-                        </p>
-                        <p className="truncate text-xs text-[var(--color-text-soft)]">{team.key}</p>
+                        <p className="text-foreground truncate font-semibold">{team.name}</p>
+                        <p className="text-muted-foreground/80 truncate text-xs">{team.key}</p>
                       </div>
                       <Badge variant={team.status === 'active' ? 'success' : 'warning'}>
                         {team.status}
@@ -324,16 +319,16 @@ export function TeamsPage() {
 
                     <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                       <div>
-                        <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                        <dt className="text-muted-foreground/80 text-xs font-semibold tracking-[0.08em] uppercase">
                           Members
                         </dt>
-                        <dd className="text-[var(--color-text-muted)]">{team.member_count}</dd>
+                        <dd className="text-muted-foreground">{team.member_count}</dd>
                       </div>
                       <div>
-                        <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                        <dt className="text-muted-foreground/80 text-xs font-semibold tracking-[0.08em] uppercase">
                           Admins
                         </dt>
-                        <dd className="text-[var(--color-text-muted)]">
+                        <dd className="text-muted-foreground">
                           {team.admins.length > 0 ? team.admins.length : 'None'}
                         </dd>
                       </div>
@@ -343,9 +338,7 @@ export function TeamsPage() {
                       {team.admins.length > 0 ? (
                         team.admins.map((admin) => <Badge key={admin.id}>{admin.name}</Badge>)
                       ) : (
-                        <span className="text-xs text-[var(--color-text-soft)]">
-                          No admins assigned
-                        </span>
+                        <span className="text-muted-foreground/80 text-xs">No admins assigned</span>
                       )}
                     </div>
 
@@ -371,9 +364,9 @@ export function TeamsPage() {
                 ))}
               </div>
 
-              <div className="hidden overflow-hidden rounded-md border border-[color:var(--color-border)] md:block">
+              <div className="border-border hidden overflow-hidden rounded-md border md:block">
                 <table className="w-full text-left text-sm">
-                  <thead className="bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
+                  <thead className="bg-muted text-muted-foreground/80">
                     <tr>
                       <th className="px-3 py-2 font-semibold">Team</th>
                       <th className="px-3 py-2 font-semibold">Admins</th>
@@ -384,14 +377,11 @@ export function TeamsPage() {
                   </thead>
                   <tbody>
                     {teams.map((team) => (
-                      <tr
-                        key={team.id}
-                        className="border-t border-[color:var(--color-border)] align-top"
-                      >
+                      <tr key={team.id} className="border-border border-t align-top">
                         <td className="px-3 py-3">
                           <div className="flex flex-col gap-1">
-                            <p className="text-[var(--color-text)]">{team.name}</p>
-                            <p className="text-xs text-[var(--color-text-soft)]">{team.key}</p>
+                            <p className="text-foreground">{team.name}</p>
+                            <p className="text-muted-foreground/80 text-xs">{team.key}</p>
                           </div>
                         </td>
                         <td className="px-3 py-3">
@@ -402,12 +392,10 @@ export function TeamsPage() {
                               ))}
                             </div>
                           ) : (
-                            <span className="text-xs text-[var(--color-text-soft)]">No admins</span>
+                            <span className="text-muted-foreground/80 text-xs">No admins</span>
                           )}
                         </td>
-                        <td className="px-3 py-3 text-[var(--color-text-muted)]">
-                          {team.member_count}
-                        </td>
+                        <td className="text-muted-foreground px-3 py-3">{team.member_count}</td>
                         <td className="px-3 py-3">
                           <Badge variant={team.status === 'active' ? 'success' : 'warning'}>
                             {team.status}
@@ -520,12 +508,10 @@ export function TeamsPage() {
 
           {membersTeam ? (
             <div className="flex flex-col gap-6">
-              <section className="flex flex-col gap-4 rounded-lg border border-[color:var(--color-border)] p-5">
+              <section className="border-border flex flex-col gap-4 rounded-lg border p-5">
                 <div className="flex flex-col gap-1">
-                  <h3 className="text-base font-semibold text-[var(--color-text)]">
-                    Existing users
-                  </h3>
-                  <p className="text-sm text-[var(--color-text-muted)]">
+                  <h3 className="text-foreground text-base font-semibold">Existing users</h3>
+                  <p className="text-muted-foreground text-sm">
                     Only teamless users can be newly added. Users already on another team remain
                     unavailable in this flow.
                   </p>
@@ -555,12 +541,10 @@ export function TeamsPage() {
                 </form>
               </section>
 
-              <section className="flex flex-col gap-4 rounded-lg border border-[color:var(--color-border)] p-5">
+              <section className="border-border flex flex-col gap-4 rounded-lg border p-5">
                 <div className="flex flex-col gap-1">
-                  <h3 className="text-base font-semibold text-[var(--color-text)]">
-                    Invite a new member
-                  </h3>
-                  <p className="text-sm text-[var(--color-text-muted)]">
+                  <h3 className="text-foreground text-base font-semibold">Invite a new member</h3>
+                  <p className="text-muted-foreground text-sm">
                     This uses the same onboarding flow as the users page and preassigns the new user
                     to {membersTeam.name} as a member.
                   </p>
@@ -782,7 +766,7 @@ function UserMultiSelectField({
                   ? placeholder
                   : emptyTitle}
             </span>
-            <span className="text-xs text-[var(--color-text-soft)]">▼</span>
+            <span className="text-muted-foreground/80 text-xs">▼</span>
           </Button>
         </PopoverTrigger>
         <PopoverContent className="p-0">
@@ -802,12 +786,12 @@ function UserMultiSelectField({
                       }
                     }}
                   >
-                    <span className="w-4 text-[var(--color-text-soft)]">
+                    <span className="text-muted-foreground/80 w-4">
                       {selectedUserIds.includes(user.id) ? '✓' : ''}
                     </span>
                     <div className="flex min-w-0 flex-1 flex-col gap-1">
                       <span className="truncate">{user.name}</span>
-                      <span className="truncate text-xs text-[var(--color-text-soft)]">
+                      <span className="text-muted-foreground/80 truncate text-xs">
                         {user.email}
                         {reason ? ` · ${reason}` : ''}
                       </span>

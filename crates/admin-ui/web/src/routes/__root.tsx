@@ -137,7 +137,7 @@ function RootDocument({ children }: { children: ReactNode }) {
             style: {
               background: 'var(--color-card)',
               border: '1px solid var(--color-border)',
-              color: 'var(--color-text)',
+              color: 'var(--color-foreground)',
             },
           }}
         />

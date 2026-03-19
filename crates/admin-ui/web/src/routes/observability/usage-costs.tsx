@@ -69,7 +69,10 @@ export function UsageCostsPage() {
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
-            <Select value={String(windowDays)} onValueChange={(value) => setWindowDays(Number(value) as 7 | 30)}>
+            <Select
+              value={String(windowDays)}
+              onValueChange={(value) => setWindowDays(Number(value) as 7 | 30)}
+            >
               <SelectTrigger className="w-[130px]">
                 <SelectValue placeholder="Window" />
               </SelectTrigger>
@@ -80,7 +83,10 @@ export function UsageCostsPage() {
                 </SelectGroup>
               </SelectContent>
             </Select>
-            <Select value={ownerKind} onValueChange={(value) => setOwnerKind(value as SpendOwnerKind)}>
+            <Select
+              value={ownerKind}
+              onValueChange={(value) => setOwnerKind(value as SpendOwnerKind)}
+            >
               <SelectTrigger className="w-[130px]">
                 <SelectValue placeholder="Owner" />
               </SelectTrigger>
@@ -103,15 +109,21 @@ export function UsageCostsPage() {
               label="Priced spend"
               value={CURRENCY_FORMATTER.format(report.totals.priced_cost_usd_10000 / 10_000)}
             />
-            <MetricCard label="Priced requests" value={String(report.totals.priced_request_count)} />
-            <MetricCard label="Unpriced requests" value={String(report.totals.unpriced_request_count)} />
+            <MetricCard
+              label="Priced requests"
+              value={String(report.totals.priced_request_count)}
+            />
+            <MetricCard
+              label="Unpriced requests"
+              value={String(report.totals.unpriced_request_count)}
+            />
             <MetricCard
               label="Usage-missing requests"
               value={String(report.totals.usage_missing_request_count)}
             />
           </div>
 
-          <div className="flex flex-col gap-3 rounded-md border border-[color:var(--color-border)] p-4">
+          <div className="border-border flex flex-col gap-3 rounded-md border p-4">
             {report.daily.map((point) => {
               const amount = point.priced_cost_usd_10000 / 10_000
               const barWidth = maxDaily > 0 ? (amount / maxDaily) * 100 : 0
@@ -120,19 +132,19 @@ export function UsageCostsPage() {
                   key={point.day_start}
                   className="grid grid-cols-[120px_1fr_130px] items-center gap-3"
                 >
-                  <span className="truncate text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                  <span className="text-muted-foreground/80 truncate text-xs font-semibold tracking-[0.08em] uppercase">
                     {new Date(point.day_start).toLocaleDateString('en-US', {
                       month: 'short',
                       day: 'numeric',
                     })}
                   </span>
-                  <div className="h-3 rounded-full bg-[color:var(--color-surface-muted)]">
+                  <div className="bg-muted h-3 rounded-full">
                     <div
-                      className="h-3 rounded-full bg-[var(--color-primary)]"
+                      className="bg-primary h-3 rounded-full"
                       style={{ width: `${barWidth}%` }}
                     />
                   </div>
-                  <span className="text-right text-sm font-semibold text-[var(--color-text)]">
+                  <span className="text-foreground text-right text-sm font-semibold">
                     {CURRENCY_FORMATTER.format(amount)}
                   </span>
                 </div>
@@ -148,8 +160,8 @@ export function UsageCostsPage() {
           <CardDescription>Spend by specific user and team ownership scopes.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="overflow-hidden rounded-md border border-[color:var(--color-border)]">
-            <div className="grid grid-cols-[120px_minmax(0,1fr)_170px_120px_120px] bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
+          <div className="border-border overflow-hidden rounded-md border">
+            <div className="bg-muted text-muted-foreground/80 grid grid-cols-[120px_minmax(0,1fr)_170px_120px_120px]">
               <span className="px-3 py-2 font-semibold">Owner type</span>
               <span className="px-3 py-2 font-semibold">Owner</span>
               <span className="px-3 py-2 font-semibold">Priced spend</span>
@@ -157,26 +169,28 @@ export function UsageCostsPage() {
               <span className="px-3 py-2 font-semibold">Usage missing</span>
             </div>
             {report.owners.length === 0 ? (
-              <div className="px-3 py-8 text-sm text-[var(--color-text-soft)]">No owner spend in this window.</div>
+              <div className="text-muted-foreground/80 px-3 py-8 text-sm">
+                No owner spend in this window.
+              </div>
             ) : (
               report.owners.map((owner) => (
                 <div
                   key={`${owner.owner_kind}:${owner.owner_id}`}
-                  className="grid grid-cols-[120px_minmax(0,1fr)_170px_120px_120px] border-t border-[color:var(--color-border)]"
+                  className="border-border grid grid-cols-[120px_minmax(0,1fr)_170px_120px_120px] border-t"
                 >
                   <span className="px-3 py-3">
                     <Badge>{owner.owner_kind}</Badge>
                   </span>
-                  <span className="truncate px-3 py-3 text-sm text-[var(--color-text)]">
+                  <span className="text-foreground truncate px-3 py-3 text-sm">
                     {owner.owner_name}
                   </span>
-                  <span className="px-3 py-3 text-sm text-[var(--color-text)]">
+                  <span className="text-foreground px-3 py-3 text-sm">
                     {CURRENCY_FORMATTER.format(owner.priced_cost_usd_10000 / 10_000)}
                   </span>
-                  <span className="px-3 py-3 text-sm text-[var(--color-text-muted)]">
+                  <span className="text-muted-foreground px-3 py-3 text-sm">
                     {owner.unpriced_request_count}
                   </span>
-                  <span className="px-3 py-3 text-sm text-[var(--color-text-muted)]">
+                  <span className="text-muted-foreground px-3 py-3 text-sm">
                     {owner.usage_missing_request_count}
                   </span>
                 </div>
@@ -192,31 +206,33 @@ export function UsageCostsPage() {
           <CardDescription>Priced spend and pricing gaps by canonical model key.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="overflow-hidden rounded-md border border-[color:var(--color-border)]">
-            <div className="grid grid-cols-[minmax(0,1fr)_170px_120px_120px] bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
+          <div className="border-border overflow-hidden rounded-md border">
+            <div className="bg-muted text-muted-foreground/80 grid grid-cols-[minmax(0,1fr)_170px_120px_120px]">
               <span className="px-3 py-2 font-semibold">Model</span>
               <span className="px-3 py-2 font-semibold">Priced spend</span>
               <span className="px-3 py-2 font-semibold">Unpriced</span>
               <span className="px-3 py-2 font-semibold">Usage missing</span>
             </div>
             {report.models.length === 0 ? (
-              <div className="px-3 py-8 text-sm text-[var(--color-text-soft)]">No model spend in this window.</div>
+              <div className="text-muted-foreground/80 px-3 py-8 text-sm">
+                No model spend in this window.
+              </div>
             ) : (
               report.models.map((model) => (
                 <div
                   key={model.model_key}
-                  className="grid grid-cols-[minmax(0,1fr)_170px_120px_120px] border-t border-[color:var(--color-border)]"
+                  className="border-border grid grid-cols-[minmax(0,1fr)_170px_120px_120px] border-t"
                 >
-                  <span className="truncate px-3 py-3 text-sm font-medium text-[var(--color-text)]">
+                  <span className="text-foreground truncate px-3 py-3 text-sm font-medium">
                     {model.model_key}
                   </span>
-                  <span className="px-3 py-3 text-sm text-[var(--color-text)]">
+                  <span className="text-foreground px-3 py-3 text-sm">
                     {CURRENCY_FORMATTER.format(model.priced_cost_usd_10000 / 10_000)}
                   </span>
-                  <span className="px-3 py-3 text-sm text-[var(--color-text-muted)]">
+                  <span className="text-muted-foreground px-3 py-3 text-sm">
                     {model.unpriced_request_count}
                   </span>
-                  <span className="px-3 py-3 text-sm text-[var(--color-text-muted)]">
+                  <span className="text-muted-foreground px-3 py-3 text-sm">
                     {model.usage_missing_request_count}
                   </span>
                 </div>
@@ -231,11 +247,11 @@ export function UsageCostsPage() {
 
 function MetricCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-3">
-      <p className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+    <div className="border-border bg-muted rounded-lg border p-3">
+      <p className="text-muted-foreground/80 text-xs font-semibold tracking-[0.08em] uppercase">
         {label}
       </p>
-      <p className="mt-1 text-lg font-semibold text-[var(--color-text)]">{value}</p>
+      <p className="text-foreground mt-1 text-lg font-semibold">{value}</p>
     </div>
   )
 }

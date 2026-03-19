@@ -96,3 +96,33 @@ textarea {
   background: color-mix(in oklch, var(--color-primary) 38%, transparent);
   color: var(--color-text);
 }
+
+@theme {
+  --color-background: var(--color-bg);
+  --color-foreground: var(--color-text);
+  --color-card: var(--color-card);
+  --color-card-foreground: var(--color-text);
+  --color-popover: var(--color-surface-strong);
+  --color-popover-foreground: var(--color-text);
+  --color-primary: var(--color-primary);
+  --color-primary-foreground: var(--color-primary-foreground);
+  --color-secondary: var(--color-surface-muted);
+  --color-secondary-foreground: var(--color-text);
+  --color-muted: var(--color-surface-muted);
+  --color-muted-foreground: var(--color-text-muted);
+  --color-accent: var(--color-surface-contrast);
+  --color-accent-foreground: var(--color-text);
+  --color-destructive: var(--color-warning);
+  --color-destructive-foreground: var(--color-primary-foreground);
+  --color-success: var(--color-success);
+  --color-warning: var(--color-warning);
+  --color-border: var(--color-border);
+  --color-input: var(--color-border);
+  --color-ring: var(--color-border-strong);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+}

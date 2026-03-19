@@ -172,7 +172,7 @@ export function UsersPage() {
       )
     }
 
-    return <span className="text-xs text-[var(--color-text-soft)]">No action available</span>
+    return <span className="text-muted-foreground/80 text-xs">No action available</span>
   }
 
   return (
@@ -458,18 +458,11 @@ export function UsersPage() {
             <div className="flex flex-col gap-4">
               <div className="grid gap-3 md:hidden">
                 {users.map((user) => (
-                  <article
-                    key={user.id}
-                    className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4"
-                  >
+                  <article key={user.id} className="border-border bg-muted rounded-lg border p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="truncate font-semibold text-[var(--color-text)]">
-                          {user.name}
-                        </p>
-                        <p className="truncate text-sm text-[var(--color-text-muted)]">
-                          {user.email}
-                        </p>
+                        <p className="text-foreground truncate font-semibold">{user.name}</p>
+                        <p className="text-muted-foreground truncate text-sm">{user.email}</p>
                       </div>
                       <Badge
                         variant={
@@ -486,30 +479,28 @@ export function UsersPage() {
 
                     <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                       <div>
-                        <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                        <dt className="text-muted-foreground/80 text-xs font-semibold tracking-[0.08em] uppercase">
                           Auth
                         </dt>
-                        <dd className="text-[var(--color-text-muted)]">{user.auth_mode}</dd>
+                        <dd className="text-muted-foreground">{user.auth_mode}</dd>
                       </div>
                       <div>
-                        <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                        <dt className="text-muted-foreground/80 text-xs font-semibold tracking-[0.08em] uppercase">
                           Global role
                         </dt>
-                        <dd className="text-[var(--color-text-muted)]">{user.global_role}</dd>
+                        <dd className="text-muted-foreground">{user.global_role}</dd>
                       </div>
                       <div>
-                        <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                        <dt className="text-muted-foreground/80 text-xs font-semibold tracking-[0.08em] uppercase">
                           Team
                         </dt>
-                        <dd className="text-[var(--color-text-muted)]">
-                          {user.team_name ?? 'No team'}
-                        </dd>
+                        <dd className="text-muted-foreground">{user.team_name ?? 'No team'}</dd>
                       </div>
                       <div>
-                        <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                        <dt className="text-muted-foreground/80 text-xs font-semibold tracking-[0.08em] uppercase">
                           Team role
                         </dt>
-                        <dd className="text-[var(--color-text-muted)]">{user.team_role ?? '—'}</dd>
+                        <dd className="text-muted-foreground">{user.team_role ?? '—'}</dd>
                       </div>
                     </dl>
 
@@ -518,9 +509,9 @@ export function UsersPage() {
                 ))}
               </div>
 
-              <div className="hidden overflow-hidden rounded-md border border-[color:var(--color-border)] md:block">
+              <div className="border-border hidden overflow-hidden rounded-md border md:block">
                 <table className="w-full text-left text-sm">
-                  <thead className="bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
+                  <thead className="bg-muted text-muted-foreground/80">
                     <tr>
                       <th className="px-3 py-2 font-semibold">Name</th>
                       <th className="px-3 py-2 font-semibold">Email</th>
@@ -534,24 +525,13 @@ export function UsersPage() {
                   </thead>
                   <tbody>
                     {users.map((user) => (
-                      <tr
-                        key={user.id}
-                        className="border-t border-[color:var(--color-border)] align-top"
-                      >
-                        <td className="px-3 py-3 text-[var(--color-text)]">{user.name}</td>
-                        <td className="px-3 py-3 text-[var(--color-text-muted)]">{user.email}</td>
-                        <td className="px-3 py-3 text-[var(--color-text-muted)]">
-                          {user.auth_mode}
-                        </td>
-                        <td className="px-3 py-3 text-[var(--color-text-muted)]">
-                          {user.global_role}
-                        </td>
-                        <td className="px-3 py-3 text-[var(--color-text-muted)]">
-                          {user.team_name ?? '—'}
-                        </td>
-                        <td className="px-3 py-3 text-[var(--color-text-muted)]">
-                          {user.team_role ?? '—'}
-                        </td>
+                      <tr key={user.id} className="border-border border-t align-top">
+                        <td className="text-foreground px-3 py-3">{user.name}</td>
+                        <td className="text-muted-foreground px-3 py-3">{user.email}</td>
+                        <td className="text-muted-foreground px-3 py-3">{user.auth_mode}</td>
+                        <td className="text-muted-foreground px-3 py-3">{user.global_role}</td>
+                        <td className="text-muted-foreground px-3 py-3">{user.team_name ?? '—'}</td>
+                        <td className="text-muted-foreground px-3 py-3">{user.team_role ?? '—'}</td>
                         <td className="px-3 py-3">
                           <Badge
                             variant={

@@ -14,14 +14,14 @@ const SelectTrigger = React.forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      'flex h-11 w-full items-center justify-between rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] px-3.5 py-2.5 text-sm text-[var(--color-text)] transition-colors outline-none focus:border-[color:var(--color-border-strong)] focus:ring-2 focus:ring-[var(--color-primary-soft)] data-[placeholder]:text-[var(--color-text-soft)]',
+      'border-border bg-muted text-foreground focus:border-ring focus:ring-primary/20 data-[placeholder]:text-muted-foreground/80 flex h-11 w-full items-center justify-between rounded-md border px-3.5 py-2.5 text-sm transition-colors outline-none focus:ring-2',
       className,
     )}
     {...props}
   >
     {children}
     <SelectPrimitive.Icon asChild>
-      <span className="text-xs text-[var(--color-text-soft)]">▼</span>
+      <span className="text-muted-foreground/80 text-xs">▼</span>
     </SelectPrimitive.Icon>
   </SelectPrimitive.Trigger>
 ))
@@ -35,7 +35,7 @@ const SelectContent = React.forwardRef<
     <SelectPrimitive.Content
       ref={ref}
       className={cn(
-        'z-50 min-w-[var(--radix-select-trigger-width)] rounded-md border border-[color:var(--color-border)] bg-[var(--color-surface)] p-1 text-[var(--color-text)]',
+        'border-border bg-card text-foreground z-50 min-w-[var(--radix-select-trigger-width)] rounded-md border p-1',
         className,
       )}
       position="popper"
@@ -54,7 +54,7 @@ const SelectItem = React.forwardRef<
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      'relative flex cursor-default items-center rounded-sm px-3 py-2 text-sm text-[var(--color-text-muted)] outline-none select-none data-[highlighted]:bg-[color:var(--color-surface-contrast)] data-[highlighted]:text-[var(--color-text)]',
+      'text-muted-foreground data-[highlighted]:bg-accent data-[highlighted]:text-foreground relative flex cursor-default items-center rounded-sm px-3 py-2 text-sm outline-none select-none',
       className,
     )}
     {...props}

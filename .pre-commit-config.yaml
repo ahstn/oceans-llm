@@ -16,6 +16,7 @@ repos:
         name: lint
         language: system
         entry: mise lint
+        pass_filenames: false
         files:
           glob:
             - "crates/**/src/**/*.rs"

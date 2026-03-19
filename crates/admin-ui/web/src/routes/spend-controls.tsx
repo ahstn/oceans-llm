@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -189,8 +190,8 @@ export function SpendControlsPage() {
           <CardDescription>Per-user budget configuration and current window spend.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="overflow-hidden rounded-md border border-[color:var(--color-border)]">
-            <div className="grid grid-cols-[minmax(0,1fr)_170px_170px_180px] bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
+          <div className="border-border overflow-hidden rounded-md border">
+            <div className="bg-muted text-muted-foreground/80 grid grid-cols-[minmax(0,1fr)_170px_170px_180px]">
               <span className="px-3 py-2 font-semibold">User</span>
               <span className="px-3 py-2 font-semibold">Budget</span>
               <span className="px-3 py-2 font-semibold">Current spend</span>
@@ -199,24 +200,31 @@ export function SpendControlsPage() {
             {users.map((user) => (
               <div
                 key={user.user_id}
-                className="grid grid-cols-[minmax(0,1fr)_170px_170px_180px] border-t border-[color:var(--color-border)]"
+                className="border-border grid grid-cols-[minmax(0,1fr)_170px_170px_180px] border-t"
               >
                 <div className="min-w-0 px-3 py-3">
-                  <p className="truncate text-sm font-semibold text-[var(--color-text)]">{user.name}</p>
-                  <p className="truncate text-xs text-[var(--color-text-soft)]">{user.email}</p>
+                  <p className="text-foreground truncate text-sm font-semibold">{user.name}</p>
+                  <p className="text-muted-foreground/80 truncate text-xs">{user.email}</p>
                 </div>
                 <div className="px-3 py-3">
                   {user.budget ? (
-                    <Badge>{CURRENCY_FORMATTER.format(user.budget.amount_usd_10000 / 10_000)}</Badge>
+                    <Badge>
+                      {CURRENCY_FORMATTER.format(user.budget.amount_usd_10000 / 10_000)}
+                    </Badge>
                   ) : (
-                    <span className="text-sm text-[var(--color-text-soft)]">Not set</span>
+                    <span className="text-muted-foreground/80 text-sm">Not set</span>
                   )}
                 </div>
-                <span className="px-3 py-3 text-sm text-[var(--color-text-muted)]">
+                <span className="text-muted-foreground px-3 py-3 text-sm">
                   {CURRENCY_FORMATTER.format(user.current_window_spend_usd_10000 / 10_000)}
                 </span>
                 <div className="flex items-center gap-2 px-3 py-3">
-                  <Button type="button" size="sm" variant="secondary" onClick={() => openUserDialog(user)}>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => openUserDialog(user)}
+                  >
                     Configure
                   </Button>
                   {user.budget ? (
@@ -243,8 +251,8 @@ export function SpendControlsPage() {
           <CardDescription>Team hard limits for team-owned API key spend.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="overflow-hidden rounded-md border border-[color:var(--color-border)]">
-            <div className="grid grid-cols-[minmax(0,1fr)_170px_170px_180px] bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
+          <div className="border-border overflow-hidden rounded-md border">
+            <div className="bg-muted text-muted-foreground/80 grid grid-cols-[minmax(0,1fr)_170px_170px_180px]">
               <span className="px-3 py-2 font-semibold">Team</span>
               <span className="px-3 py-2 font-semibold">Budget</span>
               <span className="px-3 py-2 font-semibold">Current spend</span>
@@ -253,24 +261,31 @@ export function SpendControlsPage() {
             {teams.map((team) => (
               <div
                 key={team.team_id}
-                className="grid grid-cols-[minmax(0,1fr)_170px_170px_180px] border-t border-[color:var(--color-border)]"
+                className="border-border grid grid-cols-[minmax(0,1fr)_170px_170px_180px] border-t"
               >
                 <div className="min-w-0 px-3 py-3">
-                  <p className="truncate text-sm font-semibold text-[var(--color-text)]">{team.team_name}</p>
-                  <p className="truncate text-xs text-[var(--color-text-soft)]">{team.team_key}</p>
+                  <p className="text-foreground truncate text-sm font-semibold">{team.team_name}</p>
+                  <p className="text-muted-foreground/80 truncate text-xs">{team.team_key}</p>
                 </div>
                 <div className="px-3 py-3">
                   {team.budget ? (
-                    <Badge>{CURRENCY_FORMATTER.format(team.budget.amount_usd_10000 / 10_000)}</Badge>
+                    <Badge>
+                      {CURRENCY_FORMATTER.format(team.budget.amount_usd_10000 / 10_000)}
+                    </Badge>
                   ) : (
-                    <span className="text-sm text-[var(--color-text-soft)]">Not set</span>
+                    <span className="text-muted-foreground/80 text-sm">Not set</span>
                   )}
                 </div>
-                <span className="px-3 py-3 text-sm text-[var(--color-text-muted)]">
+                <span className="text-muted-foreground px-3 py-3 text-sm">
                   {CURRENCY_FORMATTER.format(team.current_window_spend_usd_10000 / 10_000)}
                 </span>
                 <div className="flex items-center gap-2 px-3 py-3">
-                  <Button type="button" size="sm" variant="secondary" onClick={() => openTeamDialog(team)}>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => openTeamDialog(team)}
+                  >
                     Configure
                   </Button>
                   {team.budget ? (
@@ -291,84 +306,87 @@ export function SpendControlsPage() {
         </CardContent>
       </Card>
 
-      <Dialog open={dialogState.mode !== 'closed'} onOpenChange={(open) => (!open ? closeDialog() : null)}>
+      <Dialog
+        open={dialogState.mode !== 'closed'}
+        onOpenChange={(open) => (!open ? closeDialog() : null)}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Configure Budget</DialogTitle>
             <DialogDescription>
-              Update cadence, limit amount, and hard-limit behavior for {openLabel ?? 'selected owner'}.
+              Update cadence, limit amount, and hard-limit behavior for{' '}
+              {openLabel ?? 'selected owner'}.
             </DialogDescription>
           </DialogHeader>
-          <form className="flex flex-col gap-3" onSubmit={handleSave}>
-            <div className="grid gap-1">
-              <label className="text-xs font-semibold text-[var(--color-text-soft)]" htmlFor="budget-cadence">
-                Cadence
-              </label>
-              <Select
-                value={form.cadence}
-                onValueChange={(value) => setForm((current) => ({ ...current, cadence: value as 'daily' | 'weekly' }))}
-              >
-                <SelectTrigger id="budget-cadence">
-                  <SelectValue placeholder="Cadence" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="daily">Daily</SelectItem>
-                    <SelectItem value="weekly">Weekly</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
+          <form onSubmit={handleSave}>
+            <FieldGroup className="py-4">
+              <Field>
+                <FieldLabel htmlFor="budget-cadence">Cadence</FieldLabel>
+                <Select
+                  value={form.cadence}
+                  onValueChange={(value) =>
+                    setForm((current) => ({ ...current, cadence: value as 'daily' | 'weekly' }))
+                  }
+                >
+                  <SelectTrigger id="budget-cadence">
+                    <SelectValue placeholder="Cadence" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="daily">Daily</SelectItem>
+                      <SelectItem value="weekly">Weekly</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
 
-            <div className="grid gap-1">
-              <label className="text-xs font-semibold text-[var(--color-text-soft)]" htmlFor="budget-amount">
-                Amount (USD)
-              </label>
-              <Input
-                id="budget-amount"
-                value={form.amount_usd}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    amount_usd: event.currentTarget.value,
-                  }))
-                }
-                placeholder="100.0000"
-                autoComplete="off"
-              />
-            </div>
+              <Field>
+                <FieldLabel htmlFor="budget-amount">Amount (USD)</FieldLabel>
+                <Input
+                  id="budget-amount"
+                  value={form.amount_usd}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      amount_usd: event.currentTarget.value,
+                    }))
+                  }
+                  placeholder="100.0000"
+                  autoComplete="off"
+                />
+              </Field>
 
-            <div className="grid gap-1">
-              <label className="text-xs font-semibold text-[var(--color-text-soft)]" htmlFor="budget-timezone">
-                Timezone
-              </label>
-              <Input
-                id="budget-timezone"
-                value={form.timezone ?? 'UTC'}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    timezone: event.currentTarget.value,
-                  }))
-                }
-                placeholder="UTC"
-                autoComplete="off"
-              />
-            </div>
+              <Field>
+                <FieldLabel htmlFor="budget-timezone">Timezone</FieldLabel>
+                <Input
+                  id="budget-timezone"
+                  value={form.timezone ?? 'UTC'}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      timezone: event.currentTarget.value,
+                    }))
+                  }
+                  placeholder="UTC"
+                  autoComplete="off"
+                />
+              </Field>
 
-            <label className="mt-1 flex items-center gap-2 text-sm text-[var(--color-text)]">
-              <input
-                type="checkbox"
-                checked={form.hard_limit}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    hard_limit: event.currentTarget.checked,
-                  }))
-                }
-              />
-              Enforce hard limit
-            </label>
+              <label className="text-foreground mt-2 flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="accent-primary border-border h-4 w-4 rounded"
+                  checked={form.hard_limit}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      hard_limit: event.currentTarget.checked,
+                    }))
+                  }
+                />
+                Enforce hard limit
+              </label>
+            </FieldGroup>
 
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={closeDialog}>

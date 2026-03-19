@@ -7,7 +7,7 @@ export function Empty({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
       className={cn(
-        'flex w-full min-w-0 flex-1 flex-col items-center justify-center rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] px-6 py-10 text-center text-balance',
+        'border-border bg-muted flex w-full min-w-0 flex-1 flex-col items-center justify-center rounded-lg border px-6 py-10 text-center text-balance',
         className,
       )}
       {...props}
@@ -23,7 +23,7 @@ const emptyMediaVariants = cva('flex shrink-0 items-center justify-center', {
   variants: {
     variant: {
       default: '',
-      icon: 'size-14 rounded-full border border-[color:var(--color-border)] bg-[var(--color-primary-soft)] text-[var(--color-primary)]',
+      icon: 'size-14 rounded-full border border-border bg-primary/20 text-primary',
     },
   },
   defaultVariants: {
@@ -41,10 +41,7 @@ export function EmptyMedia({
 
 export function EmptyTitle({ className, ...props }: React.ComponentProps<'div'>) {
   return (
-    <div
-      className={cn('text-lg font-semibold text-[var(--color-text)] sm:text-xl', className)}
-      {...props}
-    />
+    <div className={cn('text-foreground text-lg font-semibold sm:text-xl', className)} {...props} />
   )
 }
 
@@ -52,7 +49,7 @@ export function EmptyDescription({ className, ...props }: React.ComponentProps<'
   return (
     <p
       className={cn(
-        'text-sm text-[var(--color-text-muted)] [&>a]:underline [&>a]:underline-offset-4',
+        'text-muted-foreground text-sm [&>a]:underline [&>a]:underline-offset-4',
         className,
       )}
       {...props}

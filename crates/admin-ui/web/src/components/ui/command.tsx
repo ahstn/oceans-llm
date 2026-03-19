@@ -26,7 +26,7 @@ const CommandInput = React.forwardRef<
     <CommandPrimitive.Input
       ref={ref}
       className={cn(
-        'flex h-11 w-full bg-transparent text-sm text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-soft)]',
+        'text-foreground placeholder:text-muted-foreground/80 flex h-11 w-full bg-transparent text-sm outline-none',
         className,
       )}
       {...props}
@@ -53,7 +53,7 @@ const CommandEmpty = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <CommandPrimitive.Empty
     ref={ref}
-    className={cn('px-3 py-6 text-center text-sm text-[var(--color-text-soft)]', className)}
+    className={cn('text-muted-foreground/80 px-3 py-6 text-center text-sm', className)}
     {...props}
   />
 ))
@@ -66,7 +66,7 @@ const CommandGroup = React.forwardRef<
   <CommandPrimitive.Group
     ref={ref}
     className={cn(
-      'overflow-hidden p-1 text-[var(--color-text-muted)] [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:tracking-[0.08em] [&_[cmdk-group-heading]]:text-[var(--color-text-soft)] [&_[cmdk-group-heading]]:uppercase',
+      'text-muted-foreground [&_[cmdk-group-heading]]:text-muted-foreground/80 overflow-hidden p-1 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:tracking-[0.08em] [&_[cmdk-group-heading]]:uppercase',
       className,
     )}
     {...props}
@@ -81,7 +81,7 @@ const CommandItem = React.forwardRef<
   <CommandPrimitive.Item
     ref={ref}
     className={cn(
-      'flex cursor-default items-center gap-2 rounded-sm px-2 py-2 text-sm text-[var(--color-text-muted)] outline-none select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-40 data-[selected=true]:bg-[color:var(--color-surface-contrast)] data-[selected=true]:text-[var(--color-text)]',
+      'text-muted-foreground data-[selected=true]:bg-accent data-[selected=true]:text-foreground flex cursor-default items-center gap-2 rounded-sm px-2 py-2 text-sm outline-none select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-40',
       className,
     )}
     {...props}

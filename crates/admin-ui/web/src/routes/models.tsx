@@ -66,9 +66,9 @@ function ModelsPage() {
                       </Badge>
                     </div>
                   </CardHeader>
-                  <CardContent className="flex flex-col gap-3 text-sm text-[var(--color-text-muted)]">
+                  <CardContent className="text-muted-foreground flex flex-col gap-3 text-sm">
                     <p>
-                      <span className="font-semibold text-[var(--color-text)]">Upstream:</span>{' '}
+                      <span className="text-foreground font-semibold">Upstream:</span>{' '}
                       {model.upstreamModel}
                     </p>
                     <div className="flex flex-wrap gap-2 pt-1">

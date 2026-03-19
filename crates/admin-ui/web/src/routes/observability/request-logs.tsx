@@ -95,26 +95,24 @@ export function RequestLogsPage() {
           </div>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <div className="text-sm text-[var(--color-text-soft)]">
+          <div className="text-muted-foreground/80 text-sm">
             {data.total} total logs loaded from gateway observability APIs.
           </div>
 
           <div
-            className="max-h-[34rem] overflow-auto rounded-md border border-[color:var(--color-border)] p-3 lg:hidden"
+            className="border-border max-h-[34rem] overflow-auto rounded-md border p-3 lg:hidden"
             data-testid="request-log-mobile-list"
           >
             <div className="flex flex-col gap-3">
               {data.items.map((item) => (
                 <article
                   key={item.requestLogId}
-                  className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4"
+                  className="border-border bg-muted rounded-lg border p-4"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate font-semibold text-[var(--color-text)]">
-                        {item.modelKey}
-                      </p>
-                      <p className="truncate font-mono text-xs text-[var(--color-text-soft)]">
+                      <p className="text-foreground truncate font-semibold">{item.modelKey}</p>
+                      <p className="text-muted-foreground/80 truncate font-mono text-xs">
                         {item.requestId}
                       </p>
                     </div>
@@ -125,32 +123,30 @@ export function RequestLogsPage() {
 
                   <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                     <div>
-                      <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                      <dt className="text-muted-foreground/80 text-xs font-semibold tracking-[0.08em] uppercase">
                         Provider
                       </dt>
-                      <dd className="text-[var(--color-text-muted)]">{item.providerKey}</dd>
+                      <dd className="text-muted-foreground">{item.providerKey}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                      <dt className="text-muted-foreground/80 text-xs font-semibold tracking-[0.08em] uppercase">
                         Latency
                       </dt>
-                      <dd className="text-[var(--color-text-muted)]">
-                        {formatLatency(item.latencyMs)}
-                      </dd>
+                      <dd className="text-muted-foreground">{formatLatency(item.latencyMs)}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                      <dt className="text-muted-foreground/80 text-xs font-semibold tracking-[0.08em] uppercase">
                         Tokens
                       </dt>
-                      <dd className="text-[var(--color-text-muted)]">
+                      <dd className="text-muted-foreground">
                         {formatTokenCount(item.totalTokens)}
                       </dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                      <dt className="text-muted-foreground/80 text-xs font-semibold tracking-[0.08em] uppercase">
                         Timestamp
                       </dt>
-                      <dd className="text-[var(--color-text-muted)]">{item.occurredAt}</dd>
+                      <dd className="text-muted-foreground">{item.occurredAt}</dd>
                     </div>
                   </dl>
 
@@ -177,10 +173,10 @@ export function RequestLogsPage() {
           </div>
 
           <div
-            className="hidden overflow-hidden rounded-md border border-[color:var(--color-border)] lg:block"
+            className="border-border hidden overflow-hidden rounded-md border lg:block"
             data-testid="request-log-desktop-table"
           >
-            <div className="grid grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)_minmax(0,1fr)_88px_96px_88px_120px] bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
+            <div className="bg-muted text-muted-foreground/80 grid grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)_minmax(0,1fr)_88px_96px_88px_120px]">
               <span className="px-3 py-2 font-semibold">Request</span>
               <span className="px-3 py-2 font-semibold">Model</span>
               <span className="px-3 py-2 font-semibold">Provider</span>
@@ -201,24 +197,22 @@ export function RequestLogsPage() {
                   return (
                     <div
                       key={item.requestLogId}
-                      className="absolute top-0 left-0 grid w-full grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)_minmax(0,1fr)_88px_96px_88px_120px] border-t border-[color:var(--color-border)] align-top text-sm"
+                      className="border-border absolute top-0 left-0 grid w-full grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)_minmax(0,1fr)_88px_96px_88px_120px] border-t align-top text-sm"
                       style={{
                         height: `${virtualRow.size}px`,
                         transform: `translateY(${virtualRow.start}px)`,
                       }}
                     >
                       <div className="min-w-0 px-3 py-3">
-                        <div className="truncate font-mono text-xs text-[var(--color-text-soft)]">
+                        <div className="text-muted-foreground/80 truncate font-mono text-xs">
                           {item.requestId}
                         </div>
-                        <div className="truncate text-xs text-[var(--color-text-muted)]">
+                        <div className="text-muted-foreground truncate text-xs">
                           {item.requestLogId}
                         </div>
                       </div>
-                      <span className="truncate px-3 py-3 text-[var(--color-text)]">
-                        {item.modelKey}
-                      </span>
-                      <span className="truncate px-3 py-3 text-[var(--color-text-muted)]">
+                      <span className="text-foreground truncate px-3 py-3">{item.modelKey}</span>
+                      <span className="text-muted-foreground truncate px-3 py-3">
                         {item.providerKey}
                       </span>
                       <span className="px-3 py-3">
@@ -226,10 +220,10 @@ export function RequestLogsPage() {
                           {item.statusCode ?? 'n/a'}
                         </Badge>
                       </span>
-                      <span className="px-3 py-3 text-[var(--color-text-muted)]">
+                      <span className="text-muted-foreground px-3 py-3">
                         {formatLatency(item.latencyMs)}
                       </span>
-                      <span className="px-3 py-3 text-[var(--color-text-muted)]">
+                      <span className="text-muted-foreground px-3 py-3">
                         {formatTokenCount(item.totalTokens)}
                       </span>
                       <div className="px-3 py-2.5">
@@ -264,14 +258,14 @@ export function RequestLogsPage() {
           </DialogHeader>
 
           {detailPending ? (
-            <div className="text-sm text-[var(--color-text-soft)]">Loading request log detail…</div>
+            <div className="text-muted-foreground/80 text-sm">Loading request log detail…</div>
           ) : detailError ? (
             <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
               {detailError}
             </div>
           ) : selectedDetail ? (
             <div className="grid gap-4">
-              <div className="grid gap-3 rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4 md:grid-cols-2">
+              <div className="border-border bg-muted grid gap-3 rounded-md border p-4 md:grid-cols-2">
                 <DetailRow label="Request ID" value={selectedDetail.log.requestId} mono />
                 <DetailRow label="Request Log ID" value={selectedDetail.log.requestLogId} mono />
                 <DetailRow label="Model" value={selectedDetail.log.modelKey} />
@@ -327,9 +321,7 @@ export function RequestLogsPage() {
               </div>
             </div>
           ) : (
-            <div className="text-sm text-[var(--color-text-soft)]">
-              Loading request log detail…
-            </div>
+            <div className="text-muted-foreground/80 text-sm">Loading request log detail…</div>
           )}
         </DialogContent>
       </Dialog>
@@ -348,14 +340,10 @@ function DetailRow({
 }) {
   return (
     <div>
-      <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+      <dt className="text-muted-foreground/80 text-xs font-semibold tracking-[0.08em] uppercase">
         {label}
       </dt>
-      <dd
-        className={
-          mono ? 'font-mono text-sm text-[var(--color-text)]' : 'text-sm text-[var(--color-text)]'
-        }
-      >
+      <dd className={mono ? 'text-foreground font-mono text-sm' : 'text-foreground text-sm'}>
         {value}
       </dd>
     </div>
@@ -364,12 +352,12 @@ function DetailRow({
 
 function PayloadCard({ title, note, payload }: { title: string; note: string; payload: unknown }) {
   return (
-    <section className="rounded-md border border-[color:var(--color-border)]">
-      <header className="border-b border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] px-4 py-3">
-        <h3 className="font-semibold text-[var(--color-text)]">{title}</h3>
-        <p className="text-sm text-[var(--color-text-soft)]">{note}</p>
+    <section className="border-border rounded-md border">
+      <header className="border-border bg-muted border-b px-4 py-3">
+        <h3 className="text-foreground font-semibold">{title}</h3>
+        <p className="text-muted-foreground/80 text-sm">{note}</p>
       </header>
-      <pre className="max-h-[360px] overflow-auto p-4 text-xs leading-6 text-[var(--color-text-muted)]">
+      <pre className="text-muted-foreground max-h-[360px] overflow-auto p-4 text-xs leading-6">
         {payload ? JSON.stringify(payload, null, 2) : 'No payload stored.'}
       </pre>
     </section>

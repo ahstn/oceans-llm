@@ -55,31 +55,24 @@ function ApiKeysPage() {
             <>
               <div className="grid gap-3 md:hidden">
                 {data.items.map((item) => (
-                  <div
-                    key={item.id}
-                    className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4"
-                  >
+                  <div key={item.id} className="border-border bg-muted rounded-lg border p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex flex-col gap-1">
-                        <p className="font-semibold text-[var(--color-text)]">{item.name}</p>
-                        <p className="font-mono text-xs text-[var(--color-text-soft)]">
-                          {item.prefix}
-                        </p>
+                        <p className="text-foreground font-semibold">{item.name}</p>
+                        <p className="text-muted-foreground/80 font-mono text-xs">{item.prefix}</p>
                       </div>
                       <Badge variant={item.status === 'active' ? 'success' : 'warning'}>
                         {item.status}
                       </Badge>
                     </div>
-                    <p className="mt-3 text-sm text-[var(--color-text-muted)]">
-                      Created {item.createdAt}
-                    </p>
+                    <p className="text-muted-foreground mt-3 text-sm">Created {item.createdAt}</p>
                   </div>
                 ))}
               </div>
 
-              <div className="hidden overflow-hidden rounded-md border border-[color:var(--color-border)] md:block">
+              <div className="border-border hidden overflow-hidden rounded-md border md:block">
                 <table className="w-full text-left text-sm">
-                  <thead className="bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
+                  <thead className="bg-muted text-muted-foreground/80">
                     <tr>
                       <th className="px-3 py-2 font-semibold">Name</th>
                       <th className="px-3 py-2 font-semibold">Prefix</th>
@@ -89,14 +82,12 @@ function ApiKeysPage() {
                   </thead>
                   <tbody>
                     {data.items.map((item) => (
-                      <tr key={item.id} className="border-t border-[color:var(--color-border)]">
-                        <td className="px-3 py-3 text-[var(--color-text)]">{item.name}</td>
-                        <td className="px-3 py-3 font-mono text-xs text-[var(--color-text-soft)]">
+                      <tr key={item.id} className="border-border border-t">
+                        <td className="text-foreground px-3 py-3">{item.name}</td>
+                        <td className="text-muted-foreground/80 px-3 py-3 font-mono text-xs">
                           {item.prefix}
                         </td>
-                        <td className="px-3 py-3 text-[var(--color-text-muted)]">
-                          {item.createdAt}
-                        </td>
+                        <td className="text-muted-foreground px-3 py-3">{item.createdAt}</td>
                         <td className="px-3 py-3">
                           <Badge variant={item.status === 'active' ? 'success' : 'warning'}>
                             {item.status}

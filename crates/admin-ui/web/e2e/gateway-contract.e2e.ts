@@ -116,11 +116,14 @@ test('admin spend report endpoint and usage costs page reflect live usage ledger
   })
   expect(completionResponse.status()).toBe(200)
 
-  const reportResponse = await request.get(`${root}/api/v1/admin/spend/report?days=7&owner_kind=all`, {
-    headers: {
-      cookie: adminCookie,
+  const reportResponse = await request.get(
+    `${root}/api/v1/admin/spend/report?days=7&owner_kind=all`,
+    {
+      headers: {
+        cookie: adminCookie,
+      },
     },
-  })
+  )
   expect(reportResponse.status()).toBe(200)
   const reportBody = (await reportResponse.json()) as {
     data: {
