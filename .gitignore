@@ -1,5 +1,7 @@
 **/.DS_Store
 mise.local.toml
+*.db
+gateway.db
 
 target/
 node_modules/
