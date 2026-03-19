@@ -149,6 +149,45 @@ mod tests {
             .expect("suppress duplicate alert")
         );
 
+        let reconfigured_alert = BudgetAlertRecord {
+            budget_alert_id: Uuid::new_v4(),
+            ownership_scope_key: alert_one.ownership_scope_key.clone(),
+            owner_kind: alert_one.owner_kind,
+            owner_id: alert_one.owner_id,
+            owner_name: alert_one.owner_name.clone(),
+            budget_id: Uuid::new_v4(),
+            cadence: BudgetCadence::Weekly,
+            threshold_bps: alert_one.threshold_bps,
+            window_start: alert_one.window_start,
+            window_end: alert_one.window_end,
+            spend_before_usd: alert_one.spend_before_usd,
+            spend_after_usd: alert_one.spend_after_usd,
+            remaining_budget_usd: alert_one.remaining_budget_usd,
+            created_at: now - Duration::minutes(3),
+            updated_at: now - Duration::minutes(3),
+        };
+        let reconfigured_delivery = BudgetAlertDeliveryRecord {
+            budget_alert_delivery_id: Uuid::new_v4(),
+            budget_alert_id: reconfigured_alert.budget_alert_id,
+            channel: BudgetAlertChannel::Email,
+            delivery_status: BudgetAlertDeliveryStatus::Failed,
+            recipient: Some("member.one@example.com".to_string()),
+            provider_message_id: None,
+            failure_reason: Some("smtp timeout".to_string()),
+            queued_at: reconfigured_alert.created_at,
+            last_attempted_at: Some(reconfigured_alert.created_at + Duration::seconds(5)),
+            sent_at: None,
+            updated_at: reconfigured_alert.created_at + Duration::seconds(5),
+        };
+        assert!(
+            repo.create_budget_alert_with_deliveries(
+                &reconfigured_alert,
+                std::slice::from_ref(&reconfigured_delivery),
+            )
+            .await
+            .expect("allow alert for reconfigured budget in same window")
+        );
+
         let alert_two = BudgetAlertRecord {
             budget_alert_id: Uuid::new_v4(),
             ownership_scope_key: format!("team:{}:actor:none", Uuid::new_v4()),
@@ -198,14 +237,16 @@ mod tests {
             })
             .await
             .expect("list all alert history");
-        assert_eq!(page.total, 2);
-        assert_eq!(page.items.len(), 2);
+        assert_eq!(page.total, 3);
+        assert_eq!(page.items.len(), 3);
         assert_eq!(page.items[0].budget_alert_id, alert_two.budget_alert_id);
         assert_eq!(page.items[0].delivery_status, BudgetAlertDeliveryStatus::Failed);
         assert_eq!(page.items[0].recipient_summary, "ops@example.com");
         assert_eq!(page.items[0].failure_reason.as_deref(), Some("smtp timeout"));
-        assert_eq!(page.items[1].budget_alert_id, alert_one.budget_alert_id);
-        assert_eq!(page.items[1].cadence, BudgetCadence::Monthly);
+        assert_eq!(page.items[1].budget_alert_id, reconfigured_alert.budget_alert_id);
+        assert_eq!(page.items[1].cadence, BudgetCadence::Weekly);
+        assert_eq!(page.items[2].budget_alert_id, alert_one.budget_alert_id);
+        assert_eq!(page.items[2].cadence, BudgetCadence::Monthly);
 
         let team_only = repo
             .list_budget_alert_history(&BudgetAlertHistoryQuery {

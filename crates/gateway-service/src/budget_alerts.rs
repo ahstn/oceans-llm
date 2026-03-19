@@ -573,6 +573,7 @@ mod tests {
             let mut alerts = self.alerts.lock().expect("alerts lock");
             if alerts.iter().any(|existing| {
                 existing.ownership_scope_key == alert.ownership_scope_key
+                    && existing.budget_id == alert.budget_id
                     && existing.threshold_bps == alert.threshold_bps
                     && existing.window_start == alert.window_start
             }) {
@@ -719,6 +720,56 @@ mod tests {
         assert_eq!(alerts.len(), 1);
         assert_eq!(deliveries.len(), 1);
         assert_eq!(deliveries[0].delivery_status, BudgetAlertDeliveryStatus::Pending);
+    }
+
+    #[tokio::test]
+    async fn budget_reconfiguration_can_emit_a_new_alert_in_the_same_window() {
+        let user_id = Uuid::new_v4();
+        let repo = Arc::new(InMemoryRepo {
+            user: Some(build_user(user_id, "Jane User", "jane@example.com", "active")),
+            ..InMemoryRepo::default()
+        });
+        let service = BudgetAlertService::new(repo.clone(), Arc::new(SinkBudgetAlertSender));
+        let now = OffsetDateTime::now_utc();
+        let original_budget = UserBudgetRecord {
+            user_budget_id: Uuid::new_v4(),
+            user_id,
+            cadence: BudgetCadence::Monthly,
+            amount_usd: Money4::from_scaled(1_000_000),
+            hard_limit: true,
+            timezone: "UTC".to_string(),
+            is_active: true,
+            created_at: now,
+            updated_at: now,
+        };
+        let reconfigured_budget = UserBudgetRecord {
+            user_budget_id: Uuid::new_v4(),
+            user_id,
+            cadence: BudgetCadence::Monthly,
+            amount_usd: Money4::from_scaled(900_000),
+            hard_limit: true,
+            timezone: "UTC".to_string(),
+            is_active: true,
+            created_at: now,
+            updated_at: now,
+        };
+
+        service
+            .evaluate_after_user_budget_upsert(&original_budget, Money4::from_scaled(850_000), now)
+            .await
+            .expect("first budget alert");
+        service
+            .evaluate_after_user_budget_upsert(
+                &reconfigured_budget,
+                Money4::from_scaled(850_000),
+                now + time::Duration::minutes(1),
+            )
+            .await
+            .expect("reconfigured budget alert");
+
+        let alerts = repo.alerts.lock().expect("alerts lock");
+        assert_eq!(alerts.len(), 2);
+        assert_ne!(alerts[0].budget_id, alerts[1].budget_id);
     }
 
     #[tokio::test]

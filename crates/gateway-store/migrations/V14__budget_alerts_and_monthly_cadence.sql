@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS budget_alerts (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS budget_alerts_scope_threshold_window_uidx
-  ON budget_alerts (ownership_scope_key, threshold_bps, window_start);
+  ON budget_alerts (ownership_scope_key, budget_id, threshold_bps, window_start);
 
 CREATE INDEX IF NOT EXISTS budget_alerts_created_at_idx
   ON budget_alerts (created_at DESC);
