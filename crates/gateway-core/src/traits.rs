@@ -9,12 +9,14 @@ use uuid::Uuid;
 
 use crate::{
     domain::{
-        ApiKeyRecord, GatewayModel, ModelPricingRecord, ModelRoute, Money4,
-        PricingCatalogCacheRecord, ProviderCapabilities, ProviderConnection,
-        ProviderRequestContext, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
-        RequestLogQuery, RequestLogRecord, SpendDailyAggregateRecord, SpendModelAggregateRecord,
-        SpendOwnerAggregateRecord, TeamBudgetRecord, TeamMembershipRecord, TeamRecord,
-        UsageLedgerRecord, UserBudgetRecord, UserRecord,
+        ApiKeyRecord, BudgetAlertDeliveryRecord, BudgetAlertDispatchTask,
+        BudgetAlertHistoryPage, BudgetAlertHistoryQuery, BudgetAlertRecord, GatewayModel,
+        ModelPricingRecord, ModelRoute, Money4, PricingCatalogCacheRecord,
+        ProviderCapabilities, ProviderConnection, ProviderRequestContext, RequestLogDetail,
+        RequestLogPage, RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord,
+        SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord,
+        TeamBudgetRecord, TeamMembershipRecord, TeamRecord, UsageLedgerRecord,
+        UserBudgetRecord, UserRecord,
     },
     error::{ProviderError, RouteError, StoreError},
     protocol::core::{ChatRequest, EmbeddingsRequest},
@@ -64,6 +66,15 @@ pub trait IdentityRepository: Send + Sync {
         &self,
         team_id: Uuid,
     ) -> Result<Vec<String>, StoreError>;
+    async fn list_team_memberships(
+        &self,
+        team_id: Uuid,
+    ) -> Result<Vec<TeamMembershipRecord>, StoreError> {
+        let _ = team_id;
+        Err(StoreError::Unexpected(
+            "list_team_memberships is not implemented for this repository".to_string(),
+        ))
+    }
 }
 
 #[async_trait]
@@ -192,6 +203,68 @@ pub trait BudgetRepository: Send + Sync {
         &self,
         event: &UsageLedgerRecord,
     ) -> Result<bool, StoreError>;
+}
+
+#[async_trait]
+pub trait BudgetAlertRepository: Send + Sync {
+    async fn create_budget_alert_with_deliveries(
+        &self,
+        alert: &BudgetAlertRecord,
+        deliveries: &[BudgetAlertDeliveryRecord],
+    ) -> Result<bool, StoreError> {
+        let _ = (alert, deliveries);
+        Err(StoreError::Unexpected(
+            "create_budget_alert_with_deliveries is not implemented for this repository"
+                .to_string(),
+        ))
+    }
+
+    async fn list_budget_alert_history(
+        &self,
+        query: &BudgetAlertHistoryQuery,
+    ) -> Result<BudgetAlertHistoryPage, StoreError> {
+        let _ = query;
+        Err(StoreError::Unexpected(
+            "list_budget_alert_history is not implemented for this repository".to_string(),
+        ))
+    }
+
+    async fn claim_pending_budget_alert_delivery_tasks(
+        &self,
+        limit: u32,
+        claimed_at: OffsetDateTime,
+    ) -> Result<Vec<BudgetAlertDispatchTask>, StoreError> {
+        let _ = (limit, claimed_at);
+        Err(StoreError::Unexpected(
+            "claim_pending_budget_alert_delivery_tasks is not implemented for this repository"
+                .to_string(),
+        ))
+    }
+
+    async fn mark_budget_alert_delivery_sent(
+        &self,
+        delivery_id: Uuid,
+        provider_message_id: Option<&str>,
+        sent_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        let _ = (delivery_id, provider_message_id, sent_at);
+        Err(StoreError::Unexpected(
+            "mark_budget_alert_delivery_sent is not implemented for this repository".to_string(),
+        ))
+    }
+
+    async fn mark_budget_alert_delivery_failed(
+        &self,
+        delivery_id: Uuid,
+        failure_reason: &str,
+        failed_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        let _ = (delivery_id, failure_reason, failed_at);
+        Err(StoreError::Unexpected(
+            "mark_budget_alert_delivery_failed is not implemented for this repository"
+                .to_string(),
+        ))
+    }
 }
 
 #[async_trait]

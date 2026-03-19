@@ -941,4 +941,34 @@ impl IdentityRepository for LibsqlStore {
         )
         .await
     }
+
+    async fn list_team_memberships(
+        &self,
+        team_id: Uuid,
+    ) -> Result<Vec<TeamMembershipRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT team_id, user_id, role, created_at, updated_at
+                FROM team_memberships
+                WHERE team_id = ?1
+                ORDER BY created_at ASC, user_id ASC
+                "#,
+                [team_id.to_string()],
+            )
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?;
+
+        let mut memberships = Vec::new();
+        while let Some(row) = rows
+            .next()
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?
+        {
+            memberships.push(decode_team_membership_record(&row)?);
+        }
+
+        Ok(memberships)
+    }
 }

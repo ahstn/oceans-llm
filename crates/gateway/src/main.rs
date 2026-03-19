@@ -1,5 +1,6 @@
 mod cli;
 mod config;
+mod email;
 mod http;
 mod observability;
 
@@ -7,7 +8,8 @@ use std::{env, net::SocketAddr, path::Path, sync::Arc, time::Duration};
 
 use crate::{
     cli::{Cli, Command, MigrateAction, ServeArgs},
-    config::{BootstrapAdminConfig, GatewayConfig},
+    config::{BootstrapAdminConfig, BudgetAlertEmailConfig, GatewayConfig},
+    email::build_budget_alert_sender,
 };
 use admin_ui::AdminUiConfig;
 use anyhow::Context;
@@ -114,11 +116,18 @@ async fn run_serve_with_store(
     }
 
     let planner = Arc::new(WeightedRoutePlanner::default());
-    let service = Arc::new(GatewayService::new(store, planner));
+    let budget_alert_sender = build_budget_alert_sender(&config.budget_alerts.email)
+        .context("failed to build budget alert email sender")?;
+    let service = Arc::new(GatewayService::new_with_budget_alert_sender(
+        store,
+        planner,
+        budget_alert_sender,
+    ));
     if let Err(error) = service.refresh_pricing_catalog_if_stale().await {
         tracing::warn!(error = %error, "initial pricing catalog refresh failed");
     }
     spawn_pricing_catalog_refresh_loop(service.clone());
+    spawn_budget_alert_delivery_loop(service.clone(), &config.budget_alerts.email);
     let providers = build_provider_registry(config)?;
 
     let bind_address: SocketAddr = config
@@ -292,6 +301,29 @@ fn spawn_pricing_catalog_refresh_loop(
     });
 }
 
+fn spawn_budget_alert_delivery_loop(
+    service: Arc<GatewayService<AnyStore, WeightedRoutePlanner>>,
+    config: &BudgetAlertEmailConfig,
+) {
+    let poll_interval = Duration::from_secs(config.poll_interval_secs);
+    let batch_size = config.batch_size;
+
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(poll_interval);
+        interval.tick().await;
+
+        loop {
+            interval.tick().await;
+            if let Err(error) = service
+                .dispatch_pending_budget_alert_deliveries(batch_size)
+                .await
+            {
+                tracing::warn!(error = %error, "background budget alert delivery failed");
+            }
+        }
+    });
+}
+
 fn pricing_catalog_refresh_interval() -> Duration {
     DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL
 }
@@ -330,11 +362,12 @@ mod tests {
         routing::post,
     };
     use gateway_core::{
-        ApiKeyRepository, AuthMode, BudgetCadence, BudgetRepository, CoreChatRequest,
-        CoreEmbeddingsRequest, GlobalRole, ModelRepository, Money4, ProviderCapabilities,
-        ProviderClient, ProviderError, ProviderRequestContext, ProviderStream, SeedApiKey,
-        SeedModel, SeedModelRoute, SeedProvider, UsageLedgerRecord, UsagePricingStatus,
-        parse_gateway_api_key,
+        ApiKeyRepository, AuthMode, BudgetAlertChannel, BudgetAlertDeliveryRecord,
+        BudgetAlertDeliveryStatus, BudgetAlertRepository, BudgetCadence, BudgetRepository,
+        CoreChatRequest, CoreEmbeddingsRequest, GlobalRole, ModelRepository, Money4,
+        ProviderCapabilities, ProviderClient, ProviderError, ProviderRequestContext,
+        ProviderStream, SeedApiKey, SeedModel, SeedModelRoute, SeedProvider, UsageLedgerRecord,
+        UsagePricingStatus, parse_gateway_api_key,
     };
     use gateway_providers::{OpenAiCompatConfig, OpenAiCompatProvider};
     use gateway_service::{GatewayService, WeightedRoutePlanner, hash_gateway_key_secret};
@@ -2651,6 +2684,19 @@ mod tests {
             .expect("response");
         assert_eq!(budgets.status(), StatusCode::UNAUTHORIZED);
 
+        let alert_history = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/v1/admin/spend/budget-alerts")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(alert_history.status(), StatusCode::UNAUTHORIZED);
+
         let user_upsert = app
             .clone()
             .oneshot(
@@ -2993,7 +3039,7 @@ mod tests {
                     .header("content-type", "application/json")
                     .body(Body::from(
                         json!({
-                            "cadence": "monthly",
+                            "cadence": "quarterly",
                             "amount_usd": "25.0000",
                             "hard_limit": true,
                             "timezone": "UTC"
@@ -3019,7 +3065,7 @@ mod tests {
                     .header("content-type", "application/json")
                     .body(Body::from(
                         json!({
-                            "cadence": "daily",
+                            "cadence": "monthly",
                             "amount_usd": "25.0000",
                             "hard_limit": true,
                             "timezone": "UTC"
@@ -3038,6 +3084,7 @@ mod tests {
             user.user_id.to_string()
         );
         assert_eq!(upsert_user_body["data"]["budget"]["amount_usd"], "25.0000");
+        assert_eq!(upsert_user_body["data"]["budget"]["cadence"], "monthly");
         assert_eq!(upsert_user_body["data"]["budget"]["hard_limit"], true);
 
         let upsert_team = app
@@ -3160,6 +3207,99 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(upsert_unknown_team.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn admin_budget_alert_history_lists_authenticated_alerts_with_filters() {
+        let (app, store, _) =
+            build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;
+        let session_cookie = bootstrap_admin_session_cookie(&app, &store).await;
+
+        let user = store
+            .create_identity_user(
+                "Member",
+                "member@example.com",
+                "member@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                "active",
+            )
+            .await
+            .expect("create user");
+        let now = time::OffsetDateTime::now_utc()
+            .replace_nanosecond(0)
+            .expect("zero nanos");
+        let alert = gateway_core::BudgetAlertRecord {
+            budget_alert_id: Uuid::new_v4(),
+            ownership_scope_key: format!("user:{}", user.user_id),
+            owner_kind: gateway_core::ApiKeyOwnerKind::User,
+            owner_id: user.user_id,
+            owner_name: user.name.clone(),
+            budget_id: Uuid::new_v4(),
+            cadence: BudgetCadence::Monthly,
+            threshold_bps: 2_000,
+            window_start: now - time::Duration::days(17),
+            window_end: now + time::Duration::days(14),
+            spend_before_usd: Money4::from_scaled(7_500_000),
+            spend_after_usd: Money4::from_scaled(8_200_000),
+            remaining_budget_usd: Money4::from_scaled(1_800_000),
+            created_at: now,
+            updated_at: now,
+        };
+        let delivery = BudgetAlertDeliveryRecord {
+            budget_alert_delivery_id: Uuid::new_v4(),
+            budget_alert_id: alert.budget_alert_id,
+            channel: BudgetAlertChannel::Email,
+            delivery_status: BudgetAlertDeliveryStatus::Pending,
+            recipient: Some(user.email.clone()),
+            provider_message_id: None,
+            failure_reason: None,
+            queued_at: now,
+            last_attempted_at: None,
+            sent_at: None,
+            updated_at: now,
+        };
+        assert!(
+            store
+                .create_budget_alert_with_deliveries(&alert, &[delivery])
+                .await
+                .expect("insert alert history row")
+        );
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/v1/admin/spend/budget-alerts?owner_kind=user&channel=email&status=pending")
+                    .header("cookie", &session_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = read_json(response).await;
+        assert_eq!(body["data"]["page"], 1);
+        assert_eq!(body["data"]["page_size"], 25);
+        assert_eq!(body["data"]["total"], 1);
+        assert_eq!(
+            body["data"]["items"][0]["budget_alert_id"],
+            alert.budget_alert_id.to_string()
+        );
+        assert_eq!(body["data"]["items"][0]["owner_kind"], "user");
+        assert_eq!(body["data"]["items"][0]["owner_id"], user.user_id.to_string());
+        assert_eq!(body["data"]["items"][0]["owner_name"], "Member");
+        assert_eq!(body["data"]["items"][0]["cadence"], "monthly");
+        assert_eq!(body["data"]["items"][0]["threshold_bps"], 2_000);
+        assert_eq!(
+            body["data"]["items"][0]["recipient_summary"],
+            "member@example.com"
+        );
+        assert_eq!(body["data"]["items"][0]["delivery_status"], "pending");
+        assert_eq!(body["data"]["items"][0]["channel"], "email");
     }
 
     #[tokio::test]

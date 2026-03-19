@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use gateway_core::{
     ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, BudgetCadence, BudgetRepository, GatewayError,
-    UsageLedgerRecord,
+    UsageLedgerRecord, budget_window_utc,
 };
-use time::{Duration, OffsetDateTime, UtcOffset};
+use time::OffsetDateTime;
 
 #[derive(Clone)]
 pub struct BudgetGuard<R> {
@@ -165,27 +165,8 @@ fn budget_window_bounds_utc(
     cadence: BudgetCadence,
     occurred_at: OffsetDateTime,
 ) -> Result<(OffsetDateTime, OffsetDateTime), GatewayError> {
-    let now_utc = occurred_at.to_offset(UtcOffset::UTC);
-    let day_start = now_utc
-        .date()
-        .with_hms(0, 0, 0)
-        .map_err(|error| GatewayError::Internal(format!("invalid day start: {error}")))?
-        .assume_offset(UtcOffset::UTC);
-    let end = now_utc + Duration::seconds(1);
-
-    // Budget windows are fixed to UTC:
-    // - Daily: starts at 00:00:00 UTC.
-    // - Weekly: starts at Monday 00:00:00 UTC.
-    //   Sunday 23:59:59 UTC remains in the prior week.
-    let start = match cadence {
-        BudgetCadence::Daily => day_start,
-        BudgetCadence::Weekly => {
-            let days_from_monday = i64::from(now_utc.weekday().number_days_from_monday());
-            day_start - Duration::days(days_from_monday)
-        }
-    };
-
-    Ok((start, end))
+    let window = budget_window_utc(cadence, occurred_at).map_err(GatewayError::Internal)?;
+    Ok((window.period_start, window.observed_end))
 }
 
 fn ownership_scope_key(api_key: &AuthenticatedApiKey) -> Result<String, AuthError> {

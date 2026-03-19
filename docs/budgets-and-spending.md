@@ -95,13 +95,28 @@ That follow-up is tracked in [issue #49](https://github.com/ahstn/oceans-llm/iss
 - each table enforces one active budget per owner through a partial unique index
 
 Budget fields:
-
-- `cadence`: `daily` or `weekly`
+- `cadence`: `daily`, `weekly`, or `monthly`
 - `amount_10000`
 - `hard_limit`
 - `timezone`
 
 `timezone` is stored now, but current enforcement windows remain UTC-anchored.
+
+## Budget Threshold Alerts
+
+- Budget alerts are persisted as audit rows in `budget_alerts`
+- Per-recipient delivery attempts are persisted in `budget_alert_deliveries`
+- The initial threshold is fixed at `20%` remaining budget
+- Alert creation happens:
+  - after a new chargeable usage ledger row is written
+  - after a budget upsert, if current spend is already at or below the threshold
+- Delivery is durable-first:
+  - request handling writes the alert row and queued delivery rows
+  - a background dispatcher sends email later
+- Email delivery is owner-only:
+  - user budgets notify the user email
+  - team budgets notify active team owners/admins with emails
+- Delivery failures remain queryable in alert history
 
 ## Spend Reporting APIs
 
@@ -115,6 +130,8 @@ Live admin spend APIs:
 - `GET /api/v1/admin/spend/budgets`
   - current user and team budget state
   - current-window spend
+- `GET /api/v1/admin/spend/budget-alerts`
+  - newest-first budget alert audit history with owner/channel/status filters
 - `PUT /api/v1/admin/spend/budgets/users/{user_id}`
 - `DELETE /api/v1/admin/spend/budgets/users/{user_id}`
 - `PUT /api/v1/admin/spend/budgets/teams/{team_id}`
@@ -127,6 +144,7 @@ These routes require an authenticated platform-admin session.
 - Budget and reporting windows are UTC-based
 - Daily windows start at `00:00:00 UTC`
 - Weekly windows start at `Monday 00:00:00 UTC`
+- Monthly windows start at `00:00:00 UTC` on the first day of the calendar month
 - `Sunday 23:59:59 UTC` is included in the previous weekly window
 
 ## Scope and Deferrals

@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use gateway_core::{
-    ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, BudgetRepository, ChatCompletionsRequest,
-    GatewayError, GatewayModel, IdentityRepository, ModelRepository, ModelRoute, Money4,
-    PricingCatalogRepository, PricingResolution, PricingUnpricedReason, ProviderRepository,
-    RequestLogDetail, RequestLogPage, RequestLogQuery, RequestLogRecord, RequestLogRepository,
-    ResolvedModelPricing, RouteError, RoutePlanner, StoreHealth, UsageLedgerRecord,
-    UsagePricingStatus,
+    ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, BudgetAlertRepository, BudgetRepository,
+    ChatCompletionsRequest, GatewayError, GatewayModel, IdentityRepository, ModelRepository,
+    ModelRoute, Money4, PricingCatalogRepository, PricingResolution, PricingUnpricedReason,
+    ProviderRepository, RequestLogDetail, RequestLogPage, RequestLogQuery, RequestLogRecord,
+    RequestLogRepository, ResolvedModelPricing, RouteError, RoutePlanner, StoreHealth,
+    TeamBudgetRecord, UsageLedgerRecord, UsagePricingStatus, UserBudgetRecord,
 };
 use serde_json::{Value, json};
 use time::OffsetDateTime;
@@ -17,6 +17,7 @@ use crate::{
     Authenticator, ChatRequestLogContext, LoggedRequest, ModelAccess, ModelResolver,
     PricingCatalog, RequestLogging, ResolvedGatewayRequest, StreamLogResultInput,
     StreamResponseCollector,
+    budget_alerts::{BudgetAlertSender, BudgetAlertService, SinkBudgetAlertSender},
     budget_guard::{BudgetGuard, BudgetGuardDisposition},
 };
 
@@ -34,6 +35,7 @@ pub struct RecordedChatUsage {
 pub struct GatewayService<S, P> {
     store: Arc<S>,
     authenticator: Authenticator<S>,
+    budget_alerts: BudgetAlertService<S>,
     budget_guard: BudgetGuard<S>,
     model_access: ModelAccess<S>,
     model_resolver: ModelResolver<S>,
@@ -45,6 +47,7 @@ pub struct GatewayService<S, P> {
 impl<S, P> GatewayService<S, P>
 where
     S: gateway_core::ApiKeyRepository
+        + BudgetAlertRepository
         + BudgetRepository
         + ModelRepository
         + IdentityRepository
@@ -59,7 +62,17 @@ where
 {
     #[must_use]
     pub fn new(store: Arc<S>, planner: Arc<P>) -> Self {
+        Self::new_with_budget_alert_sender(store, planner, Arc::new(SinkBudgetAlertSender))
+    }
+
+    #[must_use]
+    pub fn new_with_budget_alert_sender(
+        store: Arc<S>,
+        planner: Arc<P>,
+        sender: Arc<dyn BudgetAlertSender>,
+    ) -> Self {
         let authenticator = Authenticator::new(store.clone());
+        let budget_alerts = BudgetAlertService::new(store.clone(), sender);
         let budget_guard = BudgetGuard::new(store.clone());
         let model_access = ModelAccess::new(store.clone());
         let model_resolver = ModelResolver::new(store.clone());
@@ -69,6 +82,7 @@ where
         Self {
             store,
             authenticator,
+            budget_alerts,
             budget_guard,
             model_access,
             model_resolver,
@@ -265,6 +279,35 @@ where
         self.pricing_catalog.refresh_if_stale().await
     }
 
+    pub async fn dispatch_pending_budget_alert_deliveries(
+        &self,
+        limit: u32,
+    ) -> Result<usize, GatewayError> {
+        self.budget_alerts.dispatch_pending_deliveries(limit).await
+    }
+
+    pub async fn evaluate_budget_alert_after_user_budget_upsert(
+        &self,
+        budget: &UserBudgetRecord,
+        current_spend: Money4,
+        occurred_at: OffsetDateTime,
+    ) -> Result<(), GatewayError> {
+        self.budget_alerts
+            .evaluate_after_user_budget_upsert(budget, current_spend, occurred_at)
+            .await
+    }
+
+    pub async fn evaluate_budget_alert_after_team_budget_upsert(
+        &self,
+        budget: &TeamBudgetRecord,
+        current_spend: Money4,
+        occurred_at: OffsetDateTime,
+    ) -> Result<(), GatewayError> {
+        self.budget_alerts
+            .evaluate_after_team_budget_upsert(budget, current_spend, occurred_at)
+            .await
+    }
+
     pub async fn resolve_route_pricing(
         &self,
         route: &ModelRoute,
@@ -370,6 +413,13 @@ where
                 request_id = %request_id,
                 ownership_scope_key = %record.ownership_scope_key,
                 "duplicate usage ledger write ignored"
+            );
+        } else if let Err(error) = self.budget_alerts.evaluate_after_usage(auth, &record).await {
+            warn!(
+                request_id = %request_id,
+                ownership_scope_key = %record.ownership_scope_key,
+                error = %error,
+                "budget alert evaluation failed after usage ledger insert"
             );
         }
 

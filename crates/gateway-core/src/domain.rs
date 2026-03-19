@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use time::OffsetDateTime;
+use time::{Date, Duration, Month, OffsetDateTime, UtcOffset};
 use uuid::Uuid;
 
 pub const SYSTEM_LEGACY_TEAM_ID: &str = "00000000-0000-0000-0000-000000000001";
@@ -34,6 +34,13 @@ impl Money4 {
     pub fn checked_add(self, other: Self) -> Option<Self> {
         self.amount_10000
             .checked_add(other.amount_10000)
+            .map(Self::from_scaled)
+    }
+
+    #[must_use]
+    pub fn checked_sub(self, other: Self) -> Option<Self> {
+        self.amount_10000
+            .checked_sub(other.amount_10000)
             .map(Self::from_scaled)
     }
 
@@ -239,6 +246,7 @@ impl ModelAccessMode {
 pub enum BudgetCadence {
     Daily,
     Weekly,
+    Monthly,
 }
 
 impl BudgetCadence {
@@ -247,6 +255,7 @@ impl BudgetCadence {
         match self {
             Self::Daily => "daily",
             Self::Weekly => "weekly",
+            Self::Monthly => "monthly",
         }
     }
 
@@ -255,8 +264,76 @@ impl BudgetCadence {
         match value {
             "daily" => Some(Self::Daily),
             "weekly" => Some(Self::Weekly),
+            "monthly" => Some(Self::Monthly),
             _ => None,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BudgetWindow {
+    pub period_start: OffsetDateTime,
+    pub period_end: OffsetDateTime,
+    pub observed_end: OffsetDateTime,
+}
+
+pub fn budget_window_utc(
+    cadence: BudgetCadence,
+    occurred_at: OffsetDateTime,
+) -> Result<BudgetWindow, String> {
+    let now_utc = occurred_at.to_offset(UtcOffset::UTC);
+    let date = now_utc.date();
+    let day_start = date
+        .with_hms(0, 0, 0)
+        .map_err(|error| format!("invalid day start: {error}"))?
+        .assume_offset(UtcOffset::UTC);
+
+    let (period_start, period_end) = match cadence {
+        BudgetCadence::Daily => (day_start, day_start + Duration::days(1)),
+        BudgetCadence::Weekly => {
+            let days_from_monday = i64::from(now_utc.weekday().number_days_from_monday());
+            let start = day_start - Duration::days(days_from_monday);
+            (start, start + Duration::days(7))
+        }
+        BudgetCadence::Monthly => {
+            let start_date = Date::from_calendar_date(date.year(), date.month(), 1)
+                .map_err(|error| format!("invalid month start: {error}"))?;
+            let start = start_date
+                .with_hms(0, 0, 0)
+                .map_err(|error| format!("invalid month start time: {error}"))?
+                .assume_offset(UtcOffset::UTC);
+            let (next_year, next_month) = next_calendar_month(date.year(), date.month());
+            let end = Date::from_calendar_date(next_year, next_month, 1)
+                .map_err(|error| format!("invalid next month start: {error}"))?
+                .with_hms(0, 0, 0)
+                .map_err(|error| format!("invalid next month start time: {error}"))?
+                .assume_offset(UtcOffset::UTC);
+            (start, end)
+        }
+    };
+    let observed_end = std::cmp::min(now_utc + Duration::seconds(1), period_end);
+
+    Ok(BudgetWindow {
+        period_start,
+        period_end,
+        observed_end,
+    })
+}
+
+const fn next_calendar_month(year: i32, month: Month) -> (i32, Month) {
+    match month {
+        Month::January => (year, Month::February),
+        Month::February => (year, Month::March),
+        Month::March => (year, Month::April),
+        Month::April => (year, Month::May),
+        Month::May => (year, Month::June),
+        Month::June => (year, Month::July),
+        Month::July => (year, Month::August),
+        Month::August => (year, Month::September),
+        Month::September => (year, Month::October),
+        Month::October => (year, Month::November),
+        Month::November => (year, Month::December),
+        Month::December => (year + 1, Month::January),
     }
 }
 
@@ -422,6 +499,137 @@ pub struct TeamBudgetRecord {
     pub is_active: bool,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BudgetAlertChannel {
+    Email,
+}
+
+impl BudgetAlertChannel {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Email => "email",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "email" => Some(Self::Email),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BudgetAlertDeliveryStatus {
+    Pending,
+    Sent,
+    Failed,
+}
+
+impl BudgetAlertDeliveryStatus {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Sent => "sent",
+            Self::Failed => "failed",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "pending" => Some(Self::Pending),
+            "sent" => Some(Self::Sent),
+            "failed" => Some(Self::Failed),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BudgetAlertRecord {
+    pub budget_alert_id: Uuid,
+    pub ownership_scope_key: String,
+    pub owner_kind: ApiKeyOwnerKind,
+    pub owner_id: Uuid,
+    pub owner_name: String,
+    pub budget_id: Uuid,
+    pub cadence: BudgetCadence,
+    pub threshold_bps: i32,
+    pub window_start: OffsetDateTime,
+    pub window_end: OffsetDateTime,
+    pub spend_before_usd: Money4,
+    pub spend_after_usd: Money4,
+    pub remaining_budget_usd: Money4,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BudgetAlertDeliveryRecord {
+    pub budget_alert_delivery_id: Uuid,
+    pub budget_alert_id: Uuid,
+    pub channel: BudgetAlertChannel,
+    pub delivery_status: BudgetAlertDeliveryStatus,
+    pub recipient: Option<String>,
+    pub provider_message_id: Option<String>,
+    pub failure_reason: Option<String>,
+    pub queued_at: OffsetDateTime,
+    pub last_attempted_at: Option<OffsetDateTime>,
+    pub sent_at: Option<OffsetDateTime>,
+    pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BudgetAlertDispatchTask {
+    pub alert: BudgetAlertRecord,
+    pub delivery: BudgetAlertDeliveryRecord,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BudgetAlertHistoryQuery {
+    pub page: u32,
+    pub page_size: u32,
+    pub owner_kind: Option<ApiKeyOwnerKind>,
+    pub channel: Option<BudgetAlertChannel>,
+    pub delivery_status: Option<BudgetAlertDeliveryStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BudgetAlertHistoryRecord {
+    pub budget_alert_id: Uuid,
+    pub owner_kind: ApiKeyOwnerKind,
+    pub owner_id: Uuid,
+    pub owner_name: String,
+    pub channel: BudgetAlertChannel,
+    pub delivery_status: BudgetAlertDeliveryStatus,
+    pub recipient_summary: String,
+    pub threshold_bps: i32,
+    pub cadence: BudgetCadence,
+    pub window_start: OffsetDateTime,
+    pub window_end: OffsetDateTime,
+    pub spend_before_usd: Money4,
+    pub spend_after_usd: Money4,
+    pub remaining_budget_usd: Money4,
+    pub created_at: OffsetDateTime,
+    pub last_attempted_at: Option<OffsetDateTime>,
+    pub sent_at: Option<OffsetDateTime>,
+    pub failure_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BudgetAlertHistoryPage {
+    pub items: Vec<BudgetAlertHistoryRecord>,
+    pub page: u32,
+    pub page_size: u32,
+    pub total: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

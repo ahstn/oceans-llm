@@ -6,6 +6,7 @@ import {
   listModels,
   listRequestLogs,
   getSpendReport,
+  listBudgetAlertHistory,
   listSpendBudgets,
   listTeams,
   listUsers,
@@ -106,6 +107,17 @@ vi.mock('@/server/gateway-client.server', () => ({
       }
     }
 
+    if (path === '/api/v1/admin/spend/budget-alerts') {
+      return {
+        data: {
+          items: [],
+          page: 1,
+          page_size: 25,
+          total: 0,
+        },
+      }
+    }
+
     if (path === '/api/v1/admin/observability/request-logs') {
       return {
         data: {
@@ -189,20 +201,23 @@ vi.mock('@/server/gateway-client.server', () => ({
 
 describe('server-side mock repositories', () => {
   it('returns stable API envelopes for phase-1 views', async () => {
-    const [apiKeys, models, spendReport, spendBudgets, logs, teams, users] = await Promise.all([
+    const [apiKeys, models, spendReport, spendBudgets, budgetAlerts, logs, teams, users] =
+      await Promise.all([
       listApiKeys(),
       listModels(),
       getSpendReport(),
       listSpendBudgets(),
+      listBudgetAlertHistory(),
       listRequestLogs(),
       listTeams(),
       listUsers(),
-    ])
+      ])
 
     expect(apiKeys.data.items.length).toBeGreaterThan(0)
     expect(models.data.length).toBeGreaterThan(0)
     expect(spendReport.data.window_days).toBeGreaterThan(0)
     expect(spendBudgets.data.users.length).toBe(0)
+    expect(budgetAlerts.data.items.length).toBe(0)
     expect(logs.data.items.length).toBeGreaterThan(0)
     expect(teams.data.teams.length).toBeGreaterThan(0)
     expect(teams.data.users.length).toBeGreaterThan(0)

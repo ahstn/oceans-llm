@@ -837,4 +837,26 @@ impl IdentityRepository for PostgresStore {
         )
         .await
     }
+
+    async fn list_team_memberships(
+        &self,
+        team_id: Uuid,
+    ) -> Result<Vec<TeamMembershipRecord>, StoreError> {
+        let rows = sqlx::query(
+            r#"
+            SELECT team_id, user_id, role, created_at, updated_at
+            FROM team_memberships
+            WHERE team_id = $1
+            ORDER BY created_at ASC, user_id ASC
+            "#,
+        )
+        .bind(team_id.to_string())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+
+        rows.iter()
+            .map(decode_team_membership_record)
+            .collect::<Result<Vec<_>, _>>()
+    }
 }

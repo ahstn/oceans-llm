@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/select'
 import { requireAdminSession } from '@/routes/-admin-guard'
 import {
+  getBudgetAlertHistory,
   getSpendBudgets,
   removeTeamBudget,
   removeUserBudget,
@@ -31,6 +32,8 @@ import {
   saveUserBudget,
 } from '@/server/admin-data.functions'
 import type {
+  BudgetAlertHistoryItemView,
+  BudgetAlertHistoryView,
   SpendBudgetTeamView,
   SpendBudgetUserView,
   SpendBudgetsView,
@@ -39,7 +42,13 @@ import type {
 
 export const Route = createFileRoute('/spend-controls')({
   beforeLoad: ({ location }) => requireAdminSession(location),
-  loader: () => getSpendBudgets(),
+  loader: async () => {
+    const [budgets, alerts] = await Promise.all([
+      getSpendBudgets(),
+      getBudgetAlertHistory({ data: { page: 1, page_size: 10, owner_kind: 'all', status: 'all', channel: 'all' } }),
+    ])
+    return { budgets, alerts }
+  },
   component: SpendControlsPage,
 })
 
@@ -65,8 +74,16 @@ const CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
 export function SpendControlsPage() {
   const router = useRouter()
   const {
-    data: { users, teams },
-  } = Route.useLoaderData() as { data: SpendBudgetsView }
+    budgets: {
+      data: { users, teams },
+    },
+    alerts: {
+      data: { items: alertItems },
+    },
+  } = Route.useLoaderData() as {
+    budgets: { data: SpendBudgetsView }
+    alerts: { data: BudgetAlertHistoryView }
+  }
   const [dialogState, setDialogState] = useState<BudgetDialogState>({ mode: 'closed' })
   const [form, setForm] = useState<UpsertBudgetInput>(initialBudgetInput)
   const [isPending, startTransition] = useTransition()
@@ -178,7 +195,7 @@ export function SpendControlsPage() {
         <CardHeader>
           <CardTitle>Spend Controls</CardTitle>
           <CardDescription>
-            Configure hard-limit budgets for user-owned and team-owned spend scopes.
+            Configure hard-limit budgets, review who will receive email alerts, and audit threshold notifications.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -186,20 +203,23 @@ export function SpendControlsPage() {
       <Card>
         <CardHeader>
           <CardTitle>User Budgets</CardTitle>
-          <CardDescription>Per-user budget configuration and current window spend.</CardDescription>
+          <CardDescription>
+            Per-user budget configuration and current window spend. Budget alerts are delivered to the user email on file.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="overflow-hidden rounded-md border border-[color:var(--color-border)]">
-            <div className="grid grid-cols-[minmax(0,1fr)_170px_170px_180px] bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
+            <div className="grid grid-cols-[minmax(0,1fr)_170px_170px_220px_180px] bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
               <span className="px-3 py-2 font-semibold">User</span>
               <span className="px-3 py-2 font-semibold">Budget</span>
               <span className="px-3 py-2 font-semibold">Current spend</span>
+              <span className="px-3 py-2 font-semibold">Alert recipient</span>
               <span className="px-3 py-2 font-semibold">Actions</span>
             </div>
             {users.map((user) => (
               <div
                 key={user.user_id}
-                className="grid grid-cols-[minmax(0,1fr)_170px_170px_180px] border-t border-[color:var(--color-border)]"
+                className="grid grid-cols-[minmax(0,1fr)_170px_170px_220px_180px] border-t border-[color:var(--color-border)]"
               >
                 <div className="min-w-0 px-3 py-3">
                   <p className="truncate text-sm font-semibold text-[var(--color-text)]">{user.name}</p>
@@ -215,6 +235,9 @@ export function SpendControlsPage() {
                 <span className="px-3 py-3 text-sm text-[var(--color-text-muted)]">
                   {CURRENCY_FORMATTER.format(user.current_window_spend_usd_10000 / 10_000)}
                 </span>
+                <div className="px-3 py-3">
+                  <p className="truncate text-sm text-[var(--color-text)]">{user.alert_recipient_summary}</p>
+                </div>
                 <div className="flex items-center gap-2 px-3 py-3">
                   <Button type="button" size="sm" variant="secondary" onClick={() => openUserDialog(user)}>
                     Configure
@@ -240,20 +263,23 @@ export function SpendControlsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Team Budgets</CardTitle>
-          <CardDescription>Team hard limits for team-owned API key spend.</CardDescription>
+          <CardDescription>
+            Team hard limits for team-owned API key spend. Alerts go to active team owners and admins only.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="overflow-hidden rounded-md border border-[color:var(--color-border)]">
-            <div className="grid grid-cols-[minmax(0,1fr)_170px_170px_180px] bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
+            <div className="grid grid-cols-[minmax(0,1fr)_170px_170px_220px_180px] bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
               <span className="px-3 py-2 font-semibold">Team</span>
               <span className="px-3 py-2 font-semibold">Budget</span>
               <span className="px-3 py-2 font-semibold">Current spend</span>
+              <span className="px-3 py-2 font-semibold">Alert recipients</span>
               <span className="px-3 py-2 font-semibold">Actions</span>
             </div>
             {teams.map((team) => (
               <div
                 key={team.team_id}
-                className="grid grid-cols-[minmax(0,1fr)_170px_170px_180px] border-t border-[color:var(--color-border)]"
+                className="grid grid-cols-[minmax(0,1fr)_170px_170px_220px_180px] border-t border-[color:var(--color-border)]"
               >
                 <div className="min-w-0 px-3 py-3">
                   <p className="truncate text-sm font-semibold text-[var(--color-text)]">{team.team_name}</p>
@@ -269,6 +295,17 @@ export function SpendControlsPage() {
                 <span className="px-3 py-3 text-sm text-[var(--color-text-muted)]">
                   {CURRENCY_FORMATTER.format(team.current_window_spend_usd_10000 / 10_000)}
                 </span>
+                <div className="px-3 py-3">
+                  <p
+                    className={
+                      team.alert_email_ready
+                        ? 'truncate text-sm text-[var(--color-text)]'
+                        : 'text-sm text-[var(--color-danger)]'
+                    }
+                  >
+                    {team.alert_recipient_summary}
+                  </p>
+                </div>
                 <div className="flex items-center gap-2 px-3 py-3">
                   <Button type="button" size="sm" variant="secondary" onClick={() => openTeamDialog(team)}>
                     Configure
@@ -291,6 +328,68 @@ export function SpendControlsPage() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle>Budget Alert History</CardTitle>
+          <CardDescription>
+            The latest threshold alerts and delivery outcomes for audit review.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-hidden rounded-md border border-[color:var(--color-border)]">
+            <div className="grid grid-cols-[minmax(0,1fr)_120px_120px_220px_160px] bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
+              <span className="px-3 py-2 font-semibold">Owner</span>
+              <span className="px-3 py-2 font-semibold">Threshold</span>
+              <span className="px-3 py-2 font-semibold">Remaining</span>
+              <span className="px-3 py-2 font-semibold">Recipients</span>
+              <span className="px-3 py-2 font-semibold">Status</span>
+            </div>
+            {alertItems.length === 0 ? (
+              <div className="px-3 py-6 text-sm text-[var(--color-text-soft)]">
+                No budget alerts have been recorded yet.
+              </div>
+            ) : (
+              alertItems.map((alert) => (
+                <div
+                  key={alert.budget_alert_id}
+                  className="grid grid-cols-[minmax(0,1fr)_120px_120px_220px_160px] border-t border-[color:var(--color-border)]"
+                >
+                  <div className="min-w-0 px-3 py-3">
+                    <p className="truncate text-sm font-semibold text-[var(--color-text)]">
+                      {alert.owner_name}
+                    </p>
+                    <p className="truncate text-xs text-[var(--color-text-soft)]">
+                      {alert.owner_kind} • {new Date(alert.created_at).toLocaleString()}
+                    </p>
+                  </div>
+                  <span className="px-3 py-3 text-sm text-[var(--color-text-muted)]">
+                    {formatThreshold(alert)}
+                  </span>
+                  <span className="px-3 py-3 text-sm text-[var(--color-text-muted)]">
+                    {CURRENCY_FORMATTER.format(alert.remaining_budget_usd_10000 / 10_000)}
+                  </span>
+                  <div className="px-3 py-3">
+                    <p className="line-clamp-2 text-sm text-[var(--color-text-muted)]">
+                      {alert.recipient_summary}
+                    </p>
+                  </div>
+                  <div className="px-3 py-3">
+                    <Badge variant={badgeVariantForAlert(alert)}>
+                      {alert.delivery_status}
+                    </Badge>
+                    {alert.failure_reason ? (
+                      <p className="mt-1 line-clamp-2 text-xs text-[var(--color-danger)]">
+                        {alert.failure_reason}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
       <Dialog open={dialogState.mode !== 'closed'} onOpenChange={(open) => (!open ? closeDialog() : null)}>
         <DialogContent>
           <DialogHeader>
@@ -306,7 +405,12 @@ export function SpendControlsPage() {
               </label>
               <Select
                 value={form.cadence}
-                onValueChange={(value) => setForm((current) => ({ ...current, cadence: value as 'daily' | 'weekly' }))}
+                onValueChange={(value) =>
+                  setForm((current) => ({
+                    ...current,
+                    cadence: value as 'daily' | 'weekly' | 'monthly',
+                  }))
+                }
               >
                 <SelectTrigger id="budget-cadence">
                   <SelectValue placeholder="Cadence" />
@@ -315,6 +419,7 @@ export function SpendControlsPage() {
                   <SelectGroup>
                     <SelectItem value="daily">Daily</SelectItem>
                     <SelectItem value="weekly">Weekly</SelectItem>
+                    <SelectItem value="monthly">Monthly</SelectItem>
                   </SelectGroup>
                 </SelectContent>
               </Select>
@@ -390,4 +495,18 @@ function getErrorMessage(error: unknown) {
     return error.message
   }
   return 'Request failed'
+}
+
+function badgeVariantForAlert(alert: BudgetAlertHistoryItemView): 'default' | 'success' | 'warning' {
+  if (alert.delivery_status === 'sent') {
+    return 'success'
+  }
+  if (alert.delivery_status === 'pending') {
+    return 'warning'
+  }
+  return 'default'
+}
+
+function formatThreshold(alert: BudgetAlertHistoryItemView) {
+  return `${alert.threshold_bps / 100}%`
 }

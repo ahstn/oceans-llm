@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 anyhow.workspace = true
 argon2.workspace = true
+async-trait.workspace = true
 gateway-core.workspace = true
 itertools.workspace = true
 rand.workspace = true
