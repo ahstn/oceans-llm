@@ -29,7 +29,7 @@ mod tests {
         PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
         PricingProvenance, ProviderCapabilities, RequestLogRecord, RequestLogRepository,
         SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedModel, SeedModelRoute,
-        SeedProvider, StoreError, StoreHealth, UsageLedgerRecord, UsagePricingStatus,
+        SeedProvider, StoreError, StoreHealth, UsageLedgerRecord, UsagePricingStatus, UserStatus,
     };
     use serde_json::{Map, json};
     use serial_test::serial;
@@ -40,7 +40,7 @@ mod tests {
     use uuid::Uuid;
 
     use crate::{
-        LibsqlStore, MigrationTestHook, PostgresStore, StoreConnectionOptions,
+        GatewayStore, LibsqlStore, MigrationTestHook, PostgresStore, StoreConnectionOptions,
         check_migrations_with_options,
         migration_registry::{BackendMigrationStep, MIGRATION_REGISTRY, MigrationBackend},
         run_migrations, run_migrations_with_options, run_migrations_with_options_for_test,
@@ -1048,6 +1048,196 @@ mod tests {
         assert!(conflict.is_err());
     }
 
+    async fn assert_identity_mutation_store_helpers<S: GatewayStore>(store: &S) {
+        let source_team = store
+            .create_team("source", "Source")
+            .await
+            .expect("source team");
+        let destination_team = store
+            .create_team("destination", "Destination")
+            .await
+            .expect("destination team");
+        let member = store
+            .create_identity_user(
+                "Member",
+                "member@example.com",
+                "member@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
+            .await
+            .expect("member");
+        let owner = store
+            .create_identity_user(
+                "Owner",
+                "owner@example.com",
+                "owner@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
+            .await
+            .expect("owner");
+        let admin = store
+            .create_identity_user(
+                "Admin",
+                "admin@example.com",
+                "admin@example.com",
+                GlobalRole::PlatformAdmin,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
+            .await
+            .expect("platform admin");
+        let now = OffsetDateTime::now_utc();
+
+        assert!(
+            !store
+                .remove_team_membership(source_team.team_id, member.user_id)
+                .await
+                .expect("remove non-member")
+        );
+
+        store
+            .assign_team_membership(member.user_id, source_team.team_id, MembershipRole::Admin)
+            .await
+            .expect("assign member");
+        store
+            .assign_team_membership(owner.user_id, source_team.team_id, MembershipRole::Owner)
+            .await
+            .expect("assign owner");
+
+        store
+            .transfer_team_membership(
+                member.user_id,
+                source_team.team_id,
+                destination_team.team_id,
+                MembershipRole::Member,
+                now,
+            )
+            .await
+            .expect("transfer member");
+        let transferred_membership = store
+            .get_team_membership_for_user(member.user_id)
+            .await
+            .expect("lookup membership")
+            .expect("membership exists");
+        assert_eq!(transferred_membership.team_id, destination_team.team_id);
+        assert_eq!(transferred_membership.role, MembershipRole::Member);
+
+        assert!(
+            store
+                .remove_team_membership(destination_team.team_id, member.user_id)
+                .await
+                .expect("remove transferred member")
+        );
+        assert!(
+            store
+                .get_team_membership_for_user(member.user_id)
+                .await
+                .expect("load membership")
+                .is_none()
+        );
+        assert!(matches!(
+            store
+                .remove_team_membership(source_team.team_id, owner.user_id)
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+        assert!(matches!(
+            store
+                .transfer_team_membership(
+                    owner.user_id,
+                    source_team.team_id,
+                    destination_team.team_id,
+                    MembershipRole::Member,
+                    now,
+                )
+                .await,
+            Err(StoreError::Conflict(_))
+        ));
+
+        store
+            .store_user_password(member.user_id, "hash", now)
+            .await
+            .expect("store password");
+        assert!(
+            store
+                .get_user_password_auth(member.user_id)
+                .await
+                .expect("password auth")
+                .is_some()
+        );
+        store
+            .delete_user_password_auth(member.user_id)
+            .await
+            .expect("delete password auth");
+        assert!(
+            store
+                .get_user_password_auth(member.user_id)
+                .await
+                .expect("password auth after delete")
+                .is_none()
+        );
+
+        let session = store
+            .create_user_session(
+                Uuid::new_v4(),
+                member.user_id,
+                "token-hash",
+                now + Duration::days(1),
+                now,
+            )
+            .await
+            .expect("create session");
+        store
+            .revoke_user_sessions(member.user_id, now)
+            .await
+            .expect("revoke sessions");
+        assert!(
+            store
+                .get_user_session(session.session_id)
+                .await
+                .expect("load session")
+                .expect("session exists")
+                .revoked_at
+                .is_some()
+        );
+
+        assert_eq!(
+            store
+                .count_active_platform_admins()
+                .await
+                .expect("count admins"),
+            1
+        );
+        store
+            .update_user_status(admin.user_id, UserStatus::Disabled, now)
+            .await
+            .expect("disable admin");
+        assert_eq!(
+            store
+                .count_active_platform_admins()
+                .await
+                .expect("count admins after disable"),
+            0
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_identity_mutation_store_helpers_cover_transfer_removal_and_revocation() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+        assert_identity_mutation_store_helpers(&store).await;
+    }
+
     #[tokio::test]
     #[serial]
     async fn pricing_catalog_cache_round_trips_and_touch_updates_fetched_at() {
@@ -1870,7 +2060,7 @@ mod tests {
                 "member@example.com",
                 GlobalRole::User,
                 AuthMode::Password,
-                "active",
+                UserStatus::Active,
             )
             .await
             .expect("create user");
@@ -2163,7 +2353,7 @@ mod tests {
                 "member@example.com",
                 GlobalRole::User,
                 AuthMode::Password,
-                "invited",
+                UserStatus::Invited,
             )
             .await
             .expect("create user");
@@ -2408,6 +2598,31 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn postgres_identity_mutation_store_helpers_cover_transfer_removal_and_revocation() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!("skipping postgres store test because TEST_POSTGRES_URL is not set");
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options, MigrationTestHook::default())
+            .await
+            .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+        assert_identity_mutation_store_helpers(&store).await;
+
+        drop(store);
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn postgres_team_budget_enforces_single_active_record_per_team() {
         let Some(test_db) = create_postgres_test_database().await else {
             eprintln!(
@@ -2599,7 +2814,7 @@ mod tests {
                 "member@example.com",
                 GlobalRole::User,
                 AuthMode::Password,
-                "active",
+                UserStatus::Active,
             )
             .await
             .expect("create user");

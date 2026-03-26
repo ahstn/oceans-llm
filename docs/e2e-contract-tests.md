@@ -46,6 +46,11 @@ The current suite already covers more than a browser-only smoke pass:
 - live spend report API behavior
 - team hard-limit enforcement for team-owned keys
 
+Planned contract coverage is now expected for:
+
+- user lifecycle management
+- team member removal and transfer
+
 ## Preview-Backed Surface Rule
 
 Preview-backed pages may appear in smoke or landing assertions, but they are not treated as business-flow coverage until the underlying data is live.
@@ -64,6 +69,7 @@ When adding new browser scenarios:
 - prefer one critical cross-layer flow per newly live surface
 - keep the suite contract-focused rather than broad UI regression coverage
 - avoid treating mock or preview-only pages as durable product workflows
+- assert invalid transitions directly at the HTTP boundary when that is the clearest contract
 
 ## Coverage Shape
 
@@ -77,5 +83,4 @@ That split is intentional because some critical contracts are better asserted di
 ## Still Missing
 
 - password invite completion coverage
-- user and team management flows
 - request-log detail and filtering flows as that surface hardens

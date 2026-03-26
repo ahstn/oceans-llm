@@ -364,8 +364,9 @@ mod tests {
     use gateway_core::{
         ApiKeyRepository, AuthMode, BudgetAlertChannel, BudgetAlertDeliveryRecord,
         BudgetAlertDeliveryStatus, BudgetAlertRepository, BudgetCadence, BudgetRepository,
-        CoreChatRequest, CoreEmbeddingsRequest, GlobalRole, ModelRepository, Money4,
-        ProviderCapabilities, ProviderClient, ProviderError, ProviderRequestContext,
+        CoreChatRequest, CoreEmbeddingsRequest, GlobalRole, IdentityRepository,
+        MembershipRole, ModelRepository, Money4, ProviderCapabilities, ProviderClient,
+        ProviderError, ProviderRequestContext,
         ProviderStream, SeedApiKey, SeedModel, SeedModelRoute, SeedProvider, UsageLedgerRecord,
         UsagePricingStatus, parse_gateway_api_key,
     };
@@ -743,6 +744,36 @@ mod tests {
             .expect("update api key owner");
 
         user_id
+    }
+
+    async fn insert_enabled_oidc_provider(db_path: &Path, provider_key: &str) -> String {
+        let oidc_provider_id = format!("oidc-{provider_key}");
+        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
+            .build()
+            .await
+            .expect("libsql db");
+        let connection = db.connect().expect("libsql connection");
+
+        connection
+            .execute(
+                r#"
+                INSERT INTO oidc_providers (
+                    oidc_provider_id, provider_key, provider_type, issuer_url, client_id,
+                    client_secret_ref, scopes_json, enabled, created_at, updated_at
+                ) VALUES (?1, ?2, 'generic_oidc', ?3, ?4, ?5, '["openid","email"]', 1, unixepoch(), unixepoch())
+                "#,
+                libsql::params![
+                    oidc_provider_id,
+                    provider_key,
+                    format!("https://{provider_key}.example.com"),
+                    format!("{provider_key}-client"),
+                    format!("env.{}_CLIENT_SECRET", provider_key.to_ascii_uppercase()),
+                ],
+            )
+            .await
+            .expect("insert oidc provider");
+
+        format!("oidc-{provider_key}")
     }
 
     async fn build_test_app(
@@ -2646,6 +2677,458 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn admin_identity_lifecycle_endpoints_enforce_transitions_and_revoke_sessions() {
+        let (app, store, db_path) =
+            build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;
+        let bootstrap_cookie = bootstrap_admin_session_cookie(&app, &store).await;
+        let oidc_provider_id = insert_enabled_oidc_provider(&db_path, "corp").await;
+        let now = time::OffsetDateTime::now_utc();
+
+        let active_user = store
+            .create_identity_user(
+                "Active User",
+                "active@example.com",
+                "active@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                gateway_core::UserStatus::Active,
+            )
+            .await
+            .expect("active user");
+        let other_admin = store
+            .create_identity_user(
+                "Other Admin",
+                "other-admin@example.com",
+                "other-admin@example.com",
+                GlobalRole::PlatformAdmin,
+                AuthMode::Password,
+                gateway_core::UserStatus::Active,
+            )
+            .await
+            .expect("other admin");
+        let target_admin = store
+            .create_identity_user(
+                "Target Admin",
+                "target-admin@example.com",
+                "target-admin@example.com",
+                GlobalRole::PlatformAdmin,
+                AuthMode::Password,
+                gateway_core::UserStatus::Active,
+            )
+            .await
+            .expect("target admin");
+
+        let password_hash = hash_gateway_key_secret("admin-pass").expect("hash password");
+        store
+            .store_user_password(target_admin.user_id, &password_hash, now)
+            .await
+            .expect("store admin password");
+
+        let invalid_auth_mode_switch = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PATCH")
+                    .uri(format!(
+                        "/api/v1/admin/identity/users/{}",
+                        active_user.user_id
+                    ))
+                    .header("cookie", &bootstrap_cookie)
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "global_role": "user",
+                            "auth_mode": "oidc",
+                            "oidc_provider_key": "corp",
+                            "team_id": null,
+                            "team_role": null
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(invalid_auth_mode_switch.status(), StatusCode::BAD_REQUEST);
+
+        let login_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/auth/login/password")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "email": "target-admin@example.com",
+                            "password": "admin-pass"
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("login response");
+        assert_eq!(login_response.status(), StatusCode::OK);
+        let target_admin_cookie = set_cookie_header(&login_response);
+
+        let deactivate = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!(
+                        "/api/v1/admin/identity/users/{}/deactivate",
+                        target_admin.user_id
+                    ))
+                    .header("cookie", &bootstrap_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(deactivate.status(), StatusCode::OK);
+        assert_eq!(read_json(deactivate).await["data"]["status"], "ok");
+        assert_eq!(
+            store
+                .get_user_by_id(target_admin.user_id)
+                .await
+                .expect("load target admin")
+                .expect("target admin exists")
+                .status,
+            gateway_core::UserStatus::Disabled
+        );
+
+        let stale_session = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/v1/auth/session")
+                    .header("cookie", &target_admin_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(stale_session.status(), StatusCode::OK);
+        assert_eq!(read_json(stale_session).await["data"], Value::Null);
+
+        let reactivate = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!(
+                        "/api/v1/admin/identity/users/{}/reactivate",
+                        target_admin.user_id
+                    ))
+                    .header("cookie", &bootstrap_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(reactivate.status(), StatusCode::OK);
+        assert_eq!(read_json(reactivate).await["data"]["status"], "ok");
+        assert_eq!(
+            store
+                .get_user_by_id(target_admin.user_id)
+                .await
+                .expect("reload target admin")
+                .expect("target admin")
+                .status,
+            gateway_core::UserStatus::Active
+        );
+
+        let invited_user = store
+            .create_identity_user(
+                "Invited User",
+                "invited@example.com",
+                "invited@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                gateway_core::UserStatus::Invited,
+            )
+            .await
+            .expect("invited user");
+        let reset_password = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!(
+                        "/api/v1/admin/identity/users/{}/reset-onboarding",
+                        invited_user.user_id
+                    ))
+                    .header("cookie", &bootstrap_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(reset_password.status(), StatusCode::OK);
+        let reset_password_body = read_json(reset_password).await;
+        assert_eq!(reset_password_body["data"]["kind"], "password_invite");
+        assert!(
+            reset_password_body["data"]["invite_url"]
+                .as_str()
+                .expect("invite url")
+                .contains("/admin/invite/")
+        );
+
+        let oidc_user = store
+            .create_identity_user(
+                "OIDC User",
+                "oidc@example.com",
+                "oidc@example.com",
+                GlobalRole::User,
+                AuthMode::Oidc,
+                gateway_core::UserStatus::Disabled,
+            )
+            .await
+            .expect("oidc user");
+        store
+            .set_user_oidc_link(oidc_user.user_id, &oidc_provider_id, now)
+            .await
+            .expect("set oidc link");
+        store
+            .create_user_oidc_auth(
+                oidc_user.user_id,
+                &oidc_provider_id,
+                "mock:corp:oidc@example.com",
+                Some("oidc@example.com"),
+                now,
+            )
+            .await
+            .expect("create oidc auth");
+
+        let reset_oidc = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!(
+                        "/api/v1/admin/identity/users/{}/reset-onboarding",
+                        oidc_user.user_id
+                    ))
+                    .header("cookie", &bootstrap_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(reset_oidc.status(), StatusCode::OK);
+        let reset_oidc_body = read_json(reset_oidc).await;
+        assert_eq!(reset_oidc_body["data"]["kind"], "oidc_sign_in");
+        assert!(
+            reset_oidc_body["data"]["sign_in_url"]
+                .as_str()
+                .expect("sign in url")
+                .contains("provider_key=corp")
+        );
+        assert!(
+            store
+                .get_user_oidc_auth_by_user(oidc_user.user_id, &oidc_provider_id)
+                .await
+                .expect("oidc auth lookup")
+                .is_none()
+        );
+        assert_eq!(
+            store
+                .get_user_by_id(oidc_user.user_id)
+                .await
+                .expect("reload oidc user")
+                .expect("oidc user")
+                .status,
+            gateway_core::UserStatus::Invited
+        );
+
+        let disabled_user = store
+            .create_identity_user(
+                "Disabled User",
+                "disabled@example.com",
+                "disabled@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                gateway_core::UserStatus::Disabled,
+            )
+            .await
+            .expect("disabled user");
+        let reactivate_missing_credentials = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!(
+                        "/api/v1/admin/identity/users/{}/reactivate",
+                        disabled_user.user_id
+                    ))
+                    .header("cookie", &bootstrap_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(reactivate_missing_credentials.status(), StatusCode::OK);
+        assert_eq!(
+            store
+                .get_user_by_id(disabled_user.user_id)
+                .await
+                .expect("reload disabled user")
+                .expect("disabled user")
+                .status,
+            gateway_core::UserStatus::Invited
+        );
+
+        let _ = other_admin;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn admin_identity_team_member_workflows_transfer_remove_and_block_owner() {
+        let (app, store, _) =
+            build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;
+        let bootstrap_cookie = bootstrap_admin_session_cookie(&app, &store).await;
+        let source_team = store
+            .create_team("source", "Source")
+            .await
+            .expect("source team");
+        let destination_team = store
+            .create_team("destination", "Destination")
+            .await
+            .expect("destination team");
+        let member = store
+            .create_identity_user(
+                "Member",
+                "member@example.com",
+                "member@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                gateway_core::UserStatus::Active,
+            )
+            .await
+            .expect("member");
+        store
+            .assign_team_membership(member.user_id, source_team.team_id, MembershipRole::Member)
+            .await
+            .expect("assign member");
+
+        let transfer = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!(
+                        "/api/v1/admin/identity/teams/{}/members/{}/transfer",
+                        source_team.team_id, member.user_id
+                    ))
+                    .header("cookie", &bootstrap_cookie)
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "destination_team_id": destination_team.team_id,
+                            "destination_role": "admin"
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(transfer.status(), StatusCode::OK);
+        assert_eq!(read_json(transfer).await["data"]["status"], "ok");
+        let transferred_membership = store
+            .get_team_membership_for_user(member.user_id)
+            .await
+            .expect("membership lookup")
+            .expect("membership exists");
+        assert_eq!(transferred_membership.team_id, destination_team.team_id);
+        assert_eq!(transferred_membership.role, MembershipRole::Admin);
+
+        let remove = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri(format!(
+                        "/api/v1/admin/identity/teams/{}/members/{}",
+                        destination_team.team_id, member.user_id
+                    ))
+                    .header("cookie", &bootstrap_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(remove.status(), StatusCode::OK);
+        assert_eq!(read_json(remove).await["data"]["status"], "ok");
+        assert!(
+            store
+                .get_team_membership_for_user(member.user_id)
+                .await
+                .expect("membership lookup")
+                .is_none()
+        );
+
+        let owner = store
+            .create_identity_user(
+                "Owner",
+                "owner@example.com",
+                "owner@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                gateway_core::UserStatus::Active,
+            )
+            .await
+            .expect("owner");
+        store
+            .assign_team_membership(owner.user_id, source_team.team_id, MembershipRole::Owner)
+            .await
+            .expect("assign owner");
+
+        let blocked_transfer = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!(
+                        "/api/v1/admin/identity/teams/{}/members/{}/transfer",
+                        source_team.team_id, owner.user_id
+                    ))
+                    .header("cookie", &bootstrap_cookie)
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "destination_team_id": destination_team.team_id,
+                            "destination_role": "member"
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(blocked_transfer.status(), StatusCode::BAD_REQUEST);
+
+        let blocked_remove = app
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri(format!(
+                        "/api/v1/admin/identity/teams/{}/members/{}",
+                        source_team.team_id, owner.user_id
+                    ))
+                    .header("cookie", &bootstrap_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(blocked_remove.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn admin_spend_routes_require_authenticated_session() {
         let (app, _, _) =
             build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;
@@ -2838,7 +3321,7 @@ mod tests {
                 "member@example.com",
                 GlobalRole::User,
                 AuthMode::Password,
-                "active",
+                gateway_core::UserStatus::Active,
             )
             .await
             .expect("create user");
@@ -3017,7 +3500,7 @@ mod tests {
                 "member@example.com",
                 GlobalRole::User,
                 AuthMode::Password,
-                "active",
+                gateway_core::UserStatus::Active,
             )
             .await
             .expect("create user");
@@ -3555,7 +4038,7 @@ mod tests {
                 "owner@example.com",
                 gateway_core::GlobalRole::PlatformAdmin,
                 gateway_core::AuthMode::Password,
-                "active",
+                gateway_core::UserStatus::Active,
             )
             .await
             .expect("existing platform admin");

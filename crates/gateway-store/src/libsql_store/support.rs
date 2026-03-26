@@ -113,6 +113,7 @@ pub(super) fn decode_user_record(row: &libsql::Row) -> Result<UserRecord, StoreE
     let user_id: String = row.get(0).map_err(to_query_error)?;
     let global_role: String = row.get(4).map_err(to_query_error)?;
     let auth_mode: String = row.get(5).map_err(to_query_error)?;
+    let status: String = row.get(6).map_err(to_query_error)?;
     let must_change_password: i64 = row.get(7).map_err(to_query_error)?;
     let request_logging_enabled: i64 = row.get(8).map_err(to_query_error)?;
     let model_access_mode: String = row.get(9).map_err(to_query_error)?;
@@ -129,7 +130,8 @@ pub(super) fn decode_user_record(row: &libsql::Row) -> Result<UserRecord, StoreE
         })?,
         auth_mode: AuthMode::from_db(&auth_mode)
             .ok_or_else(|| StoreError::Serialization(format!("unknown auth mode `{auth_mode}`")))?,
-        status: row.get(6).map_err(to_query_error)?,
+        status: UserStatus::from_db(&status)
+            .ok_or_else(|| StoreError::Serialization(format!("unknown user status `{status}`")))?,
         must_change_password: must_change_password == 1,
         request_logging_enabled: request_logging_enabled == 1,
         model_access_mode: ModelAccessMode::from_db(&model_access_mode).ok_or_else(|| {

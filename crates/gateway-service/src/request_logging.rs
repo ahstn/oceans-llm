@@ -494,7 +494,7 @@ mod tests {
         ApiKeyOwnerKind, AuthMode, AuthenticatedApiKey, ChatCompletionsRequest, GlobalRole,
         IdentityRepository, ModelAccessMode, RequestLogDetail, RequestLogPage,
         RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository,
-        StoreError, TeamMembershipRecord, TeamRecord, UserRecord,
+        StoreError, TeamMembershipRecord, TeamRecord, UserRecord, UserStatus,
     };
     use serde_json::{Value, json};
     use time::OffsetDateTime;
@@ -609,7 +609,7 @@ mod tests {
             email_normalized: "user@example.com".to_string(),
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Password,
-            status: "active".to_string(),
+            status: UserStatus::Active,
             must_change_password: false,
             request_logging_enabled,
             model_access_mode: ModelAccessMode::All,

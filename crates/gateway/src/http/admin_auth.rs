@@ -1,5 +1,5 @@
 use axum::http::HeaderMap;
-use gateway_core::{AuthError, GatewayError, GlobalRole, UserRecord};
+use gateway_core::{AuthError, GatewayError, GlobalRole, UserRecord, UserStatus};
 
 use crate::http::{error::AppError, identity::resolve_session_user, state::AppState};
 
@@ -14,7 +14,7 @@ pub(crate) async fn require_platform_admin(
             AuthError::InsufficientPrivileges,
         )));
     }
-    if current_user.status != "active" {
+    if current_user.status != UserStatus::Active {
         return Err(AppError(GatewayError::InvalidRequest(
             "only active admins can access admin endpoints".to_string(),
         )));

@@ -22,8 +22,8 @@ For local direct UI dev on `:3001`, the server-side gateway client falls back to
 These areas are backed by real gateway APIs today:
 
 - sign-in, session lookup, and password rotation
-- identity users
-- identity teams
+- identity users and lifecycle management
+- identity teams and member transfer/removal workflows
 - password invites and onboarding links
 - OIDC pre-provisioning flows
 - spend usage reporting
@@ -60,15 +60,20 @@ Operators can currently:
 - sign in as the bootstrap or existing platform admin
 - rotate the bootstrap password when required
 - create users
+- edit user role and membership fields
+- deactivate, reactivate, and reset onboarding for users
 - create teams
 - add existing users to teams
 - invite new users directly into teams
 - pre-provision OIDC users against enabled providers
+- remove team members
+- transfer team members between teams with an explicit destination role
 
 Current scope limits:
 
 - no admin logout/session-management flow yet
-- no general team-member removal or transfer workflow yet
+- owner memberships are visible but blocked from removal/transfer in this slice
+- auth-mode switching is limited to invited users
 - OIDC remains development-style, not hardened
 
 ## Auth And Session UX Limits
@@ -113,5 +118,6 @@ The E2E harness treats only live gateway-backed surfaces as contract flows.
 
 - live surfaces should gain targeted cross-layer coverage as they harden
 - preview-backed pages can appear in landing assertions, but not as business-flow coverage
+- user lifecycle and team member workflows now belong in the live contract suite
 
 See [e2e-contract-tests.md](e2e-contract-tests.md).

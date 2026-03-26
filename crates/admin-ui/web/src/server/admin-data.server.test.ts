@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  deactivateUser,
   getRequestLogDetail,
   listApiKeys,
   listModels,
@@ -10,6 +11,11 @@ import {
   listSpendBudgets,
   listTeams,
   listUsers,
+  reactivateUser,
+  removeTeamMember,
+  resetUserOnboarding,
+  transferTeamMember,
+  updateUser,
 } from '@/server/admin-data.server'
 
 vi.mock('@/server/gateway-client.server', () => ({
@@ -38,6 +44,40 @@ vi.mock('@/server/gateway-client.server', () => ({
           ],
           teams: [{ id: 'team_1', name: 'Core Platform' }],
           oidc_providers: [{ id: 'oidc_1', key: 'okta-main', label: 'okta-main' }],
+        },
+      }
+    }
+
+    if (path === '/api/v1/admin/identity/users/user_1') {
+      return { data: { status: 'ok' } }
+    }
+
+    if (path === '/api/v1/admin/identity/users/user_1/deactivate') {
+      return { data: { status: 'ok' } }
+    }
+
+    if (path === '/api/v1/admin/identity/users/user_1/reactivate') {
+      return { data: { status: 'ok' } }
+    }
+
+    if (path === '/api/v1/admin/identity/users/user_1/reset-onboarding') {
+      return {
+        data: {
+          kind: 'password_invite',
+          user: {
+            id: 'user_1',
+            name: 'Jane Admin',
+            email: 'jane@example.com',
+            auth_mode: 'password',
+            global_role: 'platform_admin',
+            team_id: 'team_1',
+            team_name: 'Core Platform',
+            team_role: 'owner',
+            status: 'invited',
+            onboarding: null,
+          },
+          invite_url: 'http://localhost:8080/admin/invite/test',
+          expires_at: '2026-03-14T12:00:00Z',
         },
       }
     }
@@ -76,6 +116,14 @@ vi.mock('@/server/gateway-client.server', () => ({
           oidc_providers: [{ id: 'oidc_1', key: 'okta-main', label: 'okta-main' }],
         },
       }
+    }
+
+    if (path === '/api/v1/admin/identity/teams/team_1/members/user_1') {
+      return { data: { status: 'ok' } }
+    }
+
+    if (path === '/api/v1/admin/identity/teams/team_1/members/user_1/transfer') {
+      return { data: { status: 'ok' } }
     }
 
     if (path.startsWith('/api/v1/admin/spend/report')) {
@@ -231,5 +279,26 @@ describe('server-side mock repositories', () => {
     expect(detail.data.payload?.responseJson).toEqual({ body: { output: 'pong' } })
 
     await expect(getRequestLogDetail('missing')).rejects.toThrow('request log not found')
+  })
+
+  it('wires identity mutations to the documented gateway paths', async () => {
+    await expect(
+      updateUser('user_1', { global_role: 'platform_admin' }),
+    ).resolves.toMatchObject({ data: { status: 'ok' } })
+    await expect(deactivateUser('user_1')).resolves.toMatchObject({ data: { status: 'ok' } })
+    await expect(reactivateUser('user_1')).resolves.toMatchObject({ data: { status: 'ok' } })
+    await expect(removeTeamMember('team_1', 'user_1')).resolves.toMatchObject({
+      data: { status: 'ok' },
+    })
+    await expect(
+      transferTeamMember('team_1', 'user_1', {
+        destination_team_id: 'team_2',
+        destination_role: 'member',
+      }),
+    ).resolves.toMatchObject({ data: { status: 'ok' } })
+
+    const reset = await resetUserOnboarding('user_1')
+    expect(reset.data.kind).toBe('password_invite')
+    expect(reset.data.invite_url).toContain('/admin/invite/')
   })
 })
