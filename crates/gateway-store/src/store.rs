@@ -2,11 +2,11 @@ use std::path::PathBuf;
 
 use async_trait::async_trait;
 use gateway_core::{
-    ApiKeyRepository, AuthMode, BudgetRepository, GlobalRole, IdentityRepository,
-    IdentityUserRecord, MembershipRole, ModelRepository, OidcProviderRecord,
+    ApiKeyRepository, AuthMode, BudgetAlertRepository, BudgetRepository, GlobalRole,
+    IdentityRepository, IdentityUserRecord, MembershipRole, ModelRepository, OidcProviderRecord,
     PasswordInvitationRecord, PricingCatalogRepository, ProviderRepository, RequestLogRepository,
-    SeedApiKey, SeedModel, SeedProvider, StoreError, StoreHealth, TeamMembershipRecord, TeamRecord,
-    UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord,
+    SeedApiKey, SeedModel, SeedProvider, StoreError, StoreHealth, TeamMembershipRecord,
+    TeamRecord, UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -36,6 +36,7 @@ pub trait GatewayStore:
     + ProviderRepository
     + IdentityRepository
     + BudgetRepository
+    + BudgetAlertRepository
     + RequestLogRepository
     + PricingCatalogRepository
     + StoreHealth
@@ -315,6 +316,13 @@ impl IdentityRepository for AnyStore {
     ) -> Result<Vec<String>, StoreError> {
         dispatch_store!(self, list_allowed_model_keys_for_team(team_id))
     }
+
+    async fn list_team_memberships(
+        &self,
+        team_id: Uuid,
+    ) -> Result<Vec<TeamMembershipRecord>, StoreError> {
+        dispatch_store!(self, list_team_memberships(team_id))
+    }
 }
 
 #[async_trait]
@@ -463,6 +471,59 @@ impl BudgetRepository for AnyStore {
 }
 
 #[async_trait]
+impl BudgetAlertRepository for AnyStore {
+    async fn create_budget_alert_with_deliveries(
+        &self,
+        alert: &gateway_core::BudgetAlertRecord,
+        deliveries: &[gateway_core::BudgetAlertDeliveryRecord],
+    ) -> Result<bool, StoreError> {
+        dispatch_store!(self, create_budget_alert_with_deliveries(alert, deliveries))
+    }
+
+    async fn list_budget_alert_history(
+        &self,
+        query: &gateway_core::BudgetAlertHistoryQuery,
+    ) -> Result<gateway_core::BudgetAlertHistoryPage, StoreError> {
+        dispatch_store!(self, list_budget_alert_history(query))
+    }
+
+    async fn claim_pending_budget_alert_delivery_tasks(
+        &self,
+        limit: u32,
+        claimed_at: OffsetDateTime,
+    ) -> Result<Vec<gateway_core::BudgetAlertDispatchTask>, StoreError> {
+        dispatch_store!(
+            self,
+            claim_pending_budget_alert_delivery_tasks(limit, claimed_at)
+        )
+    }
+
+    async fn mark_budget_alert_delivery_sent(
+        &self,
+        delivery_id: Uuid,
+        provider_message_id: Option<&str>,
+        sent_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(
+            self,
+            mark_budget_alert_delivery_sent(delivery_id, provider_message_id, sent_at)
+        )
+    }
+
+    async fn mark_budget_alert_delivery_failed(
+        &self,
+        delivery_id: Uuid,
+        failure_reason: &str,
+        failed_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(
+            self,
+            mark_budget_alert_delivery_failed(delivery_id, failure_reason, failed_at)
+        )
+    }
+}
+
+#[async_trait]
 impl RequestLogRepository for AnyStore {
     async fn insert_request_log(
         &self,
@@ -482,7 +543,7 @@ impl RequestLogRepository for AnyStore {
     async fn get_request_log_detail(
         &self,
         request_log_id: Uuid,
-    ) -> Result<Option<gateway_core::RequestLogDetail>, StoreError> {
+    ) -> Result<gateway_core::RequestLogDetail, StoreError> {
         dispatch_store!(self, get_request_log_detail(request_log_id))
     }
 }

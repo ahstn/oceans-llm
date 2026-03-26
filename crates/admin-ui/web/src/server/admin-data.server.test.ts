@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  getRequestLogDetail,
   listApiKeys,
   listModels,
   listRequestLogs,
   getSpendReport,
+  listBudgetAlertHistory,
   listSpendBudgets,
   listTeams,
   listUsers,
@@ -105,6 +107,17 @@ vi.mock('@/server/gateway-client.server', () => ({
       }
     }
 
+    if (path === '/api/v1/admin/spend/budget-alerts') {
+      return {
+        data: {
+          items: [],
+          page: 1,
+          page_size: 25,
+          total: 0,
+        },
+      }
+    }
+
     if (path === '/api/v1/admin/observability/request-logs') {
       return {
         data: {
@@ -142,30 +155,81 @@ vi.mock('@/server/gateway-client.server', () => ({
       }
     }
 
+    if (path === '/api/v1/admin/observability/request-logs/reqlog_1') {
+      return {
+        data: {
+          log: {
+            request_log_id: 'reqlog_1',
+            request_id: 'req_1',
+            api_key_id: 'api_key_1',
+            user_id: 'user_1',
+            team_id: 'team_1',
+            model_key: 'gpt-4.1-mini',
+            resolved_model_key: 'gpt-4.1-mini',
+            provider_key: 'openai',
+            status_code: 200,
+            latency_ms: 482,
+            prompt_tokens: 400,
+            completion_tokens: 942,
+            total_tokens: 1342,
+            error_code: null,
+            has_payload: true,
+            request_payload_truncated: false,
+            response_payload_truncated: false,
+            metadata: {
+              stream: false,
+              fallback_used: false,
+              attempt_count: 1,
+            },
+            occurred_at: '2026-03-10T11:32:00Z',
+          },
+          payload: {
+            request_json: { body: { prompt: 'ping' } },
+            response_json: { body: { output: 'pong' } },
+          },
+        },
+      }
+    }
+
+    if (path === '/api/v1/admin/observability/request-logs/missing') {
+      throw new Error('request log not found')
+    }
+
     throw new Error(`Unexpected path: ${path}`)
   }),
 }))
 
 describe('server-side mock repositories', () => {
   it('returns stable API envelopes for phase-1 views', async () => {
-    const [apiKeys, models, spendReport, spendBudgets, logs, teams, users] = await Promise.all([
+    const [apiKeys, models, spendReport, spendBudgets, budgetAlerts, logs, teams, users] =
+      await Promise.all([
       listApiKeys(),
       listModels(),
       getSpendReport(),
       listSpendBudgets(),
+      listBudgetAlertHistory(),
       listRequestLogs(),
       listTeams(),
       listUsers(),
-    ])
+      ])
 
     expect(apiKeys.data.items.length).toBeGreaterThan(0)
     expect(models.data.length).toBeGreaterThan(0)
     expect(spendReport.data.window_days).toBeGreaterThan(0)
     expect(spendBudgets.data.users.length).toBe(0)
+    expect(budgetAlerts.data.items.length).toBe(0)
     expect(logs.data.items.length).toBeGreaterThan(0)
     expect(teams.data.teams.length).toBeGreaterThan(0)
     expect(teams.data.users.length).toBeGreaterThan(0)
     expect(users.data.users.length).toBeGreaterThan(0)
     expect(users.data.teams.length).toBeGreaterThan(0)
+  })
+
+  it('treats request log detail as a strict fetch', async () => {
+    const detail = await getRequestLogDetail('reqlog_1')
+    expect(detail.data.log.requestLogId).toBe('reqlog_1')
+    expect(detail.data.payload?.responseJson).toEqual({ body: { output: 'pong' } })
+
+    await expect(getRequestLogDetail('missing')).rejects.toThrow('request log not found')
   })
 })

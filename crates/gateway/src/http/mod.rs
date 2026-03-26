@@ -2,8 +2,8 @@ pub mod admin_auth;
 pub mod error;
 pub mod handlers;
 pub mod identity;
-pub mod spend;
 pub mod observability;
+pub mod spend;
 pub mod state;
 
 use admin_ui::{AdminUiConfig, mount_admin_ui};
@@ -48,6 +48,10 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
         )
         .route("/api/v1/admin/spend/report", get(get_spend_report))
         .route("/api/v1/admin/spend/budgets", get(list_spend_budgets))
+        .route(
+            "/api/v1/admin/spend/budget-alerts",
+            get(list_budget_alert_history),
+        )
         .route(
             "/api/v1/admin/spend/budgets/users/{user_id}",
             axum::routing::put(upsert_user_budget).delete(deactivate_user_budget),

@@ -1,6 +1,7 @@
 import type {
   AddTeamMembersInput,
   AuthSessionView,
+  BudgetAlertHistoryView,
   ChangePasswordInput,
   CreateUserInput,
   CreateUserResult,
@@ -116,6 +117,35 @@ export async function listSpendBudgets(): Promise<ApiEnvelope<SpendBudgetsView>>
   return fetchGatewayJson<ApiEnvelope<SpendBudgetsView>>('/api/v1/admin/spend/budgets')
 }
 
+export async function listBudgetAlertHistory(params?: {
+  page?: number
+  page_size?: number
+  owner_kind?: SpendOwnerKind
+  status?: 'all' | 'pending' | 'sent' | 'failed'
+  channel?: 'all' | 'email'
+}): Promise<ApiEnvelope<BudgetAlertHistoryView>> {
+  const query = new URLSearchParams()
+  if (params?.page) {
+    query.set('page', String(params.page))
+  }
+  if (params?.page_size) {
+    query.set('page_size', String(params.page_size))
+  }
+  if (params?.owner_kind && params.owner_kind !== 'all') {
+    query.set('owner_kind', params.owner_kind)
+  }
+  if (params?.status && params.status !== 'all') {
+    query.set('status', params.status)
+  }
+  if (params?.channel && params.channel !== 'all') {
+    query.set('channel', params.channel)
+  }
+  const suffix = query.toString() ? `?${query.toString()}` : ''
+  return fetchGatewayJson<ApiEnvelope<BudgetAlertHistoryView>>(
+    `/api/v1/admin/spend/budget-alerts${suffix}`,
+  )
+}
+
 export async function upsertUserBudget(
   userId: string,
   input: UpsertBudgetInput,
@@ -189,13 +219,13 @@ export async function listRequestLogs(): Promise<ApiEnvelope<Paginated<RequestLo
 
 export async function getRequestLogDetail(
   requestLogId: string,
-): Promise<ApiEnvelope<RequestLogDetailView | null>> {
-  const response = await fetchGatewayJson<ApiEnvelope<GatewayRequestLogDetail | null>>(
+): Promise<ApiEnvelope<RequestLogDetailView>> {
+  const response = await fetchGatewayJson<ApiEnvelope<GatewayRequestLogDetail>>(
     `/api/v1/admin/observability/request-logs/${encodeURIComponent(requestLogId)}`,
   )
 
   return {
-    data: response.data ? mapRequestLogDetail(response.data) : null,
+    data: mapRequestLogDetail(response.data),
     meta: response.meta,
   }
 }

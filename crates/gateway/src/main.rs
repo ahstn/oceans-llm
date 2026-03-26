@@ -1,5 +1,6 @@
 mod cli;
 mod config;
+mod email;
 mod http;
 mod observability;
 
@@ -7,7 +8,8 @@ use std::{env, net::SocketAddr, path::Path, sync::Arc, time::Duration};
 
 use crate::{
     cli::{Cli, Command, MigrateAction, ServeArgs},
-    config::{BootstrapAdminConfig, GatewayConfig},
+    config::{BootstrapAdminConfig, BudgetAlertEmailConfig, GatewayConfig},
+    email::build_budget_alert_sender,
 };
 use admin_ui::AdminUiConfig;
 use anyhow::Context;
@@ -114,11 +116,18 @@ async fn run_serve_with_store(
     }
 
     let planner = Arc::new(WeightedRoutePlanner::default());
-    let service = Arc::new(GatewayService::new(store, planner));
+    let budget_alert_sender = build_budget_alert_sender(&config.budget_alerts.email)
+        .context("failed to build budget alert email sender")?;
+    let service = Arc::new(GatewayService::new_with_budget_alert_sender(
+        store,
+        planner,
+        budget_alert_sender,
+    ));
     if let Err(error) = service.refresh_pricing_catalog_if_stale().await {
         tracing::warn!(error = %error, "initial pricing catalog refresh failed");
     }
     spawn_pricing_catalog_refresh_loop(service.clone());
+    spawn_budget_alert_delivery_loop(service.clone(), &config.budget_alerts.email);
     let providers = build_provider_registry(config)?;
 
     let bind_address: SocketAddr = config
@@ -292,6 +301,29 @@ fn spawn_pricing_catalog_refresh_loop(
     });
 }
 
+fn spawn_budget_alert_delivery_loop(
+    service: Arc<GatewayService<AnyStore, WeightedRoutePlanner>>,
+    config: &BudgetAlertEmailConfig,
+) {
+    let poll_interval = Duration::from_secs(config.poll_interval_secs);
+    let batch_size = config.batch_size;
+
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(poll_interval);
+        interval.tick().await;
+
+        loop {
+            interval.tick().await;
+            if let Err(error) = service
+                .dispatch_pending_budget_alert_deliveries(batch_size)
+                .await
+            {
+                tracing::warn!(error = %error, "background budget alert delivery failed");
+            }
+        }
+    });
+}
+
 fn pricing_catalog_refresh_interval() -> Duration {
     DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL
 }
@@ -330,11 +362,12 @@ mod tests {
         routing::post,
     };
     use gateway_core::{
-        ApiKeyRepository, AuthMode, BudgetCadence, BudgetRepository, CoreChatRequest,
-        CoreEmbeddingsRequest, GlobalRole, ModelRepository, Money4, ProviderCapabilities,
-        ProviderClient, ProviderError, ProviderRequestContext, ProviderStream, SeedApiKey,
-        SeedModel, SeedModelRoute, SeedProvider, UsageLedgerRecord, UsagePricingStatus,
-        parse_gateway_api_key,
+        ApiKeyRepository, AuthMode, BudgetAlertChannel, BudgetAlertDeliveryRecord,
+        BudgetAlertDeliveryStatus, BudgetAlertRepository, BudgetCadence, BudgetRepository,
+        CoreChatRequest, CoreEmbeddingsRequest, GlobalRole, ModelRepository, Money4,
+        ProviderCapabilities, ProviderClient, ProviderError, ProviderRequestContext,
+        ProviderStream, SeedApiKey, SeedModel, SeedModelRoute, SeedProvider, UsageLedgerRecord,
+        UsagePricingStatus, parse_gateway_api_key,
     };
     use gateway_providers::{OpenAiCompatConfig, OpenAiCompatProvider};
     use gateway_service::{GatewayService, WeightedRoutePlanner, hash_gateway_key_secret};
@@ -649,6 +682,18 @@ mod tests {
         }
 
         ledgers
+    }
+
+    async fn drop_model_pricing_table(db_path: &Path) {
+        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
+            .build()
+            .await
+            .expect("libsql db");
+        let connection = db.connect().expect("libsql connection");
+        connection
+            .execute("DROP TABLE model_pricing", ())
+            .await
+            .expect("drop model_pricing table");
     }
 
     async fn set_api_key_owner_to_user(
@@ -1256,6 +1301,117 @@ mod tests {
         assert_eq!(ledgers[0].request_id, "req-dedupe");
         assert!(ledgers[0].ownership_scope_key.starts_with("team:"));
         assert_eq!(ledgers[0].pricing_status, "priced");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn non_stream_success_remains_200_when_post_success_accounting_fails() {
+        let (_, provider) = make_chat_provider(
+            "openai-prod",
+            MockChatResult::Value(json!({
+                "id": "chatcmpl_123",
+                "object": "chat.completion",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "pong"}, "finish_reason":"stop"}],
+                "usage": {"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18}
+            })),
+            vec![],
+            ProviderCapabilities::openai_compat_baseline(),
+        );
+        let mut registry = gateway_core::ProviderRegistry::new();
+        registry.register(Arc::new(provider));
+
+        let (app, raw_key, db_path) = build_default_test_app(registry).await;
+        drop_model_pricing_table(&db_path).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .header("x-request-id", "req-accounting-fail-open")
+                    .body(Body::from(
+                        json!({
+                            "model": "fast",
+                            "messages": [{"role": "user", "content": "ping"}]
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let payload = read_json(response).await;
+        assert_eq!(payload["choices"][0]["message"]["content"], "pong");
+
+        let logs = load_request_logs(&db_path).await;
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].status_code, Some(200));
+        assert_eq!(logs[0].provider_key, "openai-prod");
+
+        assert!(load_usage_ledger(&db_path).await.is_empty());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn stream_success_remains_200_when_post_success_accounting_fails() {
+        let (_, provider) = make_chat_provider(
+            "openai-prod",
+            MockChatResult::Value(json!({
+                "id": "chatcmpl_unused",
+                "object": "chat.completion",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "unused"}, "finish_reason":"stop"}]
+            })),
+            vec![
+                "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"hi\"},\"finish_reason\":null}],\"usage\":{\"prompt_tokens\":11,\"completion_tokens\":7,\"total_tokens\":18}}\n\n".to_string(),
+                "data: [DONE]\n\n".to_string(),
+            ],
+            ProviderCapabilities::new(true, true, false),
+        );
+        let mut registry = gateway_core::ProviderRegistry::new();
+        registry.register(Arc::new(provider));
+
+        let (app, raw_key, db_path) = build_default_test_app(registry).await;
+        drop_model_pricing_table(&db_path).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .header("x-request-id", "req-stream-accounting-fail-open")
+                    .body(Body::from(
+                        json!({
+                            "model": "fast",
+                            "stream": true,
+                            "messages": [{"role": "user", "content": "ping"}]
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        let transcript = String::from_utf8(body.to_vec()).expect("utf8");
+        assert!(transcript.contains("\"content\":\"hi\""));
+        assert!(transcript.contains("data: [DONE]"));
+
+        let logs = load_request_logs(&db_path).await;
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].status_code, Some(200));
+        assert_eq!(logs[0].metadata["stream"], Value::Bool(true));
+
+        assert!(load_usage_ledger(&db_path).await.is_empty());
     }
 
     #[tokio::test]
@@ -2528,6 +2684,19 @@ mod tests {
             .expect("response");
         assert_eq!(budgets.status(), StatusCode::UNAUTHORIZED);
 
+        let alert_history = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/v1/admin/spend/budget-alerts")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(alert_history.status(), StatusCode::UNAUTHORIZED);
+
         let user_upsert = app
             .clone()
             .oneshot(
@@ -2580,6 +2749,33 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(team_deactivate.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn admin_request_log_detail_returns_404_for_unknown_id() {
+        let (app, store, _) =
+            build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;
+        let session_cookie = bootstrap_admin_session_cookie(&app, &store).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!(
+                        "/api/v1/admin/observability/request-logs/{}",
+                        Uuid::new_v4()
+                    ))
+                    .header("cookie", session_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let body = read_json(response).await;
+        assert_eq!(body["error"]["code"], "not_found");
     }
 
     #[tokio::test]
@@ -2843,7 +3039,7 @@ mod tests {
                     .header("content-type", "application/json")
                     .body(Body::from(
                         json!({
-                            "cadence": "monthly",
+                            "cadence": "quarterly",
                             "amount_usd": "25.0000",
                             "hard_limit": true,
                             "timezone": "UTC"
@@ -2869,7 +3065,7 @@ mod tests {
                     .header("content-type", "application/json")
                     .body(Body::from(
                         json!({
-                            "cadence": "daily",
+                            "cadence": "monthly",
                             "amount_usd": "25.0000",
                             "hard_limit": true,
                             "timezone": "UTC"
@@ -2888,6 +3084,7 @@ mod tests {
             user.user_id.to_string()
         );
         assert_eq!(upsert_user_body["data"]["budget"]["amount_usd"], "25.0000");
+        assert_eq!(upsert_user_body["data"]["budget"]["cadence"], "monthly");
         assert_eq!(upsert_user_body["data"]["budget"]["hard_limit"], true);
 
         let upsert_team = app
@@ -3010,6 +3207,99 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(upsert_unknown_team.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn admin_budget_alert_history_lists_authenticated_alerts_with_filters() {
+        let (app, store, _) =
+            build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;
+        let session_cookie = bootstrap_admin_session_cookie(&app, &store).await;
+
+        let user = store
+            .create_identity_user(
+                "Member",
+                "member@example.com",
+                "member@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                "active",
+            )
+            .await
+            .expect("create user");
+        let now = time::OffsetDateTime::now_utc()
+            .replace_nanosecond(0)
+            .expect("zero nanos");
+        let alert = gateway_core::BudgetAlertRecord {
+            budget_alert_id: Uuid::new_v4(),
+            ownership_scope_key: format!("user:{}", user.user_id),
+            owner_kind: gateway_core::ApiKeyOwnerKind::User,
+            owner_id: user.user_id,
+            owner_name: user.name.clone(),
+            budget_id: Uuid::new_v4(),
+            cadence: BudgetCadence::Monthly,
+            threshold_bps: 2_000,
+            window_start: now - time::Duration::days(17),
+            window_end: now + time::Duration::days(14),
+            spend_before_usd: Money4::from_scaled(7_500_000),
+            spend_after_usd: Money4::from_scaled(8_200_000),
+            remaining_budget_usd: Money4::from_scaled(1_800_000),
+            created_at: now,
+            updated_at: now,
+        };
+        let delivery = BudgetAlertDeliveryRecord {
+            budget_alert_delivery_id: Uuid::new_v4(),
+            budget_alert_id: alert.budget_alert_id,
+            channel: BudgetAlertChannel::Email,
+            delivery_status: BudgetAlertDeliveryStatus::Pending,
+            recipient: Some(user.email.clone()),
+            provider_message_id: None,
+            failure_reason: None,
+            queued_at: now,
+            last_attempted_at: None,
+            sent_at: None,
+            updated_at: now,
+        };
+        assert!(
+            store
+                .create_budget_alert_with_deliveries(&alert, &[delivery])
+                .await
+                .expect("insert alert history row")
+        );
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/v1/admin/spend/budget-alerts?owner_kind=user&channel=email&status=pending")
+                    .header("cookie", &session_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = read_json(response).await;
+        assert_eq!(body["data"]["page"], 1);
+        assert_eq!(body["data"]["page_size"], 25);
+        assert_eq!(body["data"]["total"], 1);
+        assert_eq!(
+            body["data"]["items"][0]["budget_alert_id"],
+            alert.budget_alert_id.to_string()
+        );
+        assert_eq!(body["data"]["items"][0]["owner_kind"], "user");
+        assert_eq!(body["data"]["items"][0]["owner_id"], user.user_id.to_string());
+        assert_eq!(body["data"]["items"][0]["owner_name"], "Member");
+        assert_eq!(body["data"]["items"][0]["cadence"], "monthly");
+        assert_eq!(body["data"]["items"][0]["threshold_bps"], 2_000);
+        assert_eq!(
+            body["data"]["items"][0]["recipient_summary"],
+            "member@example.com"
+        );
+        assert_eq!(body["data"]["items"][0]["delivery_status"], "pending");
+        assert_eq!(body["data"]["items"][0]["channel"], "email");
     }
 
     #[tokio::test]

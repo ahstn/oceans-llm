@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 admin-ui.workspace = true
 anyhow.workspace = true
+async-trait.workspace = true
 axum.workspace = true
 futures-util.workspace = true
 gateway-core.workspace = true
@@ -14,6 +15,7 @@ gateway-service.workspace = true
 gateway-store.workspace = true
 clap.workspace = true
 http.workspace = true
+lettre.workspace = true
 opentelemetry.workspace = true
 opentelemetry-otlp.workspace = true
 opentelemetry_sdk.workspace = true

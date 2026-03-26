@@ -162,6 +162,17 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
             "../migrations/postgres/V13__request_log_payloads_and_indexes.sql"
         )),
     },
+    MigrationManifest {
+        version: 14,
+        name: "budget_alerts_and_monthly_cadence",
+        checksum: "V14__budget_alerts_and_monthly_cadence.sql",
+        libsql: BackendMigrationStep::Sql(include_str!(
+            "../migrations/V14__budget_alerts_and_monthly_cadence.sql"
+        )),
+        postgres: BackendMigrationStep::Sql(include_str!(
+            "../migrations/postgres/V14__budget_alerts_and_monthly_cadence.sql"
+        )),
+    },
 ];
 
 #[cfg(test)]

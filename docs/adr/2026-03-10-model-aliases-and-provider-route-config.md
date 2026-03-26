@@ -3,6 +3,12 @@
 - Date: 2026-03-10
 - Status: Accepted
 
+## Implemented By
+
+- Canonical docs:
+  - [../model-routing-and-api-behavior.md](../model-routing-and-api-behavior.md)
+  - [../data-relationships.md](../data-relationships.md)
+
 ## Context
 
 The gateway already separates two concepts:

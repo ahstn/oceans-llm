@@ -1144,7 +1144,7 @@ async fn sync_team_admins(
     now: OffsetDateTime,
 ) -> Result<(), AppError> {
     let selected_admin_ids: BTreeSet<_> = selected_admin_ids.iter().copied().collect();
-    let memberships = store.list_team_memberships(team_id).await?;
+    let memberships = GatewayStore::list_team_memberships(store, team_id).await?;
 
     for membership in &memberships {
         if membership.role == MembershipRole::Admin

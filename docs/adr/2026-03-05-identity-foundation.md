@@ -3,6 +3,13 @@
 - Date: 2026-03-06
 - Status: Accepted
 
+## Implemented By
+
+- Canonical docs:
+  - [../identity-and-access.md](../identity-and-access.md)
+  - [../data-relationships.md](../data-relationships.md)
+  - [../admin-control-plane.md](../admin-control-plane.md)
+
 ## Context
 
 The original gateway foundation treated API keys as the primary identity boundary. That was enough for seeded model access, but it did not give us a durable way to represent:

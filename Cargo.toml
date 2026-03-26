@@ -25,6 +25,7 @@ futures-core = "0.3"
 futures-util = "0.3"
 http = "1"
 itertools = "0.14"
+lettre = { version = "0.11", default-features = false, features = ["builder", "hostname", "pool", "smtp-transport", "tokio1", "tokio1-rustls-tls"] }
 libsql = "0.9"
 opentelemetry = { version = "0.31", features = ["metrics", "trace"] }
 opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic", "metrics", "trace"] }

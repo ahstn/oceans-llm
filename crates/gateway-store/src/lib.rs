@@ -22,12 +22,14 @@ mod tests {
     use std::env;
 
     use gateway_core::{
-        ApiKeyOwnerKind, ApiKeyRepository, AuthMode, BudgetCadence, BudgetRepository, GlobalRole,
+        ApiKeyOwnerKind, ApiKeyRepository, AuthMode, BudgetAlertChannel,
+        BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus, BudgetAlertHistoryQuery,
+        BudgetAlertRecord, BudgetAlertRepository, BudgetCadence, BudgetRepository, GlobalRole,
         IdentityRepository, MembershipRole, ModelPricingRecord, ModelRepository, Money4,
         PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
         PricingProvenance, ProviderCapabilities, RequestLogRecord, RequestLogRepository,
         SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedModel, SeedModelRoute,
-        SeedProvider, StoreHealth, UsageLedgerRecord, UsagePricingStatus,
+        SeedProvider, StoreError, StoreHealth, UsageLedgerRecord, UsagePricingStatus,
     };
     use serde_json::{Map, json};
     use serial_test::serial;
@@ -96,6 +98,216 @@ mod tests {
             computed_cost_usd: Money4::from_scaled(computed_cost_10000),
             occurred_at,
         }
+    }
+
+    async fn exercise_budget_alert_repository<R>(repo: &R)
+    where
+        R: BudgetAlertRepository + Sync,
+    {
+        let now = OffsetDateTime::now_utc().replace_nanosecond(0).expect("zero nanos");
+        let alert_one = BudgetAlertRecord {
+            budget_alert_id: Uuid::new_v4(),
+            ownership_scope_key: format!("user:{}", Uuid::new_v4()),
+            owner_kind: ApiKeyOwnerKind::User,
+            owner_id: Uuid::new_v4(),
+            owner_name: "Member One".to_string(),
+            budget_id: Uuid::new_v4(),
+            cadence: BudgetCadence::Monthly,
+            threshold_bps: 2_000,
+            window_start: now - Duration::days(10),
+            window_end: now + Duration::days(20),
+            spend_before_usd: Money4::from_scaled(7_500_000),
+            spend_after_usd: Money4::from_scaled(8_200_000),
+            remaining_budget_usd: Money4::from_scaled(1_800_000),
+            created_at: now - Duration::minutes(5),
+            updated_at: now - Duration::minutes(5),
+        };
+        let pending_delivery = BudgetAlertDeliveryRecord {
+            budget_alert_delivery_id: Uuid::new_v4(),
+            budget_alert_id: alert_one.budget_alert_id,
+            channel: BudgetAlertChannel::Email,
+            delivery_status: BudgetAlertDeliveryStatus::Pending,
+            recipient: Some("member.one@example.com".to_string()),
+            provider_message_id: None,
+            failure_reason: None,
+            queued_at: alert_one.created_at,
+            last_attempted_at: None,
+            sent_at: None,
+            updated_at: alert_one.created_at,
+        };
+
+        assert!(
+            repo.create_budget_alert_with_deliveries(
+                &alert_one,
+                std::slice::from_ref(&pending_delivery),
+            )
+            .await
+            .expect("insert first alert")
+        );
+        assert!(
+            !repo.create_budget_alert_with_deliveries(
+                &alert_one,
+                std::slice::from_ref(&pending_delivery),
+            )
+            .await
+            .expect("suppress duplicate alert")
+        );
+
+        let reconfigured_alert = BudgetAlertRecord {
+            budget_alert_id: Uuid::new_v4(),
+            ownership_scope_key: alert_one.ownership_scope_key.clone(),
+            owner_kind: alert_one.owner_kind,
+            owner_id: alert_one.owner_id,
+            owner_name: alert_one.owner_name.clone(),
+            budget_id: Uuid::new_v4(),
+            cadence: BudgetCadence::Weekly,
+            threshold_bps: alert_one.threshold_bps,
+            window_start: alert_one.window_start,
+            window_end: alert_one.window_end,
+            spend_before_usd: alert_one.spend_before_usd,
+            spend_after_usd: alert_one.spend_after_usd,
+            remaining_budget_usd: alert_one.remaining_budget_usd,
+            created_at: now - Duration::minutes(3),
+            updated_at: now - Duration::minutes(3),
+        };
+        let reconfigured_delivery = BudgetAlertDeliveryRecord {
+            budget_alert_delivery_id: Uuid::new_v4(),
+            budget_alert_id: reconfigured_alert.budget_alert_id,
+            channel: BudgetAlertChannel::Email,
+            delivery_status: BudgetAlertDeliveryStatus::Failed,
+            recipient: Some("member.one@example.com".to_string()),
+            provider_message_id: None,
+            failure_reason: Some("smtp timeout".to_string()),
+            queued_at: reconfigured_alert.created_at,
+            last_attempted_at: Some(reconfigured_alert.created_at + Duration::seconds(5)),
+            sent_at: None,
+            updated_at: reconfigured_alert.created_at + Duration::seconds(5),
+        };
+        assert!(
+            repo.create_budget_alert_with_deliveries(
+                &reconfigured_alert,
+                std::slice::from_ref(&reconfigured_delivery),
+            )
+            .await
+            .expect("allow alert for reconfigured budget in same window")
+        );
+
+        let alert_two = BudgetAlertRecord {
+            budget_alert_id: Uuid::new_v4(),
+            ownership_scope_key: format!("team:{}:actor:none", Uuid::new_v4()),
+            owner_kind: ApiKeyOwnerKind::Team,
+            owner_id: Uuid::new_v4(),
+            owner_name: "Ops".to_string(),
+            budget_id: Uuid::new_v4(),
+            cadence: BudgetCadence::Weekly,
+            threshold_bps: 2_000,
+            window_start: now - Duration::days(7),
+            window_end: now,
+            spend_before_usd: Money4::from_scaled(90_000),
+            spend_after_usd: Money4::from_scaled(95_000),
+            remaining_budget_usd: Money4::from_scaled(5_000),
+            created_at: now - Duration::minutes(1),
+            updated_at: now - Duration::minutes(1),
+        };
+        let failed_delivery = BudgetAlertDeliveryRecord {
+            budget_alert_delivery_id: Uuid::new_v4(),
+            budget_alert_id: alert_two.budget_alert_id,
+            channel: BudgetAlertChannel::Email,
+            delivery_status: BudgetAlertDeliveryStatus::Failed,
+            recipient: Some("ops@example.com".to_string()),
+            provider_message_id: None,
+            failure_reason: Some("smtp timeout".to_string()),
+            queued_at: alert_two.created_at,
+            last_attempted_at: Some(alert_two.created_at + Duration::seconds(10)),
+            sent_at: None,
+            updated_at: alert_two.created_at + Duration::seconds(10),
+        };
+        assert!(
+            repo.create_budget_alert_with_deliveries(
+                &alert_two,
+                std::slice::from_ref(&failed_delivery),
+            )
+            .await
+            .expect("insert failed alert")
+        );
+
+        let page = repo
+            .list_budget_alert_history(&BudgetAlertHistoryQuery {
+                page: 1,
+                page_size: 10,
+                owner_kind: None,
+                channel: None,
+                delivery_status: None,
+            })
+            .await
+            .expect("list all alert history");
+        assert_eq!(page.total, 3);
+        assert_eq!(page.items.len(), 3);
+        assert_eq!(page.items[0].budget_alert_id, alert_two.budget_alert_id);
+        assert_eq!(page.items[0].delivery_status, BudgetAlertDeliveryStatus::Failed);
+        assert_eq!(page.items[0].recipient_summary, "ops@example.com");
+        assert_eq!(page.items[0].failure_reason.as_deref(), Some("smtp timeout"));
+        assert_eq!(page.items[1].budget_alert_id, reconfigured_alert.budget_alert_id);
+        assert_eq!(page.items[1].cadence, BudgetCadence::Weekly);
+        assert_eq!(page.items[2].budget_alert_id, alert_one.budget_alert_id);
+        assert_eq!(page.items[2].cadence, BudgetCadence::Monthly);
+
+        let team_only = repo
+            .list_budget_alert_history(&BudgetAlertHistoryQuery {
+                page: 1,
+                page_size: 10,
+                owner_kind: Some(ApiKeyOwnerKind::Team),
+                channel: Some(BudgetAlertChannel::Email),
+                delivery_status: Some(BudgetAlertDeliveryStatus::Failed),
+            })
+            .await
+            .expect("filter alert history");
+        assert_eq!(team_only.total, 1);
+        assert_eq!(team_only.items[0].budget_alert_id, alert_two.budget_alert_id);
+
+        let claimed_at = now + Duration::minutes(1);
+        let claimed = repo
+            .claim_pending_budget_alert_delivery_tasks(10, claimed_at)
+            .await
+            .expect("claim pending deliveries");
+        assert_eq!(claimed.len(), 1);
+        assert_eq!(
+            claimed[0].delivery.budget_alert_delivery_id,
+            pending_delivery.budget_alert_delivery_id
+        );
+        assert_eq!(claimed[0].alert.budget_alert_id, alert_one.budget_alert_id);
+
+        let claimed_again = repo
+            .claim_pending_budget_alert_delivery_tasks(10, claimed_at + Duration::seconds(5))
+            .await
+            .expect("avoid reclaiming in-flight delivery");
+        assert!(claimed_again.is_empty());
+
+        let sent_at = claimed_at + Duration::seconds(30);
+        repo.mark_budget_alert_delivery_sent(
+            pending_delivery.budget_alert_delivery_id,
+            Some("smtp-123"),
+            sent_at,
+        )
+        .await
+        .expect("mark delivery sent");
+
+        let sent_page = repo
+            .list_budget_alert_history(&BudgetAlertHistoryQuery {
+                page: 1,
+                page_size: 10,
+                owner_kind: Some(ApiKeyOwnerKind::User),
+                channel: Some(BudgetAlertChannel::Email),
+                delivery_status: Some(BudgetAlertDeliveryStatus::Sent),
+            })
+            .await
+            .expect("list sent alerts");
+        assert_eq!(sent_page.total, 1);
+        assert_eq!(sent_page.items[0].budget_alert_id, alert_one.budget_alert_id);
+        assert_eq!(sent_page.items[0].delivery_status, BudgetAlertDeliveryStatus::Sent);
+        assert_eq!(sent_page.items[0].last_attempted_at, Some(claimed_at));
+        assert_eq!(sent_page.items[0].sent_at, Some(sent_at));
+        assert_eq!(sent_page.items[0].recipient_summary, "member.one@example.com");
     }
 
     #[tokio::test]
@@ -558,6 +770,24 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn libsql_request_log_detail_missing_returns_not_found() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        let error = store
+            .get_request_log_detail(Uuid::new_v4())
+            .await
+            .expect_err("missing request log should fail");
+        assert!(matches!(error, StoreError::NotFound(_)));
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn migration_backfills_legacy_api_keys_with_reserved_team_owner() {
         let tmp = tempdir().expect("tempdir");
         let db_path = tmp.path().join("gateway.db");
@@ -1012,6 +1242,20 @@ mod tests {
         )
         .await
         .expect("inactive budget should be allowed");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_budget_alert_repository_tracks_history_and_delivery_lifecycle() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        exercise_budget_alert_repository(&store).await;
     }
 
     #[tokio::test]
@@ -2249,6 +2493,34 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn postgres_budget_alert_repository_tracks_history_and_delivery_lifecycle() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres budget alert repository test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options, MigrationTestHook::default())
+            .await
+            .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        exercise_budget_alert_repository(&store).await;
+
+        drop(store);
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn postgres_spend_reporting_aggregates_and_team_window_sum_filter_chargeable_statuses() {
         let Some(test_db) = create_postgres_test_database().await else {
             eprintln!(
@@ -2699,6 +2971,40 @@ mod tests {
         assert_eq!(resolved_model_key.as_deref(), Some("fast"));
 
         pool.close().await;
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_request_log_detail_missing_returns_not_found() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres request log detail missing test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        run_migrations_with_options(
+            &StoreConnectionOptions::Postgres {
+                url: test_db.database_url.clone(),
+                max_connections: 2,
+            },
+            MigrationTestHook::default(),
+        )
+        .await
+        .expect("apply postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 2)
+            .await
+            .expect("postgres store");
+
+        let error = store
+            .get_request_log_detail(Uuid::new_v4())
+            .await
+            .expect_err("missing request log should fail");
+        assert!(matches!(error, StoreError::NotFound(_)));
+
+        drop(store);
         drop_postgres_test_database(&test_db).await;
     }
 

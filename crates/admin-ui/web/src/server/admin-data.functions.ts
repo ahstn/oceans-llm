@@ -8,6 +8,7 @@ import {
   createUser,
   deactivateTeamBudget,
   deactivateUserBudget,
+  listBudgetAlertHistory,
   getRequestLogDetail,
   getSession,
   getSpendReport,
@@ -53,6 +54,22 @@ export const getSpendUsageReport = createServerFn({ method: 'POST' }).handler(
 export const getSpendBudgets = createServerFn({ method: 'GET' }).handler(async () => {
   return listSpendBudgets()
 })
+
+export const getBudgetAlertHistory = createServerFn({ method: 'POST' }).handler(
+  async ({
+    data,
+  }: {
+    data?: {
+      page?: number
+      page_size?: number
+      owner_kind?: 'all' | 'user' | 'team'
+      status?: 'all' | 'pending' | 'sent' | 'failed'
+      channel?: 'all' | 'email'
+    }
+  }) => {
+    return listBudgetAlertHistory(data)
+  },
+)
 
 export const saveUserBudget = createServerFn({ method: 'POST' }).handler(
   async ({

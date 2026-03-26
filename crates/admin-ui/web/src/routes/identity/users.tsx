@@ -182,7 +182,7 @@ export function UsersPage() {
           <div className="flex flex-col gap-1">
             <CardTitle>Users</CardTitle>
             <CardDescription>
-              Create password or SSO users, then hand off the generated onboarding URL.
+              Create password or SSO users, then hand off the generated onboarding URL. A valid email address is also required for budget alert emails.
             </CardDescription>
           </div>
 
@@ -289,6 +289,9 @@ export function UsersPage() {
                         placeholder="jane@example.com"
                         required
                       />
+                      <FieldDescription>
+                        Budget threshold alerts use this email in the initial rollout, so it must be valid and monitored.
+                      </FieldDescription>
                     </Field>
 
                     <Field>

@@ -193,7 +193,7 @@ impl RequestLogRepository for PostgresStore {
     async fn get_request_log_detail(
         &self,
         request_log_id: Uuid,
-    ) -> Result<Option<RequestLogDetail>, StoreError> {
+    ) -> Result<RequestLogDetail, StoreError> {
         let row = sqlx::query(
             r#"
             SELECT rl.request_log_id, rl.request_id, rl.api_key_id, rl.user_id, rl.team_id,
@@ -214,7 +214,9 @@ impl RequestLogRepository for PostgresStore {
         .map_err(to_query_error)?;
 
         let Some(row) = row else {
-            return Ok(None);
+            return Err(StoreError::NotFound(format!(
+                "request log `{request_log_id}` not found"
+            )));
         };
 
         let log = decode_request_log_row(&row)?;
@@ -229,6 +231,6 @@ impl RequestLogRepository for PostgresStore {
             _ => None,
         };
 
-        Ok(Some(RequestLogDetail { log, payload }))
+        Ok(RequestLogDetail { log, payload })
     }
 }

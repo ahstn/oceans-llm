@@ -3,6 +3,11 @@
 - Date: 2026-03-13
 - Status: Accepted
 
+## Implemented By
+
+- Canonical docs:
+  - [../model-routing-and-api-behavior.md](../model-routing-and-api-behavior.md)
+
 ## Context
 
 Issue #35 requires richer capability modeling and deterministic request validation before provider execution. The previous model exposed only coarse booleans and allowed incompatible requests to fall through to provider-specific runtime errors.

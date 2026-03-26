@@ -3,6 +3,12 @@
 - Date: 2026-03-08
 - Status: Accepted
 
+## Implemented By
+
+- Canonical docs:
+  - [../identity-and-access.md](../identity-and-access.md)
+  - [../admin-control-plane.md](../admin-control-plane.md)
+
 ## Context
 
 The admin UI already had an identity foundation for users, invitations, team membership storage, and one-team-per-user enforcement, but the `Teams` page was still mock data. Admins could not:

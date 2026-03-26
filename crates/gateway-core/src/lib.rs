@@ -8,17 +8,21 @@ pub use auth::{
     AuthenticatedApiKey, ParsedGatewayApiKey, extract_bearer_token, parse_gateway_api_key,
 };
 pub use domain::{
-    ApiKeyOwnerKind, ApiKeyRecord, AuthMode, BudgetCadence, GatewayModel, GlobalRole,
-    IdentityUserRecord, MembershipRole, ModelAccessMode, ModelPricingRecord, ModelRoute, Money4,
-    OidcProviderRecord, PasswordInvitationRecord, PricingCatalogCacheRecord, PricingLimits,
-    PricingModalities, PricingProvenance, PricingResolution, PricingUnpricedReason,
-    ProviderCapabilities, ProviderConnection, ProviderRequestContext, RequestLogDetail,
-    RequestLogPage, RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord,
-    ResolvedModelPricing, SYSTEM_BOOTSTRAP_ADMIN_EMAIL, SYSTEM_BOOTSTRAP_ADMIN_USER_ID,
-    SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedModel, SeedModelRoute,
-    SeedProvider, SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord,
+    ApiKeyOwnerKind, ApiKeyRecord, AuthMode, BudgetAlertChannel, BudgetAlertDeliveryRecord,
+    BudgetAlertDeliveryStatus, BudgetAlertDispatchTask, BudgetAlertHistoryPage,
+    BudgetAlertHistoryQuery, BudgetAlertHistoryRecord, BudgetAlertRecord, BudgetCadence,
+    BudgetWindow, GatewayModel, GlobalRole, IdentityUserRecord, MembershipRole,
+    ModelAccessMode, ModelPricingRecord, ModelRoute, Money4, OidcProviderRecord,
+    PasswordInvitationRecord, PricingCatalogCacheRecord, PricingLimits, PricingModalities,
+    PricingProvenance, PricingResolution, PricingUnpricedReason, ProviderCapabilities,
+    ProviderConnection, ProviderRequestContext, RequestLogDetail, RequestLogPage,
+    RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, ResolvedModelPricing,
+    SYSTEM_BOOTSTRAP_ADMIN_EMAIL, SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SYSTEM_LEGACY_TEAM_ID,
+    SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedModel, SeedModelRoute, SeedProvider,
+    SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord,
     TeamBudgetRecord, TeamMembershipRecord, TeamRecord, UsageLedgerRecord, UsagePricingStatus,
     UserBudgetRecord, UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord,
+    budget_window_utc,
 };
 pub use error::{AuthError, GatewayError, ProviderError, RouteError, StoreError};
 pub use protocol::core::{
@@ -34,7 +38,7 @@ pub use protocol::translate::{
     openai_embeddings_request_to_core,
 };
 pub use traits::{
-    ApiKeyRepository, BudgetRepository, IdentityRepository, ModelRepository,
-    PricingCatalogRepository, ProviderClient, ProviderRegistry, ProviderRepository, ProviderStream,
-    RequestLogRepository, RoutePlanner, StoreHealth,
+    ApiKeyRepository, BudgetAlertRepository, BudgetRepository, IdentityRepository,
+    ModelRepository, PricingCatalogRepository, ProviderClient, ProviderRegistry,
+    ProviderRepository, ProviderStream, RequestLogRepository, RoutePlanner, StoreHealth,
 };
