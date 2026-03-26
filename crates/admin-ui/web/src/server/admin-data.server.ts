@@ -35,7 +35,7 @@ function envelope<T>(data: T): ApiEnvelope<T> {
   return {
     data,
     meta: {
-      generatedAt: new Date().toISOString(),
+      generated_at: new Date().toISOString(),
     },
   }
 }

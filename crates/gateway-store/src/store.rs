@@ -52,6 +52,10 @@ pub trait GatewayStore:
         must_change_password: bool,
     ) -> Result<UserRecord, StoreError>;
     async fn list_identity_users(&self) -> Result<Vec<IdentityUserRecord>, StoreError>;
+    async fn get_identity_user(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Option<IdentityUserRecord>, StoreError>;
     async fn list_active_teams(&self) -> Result<Vec<TeamRecord>, StoreError>;
     async fn list_teams(&self) -> Result<Vec<TeamRecord>, StoreError>;
     async fn list_enabled_oidc_providers(&self) -> Result<Vec<OidcProviderRecord>, StoreError>;
@@ -85,6 +89,11 @@ pub trait GatewayStore:
         user_id: Uuid,
         global_role: GlobalRole,
         auth_mode: AuthMode,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError>;
+    async fn deactivate_identity_user(
+        &self,
+        user_id: Uuid,
         updated_at: OffsetDateTime,
     ) -> Result<(), StoreError>;
     async fn assign_team_membership(
@@ -224,7 +233,6 @@ pub trait GatewayStore:
         email_normalized: &str,
         oidc_provider_id: &str,
     ) -> Result<Option<UserRecord>, StoreError>;
-    async fn count_active_platform_admins(&self) -> Result<u64, StoreError>;
     async fn seed_from_inputs(
         &self,
         providers: &[SeedProvider],
@@ -674,6 +682,13 @@ impl GatewayStore for AnyStore {
         dispatch_store!(self, list_identity_users())
     }
 
+    async fn get_identity_user(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Option<IdentityUserRecord>, StoreError> {
+        dispatch_store!(self, get_identity_user(user_id))
+    }
+
     async fn list_active_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
         dispatch_store!(self, list_active_teams())
     }
@@ -750,6 +765,14 @@ impl GatewayStore for AnyStore {
             self,
             update_identity_user(user_id, global_role, auth_mode, updated_at)
         )
+    }
+
+    async fn deactivate_identity_user(
+        &self,
+        user_id: Uuid,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(self, deactivate_identity_user(user_id, updated_at))
     }
 
     async fn assign_team_membership(
@@ -998,10 +1021,6 @@ impl GatewayStore for AnyStore {
             self,
             find_invited_oidc_user(email_normalized, oidc_provider_id)
         )
-    }
-
-    async fn count_active_platform_admins(&self) -> Result<u64, StoreError> {
-        dispatch_store!(self, count_active_platform_admins())
     }
 
     async fn seed_from_inputs(

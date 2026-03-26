@@ -94,6 +94,13 @@ impl GatewayStore for PostgresStore {
         Self::list_identity_users(self).await
     }
 
+    async fn get_identity_user(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Option<IdentityUserRecord>, StoreError> {
+        Self::get_identity_user(self, user_id).await
+    }
+
     async fn list_active_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
         Self::list_active_teams(self).await
     }
@@ -166,6 +173,14 @@ impl GatewayStore for PostgresStore {
         updated_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
         Self::update_identity_user(self, user_id, global_role, auth_mode, updated_at).await
+    }
+
+    async fn deactivate_identity_user(
+        &self,
+        user_id: Uuid,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        Self::deactivate_identity_user(self, user_id, updated_at).await
     }
 
     async fn assign_team_membership(
@@ -402,10 +417,6 @@ impl GatewayStore for PostgresStore {
         oidc_provider_id: &str,
     ) -> Result<Option<UserRecord>, StoreError> {
         Self::find_invited_oidc_user(self, email_normalized, oidc_provider_id).await
-    }
-
-    async fn count_active_platform_admins(&self) -> Result<u64, StoreError> {
-        Self::count_active_platform_admins(self).await
     }
 
     async fn seed_from_inputs(

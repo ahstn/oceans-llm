@@ -3,6 +3,7 @@ pub mod error;
 pub mod handlers;
 pub mod identity;
 pub mod identity_lifecycle;
+pub mod identity_views;
 pub mod observability;
 pub mod spend;
 pub mod state;

@@ -1205,24 +1205,42 @@ mod tests {
                 .is_some()
         );
 
-        assert_eq!(
-            store
-                .count_active_platform_admins()
-                .await
-                .expect("count admins"),
-            1
-        );
-        store
-            .update_user_status(admin.user_id, UserStatus::Disabled, now)
+        let loaded_member = store
+            .get_identity_user(member.user_id)
             .await
-            .expect("disable admin");
-        assert_eq!(
-            store
-                .count_active_platform_admins()
-                .await
-                .expect("count admins after disable"),
-            0
-        );
+            .expect("load identity user")
+            .expect("identity user exists");
+        assert_eq!(loaded_member.user.user_id, member.user_id);
+
+        let last_admin_disable = store.deactivate_identity_user(admin.user_id, now).await;
+        assert!(matches!(last_admin_disable, Err(StoreError::Conflict(_))));
+
+        let second_admin = store
+            .create_identity_user(
+                "Second Admin",
+                "second-admin@example.com",
+                "second-admin@example.com",
+                GlobalRole::PlatformAdmin,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
+            .await
+            .expect("second admin");
+        store
+            .deactivate_identity_user(admin.user_id, now)
+            .await
+            .expect("disable admin with backup");
+        let disabled_admin = store
+            .get_user_by_id(admin.user_id)
+            .await
+            .expect("load disabled admin")
+            .expect("disabled admin exists");
+        assert_eq!(disabled_admin.status, UserStatus::Disabled);
+
+        let last_admin_demote = store
+            .update_identity_user(second_admin.user_id, GlobalRole::User, AuthMode::Password, now)
+            .await;
+        assert!(matches!(last_admin_demote, Err(StoreError::Conflict(_))));
     }
 
     #[tokio::test]

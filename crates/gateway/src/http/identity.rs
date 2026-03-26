@@ -22,9 +22,13 @@ use crate::http::{
     error::AppError,
     identity_lifecycle::{
         ensure_assignable_membership_role, ensure_auth_mode_edit_allowed,
-        ensure_deactivation_allowed, ensure_last_active_admin_preserved, ensure_manageable_user,
-        ensure_mutable_membership, ensure_not_self_deactivating, ensure_not_self_demoting,
-        ensure_reactivation_allowed, ensure_reset_onboarding_allowed, reactivation_status,
+        ensure_deactivation_allowed, ensure_manageable_user, ensure_mutable_membership,
+        ensure_not_self_deactivating, ensure_not_self_demoting, ensure_reactivation_allowed,
+        ensure_reset_onboarding_allowed, reactivation_status,
+    },
+    identity_views::{
+        build_admin_identity_user_view, build_admin_team_views, build_assignable_user_views,
+        reload_identity_user, reload_team_view,
     },
     state::AppState,
 };
@@ -53,16 +57,16 @@ pub(crate) struct AdminIdentityPayload {
 
 #[derive(Debug, Serialize)]
 pub(crate) struct AdminIdentityUserView {
-    id: String,
-    name: String,
-    email: String,
-    auth_mode: String,
-    global_role: String,
-    team_id: Option<String>,
-    team_name: Option<String>,
-    team_role: Option<String>,
-    status: String,
-    onboarding: Option<AdminOnboardingActionView>,
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) email: String,
+    pub(crate) auth_mode: String,
+    pub(crate) global_role: String,
+    pub(crate) team_id: Option<String>,
+    pub(crate) team_name: Option<String>,
+    pub(crate) team_role: Option<String>,
+    pub(crate) status: String,
+    pub(crate) onboarding: Option<AdminOnboardingActionView>,
 }
 
 #[derive(Debug, Serialize)]
@@ -80,41 +84,41 @@ pub(crate) struct AdminTeamsPayload {
 
 #[derive(Debug, Serialize)]
 pub(crate) struct AdminTeamManagementView {
-    id: String,
-    name: String,
-    key: String,
-    status: String,
-    member_count: usize,
-    admins: Vec<AdminTeamAdminView>,
-    members: Vec<AdminTeamMemberView>,
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) key: String,
+    pub(crate) status: String,
+    pub(crate) member_count: usize,
+    pub(crate) admins: Vec<AdminTeamAdminView>,
+    pub(crate) members: Vec<AdminTeamMemberView>,
 }
 
 #[derive(Debug, Serialize)]
 pub(crate) struct AdminTeamAdminView {
-    id: String,
-    name: String,
-    email: String,
-    status: String,
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) email: String,
+    pub(crate) status: String,
 }
 
 #[derive(Debug, Serialize)]
 pub(crate) struct AdminTeamMemberView {
-    id: String,
-    name: String,
-    email: String,
-    status: String,
-    role: String,
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) email: String,
+    pub(crate) status: String,
+    pub(crate) role: String,
 }
 
 #[derive(Debug, Serialize)]
 pub(crate) struct AdminTeamAssignableUserView {
-    id: String,
-    name: String,
-    email: String,
-    status: String,
-    team_id: Option<String>,
-    team_name: Option<String>,
-    team_role: Option<String>,
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) email: String,
+    pub(crate) status: String,
+    pub(crate) team_id: Option<String>,
+    pub(crate) team_name: Option<String>,
+    pub(crate) team_role: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -358,8 +362,6 @@ pub async fn create_identity_team(
 
     let team_key = generate_unique_team_key(&state.store, name).await?;
     let team = state.store.create_team(&team_key, name).await?;
-    let now = OffsetDateTime::now_utc();
-
     for user_id in selected_admin_ids {
         state
             .store
@@ -368,7 +370,7 @@ pub async fn create_identity_team(
     }
 
     Ok(Json(envelope(
-        reload_team_view(&state.store, team.team_id, now).await?,
+        reload_team_view(&state.store, team.team_id).await?,
     )))
 }
 
@@ -403,7 +405,7 @@ pub async fn update_identity_team(
     sync_team_admins(&state.store, team_id, &selected_admin_ids, now).await?;
 
     Ok(Json(envelope(
-        reload_team_view(&state.store, team_id, now).await?,
+        reload_team_view(&state.store, team_id).await?,
     )))
 }
 
@@ -466,7 +468,7 @@ pub async fn add_identity_team_members(
     }
 
     Ok(Json(envelope(
-        reload_team_view(&state.store, team_id, OffsetDateTime::now_utc()).await?,
+        reload_team_view(&state.store, team_id).await?,
     )))
 }
 
@@ -687,14 +689,6 @@ pub async fn update_identity_user(
 
     ensure_not_self_demoting(&actor, &identity_user.user, next_global_role).map_err(AppError)?;
     ensure_auth_mode_edit_allowed(&identity_user.user, next_auth_mode).map_err(AppError)?;
-    ensure_last_active_admin_preserved(
-        &identity_user.user,
-        identity_user.user.status == UserStatus::Active
-            && next_global_role == GlobalRole::PlatformAdmin,
-        state.store.count_active_platform_admins().await?,
-    )
-    .map_err(AppError)?;
-
     if let Some((team_id, _)) = requested_membership {
         state
             .store
@@ -730,18 +724,12 @@ pub async fn deactivate_identity_user(
     ensure_manageable_user(&user).map_err(AppError)?;
     ensure_not_self_deactivating(&actor, &user).map_err(AppError)?;
     ensure_deactivation_allowed(&user).map_err(AppError)?;
-    ensure_last_active_admin_preserved(&user, false, state.store.count_active_platform_admins().await?)
-        .map_err(AppError)?;
-
     let now = OffsetDateTime::now_utc();
+    state.store.deactivate_identity_user(user_id, now).await?;
     state.store.revoke_user_sessions(user_id, now).await?;
     state
         .store
         .revoke_password_invitations_for_user(user_id, now)
-        .await?;
-    state
-        .store
-        .update_user_status(user_id, UserStatus::Disabled, now)
         .await?;
 
     Ok(Json(envelope(IdentityActionStatus { status: "ok" })))
@@ -1133,68 +1121,6 @@ pub(crate) async fn resolve_session_user(
     Ok(Some(user))
 }
 
-async fn build_admin_identity_user_view(
-    store: &AnyStore,
-    secret: &str,
-    origin: &str,
-    now: OffsetDateTime,
-    user: IdentityUserRecord,
-) -> Result<AdminIdentityUserView, AppError> {
-    let onboarding = match user.user.auth_mode {
-        AuthMode::Password if user.user.status == UserStatus::Invited => {
-            let active_invitation = store
-                .find_active_password_invitation_for_user(user.user.user_id, now)
-                .await?;
-            Some(AdminOnboardingActionView::PasswordInvite {
-                invite_url: active_invitation
-                    .as_ref()
-                    .map(|invitation| invitation_url(origin, invitation, secret)),
-                expires_at: active_invitation
-                    .as_ref()
-                    .map(|invitation| format_timestamp(invitation.expires_at)),
-                can_resend: true,
-            })
-        }
-        AuthMode::Oidc => {
-            let provider_key = user.oidc_provider_key.clone().unwrap_or_default();
-            if provider_key.is_empty() {
-                None
-            } else {
-                let provider = OidcProviderRecord {
-                    oidc_provider_id: user.oidc_provider_id.clone().unwrap_or_default(),
-                    provider_key: provider_key.clone(),
-                    provider_type: "generic_oidc".to_string(),
-                    issuer_url: String::new(),
-                    client_id: String::new(),
-                    scopes: Vec::new(),
-                    enabled: true,
-                    created_at: now,
-                    updated_at: now,
-                };
-                Some(AdminOnboardingActionView::OidcSignIn {
-                    sign_in_url: oidc_sign_in_url(origin, &provider, &user.user.email),
-                    provider_key: provider_key.clone(),
-                    provider_label: provider_key,
-                })
-            }
-        }
-        _ => None,
-    };
-
-    Ok(AdminIdentityUserView {
-        id: user.user.user_id.to_string(),
-        name: user.user.name,
-        email: user.user.email,
-        auth_mode: user.user.auth_mode.as_str().to_string(),
-        global_role: user.user.global_role.as_str().to_string(),
-        team_id: user.team_id.map(|value| value.to_string()),
-        team_name: user.team_name,
-        team_role: user.membership_role.map(|value| value.as_str().to_string()),
-        status: format_user_status(user.user.status),
-        onboarding,
-    })
-}
-
 fn build_auth_session_view(user: UserRecord) -> AuthSessionView {
     AuthSessionView {
         user: AuthSessionUserView {
@@ -1205,105 +1131,6 @@ fn build_auth_session_view(user: UserRecord) -> AuthSessionView {
         },
         must_change_password: user.must_change_password,
     }
-}
-
-fn build_assignable_user_views(users: &[IdentityUserRecord]) -> Vec<AdminTeamAssignableUserView> {
-    let mut views: Vec<_> = users
-        .iter()
-        .map(|user| AdminTeamAssignableUserView {
-            id: user.user.user_id.to_string(),
-            name: user.user.name.clone(),
-            email: user.user.email.clone(),
-            status: format_user_status(user.user.status),
-            team_id: user.team_id.map(|value| value.to_string()),
-            team_name: user.team_name.clone(),
-            team_role: user.membership_role.map(|value| value.as_str().to_string()),
-        })
-        .collect();
-    views.sort_by(|left, right| {
-        left.name
-            .cmp(&right.name)
-            .then_with(|| left.email.cmp(&right.email))
-    });
-    views
-}
-
-fn build_admin_team_views(
-    teams: &[gateway_core::TeamRecord],
-    users: &[IdentityUserRecord],
-) -> Vec<AdminTeamManagementView> {
-    teams
-        .iter()
-        .map(|team| {
-            let mut admins: Vec<_> = users
-                .iter()
-                .filter(|user| user.team_id == Some(team.team_id))
-                .filter(|user| user.membership_role == Some(MembershipRole::Admin))
-                .map(|user| AdminTeamAdminView {
-                    id: user.user.user_id.to_string(),
-                    name: user.user.name.clone(),
-                    email: user.user.email.clone(),
-                    status: format_user_status(user.user.status),
-                })
-                .collect();
-            let mut members: Vec<_> = users
-                .iter()
-                .filter(|user| user.team_id == Some(team.team_id))
-                .map(|user| AdminTeamMemberView {
-                    id: user.user.user_id.to_string(),
-                    name: user.user.name.clone(),
-                    email: user.user.email.clone(),
-                    status: format_user_status(user.user.status),
-                    role: user
-                        .membership_role
-                        .map(|value| value.as_str().to_string())
-                        .unwrap_or_else(|| "member".to_string()),
-                })
-                .collect();
-            admins.sort_by(|left, right| {
-                left.name
-                    .cmp(&right.name)
-                    .then_with(|| left.email.cmp(&right.email))
-            });
-            members.sort_by(|left, right| {
-                left.name
-                    .cmp(&right.name)
-                    .then_with(|| left.email.cmp(&right.email))
-            });
-
-            let member_count = users
-                .iter()
-                .filter(|user| user.team_id == Some(team.team_id))
-                .count();
-
-            AdminTeamManagementView {
-                id: team.team_id.to_string(),
-                name: team.team_name.clone(),
-                key: team.team_key.clone(),
-                status: team.status.clone(),
-                member_count,
-                admins,
-                members,
-            }
-        })
-        .collect()
-}
-
-async fn reload_team_view(
-    store: &AnyStore,
-    team_id: Uuid,
-    _now: OffsetDateTime,
-) -> Result<AdminTeamManagementView, AppError> {
-    let teams = store.list_teams().await?;
-    let users = store.list_identity_users().await?;
-    build_admin_team_views(&teams, &users)
-        .into_iter()
-        .find(|team| team.id == team_id.to_string())
-        .ok_or_else(|| {
-            AppError(GatewayError::Store(gateway_core::StoreError::NotFound(
-                "team missing".to_string(),
-            )))
-        })
 }
 
 async fn generate_unique_team_key(store: &AnyStore, name: &str) -> Result<String, AppError> {
@@ -1637,7 +1464,7 @@ async fn build_onboarding_response(
             .await?;
             Ok(CreateUserResponse::OidcSignIn {
                 user: view,
-                sign_in_url: oidc_sign_in_url(origin, &provider, &user.user.email),
+                sign_in_url: oidc_sign_in_url(origin, &provider.provider_key, &user.user.email),
                 provider_label: provider.provider_key,
             })
         }
@@ -1645,23 +1472,6 @@ async fn build_onboarding_response(
             "unsupported auth mode".to_string(),
         ))),
     }
-}
-
-async fn reload_identity_user(
-    store: &AnyStore,
-    user_id: Uuid,
-) -> Result<IdentityUserRecord, AppError> {
-    let user = store
-        .list_identity_users()
-        .await?
-        .into_iter()
-        .find(|record| record.user.user_id == user_id)
-        .ok_or_else(|| {
-            AppError(GatewayError::Store(gateway_core::StoreError::NotFound(
-                "user missing".to_string(),
-            )))
-        })?;
-    Ok(user)
 }
 
 async fn load_identity_user_for_mutation(
@@ -1836,16 +1646,20 @@ async fn load_enabled_oidc_provider(
         })
 }
 
-fn oidc_sign_in_url(origin: &str, provider: &OidcProviderRecord, email: &str) -> String {
+pub(crate) fn oidc_sign_in_url(origin: &str, provider_key: &str, email: &str) -> String {
     let query = form_urlencoded::Serializer::new(String::new())
-        .append_pair("provider_key", &provider.provider_key)
+        .append_pair("provider_key", provider_key)
         .append_pair("login_hint", email)
         .append_pair("redirect_to", "/admin/account-ready?mode=oidc")
         .finish();
     format!("{origin}/api/v1/auth/oidc/start?{query}")
 }
 
-fn invitation_url(origin: &str, invitation: &PasswordInvitationRecord, secret: &str) -> String {
+pub(crate) fn invitation_url(
+    origin: &str,
+    invitation: &PasswordInvitationRecord,
+    secret: &str,
+) -> String {
     let token = signed_token("invite", secret, invitation.invitation_id);
     format!("{origin}/admin/invite/{token}")
 }
@@ -1923,10 +1737,6 @@ fn parse_uuid(raw: &str) -> Result<Uuid, AppError> {
 
 fn oidc_subject(provider: &OidcProviderRecord, email: &str) -> String {
     format!("mock:{}:{email}", provider.provider_key)
-}
-
-fn format_user_status(status: UserStatus) -> String {
-    status.as_str().to_string()
 }
 
 pub(crate) fn format_timestamp(value: OffsetDateTime) -> String {

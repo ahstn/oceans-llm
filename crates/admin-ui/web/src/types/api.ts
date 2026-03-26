@@ -1,7 +1,6 @@
 export interface ApiEnvelope<T> {
   data: T
   meta?: {
-    generatedAt?: string
     generated_at?: string
   }
 }

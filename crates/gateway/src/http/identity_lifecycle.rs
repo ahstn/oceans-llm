@@ -73,20 +73,6 @@ pub(crate) fn ensure_not_self_deactivating(
     Ok(())
 }
 
-pub(crate) fn ensure_last_active_admin_preserved(
-    user: &UserRecord,
-    will_remain_active_admin: bool,
-    active_platform_admin_count: u64,
-) -> Result<(), GatewayError> {
-    if is_active_platform_admin(user) && !will_remain_active_admin && active_platform_admin_count <= 1
-    {
-        return Err(GatewayError::InvalidRequest(
-            "the last active platform admin cannot be deactivated or demoted".to_string(),
-        ));
-    }
-    Ok(())
-}
-
 pub(crate) fn ensure_reset_onboarding_allowed(user: &UserRecord) -> Result<(), GatewayError> {
     match user.status {
         UserStatus::Invited | UserStatus::Disabled => Ok(()),
@@ -112,10 +98,6 @@ pub(crate) fn ensure_reactivation_allowed(user: &UserRecord) -> Result<(), Gatew
         ));
     }
     Ok(())
-}
-
-pub(crate) fn is_active_platform_admin(user: &UserRecord) -> bool {
-    user.global_role == GlobalRole::PlatformAdmin && user.status == UserStatus::Active
 }
 
 pub(crate) fn reactivation_status(auth_mode: AuthMode, has_auth_proof: bool) -> UserStatus {
