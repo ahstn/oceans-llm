@@ -2,84 +2,159 @@
 
 - Date: 2026-03-26
 - Status: Accepted
+- Related issues:
+  - [#59: Add request tagging support for caller-level filtering and attribution](https://github.com/ahstn/oceans-llm/issues/59)
+  - [#20: Improve admin request-log filtering and detail UX](https://github.com/ahstn/oceans-llm/issues/20)
+  - [#54: Harden chat observability metrics and streamed request-log parsing](https://github.com/ahstn/oceans-llm/issues/54)
 
 ## Context
 
-Issue #59 adds request tagging so callers sharing one API key can still split traffic by service, component, environment, or other bounded dimensions.
+Before this change, request logs already had a useful split:
 
-The existing observability model already separates:
+- [`request_logs`](../../crates/gateway-store/migrations/postgres/V13__request_log_payloads_and_indexes.sql) held hot summary fields used by the observability list views.
+- `request_log_payloads` held sanitized request and response bodies for detail inspection.
 
-- `request_logs` for hot summary reads
-- `request_log_payloads` for sanitized request/response bodies
+That shape worked well for provider, model, latency, status, and payload inspection, but it had a blind spot: teams sharing one API key could not reliably attribute traffic back to the calling service or component. Operators could answer "what happened to this request?" but not "which caller produced this class of requests?" without inferring from payloads or external systems.
 
-That split keeps common request-log scans cheap. Adding caller tags directly into payload JSON or generic metadata would make filtering backend-specific and harder to reason about, while storing every tag only as exploded rows would make common filters more expensive than they need to be.
+Issue [#59](https://github.com/ahstn/oceans-llm/issues/59) addressed that gap by adding caller-supplied request tags that are safe to capture at the gateway and cheap to query later. The implementation needed to solve three related problems at once:
+
+1. Accept and validate caller tags at the HTTP boundary.
+2. Persist them in a way that keeps common observability queries fast across both PostgreSQL and libSQL.
+3. Expose them through the admin API and UI without overloading existing runtime metadata.
 
 ## Decision
 
-### 1. Treat caller tags as a first-class request-log contract
+We treat caller tags as a first-class request-log contract with a hybrid storage model:
 
-The gateway accepts:
+- Universal attribution fields are stored directly on the request-log summary row.
+- Bespoke tags are stored in a bounded side table.
+- Caller tags are exposed explicitly in API and UI models instead of being hidden inside payload JSON or `metadata_json`.
+
+## How It Works
+
+### HTTP contract and validation
+
+The gateway now accepts four request-tagging headers:
 
 - `x-oceans-service`
 - `x-oceans-component`
 - `x-oceans-env`
 - `x-oceans-tags`
 
-The bespoke tag header uses `key=value; key2=value2` formatting and is capped at five tags.
+Parsing and validation live in [`request_tags.rs`](../../crates/gateway/src/http/request_tags.rs). This module is intentionally strict:
 
-### 2. Store universal tags on the `request_logs` summary row
+- universal headers may only appear once
+- `x-oceans-tags` may only appear once
+- bespoke tags use `key=value; key2=value2`
+- bespoke tags are capped at five entries
+- duplicate bespoke keys are rejected
+- reserved keys `service`, `component`, and `env` cannot be redefined in bespoke tags
+- keys and values are ASCII-bounded and format-constrained
 
-The summary table now owns:
+These rules keep the data shape stable for indexing, querying, and UI rendering. Invalid tag input fails fast as a `400` at the gateway boundary rather than leaking malformed data into storage.
+
+### Typed request-log model
+
+Caller tags are represented in the shared domain model as [`RequestTags`](../../crates/gateway-core/src/domain.rs) and [`RequestTag`](../../crates/gateway-core/src/domain.rs). That type now travels through the request-log pipeline:
+
+- extracted in [`handlers.rs`](../../crates/gateway/src/http/handlers.rs)
+- passed into request logging in [`request_logging.rs`](../../crates/gateway-service/src/request_logging.rs)
+- included in query and response types in [`observability.rs`](../../crates/gateway/src/http/observability.rs)
+
+This keeps the contract explicit at the Rust boundary. Future work can evolve the tag model in one place instead of re-parsing or re-encoding ad hoc maps at each layer.
+
+### Storage model
+
+We store the three universal caller dimensions directly on `request_logs`:
 
 - `caller_service`
 - `caller_component`
 - `caller_env`
 
-Why:
+We store bespoke tags in `request_log_tags`, keyed by `(request_log_id, tag_key)`.
 
-- these are the most common filter dimensions
-- exact-match filters should not require JSON inspection or a join
-- both libsql and PostgreSQL can index these fields directly
+The schema change is implemented in:
 
-### 3. Store bespoke tags in a bounded side table
+- [`V14__request_log_tags.sql` for PostgreSQL](../../crates/gateway-store/migrations/postgres/V14__request_log_tags.sql)
+- [`V14__request_log_tags.sql` for libSQL](../../crates/gateway-store/migrations/V14__request_log_tags.sql)
 
-The gateway stores bespoke tags in `request_log_tags` keyed by `(request_log_id, tag_key)`.
+Repository implementations were updated in:
 
-Why:
+- [`postgres_store/request_logs.rs`](../../crates/gateway-store/src/postgres_store/request_logs.rs)
+- [`libsql_store/request_logs.rs`](../../crates/gateway-store/src/libsql_store/request_logs.rs)
 
-- bespoke tags remain queryable without overloading `metadata_json`
-- the write amplification is bounded to at most five rows per request
-- exact-match lookups can use a dedicated `(tag_key, tag_value, request_log_id)` index
+The read path loads summary rows first, then hydrates bespoke tags in bulk for the returned page. That keeps the hot list query centered on the summary table while still supporting exact-match bespoke tag filters.
 
-### 4. Keep caller tags out of runtime metadata and metrics labels
+### Admin API and UI
 
-`metadata_json` remains runtime-owned observability metadata such as operation, stream mode, and fallback count. Caller-supplied tags are exposed through explicit request-log fields instead of being mixed into runtime metadata.
+The admin observability API now accepts caller-tag filters and returns caller tags on each request-log record in [`observability.rs`](../../crates/gateway/src/http/observability.rs).
 
-Caller tags are not promoted to metric labels.
+The admin UI surfaces those tags in both filtering and display:
 
-Why:
+- route and filter UI in [`request-logs.tsx`](../../crates/admin-ui/web/src/routes/observability/request-logs.tsx)
+- API mapping in [`admin-data.server.ts`](../../crates/admin-ui/web/src/server/admin-data.server.ts)
+- shared frontend types in [`api.ts`](../../crates/admin-ui/web/src/types/api.ts)
 
-- runtime metadata should stay semantically stable for maintainers
-- user-controlled values would create unsafe metric cardinality growth
+This matters because attribution is only useful if operators can see and query it without opening raw payloads.
+
+## Why This Shape
+
+### Why not put everything in `metadata_json`?
+
+We rejected a JSON-only design because `metadata_json` already carries runtime-owned observability facts such as stream mode and fallback metadata. Mixing caller-supplied attribution into that field would blur ownership and make filtering more backend-specific. It would also encourage future features to treat caller metadata and runtime metadata as interchangeable, which they are not.
+
+### Why not store every tag in a fully exploded tag table?
+
+We rejected an all-tags-in-rows model because three fields are expected to be common, stable filters: service, component, and environment. Requiring a join or subquery for those dimensions would make the most common request-log filters more expensive than necessary and would weaken index clarity.
+
+### Why a hybrid model?
+
+The hybrid model matches observed access patterns:
+
+- service, component, and environment are common attribution dimensions and deserve first-class columns
+- bespoke tags are useful, but less common and intentionally bounded
+- both storage backends can support this model without backend-specific JSON indexing tricks
+
+This gives us cheap exact-match filters for common cases and bounded extensibility for caller-specific tags.
 
 ## Consequences
 
-Positive:
+### Positive
 
-- common request-log filters stay cheap and explicit
-- caller tags remain visible in list/detail APIs and the admin UI
-- storage growth from bespoke tags stays bounded and understandable
+- Caller attribution is now visible from the gateway boundary through the admin UI.
+- Common filters stay cheap because the hottest dimensions live on the summary row.
+- Bespoke tags remain queryable without making the summary schema unbounded.
+- The implementation keeps `metadata_json` semantically cleaner and protects metrics from user-controlled cardinality.
 
-Tradeoffs:
+### Tradeoffs
 
-- request-log writes now touch one additional table when bespoke tags are present
-- backend query code is slightly more complex because page reads hydrate bespoke tags after the summary scan
+- Request-log writes now touch an extra table when bespoke tags are present.
+- Query code is more complex because bespoke tags are hydrated after reading the summary page.
+- The bespoke filter path currently supports exact-match filtering for one tag at a time, which is enough for issue [#59](https://github.com/ahstn/oceans-llm/issues/59) but leaves room for future UX work in [#20](https://github.com/ahstn/oceans-llm/issues/20).
+
+## Scope Boundaries
+
+This decision intentionally does not do two things:
+
+- It does not forward caller tags to upstream model providers. The tags terminate at the gateway and are used for local observability only.
+- It does not turn caller tags into metrics labels. User-controlled values would create unsafe cardinality growth and reduce the long-term reliability of metrics.
+
+Issue [#54](https://github.com/ahstn/oceans-llm/issues/54) remains adjacent but separate. That issue is about stream parsing and observability hardening; this ADR is about attribution storage and queryability.
+
+## Code Areas To Start With
+
+Future changes in this area will usually start in one of these files:
+
+- HTTP parsing and validation: [`request_tags.rs`](../../crates/gateway/src/http/request_tags.rs)
+- request entry points: [`handlers.rs`](../../crates/gateway/src/http/handlers.rs)
+- shared domain contract: [`domain.rs`](../../crates/gateway-core/src/domain.rs)
+- request-log writing: [`request_logging.rs`](../../crates/gateway-service/src/request_logging.rs)
+- observability API: [`observability.rs`](../../crates/gateway/src/http/observability.rs)
+- storage repositories: [`postgres_store/request_logs.rs`](../../crates/gateway-store/src/postgres_store/request_logs.rs) and [`libsql_store/request_logs.rs`](../../crates/gateway-store/src/libsql_store/request_logs.rs)
+- admin UI route: [`request-logs.tsx`](../../crates/admin-ui/web/src/routes/observability/request-logs.tsx)
 
 ## Follow-up Work
 
-- Extend broader request-log UX work in issue #20 around additional filter ergonomics and pagination.
-- Revisit retention and archival policy if request-log volume makes tag history expensive to retain indefinitely.
-
-## Attribution
-
-This ADR was prepared through collaborative human + AI implementation/design work.
+- Continue request-log filter ergonomics, pagination, and richer operator workflows under [#20](https://github.com/ahstn/oceans-llm/issues/20).
+- Revisit retention and archival policy if caller-tag history materially changes request-log storage costs.
+- If provider propagation ever becomes desirable, make it a separate decision with its own explicit privacy and compatibility analysis.
