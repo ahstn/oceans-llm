@@ -166,7 +166,7 @@ vi.mock('@/server/gateway-client.server', () => ({
       }
     }
 
-    if (path === '/api/v1/admin/observability/request-logs') {
+    if (path.startsWith('/api/v1/admin/observability/request-logs?') || path === '/api/v1/admin/observability/request-logs') {
       return {
         data: {
           items: [
@@ -312,5 +312,18 @@ describe('server-side mock repositories', () => {
     const reset = await resetUserOnboarding('user_1')
     expect(reset.data.kind).toBe('password_invite')
     expect(reset.data.invite_url).toContain('/admin/invite/')
+  })
+
+  it('builds explicit request log tag query params', async () => {
+    await listRequestLogs({
+      service: 'checkout',
+      tagKey: 'feature',
+      tagValue: 'guest_checkout',
+    })
+
+    const { fetchGatewayJson } = await import('@/server/gateway-client.server')
+    expect(fetchGatewayJson).toHaveBeenCalledWith(
+      '/api/v1/admin/observability/request-logs?service=checkout&tag_key=feature&tag_value=guest_checkout',
+    )
   })
 })

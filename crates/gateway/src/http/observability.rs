@@ -15,7 +15,7 @@ use crate::http::{
     admin_auth::require_platform_admin,
     error::AppError,
     identity::{Envelope, envelope, format_timestamp},
-    request_tags::parse_bespoke_tag_filter,
+    request_tags::build_bespoke_tag_filter,
     state::AppState,
 };
 
@@ -36,7 +36,8 @@ pub struct RequestLogListQuery {
     service: Option<String>,
     component: Option<String>,
     env: Option<String>,
-    tag: Option<String>,
+    tag_key: Option<String>,
+    tag_value: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -104,7 +105,7 @@ pub async fn list_request_logs(
 ) -> Result<Json<Envelope<RequestLogPageView>>, AppError> {
     require_platform_admin(&state, &headers).await?;
 
-    let query = RequestLogQuery {
+    let request_log_query = RequestLogQuery {
         page: query.page.unwrap_or(DEFAULT_PAGE).max(1),
         page_size: query
             .page_size
@@ -119,7 +120,14 @@ pub async fn list_request_logs(
         service: empty_to_none(query.service),
         component: empty_to_none(query.component),
         env: empty_to_none(query.env),
-        bespoke_tag: parse_optional_tag_filter(query.tag.as_deref())?,
+        tag_key: None,
+        tag_value: None,
+    };
+    let (tag_key, tag_value) = parse_optional_tag_filter(query.tag_key, query.tag_value)?;
+    let query = RequestLogQuery {
+        tag_key,
+        tag_value,
+        ..request_log_query
     };
 
     let page = state.service.list_request_logs(&query).await?;
@@ -188,12 +196,26 @@ fn empty_to_none(value: Option<String>) -> Option<String> {
     })
 }
 
-fn parse_optional_tag_filter(value: Option<&str>) -> Result<Option<RequestTag>, AppError> {
-    let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
-        return Ok(None);
-    };
+fn parse_optional_tag_filter(
+    key: Option<String>,
+    value: Option<String>,
+) -> Result<(Option<String>, Option<String>), AppError> {
+    let key = empty_to_none(key);
+    let value = empty_to_none(value);
 
-    parse_bespoke_tag_filter(value).map(Some).map_err(AppError)
+    match (key, value) {
+        (None, None) => Ok((None, None)),
+        (Some(_), None) => Err(AppError(GatewayError::InvalidRequest(
+            "request log tag filters require both `tag_key` and `tag_value`".to_string(),
+        ))),
+        (None, Some(_)) => Err(AppError(GatewayError::InvalidRequest(
+            "request log tag filters require both `tag_key` and `tag_value`".to_string(),
+        ))),
+        (Some(key), Some(value)) => {
+            let tag = build_bespoke_tag_filter(&key, &value).map_err(AppError)?;
+            Ok((Some(tag.key), Some(tag.value)))
+        }
+    }
 }
 
 fn request_tags_view(tags: &RequestTags) -> RequestTagsView {

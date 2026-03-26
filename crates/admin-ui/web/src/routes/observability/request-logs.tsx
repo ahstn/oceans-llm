@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useTransition } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { useVirtualizer } from '@tanstack/react-virtual'
 
 import { Badge } from '@/components/ui/badge'
@@ -19,7 +19,9 @@ import type { RequestLogDetailView, RequestLogFiltersInput, RequestLogView } fro
 
 export const Route = createFileRoute('/observability/request-logs')({
   beforeLoad: ({ location }) => requireAdminSession(location),
-  loader: () => getRequestLogs({ data: {} }),
+  validateSearch: (search: Record<string, unknown>) => normalizeFilterSearch(search),
+  loaderDeps: ({ search }) => search,
+  loader: ({ deps }) => getRequestLogs({ data: deps }),
   component: RequestLogsPage,
 })
 
@@ -30,20 +32,28 @@ const initialFilters: RequestLogFiltersInput = {
   service: '',
   component: '',
   env: '',
-  tag: '',
+  tagKey: '',
+  tagValue: '',
 }
 
 export function RequestLogsPage() {
-  const loaderData = Route.useLoaderData()
+  const { data: logPage } = Route.useLoaderData()
+  const search = Route.useSearch()
+  const router = useRouter()
   const parentRef = useRef<HTMLDivElement | null>(null)
-  const [logPage, setLogPage] = useState(loaderData.data)
-  const [filters, setFilters] = useState<RequestLogFiltersInput>(initialFilters)
-  const [listError, setListError] = useState<string | null>(null)
+  const [filters, setFilters] = useState<RequestLogFiltersInput>(() => ({
+    ...initialFilters,
+    ...search,
+  }))
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null)
   const [selectedDetail, setSelectedDetail] = useState<RequestLogDetailView | null>(null)
   const [detailPending, setDetailPending] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
   const [isListPending, startListTransition] = useTransition()
+
+  useEffect(() => {
+    setFilters({ ...initialFilters, ...search })
+  }, [search])
 
   useEffect(() => {
     if (!selectedLogId) {
@@ -99,19 +109,20 @@ export function RequestLogsPage() {
 
   function applyFilters(nextFilters: RequestLogFiltersInput) {
     startListTransition(async () => {
-      try {
-        const response = await getRequestLogs({ data: nextFilters })
-        setLogPage(response.data)
-        setListError(null)
-      } catch (error: unknown) {
-        setListError(error instanceof Error ? error.message : 'Failed to load request logs')
-      }
+      await router.navigate({
+        to: '/observability/request-logs',
+        search: normalizeFilterSearch(nextFilters),
+      })
     })
   }
 
   function updateFilter(key: keyof RequestLogFiltersInput, value: string) {
     setFilters((current) => ({ ...current, [key]: value }))
   }
+
+  const normalizedFilters = normalizeFilterSearch(filters)
+  const hasPartialTagFilter =
+    Boolean(normalizedFilters.tagKey) !== Boolean(normalizedFilters.tagValue)
 
   return (
     <>
@@ -126,34 +137,44 @@ export function RequestLogsPage() {
           </div>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
             <Input
+              data-testid="request-log-filter-service"
               placeholder="Service"
               value={filters.service ?? ''}
               onChange={(event) => updateFilter('service', event.target.value)}
             />
             <Input
+              data-testid="request-log-filter-component"
               placeholder="Component"
               value={filters.component ?? ''}
               onChange={(event) => updateFilter('component', event.target.value)}
             />
             <Input
+              data-testid="request-log-filter-env"
               placeholder="Environment"
               value={filters.env ?? ''}
               onChange={(event) => updateFilter('env', event.target.value)}
             />
             <Input
-              placeholder="Bespoke tag (key=value)"
-              value={filters.tag ?? ''}
-              onChange={(event) => updateFilter('tag', event.target.value)}
+              data-testid="request-log-filter-tag-key"
+              placeholder="Tag key"
+              value={filters.tagKey ?? ''}
+              onChange={(event) => updateFilter('tagKey', event.target.value)}
+            />
+            <Input
+              data-testid="request-log-filter-tag-value"
+              placeholder="Tag value"
+              value={filters.tagValue ?? ''}
+              onChange={(event) => updateFilter('tagValue', event.target.value)}
             />
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button
               type="button"
               variant="secondary"
-              onClick={() => applyFilters(filters)}
-              disabled={isListPending}
+              onClick={() => applyFilters(normalizedFilters)}
+              disabled={isListPending || hasPartialTagFilter}
             >
               {isListPending ? 'Filtering...' : 'Apply Filters'}
             </Button>
@@ -169,9 +190,9 @@ export function RequestLogsPage() {
               Clear
             </Button>
           </div>
-          {listError ? (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-              {listError}
+          {hasPartialTagFilter ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              Provide both a tag key and tag value to filter bespoke request tags.
             </div>
           ) : null}
           <div className="text-sm text-[var(--color-text-soft)]">
@@ -509,4 +530,26 @@ function RequestTagBadges({ item }: { item: RequestLogView }) {
       ))}
     </>
   )
+}
+
+function normalizeFilterSearch(search: Record<string, unknown>): RequestLogFiltersInput {
+  return {
+    requestId: searchParamValue(search.requestId),
+    modelKey: searchParamValue(search.modelKey),
+    providerKey: searchParamValue(search.providerKey),
+    service: searchParamValue(search.service),
+    component: searchParamValue(search.component),
+    env: searchParamValue(search.env),
+    tagKey: searchParamValue(search.tagKey),
+    tagValue: searchParamValue(search.tagValue),
+  }
+}
+
+function searchParamValue(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined
+  }
+
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : undefined
 }

@@ -25,8 +25,11 @@ pub fn extract_request_tags(headers: &HeaderMap) -> Result<RequestTags, GatewayE
     })
 }
 
-pub fn parse_bespoke_tag_filter(value: &str) -> Result<RequestTag, GatewayError> {
-    parse_tag_pair(value, "request log tag filter")
+pub fn build_bespoke_tag_filter(key: &str, value: &str) -> Result<RequestTag, GatewayError> {
+    Ok(RequestTag {
+        key: validate_tag_key(key, "request log tag key")?,
+        value: validate_tag_value(value, "request log tag value")?,
+    })
 }
 
 fn extract_single_header_value(
@@ -177,7 +180,10 @@ fn validate_tag_value(value: &str, context: &str) -> Result<String, GatewayError
 mod tests {
     use axum::http::{HeaderMap, HeaderValue};
 
-    use super::{HEADER_COMPONENT, HEADER_ENV, HEADER_SERVICE, HEADER_TAGS, extract_request_tags};
+    use super::{
+        HEADER_COMPONENT, HEADER_ENV, HEADER_SERVICE, HEADER_TAGS, build_bespoke_tag_filter,
+        extract_request_tags,
+    };
 
     #[test]
     fn parses_universal_and_bespoke_request_tags() {
@@ -235,5 +241,12 @@ mod tests {
 
         let error = extract_request_tags(&headers).expect_err("invalid universal value must fail");
         assert!(error.to_string().contains("lowercase ASCII letters"));
+    }
+
+    #[test]
+    fn builds_explicit_bespoke_tag_filter() {
+        let tag = build_bespoke_tag_filter("feature", "guest_checkout").expect("valid filter");
+        assert_eq!(tag.key, "feature");
+        assert_eq!(tag.value, "guest_checkout");
     }
 }

@@ -214,7 +214,8 @@ export interface RequestLogFiltersInput {
   service?: string
   component?: string
   env?: string
-  tag?: string
+  tagKey?: string
+  tagValue?: string
 }
 
 export interface TeamAdminView {

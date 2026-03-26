@@ -203,8 +203,8 @@ impl RequestLogRepository for LibsqlStore {
         let service = query.service.as_deref();
         let component = query.component.as_deref();
         let env = query.env.as_deref();
-        let bespoke_tag_key = query.bespoke_tag.as_ref().map(|tag| tag.key.as_str());
-        let bespoke_tag_value = query.bespoke_tag.as_ref().map(|tag| tag.value.as_str());
+        let tag_key = query.tag_key.as_deref();
+        let tag_value = query.tag_value.as_deref();
 
         let mut count_rows = self
             .connection
@@ -242,8 +242,8 @@ impl RequestLogRepository for LibsqlStore {
                     service,
                     component,
                     env,
-                    bespoke_tag_key,
-                    bespoke_tag_value
+                    tag_key,
+                    tag_value
                 ],
             )
             .await
@@ -297,8 +297,8 @@ impl RequestLogRepository for LibsqlStore {
                     service,
                     component,
                     env,
-                    bespoke_tag_key,
-                    bespoke_tag_value,
+                    tag_key,
+                    tag_value,
                     page_size,
                     offset
                 ],

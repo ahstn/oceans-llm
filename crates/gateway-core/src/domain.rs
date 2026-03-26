@@ -827,7 +827,8 @@ pub struct RequestLogQuery {
     pub service: Option<String>,
     pub component: Option<String>,
     pub env: Option<String>,
-    pub bespoke_tag: Option<RequestTag>,
+    pub tag_key: Option<String>,
+    pub tag_value: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

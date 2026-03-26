@@ -195,8 +195,8 @@ impl RequestLogRepository for PostgresStore {
         let service = query.service.as_deref();
         let component = query.component.as_deref();
         let env = query.env.as_deref();
-        let bespoke_tag_key = query.bespoke_tag.as_ref().map(|tag| tag.key.as_str());
-        let bespoke_tag_value = query.bespoke_tag.as_ref().map(|tag| tag.value.as_str());
+        let tag_key = query.tag_key.as_deref();
+        let tag_value = query.tag_value.as_deref();
 
         let total_row = sqlx::query(
             r#"
@@ -232,8 +232,8 @@ impl RequestLogRepository for PostgresStore {
         .bind(service)
         .bind(component)
         .bind(env)
-        .bind(bespoke_tag_key)
-        .bind(bespoke_tag_value)
+        .bind(tag_key)
+        .bind(tag_value)
         .fetch_one(&self.pool)
         .await
         .map_err(to_query_error)?;
@@ -279,8 +279,8 @@ impl RequestLogRepository for PostgresStore {
         .bind(service)
         .bind(component)
         .bind(env)
-        .bind(bespoke_tag_key)
-        .bind(bespoke_tag_value)
+        .bind(tag_key)
+        .bind(tag_value)
         .bind(page_size)
         .bind(offset)
         .fetch_all(&self.pool)

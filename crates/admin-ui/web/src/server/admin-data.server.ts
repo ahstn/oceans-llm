@@ -222,8 +222,11 @@ export async function listRequestLogs(
   if (filters.env) {
     query.set('env', filters.env)
   }
-  if (filters.tag) {
-    query.set('tag', filters.tag)
+  if (filters.tagKey) {
+    query.set('tag_key', filters.tagKey)
+  }
+  if (filters.tagValue) {
+    query.set('tag_value', filters.tagValue)
   }
   const suffix = query.toString() ? `?${query.toString()}` : ''
   const response = await fetchGatewayJson<
