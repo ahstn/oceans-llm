@@ -2,6 +2,7 @@
 rust = "stable"
 node = "lts"
 bun = "1.3.10"
+postgres = { version = "17", os = ["macos"] } # skip for ci
 gh = "latest"
 opentofu = "latest"
 git-cliff = "latest"
@@ -33,6 +34,35 @@ run = "cargo run -p gateway --bin gateway -- serve"
 [tasks.check-rust-postgres]
 description = "Compile the Rust Postgres-backed runtime and store targets"
 run = "cargo check -p gateway-store -p gateway --all-targets"
+
+[tasks.postgres-start]
+description = "Start local Postgres via pitchfork"
+run = "pitchfork start postgres"
+
+[tasks.postgres-stop]
+description = "Stop local Postgres via pitchfork"
+run = "pitchfork stop postgres"
+
+[tasks.postgres-status]
+description = "Show local Postgres daemon status via pitchfork"
+run = "pitchfork list --hide-header | rg '^oceans_llm/postgres\\b'"
+
+[tasks.postgres-logs]
+description = "Tail local Postgres daemon logs via pitchfork"
+run = "pitchfork logs postgres"
+
+[tasks.postgres-reset]
+description = "Reset the local Postgres data directory and restart via pitchfork"
+run = """
+set -eu
+pitchfork stop postgres >/dev/null 2>&1 || true
+./scripts/postgres-pitchfork.sh reset
+pitchfork start postgres
+"""
+
+[tasks.postgres-env]
+description = "Print env exports for local Postgres URLs"
+run = "./scripts/postgres-pitchfork.sh print-env"
 
 [tasks.test]
 description = "Run Rust and admin UI tests"
