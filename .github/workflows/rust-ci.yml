@@ -42,6 +42,7 @@ jobs:
 
       - name: Setup mise + tools
         uses: jdx/mise-action@e79ddf65a11cec7b0e882bedced08d6e976efb2d
+        continue-on-err: true # postgres fails in gha env
 
       - name: Lint Rust workspace
         run: mise exec -- cargo clippy --workspace --all-targets -- -D warnings
