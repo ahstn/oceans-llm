@@ -45,6 +45,12 @@ const items: RequestLogView[] = [
     hasPayload: true,
     requestPayloadTruncated: false,
     responsePayloadTruncated: false,
+    requestTags: {
+      service: 'checkout',
+      component: 'pricing_api',
+      env: 'prod',
+      bespoke: [{ key: 'feature', value: 'guest_checkout' }],
+    },
     metadata: {
       stream: false,
       fallback_used: false,

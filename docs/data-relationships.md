@@ -94,11 +94,14 @@ This document is schema-oriented. It describes the persistent relationships that
   - Key columns: `usage_event_id`, `request_id`, `ownership_scope_key`, `api_key_id`, `user_id`, `team_id`, `actor_user_id`, `model_id`, `provider_key`, `upstream_model`, `pricing_status`, `unpriced_reason`, `pricing_row_id`, `pricing_provider_id`, `computed_cost_10000`, `provider_usage`, `occurred_at`
   - Notes: this is the canonical spend ledger used for enforcement and reporting
 - `request_logs`
-  - Key columns: `request_log_id`, `request_id`, `api_key_id`, `user_id`, `team_id`, `model_key`, `resolved_model_key`, `provider_key`, `status_code`, `metadata_json`, `occurred_at`
+  - Key columns: `request_log_id`, `request_id`, `api_key_id`, `user_id`, `team_id`, `model_key`, `resolved_model_key`, `provider_key`, `caller_service`, `caller_component`, `caller_env`, `status_code`, `metadata_json`, `occurred_at`
   - Notes: one summary row per final request outcome
 - `request_log_payloads`
   - Key columns: `request_log_id`, `request_json`, `response_json`
   - Notes: summary and payload are intentionally split
+- `request_log_tags`
+  - Key columns: `request_log_id`, `tag_key`, `tag_value`
+  - Notes: bounded bespoke caller tags for request-log filtering and attribution
 
 ### Pricing Catalog Cache
 

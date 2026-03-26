@@ -173,6 +173,15 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
             "../migrations/postgres/V14__budget_alerts_and_monthly_cadence.sql"
         )),
     },
+    MigrationManifest {
+        version: 15,
+        name: "request_log_tags",
+        checksum: "V15__request_log_tags.sql",
+        libsql: BackendMigrationStep::Sql(include_str!("../migrations/V15__request_log_tags.sql")),
+        postgres: BackendMigrationStep::Sql(include_str!(
+            "../migrations/postgres/V15__request_log_tags.sql"
+        )),
+    },
 ];
 
 #[cfg(test)]

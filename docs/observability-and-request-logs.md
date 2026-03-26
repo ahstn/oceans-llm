@@ -36,6 +36,7 @@ The runtime emits bounded request-level signals for:
 - token totals
 - operational cost totals
 - usage-record totals by pricing status
+- caller request tags in request-log storage for filtering and attribution
 
 The request path also records tracing spans enriched with routing and ownership context.
 
@@ -45,6 +46,40 @@ Request correlation is anchored on `x-request-id`:
 - public `/v1/*` responses return it
 - provider adapters forward it upstream
 - admin request-log lookup can use it as the operator-visible correlation key
+
+## Request Tagging Contract
+
+Callers can attach bounded attribution metadata to requests with these headers:
+
+- `x-oceans-service`
+- `x-oceans-component`
+- `x-oceans-env`
+- `x-oceans-tags`
+
+Intended use:
+
+- use the universal headers for the stable dimensions most teams will filter on repeatedly
+- use `x-oceans-tags` only for a small number of extra exact-match tags
+
+`x-oceans-tags` uses `key=value; key2=value2` formatting.
+
+Examples:
+
+- `x-oceans-service: checkout`
+- `x-oceans-component: pricing_api`
+- `x-oceans-env: prod`
+- `x-oceans-tags: feature=guest_checkout; cohort=beta`
+
+Current validation rules:
+
+- universal headers may only be sent once each
+- `x-oceans-tags` may only be sent once
+- bespoke tags are capped at 5 entries
+- bespoke keys must be unique inside the header
+- bespoke keys may not reuse reserved universal names: `service`, `component`, `env`
+- keys must start with a lowercase ASCII letter and then use only lowercase ASCII letters, digits, `.`, `_`, or `-`
+- values must use only lowercase ASCII letters, digits, `.`, `_`, `-`, `/`, or `:`
+- malformed or duplicate tags are rejected as `400 invalid_request`
 
 ## Request Log Storage Shape
 
@@ -59,6 +94,7 @@ The summary row stores:
 - owner identity
 - requested and resolved model identity
 - provider key
+- universal caller tags
 - status, latency, and usage totals
 - truncation flags
 - metadata
@@ -67,6 +103,10 @@ The payload row stores:
 
 - sanitized request JSON
 - sanitized response JSON
+
+The gateway also stores bespoke caller tags in a bounded side table:
+
+- `request_log_tags`
 
 Streaming requests persist a bounded transcript payload rather than raw transport bytes.
 
@@ -117,6 +157,10 @@ Current list filters:
 - `status_code`
 - `user_id`
 - `team_id`
+- `service`
+- `component`
+- `env`
+- `tag` using `key=value`
 
 ## Important Current Rough Edges
 

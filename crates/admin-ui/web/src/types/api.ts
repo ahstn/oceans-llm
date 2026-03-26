@@ -180,8 +180,21 @@ export interface RequestLogView {
   hasPayload: boolean
   requestPayloadTruncated: boolean
   responsePayloadTruncated: boolean
+  requestTags: RequestLogTagsView
   metadata: Record<string, unknown>
   occurredAt: string
+}
+
+export interface RequestTagView {
+  key: string
+  value: string
+}
+
+export interface RequestLogTagsView {
+  service: string | null
+  component: string | null
+  env: string | null
+  bespoke: RequestTagView[]
 }
 
 export interface RequestLogPayloadView {
@@ -192,6 +205,16 @@ export interface RequestLogPayloadView {
 export interface RequestLogDetailView {
   log: RequestLogView
   payload: RequestLogPayloadView | null
+}
+
+export interface RequestLogFiltersInput {
+  requestId?: string
+  modelKey?: string
+  providerKey?: string
+  service?: string
+  component?: string
+  env?: string
+  tag?: string
 }
 
 export interface TeamAdminView {

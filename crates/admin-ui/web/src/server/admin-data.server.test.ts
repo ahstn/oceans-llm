@@ -188,6 +188,12 @@ vi.mock('@/server/gateway-client.server', () => ({
               has_payload: true,
               request_payload_truncated: false,
               response_payload_truncated: false,
+              request_tags: {
+                service: 'checkout',
+                component: 'pricing_api',
+                env: 'prod',
+                bespoke: [{ key: 'feature', value: 'guest_checkout' }],
+              },
               metadata: {
                 stream: false,
                 fallback_used: false,
@@ -224,6 +230,12 @@ vi.mock('@/server/gateway-client.server', () => ({
             has_payload: true,
             request_payload_truncated: false,
             response_payload_truncated: false,
+            request_tags: {
+              service: 'checkout',
+              component: 'pricing_api',
+              env: 'prod',
+              bespoke: [{ key: 'feature', value: 'guest_checkout' }],
+            },
             metadata: {
               stream: false,
               fallback_used: false,

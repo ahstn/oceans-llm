@@ -98,6 +98,7 @@ Operators can currently:
 - filter spend by owner kind
 - manage user and team budgets
 - inspect request-log summaries
+- filter request logs by caller service, component, environment, and one bespoke tag match
 - inspect sanitized request-log payload detail
 
 Current scope limits:

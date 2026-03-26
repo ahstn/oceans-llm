@@ -1,5 +1,8 @@
+use std::collections::BTreeMap;
+
 use super::*;
 use crate::shared::{parse_uuid, serialize_json, unix_to_datetime};
+use gateway_core::{RequestTag, RequestTags};
 
 fn normalize_query(query: &RequestLogQuery) -> (i64, i64) {
     let page = query.page.max(1);
@@ -16,8 +19,8 @@ fn decode_request_log_row(row: &libsql::Row) -> Result<RequestLogRecord, StoreEr
     let has_payload: i64 = row.get(13).map_err(to_query_error)?;
     let request_payload_truncated: i64 = row.get(14).map_err(to_query_error)?;
     let response_payload_truncated: i64 = row.get(15).map_err(to_query_error)?;
-    let metadata_json: String = row.get(16).map_err(to_query_error)?;
-    let occurred_at: i64 = row.get(17).map_err(to_query_error)?;
+    let occurred_at: i64 = row.get(20).map_err(to_query_error)?;
+    let metadata_json: String = row.get(19).map_err(to_query_error)?;
 
     Ok(RequestLogRecord {
         request_log_id: parse_uuid(&request_log_id)?,
@@ -33,14 +36,64 @@ fn decode_request_log_row(row: &libsql::Row) -> Result<RequestLogRecord, StoreEr
         prompt_tokens: row.get(10).map_err(to_query_error)?,
         completion_tokens: row.get(11).map_err(to_query_error)?,
         total_tokens: row.get(12).map_err(to_query_error)?,
-        error_code: row.get(18).map_err(to_query_error)?,
+        error_code: row.get(21).map_err(to_query_error)?,
         has_payload: has_payload == 1,
         request_payload_truncated: request_payload_truncated == 1,
         response_payload_truncated: response_payload_truncated == 1,
+        request_tags: RequestTags {
+            service: row.get(16).map_err(to_query_error)?,
+            component: row.get(17).map_err(to_query_error)?,
+            env: row.get(18).map_err(to_query_error)?,
+            bespoke: Vec::new(),
+        },
         metadata: serde_json::from_str(&metadata_json)
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
         occurred_at: unix_to_datetime(occurred_at)?,
     })
+}
+
+async fn load_bespoke_tags_for_logs(
+    connection: &libsql::Connection,
+    request_log_ids: &[Uuid],
+) -> Result<BTreeMap<Uuid, Vec<RequestTag>>, StoreError> {
+    if request_log_ids.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+
+    let placeholders = (0..request_log_ids.len())
+        .map(|index| format!("?{}", index + 1))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let query = format!(
+        "SELECT request_log_id, tag_key, tag_value FROM request_log_tags WHERE request_log_id IN ({placeholders}) ORDER BY request_log_id ASC, tag_key ASC"
+    );
+    let params = request_log_ids
+        .iter()
+        .map(|id| libsql::Value::Text(id.to_string()))
+        .collect::<Vec<_>>();
+
+    let mut rows = connection
+        .query(&query, params)
+        .await
+        .map_err(|error| StoreError::Query(error.to_string()))?;
+
+    let mut tags = BTreeMap::<Uuid, Vec<RequestTag>>::new();
+    while let Some(row) = rows
+        .next()
+        .await
+        .map_err(|error| StoreError::Query(error.to_string()))?
+    {
+        let request_log_id: String = row.get(0).map_err(to_query_error)?;
+        let request_log_id = parse_uuid(&request_log_id)?;
+        let tag_key: String = row.get(1).map_err(to_query_error)?;
+        let tag_value: String = row.get(2).map_err(to_query_error)?;
+        tags.entry(request_log_id).or_default().push(RequestTag {
+            key: tag_key,
+            value: tag_value,
+        });
+    }
+
+    Ok(tags)
 }
 
 #[async_trait]
@@ -63,8 +116,9 @@ impl RequestLogRepository for LibsqlStore {
                     request_log_id, request_id, api_key_id, user_id, team_id, model_key,
                     resolved_model_key, provider_key, status_code, latency_ms, prompt_tokens,
                     completion_tokens, total_tokens, has_payload, request_payload_truncated,
-                    response_payload_truncated, error_code, metadata_json, occurred_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
+                    response_payload_truncated, caller_service, caller_component, caller_env,
+                    error_code, metadata_json, occurred_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)
                 "#,
             libsql::params![
                 log.request_log_id.to_string(),
@@ -83,6 +137,9 @@ impl RequestLogRepository for LibsqlStore {
                 if log.has_payload { 1_i64 } else { 0_i64 },
                 if log.request_payload_truncated { 1_i64 } else { 0_i64 },
                 if log.response_payload_truncated { 1_i64 } else { 0_i64 },
+                log.request_tags.service.as_deref(),
+                log.request_tags.component.as_deref(),
+                log.request_tags.env.as_deref(),
                 log.error_code.as_deref(),
                 metadata_json,
                 log.occurred_at.unix_timestamp()
@@ -90,6 +147,22 @@ impl RequestLogRepository for LibsqlStore {
         )
         .await
         .map_err(|error| StoreError::Query(error.to_string()))?;
+
+        for tag in &log.request_tags.bespoke {
+            tx.execute(
+                r#"
+                    INSERT INTO request_log_tags (request_log_id, tag_key, tag_value)
+                    VALUES (?1, ?2, ?3)
+                    "#,
+                libsql::params![
+                    log.request_log_id.to_string(),
+                    tag.key.as_str(),
+                    tag.value.as_str()
+                ],
+            )
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?;
+        }
 
         if let Some(payload) = payload {
             let request_json = serialize_json(&payload.request_json)?;
@@ -127,6 +200,11 @@ impl RequestLogRepository for LibsqlStore {
         let provider_key = query.provider_key.as_deref();
         let user_id = query.user_id.map(|value| value.to_string());
         let team_id = query.team_id.map(|value| value.to_string());
+        let service = query.service.as_deref();
+        let component = query.component.as_deref();
+        let env = query.env.as_deref();
+        let bespoke_tag_key = query.bespoke_tag.as_ref().map(|tag| tag.key.as_str());
+        let bespoke_tag_value = query.bespoke_tag.as_ref().map(|tag| tag.value.as_str());
 
         let mut count_rows = self
             .connection
@@ -140,6 +218,19 @@ impl RequestLogRepository for LibsqlStore {
                   AND (?4 IS NULL OR status_code = ?4)
                   AND (?5 IS NULL OR user_id = ?5)
                   AND (?6 IS NULL OR team_id = ?6)
+                  AND (?7 IS NULL OR caller_service = ?7)
+                  AND (?8 IS NULL OR caller_component = ?8)
+                  AND (?9 IS NULL OR caller_env = ?9)
+                  AND (
+                    (?10 IS NULL AND ?11 IS NULL)
+                    OR EXISTS (
+                      SELECT 1
+                      FROM request_log_tags
+                      WHERE request_log_tags.request_log_id = request_logs.request_log_id
+                        AND request_log_tags.tag_key = ?10
+                        AND request_log_tags.tag_value = ?11
+                    )
+                  )
                 "#,
                 libsql::params![
                     request_id,
@@ -147,7 +238,12 @@ impl RequestLogRepository for LibsqlStore {
                     provider_key,
                     query.status_code,
                     user_id.clone(),
-                    team_id.clone()
+                    team_id.clone(),
+                    service,
+                    component,
+                    env,
+                    bespoke_tag_key,
+                    bespoke_tag_value
                 ],
             )
             .await
@@ -166,7 +262,8 @@ impl RequestLogRepository for LibsqlStore {
                 SELECT request_log_id, request_id, api_key_id, user_id, team_id, model_key,
                        resolved_model_key, provider_key, status_code, latency_ms, prompt_tokens,
                        completion_tokens, total_tokens, has_payload, request_payload_truncated,
-                       response_payload_truncated, metadata_json, occurred_at, error_code
+                       response_payload_truncated, caller_service, caller_component, caller_env,
+                       metadata_json, occurred_at, error_code
                 FROM request_logs
                 WHERE (?1 IS NULL OR request_id = ?1)
                   AND (?2 IS NULL OR model_key = ?2)
@@ -174,8 +271,21 @@ impl RequestLogRepository for LibsqlStore {
                   AND (?4 IS NULL OR status_code = ?4)
                   AND (?5 IS NULL OR user_id = ?5)
                   AND (?6 IS NULL OR team_id = ?6)
+                  AND (?7 IS NULL OR caller_service = ?7)
+                  AND (?8 IS NULL OR caller_component = ?8)
+                  AND (?9 IS NULL OR caller_env = ?9)
+                  AND (
+                    (?10 IS NULL AND ?11 IS NULL)
+                    OR EXISTS (
+                      SELECT 1
+                      FROM request_log_tags
+                      WHERE request_log_tags.request_log_id = request_logs.request_log_id
+                        AND request_log_tags.tag_key = ?10
+                        AND request_log_tags.tag_value = ?11
+                    )
+                  )
                 ORDER BY occurred_at DESC, request_log_id DESC
-                LIMIT ?7 OFFSET ?8
+                LIMIT ?12 OFFSET ?13
                 "#,
                 libsql::params![
                     request_id,
@@ -184,6 +294,11 @@ impl RequestLogRepository for LibsqlStore {
                     query.status_code,
                     user_id,
                     team_id,
+                    service,
+                    component,
+                    env,
+                    bespoke_tag_key,
+                    bespoke_tag_value,
                     page_size,
                     offset
                 ],
@@ -198,6 +313,19 @@ impl RequestLogRepository for LibsqlStore {
             .map_err(|error| StoreError::Query(error.to_string()))?
         {
             items.push(decode_request_log_row(&row)?);
+        }
+
+        let request_log_ids = items
+            .iter()
+            .map(|item| item.request_log_id)
+            .collect::<Vec<_>>();
+        let tag_map = load_bespoke_tags_for_logs(&self.connection, &request_log_ids).await?;
+
+        for item in &mut items {
+            item.request_tags.bespoke = tag_map
+                .get(&item.request_log_id)
+                .cloned()
+                .unwrap_or_default();
         }
 
         Ok(RequestLogPage {
@@ -220,6 +348,7 @@ impl RequestLogRepository for LibsqlStore {
                        rl.model_key, rl.resolved_model_key, rl.provider_key, rl.status_code,
                        rl.latency_ms, rl.prompt_tokens, rl.completion_tokens, rl.total_tokens,
                        rl.has_payload, rl.request_payload_truncated, rl.response_payload_truncated,
+                       rl.caller_service, rl.caller_component, rl.caller_env,
                        rl.metadata_json, rl.occurred_at, rl.error_code,
                        rlp.request_json, rlp.response_json
                 FROM request_logs rl
@@ -242,9 +371,13 @@ impl RequestLogRepository for LibsqlStore {
             )));
         };
 
-        let log = decode_request_log_row(&row)?;
-        let request_json: Option<String> = row.get(19).map_err(to_query_error)?;
-        let response_json: Option<String> = row.get(20).map_err(to_query_error)?;
+        let mut log = decode_request_log_row(&row)?;
+        let request_json: Option<String> = row.get(22).map_err(to_query_error)?;
+        let response_json: Option<String> = row.get(23).map_err(to_query_error)?;
+        log.request_tags.bespoke = load_bespoke_tags_for_logs(&self.connection, &[request_log_id])
+            .await?
+            .remove(&request_log_id)
+            .unwrap_or_default();
         let payload = match (request_json, response_json) {
             (Some(request_json), Some(response_json)) => Some(RequestLogPayloadRecord {
                 request_log_id,

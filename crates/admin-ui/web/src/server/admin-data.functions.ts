@@ -115,9 +115,15 @@ export const removeTeamBudget = createServerFn({ method: 'POST' }).handler(
   },
 )
 
-export const getRequestLogs = createServerFn({ method: 'GET' }).handler(async () => {
-  return listRequestLogs()
-})
+export const getRequestLogs = createServerFn({ method: 'POST' }).handler(
+  async ({
+    data,
+  }: {
+    data?: Parameters<typeof listRequestLogs>[0]
+  }) => {
+    return listRequestLogs(data)
+  },
+)
 
 export const getObservabilityRequestLogDetail = createServerFn({ method: 'GET' }).handler(
   async ({ data }: { data: { requestLogId: string } }) => {

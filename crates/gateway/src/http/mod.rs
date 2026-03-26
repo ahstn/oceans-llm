@@ -5,6 +5,7 @@ pub mod identity;
 pub mod identity_lifecycle;
 pub mod identity_views;
 pub mod observability;
+pub mod request_tags;
 pub mod spend;
 pub mod state;
 

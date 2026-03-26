@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useTransition } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useVirtualizer } from '@tanstack/react-virtual'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import {
   Dialog,
   DialogContent,
@@ -14,21 +15,35 @@ import {
 } from '@/components/ui/dialog'
 import { requireAdminSession } from '@/routes/-admin-guard'
 import { getObservabilityRequestLogDetail, getRequestLogs } from '@/server/admin-data.functions'
-import type { RequestLogDetailView, RequestLogView } from '@/types/api'
+import type { RequestLogDetailView, RequestLogFiltersInput, RequestLogView } from '@/types/api'
 
 export const Route = createFileRoute('/observability/request-logs')({
   beforeLoad: ({ location }) => requireAdminSession(location),
-  loader: () => getRequestLogs(),
+  loader: () => getRequestLogs({ data: {} }),
   component: RequestLogsPage,
 })
 
+const initialFilters: RequestLogFiltersInput = {
+  requestId: '',
+  modelKey: '',
+  providerKey: '',
+  service: '',
+  component: '',
+  env: '',
+  tag: '',
+}
+
 export function RequestLogsPage() {
-  const { data } = Route.useLoaderData()
+  const loaderData = Route.useLoaderData()
   const parentRef = useRef<HTMLDivElement | null>(null)
+  const [logPage, setLogPage] = useState(loaderData.data)
+  const [filters, setFilters] = useState<RequestLogFiltersInput>(initialFilters)
+  const [listError, setListError] = useState<string | null>(null)
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null)
   const [selectedDetail, setSelectedDetail] = useState<RequestLogDetailView | null>(null)
   const [detailPending, setDetailPending] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
+  const [isListPending, startListTransition] = useTransition()
 
   useEffect(() => {
     if (!selectedLogId) {
@@ -67,7 +82,7 @@ export function RequestLogsPage() {
   }, [selectedLogId])
 
   const rowVirtualizer = useVirtualizer({
-    count: data.items.length,
+    count: logPage.items.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 56,
     overscan: 12,
@@ -80,6 +95,22 @@ export function RequestLogsPage() {
     setSelectedDetail(null)
     setDetailPending(true)
     setDetailError(null)
+  }
+
+  function applyFilters(nextFilters: RequestLogFiltersInput) {
+    startListTransition(async () => {
+      try {
+        const response = await getRequestLogs({ data: nextFilters })
+        setLogPage(response.data)
+        setListError(null)
+      } catch (error: unknown) {
+        setListError(error instanceof Error ? error.message : 'Failed to load request logs')
+      }
+    })
+  }
+
+  function updateFilter(key: keyof RequestLogFiltersInput, value: string) {
+    setFilters((current) => ({ ...current, [key]: value }))
   }
 
   return (
@@ -95,8 +126,56 @@ export function RequestLogsPage() {
           </div>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <Input
+              placeholder="Service"
+              value={filters.service ?? ''}
+              onChange={(event) => updateFilter('service', event.target.value)}
+            />
+            <Input
+              placeholder="Component"
+              value={filters.component ?? ''}
+              onChange={(event) => updateFilter('component', event.target.value)}
+            />
+            <Input
+              placeholder="Environment"
+              value={filters.env ?? ''}
+              onChange={(event) => updateFilter('env', event.target.value)}
+            />
+            <Input
+              placeholder="Bespoke tag (key=value)"
+              value={filters.tag ?? ''}
+              onChange={(event) => updateFilter('tag', event.target.value)}
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => applyFilters(filters)}
+              disabled={isListPending}
+            >
+              {isListPending ? 'Filtering...' : 'Apply Filters'}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setFilters(initialFilters)
+                applyFilters(initialFilters)
+              }}
+              disabled={isListPending}
+            >
+              Clear
+            </Button>
+          </div>
+          {listError ? (
+            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              {listError}
+            </div>
+          ) : null}
           <div className="text-sm text-[var(--color-text-soft)]">
-            {data.total} total logs loaded from gateway observability APIs.
+            {logPage.total} total logs loaded from gateway observability APIs.
           </div>
 
           <div
@@ -104,7 +183,7 @@ export function RequestLogsPage() {
             data-testid="request-log-mobile-list"
           >
             <div className="flex flex-col gap-3">
-              {data.items.map((item) => (
+              {logPage.items.map((item) => (
                 <article
                   key={item.requestLogId}
                   className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4"
@@ -162,6 +241,7 @@ export function RequestLogsPage() {
                       {metadataBoolean(item, 'fallback_used') ? (
                         <Badge variant="warning">fallback</Badge>
                       ) : null}
+                      <RequestTagBadges item={item} />
                     </div>
                     <Button
                       type="button"
@@ -197,7 +277,7 @@ export function RequestLogsPage() {
                 }}
               >
                 {rows.map((virtualRow) => {
-                  const item = data.items[virtualRow.index]
+                  const item = logPage.items[virtualRow.index]
                   return (
                     <div
                       key={item.requestLogId}
@@ -305,6 +385,13 @@ export function RequestLogsPage() {
                 />
               </div>
 
+              <section className="rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4">
+                <h3 className="text-sm font-semibold text-[var(--color-text)]">Request Tags</h3>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <RequestTagBadges item={selectedDetail.log} />
+                </div>
+              </section>
+
               <div className="grid gap-4 lg:grid-cols-2">
                 <PayloadCard
                   title="Request Payload"
@@ -399,4 +486,27 @@ function metadataBoolean(item: RequestLogView, key: string) {
 function metadataNumber(item: RequestLogView, key: string) {
   const value = item.metadata[key]
   return typeof value === 'number' ? value : null
+}
+
+function RequestTagBadges({ item }: { item: RequestLogView }) {
+  const tags = [
+    item.requestTags.service ? `service:${item.requestTags.service}` : null,
+    item.requestTags.component ? `component:${item.requestTags.component}` : null,
+    item.requestTags.env ? `env:${item.requestTags.env}` : null,
+    ...item.requestTags.bespoke.map((tag) => `${tag.key}:${tag.value}`),
+  ].filter((value): value is string => value !== null)
+
+  if (tags.length === 0) {
+    return <span className="text-xs text-[var(--color-text-soft)]">No caller tags</span>
+  }
+
+  return (
+    <>
+      {tags.map((tag) => (
+        <Badge key={tag} variant="outline">
+          {tag}
+        </Badge>
+      ))}
+    </>
+  )
 }

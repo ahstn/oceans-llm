@@ -5,6 +5,7 @@ use axum::{
 };
 use gateway_core::{
     GatewayError, RequestLogDetail, RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord,
+    RequestTag, RequestTags,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -14,6 +15,7 @@ use crate::http::{
     admin_auth::require_platform_admin,
     error::AppError,
     identity::{Envelope, envelope, format_timestamp},
+    request_tags::parse_bespoke_tag_filter,
     state::AppState,
 };
 
@@ -31,6 +33,10 @@ pub struct RequestLogListQuery {
     status_code: Option<i64>,
     user_id: Option<String>,
     team_id: Option<String>,
+    service: Option<String>,
+    component: Option<String>,
+    env: Option<String>,
+    tag: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -60,8 +66,23 @@ pub struct RequestLogSummaryView {
     has_payload: bool,
     request_payload_truncated: bool,
     response_payload_truncated: bool,
+    request_tags: RequestTagsView,
     metadata: Value,
     occurred_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RequestTagsView {
+    service: Option<String>,
+    component: Option<String>,
+    env: Option<String>,
+    bespoke: Vec<RequestTagView>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RequestTagView {
+    key: String,
+    value: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -95,6 +116,10 @@ pub async fn list_request_logs(
         status_code: query.status_code,
         user_id: parse_optional_uuid(query.user_id.as_deref(), "user_id")?,
         team_id: parse_optional_uuid(query.team_id.as_deref(), "team_id")?,
+        service: empty_to_none(query.service),
+        component: empty_to_none(query.component),
+        env: empty_to_none(query.env),
+        bespoke_tag: parse_optional_tag_filter(query.tag.as_deref())?,
     };
 
     let page = state.service.list_request_logs(&query).await?;
@@ -136,6 +161,7 @@ fn summary_view(log: &RequestLogRecord) -> RequestLogSummaryView {
         has_payload: log.has_payload,
         request_payload_truncated: log.request_payload_truncated,
         response_payload_truncated: log.response_payload_truncated,
+        request_tags: request_tags_view(&log.request_tags),
         metadata: Value::Object(log.metadata.clone()),
         occurred_at: format_timestamp(log.occurred_at),
     }
@@ -160,6 +186,30 @@ fn empty_to_none(value: Option<String>) -> Option<String> {
         let trimmed = value.trim();
         (!trimmed.is_empty()).then(|| trimmed.to_string())
     })
+}
+
+fn parse_optional_tag_filter(value: Option<&str>) -> Result<Option<RequestTag>, AppError> {
+    let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+
+    parse_bespoke_tag_filter(value).map(Some).map_err(AppError)
+}
+
+fn request_tags_view(tags: &RequestTags) -> RequestTagsView {
+    RequestTagsView {
+        service: tags.service.clone(),
+        component: tags.component.clone(),
+        env: tags.env.clone(),
+        bespoke: tags.bespoke.iter().map(request_tag_view).collect(),
+    }
+}
+
+fn request_tag_view(tag: &RequestTag) -> RequestTagView {
+    RequestTagView {
+        key: tag.key.clone(),
+        value: tag.value.clone(),
+    }
 }
 
 fn parse_optional_uuid(value: Option<&str>, field_name: &str) -> Result<Option<Uuid>, AppError> {
