@@ -2,7 +2,7 @@
 rust = "stable"
 node = "lts"
 bun = "1.3.10"
-postgres = "17"
+postgres = { version = "17", os = ["macos"] } # skip for ci
 gh = "latest"
 opentofu = "latest"
 git-cliff = "latest"
