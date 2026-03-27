@@ -3706,7 +3706,7 @@ mod tests {
                 "member@example.com",
                 GlobalRole::User,
                 AuthMode::Password,
-                "active",
+                gateway_core::UserStatus::Active,
             )
             .await
             .expect("create user");

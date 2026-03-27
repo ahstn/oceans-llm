@@ -2626,7 +2626,7 @@ mod tests {
             url: test_db.database_url.clone(),
             max_connections: 4,
         };
-        run_migrations_with_options(&options, MigrationTestHook::default())
+        run_migrations_with_options(&options)
             .await
             .expect("postgres migrations");
 
@@ -2738,7 +2738,7 @@ mod tests {
             url: test_db.database_url.clone(),
             max_connections: 4,
         };
-        run_migrations_with_options(&options, MigrationTestHook::default())
+        run_migrations_with_options(&options)
             .await
             .expect("postgres migrations");
 
@@ -3222,7 +3222,6 @@ mod tests {
                 url: test_db.database_url.clone(),
                 max_connections: 2,
             },
-            MigrationTestHook::default(),
         )
         .await
         .expect("apply postgres migrations");

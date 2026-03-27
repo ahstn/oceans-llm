@@ -188,7 +188,7 @@ pub struct AddTeamMembersRequest {
 #[derive(Debug, Deserialize)]
 pub struct UpdateUserRequest {
     pub global_role: String,
-    pub auth_mode: String,
+    pub auth_mode: Option<String>,
     pub team_id: Option<String>,
     pub team_role: Option<String>,
     pub oidc_provider_key: Option<String>,
@@ -675,7 +675,12 @@ pub async fn update_identity_user(
     let user_id = parse_uuid(&user_id)?;
     let identity_user = load_identity_user_for_mutation(&state, user_id).await?;
     let next_global_role = parse_global_role(&request.global_role)?;
-    let next_auth_mode = parse_auth_mode(&request.auth_mode)?;
+    let next_auth_mode = request
+        .auth_mode
+        .as_deref()
+        .map(parse_auth_mode)
+        .transpose()?
+        .unwrap_or(identity_user.user.auth_mode);
     let requested_membership = parse_requested_membership(
         request.team_id.as_deref(),
         request.team_role.as_deref(),
@@ -683,12 +688,21 @@ pub async fn update_identity_user(
     let oidc_provider = resolve_requested_oidc_provider(
         &state.store,
         next_auth_mode,
-        request.oidc_provider_key.as_deref(),
+        match next_auth_mode {
+            AuthMode::Oidc => request
+                .oidc_provider_key
+                .as_deref()
+                .or(identity_user.oidc_provider_key.as_deref()),
+            AuthMode::Password | AuthMode::Oauth => request.oidc_provider_key.as_deref(),
+        },
     )
     .await?;
 
     ensure_not_self_demoting(&actor, &identity_user.user, next_global_role).map_err(AppError)?;
     ensure_auth_mode_edit_allowed(&identity_user.user, next_auth_mode).map_err(AppError)?;
+    if membership_update_requested(&identity_user, requested_membership) {
+        ensure_mutable_membership(identity_user.membership_role).map_err(AppError)?;
+    }
     if let Some((team_id, _)) = requested_membership {
         state
             .store
@@ -769,6 +783,14 @@ pub async fn reset_identity_user_onboarding(
     let user_id = parse_uuid(&user_id)?;
     let identity_user = load_identity_user_for_mutation(&state, user_id).await?;
     ensure_reset_onboarding_allowed(&identity_user.user).map_err(AppError)?;
+    if identity_user.user.auth_mode == AuthMode::Oidc {
+        let provider_key = identity_user.oidc_provider_key.as_deref().ok_or_else(|| {
+            AppError(GatewayError::InvalidRequest(
+                "oidc users must be linked to a provider before resetting onboarding".to_string(),
+            ))
+        })?;
+        load_enabled_oidc_provider(&state.store, provider_key).await?;
+    }
 
     let now = OffsetDateTime::now_utc();
     match identity_user.user.auth_mode {
@@ -1316,6 +1338,9 @@ async fn sync_identity_user_membership(
     requested_membership: Option<(Uuid, MembershipRole)>,
     now: OffsetDateTime,
 ) -> Result<(), AppError> {
+    if !membership_update_requested(user, requested_membership) {
+        return Ok(());
+    }
     ensure_mutable_membership(user.membership_role).map_err(AppError)?;
 
     match (user.team_id, requested_membership) {
@@ -1355,6 +1380,20 @@ async fn sync_identity_user_membership(
                 .await?;
             Ok(())
         }
+    }
+}
+
+fn membership_update_requested(
+    user: &IdentityUserRecord,
+    requested_membership: Option<(Uuid, MembershipRole)>,
+) -> bool {
+    current_membership(user) != requested_membership
+}
+
+fn current_membership(user: &IdentityUserRecord) -> Option<(Uuid, MembershipRole)> {
+    match (user.team_id, user.membership_role) {
+        (Some(team_id), Some(role)) => Some((team_id, role)),
+        _ => None,
     }
 }
 

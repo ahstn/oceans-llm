@@ -6,7 +6,7 @@ use axum::{
 use gateway_core::{
     ApiKeyOwnerKind, BudgetAlertChannel, BudgetAlertDeliveryStatus, BudgetAlertHistoryQuery,
     BudgetAlertRepository, BudgetCadence, BudgetRepository, GatewayError, IdentityRepository,
-    MembershipRole, Money4, budget_window_utc,
+    MembershipRole, Money4, UserStatus, budget_window_utc,
 };
 use gateway_store::GatewayStore;
 use serde::{Deserialize, Serialize};
@@ -595,7 +595,7 @@ async fn active_team_budget_recipients(
         let Some(user) = store.get_user_by_id(membership.user_id).await? else {
             continue;
         };
-        if user.status != "active" {
+        if user.status != UserStatus::Active {
             continue;
         }
         recipients.push(user.email);
