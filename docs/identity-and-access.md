@@ -2,7 +2,7 @@
 
 `Owns`: bootstrap admin behavior, users, teams, onboarding, ownership model, request-logging preference, and access overlays.
 `Depends on`: [data-relationships.md](data-relationships.md)
-`See also`: [admin-control-plane.md](admin-control-plane.md), [budgets-and-spending.md](budgets-and-spending.md), [adr/2026-03-05-identity-foundation.md](adr/2026-03-05-identity-foundation.md), [adr/2026-03-08-admin-team-management-flow.md](adr/2026-03-08-admin-team-management-flow.md)
+`See also`: [admin-control-plane.md](admin-control-plane.md), [budgets-and-spending.md](budgets-and-spending.md), [adr/2026-03-05-identity-foundation.md](adr/2026-03-05-identity-foundation.md), [adr/2026-03-08-admin-team-management-flow.md](adr/2026-03-08-admin-team-management-flow.md), [adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md](adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md)
 
 This document describes the live identity and access model across the gateway and admin control plane.
 
@@ -20,8 +20,26 @@ The product uses first-class users, teams, and API key ownership:
 - teams are durable ownership boundaries for team budgets and future team-owned resources
 - one user belongs to at most one team in this slice
 - users can exist without a team
+- team transfers are future-membership changes only; they do not migrate historical request logs, spend, budgets, or API-key ownership
 
 Legacy keys are preserved through the reserved `system-legacy` team.
+
+## User Lifecycle
+
+User status is a typed lifecycle rather than an incidental string:
+
+- `invited`
+- `active`
+- `disabled`
+
+The lifecycle rules are intentionally conservative:
+
+- auth-mode changes are allowed only while a user is still `invited`
+- deactivation revokes runtime access and outstanding invite state
+- reactivation restores access only when the current auth proof still exists
+- reset-onboarding returns the user to `invited` and reissues the onboarding link
+- the last active platform admin cannot be deactivated or demoted
+- bootstrap admin remains out of band and is excluded from normal user-management views
 
 ## Bootstrap Admin
 
@@ -88,7 +106,7 @@ Current team-management rules:
 - teams can be created with zero admins
 - the admin UI can add existing teamless users or invite new members directly into a team
 - cross-team reassignment is rejected in this slice
-- `owner` remains a backend concept and is not exposed as a general admin-UI lifecycle today
+- `owner` remains visible but is not removable or transferable through the admin UI in this slice
 
 ## Current Team Lifecycle Boundaries
 
@@ -96,8 +114,8 @@ Additional boundaries that are easy to miss from one page or one API response:
 
 - `team_key` is server-generated and durable
 - empty teams are valid and expected
-- current edit flows primarily synchronize the admin subset, not a full membership lifecycle model
-- removal and transfer flows remain deferred follow-up work
+- current edit flows now include explicit member removal and transfer actions
+- owner memberships remain blocked from casual lifecycle edits until the broader ownership model is defined
 
 ## Model Access Overlays
 

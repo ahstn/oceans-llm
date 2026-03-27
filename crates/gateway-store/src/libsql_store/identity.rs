@@ -107,6 +107,53 @@ impl LibsqlStore {
         Ok(users)
     }
 
+    pub async fn get_identity_user(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Option<IdentityUserRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT
+                    users.user_id,
+                    users.name,
+                    users.email,
+                    users.email_normalized,
+                    users.global_role,
+                    users.auth_mode,
+                    users.status,
+                    users.must_change_password,
+                    users.request_logging_enabled,
+                    users.model_access_mode,
+                    users.created_at,
+                    users.updated_at,
+                    teams.team_id,
+                    teams.team_name,
+                    team_memberships.role,
+                    user_oidc_links.oidc_provider_id,
+                    oidc_providers.provider_key
+                FROM users
+                LEFT JOIN team_memberships ON team_memberships.user_id = users.user_id
+                LEFT JOIN teams ON teams.team_id = team_memberships.team_id
+                LEFT JOIN user_oidc_links ON user_oidc_links.user_id = users.user_id
+                LEFT JOIN oidc_providers ON oidc_providers.oidc_provider_id = user_oidc_links.oidc_provider_id
+                WHERE users.user_id = ?1
+                  AND users.user_id != ?2
+                LIMIT 1
+                "#,
+                libsql::params![user_id.to_string(), SYSTEM_BOOTSTRAP_ADMIN_USER_ID],
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let Some(row) = rows.next().await.map_err(to_query_error)? else {
+            return Ok(None);
+        };
+
+        decode_identity_user_record(&row).map(Some)
+    }
+
     pub async fn list_active_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
         let mut rows = self
             .connection
@@ -303,7 +350,7 @@ impl LibsqlStore {
         email_normalized: &str,
         global_role: GlobalRole,
         auth_mode: AuthMode,
-        status: &str,
+        status: UserStatus,
     ) -> Result<UserRecord, StoreError> {
         let user_id = Uuid::new_v4();
         let now = OffsetDateTime::now_utc().unix_timestamp();
@@ -323,7 +370,7 @@ impl LibsqlStore {
                     email_normalized,
                     global_role.as_str(),
                     auth_mode.as_str(),
-                    status,
+                    status.as_str(),
                     now
                 ],
             )
@@ -352,6 +399,254 @@ impl LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn update_identity_user(
+        &self,
+        user_id: Uuid,
+        global_role: GlobalRole,
+        auth_mode: AuthMode,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        let tx = self.connection.transaction().await.map_err(to_query_error)?;
+        let mut rows = tx
+            .query(
+                r#"
+                SELECT global_role, status
+                FROM users
+                WHERE user_id = ?1
+                LIMIT 1
+                "#,
+                [user_id.to_string()],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let Some(row) = rows.next().await.map_err(to_query_error)? else {
+            return Err(StoreError::NotFound("user not found".to_string()));
+        };
+        let current_role: String = row.get(0).map_err(to_query_error)?;
+        let current_status: String = row.get(1).map_err(to_query_error)?;
+        if current_role == GlobalRole::PlatformAdmin.as_str()
+            && current_status == UserStatus::Active.as_str()
+            && global_role != GlobalRole::PlatformAdmin
+        {
+            let mut rows = tx
+                .query(
+                    r#"
+                    SELECT COUNT(*)
+                    FROM users
+                    WHERE global_role = 'platform_admin'
+                      AND status = 'active'
+                      AND user_id != ?1
+                      AND user_id != ?2
+                    "#,
+                    libsql::params![user_id.to_string(), SYSTEM_BOOTSTRAP_ADMIN_USER_ID],
+                )
+                .await
+                .map_err(to_query_error)?;
+            let row = rows.next().await.map_err(to_query_error)?.ok_or_else(|| {
+                StoreError::Query("active platform admin count missing".to_string())
+            })?;
+            let count: i64 = row.get(0).map_err(to_query_error)?;
+            if count <= 0 {
+                return Err(StoreError::Conflict(
+                    "the last active platform admin cannot be deactivated or demoted".to_string(),
+                ));
+            }
+        }
+
+        tx.execute(
+            r#"
+            UPDATE users
+            SET global_role = ?1,
+                auth_mode = ?2,
+                updated_at = ?3
+            WHERE user_id = ?4
+            "#,
+            libsql::params![
+                global_role.as_str(),
+                auth_mode.as_str(),
+                updated_at.unix_timestamp(),
+                user_id.to_string(),
+            ],
+        )
+        .await
+        .map_err(to_write_error)?;
+        tx.commit().await.map_err(to_query_error)?;
+        Ok(())
+    }
+
+    pub async fn deactivate_identity_user(
+        &self,
+        user_id: Uuid,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        let tx = self.connection.transaction().await.map_err(to_query_error)?;
+        let mut rows = tx
+            .query(
+                r#"
+                SELECT global_role, status
+                FROM users
+                WHERE user_id = ?1
+                LIMIT 1
+                "#,
+                [user_id.to_string()],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let Some(row) = rows.next().await.map_err(to_query_error)? else {
+            return Err(StoreError::NotFound("user not found".to_string()));
+        };
+        let current_role: String = row.get(0).map_err(to_query_error)?;
+        let current_status: String = row.get(1).map_err(to_query_error)?;
+        if current_status == UserStatus::Disabled.as_str() {
+            return Err(StoreError::Conflict("user is already disabled".to_string()));
+        }
+        if current_role == GlobalRole::PlatformAdmin.as_str()
+            && current_status == UserStatus::Active.as_str()
+        {
+            let mut rows = tx
+                .query(
+                    r#"
+                    SELECT COUNT(*)
+                    FROM users
+                    WHERE global_role = 'platform_admin'
+                      AND status = 'active'
+                      AND user_id != ?1
+                      AND user_id != ?2
+                    "#,
+                    libsql::params![user_id.to_string(), SYSTEM_BOOTSTRAP_ADMIN_USER_ID],
+                )
+                .await
+                .map_err(to_query_error)?;
+            let row = rows.next().await.map_err(to_query_error)?.ok_or_else(|| {
+                StoreError::Query("active platform admin count missing".to_string())
+            })?;
+            let count: i64 = row.get(0).map_err(to_query_error)?;
+            if count <= 0 {
+                return Err(StoreError::Conflict(
+                    "the last active platform admin cannot be deactivated or demoted".to_string(),
+                ));
+            }
+        }
+
+        tx.execute(
+            r#"
+            UPDATE users
+            SET status = ?1,
+                updated_at = ?2
+            WHERE user_id = ?3
+            "#,
+            libsql::params![
+                UserStatus::Disabled.as_str(),
+                updated_at.unix_timestamp(),
+                user_id.to_string(),
+            ],
+        )
+        .await
+        .map_err(to_write_error)?;
+        tx.commit().await.map_err(to_query_error)?;
+        Ok(())
+    }
+
+    pub async fn remove_team_membership(
+        &self,
+        team_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<bool, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT role
+                FROM team_memberships
+                WHERE team_id = ?1
+                  AND user_id = ?2
+                LIMIT 1
+                "#,
+                libsql::params![team_id.to_string(), user_id.to_string()],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let Some(row) = rows.next().await.map_err(to_query_error)? else {
+            return Ok(false);
+        };
+        let current_role: String = row.get(0).map_err(to_query_error)?;
+        if current_role == MembershipRole::Owner.as_str() {
+            return Err(StoreError::Conflict(
+                "owner memberships cannot be removed or transferred".to_string(),
+            ));
+        }
+
+        self.connection
+            .execute(
+                r#"
+                DELETE FROM team_memberships
+                WHERE team_id = ?1
+                  AND user_id = ?2
+                "#,
+                libsql::params![team_id.to_string(), user_id.to_string()],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(true)
+    }
+
+    pub async fn transfer_team_membership(
+        &self,
+        user_id: Uuid,
+        from_team_id: Uuid,
+        to_team_id: Uuid,
+        role: MembershipRole,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        let tx = self.connection.transaction().await.map_err(to_query_error)?;
+        let mut rows = tx
+            .query(
+                r#"
+                SELECT role
+                FROM team_memberships
+                WHERE user_id = ?1
+                  AND team_id = ?2
+                LIMIT 1
+                "#,
+                libsql::params![user_id.to_string(), from_team_id.to_string()],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let Some(row) = rows.next().await.map_err(to_query_error)? else {
+            return Err(StoreError::NotFound(
+                "team membership missing for requested source team".to_string(),
+            ));
+        };
+        let existing_role: String = row.get(0).map_err(to_query_error)?;
+        if existing_role == MembershipRole::Owner.as_str() {
+            return Err(StoreError::Conflict(
+                "owner memberships cannot be removed or transferred".to_string(),
+            ));
+        }
+
+        tx.execute(
+            r#"
+            UPDATE team_memberships
+            SET team_id = ?1,
+                role = ?2,
+                updated_at = ?3
+            WHERE user_id = ?4
+              AND team_id = ?5
+            "#,
+            libsql::params![
+                to_team_id.to_string(),
+                role.as_str(),
+                updated_at.unix_timestamp(),
+                user_id.to_string(),
+                from_team_id.to_string(),
+            ],
+        )
+        .await
+        .map_err(to_write_error)?;
+        tx.commit().await.map_err(to_query_error)?;
         Ok(())
     }
 
@@ -589,7 +884,7 @@ impl LibsqlStore {
     pub async fn update_user_status(
         &self,
         user_id: Uuid,
-        status: &str,
+        status: UserStatus,
         updated_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
         self.connection
@@ -600,7 +895,7 @@ impl LibsqlStore {
                     updated_at = ?2
                 WHERE user_id = ?3
                 "#,
-                libsql::params![status, updated_at.unix_timestamp(), user_id.to_string()],
+                libsql::params![status.as_str(), updated_at.unix_timestamp(), user_id.to_string()],
             )
             .await
             .map_err(to_write_error)?;
@@ -703,6 +998,26 @@ impl LibsqlStore {
         Ok(())
     }
 
+    pub async fn revoke_user_sessions(
+        &self,
+        user_id: Uuid,
+        revoked_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        self.connection
+            .execute(
+                r#"
+                UPDATE user_sessions
+                SET revoked_at = ?1
+                WHERE user_id = ?2
+                  AND revoked_at IS NULL
+                "#,
+                libsql::params![revoked_at.unix_timestamp(), user_id.to_string()],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(())
+    }
+
     pub async fn get_user_oidc_auth(
         &self,
         oidc_provider_id: &str,
@@ -719,6 +1034,33 @@ impl LibsqlStore {
                 LIMIT 1
                 "#,
                 libsql::params![oidc_provider_id, subject],
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let Some(row) = rows.next().await.map_err(to_query_error)? else {
+            return Ok(None);
+        };
+
+        decode_user_oidc_auth_record(&row).map(Some)
+    }
+
+    pub async fn get_user_oidc_auth_by_user(
+        &self,
+        user_id: Uuid,
+        oidc_provider_id: &str,
+    ) -> Result<Option<UserOidcAuthRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT user_id, oidc_provider_id, subject, email_claim, created_at
+                FROM user_oidc_auth
+                WHERE user_id = ?1
+                  AND oidc_provider_id = ?2
+                LIMIT 1
+                "#,
+                libsql::params![user_id.to_string(), oidc_provider_id],
             )
             .await
             .map_err(to_query_error)?;
@@ -778,6 +1120,47 @@ impl LibsqlStore {
                     oidc_provider_id,
                     created_at.unix_timestamp(),
                 ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn clear_user_oidc_link(&self, user_id: Uuid) -> Result<(), StoreError> {
+        self.connection
+            .execute(
+                "DELETE FROM user_oidc_links WHERE user_id = ?1",
+                [user_id.to_string()],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn delete_user_password_auth(&self, user_id: Uuid) -> Result<(), StoreError> {
+        self.connection
+            .execute(
+                "DELETE FROM user_password_auth WHERE user_id = ?1",
+                [user_id.to_string()],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn delete_user_oidc_auth(
+        &self,
+        user_id: Uuid,
+        oidc_provider_id: &str,
+    ) -> Result<(), StoreError> {
+        self.connection
+            .execute(
+                r#"
+                DELETE FROM user_oidc_auth
+                WHERE user_id = ?1
+                  AND oidc_provider_id = ?2
+                "#,
+                libsql::params![user_id.to_string(), oidc_provider_id],
             )
             .await
             .map_err(to_write_error)?;

@@ -88,7 +88,7 @@ mod tests {
     use gateway_core::{
         ApiKeyOwnerKind, AuthMode, AuthenticatedApiKey, GatewayError, GatewayModel, GlobalRole,
         IdentityRepository, ModelAccessMode, ModelRepository, ModelRoute, RouteError, StoreError,
-        TeamMembershipRecord, TeamRecord, UserRecord,
+        TeamMembershipRecord, TeamRecord, UserRecord, UserStatus,
     };
     use time::OffsetDateTime;
     use uuid::Uuid;
@@ -139,7 +139,7 @@ mod tests {
                 email_normalized: "user@example.com".to_string(),
                 global_role: GlobalRole::User,
                 auth_mode: AuthMode::Password,
-                status: "active".to_string(),
+                status: UserStatus::Active,
                 must_change_password: false,
                 request_logging_enabled: true,
                 model_access_mode: ModelAccessMode::All,

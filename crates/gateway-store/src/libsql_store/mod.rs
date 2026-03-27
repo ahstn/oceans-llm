@@ -28,6 +28,7 @@ use gateway_core::{
     SpendModelAggregateRecord, SpendOwnerAggregateRecord, StoreError, StoreHealth,
     TeamBudgetRecord, TeamMembershipRecord, TeamRecord, UsageLedgerRecord, UsagePricingStatus,
     UserBudgetRecord, UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord,
+    UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -98,6 +99,13 @@ impl GatewayStore for LibsqlStore {
         Self::list_identity_users(self).await
     }
 
+    async fn get_identity_user(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Option<IdentityUserRecord>, StoreError> {
+        Self::get_identity_user(self, user_id).await
+    }
+
     async fn list_active_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
         Self::list_active_teams(self).await
     }
@@ -148,7 +156,7 @@ impl GatewayStore for LibsqlStore {
         email_normalized: &str,
         global_role: GlobalRole,
         auth_mode: AuthMode,
-        status: &str,
+        status: UserStatus,
     ) -> Result<UserRecord, StoreError> {
         Self::create_identity_user(
             self,
@@ -162,6 +170,24 @@ impl GatewayStore for LibsqlStore {
         .await
     }
 
+    async fn update_identity_user(
+        &self,
+        user_id: Uuid,
+        global_role: GlobalRole,
+        auth_mode: AuthMode,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        Self::update_identity_user(self, user_id, global_role, auth_mode, updated_at).await
+    }
+
+    async fn deactivate_identity_user(
+        &self,
+        user_id: Uuid,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        Self::deactivate_identity_user(self, user_id, updated_at).await
+    }
+
     async fn assign_team_membership(
         &self,
         user_id: Uuid,
@@ -169,6 +195,26 @@ impl GatewayStore for LibsqlStore {
         role: MembershipRole,
     ) -> Result<(), StoreError> {
         Self::assign_team_membership(self, user_id, team_id, role).await
+    }
+
+    async fn remove_team_membership(
+        &self,
+        team_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<bool, StoreError> {
+        Self::remove_team_membership(self, team_id, user_id).await
+    }
+
+    async fn transfer_team_membership(
+        &self,
+        user_id: Uuid,
+        from_team_id: Uuid,
+        to_team_id: Uuid,
+        role: MembershipRole,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        Self::transfer_team_membership(self, user_id, from_team_id, to_team_id, role, updated_at)
+            .await
     }
 
     async fn get_user_password_auth(
@@ -257,7 +303,7 @@ impl GatewayStore for LibsqlStore {
     async fn update_user_status(
         &self,
         user_id: Uuid,
-        status: &str,
+        status: UserStatus,
         updated_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
         Self::update_user_status(self, user_id, status, updated_at).await
@@ -302,12 +348,28 @@ impl GatewayStore for LibsqlStore {
         Self::touch_user_session(self, session_id, last_seen_at).await
     }
 
+    async fn revoke_user_sessions(
+        &self,
+        user_id: Uuid,
+        revoked_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        Self::revoke_user_sessions(self, user_id, revoked_at).await
+    }
+
     async fn get_user_oidc_auth(
         &self,
         oidc_provider_id: &str,
         subject: &str,
     ) -> Result<Option<UserOidcAuthRecord>, StoreError> {
         Self::get_user_oidc_auth(self, oidc_provider_id, subject).await
+    }
+
+    async fn get_user_oidc_auth_by_user(
+        &self,
+        user_id: Uuid,
+        oidc_provider_id: &str,
+    ) -> Result<Option<UserOidcAuthRecord>, StoreError> {
+        Self::get_user_oidc_auth_by_user(self, user_id, oidc_provider_id).await
     }
 
     async fn create_user_oidc_auth(
@@ -336,6 +398,22 @@ impl GatewayStore for LibsqlStore {
         created_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
         Self::set_user_oidc_link(self, user_id, oidc_provider_id, created_at).await
+    }
+
+    async fn clear_user_oidc_link(&self, user_id: Uuid) -> Result<(), StoreError> {
+        Self::clear_user_oidc_link(self, user_id).await
+    }
+
+    async fn delete_user_password_auth(&self, user_id: Uuid) -> Result<(), StoreError> {
+        Self::delete_user_password_auth(self, user_id).await
+    }
+
+    async fn delete_user_oidc_auth(
+        &self,
+        user_id: Uuid,
+        oidc_provider_id: &str,
+    ) -> Result<(), StoreError> {
+        Self::delete_user_oidc_auth(self, user_id, oidc_provider_id).await
     }
 
     async fn find_invited_oidc_user(

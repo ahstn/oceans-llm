@@ -2,6 +2,7 @@ import { createServerFn } from '@tanstack/react-start'
 
 import {
   addTeamMembers,
+  deactivateUser,
   changePassword,
   completeInvitation,
   createTeam,
@@ -9,6 +10,7 @@ import {
   deactivateTeamBudget,
   deactivateUserBudget,
   listBudgetAlertHistory,
+  reactivateUser,
   getRequestLogDetail,
   getSession,
   getSpendReport,
@@ -20,10 +22,14 @@ import {
   listTeams,
   listUsers,
   loginWithPassword,
+  removeTeamMember,
   resendPasswordInvite,
+  resetUserOnboarding,
+  transferTeamMember,
   upsertTeamBudget,
   upsertUserBudget,
   updateTeam,
+  updateUser,
 } from '@/server/admin-data.server'
 
 export const getApiKeys = createServerFn({ method: 'GET' }).handler(async () => {
@@ -157,6 +163,22 @@ export const addIdentityTeamMembers = createServerFn({ method: 'POST' }).handler
   },
 )
 
+export const removeIdentityTeamMember = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: { teamId: string; userId: string } }) => {
+    return removeTeamMember(data.teamId, data.userId)
+  },
+)
+
+export const transferIdentityTeamMember = createServerFn({ method: 'POST' }).handler(
+  async ({
+    data,
+  }: {
+    data: { teamId: string; userId: string; input: Parameters<typeof transferTeamMember>[2] }
+  }) => {
+    return transferTeamMember(data.teamId, data.userId, data.input)
+  },
+)
+
 export const getUsers = createServerFn({ method: 'GET' }).handler(async () => {
   return listUsers()
 })
@@ -164,6 +186,30 @@ export const getUsers = createServerFn({ method: 'GET' }).handler(async () => {
 export const createIdentityUser = createServerFn({ method: 'POST' }).handler(
   async ({ data }: { data: Parameters<typeof createUser>[0] }) => {
     return createUser(data)
+  },
+)
+
+export const updateIdentityUser = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: { userId: string; input: Parameters<typeof updateUser>[1] } }) => {
+    return updateUser(data.userId, data.input)
+  },
+)
+
+export const deactivateIdentityUser = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: { userId: string } }) => {
+    return deactivateUser(data.userId)
+  },
+)
+
+export const reactivateIdentityUser = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: { userId: string } }) => {
+    return reactivateUser(data.userId)
+  },
+)
+
+export const resetIdentityUserOnboarding = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: { userId: string } }) => {
+    return resetUserOnboarding(data.userId)
   },
 )
 

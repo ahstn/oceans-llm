@@ -5,6 +5,7 @@ import type {
   ChangePasswordInput,
   CreateUserInput,
   CreateUserResult,
+  IdentityActionResult,
   IdentityUsersPayload,
   IdentityTeamsPayload,
   InvitationStateView,
@@ -24,7 +25,9 @@ import type {
   DeactivateBudgetResultView,
   CreateTeamInput,
   PasswordLoginInput,
+  TransferTeamMemberInput,
   UpdateTeamInput,
+  UpdateUserInput,
 } from '@/types/api'
 import { fetchGatewayJson } from '@/server/gateway-client.server'
 
@@ -32,7 +35,7 @@ function envelope<T>(data: T): ApiEnvelope<T> {
   return {
     data,
     meta: {
-      generatedAt: new Date().toISOString(),
+      generated_at: new Date().toISOString(),
     },
   }
 }
@@ -270,6 +273,33 @@ export async function addTeamMembers(
   )
 }
 
+export async function removeTeamMember(
+  teamId: string,
+  userId: string,
+): Promise<ApiEnvelope<IdentityActionResult>> {
+  return fetchGatewayJson<ApiEnvelope<IdentityActionResult>>(
+    `/api/v1/admin/identity/teams/${teamId}/members/${userId}`,
+    {
+      method: 'DELETE',
+    },
+  )
+}
+
+export async function transferTeamMember(
+  teamId: string,
+  userId: string,
+  input: TransferTeamMemberInput,
+): Promise<ApiEnvelope<IdentityActionResult>> {
+  return fetchGatewayJson<ApiEnvelope<IdentityActionResult>>(
+    `/api/v1/admin/identity/teams/${teamId}/members/${userId}/transfer`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  )
+}
+
 export async function getSession(): Promise<ApiEnvelope<AuthSessionView | null>> {
   return fetchGatewayJson<ApiEnvelope<AuthSessionView | null>>('/api/v1/auth/session')
 }
@@ -304,6 +334,49 @@ export async function createUser(input: CreateUserInput): Promise<ApiEnvelope<Cr
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(input),
   })
+}
+
+export async function updateUser(
+  userId: string,
+  input: UpdateUserInput,
+): Promise<ApiEnvelope<IdentityActionResult>> {
+  return fetchGatewayJson<ApiEnvelope<IdentityActionResult>>(
+    `/api/v1/admin/identity/users/${userId}`,
+    {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  )
+}
+
+export async function deactivateUser(userId: string): Promise<ApiEnvelope<IdentityActionResult>> {
+  return fetchGatewayJson<ApiEnvelope<IdentityActionResult>>(
+    `/api/v1/admin/identity/users/${userId}/deactivate`,
+    {
+      method: 'POST',
+    },
+  )
+}
+
+export async function reactivateUser(userId: string): Promise<ApiEnvelope<IdentityActionResult>> {
+  return fetchGatewayJson<ApiEnvelope<IdentityActionResult>>(
+    `/api/v1/admin/identity/users/${userId}/reactivate`,
+    {
+      method: 'POST',
+    },
+  )
+}
+
+export async function resetUserOnboarding(
+  userId: string,
+): Promise<ApiEnvelope<CreateUserResult>> {
+  return fetchGatewayJson<ApiEnvelope<CreateUserResult>>(
+    `/api/v1/admin/identity/users/${userId}/reset-onboarding`,
+    {
+      method: 'POST',
+    },
+  )
 }
 
 export async function resendPasswordInvite(

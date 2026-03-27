@@ -98,6 +98,49 @@ impl PostgresStore {
         rows.iter().map(decode_identity_user_record).collect()
     }
 
+    pub async fn get_identity_user(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Option<IdentityUserRecord>, StoreError> {
+        let row = sqlx::query(
+            r#"
+            SELECT
+                users.user_id,
+                users.name,
+                users.email,
+                users.email_normalized,
+                users.global_role,
+                users.auth_mode,
+                users.status,
+                users.must_change_password,
+                users.request_logging_enabled,
+                users.model_access_mode,
+                users.created_at,
+                users.updated_at,
+                teams.team_id,
+                teams.team_name,
+                team_memberships.role,
+                user_oidc_links.oidc_provider_id,
+                oidc_providers.provider_key
+            FROM users
+            LEFT JOIN team_memberships ON team_memberships.user_id = users.user_id
+            LEFT JOIN teams ON teams.team_id = team_memberships.team_id
+            LEFT JOIN user_oidc_links ON user_oidc_links.user_id = users.user_id
+            LEFT JOIN oidc_providers ON oidc_providers.oidc_provider_id = user_oidc_links.oidc_provider_id
+            WHERE users.user_id = $1
+              AND users.user_id != $2
+            LIMIT 1
+            "#,
+        )
+        .bind(user_id.to_string())
+        .bind(SYSTEM_BOOTSTRAP_ADMIN_USER_ID)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+
+        row.as_ref().map(decode_identity_user_record).transpose()
+    }
+
     pub async fn list_active_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
         let rows = sqlx::query(
             r#"
@@ -263,7 +306,7 @@ impl PostgresStore {
         email_normalized: &str,
         global_role: GlobalRole,
         auth_mode: AuthMode,
-        status: &str,
+        status: UserStatus,
     ) -> Result<UserRecord, StoreError> {
         let user_id = Uuid::new_v4();
         let now = OffsetDateTime::now_utc().unix_timestamp();
@@ -282,7 +325,7 @@ impl PostgresStore {
         .bind(email_normalized)
         .bind(global_role.as_str())
         .bind(auth_mode.as_str())
-        .bind(status)
+        .bind(status.as_str())
         .bind(now)
         .execute(&self.pool)
         .await
@@ -313,6 +356,251 @@ impl PostgresStore {
         .execute(&self.pool)
         .await
         .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn update_identity_user(
+        &self,
+        user_id: Uuid,
+        global_role: GlobalRole,
+        auth_mode: AuthMode,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        let row = sqlx::query(
+            r#"
+            SELECT global_role, status
+            FROM users
+            WHERE user_id = $1
+            LIMIT 1
+            "#,
+        )
+        .bind(user_id.to_string())
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(to_query_error)?;
+        let Some(row) = row else {
+            return Err(StoreError::NotFound("user not found".to_string()));
+        };
+        let current_role: String = row.try_get(0).map_err(to_query_error)?;
+        let current_status: String = row.try_get(1).map_err(to_query_error)?;
+        if current_role == GlobalRole::PlatformAdmin.as_str()
+            && current_status == UserStatus::Active.as_str()
+            && global_role != GlobalRole::PlatformAdmin
+        {
+            let row = sqlx::query(
+                r#"
+                SELECT COUNT(*)
+                FROM users
+                WHERE global_role = 'platform_admin'
+                  AND status = 'active'
+                  AND user_id != $1
+                  AND user_id != $2
+                "#,
+            )
+            .bind(user_id.to_string())
+            .bind(SYSTEM_BOOTSTRAP_ADMIN_USER_ID)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(to_query_error)?;
+            let count: i64 = row.try_get(0).map_err(to_query_error)?;
+            if count <= 0 {
+                return Err(StoreError::Conflict(
+                    "the last active platform admin cannot be deactivated or demoted".to_string(),
+                ));
+            }
+        }
+
+        sqlx::query(
+            r#"
+            UPDATE users
+            SET global_role = $1,
+                auth_mode = $2,
+                updated_at = $3
+            WHERE user_id = $4
+            "#,
+        )
+        .bind(global_role.as_str())
+        .bind(auth_mode.as_str())
+        .bind(updated_at.unix_timestamp())
+        .bind(user_id.to_string())
+        .execute(&mut *tx)
+        .await
+        .map_err(to_write_error)?;
+        tx.commit().await.map_err(to_query_error)?;
+        Ok(())
+    }
+
+    pub async fn deactivate_identity_user(
+        &self,
+        user_id: Uuid,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        let row = sqlx::query(
+            r#"
+            SELECT global_role, status
+            FROM users
+            WHERE user_id = $1
+            LIMIT 1
+            "#,
+        )
+        .bind(user_id.to_string())
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(to_query_error)?;
+        let Some(row) = row else {
+            return Err(StoreError::NotFound("user not found".to_string()));
+        };
+        let current_role: String = row.try_get(0).map_err(to_query_error)?;
+        let current_status: String = row.try_get(1).map_err(to_query_error)?;
+        if current_status == UserStatus::Disabled.as_str() {
+            return Err(StoreError::Conflict("user is already disabled".to_string()));
+        }
+        if current_role == GlobalRole::PlatformAdmin.as_str()
+            && current_status == UserStatus::Active.as_str()
+        {
+            let row = sqlx::query(
+                r#"
+                SELECT COUNT(*)
+                FROM users
+                WHERE global_role = 'platform_admin'
+                  AND status = 'active'
+                  AND user_id != $1
+                  AND user_id != $2
+                "#,
+            )
+            .bind(user_id.to_string())
+            .bind(SYSTEM_BOOTSTRAP_ADMIN_USER_ID)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(to_query_error)?;
+            let count: i64 = row.try_get(0).map_err(to_query_error)?;
+            if count <= 0 {
+                return Err(StoreError::Conflict(
+                    "the last active platform admin cannot be deactivated or demoted".to_string(),
+                ));
+            }
+        }
+
+        sqlx::query(
+            r#"
+            UPDATE users
+            SET status = $1,
+                updated_at = $2
+            WHERE user_id = $3
+            "#,
+        )
+        .bind(UserStatus::Disabled.as_str())
+        .bind(updated_at.unix_timestamp())
+        .bind(user_id.to_string())
+        .execute(&mut *tx)
+        .await
+        .map_err(to_write_error)?;
+        tx.commit().await.map_err(to_query_error)?;
+        Ok(())
+    }
+
+    pub async fn remove_team_membership(
+        &self,
+        team_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<bool, StoreError> {
+        let row = sqlx::query(
+            r#"
+            SELECT role
+            FROM team_memberships
+            WHERE team_id = $1
+              AND user_id = $2
+            LIMIT 1
+            "#,
+        )
+        .bind(team_id.to_string())
+        .bind(user_id.to_string())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+        let Some(row) = row else {
+            return Ok(false);
+        };
+        let role: String = row.try_get(0).map_err(to_query_error)?;
+        if role == MembershipRole::Owner.as_str() {
+            return Err(StoreError::Conflict(
+                "owner memberships cannot be removed or transferred".to_string(),
+            ));
+        }
+
+        let result = sqlx::query(
+            r#"
+            DELETE FROM team_memberships
+            WHERE team_id = $1
+              AND user_id = $2
+            "#,
+        )
+        .bind(team_id.to_string())
+        .bind(user_id.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(to_write_error)?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
+    pub async fn transfer_team_membership(
+        &self,
+        user_id: Uuid,
+        from_team_id: Uuid,
+        to_team_id: Uuid,
+        role: MembershipRole,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        let exists = sqlx::query(
+            r#"
+            SELECT role
+            FROM team_memberships
+            WHERE user_id = $1
+              AND team_id = $2
+            LIMIT 1
+            "#,
+        )
+        .bind(user_id.to_string())
+        .bind(from_team_id.to_string())
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(to_query_error)?
+        ;
+        let Some(row) = exists else {
+            return Err(StoreError::NotFound(
+                "team membership missing for requested source team".to_string(),
+            ));
+        };
+        let existing_role: String = row.try_get(0).map_err(to_query_error)?;
+        if existing_role == MembershipRole::Owner.as_str() {
+            return Err(StoreError::Conflict(
+                "owner memberships cannot be removed or transferred".to_string(),
+            ));
+        }
+
+        sqlx::query(
+            r#"
+            UPDATE team_memberships
+            SET team_id = $1,
+                role = $2,
+                updated_at = $3
+            WHERE user_id = $4
+              AND team_id = $5
+            "#,
+        )
+        .bind(to_team_id.to_string())
+        .bind(role.as_str())
+        .bind(updated_at.unix_timestamp())
+        .bind(user_id.to_string())
+        .bind(from_team_id.to_string())
+        .execute(&mut *tx)
+        .await
+        .map_err(to_write_error)?;
+        tx.commit().await.map_err(to_query_error)?;
         Ok(())
     }
 
@@ -532,7 +820,7 @@ impl PostgresStore {
     pub async fn update_user_status(
         &self,
         user_id: Uuid,
-        status: &str,
+        status: UserStatus,
         updated_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
         sqlx::query(
@@ -543,7 +831,7 @@ impl PostgresStore {
             WHERE user_id = $3
             "#,
         )
-        .bind(status)
+        .bind(status.as_str())
         .bind(updated_at.unix_timestamp())
         .bind(user_id.to_string())
         .execute(&self.pool)
@@ -638,6 +926,27 @@ impl PostgresStore {
         Ok(())
     }
 
+    pub async fn revoke_user_sessions(
+        &self,
+        user_id: Uuid,
+        revoked_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        sqlx::query(
+            r#"
+            UPDATE user_sessions
+            SET revoked_at = $1
+            WHERE user_id = $2
+              AND revoked_at IS NULL
+            "#,
+        )
+        .bind(revoked_at.unix_timestamp())
+        .bind(user_id.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(to_write_error)?;
+        Ok(())
+    }
+
     pub async fn get_user_oidc_auth(
         &self,
         oidc_provider_id: &str,
@@ -654,6 +963,29 @@ impl PostgresStore {
         )
         .bind(oidc_provider_id)
         .bind(subject)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+
+        row.as_ref().map(decode_user_oidc_auth_record).transpose()
+    }
+
+    pub async fn get_user_oidc_auth_by_user(
+        &self,
+        user_id: Uuid,
+        oidc_provider_id: &str,
+    ) -> Result<Option<UserOidcAuthRecord>, StoreError> {
+        let row = sqlx::query(
+            r#"
+            SELECT user_id, oidc_provider_id, subject, email_claim, created_at
+            FROM user_oidc_auth
+            WHERE user_id = $1
+              AND oidc_provider_id = $2
+            LIMIT 1
+            "#,
+        )
+        .bind(user_id.to_string())
+        .bind(oidc_provider_id)
         .fetch_optional(&self.pool)
         .await
         .map_err(to_query_error)?;
@@ -705,6 +1037,44 @@ impl PostgresStore {
         .bind(user_id.to_string())
         .bind(oidc_provider_id)
         .bind(created_at.unix_timestamp())
+        .execute(&self.pool)
+        .await
+        .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn clear_user_oidc_link(&self, user_id: Uuid) -> Result<(), StoreError> {
+        sqlx::query("DELETE FROM user_oidc_links WHERE user_id = $1")
+            .bind(user_id.to_string())
+            .execute(&self.pool)
+            .await
+            .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn delete_user_password_auth(&self, user_id: Uuid) -> Result<(), StoreError> {
+        sqlx::query("DELETE FROM user_password_auth WHERE user_id = $1")
+            .bind(user_id.to_string())
+            .execute(&self.pool)
+            .await
+            .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn delete_user_oidc_auth(
+        &self,
+        user_id: Uuid,
+        oidc_provider_id: &str,
+    ) -> Result<(), StoreError> {
+        sqlx::query(
+            r#"
+            DELETE FROM user_oidc_auth
+            WHERE user_id = $1
+              AND oidc_provider_id = $2
+            "#,
+        )
+        .bind(user_id.to_string())
+        .bind(oidc_provider_id)
         .execute(&self.pool)
         .await
         .map_err(to_write_error)?;

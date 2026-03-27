@@ -50,6 +50,8 @@ import {
   createIdentityTeam,
   createIdentityUser,
   getTeams,
+  removeIdentityTeamMember,
+  transferIdentityTeamMember,
   updateIdentityTeam,
 } from '@/server/admin-data.functions'
 import type {
@@ -59,6 +61,7 @@ import type {
   IdentityTeamsPayload,
   TeamAssignableUserView,
   TeamManagementView,
+  TransferTeamMemberInput,
 } from '@/types/api'
 
 export const Route = createFileRoute('/identity/teams')({
@@ -86,6 +89,11 @@ type TeamDialogState = { mode: 'closed' } | { mode: 'create' } | { mode: 'edit';
 
 type MembersDialogState = { mode: 'closed' } | { mode: 'open'; teamId: string }
 
+type TeamMemberDialogState =
+  | { mode: 'closed' }
+  | { mode: 'remove'; teamId: string; userId: string }
+  | { mode: 'transfer'; teamId: string; userId: string }
+
 export function TeamsPage() {
   const router = useRouter()
   const {
@@ -97,6 +105,11 @@ export function TeamsPage() {
   const [selectedExistingMemberIds, setSelectedExistingMemberIds] = useState<string[]>([])
   const [inviteForm, setInviteForm] = useState<CreateUserInput>(initialInviteForm)
   const [inviteResult, setInviteResult] = useState<CreateUserResult | null>(null)
+  const [memberDialog, setMemberDialog] = useState<TeamMemberDialogState>({ mode: 'closed' })
+  const [transferForm, setTransferForm] = useState<TransferTeamMemberInput>({
+    destination_team_id: '',
+    destination_role: 'member',
+  })
   const [isPending, startTransition] = useTransition()
 
   const editingTeam =
@@ -107,6 +120,22 @@ export function TeamsPage() {
     membersDialog.mode === 'open'
       ? (teams.find((team) => team.id === membersDialog.teamId) ?? null)
       : null
+  const memberDialogTeam =
+    memberDialog.mode === 'closed'
+      ? null
+      : (teams.find((team) => team.id === memberDialog.teamId) ?? null)
+  const memberDialogUser =
+    memberDialog.mode === 'closed'
+      ? null
+      : (users.find((user) => user.id === memberDialog.userId) ?? null)
+  const teamMembersByTeam = useMemo(
+    () =>
+      teams.map((team) => ({
+        team,
+        members: users.filter((user) => user.team_id === team.id),
+      })),
+    [teams, users],
+  )
 
   const adminOptions = useMemo(
     () =>
@@ -176,6 +205,26 @@ export function TeamsPage() {
     setInviteForm(initialInviteForm)
   }
 
+  function openRemoveMemberDialog(teamId: string, userId: string) {
+    setMemberDialog({ mode: 'remove', teamId, userId })
+  }
+
+  function openTransferMemberDialog(teamId: string, userId: string) {
+    setMemberDialog({ mode: 'transfer', teamId, userId })
+    setTransferForm({
+      destination_team_id: '',
+      destination_role: 'member',
+    })
+  }
+
+  function closeMemberDialog() {
+    setMemberDialog({ mode: 'closed' })
+    setTransferForm({
+      destination_team_id: '',
+      destination_role: 'member',
+    })
+  }
+
   function setInviteAuthMode(authMode: CreateUserInput['auth_mode']) {
     setInviteForm((current) => ({
       ...current,
@@ -186,6 +235,48 @@ export function TeamsPage() {
             (oidcProviders.length === 1 ? oidcProviders[0].key : null))
           : null,
     }))
+  }
+
+  async function handleRemoveMember() {
+    if (memberDialog.mode !== 'remove') {
+      return
+    }
+
+    startTransition(async () => {
+      try {
+        await removeIdentityTeamMember({
+          data: { teamId: memberDialog.teamId, userId: memberDialog.userId },
+        })
+        toast.success('Member removed')
+        await refreshTeams()
+        closeMemberDialog()
+      } catch (error) {
+        toast.error(getErrorMessage(error))
+      }
+    })
+  }
+
+  async function handleTransferMember() {
+    if (memberDialog.mode !== 'transfer' || !memberDialogTeam) {
+      return
+    }
+
+    startTransition(async () => {
+      try {
+        await transferIdentityTeamMember({
+          data: {
+            teamId: memberDialog.teamId,
+            userId: memberDialog.userId,
+            input: sanitizeTransferForm(transferForm, memberDialogTeam),
+          },
+        })
+        toast.success('Member transferred')
+        await refreshTeams()
+        closeMemberDialog()
+      } catch (error) {
+        toast.error(getErrorMessage(error))
+      }
+    })
   }
 
   async function handleTeamSubmit(event: FormEvent<HTMLFormElement>) {
@@ -305,7 +396,7 @@ export function TeamsPage() {
           ) : (
             <div className="flex flex-col gap-4">
               <div className="grid gap-3 md:hidden">
-                {teams.map((team) => (
+                {teamMembersByTeam.map(({ team, members }) => (
                   <article
                     key={team.id}
                     className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4"
@@ -349,6 +440,66 @@ export function TeamsPage() {
                       )}
                     </div>
 
+                    <div className="mt-4 flex flex-col gap-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <h3 className="text-sm font-semibold text-[var(--color-text)]">Members</h3>
+                        <span className="text-xs text-[var(--color-text-soft)]">
+                          {members.length} total
+                        </span>
+                      </div>
+                      {members.length > 0 ? (
+                        <div className="flex flex-col gap-2">
+                          {members.map((member) => (
+                            <div
+                              key={member.id}
+                              className="rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-bg)] p-3"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-semibold text-[var(--color-text)]">
+                                    {member.name}
+                                  </p>
+                                  <p className="truncate text-xs text-[var(--color-text-soft)]">
+                                    {member.email}
+                                  </p>
+                                </div>
+                                <Badge variant={member.team_role === 'owner' ? 'warning' : 'default'}>
+                                  {member.team_role ?? 'member'}
+                                </Badge>
+                              </div>
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => openTransferMemberDialog(team.id, member.id)}
+                                  disabled={member.team_role === 'owner'}
+                                >
+                                  Transfer
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => openRemoveMemberDialog(team.id, member.id)}
+                                  disabled={member.team_role === 'owner'}
+                                >
+                                  Remove
+                                </Button>
+                              </div>
+                              {member.team_role === 'owner' ? (
+                                <p className="mt-2 text-xs text-[var(--color-text-soft)]">
+                                  Owner memberships cannot be removed or transferred in this slice.
+                                </p>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-[var(--color-text-soft)]">No members assigned yet.</p>
+                      )}
+                    </div>
+
                     <div className="mt-4 flex flex-wrap gap-2">
                       <Button
                         type="button"
@@ -383,7 +534,7 @@ export function TeamsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {teams.map((team) => (
+                    {teamMembersByTeam.map(({ team, members }) => (
                       <tr
                         key={team.id}
                         className="border-t border-[color:var(--color-border)] align-top"
@@ -405,8 +556,56 @@ export function TeamsPage() {
                             <span className="text-xs text-[var(--color-text-soft)]">No admins</span>
                           )}
                         </td>
-                        <td className="px-3 py-3 text-[var(--color-text-muted)]">
-                          {team.member_count}
+                        <td className="px-3 py-3">
+                          <div className="flex flex-col gap-2">
+                            <div className="text-sm text-[var(--color-text-muted)]">
+                              {team.member_count} members
+                            </div>
+                            {members.length > 0 ? (
+                              <div className="flex flex-col gap-2">
+                                {members.map((member) => (
+                                  <div
+                                    key={member.id}
+                                    className="flex flex-wrap items-center gap-2 rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] px-2 py-2"
+                                  >
+                                    <div className="min-w-0 flex-1">
+                                      <p className="truncate text-[var(--color-text)]">
+                                        {member.name}
+                                      </p>
+                                      <p className="truncate text-xs text-[var(--color-text-soft)]">
+                                        {member.email}
+                                      </p>
+                                    </div>
+                                    <Badge variant={member.team_role === 'owner' ? 'warning' : 'default'}>
+                                      {member.team_role ?? 'member'}
+                                    </Badge>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="secondary"
+                                      onClick={() => openTransferMemberDialog(team.id, member.id)}
+                                      disabled={member.team_role === 'owner'}
+                                    >
+                                      Transfer
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => openRemoveMemberDialog(team.id, member.id)}
+                                      disabled={member.team_role === 'owner'}
+                                    >
+                                      Remove
+                                    </Button>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-sm text-[var(--color-text-soft)]">
+                                No members assigned yet
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-3 py-3">
                           <Badge variant={team.status === 'active' ? 'success' : 'warning'}>
@@ -726,6 +925,166 @@ export function TeamsPage() {
           ) : null}
         </DialogContent>
       </Dialog>
+
+      <Dialog
+        open={memberDialog.mode === 'remove'}
+        onOpenChange={(open) => !open && closeMemberDialog()}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove member</DialogTitle>
+            <DialogDescription>
+              {memberDialogTeam && memberDialogUser
+                ? `Remove ${memberDialogUser.name} from ${memberDialogTeam.name}. This only changes future membership-derived access.`
+                : 'Remove this member from the team.'}
+            </DialogDescription>
+          </DialogHeader>
+
+          {memberDialogUser && memberDialogTeam ? (
+            <div className="flex flex-col gap-4">
+              <Alert>
+                <AlertTitle>Membership removal</AlertTitle>
+                <AlertDescription>
+                  Historical logs, spend, and API-key ownership are not migrated by this action.
+                </AlertDescription>
+              </Alert>
+
+              {memberDialogUser.team_role === 'owner' ? (
+                <Alert>
+                  <AlertTitle>Owner membership is locked</AlertTitle>
+                  <AlertDescription>
+                    Owner memberships cannot be removed in this slice.
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+
+              <DialogFooter>
+                <Button type="button" variant="secondary" onClick={closeMemberDialog}>
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={handleRemoveMember}
+                  disabled={isPending || memberDialogUser.team_role === 'owner'}
+                >
+                  Remove member
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={memberDialog.mode === 'transfer'}
+        onOpenChange={(open) => !open && closeMemberDialog()}
+      >
+        <DialogContent className="w-[min(760px,calc(100vw-32px))]">
+          <DialogHeader>
+            <DialogTitle>Transfer member</DialogTitle>
+            <DialogDescription>
+              {memberDialogTeam && memberDialogUser
+                ? `Move ${memberDialogUser.name} out of ${memberDialogTeam.name} and into another team. Future access follows the destination membership only.`
+                : 'Transfer this member to another team.'}
+            </DialogDescription>
+          </DialogHeader>
+
+          {memberDialogUser && memberDialogTeam ? (
+            <form className="flex flex-col gap-5" onSubmit={(event) => {
+              event.preventDefault()
+              handleTransferMember()
+            }}>
+              {memberDialogUser.team_role === 'owner' ? (
+                <Alert>
+                  <AlertTitle>Owner memberships are locked</AlertTitle>
+                  <AlertDescription>
+                    Owner memberships are not removable or transferable in this slice.
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+
+              <FieldGroup>
+                <Field>
+                  <FieldLabel htmlFor="transfer-destination-team">Destination team</FieldLabel>
+                  <Select
+                    value={transferForm.destination_team_id || undefined}
+                    onValueChange={(value) =>
+                      setTransferForm((current) => ({
+                        ...current,
+                        destination_team_id: value,
+                      }))
+                    }
+                  >
+                    <SelectTrigger id="transfer-destination-team">
+                      <SelectValue placeholder="Select destination team" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {teams
+                          .filter((team) => team.id !== memberDialogTeam.id)
+                          .map((team) => (
+                            <SelectItem key={team.id} value={team.id}>
+                              {team.name}
+                            </SelectItem>
+                          ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  <FieldDescription>
+                    Teams already using the user are omitted. Pick the new ownership boundary
+                    explicitly.
+                  </FieldDescription>
+                </Field>
+
+                <Field>
+                  <FieldLabel htmlFor="transfer-destination-role">Destination role</FieldLabel>
+                  <Select
+                    value={transferForm.destination_role}
+                    onValueChange={(value: TransferTeamMemberInput['destination_role']) =>
+                      setTransferForm((current) => ({ ...current, destination_role: value }))
+                    }
+                  >
+                    <SelectTrigger id="transfer-destination-role">
+                      <SelectValue placeholder="Select destination role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectItem value="member">Member</SelectItem>
+                        <SelectItem value="admin">Admin</SelectItem>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </FieldGroup>
+
+              <Alert>
+                <AlertTitle>Transfer is membership-only</AlertTitle>
+                <AlertDescription>
+                  This does not migrate past request logs, spend, budgets, or API-key ownership.
+                </AlertDescription>
+              </Alert>
+
+              <DialogFooter>
+                <Button type="button" variant="secondary" onClick={closeMemberDialog}>
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={
+                    isPending ||
+                    !transferForm.destination_team_id ||
+                    transferForm.destination_team_id === memberDialogTeam.id ||
+                    memberDialogUser.team_role === 'owner'
+                  }
+                >
+                  Transfer member
+                </Button>
+              </DialogFooter>
+            </form>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -862,6 +1221,19 @@ function sanitizeInviteForm(
       form.auth_mode === 'oidc'
         ? (form.oidc_provider_key ?? (oidcProviders.length === 1 ? oidcProviders[0].key : null))
         : null,
+  }
+}
+
+function sanitizeTransferForm(
+  form: TransferTeamMemberInput,
+  team: TeamManagementView,
+): TransferTeamMemberInput {
+  return {
+    destination_team_id:
+      form.destination_team_id && form.destination_team_id !== team.id
+        ? form.destination_team_id
+        : '',
+    destination_role: form.destination_role,
   }
 }
 

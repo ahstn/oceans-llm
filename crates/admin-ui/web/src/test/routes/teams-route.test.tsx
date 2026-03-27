@@ -28,6 +28,8 @@ vi.mock('@/server/admin-data.functions', () => ({
   createIdentityTeam: vi.fn(),
   createIdentityUser: vi.fn(),
   getTeams: vi.fn(),
+  removeIdentityTeamMember: vi.fn(),
+  transferIdentityTeamMember: vi.fn(),
   updateIdentityTeam: vi.fn(),
 }))
 
@@ -57,5 +59,52 @@ describe('TeamsPage', () => {
     expect(
       screen.getByText('Create a team now and optionally assign team admins from existing users.'),
     ).toBeInTheDocument()
+  })
+
+  it('shows member roster actions and blocks owner transfers', async () => {
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        teams: [
+          {
+            id: 'team_1',
+            name: 'Core Platform',
+            key: 'core-platform',
+            status: 'active',
+            member_count: 1,
+            admins: [
+              {
+                id: 'user_1',
+                name: 'Jane Admin',
+                email: 'jane@example.com',
+                status: 'active',
+              },
+            ],
+          },
+        ],
+        users: [
+          {
+            id: 'user_1',
+            name: 'Jane Admin',
+            email: 'jane@example.com',
+            status: 'active',
+            team_id: 'team_1',
+            team_name: 'Core Platform',
+            team_role: 'owner',
+          },
+        ],
+        oidc_providers: [],
+      } satisfies IdentityTeamsPayload,
+    })
+
+    const { TeamsPage } = await import('@/routes/identity/teams')
+
+    render(<TeamsPage />)
+
+    expect(screen.getAllByText('Jane Admin').length).toBeGreaterThan(0)
+    expect(
+      screen.getAllByText('Owner memberships cannot be removed or transferred in this slice.').length,
+    ).toBeGreaterThan(0)
+    expect(screen.getAllByRole('button', { name: 'Transfer' })[0]).toBeDisabled()
+    expect(screen.getAllByRole('button', { name: 'Remove' })[0]).toBeDisabled()
   })
 })

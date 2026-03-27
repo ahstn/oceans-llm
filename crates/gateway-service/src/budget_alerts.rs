@@ -5,7 +5,7 @@ use gateway_core::{
     ApiKeyOwnerKind, AuthenticatedApiKey, BudgetAlertChannel, BudgetAlertDeliveryRecord,
     BudgetAlertDeliveryStatus, BudgetAlertDispatchTask, BudgetAlertRecord, BudgetAlertRepository,
     BudgetCadence, BudgetRepository, GatewayError, IdentityRepository, MembershipRole, Money4,
-    TeamBudgetRecord, UsageLedgerRecord, UserBudgetRecord, budget_window_utc,
+    TeamBudgetRecord, UsageLedgerRecord, UserBudgetRecord, UserStatus, budget_window_utc,
 };
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tracing::{info, warn};
@@ -334,7 +334,7 @@ where
             let Some(user) = self.repo.get_user_by_id(membership.user_id).await? else {
                 continue;
             };
-            if user.status != "active" {
+            if user.status != UserStatus::Active {
                 continue;
             }
             recipients.insert(user.email);
@@ -668,7 +668,7 @@ mod tests {
         }
     }
 
-    fn build_user(user_id: Uuid, name: &str, email: &str, status: &str) -> UserRecord {
+    fn build_user(user_id: Uuid, name: &str, email: &str, status: UserStatus) -> UserRecord {
         UserRecord {
             user_id,
             name: name.to_string(),
@@ -676,7 +676,7 @@ mod tests {
             email_normalized: email.to_string(),
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Password,
-            status: status.to_string(),
+            status,
             must_change_password: false,
             request_logging_enabled: true,
             model_access_mode: ModelAccessMode::All,
@@ -689,7 +689,12 @@ mod tests {
     async fn monthly_budget_upsert_creates_one_alert_even_when_repeated() {
         let user_id = Uuid::new_v4();
         let repo = Arc::new(InMemoryRepo {
-            user: Some(build_user(user_id, "Jane User", "jane@example.com", "active")),
+            user: Some(build_user(
+                user_id,
+                "Jane User",
+                "jane@example.com",
+                UserStatus::Active,
+            )),
             ..InMemoryRepo::default()
         });
         let service = BudgetAlertService::new(repo.clone(), Arc::new(SinkBudgetAlertSender));
@@ -726,7 +731,12 @@ mod tests {
     async fn budget_reconfiguration_can_emit_a_new_alert_in_the_same_window() {
         let user_id = Uuid::new_v4();
         let repo = Arc::new(InMemoryRepo {
-            user: Some(build_user(user_id, "Jane User", "jane@example.com", "active")),
+            user: Some(build_user(
+                user_id,
+                "Jane User",
+                "jane@example.com",
+                UserStatus::Active,
+            )),
             ..InMemoryRepo::default()
         });
         let service = BudgetAlertService::new(repo.clone(), Arc::new(SinkBudgetAlertSender));
@@ -813,9 +823,9 @@ mod tests {
                 },
             ],
             team_users: vec![
-                build_user(owner_id, "Owner", "owner@example.com", "active"),
-                build_user(admin_id, "Admin", "admin@example.com", "active"),
-                build_user(member_id, "Member", "member@example.com", "active"),
+                build_user(owner_id, "Owner", "owner@example.com", UserStatus::Active),
+                build_user(admin_id, "Admin", "admin@example.com", UserStatus::Active),
+                build_user(member_id, "Member", "member@example.com", UserStatus::Active),
             ],
             active_team_budget: Some(TeamBudgetRecord {
                 team_budget_id: Uuid::new_v4(),
@@ -891,7 +901,12 @@ mod tests {
     async fn overspent_budget_upsert_still_creates_alert() {
         let user_id = Uuid::new_v4();
         let repo = Arc::new(InMemoryRepo {
-            user: Some(build_user(user_id, "Jane User", "jane@example.com", "active")),
+            user: Some(build_user(
+                user_id,
+                "Jane User",
+                "jane@example.com",
+                UserStatus::Active,
+            )),
             ..InMemoryRepo::default()
         });
         let service = BudgetAlertService::new(repo.clone(), Arc::new(SinkBudgetAlertSender));
@@ -940,7 +955,12 @@ mod tests {
                 created_at: now,
                 updated_at: now,
             }],
-            team_users: vec![build_user(owner_id, "Owner", "owner@example.com", "active")],
+            team_users: vec![build_user(
+                owner_id,
+                "Owner",
+                "owner@example.com",
+                UserStatus::Active,
+            )],
             active_team_budget: Some(TeamBudgetRecord {
                 team_budget_id: Uuid::new_v4(),
                 team_id,

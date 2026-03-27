@@ -7,6 +7,7 @@ use gateway_core::{
     PasswordInvitationRecord, PricingCatalogRepository, ProviderRepository, RequestLogRepository,
     SeedApiKey, SeedModel, SeedProvider, StoreError, StoreHealth, TeamMembershipRecord,
     TeamRecord, UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord,
+    UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -51,6 +52,10 @@ pub trait GatewayStore:
         must_change_password: bool,
     ) -> Result<UserRecord, StoreError>;
     async fn list_identity_users(&self) -> Result<Vec<IdentityUserRecord>, StoreError>;
+    async fn get_identity_user(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Option<IdentityUserRecord>, StoreError>;
     async fn list_active_teams(&self) -> Result<Vec<TeamRecord>, StoreError>;
     async fn list_teams(&self) -> Result<Vec<TeamRecord>, StoreError>;
     async fn list_enabled_oidc_providers(&self) -> Result<Vec<OidcProviderRecord>, StoreError>;
@@ -77,13 +82,38 @@ pub trait GatewayStore:
         email_normalized: &str,
         global_role: GlobalRole,
         auth_mode: AuthMode,
-        status: &str,
+        status: UserStatus,
     ) -> Result<UserRecord, StoreError>;
+    async fn update_identity_user(
+        &self,
+        user_id: Uuid,
+        global_role: GlobalRole,
+        auth_mode: AuthMode,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError>;
+    async fn deactivate_identity_user(
+        &self,
+        user_id: Uuid,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError>;
     async fn assign_team_membership(
         &self,
         user_id: Uuid,
         team_id: Uuid,
         role: MembershipRole,
+    ) -> Result<(), StoreError>;
+    async fn remove_team_membership(
+        &self,
+        team_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<bool, StoreError>;
+    async fn transfer_team_membership(
+        &self,
+        user_id: Uuid,
+        from_team_id: Uuid,
+        to_team_id: Uuid,
+        role: MembershipRole,
+        updated_at: OffsetDateTime,
     ) -> Result<(), StoreError>;
     async fn get_user_password_auth(
         &self,
@@ -136,7 +166,7 @@ pub trait GatewayStore:
     async fn update_user_status(
         &self,
         user_id: Uuid,
-        status: &str,
+        status: UserStatus,
         updated_at: OffsetDateTime,
     ) -> Result<(), StoreError>;
     async fn update_user_must_change_password(
@@ -162,10 +192,20 @@ pub trait GatewayStore:
         session_id: Uuid,
         last_seen_at: OffsetDateTime,
     ) -> Result<(), StoreError>;
+    async fn revoke_user_sessions(
+        &self,
+        user_id: Uuid,
+        revoked_at: OffsetDateTime,
+    ) -> Result<(), StoreError>;
     async fn get_user_oidc_auth(
         &self,
         oidc_provider_id: &str,
         subject: &str,
+    ) -> Result<Option<UserOidcAuthRecord>, StoreError>;
+    async fn get_user_oidc_auth_by_user(
+        &self,
+        user_id: Uuid,
+        oidc_provider_id: &str,
     ) -> Result<Option<UserOidcAuthRecord>, StoreError>;
     async fn create_user_oidc_auth(
         &self,
@@ -180,6 +220,13 @@ pub trait GatewayStore:
         user_id: Uuid,
         oidc_provider_id: &str,
         created_at: OffsetDateTime,
+    ) -> Result<(), StoreError>;
+    async fn clear_user_oidc_link(&self, user_id: Uuid) -> Result<(), StoreError>;
+    async fn delete_user_password_auth(&self, user_id: Uuid) -> Result<(), StoreError>;
+    async fn delete_user_oidc_auth(
+        &self,
+        user_id: Uuid,
+        oidc_provider_id: &str,
     ) -> Result<(), StoreError>;
     async fn find_invited_oidc_user(
         &self,
@@ -635,6 +682,13 @@ impl GatewayStore for AnyStore {
         dispatch_store!(self, list_identity_users())
     }
 
+    async fn get_identity_user(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Option<IdentityUserRecord>, StoreError> {
+        dispatch_store!(self, get_identity_user(user_id))
+    }
+
     async fn list_active_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
         dispatch_store!(self, list_active_teams())
     }
@@ -685,7 +739,7 @@ impl GatewayStore for AnyStore {
         email_normalized: &str,
         global_role: GlobalRole,
         auth_mode: AuthMode,
-        status: &str,
+        status: UserStatus,
     ) -> Result<UserRecord, StoreError> {
         dispatch_store!(
             self,
@@ -700,6 +754,27 @@ impl GatewayStore for AnyStore {
         )
     }
 
+    async fn update_identity_user(
+        &self,
+        user_id: Uuid,
+        global_role: GlobalRole,
+        auth_mode: AuthMode,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(
+            self,
+            update_identity_user(user_id, global_role, auth_mode, updated_at)
+        )
+    }
+
+    async fn deactivate_identity_user(
+        &self,
+        user_id: Uuid,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(self, deactivate_identity_user(user_id, updated_at))
+    }
+
     async fn assign_team_membership(
         &self,
         user_id: Uuid,
@@ -707,6 +782,28 @@ impl GatewayStore for AnyStore {
         role: MembershipRole,
     ) -> Result<(), StoreError> {
         dispatch_store!(self, assign_team_membership(user_id, team_id, role))
+    }
+
+    async fn remove_team_membership(
+        &self,
+        team_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<bool, StoreError> {
+        dispatch_store!(self, remove_team_membership(team_id, user_id))
+    }
+
+    async fn transfer_team_membership(
+        &self,
+        user_id: Uuid,
+        from_team_id: Uuid,
+        to_team_id: Uuid,
+        role: MembershipRole,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(
+            self,
+            transfer_team_membership(user_id, from_team_id, to_team_id, role, updated_at)
+        )
     }
 
     async fn get_user_password_auth(
@@ -802,7 +899,7 @@ impl GatewayStore for AnyStore {
     async fn update_user_status(
         &self,
         user_id: Uuid,
-        status: &str,
+        status: UserStatus,
         updated_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
         dispatch_store!(self, update_user_status(user_id, status, updated_at))
@@ -849,12 +946,28 @@ impl GatewayStore for AnyStore {
         dispatch_store!(self, touch_user_session(session_id, last_seen_at))
     }
 
+    async fn revoke_user_sessions(
+        &self,
+        user_id: Uuid,
+        revoked_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(self, revoke_user_sessions(user_id, revoked_at))
+    }
+
     async fn get_user_oidc_auth(
         &self,
         oidc_provider_id: &str,
         subject: &str,
     ) -> Result<Option<UserOidcAuthRecord>, StoreError> {
         dispatch_store!(self, get_user_oidc_auth(oidc_provider_id, subject))
+    }
+
+    async fn get_user_oidc_auth_by_user(
+        &self,
+        user_id: Uuid,
+        oidc_provider_id: &str,
+    ) -> Result<Option<UserOidcAuthRecord>, StoreError> {
+        dispatch_store!(self, get_user_oidc_auth_by_user(user_id, oidc_provider_id))
     }
 
     async fn create_user_oidc_auth(
@@ -881,6 +994,22 @@ impl GatewayStore for AnyStore {
             self,
             set_user_oidc_link(user_id, oidc_provider_id, created_at)
         )
+    }
+
+    async fn clear_user_oidc_link(&self, user_id: Uuid) -> Result<(), StoreError> {
+        dispatch_store!(self, clear_user_oidc_link(user_id))
+    }
+
+    async fn delete_user_password_auth(&self, user_id: Uuid) -> Result<(), StoreError> {
+        dispatch_store!(self, delete_user_password_auth(user_id))
+    }
+
+    async fn delete_user_oidc_auth(
+        &self,
+        user_id: Uuid,
+        oidc_provider_id: &str,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(self, delete_user_oidc_auth(user_id, oidc_provider_id))
     }
 
     async fn find_invited_oidc_user(

@@ -188,6 +188,35 @@ impl GlobalRole {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum UserStatus {
+    Active,
+    Invited,
+    Disabled,
+}
+
+impl UserStatus {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Invited => "invited",
+            Self::Disabled => "disabled",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "active" => Some(Self::Active),
+            "invited" => Some(Self::Invited),
+            "disabled" => Some(Self::Disabled),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum MembershipRole {
     Owner,
     Admin,
@@ -397,7 +426,7 @@ pub struct UserRecord {
     pub email_normalized: String,
     pub global_role: GlobalRole,
     pub auth_mode: AuthMode,
-    pub status: String,
+    pub status: UserStatus,
     pub must_change_password: bool,
     pub request_logging_enabled: bool,
     pub model_access_mode: ModelAccessMode,

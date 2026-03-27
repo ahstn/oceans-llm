@@ -2,7 +2,7 @@ use std::{collections::HashSet, sync::Arc};
 
 use gateway_core::{
     AuthError, AuthenticatedApiKey, GatewayError, GatewayModel, IdentityRepository,
-    ModelAccessMode, ModelRepository, RouteError,
+    ModelAccessMode, ModelRepository, RouteError, UserStatus,
 };
 use itertools::Itertools;
 
@@ -131,6 +131,9 @@ where
                 .get_user_by_id(user_id)
                 .await?
                 .ok_or(AuthError::ApiKeyOwnerInvalid)?;
+            if user.status != UserStatus::Active {
+                return Err(AuthError::ApiKeyOwnerInvalid.into());
+            }
             if user.model_access_mode == ModelAccessMode::Restricted {
                 let allowed_for_user = self
                     .repo
@@ -175,9 +178,9 @@ mod tests {
 
     use async_trait::async_trait;
     use gateway_core::{
-        ApiKeyOwnerKind, AuthMode, AuthenticatedApiKey, GatewayError, GatewayModel, GlobalRole,
-        IdentityRepository, MembershipRole, ModelAccessMode, ModelRepository, ModelRoute,
-        StoreError, TeamMembershipRecord, TeamRecord, UserRecord,
+        ApiKeyOwnerKind, AuthError, AuthMode, AuthenticatedApiKey, GatewayError, GatewayModel,
+        GlobalRole, IdentityRepository, MembershipRole, ModelAccessMode, ModelRepository,
+        ModelRoute, StoreError, TeamMembershipRecord, TeamRecord, UserRecord, UserStatus,
     };
     use time::OffsetDateTime;
     use uuid::Uuid;
@@ -282,7 +285,7 @@ mod tests {
             email_normalized: "user@example.com".to_string(),
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Password,
-            status: "active".to_string(),
+            status: UserStatus::Active,
             must_change_password: false,
             request_logging_enabled: true,
             model_access_mode,
@@ -451,5 +454,28 @@ mod tests {
         assert_eq!(models.len(), 2);
         assert_eq!(models[0].model_key, "fast");
         assert_eq!(models[1].model_key, "reasoning");
+    }
+
+    #[tokio::test]
+    async fn rejects_disabled_user_owned_api_keys() {
+        let api_key_id = Uuid::new_v4();
+        let user_id = Uuid::new_v4();
+        let mut repo = InMemoryModelRepo::default();
+        repo.users.insert(
+            user_id,
+            UserRecord {
+                status: UserStatus::Disabled,
+                ..user(user_id, ModelAccessMode::All)
+            },
+        );
+        let access = ModelAccess::new(Arc::new(repo));
+        let auth = auth(api_key_id, ApiKeyOwnerKind::User, Some(user_id), None);
+
+        let error = access
+            .list_models_for_api_key(&auth)
+            .await
+            .expect_err("disabled user-owned api keys must be rejected");
+
+        assert!(matches!(error, GatewayError::Auth(AuthError::ApiKeyOwnerInvalid)));
     }
 }

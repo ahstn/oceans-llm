@@ -1,7 +1,6 @@
 export interface ApiEnvelope<T> {
   data: T
   meta?: {
-    generatedAt?: string
     generated_at?: string
   }
 }
@@ -241,6 +240,19 @@ export interface AddTeamMembersInput {
   user_ids: string[]
 }
 
+export interface RemoveTeamMemberResult {
+  status: 'ok'
+}
+
+export interface TransferTeamMemberInput {
+  destination_team_id: string
+  destination_role: 'member' | 'admin'
+}
+
+export interface TransferTeamMemberResult {
+  status: 'ok'
+}
+
 export interface AdminTeamOption {
   id: string
   name: string
@@ -293,6 +305,18 @@ export interface CreateUserInput {
   team_id?: string | null
   team_role?: 'owner' | 'admin' | 'member' | null
   oidc_provider_key?: string | null
+}
+
+export interface UpdateUserInput {
+  global_role?: 'platform_admin' | 'user'
+  team_id?: string | null
+  team_role?: 'admin' | 'member' | null
+  auth_mode?: 'password' | 'oidc'
+  oidc_provider_key?: string | null
+}
+
+export interface IdentityActionResult {
+  status: 'ok'
 }
 
 export type CreateUserResult =

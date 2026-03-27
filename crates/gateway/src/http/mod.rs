@@ -2,6 +2,8 @@ pub mod admin_auth;
 pub mod error;
 pub mod handlers;
 pub mod identity;
+pub mod identity_lifecycle;
+pub mod identity_views;
 pub mod observability;
 pub mod spend;
 pub mod state;
@@ -9,7 +11,7 @@ pub mod state;
 use admin_ui::{AdminUiConfig, mount_admin_ui};
 use axum::{
     Router,
-    routing::{get, post},
+    routing::{delete, get, patch, post},
 };
 use http::HeaderName;
 use tower_http::{
@@ -31,6 +33,22 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
             get(list_identity_users).post(create_identity_user),
         )
         .route(
+            "/api/v1/admin/identity/users/{user_id}",
+            patch(update_identity_user),
+        )
+        .route(
+            "/api/v1/admin/identity/users/{user_id}/deactivate",
+            post(deactivate_identity_user),
+        )
+        .route(
+            "/api/v1/admin/identity/users/{user_id}/reactivate",
+            post(reactivate_identity_user),
+        )
+        .route(
+            "/api/v1/admin/identity/users/{user_id}/reset-onboarding",
+            post(reset_identity_user_onboarding),
+        )
+        .route(
             "/api/v1/admin/identity/teams",
             get(list_identity_teams).post(create_identity_team),
         )
@@ -41,6 +59,14 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
         .route(
             "/api/v1/admin/identity/teams/{team_id}/members",
             post(add_identity_team_members),
+        )
+        .route(
+            "/api/v1/admin/identity/teams/{team_id}/members/{user_id}",
+            delete(remove_identity_team_member),
+        )
+        .route(
+            "/api/v1/admin/identity/teams/{team_id}/members/{user_id}/transfer",
+            post(transfer_identity_team_member),
         )
         .route(
             "/api/v1/admin/identity/users/{user_id}/password-invite",

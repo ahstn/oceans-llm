@@ -8,7 +8,7 @@ use axum::{
 };
 use gateway_core::{
     AuthError, AuthMode, GatewayError, GlobalRole, IdentityRepository, IdentityUserRecord,
-    MembershipRole, OidcProviderRecord, PasswordInvitationRecord, UserRecord,
+    MembershipRole, OidcProviderRecord, PasswordInvitationRecord, UserRecord, UserStatus,
 };
 use gateway_store::{AnyStore, GatewayStore};
 use serde::{Deserialize, Serialize};
@@ -20,6 +20,16 @@ use uuid::Uuid;
 use crate::http::{
     admin_auth::{require_authenticated_session, require_platform_admin},
     error::AppError,
+    identity_lifecycle::{
+        ensure_assignable_membership_role, ensure_auth_mode_edit_allowed,
+        ensure_deactivation_allowed, ensure_manageable_user, ensure_mutable_membership,
+        ensure_not_self_deactivating, ensure_not_self_demoting, ensure_reactivation_allowed,
+        ensure_reset_onboarding_allowed, reactivation_status,
+    },
+    identity_views::{
+        build_admin_identity_user_view, build_admin_team_views, build_assignable_user_views,
+        reload_identity_user, reload_team_view,
+    },
     state::AppState,
 };
 
@@ -47,16 +57,16 @@ pub(crate) struct AdminIdentityPayload {
 
 #[derive(Debug, Serialize)]
 pub(crate) struct AdminIdentityUserView {
-    id: String,
-    name: String,
-    email: String,
-    auth_mode: String,
-    global_role: String,
-    team_id: Option<String>,
-    team_name: Option<String>,
-    team_role: Option<String>,
-    status: String,
-    onboarding: Option<AdminOnboardingActionView>,
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) email: String,
+    pub(crate) auth_mode: String,
+    pub(crate) global_role: String,
+    pub(crate) team_id: Option<String>,
+    pub(crate) team_name: Option<String>,
+    pub(crate) team_role: Option<String>,
+    pub(crate) status: String,
+    pub(crate) onboarding: Option<AdminOnboardingActionView>,
 }
 
 #[derive(Debug, Serialize)]
@@ -74,31 +84,41 @@ pub(crate) struct AdminTeamsPayload {
 
 #[derive(Debug, Serialize)]
 pub(crate) struct AdminTeamManagementView {
-    id: String,
-    name: String,
-    key: String,
-    status: String,
-    member_count: usize,
-    admins: Vec<AdminTeamAdminView>,
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) key: String,
+    pub(crate) status: String,
+    pub(crate) member_count: usize,
+    pub(crate) admins: Vec<AdminTeamAdminView>,
+    pub(crate) members: Vec<AdminTeamMemberView>,
 }
 
 #[derive(Debug, Serialize)]
 pub(crate) struct AdminTeamAdminView {
-    id: String,
-    name: String,
-    email: String,
-    status: String,
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) email: String,
+    pub(crate) status: String,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct AdminTeamMemberView {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) email: String,
+    pub(crate) status: String,
+    pub(crate) role: String,
 }
 
 #[derive(Debug, Serialize)]
 pub(crate) struct AdminTeamAssignableUserView {
-    id: String,
-    name: String,
-    email: String,
-    status: String,
-    team_id: Option<String>,
-    team_name: Option<String>,
-    team_role: Option<String>,
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) email: String,
+    pub(crate) status: String,
+    pub(crate) team_id: Option<String>,
+    pub(crate) team_name: Option<String>,
+    pub(crate) team_role: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -165,6 +185,21 @@ pub struct AddTeamMembersRequest {
     pub user_ids: Vec<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct UpdateUserRequest {
+    pub global_role: String,
+    pub auth_mode: Option<String>,
+    pub team_id: Option<String>,
+    pub team_role: Option<String>,
+    pub oidc_provider_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TransferTeamMemberRequest {
+    pub destination_team_id: String,
+    pub destination_role: String,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CreateUserResponse {
@@ -178,6 +213,11 @@ pub enum CreateUserResponse {
         sign_in_url: String,
         provider_label: String,
     },
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct IdentityActionStatus {
+    status: &'static str,
 }
 
 #[derive(Debug, Serialize)]
@@ -322,8 +362,6 @@ pub async fn create_identity_team(
 
     let team_key = generate_unique_team_key(&state.store, name).await?;
     let team = state.store.create_team(&team_key, name).await?;
-    let now = OffsetDateTime::now_utc();
-
     for user_id in selected_admin_ids {
         state
             .store
@@ -332,7 +370,7 @@ pub async fn create_identity_team(
     }
 
     Ok(Json(envelope(
-        reload_team_view(&state.store, team.team_id, now).await?,
+        reload_team_view(&state.store, team.team_id).await?,
     )))
 }
 
@@ -367,7 +405,7 @@ pub async fn update_identity_team(
     sync_team_admins(&state.store, team_id, &selected_admin_ids, now).await?;
 
     Ok(Json(envelope(
-        reload_team_view(&state.store, team_id, now).await?,
+        reload_team_view(&state.store, team_id).await?,
     )))
 }
 
@@ -430,7 +468,7 @@ pub async fn add_identity_team_members(
     }
 
     Ok(Json(envelope(
-        reload_team_view(&state.store, team_id, OffsetDateTime::now_utc()).await?,
+        reload_team_view(&state.store, team_id).await?,
     )))
 }
 
@@ -469,7 +507,7 @@ pub async fn login_with_password(
             AuthError::InsufficientPrivileges,
         )));
     }
-    if user.status != "active" {
+    if user.status != UserStatus::Active {
         return Err(AppError(GatewayError::InvalidRequest(
             "only active admins can sign in".to_string(),
         )));
@@ -508,6 +546,11 @@ pub async fn change_password(
     if user.auth_mode != AuthMode::Password {
         return Err(AppError(GatewayError::InvalidRequest(
             "password changes are only valid for password users".to_string(),
+        )));
+    }
+    if user.status != UserStatus::Active {
+        return Err(AppError(GatewayError::InvalidRequest(
+            "only active users can change passwords".to_string(),
         )));
     }
     let password_auth = state
@@ -565,34 +608,16 @@ pub async fn create_identity_user(
         )));
     }
 
-    let membership = match (request.team_id.as_deref(), request.team_role.as_deref()) {
-        (Some(team_id), Some(role)) => Some((parse_uuid(team_id)?, parse_membership_role(role)?)),
-        (None, None) => None,
-        _ => {
-            return Err(AppError(GatewayError::InvalidRequest(
-                "team_id and team_role must either both be present or both be absent".to_string(),
-            )));
-        }
-    };
-
-    let oidc_provider = match auth_mode {
-        AuthMode::Oidc => {
-            let provider_key = request.oidc_provider_key.as_deref().ok_or_else(|| {
-                AppError(GatewayError::InvalidRequest(
-                    "oidc_provider_key is required for oidc users".to_string(),
-                ))
-            })?;
-            Some(load_enabled_oidc_provider(&state.store, provider_key).await?)
-        }
-        _ => {
-            if request.oidc_provider_key.is_some() {
-                return Err(AppError(GatewayError::InvalidRequest(
-                    "oidc_provider_key is only valid for oidc users".to_string(),
-                )));
-            }
-            None
-        }
-    };
+    let membership = parse_requested_membership(
+        request.team_id.as_deref(),
+        request.team_role.as_deref(),
+    )?;
+    let oidc_provider = resolve_requested_oidc_provider(
+        &state.store,
+        auth_mode,
+        request.oidc_provider_key.as_deref(),
+    )
+    .await?;
 
     if let Some((team_id, _)) = membership {
         state
@@ -610,7 +635,7 @@ pub async fn create_identity_user(
             &email_normalized,
             global_role,
             auth_mode,
-            "invited",
+            UserStatus::Invited,
         )
         .await?;
     let created_at = OffsetDateTime::now_utc();
@@ -629,39 +654,251 @@ pub async fn create_identity_user(
             .await?;
     }
 
-    let identity_user = reload_identity_user(&state.store, user.user_id).await?;
-    let view = build_admin_identity_user_view(
-        &state.store,
-        &state.identity_token_secret,
+    let response = build_onboarding_response(
+        &state,
         &origin,
         created_at,
-        identity_user,
+        reload_identity_user(&state.store, user.user_id).await?,
     )
     .await?;
 
-    let response = match oidc_provider {
-        Some(provider) => CreateUserResponse::OidcSignIn {
-            user: view,
-            sign_in_url: oidc_sign_in_url(&origin, &provider, &user.email),
-            provider_label: provider.provider_key,
+    Ok(Json(envelope(response)))
+}
+
+pub async fn update_identity_user(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(user_id): Path<String>,
+    Json(request): Json<UpdateUserRequest>,
+) -> Result<Json<Envelope<IdentityActionStatus>>, AppError> {
+    let actor = require_platform_admin(&state, &headers).await?;
+    let user_id = parse_uuid(&user_id)?;
+    let identity_user = load_identity_user_for_mutation(&state, user_id).await?;
+    let next_global_role = parse_global_role(&request.global_role)?;
+    let next_auth_mode = request
+        .auth_mode
+        .as_deref()
+        .map(parse_auth_mode)
+        .transpose()?
+        .unwrap_or(identity_user.user.auth_mode);
+    let requested_membership = parse_requested_membership(
+        request.team_id.as_deref(),
+        request.team_role.as_deref(),
+    )?;
+    let oidc_provider = resolve_requested_oidc_provider(
+        &state.store,
+        next_auth_mode,
+        match next_auth_mode {
+            AuthMode::Oidc => request
+                .oidc_provider_key
+                .as_deref()
+                .or(identity_user.oidc_provider_key.as_deref()),
+            AuthMode::Password | AuthMode::Oauth => request.oidc_provider_key.as_deref(),
         },
-        None => {
-            let invitation = create_password_invite(
-                &state.store,
-                &state.identity_token_secret,
-                &origin,
-                user.user_id,
-            )
-            .await?;
-            CreateUserResponse::PasswordInvite {
-                user: view,
-                invite_url: invitation.url,
-                expires_at: invitation.expires_at,
-            }
+    )
+    .await?;
+
+    ensure_not_self_demoting(&actor, &identity_user.user, next_global_role).map_err(AppError)?;
+    ensure_auth_mode_edit_allowed(&identity_user.user, next_auth_mode).map_err(AppError)?;
+    if membership_update_requested(&identity_user, requested_membership) {
+        ensure_mutable_membership(identity_user.membership_role).map_err(AppError)?;
+    }
+    if let Some((team_id, _)) = requested_membership {
+        state
+            .store
+            .get_team_by_id(team_id)
+            .await?
+            .ok_or_else(|| AppError(GatewayError::InvalidRequest("team not found".to_string())))?;
+    }
+
+    let now = OffsetDateTime::now_utc();
+    state
+        .store
+        .update_identity_user(user_id, next_global_role, next_auth_mode, now)
+        .await?;
+    sync_identity_user_auth_mode(&state.store, &identity_user, next_auth_mode, oidc_provider.as_ref(), now)
+        .await?;
+    sync_identity_user_membership(&state.store, &identity_user, requested_membership, now).await?;
+
+    Ok(Json(envelope(IdentityActionStatus { status: "ok" })))
+}
+
+pub async fn deactivate_identity_user(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(user_id): Path<String>,
+) -> Result<Json<Envelope<IdentityActionStatus>>, AppError> {
+    let actor = require_platform_admin(&state, &headers).await?;
+    let user_id = parse_uuid(&user_id)?;
+    let user = state
+        .store
+        .get_user_by_id(user_id)
+        .await?
+        .ok_or_else(|| AppError(GatewayError::InvalidRequest("user not found".to_string())))?;
+    ensure_manageable_user(&user).map_err(AppError)?;
+    ensure_not_self_deactivating(&actor, &user).map_err(AppError)?;
+    ensure_deactivation_allowed(&user).map_err(AppError)?;
+    let now = OffsetDateTime::now_utc();
+    state.store.deactivate_identity_user(user_id, now).await?;
+    state.store.revoke_user_sessions(user_id, now).await?;
+    state
+        .store
+        .revoke_password_invitations_for_user(user_id, now)
+        .await?;
+
+    Ok(Json(envelope(IdentityActionStatus { status: "ok" })))
+}
+
+pub async fn reactivate_identity_user(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(user_id): Path<String>,
+) -> Result<Json<Envelope<IdentityActionStatus>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+
+    let user_id = parse_uuid(&user_id)?;
+    let identity_user = load_identity_user_for_mutation(&state, user_id).await?;
+    ensure_reactivation_allowed(&identity_user.user).map_err(AppError)?;
+
+    let now = OffsetDateTime::now_utc();
+    let next_status = reactivation_status(
+        identity_user.user.auth_mode,
+        user_has_auth_proof(&state.store, &identity_user).await?,
+    );
+    state
+        .store
+        .update_user_status(user_id, next_status, now)
+        .await?;
+
+    Ok(Json(envelope(IdentityActionStatus { status: "ok" })))
+}
+
+pub async fn reset_identity_user_onboarding(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(user_id): Path<String>,
+) -> Result<Json<Envelope<CreateUserResponse>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+
+    let user_id = parse_uuid(&user_id)?;
+    let identity_user = load_identity_user_for_mutation(&state, user_id).await?;
+    ensure_reset_onboarding_allowed(&identity_user.user).map_err(AppError)?;
+    if identity_user.user.auth_mode == AuthMode::Oidc {
+        let provider_key = identity_user.oidc_provider_key.as_deref().ok_or_else(|| {
+            AppError(GatewayError::InvalidRequest(
+                "oidc users must be linked to a provider before resetting onboarding".to_string(),
+            ))
+        })?;
+        load_enabled_oidc_provider(&state.store, provider_key).await?;
+    }
+
+    let now = OffsetDateTime::now_utc();
+    match identity_user.user.auth_mode {
+        AuthMode::Password => {
+            state.store.delete_user_password_auth(user_id).await?;
+            state
+                .store
+                .revoke_password_invitations_for_user(user_id, now)
+                .await?;
         }
-    };
+        AuthMode::Oidc => {
+            let provider_id = identity_user.oidc_provider_id.as_deref().ok_or_else(|| {
+                AppError(GatewayError::InvalidRequest(
+                    "oidc users must be linked to a provider before resetting onboarding"
+                        .to_string(),
+                ))
+            })?;
+            state
+                .store
+                .delete_user_oidc_auth(user_id, provider_id)
+                .await?;
+        }
+        AuthMode::Oauth => {
+            return Err(AppError(GatewayError::InvalidRequest(
+                "unsupported auth mode".to_string(),
+            )));
+        }
+    }
+
+    state
+        .store
+        .update_user_status(user_id, UserStatus::Invited, now)
+        .await?;
+    let origin = request_origin(&headers);
+    let identity_user = reload_identity_user(&state.store, user_id).await?;
+    let response = build_onboarding_response(&state, &origin, now, identity_user).await?;
 
     Ok(Json(envelope(response)))
+}
+
+pub async fn remove_identity_team_member(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((team_id, user_id)): Path<(String, String)>,
+) -> Result<Json<Envelope<IdentityActionStatus>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+
+    let team_id = parse_uuid(&team_id)?;
+    let user_id = parse_uuid(&user_id)?;
+    let identity_user = load_identity_user_for_mutation(&state, user_id).await?;
+    ensure_mutable_membership(identity_user.membership_role).map_err(AppError)?;
+
+    if identity_user.team_id != Some(team_id) {
+        return Err(AppError(GatewayError::InvalidRequest(
+            "user is not a member of the requested team".to_string(),
+        )));
+    }
+
+    state.store.remove_team_membership(team_id, user_id).await?;
+    Ok(Json(envelope(IdentityActionStatus { status: "ok" })))
+}
+
+pub async fn transfer_identity_team_member(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((team_id, user_id)): Path<(String, String)>,
+    Json(request): Json<TransferTeamMemberRequest>,
+) -> Result<Json<Envelope<IdentityActionStatus>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+
+    let team_id = parse_uuid(&team_id)?;
+    let user_id = parse_uuid(&user_id)?;
+    let destination_team_id = parse_uuid(&request.destination_team_id)?;
+    let destination_role =
+        ensure_assignable_membership_role(parse_membership_role(&request.destination_role)?)
+            .map_err(AppError)?;
+    if destination_team_id == team_id {
+        return Err(AppError(GatewayError::InvalidRequest(
+            "destination team must differ from the source team".to_string(),
+        )));
+    }
+
+    state
+        .store
+        .get_team_by_id(destination_team_id)
+        .await?
+        .ok_or_else(|| AppError(GatewayError::InvalidRequest("team not found".to_string())))?;
+
+    let identity_user = load_identity_user_for_mutation(&state, user_id).await?;
+    ensure_mutable_membership(identity_user.membership_role).map_err(AppError)?;
+    if identity_user.team_id != Some(team_id) {
+        return Err(AppError(GatewayError::InvalidRequest(
+            "user is not a member of the requested source team".to_string(),
+        )));
+    }
+
+    state
+        .store
+        .transfer_team_membership(
+            user_id,
+            team_id,
+            destination_team_id,
+            destination_role,
+            OffsetDateTime::now_utc(),
+        )
+        .await?;
+
+    Ok(Json(envelope(IdentityActionStatus { status: "ok" })))
 }
 
 pub async fn regenerate_password_invite(
@@ -683,7 +920,7 @@ pub async fn regenerate_password_invite(
             "password invites are only valid for password users".to_string(),
         )));
     }
-    if user.status != "invited" {
+    if user.status != UserStatus::Invited {
         return Err(AppError(GatewayError::InvalidRequest(
             "only invited users can receive a password invite".to_string(),
         )));
@@ -735,7 +972,7 @@ pub async fn complete_password_invitation(
         .await?;
     state
         .store
-        .update_user_status(invitation.user_id, "active", now)
+        .update_user_status(invitation.user_id, UserStatus::Active, now)
         .await?;
     state
         .store
@@ -792,15 +1029,15 @@ pub async fn oidc_callback(
             .get_user_by_id(oidc_auth.user_id)
             .await?
             .ok_or_else(|| AppError(GatewayError::InvalidRequest("user not found".to_string())))?;
-        if user.status == "disabled" {
+        if user.status == UserStatus::Disabled {
             return Err(AppError(GatewayError::InvalidRequest(
                 "disabled users cannot sign in".to_string(),
             )));
         }
-        if user.status == "invited" {
+        if user.status == UserStatus::Invited {
             state
                 .store
-                .update_user_status(user.user_id, "active", now)
+                .update_user_status(user.user_id, UserStatus::Active, now)
                 .await?;
         }
         user
@@ -815,7 +1052,7 @@ pub async fn oidc_callback(
                 ))
             })?;
 
-        if user.status == "disabled" {
+        if user.status == UserStatus::Disabled {
             return Err(AppError(GatewayError::InvalidRequest(
                 "disabled users cannot sign in".to_string(),
             )));
@@ -833,7 +1070,7 @@ pub async fn oidc_callback(
             .await?;
         state
             .store
-            .update_user_status(user.user_id, "active", now)
+            .update_user_status(user.user_id, UserStatus::Active, now)
             .await?;
         user
     };
@@ -891,74 +1128,19 @@ pub(crate) async fn resolve_session_user(
         return Ok(None);
     }
 
+    let Some(user) = state.store.get_user_by_id(session.user_id).await? else {
+        return Ok(None);
+    };
+    if user.status == UserStatus::Disabled {
+        state.store.revoke_user_sessions(user.user_id, now).await?;
+        return Ok(None);
+    }
+
     state
         .store
         .touch_user_session(session.session_id, now)
         .await?;
-    let user = state.store.get_user_by_id(session.user_id).await?;
-    Ok(user)
-}
-
-async fn build_admin_identity_user_view(
-    store: &AnyStore,
-    secret: &str,
-    origin: &str,
-    now: OffsetDateTime,
-    user: IdentityUserRecord,
-) -> Result<AdminIdentityUserView, AppError> {
-    let onboarding = match user.user.auth_mode {
-        AuthMode::Password if user.user.status == "invited" => {
-            let active_invitation = store
-                .find_active_password_invitation_for_user(user.user.user_id, now)
-                .await?;
-            Some(AdminOnboardingActionView::PasswordInvite {
-                invite_url: active_invitation
-                    .as_ref()
-                    .map(|invitation| invitation_url(origin, invitation, secret)),
-                expires_at: active_invitation
-                    .as_ref()
-                    .map(|invitation| format_timestamp(invitation.expires_at)),
-                can_resend: true,
-            })
-        }
-        AuthMode::Oidc => {
-            let provider_key = user.oidc_provider_key.clone().unwrap_or_default();
-            if provider_key.is_empty() {
-                None
-            } else {
-                let provider = OidcProviderRecord {
-                    oidc_provider_id: user.oidc_provider_id.clone().unwrap_or_default(),
-                    provider_key: provider_key.clone(),
-                    provider_type: "generic_oidc".to_string(),
-                    issuer_url: String::new(),
-                    client_id: String::new(),
-                    scopes: Vec::new(),
-                    enabled: true,
-                    created_at: now,
-                    updated_at: now,
-                };
-                Some(AdminOnboardingActionView::OidcSignIn {
-                    sign_in_url: oidc_sign_in_url(origin, &provider, &user.user.email),
-                    provider_key: provider_key.clone(),
-                    provider_label: provider_key,
-                })
-            }
-        }
-        _ => None,
-    };
-
-    Ok(AdminIdentityUserView {
-        id: user.user.user_id.to_string(),
-        name: user.user.name,
-        email: user.user.email,
-        auth_mode: user.user.auth_mode.as_str().to_string(),
-        global_role: user.user.global_role.as_str().to_string(),
-        team_id: user.team_id.map(|value| value.to_string()),
-        team_name: user.team_name,
-        team_role: user.membership_role.map(|value| value.as_str().to_string()),
-        status: user.user.status,
-        onboarding,
-    })
+    Ok(Some(user))
 }
 
 fn build_auth_session_view(user: UserRecord) -> AuthSessionView {
@@ -971,85 +1153,6 @@ fn build_auth_session_view(user: UserRecord) -> AuthSessionView {
         },
         must_change_password: user.must_change_password,
     }
-}
-
-fn build_assignable_user_views(users: &[IdentityUserRecord]) -> Vec<AdminTeamAssignableUserView> {
-    let mut views: Vec<_> = users
-        .iter()
-        .map(|user| AdminTeamAssignableUserView {
-            id: user.user.user_id.to_string(),
-            name: user.user.name.clone(),
-            email: user.user.email.clone(),
-            status: user.user.status.clone(),
-            team_id: user.team_id.map(|value| value.to_string()),
-            team_name: user.team_name.clone(),
-            team_role: user.membership_role.map(|value| value.as_str().to_string()),
-        })
-        .collect();
-    views.sort_by(|left, right| {
-        left.name
-            .cmp(&right.name)
-            .then_with(|| left.email.cmp(&right.email))
-    });
-    views
-}
-
-fn build_admin_team_views(
-    teams: &[gateway_core::TeamRecord],
-    users: &[IdentityUserRecord],
-) -> Vec<AdminTeamManagementView> {
-    teams
-        .iter()
-        .map(|team| {
-            let mut admins: Vec<_> = users
-                .iter()
-                .filter(|user| user.team_id == Some(team.team_id))
-                .filter(|user| user.membership_role == Some(MembershipRole::Admin))
-                .map(|user| AdminTeamAdminView {
-                    id: user.user.user_id.to_string(),
-                    name: user.user.name.clone(),
-                    email: user.user.email.clone(),
-                    status: user.user.status.clone(),
-                })
-                .collect();
-            admins.sort_by(|left, right| {
-                left.name
-                    .cmp(&right.name)
-                    .then_with(|| left.email.cmp(&right.email))
-            });
-
-            let member_count = users
-                .iter()
-                .filter(|user| user.team_id == Some(team.team_id))
-                .count();
-
-            AdminTeamManagementView {
-                id: team.team_id.to_string(),
-                name: team.team_name.clone(),
-                key: team.team_key.clone(),
-                status: team.status.clone(),
-                member_count,
-                admins,
-            }
-        })
-        .collect()
-}
-
-async fn reload_team_view(
-    store: &AnyStore,
-    team_id: Uuid,
-    _now: OffsetDateTime,
-) -> Result<AdminTeamManagementView, AppError> {
-    let teams = store.list_teams().await?;
-    let users = store.list_identity_users().await?;
-    build_admin_team_views(&teams, &users)
-        .into_iter()
-        .find(|team| team.id == team_id.to_string())
-        .ok_or_else(|| {
-            AppError(GatewayError::Store(gateway_core::StoreError::NotFound(
-                "team missing".to_string(),
-            )))
-        })
 }
 
 async fn generate_unique_team_key(store: &AnyStore, name: &str) -> Result<String, AppError> {
@@ -1187,21 +1290,240 @@ async fn sync_team_admins(
     Ok(())
 }
 
-async fn reload_identity_user(
+fn parse_requested_membership(
+    team_id: Option<&str>,
+    team_role: Option<&str>,
+) -> Result<Option<(Uuid, MembershipRole)>, AppError> {
+    match (team_id, team_role) {
+        (Some(team_id), Some(role)) => {
+            let role = ensure_assignable_membership_role(parse_membership_role(role)?)
+                .map_err(AppError)?;
+            Ok(Some((parse_uuid(team_id)?, role)))
+        }
+        (None, None) => Ok(None),
+        _ => Err(AppError(GatewayError::InvalidRequest(
+            "team_id and team_role must either both be present or both be absent".to_string(),
+        ))),
+    }
+}
+
+async fn resolve_requested_oidc_provider(
     store: &AnyStore,
+    auth_mode: AuthMode,
+    oidc_provider_key: Option<&str>,
+) -> Result<Option<OidcProviderRecord>, AppError> {
+    match auth_mode {
+        AuthMode::Oidc => {
+            let provider_key = oidc_provider_key.ok_or_else(|| {
+                AppError(GatewayError::InvalidRequest(
+                    "oidc_provider_key is required for oidc users".to_string(),
+                ))
+            })?;
+            Ok(Some(load_enabled_oidc_provider(store, provider_key).await?))
+        }
+        _ => {
+            if oidc_provider_key.is_some() {
+                return Err(AppError(GatewayError::InvalidRequest(
+                    "oidc_provider_key is only valid for oidc users".to_string(),
+                )));
+            }
+            Ok(None)
+        }
+    }
+}
+
+async fn sync_identity_user_membership(
+    store: &AnyStore,
+    user: &IdentityUserRecord,
+    requested_membership: Option<(Uuid, MembershipRole)>,
+    now: OffsetDateTime,
+) -> Result<(), AppError> {
+    if !membership_update_requested(user, requested_membership) {
+        return Ok(());
+    }
+    ensure_mutable_membership(user.membership_role).map_err(AppError)?;
+
+    match (user.team_id, requested_membership) {
+        (None, None) => Ok(()),
+        (None, Some((team_id, role))) => {
+            store
+                .assign_team_membership(user.user.user_id, team_id, role)
+                .await?;
+            Ok(())
+        }
+        (Some(team_id), None) => {
+            store.remove_team_membership(team_id, user.user.user_id).await?;
+            Ok(())
+        }
+        (Some(current_team_id), Some((next_team_id, next_role))) if current_team_id == next_team_id => {
+            if user.membership_role != Some(next_role) {
+                store
+                    .update_team_membership_role(
+                        current_team_id,
+                        user.user.user_id,
+                        next_role,
+                        now,
+                    )
+                    .await?;
+            }
+            Ok(())
+        }
+        (Some(current_team_id), Some((next_team_id, next_role))) => {
+            store
+                .transfer_team_membership(
+                    user.user.user_id,
+                    current_team_id,
+                    next_team_id,
+                    next_role,
+                    now,
+                )
+                .await?;
+            Ok(())
+        }
+    }
+}
+
+fn membership_update_requested(
+    user: &IdentityUserRecord,
+    requested_membership: Option<(Uuid, MembershipRole)>,
+) -> bool {
+    current_membership(user) != requested_membership
+}
+
+fn current_membership(user: &IdentityUserRecord) -> Option<(Uuid, MembershipRole)> {
+    match (user.team_id, user.membership_role) {
+        (Some(team_id), Some(role)) => Some((team_id, role)),
+        _ => None,
+    }
+}
+
+async fn sync_identity_user_auth_mode(
+    store: &AnyStore,
+    user: &IdentityUserRecord,
+    next_auth_mode: AuthMode,
+    oidc_provider: Option<&OidcProviderRecord>,
+    now: OffsetDateTime,
+) -> Result<(), AppError> {
+    if user.user.auth_mode == AuthMode::Password && next_auth_mode != AuthMode::Password {
+        store
+            .delete_user_password_auth(user.user.user_id)
+            .await?;
+        store
+            .revoke_password_invitations_for_user(user.user.user_id, now)
+            .await?;
+    }
+
+    if let Some(current_provider_id) = user.oidc_provider_id.as_deref() {
+        let next_provider_id = oidc_provider.map(|provider| provider.oidc_provider_id.as_str());
+        if next_auth_mode != AuthMode::Oidc || next_provider_id != Some(current_provider_id) {
+            store
+                .delete_user_oidc_auth(user.user.user_id, current_provider_id)
+                .await?;
+        }
+    }
+
+    match next_auth_mode {
+        AuthMode::Password => {
+            store.clear_user_oidc_link(user.user.user_id).await?;
+        }
+        AuthMode::Oidc => {
+            let provider = oidc_provider.ok_or_else(|| {
+                AppError(GatewayError::InvalidRequest(
+                    "oidc provider configuration is required".to_string(),
+                ))
+            })?;
+            store
+                .set_user_oidc_link(user.user.user_id, &provider.oidc_provider_id, now)
+                .await?;
+        }
+        AuthMode::Oauth => {}
+    }
+
+    Ok(())
+}
+
+async fn user_has_auth_proof(store: &AnyStore, user: &IdentityUserRecord) -> Result<bool, AppError> {
+    match user.user.auth_mode {
+        AuthMode::Password => Ok(store
+            .get_user_password_auth(user.user.user_id)
+            .await?
+            .is_some()),
+        AuthMode::Oidc => {
+            let Some(provider_id) = user.oidc_provider_id.as_deref() else {
+                return Ok(false);
+            };
+            Ok(store
+                .get_user_oidc_auth_by_user(user.user.user_id, provider_id)
+                .await?
+                .is_some())
+        }
+        AuthMode::Oauth => Ok(false),
+    }
+}
+
+async fn build_onboarding_response(
+    state: &AppState,
+    origin: &str,
+    now: OffsetDateTime,
+    user: IdentityUserRecord,
+) -> Result<CreateUserResponse, AppError> {
+    match user.user.auth_mode {
+        AuthMode::Password => {
+            let invitation =
+                create_password_invite(&state.store, &state.identity_token_secret, origin, user.user.user_id)
+                    .await?;
+            let view = build_admin_identity_user_view(
+                &state.store,
+                &state.identity_token_secret,
+                origin,
+                now,
+                reload_identity_user(&state.store, user.user.user_id).await?,
+            )
+            .await?;
+            Ok(CreateUserResponse::PasswordInvite {
+                user: view,
+                invite_url: invitation.url,
+                expires_at: invitation.expires_at,
+            })
+        }
+        AuthMode::Oidc => {
+            let provider_key = user.oidc_provider_key.clone().ok_or_else(|| {
+                AppError(GatewayError::InvalidRequest(
+                    "oidc provider is required for oidc users".to_string(),
+                ))
+            })?;
+            let provider = load_enabled_oidc_provider(&state.store, &provider_key).await?;
+            let view = build_admin_identity_user_view(
+                &state.store,
+                &state.identity_token_secret,
+                origin,
+                now,
+                user.clone(),
+            )
+            .await?;
+            Ok(CreateUserResponse::OidcSignIn {
+                user: view,
+                sign_in_url: oidc_sign_in_url(origin, &provider.provider_key, &user.user.email),
+                provider_label: provider.provider_key,
+            })
+        }
+        AuthMode::Oauth => Err(AppError(GatewayError::InvalidRequest(
+            "unsupported auth mode".to_string(),
+        ))),
+    }
+}
+
+async fn load_identity_user_for_mutation(
+    state: &AppState,
     user_id: Uuid,
 ) -> Result<IdentityUserRecord, AppError> {
-    let user = store
-        .list_identity_users()
+    let user = state
+        .store
+        .get_user_by_id(user_id)
         .await?
-        .into_iter()
-        .find(|record| record.user.user_id == user_id)
-        .ok_or_else(|| {
-            AppError(GatewayError::Store(gateway_core::StoreError::NotFound(
-                "user missing".to_string(),
-            )))
-        })?;
-    Ok(user)
+        .ok_or_else(|| AppError(GatewayError::InvalidRequest("user not found".to_string())))?;
+    ensure_manageable_user(&user).map_err(AppError)?;
+    reload_identity_user(&state.store, user_id).await
 }
 
 struct GeneratedInvite {
@@ -1363,16 +1685,20 @@ async fn load_enabled_oidc_provider(
         })
 }
 
-fn oidc_sign_in_url(origin: &str, provider: &OidcProviderRecord, email: &str) -> String {
+pub(crate) fn oidc_sign_in_url(origin: &str, provider_key: &str, email: &str) -> String {
     let query = form_urlencoded::Serializer::new(String::new())
-        .append_pair("provider_key", &provider.provider_key)
+        .append_pair("provider_key", provider_key)
         .append_pair("login_hint", email)
         .append_pair("redirect_to", "/admin/account-ready?mode=oidc")
         .finish();
     format!("{origin}/api/v1/auth/oidc/start?{query}")
 }
 
-fn invitation_url(origin: &str, invitation: &PasswordInvitationRecord, secret: &str) -> String {
+pub(crate) fn invitation_url(
+    origin: &str,
+    invitation: &PasswordInvitationRecord,
+    secret: &str,
+) -> String {
     let token = signed_token("invite", secret, invitation.invitation_id);
     format!("{origin}/admin/invite/{token}")
 }

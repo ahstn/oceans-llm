@@ -27,9 +27,13 @@ vi.mock('sonner', () => ({
 }))
 
 vi.mock('@/server/admin-data.functions', () => ({
+  deactivateIdentityUser: vi.fn(),
   createIdentityUser: (...args: unknown[]) => createIdentityUserMock(...args),
   getUsers: vi.fn(),
+  reactivateIdentityUser: vi.fn(),
+  resetIdentityUserOnboarding: vi.fn(),
   resendIdentityUserPasswordInvite: (...args: unknown[]) => resendInviteMock(...args),
+  updateIdentityUser: vi.fn(),
 }))
 
 const basePayload: IdentityUsersPayload = {
@@ -105,5 +109,39 @@ describe('UsersPage', () => {
 
     expect(group).not.toBeNull()
     expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument()
+  })
+
+  it('locks owner membership controls and invited-only auth mode edits', async () => {
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        users: [
+          {
+            id: 'user_1',
+            name: 'Jane Admin',
+            email: 'jane@example.com',
+            auth_mode: 'password',
+            global_role: 'platform_admin',
+            team_id: 'team_1',
+            team_name: 'Core Platform',
+            team_role: 'owner',
+            status: 'active',
+            onboarding: null,
+          },
+        ],
+        teams: [{ id: 'team_1', name: 'Core Platform' }],
+        oidc_providers: [],
+      } satisfies IdentityUsersPayload,
+    })
+
+    const { UsersPage } = await import('@/routes/identity/users')
+
+    render(<UsersPage />)
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Manage' })[0])
+
+    expect(screen.getByText('Owner membership is locked')).toBeInTheDocument()
+    expect(screen.getByText('Auth mode is locked after activation; use reset onboarding to reissue credentials.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reset onboarding' })).toBeDisabled()
+    expect(screen.getAllByLabelText('Auth method')[1]).toBeDisabled()
   })
 })
