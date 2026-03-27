@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { RequestLogView } from '@/types/api'
@@ -108,24 +108,22 @@ describe('RequestLogsPage', () => {
 
     const { RequestLogsPage } = await import('@/routes/observability/request-logs')
 
-    render(<RequestLogsPage />)
+    const view = render(<RequestLogsPage />)
+    const scope = within(view.container)
 
-    fireEvent.change(screen.getByTestId('request-log-filter-tag-key'), {
-      target: { value: '   ' },
-    })
-    fireEvent.change(screen.getByTestId('request-log-filter-tag-value'), {
-      target: { value: 'guest_checkout' },
-    })
+    const tagKeyInput = scope.getByTestId('request-log-filter-tag-key')
+    const tagValueInput = scope.getByTestId('request-log-filter-tag-value')
 
-    expect(screen.getByRole('button', { name: 'Apply Filters' })).toBeDisabled()
+    fireEvent.change(tagKeyInput, { target: { value: '   ' } })
+    fireEvent.change(tagValueInput, { target: { value: 'guest_checkout' } })
+
+    expect(scope.getByRole('button', { name: 'Apply Filters' })).toBeDisabled()
     expect(
-      screen.getByText('Provide both a tag key and tag value to filter bespoke request tags.'),
+      scope.getByText('Provide both a tag key and tag value to filter bespoke request tags.'),
     ).toBeInTheDocument()
 
-    fireEvent.change(screen.getByTestId('request-log-filter-tag-key'), {
-      target: { value: ' feature ' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'Apply Filters' }))
+    fireEvent.change(tagKeyInput, { target: { value: ' feature ' } })
+    fireEvent.click(scope.getByRole('button', { name: 'Apply Filters' }))
 
     await waitFor(() => {
       expect(navigateMock).toHaveBeenCalledWith({
