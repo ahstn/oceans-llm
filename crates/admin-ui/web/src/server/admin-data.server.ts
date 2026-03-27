@@ -16,6 +16,7 @@ import type {
   Paginated,
   PasswordInviteResult,
   RequestLogDetailView,
+  RequestLogFiltersInput,
   RequestLogView,
   SpendBudgetsView,
   SpendOwnerKind,
@@ -199,7 +200,35 @@ export async function deactivateTeamBudget(
   )
 }
 
-export async function listRequestLogs(): Promise<ApiEnvelope<Paginated<RequestLogView>>> {
+export async function listRequestLogs(
+  filters: RequestLogFiltersInput = {},
+): Promise<ApiEnvelope<Paginated<RequestLogView>>> {
+  const query = new URLSearchParams()
+  if (filters.requestId) {
+    query.set('request_id', filters.requestId)
+  }
+  if (filters.modelKey) {
+    query.set('model_key', filters.modelKey)
+  }
+  if (filters.providerKey) {
+    query.set('provider_key', filters.providerKey)
+  }
+  if (filters.service) {
+    query.set('service', filters.service)
+  }
+  if (filters.component) {
+    query.set('component', filters.component)
+  }
+  if (filters.env) {
+    query.set('env', filters.env)
+  }
+  if (filters.tagKey) {
+    query.set('tag_key', filters.tagKey)
+  }
+  if (filters.tagValue) {
+    query.set('tag_value', filters.tagValue)
+  }
+  const suffix = query.toString() ? `?${query.toString()}` : ''
   const response = await fetchGatewayJson<
     ApiEnvelope<{
       items: GatewayRequestLogSummary[]
@@ -207,7 +236,7 @@ export async function listRequestLogs(): Promise<ApiEnvelope<Paginated<RequestLo
       page_size: number
       total: number
     }>
-  >('/api/v1/admin/observability/request-logs')
+  >(`/api/v1/admin/observability/request-logs${suffix}`)
 
   return {
     data: {
@@ -428,6 +457,15 @@ interface GatewayRequestLogSummary {
   has_payload: boolean
   request_payload_truncated: boolean
   response_payload_truncated: boolean
+  request_tags: {
+    service: string | null
+    component: string | null
+    env: string | null
+    bespoke: Array<{
+      key: string
+      value: string
+    }>
+  }
   metadata: Record<string, unknown>
   occurred_at: string
 }
@@ -459,6 +497,12 @@ function mapRequestLogSummary(summary: GatewayRequestLogSummary): RequestLogView
     hasPayload: summary.has_payload,
     requestPayloadTruncated: summary.request_payload_truncated,
     responsePayloadTruncated: summary.response_payload_truncated,
+    requestTags: {
+      service: summary.request_tags.service,
+      component: summary.request_tags.component,
+      env: summary.request_tags.env,
+      bespoke: summary.request_tags.bespoke,
+    },
     metadata: summary.metadata,
     occurredAt: summary.occurred_at,
   }

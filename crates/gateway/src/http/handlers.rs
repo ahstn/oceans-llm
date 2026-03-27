@@ -14,7 +14,7 @@ use futures_util::{StreamExt, stream};
 use gateway_core::{
     AuthenticatedApiKey, ChatCompletionsRequest, CoreRequestRequirements, EmbeddingsRequest,
     GatewayError, ModelsListResponse, ProviderCapabilities, ProviderClient, ProviderError,
-    ProviderRequestContext, RequestLogRecord, openai_chat_request_to_core,
+    ProviderRequestContext, RequestLogRecord, RequestTags, openai_chat_request_to_core,
     openai_embeddings_request_to_core, protocol::openai::ModelCard,
 };
 use serde_json::{Map, Value, json};
@@ -24,6 +24,7 @@ use uuid::Uuid;
 
 use crate::http::{
     error::AppError,
+    request_tags::extract_request_tags,
     state::{AppGatewayService, AppState},
 };
 use crate::observability::{ChatMetricLabels, ChatRequestMetric};
@@ -88,12 +89,14 @@ pub async fn v1_chat_completions(
 
     let request_id = extract_request_id(&headers);
     let request_headers = extract_request_headers(&headers);
+    let request_tags = extract_request_tags(&headers)?;
     let request_log_context = state.service.begin_chat_request_log(
         &request_id,
         &resolved.selection.requested_model.model_key,
         &resolved.selection.execution_model.model_key,
         &request,
         &request_headers,
+        request_tags,
     );
     let request_span = Span::current();
     record_request_span_fields(&request_span, &auth, &resolved, core_request.stream);
@@ -337,6 +340,7 @@ pub async fn v1_embeddings(
         .await?;
     let request_id = extract_request_id(&headers);
     let request_headers = extract_request_headers(&headers);
+    let request_tags = extract_request_tags(&headers)?;
     let (eligible_route_count, selected) =
         select_first_eligible_route(&state.providers, &resolved.routes, requirements);
 
@@ -387,6 +391,7 @@ pub async fn v1_embeddings(
                 &request_id,
                 &resolved.selection.requested_model.model_key,
                 &resolved.selection.execution_model.model_key,
+                &request_tags,
                 RequestLogSummary::failure(
                     RequestOperation::Embeddings,
                     route.provider_key.clone(),
@@ -420,6 +425,7 @@ pub async fn v1_embeddings(
         &request_id,
         &resolved.selection.requested_model.model_key,
         &resolved.selection.execution_model.model_key,
+        &request_tags,
         RequestLogSummary::success(
             RequestOperation::Embeddings,
             route.provider_key.clone(),
@@ -840,6 +846,7 @@ async fn best_effort_log_request(
     request_id: &str,
     model_key: &str,
     resolved_model_key: &str,
+    request_tags: &RequestTags,
     summary: RequestLogSummary,
 ) {
     let metadata = request_log_metadata(summary.stream, summary.operation);
@@ -860,6 +867,7 @@ async fn best_effort_log_request(
         has_payload: false,
         request_payload_truncated: false,
         response_payload_truncated: false,
+        request_tags: request_tags.clone(),
         error_code: summary.error_code,
         metadata,
         occurred_at: OffsetDateTime::now_utc(),

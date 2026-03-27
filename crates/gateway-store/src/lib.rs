@@ -28,8 +28,9 @@ mod tests {
         IdentityRepository, MembershipRole, ModelPricingRecord, ModelRepository, Money4,
         PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
         PricingProvenance, ProviderCapabilities, RequestLogRecord, RequestLogRepository,
-        SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedModel, SeedModelRoute,
-        SeedProvider, StoreError, StoreHealth, UsageLedgerRecord, UsagePricingStatus, UserStatus,
+        RequestTags, SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedModel,
+        SeedModelRoute, SeedProvider, StoreError, StoreHealth, UsageLedgerRecord,
+        UsagePricingStatus, UserStatus,
     };
     use serde_json::{Map, json};
     use serial_test::serial;
@@ -2589,6 +2590,7 @@ mod tests {
             has_payload: false,
             request_payload_truncated: false,
             response_payload_truncated: false,
+            request_tags: RequestTags::default(),
             metadata: Map::new(),
             occurred_at: OffsetDateTime::now_utc(),
         };

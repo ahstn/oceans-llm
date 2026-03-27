@@ -1,16 +1,21 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { RequestLogView } from '@/types/api'
 
 const getObservabilityRequestLogDetailMock = vi.fn()
+const navigateMock = vi.fn()
 
 const routeMock = {
   useLoaderData: vi.fn(),
+  useSearch: vi.fn(),
 }
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
+  useRouter: () => ({
+    navigate: navigateMock,
+  }),
 }))
 
 vi.mock('@tanstack/react-virtual', () => ({
@@ -45,6 +50,12 @@ const items: RequestLogView[] = [
     hasPayload: true,
     requestPayloadTruncated: false,
     responsePayloadTruncated: false,
+    requestTags: {
+      service: 'checkout',
+      component: 'pricing_api',
+      env: 'prod',
+      bespoke: [{ key: 'feature', value: 'guest_checkout' }],
+    },
     metadata: {
       stream: false,
       fallback_used: false,
@@ -57,11 +68,14 @@ const items: RequestLogView[] = [
 describe('RequestLogsPage', () => {
   beforeEach(() => {
     routeMock.useLoaderData.mockReset()
+    routeMock.useSearch.mockReset()
     getObservabilityRequestLogDetailMock.mockReset()
+    navigateMock.mockReset()
+    routeMock.useSearch.mockReturnValue({})
   })
 
   it('renders dedicated mobile and desktop log layouts from the same payload', async () => {
-    routeMock.useLoaderData.mockReturnValue({ data: { items } })
+    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
 
     const { RequestLogsPage } = await import('@/routes/observability/request-logs')
 
@@ -86,6 +100,39 @@ describe('RequestLogsPage', () => {
 
     await waitFor(() => {
       expect(screen.getByText('request log missing')).toBeInTheDocument()
+    })
+  })
+
+  it('treats whitespace-only tag input as empty when gating filters', async () => {
+    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
+
+    const { RequestLogsPage } = await import('@/routes/observability/request-logs')
+
+    const view = render(<RequestLogsPage />)
+    const scope = within(view.container)
+
+    const tagKeyInput = scope.getByTestId('request-log-filter-tag-key')
+    const tagValueInput = scope.getByTestId('request-log-filter-tag-value')
+
+    fireEvent.change(tagKeyInput, { target: { value: '   ' } })
+    fireEvent.change(tagValueInput, { target: { value: 'guest_checkout' } })
+
+    expect(scope.getByRole('button', { name: 'Apply Filters' })).toBeDisabled()
+    expect(
+      scope.getByText('Provide both a tag key and tag value to filter bespoke request tags.'),
+    ).toBeInTheDocument()
+
+    fireEvent.change(tagKeyInput, { target: { value: ' feature ' } })
+    fireEvent.click(scope.getByRole('button', { name: 'Apply Filters' }))
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith({
+        to: '/observability/request-logs',
+        search: {
+          tagKey: 'feature',
+          tagValue: 'guest_checkout',
+        },
+      })
     })
   })
 })

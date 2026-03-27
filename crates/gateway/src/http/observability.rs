@@ -5,6 +5,7 @@ use axum::{
 };
 use gateway_core::{
     GatewayError, RequestLogDetail, RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord,
+    RequestTag, RequestTags,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -14,6 +15,7 @@ use crate::http::{
     admin_auth::require_platform_admin,
     error::AppError,
     identity::{Envelope, envelope, format_timestamp},
+    request_tags::build_bespoke_tag_filter,
     state::AppState,
 };
 
@@ -31,6 +33,11 @@ pub struct RequestLogListQuery {
     status_code: Option<i64>,
     user_id: Option<String>,
     team_id: Option<String>,
+    service: Option<String>,
+    component: Option<String>,
+    env: Option<String>,
+    tag_key: Option<String>,
+    tag_value: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -60,8 +67,23 @@ pub struct RequestLogSummaryView {
     has_payload: bool,
     request_payload_truncated: bool,
     response_payload_truncated: bool,
+    request_tags: RequestTagsView,
     metadata: Value,
     occurred_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RequestTagsView {
+    service: Option<String>,
+    component: Option<String>,
+    env: Option<String>,
+    bespoke: Vec<RequestTagView>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RequestTagView {
+    key: String,
+    value: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -83,7 +105,7 @@ pub async fn list_request_logs(
 ) -> Result<Json<Envelope<RequestLogPageView>>, AppError> {
     require_platform_admin(&state, &headers).await?;
 
-    let query = RequestLogQuery {
+    let request_log_query = RequestLogQuery {
         page: query.page.unwrap_or(DEFAULT_PAGE).max(1),
         page_size: query
             .page_size
@@ -95,6 +117,17 @@ pub async fn list_request_logs(
         status_code: query.status_code,
         user_id: parse_optional_uuid(query.user_id.as_deref(), "user_id")?,
         team_id: parse_optional_uuid(query.team_id.as_deref(), "team_id")?,
+        service: empty_to_none(query.service),
+        component: empty_to_none(query.component),
+        env: empty_to_none(query.env),
+        tag_key: None,
+        tag_value: None,
+    };
+    let (tag_key, tag_value) = parse_optional_tag_filter(query.tag_key, query.tag_value)?;
+    let query = RequestLogQuery {
+        tag_key,
+        tag_value,
+        ..request_log_query
     };
 
     let page = state.service.list_request_logs(&query).await?;
@@ -136,6 +169,7 @@ fn summary_view(log: &RequestLogRecord) -> RequestLogSummaryView {
         has_payload: log.has_payload,
         request_payload_truncated: log.request_payload_truncated,
         response_payload_truncated: log.response_payload_truncated,
+        request_tags: request_tags_view(&log.request_tags),
         metadata: Value::Object(log.metadata.clone()),
         occurred_at: format_timestamp(log.occurred_at),
     }
@@ -160,6 +194,44 @@ fn empty_to_none(value: Option<String>) -> Option<String> {
         let trimmed = value.trim();
         (!trimmed.is_empty()).then(|| trimmed.to_string())
     })
+}
+
+fn parse_optional_tag_filter(
+    key: Option<String>,
+    value: Option<String>,
+) -> Result<(Option<String>, Option<String>), AppError> {
+    let key = empty_to_none(key);
+    let value = empty_to_none(value);
+
+    match (key, value) {
+        (None, None) => Ok((None, None)),
+        (Some(_), None) => Err(AppError(GatewayError::InvalidRequest(
+            "request log tag filters require both `tag_key` and `tag_value`".to_string(),
+        ))),
+        (None, Some(_)) => Err(AppError(GatewayError::InvalidRequest(
+            "request log tag filters require both `tag_key` and `tag_value`".to_string(),
+        ))),
+        (Some(key), Some(value)) => {
+            let tag = build_bespoke_tag_filter(&key, &value).map_err(AppError)?;
+            Ok((Some(tag.key), Some(tag.value)))
+        }
+    }
+}
+
+fn request_tags_view(tags: &RequestTags) -> RequestTagsView {
+    RequestTagsView {
+        service: tags.service.clone(),
+        component: tags.component.clone(),
+        env: tags.env.clone(),
+        bespoke: tags.bespoke.iter().map(request_tag_view).collect(),
+    }
+}
+
+fn request_tag_view(tag: &RequestTag) -> RequestTagView {
+    RequestTagView {
+        key: tag.key.clone(),
+        value: tag.value.clone(),
+    }
 }
 
 fn parse_optional_uuid(value: Option<&str>, field_name: &str) -> Result<Option<Uuid>, AppError> {

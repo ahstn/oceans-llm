@@ -5,8 +5,8 @@ use gateway_core::{
     ChatCompletionsRequest, GatewayError, GatewayModel, IdentityRepository, ModelRepository,
     ModelRoute, Money4, PricingCatalogRepository, PricingResolution, PricingUnpricedReason,
     ProviderRepository, RequestLogDetail, RequestLogPage, RequestLogQuery, RequestLogRecord,
-    RequestLogRepository, ResolvedModelPricing, RouteError, RoutePlanner, StoreHealth,
-    TeamBudgetRecord, UsageLedgerRecord, UsagePricingStatus, UserBudgetRecord,
+    RequestLogRepository, RequestTags, ResolvedModelPricing, RouteError, RoutePlanner,
+    StoreHealth, TeamBudgetRecord, UsageLedgerRecord, UsagePricingStatus, UserBudgetRecord,
 };
 use serde_json::{Value, json};
 use time::OffsetDateTime;
@@ -178,6 +178,7 @@ where
         resolved_model_key: &str,
         request: &ChatCompletionsRequest,
         request_headers: &std::collections::BTreeMap<String, String>,
+        request_tags: RequestTags,
     ) -> ChatRequestLogContext {
         self.request_logging.begin_chat_request(
             request_id,
@@ -185,6 +186,7 @@ where
             resolved_model_key,
             request,
             request_headers,
+            request_tags,
         )
     }
 

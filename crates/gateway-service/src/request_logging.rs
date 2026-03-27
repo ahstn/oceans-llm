@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use gateway_core::{
     ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, ChatCompletionsRequest, GatewayError,
     IdentityRepository, OpenAiErrorEnvelope, RequestLogDetail, RequestLogPage,
-    RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository,
+    RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestTags,
 };
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
@@ -20,6 +20,7 @@ pub struct ChatRequestLogContext {
     pub request_id: String,
     pub requested_model_key: String,
     pub resolved_model_key: String,
+    pub request_tags: RequestTags,
     request_json: Value,
     request_payload_truncated: bool,
 }
@@ -205,6 +206,7 @@ where
         resolved_model_key: &str,
         request: &ChatCompletionsRequest,
         request_headers: &BTreeMap<String, String>,
+        request_tags: RequestTags,
     ) -> ChatRequestLogContext {
         let sanitized_headers = request_headers
             .iter()
@@ -222,6 +224,7 @@ where
             request_id: request_id.to_string(),
             requested_model_key: requested_model_key.to_string(),
             resolved_model_key: resolved_model_key.to_string(),
+            request_tags,
             request_json,
             request_payload_truncated,
         }
@@ -405,6 +408,7 @@ where
             has_payload: true,
             request_payload_truncated: context.request_payload_truncated,
             response_payload_truncated,
+            request_tags: context.request_tags.clone(),
             metadata,
             occurred_at: OffsetDateTime::now_utc(),
         };
@@ -494,7 +498,8 @@ mod tests {
         ApiKeyOwnerKind, AuthMode, AuthenticatedApiKey, ChatCompletionsRequest, GlobalRole,
         IdentityRepository, ModelAccessMode, RequestLogDetail, RequestLogPage,
         RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository,
-        StoreError, TeamMembershipRecord, TeamRecord, UserRecord, UserStatus,
+        RequestTag, RequestTags, StoreError, TeamMembershipRecord, TeamRecord, UserRecord,
+        UserStatus,
     };
     use serde_json::{Value, json};
     use time::OffsetDateTime;
@@ -650,6 +655,7 @@ mod tests {
                 extra: BTreeMap::new(),
             },
             &BTreeMap::new(),
+            RequestTags::default(),
         );
 
         let wrote = logging
@@ -694,6 +700,15 @@ mod tests {
                 extra: BTreeMap::from([("token".to_string(), Value::String("secret".to_string()))]),
             },
             &headers,
+            RequestTags {
+                service: Some("checkout".to_string()),
+                component: Some("pricing_api".to_string()),
+                env: Some("prod".to_string()),
+                bespoke: vec![RequestTag {
+                    key: "feature".to_string(),
+                    value: "guest_checkout".to_string(),
+                }],
+            },
         );
 
         let wrote = logging
@@ -720,6 +735,8 @@ mod tests {
             "[REDACTED]"
         );
         assert_eq!(payloads[0].request_json["body"]["token"], "[REDACTED]");
+        assert_eq!(logs[0].request_tags.service.as_deref(), Some("checkout"));
+        assert_eq!(logs[0].request_tags.bespoke[0].key, "feature");
         assert_eq!(logs[0].metadata["fallback_used"], Value::Bool(true));
     }
 
@@ -746,6 +763,7 @@ mod tests {
                 extra: BTreeMap::new(),
             },
             &BTreeMap::new(),
+            RequestTags::default(),
         );
         let mut collector = logging.new_stream_response_collector();
         collector.observe_chunk(br#"data: {"delta":"hello"}"#);

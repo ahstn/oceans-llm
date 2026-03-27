@@ -759,6 +759,31 @@ impl UsagePricingStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RequestTag {
+    pub key: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RequestTags {
+    pub service: Option<String>,
+    pub component: Option<String>,
+    pub env: Option<String>,
+    #[serde(default)]
+    pub bespoke: Vec<RequestTag>,
+}
+
+impl RequestTags {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.service.is_none()
+            && self.component.is_none()
+            && self.env.is_none()
+            && self.bespoke.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RequestLogRecord {
     pub request_log_id: Uuid,
     pub request_id: String,
@@ -777,6 +802,7 @@ pub struct RequestLogRecord {
     pub has_payload: bool,
     pub request_payload_truncated: bool,
     pub response_payload_truncated: bool,
+    pub request_tags: RequestTags,
     pub metadata: Map<String, Value>,
     pub occurred_at: OffsetDateTime,
 }
@@ -798,6 +824,11 @@ pub struct RequestLogQuery {
     pub status_code: Option<i64>,
     pub user_id: Option<Uuid>,
     pub team_id: Option<Uuid>,
+    pub service: Option<String>,
+    pub component: Option<String>,
+    pub env: Option<String>,
+    pub tag_key: Option<String>,
+    pub tag_value: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
