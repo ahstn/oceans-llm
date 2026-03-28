@@ -6,15 +6,13 @@ use bytes::Bytes;
 use futures_util::StreamExt;
 use gateway_core::{
     CoreChatRequest, CoreEmbeddingsRequest, ProviderCapabilities, ProviderClient, ProviderError,
-    ProviderRequestContext, ProviderStream, core_chat_request_to_openai,
+    ProviderRequestContext, ProviderStream, SseEventParser, core_chat_request_to_openai,
     core_embeddings_request_to_openai,
 };
 use serde_json::Value;
 
 use crate::http::{join_base_url, map_reqwest_error};
-use crate::streaming::{
-    SseEventParser, done_sse_chunk, openai_sse_error_chunk, render_sse_event_chunk,
-};
+use crate::streaming::{done_sse_chunk, openai_sse_error_chunk, render_sse_event_chunk};
 
 #[derive(Debug, Clone)]
 pub struct OpenAiCompatConfig {
