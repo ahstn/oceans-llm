@@ -1,4 +1,4 @@
-import type { components, paths } from '@/generated/admin-api'
+import type { components, operations, paths } from '@/generated/admin-api'
 
 export type GatewayPaths = paths
 export type ResponseMeta = components['schemas']['ResponseMeta']
@@ -31,7 +31,9 @@ export type RequestLogView = components['schemas']['RequestLogSummaryView']
 export type RequestLogPayloadView = components['schemas']['RequestLogPayloadView']
 export type RequestLogDetailView = components['schemas']['RequestLogDetailView']
 export type RequestLogPageView = components['schemas']['RequestLogPageView']
-export type RequestLogFiltersInput = components['schemas']['RequestLogListQuery']
+export type RequestLogFiltersInput = NonNullable<
+  operations['list_request_logs']['parameters']['query']
+>
 
 export type TeamAdminView = components['schemas']['AdminTeamAdminView']
 export type TeamMemberView = components['schemas']['AdminTeamMemberView']

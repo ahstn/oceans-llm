@@ -535,8 +535,9 @@ pub fn admin_openapi() -> utoipa::openapi::OpenApi {
 }
 
 pub fn write_admin_openapi(path: &Path) -> anyhow::Result<()> {
-    let document = serde_json::to_string_pretty(&admin_openapi())
+    let mut document = serde_json::to_string_pretty(&admin_openapi())
         .context("failed serializing admin OpenAPI document")?;
+    document.push('\n');
 
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
