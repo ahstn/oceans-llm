@@ -1,4 +1,7 @@
+import createClient from 'openapi-fetch'
 import { getRequest, setResponseHeader } from '@tanstack/react-start/server'
+
+import type { GatewayPaths } from '@/types/live-api'
 
 const DEFAULT_DEV_UI_PORT = '3001'
 const DEFAULT_GATEWAY_PORT = '8080'
@@ -71,34 +74,63 @@ function forwardRequestHeaders(initHeaders?: HeadersInit) {
   return forwardRequestHeadersFromRequest(getRequest(), initHeaders)
 }
 
-async function readGatewayError(response: Response) {
-  try {
-    const body = await response.json()
-    if (body?.error?.message) {
-      return String(body.error.message)
-    }
-  } catch {
-    // Ignore parse failures and use the HTTP status instead.
+function mergeRequestHeaders(input: RequestInfo | URL, initHeaders?: HeadersInit) {
+  const headers = new Headers(input instanceof Request ? input.headers : undefined)
+
+  if (initHeaders) {
+    const overrides = new Headers(initHeaders)
+    overrides.forEach((value, key) => {
+      headers.set(key, value)
+    })
   }
 
-  return `Gateway request failed with ${response.status}`
+  return headers
 }
 
-export async function fetchGatewayJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const headers = forwardRequestHeaders(init?.headers)
-  const response = await fetch(`${resolveGatewayOrigin()}${path}`, {
+function readGatewayErrorBody(error: unknown, status: number) {
+  if (
+    error &&
+    typeof error === 'object' &&
+    'error' in error &&
+    error.error &&
+    typeof error.error === 'object' &&
+    'message' in error.error &&
+    typeof error.error.message === 'string'
+  ) {
+    return error.error.message
+  }
+
+  return `Gateway request failed with ${status}`
+}
+
+async function gatewayFetch(input: RequestInfo | URL, init?: RequestInit) {
+  const request = new Request(input, {
     ...init,
-    headers,
+    headers: forwardRequestHeaders(mergeRequestHeaders(input, init?.headers)),
   })
+  const response = await fetch(request)
 
   const setCookie = response.headers.get('set-cookie')
   if (setCookie) {
     setResponseHeader('set-cookie', setCookie)
   }
 
-  if (!response.ok) {
-    throw new Error(await readGatewayError(response))
+  return response
+}
+
+export function createGatewayApiClient() {
+  return createClient<GatewayPaths>({
+    baseUrl: resolveGatewayOrigin(),
+    fetch: gatewayFetch,
+  })
+}
+
+export function unwrapGatewayResponse<TData>(
+  result: { data?: TData; error?: unknown; response: Response },
+): TData {
+  if (result.data !== undefined) {
+    return result.data
   }
 
-  return (await response.json()) as T
+  throw new Error(readGatewayErrorBody(result.error, result.response.status))
 }

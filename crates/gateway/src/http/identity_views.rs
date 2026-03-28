@@ -4,12 +4,13 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::http::{
-    error::AppError,
-    identity::{
+    admin_contract::{
         AdminIdentityUserView, AdminOnboardingActionView, AdminTeamAdminView,
-        AdminTeamAssignableUserView, AdminTeamManagementView, AdminTeamMemberView, invitation_url,
-        oidc_sign_in_url, format_timestamp,
+        AdminTeamAssignableUserView, AdminTeamManagementView, AdminTeamMemberView,
+        format_timestamp,
     },
+    error::AppError,
+    identity::{invitation_url, oidc_sign_in_url},
 };
 
 pub(crate) async fn build_admin_identity_user_view(

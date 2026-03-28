@@ -7,14 +7,17 @@ use gateway_core::{
     GatewayError, RequestLogDetail, RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord,
     RequestTag, RequestTags,
 };
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
 use crate::http::{
     admin_auth::require_platform_admin,
+    admin_contract::{
+        Envelope, RequestLogDetailView, RequestLogListQuery, RequestLogPageView,
+        RequestLogPayloadView, RequestLogSummaryView, RequestTagView, RequestTagsView, envelope,
+        format_timestamp,
+    },
     error::AppError,
-    identity::{Envelope, envelope, format_timestamp},
     request_tags::build_bespoke_tag_filter,
     state::AppState,
 };
@@ -23,81 +26,13 @@ const DEFAULT_PAGE: u32 = 1;
 const DEFAULT_PAGE_SIZE: u32 = 100;
 const MAX_PAGE_SIZE: u32 = 500;
 
-#[derive(Debug, Deserialize, Default)]
-pub struct RequestLogListQuery {
-    page: Option<u32>,
-    page_size: Option<u32>,
-    request_id: Option<String>,
-    model_key: Option<String>,
-    provider_key: Option<String>,
-    status_code: Option<i64>,
-    user_id: Option<String>,
-    team_id: Option<String>,
-    service: Option<String>,
-    component: Option<String>,
-    env: Option<String>,
-    tag_key: Option<String>,
-    tag_value: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct RequestLogPageView {
-    items: Vec<RequestLogSummaryView>,
-    page: u32,
-    page_size: u32,
-    total: u64,
-}
-
-#[derive(Debug, Serialize)]
-pub struct RequestLogSummaryView {
-    request_log_id: String,
-    request_id: String,
-    api_key_id: String,
-    user_id: Option<String>,
-    team_id: Option<String>,
-    model_key: String,
-    resolved_model_key: String,
-    provider_key: String,
-    status_code: Option<i64>,
-    latency_ms: Option<i64>,
-    prompt_tokens: Option<i64>,
-    completion_tokens: Option<i64>,
-    total_tokens: Option<i64>,
-    error_code: Option<String>,
-    has_payload: bool,
-    request_payload_truncated: bool,
-    response_payload_truncated: bool,
-    request_tags: RequestTagsView,
-    metadata: Value,
-    occurred_at: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct RequestTagsView {
-    service: Option<String>,
-    component: Option<String>,
-    env: Option<String>,
-    bespoke: Vec<RequestTagView>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct RequestTagView {
-    key: String,
-    value: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct RequestLogDetailView {
-    log: RequestLogSummaryView,
-    payload: Option<RequestLogPayloadView>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct RequestLogPayloadView {
-    request_json: Value,
-    response_json: Value,
-}
-
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/observability/request-logs",
+    params(RequestLogListQuery),
+    responses((status = 200, body = Envelope<RequestLogPageView>)),
+    security(("session_cookie" = []))
+)]
 pub async fn list_request_logs(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -139,6 +74,16 @@ pub async fn list_request_logs(
     })))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/observability/request-logs/{request_log_id}",
+    params(("request_log_id" = String, Path, description = "Request log identifier")),
+    responses(
+        (status = 200, body = Envelope<RequestLogDetailView>),
+        (status = 404, description = "Request log not found")
+    ),
+    security(("session_cookie" = []))
+)]
 pub async fn get_request_log_detail(
     State(state): State<AppState>,
     headers: HeaderMap,

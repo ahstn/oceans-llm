@@ -2,7 +2,7 @@
 
 `Owns`: the current admin UI capability map, live versus preview-backed surfaces, and operator expectations for the control plane.
 `Depends on`: [identity-and-access.md](identity-and-access.md), [budgets-and-spending.md](budgets-and-spending.md), [observability-and-request-logs.md](observability-and-request-logs.md)
-`See also`: [e2e-contract-tests.md](e2e-contract-tests.md), [../crates/admin-ui/web/src/server/admin-data.server.ts](../crates/admin-ui/web/src/server/admin-data.server.ts)
+`See also`: [e2e-contract-tests.md](e2e-contract-tests.md), [../crates/gateway/src/http/admin_contract.rs](../crates/gateway/src/http/admin_contract.rs), [../crates/gateway/openapi/admin-api.json](../crates/gateway/openapi/admin-api.json), [../crates/admin-ui/web/src/generated/admin-api.ts](../crates/admin-ui/web/src/generated/admin-api.ts)
 
 This document describes what operators can actually do in the admin UI today.
 
@@ -13,7 +13,13 @@ The control plane is served through the gateway at `/admin`.
 Normal runtime model:
 
 - gateway handles auth, admin APIs, and reverse proxying
-- the Bun SSR app calls back into the gateway using same-origin or forwarded-origin resolution
+- the Bun SSR app calls back into the gateway using a typed same-origin client with forwarded-origin resolution
+
+Live admin and auth surfaces now use a generated contract pipeline:
+
+- Rust transport DTOs and handler annotations live in [../crates/gateway/src/http/admin_contract.rs](../crates/gateway/src/http/admin_contract.rs)
+- the checked-in OpenAPI artifact lives at [../crates/gateway/openapi/admin-api.json](../crates/gateway/openapi/admin-api.json)
+- the admin UI consumes generated types from [../crates/admin-ui/web/src/generated/admin-api.ts](../crates/admin-ui/web/src/generated/admin-api.ts)
 
 For local direct UI dev on `:3001`, the server-side gateway client falls back to `:8080` unless `ADMIN_GATEWAY_ORIGIN` is explicitly set.
 
@@ -29,6 +35,8 @@ These areas are backed by real gateway APIs today:
 - spend usage reporting
 - spend budget management for users and teams
 - request-log list and detail inspection
+
+Those live surfaces are expected to track the generated gateway contract directly. We do not keep a separate hand-maintained frontend transport model for them.
 
 ## Preview-Backed Surfaces
 
@@ -104,7 +112,7 @@ Operators can currently:
 Current scope limits:
 
 - spend reporting does not yet include provider breakdown
-- request-log detail still returns nullable success on missing rows
+- request-log detail missing rows now return `404 not_found`
 - request-log filtering and ergonomics still have follow-up work
 
 Related follow-ups:

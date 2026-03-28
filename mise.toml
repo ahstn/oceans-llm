@@ -17,10 +17,23 @@ run = "mise install"
 description = "Format Rust sources"
 run = "cargo fmt --all"
 
+[tasks.admin-contract-generate]
+description = "Generate the checked-in admin OpenAPI artifact and TypeScript contract"
+depends = ["ui-install"]
+run = """
+cargo run -p gateway --bin export_admin_openapi -- crates/gateway/openapi/admin-api.json
+bun run --cwd crates/admin-ui/web generate:admin-api
+"""
+
+[tasks.admin-contract-check]
+description = "Verify generated admin contract artifacts are up to date"
+depends = ["admin-contract-generate"]
+run = "git diff --exit-code -- crates/gateway/openapi/admin-api.json crates/admin-ui/web/src/generated/admin-api.ts"
+
 [tasks.lint]
 description = "Run Rust and admin UI linting"
 depends = ["ui-install"]
-run = "cargo clippy --workspace --all-targets -- -D warnings && bun run --cwd crates/admin-ui/web lint"
+run = "mise run admin-contract-check && cargo clippy --workspace --all-targets -- -D warnings && bun run --cwd crates/admin-ui/web lint"
 
 [tasks.build]
 description = "Build Rust crates and admin UI bundle"
@@ -157,7 +170,7 @@ run = "bun run --cwd crates/admin-ui/web build"
 
 [tasks.ui-lint]
 description = "Lint admin UI"
-run = "bun run --cwd crates/admin-ui/web lint"
+run = "mise run admin-contract-check && bun run --cwd crates/admin-ui/web lint"
 
 [tasks.ui-fmt]
 description = "Format admin UI"

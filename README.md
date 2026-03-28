@@ -90,6 +90,27 @@ Default local endpoints:
 
 For contributor setup, workspace layout, task conventions, CI workflow references, and editor recommendations, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Admin Contract Generation
+
+The live admin control plane now ships checked-in contract artifacts:
+
+- gateway OpenAPI artifact: `crates/gateway/openapi/admin-api.json`
+- generated admin UI types: `crates/admin-ui/web/src/generated/admin-api.ts`
+
+Refresh them locally with:
+
+```bash
+mise run admin-contract-generate
+```
+
+Verify they are current with:
+
+```bash
+mise run admin-contract-check
+```
+
+`mise run lint` and CI both enforce this drift check.
+
 ## Gateway Commands
 
 The runtime exposes explicit operational commands:

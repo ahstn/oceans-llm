@@ -9,179 +9,29 @@ use gateway_core::{
     MembershipRole, Money4, UserStatus, budget_window_utc,
 };
 use gateway_store::GatewayStore;
-use serde::{Deserialize, Serialize};
-use time::{OffsetDateTime, UtcOffset, Duration, format_description::well_known::Rfc3339};
+use time::{Duration, OffsetDateTime, UtcOffset};
 use uuid::Uuid;
 
-use crate::http::{admin_auth::require_platform_admin, error::AppError, state::AppState};
+use crate::http::{
+    admin_auth::require_platform_admin,
+    admin_contract::{
+        BudgetAlertHistoryItemView, BudgetAlertHistoryRequestQuery, BudgetAlertHistoryView,
+        BudgetSettingsView, DeactivateBudgetResultView, Envelope, SpendBudgetTeamView,
+        SpendBudgetUserView, SpendBudgetsView, SpendDailyPointView, SpendModelBreakdownView,
+        SpendOwnerBreakdownView, SpendReportQuery, SpendReportView, SpendTotalsView,
+        UpsertBudgetRequest, UpsertBudgetResultView, envelope, format_timestamp,
+    },
+    error::AppError,
+    state::AppState,
+};
 
-#[derive(Debug, Serialize)]
-pub(crate) struct Envelope<T> {
-    data: T,
-    meta: ResponseMeta,
-}
-
-#[derive(Debug, Serialize)]
-pub(crate) struct ResponseMeta {
-    generated_at: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct SpendReportQuery {
-    pub days: Option<u16>,
-    pub owner_kind: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct BudgetAlertHistoryRequestQuery {
-    pub page: Option<u32>,
-    pub page_size: Option<u32>,
-    pub owner_kind: Option<String>,
-    pub channel: Option<String>,
-    pub status: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct SpendTotalsView {
-    pub priced_cost_usd_10000: i64,
-    pub priced_request_count: i64,
-    pub unpriced_request_count: i64,
-    pub usage_missing_request_count: i64,
-}
-
-#[derive(Debug, Serialize)]
-pub struct SpendDailyPointView {
-    pub day_start: String,
-    pub priced_cost_usd_10000: i64,
-    pub priced_request_count: i64,
-    pub unpriced_request_count: i64,
-    pub usage_missing_request_count: i64,
-}
-
-#[derive(Debug, Serialize)]
-pub struct SpendOwnerBreakdownView {
-    pub owner_kind: String,
-    pub owner_id: String,
-    pub owner_name: String,
-    pub priced_cost_usd_10000: i64,
-    pub priced_request_count: i64,
-    pub unpriced_request_count: i64,
-    pub usage_missing_request_count: i64,
-}
-
-#[derive(Debug, Serialize)]
-pub struct SpendModelBreakdownView {
-    pub model_key: String,
-    pub priced_cost_usd_10000: i64,
-    pub priced_request_count: i64,
-    pub unpriced_request_count: i64,
-    pub usage_missing_request_count: i64,
-}
-
-#[derive(Debug, Serialize)]
-pub struct SpendReportView {
-    pub window_days: u16,
-    pub owner_kind: String,
-    pub window_start: String,
-    pub window_end: String,
-    pub totals: SpendTotalsView,
-    pub daily: Vec<SpendDailyPointView>,
-    pub owners: Vec<SpendOwnerBreakdownView>,
-    pub models: Vec<SpendModelBreakdownView>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct BudgetSettingsView {
-    pub cadence: String,
-    pub amount_usd: String,
-    pub amount_usd_10000: i64,
-    pub hard_limit: bool,
-    pub timezone: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct SpendBudgetUserView {
-    pub user_id: String,
-    pub name: String,
-    pub email: String,
-    pub team_id: Option<String>,
-    pub team_name: Option<String>,
-    pub budget: Option<BudgetSettingsView>,
-    pub current_window_spend_usd_10000: i64,
-    pub alert_email_ready: bool,
-    pub alert_recipient_summary: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct SpendBudgetTeamView {
-    pub team_id: String,
-    pub team_name: String,
-    pub team_key: String,
-    pub budget: Option<BudgetSettingsView>,
-    pub current_window_spend_usd_10000: i64,
-    pub alert_email_ready: bool,
-    pub alert_recipient_summary: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct SpendBudgetsView {
-    pub users: Vec<SpendBudgetUserView>,
-    pub teams: Vec<SpendBudgetTeamView>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct BudgetAlertHistoryItemView {
-    pub budget_alert_id: String,
-    pub owner_kind: String,
-    pub owner_id: String,
-    pub owner_name: String,
-    pub channel: String,
-    pub delivery_status: String,
-    pub recipient_summary: String,
-    pub threshold_bps: i32,
-    pub cadence: String,
-    pub window_start: String,
-    pub window_end: String,
-    pub spend_before_usd_10000: i64,
-    pub spend_after_usd_10000: i64,
-    pub remaining_budget_usd_10000: i64,
-    pub created_at: String,
-    pub last_attempted_at: Option<String>,
-    pub sent_at: Option<String>,
-    pub failure_reason: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct BudgetAlertHistoryView {
-    pub items: Vec<BudgetAlertHistoryItemView>,
-    pub page: u32,
-    pub page_size: u32,
-    pub total: u64,
-}
-
-#[derive(Debug, Serialize)]
-pub struct UpsertBudgetResultView {
-    pub owner_kind: String,
-    pub owner_id: String,
-    pub budget: BudgetSettingsView,
-    pub current_window_spend_usd_10000: i64,
-}
-
-#[derive(Debug, Serialize)]
-pub struct DeactivateBudgetResultView {
-    pub owner_kind: String,
-    pub owner_id: String,
-    pub deactivated: bool,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct UpsertBudgetRequest {
-    pub cadence: String,
-    pub amount_usd: String,
-    pub hard_limit: bool,
-    pub timezone: Option<String>,
-}
-
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/spend/report",
+    params(SpendReportQuery),
+    responses((status = 200, body = Envelope<SpendReportView>)),
+    security(("session_cookie" = []))
+)]
 pub async fn get_spend_report(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -284,6 +134,12 @@ pub async fn get_spend_report(
     })))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/spend/budgets",
+    responses((status = 200, body = Envelope<SpendBudgetsView>)),
+    security(("session_cookie" = []))
+)]
 pub async fn list_spend_budgets(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -359,6 +215,14 @@ pub async fn list_spend_budgets(
     })))
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/v1/admin/spend/budgets/users/{user_id}",
+    request_body = UpsertBudgetRequest,
+    params(("user_id" = String, Path, description = "User identifier")),
+    responses((status = 200, body = Envelope<UpsertBudgetResultView>)),
+    security(("session_cookie" = []))
+)]
 pub async fn upsert_user_budget(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -407,6 +271,13 @@ pub async fn upsert_user_budget(
     })))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/v1/admin/spend/budgets/users/{user_id}",
+    params(("user_id" = String, Path, description = "User identifier")),
+    responses((status = 200, body = Envelope<DeactivateBudgetResultView>)),
+    security(("session_cookie" = []))
+)]
 pub async fn deactivate_user_budget(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -431,6 +302,14 @@ pub async fn deactivate_user_budget(
     })))
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/v1/admin/spend/budgets/teams/{team_id}",
+    request_body = UpsertBudgetRequest,
+    params(("team_id" = String, Path, description = "Team identifier")),
+    responses((status = 200, body = Envelope<UpsertBudgetResultView>)),
+    security(("session_cookie" = []))
+)]
 pub async fn upsert_team_budget(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -479,6 +358,13 @@ pub async fn upsert_team_budget(
     })))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/v1/admin/spend/budgets/teams/{team_id}",
+    params(("team_id" = String, Path, description = "Team identifier")),
+    responses((status = 200, body = Envelope<DeactivateBudgetResultView>)),
+    security(("session_cookie" = []))
+)]
 pub async fn deactivate_team_budget(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -503,6 +389,13 @@ pub async fn deactivate_team_budget(
     })))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/spend/budget-alerts",
+    params(BudgetAlertHistoryRequestQuery),
+    responses((status = 200, body = Envelope<BudgetAlertHistoryView>)),
+    security(("session_cookie" = []))
+)]
 pub async fn list_budget_alert_history(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -709,19 +602,4 @@ fn parse_uuid(raw: &str) -> Result<Uuid, AppError> {
             "invalid uuid `{raw}`: {error}"
         )))
     })
-}
-
-fn envelope<T>(data: T) -> Envelope<T> {
-    Envelope {
-        data,
-        meta: ResponseMeta {
-            generated_at: format_timestamp(OffsetDateTime::now_utc()),
-        },
-    }
-}
-
-fn format_timestamp(value: OffsetDateTime) -> String {
-    value
-        .format(&Rfc3339)
-        .unwrap_or_else(|_| value.unix_timestamp().to_string())
 }
