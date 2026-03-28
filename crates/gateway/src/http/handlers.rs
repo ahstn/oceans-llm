@@ -138,13 +138,23 @@ pub async fn v1_chat_completions(
         provider_key: &route.provider_key,
         stream: core_request.stream,
     };
-    state.metrics.record_provider_attempt(&labels);
-    record_attempt_span_fields(&request_span, &route.provider_key, 1, false);
-
-    state
+    if let Err(error) = state
         .service
         .enforce_pre_provider_budget(&auth, &request_id, OffsetDateTime::now_utc())
-        .await?;
+        .await
+    {
+        state.metrics.record_chat_request(&ChatRequestMetric {
+            labels: labels.clone(),
+            status_code: i64::from(error.http_status_code()),
+            outcome: error.error_type(),
+            fallback_used: false,
+            latency_seconds: latency_seconds_since(request_started_at),
+        });
+        return Err(AppError(error));
+    }
+
+    state.metrics.record_provider_attempt(&labels);
+    record_attempt_span_fields(&request_span, &route.provider_key, 1, false);
 
     let context = build_provider_context(
         &request_id,
@@ -219,7 +229,6 @@ pub async fn v1_chat_completions(
             provider_key: route.provider_key.clone(),
             started_at: request_started_at,
             finished: false,
-            failure: None,
             attempt_count: 1,
             collector: state.service.new_stream_response_collector(),
         });
@@ -597,11 +606,6 @@ impl RequestLogSummary {
     }
 }
 
-struct StreamFailure {
-    status_code: i64,
-    error_code: String,
-}
-
 struct LoggingBodyStreamState {
     upstream: gateway_core::ProviderStream,
     service: std::sync::Arc<AppGatewayService>,
@@ -615,7 +619,6 @@ struct LoggingBodyStreamState {
     provider_key: String,
     started_at: Instant,
     finished: bool,
-    failure: Option<StreamFailure>,
     attempt_count: usize,
     collector: gateway_service::StreamResponseCollector,
 }
@@ -639,14 +642,6 @@ fn wrap_stream_with_request_logging(
 
         match state.upstream.next().await {
             Some(Ok(chunk)) => {
-                if state.failure.is_none()
-                    && let Some(error_code) = extract_stream_error_code(chunk.as_ref())
-                {
-                    state.failure = Some(StreamFailure {
-                        status_code: 502,
-                        error_code,
-                    });
-                }
                 state.collector.observe_chunk(chunk.as_ref());
 
                 Some((Ok(chunk), state))
@@ -692,14 +687,8 @@ fn wrap_stream_with_request_logging(
                 Some((Err(std::io::Error::other(error_message)), state))
             }
             None => {
-                let failure =
-                    state
-                        .failure
-                        .as_ref()
-                        .map(|failure| gateway_service::StreamFailureSummary {
-                            status_code: failure.status_code,
-                            error_code: failure.error_code.clone(),
-                        });
+                state.collector.finish();
+                let failure = state.collector.failure().cloned();
                 if failure.is_none() {
                     let labels = ChatMetricLabels {
                         requested_model: &state.requested_model_key,
@@ -725,7 +714,7 @@ fn wrap_stream_with_request_logging(
                 tracing::info!(
                     request_id = %state.request_log_context.request_id,
                     provider_key = %state.provider_key,
-                    termination_reason = if state.failure.is_some() { "stream_error_chunk" } else { "complete" },
+                    termination_reason = if failure.is_some() { "stream_error_chunk" } else { "complete" },
                     "chat completion stream terminated"
                 );
                 best_effort_log_stream_result(
@@ -737,11 +726,11 @@ fn wrap_stream_with_request_logging(
                         attempt_count: state.attempt_count,
                         latency_ms: latency_ms_since(state.started_at),
                         collector: state.collector,
-                        failure,
+                        failure: failure.clone(),
                     },
                 )
                 .await;
-                let (status_code, outcome) = match state.failure.as_ref() {
+                let (status_code, outcome) = match failure.as_ref() {
                     Some(failure) => (failure.status_code, "upstream_error"),
                     None => (200, "success"),
                 };
@@ -1040,32 +1029,6 @@ async fn finalize_successful_usage_accounting_from_parts(
     }
 }
 
-fn extract_stream_error_code(chunk: &[u8]) -> Option<String> {
-    let text = std::str::from_utf8(chunk).ok()?;
-    for line in text.lines() {
-        let Some(payload) = extract_sse_data_payload(line) else {
-            continue;
-        };
-        let payload = payload.trim();
-        if payload.is_empty() || payload == "[DONE]" {
-            continue;
-        }
-
-        let value: Value = serde_json::from_str(payload).ok()?;
-        let Some(error) = value.get("error").and_then(Value::as_object) else {
-            continue;
-        };
-
-        return error
-            .get("code")
-            .and_then(Value::as_str)
-            .map(str::to_string)
-            .or_else(|| Some("stream_error".to_string()));
-    }
-
-    None
-}
-
 fn extract_authorization_header(headers: &HeaderMap) -> Option<&str> {
     headers
         .get(AUTHORIZATION)
@@ -1090,9 +1053,4 @@ fn extract_request_headers(headers: &HeaderMap) -> BTreeMap<String, String> {
                 .map(|value| (name.as_str().to_ascii_lowercase(), value.to_string()))
         })
         .collect::<BTreeMap<_, _>>()
-}
-
-fn extract_sse_data_payload(line: &str) -> Option<&str> {
-    line.strip_prefix("data: ")
-        .or_else(|| line.strip_prefix("data:"))
 }

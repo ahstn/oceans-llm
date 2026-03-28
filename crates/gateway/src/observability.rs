@@ -1,5 +1,8 @@
 use std::{sync::Arc, time::Duration};
 
+#[cfg(test)]
+use std::{collections::BTreeMap, sync::Mutex};
+
 use anyhow::Context;
 use opentelemetry::{
     KeyValue, global,
@@ -26,6 +29,8 @@ pub struct GatewayMetrics {
     cost_usd: Counter<f64>,
     usage_records: Counter<u64>,
     usage_record_failures: Counter<u64>,
+    #[cfg(test)]
+    test_counters: Arc<TestMetricCounters>,
 }
 
 pub struct ObservabilityGuard {
@@ -49,6 +54,22 @@ pub struct ChatRequestMetric<'a> {
     pub outcome: &'a str,
     pub fallback_used: bool,
     pub latency_seconds: f64,
+}
+
+#[cfg(test)]
+#[derive(Debug, Default)]
+struct TestMetricCounters {
+    requests: Mutex<u64>,
+    provider_attempts: Mutex<u64>,
+    request_outcomes: Mutex<BTreeMap<String, u64>>,
+}
+
+#[cfg(test)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TestMetricSnapshot {
+    pub requests: u64,
+    pub provider_attempts: u64,
+    pub request_outcomes: BTreeMap<String, u64>,
 }
 
 impl Default for GatewayMetrics {
@@ -95,11 +116,22 @@ impl GatewayMetrics {
                 .u64_counter("gateway.chat.usage_record_failures")
                 .with_description("Post-success chat usage record failures")
                 .build(),
+            #[cfg(test)]
+            test_counters: Arc::new(TestMetricCounters::default()),
         }
     }
 
     pub fn record_provider_attempt(&self, labels: &ChatMetricLabels<'_>) {
         self.provider_attempts.add(1, &base_attrs(labels));
+        #[cfg(test)]
+        {
+            let mut attempts = self
+                .test_counters
+                .provider_attempts
+                .lock()
+                .expect("provider attempts lock");
+            *attempts += 1;
+        }
     }
 
     pub fn record_chat_request(&self, metric: &ChatRequestMetric<'_>) {
@@ -115,6 +147,17 @@ impl GatewayMetrics {
 
         self.requests.add(1, &attrs);
         self.request_duration.record(metric.latency_seconds, &attrs);
+        #[cfg(test)]
+        {
+            let mut requests = self.test_counters.requests.lock().expect("requests lock");
+            *requests += 1;
+            let mut outcomes = self
+                .test_counters
+                .request_outcomes
+                .lock()
+                .expect("request outcomes lock");
+            *outcomes.entry(metric.outcome.to_string()).or_default() += 1;
+        }
 
         if metric.fallback_used && metric.outcome == "success" {
             self.fallbacks.add(1, &base_attrs(&metric.labels));
@@ -157,6 +200,24 @@ impl GatewayMetrics {
         let mut attrs = base_attrs(labels);
         attrs.push(KeyValue::new("operation", operation.to_string()));
         self.usage_record_failures.add(1, &attrs);
+    }
+
+    #[cfg(test)]
+    pub fn test_snapshot(&self) -> TestMetricSnapshot {
+        TestMetricSnapshot {
+            requests: *self.test_counters.requests.lock().expect("requests lock"),
+            provider_attempts: *self
+                .test_counters
+                .provider_attempts
+                .lock()
+                .expect("provider attempts lock"),
+            request_outcomes: self
+                .test_counters
+                .request_outcomes
+                .lock()
+                .expect("request outcomes lock")
+                .clone(),
+        }
     }
 }
 

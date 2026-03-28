@@ -6,7 +6,7 @@ use bytes::Bytes;
 use futures_util::StreamExt;
 use gateway_core::{
     CoreChatRequest, CoreEmbeddingsRequest, ProviderCapabilities, ProviderClient, ProviderError,
-    ProviderRequestContext, ProviderStream,
+    ProviderRequestContext, ProviderStream, SseEventParser, Utf8ChunkDecoder,
 };
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::{
     http::map_reqwest_error,
-    streaming::{SseEventParser, Utf8ChunkDecoder, done_sse_chunk, openai_sse_error_chunk},
+    streaming::{done_sse_chunk, openai_sse_error_chunk},
     token::{
         AccessTokenSource, AdcTokenSource, CLOUD_PLATFORM_SCOPE, CachedAccessTokenSource,
         ServiceAccountTokenSource, StaticBearerTokenSource,
