@@ -409,7 +409,11 @@ impl LibsqlStore {
         auth_mode: AuthMode,
         updated_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
-        let tx = self.connection.transaction().await.map_err(to_query_error)?;
+        let tx = self
+            .connection
+            .transaction()
+            .await
+            .map_err(to_query_error)?;
         let mut rows = tx
             .query(
                 r#"
@@ -482,7 +486,11 @@ impl LibsqlStore {
         user_id: Uuid,
         updated_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
-        let tx = self.connection.transaction().await.map_err(to_query_error)?;
+        let tx = self
+            .connection
+            .transaction()
+            .await
+            .map_err(to_query_error)?;
         let mut rows = tx
             .query(
                 r#"
@@ -601,7 +609,11 @@ impl LibsqlStore {
         role: MembershipRole,
         updated_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
-        let tx = self.connection.transaction().await.map_err(to_query_error)?;
+        let tx = self
+            .connection
+            .transaction()
+            .await
+            .map_err(to_query_error)?;
         let mut rows = tx
             .query(
                 r#"
@@ -895,7 +907,11 @@ impl LibsqlStore {
                     updated_at = ?2
                 WHERE user_id = ?3
                 "#,
-                libsql::params![status.as_str(), updated_at.unix_timestamp(), user_id.to_string()],
+                libsql::params![
+                    status.as_str(),
+                    updated_at.unix_timestamp(),
+                    user_id.to_string()
+                ],
             )
             .await
             .map_err(to_write_error)?;

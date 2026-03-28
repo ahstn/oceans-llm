@@ -126,7 +126,6 @@ pub async fn v1_chat_completions(
                 },
                 status_code: i64::from(error.http_status_code()),
                 outcome: error.error_type(),
-                fallback_used: false,
                 latency_seconds: latency_seconds_since(request_started_at),
             });
             return Err(AppError(error));
@@ -138,6 +137,8 @@ pub async fn v1_chat_completions(
         provider_key: &route.provider_key,
         stream: core_request.stream,
     };
+    record_provider_execution_span_fields(&request_span, &route.provider_key);
+
     if let Err(error) = state
         .service
         .enforce_pre_provider_budget(&auth, &request_id, OffsetDateTime::now_utc())
@@ -147,14 +148,10 @@ pub async fn v1_chat_completions(
             labels: labels.clone(),
             status_code: i64::from(error.http_status_code()),
             outcome: error.error_type(),
-            fallback_used: false,
             latency_seconds: latency_seconds_since(request_started_at),
         });
         return Err(AppError(error));
     }
-
-    state.metrics.record_provider_attempt(&labels);
-    record_attempt_span_fields(&request_span, &route.provider_key, 1, false);
 
     let context = build_provider_context(
         &request_id,
@@ -164,20 +161,18 @@ pub async fn v1_chat_completions(
     );
 
     if core_request.stream {
-        let attempt_span = tracing::info_span!(
-            "provider_attempt",
+        let provider_execution_span = tracing::info_span!(
+            "provider_execution",
             request_id = %request_id,
             requested_model = %resolved.selection.requested_model.model_key,
             resolved_model = %resolved.selection.execution_model.model_key,
             provider = %route.provider_key,
             stream = true,
-            attempt_count = 1_i64,
-            fallback_used = false,
             ownership_kind = %auth.owner_kind.as_str(),
         );
         let stream = match provider
             .chat_completions_stream(&core_request, &context)
-            .instrument(attempt_span)
+            .instrument(provider_execution_span)
             .await
         {
             Ok(stream) => stream,
@@ -196,7 +191,6 @@ pub async fn v1_chat_completions(
                     &request_log_context,
                     gateway_service::StreamLogResultInput {
                         provider_key: route.provider_key.clone(),
-                        attempt_count: 1,
                         latency_ms: latency_ms_since(request_started_at),
                         collector: state.service.new_stream_response_collector(),
                         failure: Some(gateway_service::StreamFailureSummary {
@@ -210,7 +204,6 @@ pub async fn v1_chat_completions(
                     labels,
                     status_code: i64::from(gateway_error.http_status_code()),
                     outcome: gateway_error.error_type(),
-                    fallback_used: false,
                     latency_seconds: latency_seconds_since(request_started_at),
                 });
                 return Err(AppError(gateway_error));
@@ -229,7 +222,7 @@ pub async fn v1_chat_completions(
             provider_key: route.provider_key.clone(),
             started_at: request_started_at,
             finished: false,
-            attempt_count: 1,
+            failure: None,
             collector: state.service.new_stream_response_collector(),
         });
 
@@ -253,20 +246,18 @@ pub async fn v1_chat_completions(
         return Ok(response);
     }
 
-    let attempt_span = tracing::info_span!(
-        "provider_attempt",
+    let provider_execution_span = tracing::info_span!(
+        "provider_execution",
         request_id = %request_id,
         requested_model = %resolved.selection.requested_model.model_key,
         resolved_model = %resolved.selection.execution_model.model_key,
         provider = %route.provider_key,
         stream = false,
-        attempt_count = 1_i64,
-        fallback_used = false,
         ownership_kind = %auth.owner_kind.as_str(),
     );
     let value = provider
         .chat_completions(&core_request, &context)
-        .instrument(attempt_span)
+        .instrument(provider_execution_span)
         .await
         .map_err(|error| map_operation_provider_error(error, requirements));
     let value = match value {
@@ -277,7 +268,6 @@ pub async fn v1_chat_completions(
                 &auth,
                 &request_log_context,
                 &route.provider_key,
-                1,
                 latency_ms_since(request_started_at),
                 &error,
             )
@@ -286,7 +276,6 @@ pub async fn v1_chat_completions(
                 labels,
                 status_code: i64::from(error.http_status_code()),
                 outcome: error.error_type(),
-                fallback_used: false,
                 latency_seconds: latency_seconds_since(request_started_at),
             });
             return Err(AppError(error));
@@ -310,7 +299,6 @@ pub async fn v1_chat_completions(
         &auth,
         &request_log_context,
         &route.provider_key,
-        1,
         latency_ms_since(request_started_at),
         &value,
     )
@@ -319,7 +307,6 @@ pub async fn v1_chat_completions(
         labels,
         status_code: 200,
         outcome: "success",
-        fallback_used: false,
         latency_seconds: latency_seconds_since(request_started_at),
     });
     let mut response = Json(value).into_response();
@@ -606,6 +593,11 @@ impl RequestLogSummary {
     }
 }
 
+struct StreamFailure {
+    status_code: i64,
+    error_code: String,
+}
+
 struct LoggingBodyStreamState {
     upstream: gateway_core::ProviderStream,
     service: std::sync::Arc<AppGatewayService>,
@@ -619,7 +611,7 @@ struct LoggingBodyStreamState {
     provider_key: String,
     started_at: Instant,
     finished: bool,
-    attempt_count: usize,
+    failure: Option<StreamFailure>,
     collector: gateway_service::StreamResponseCollector,
 }
 
@@ -642,6 +634,14 @@ fn wrap_stream_with_request_logging(
 
         match state.upstream.next().await {
             Some(Ok(chunk)) => {
+                if state.failure.is_none()
+                    && let Some(error_code) = extract_stream_error_code(chunk.as_ref())
+                {
+                    state.failure = Some(StreamFailure {
+                        status_code: 502,
+                        error_code,
+                    });
+                }
                 state.collector.observe_chunk(chunk.as_ref());
 
                 Some((Ok(chunk), state))
@@ -661,7 +661,6 @@ fn wrap_stream_with_request_logging(
                     &state.request_log_context,
                     gateway_service::StreamLogResultInput {
                         provider_key: state.provider_key.clone(),
-                        attempt_count: state.attempt_count,
                         latency_ms: latency_ms_since(state.started_at),
                         collector: state.collector.clone(),
                         failure: Some(gateway_service::StreamFailureSummary {
@@ -680,15 +679,19 @@ fn wrap_stream_with_request_logging(
                     },
                     status_code: i64::from(gateway_error.http_status_code()),
                     outcome: gateway_error.error_type(),
-                    fallback_used: state.attempt_count > 1,
                     latency_seconds: latency_seconds_since(state.started_at),
                 });
                 state.finished = true;
                 Some((Err(std::io::Error::other(error_message)), state))
             }
             None => {
-                state.collector.finish();
-                let failure = state.collector.failure().cloned();
+                let failure = state
+                    .failure
+                    .as_ref()
+                    .map(|failure| gateway_service::StreamFailureSummary {
+                        status_code: failure.status_code,
+                        error_code: failure.error_code.clone(),
+                    });
                 if failure.is_none() {
                     let labels = ChatMetricLabels {
                         requested_model: &state.requested_model_key,
@@ -714,7 +717,7 @@ fn wrap_stream_with_request_logging(
                 tracing::info!(
                     request_id = %state.request_log_context.request_id,
                     provider_key = %state.provider_key,
-                    termination_reason = if failure.is_some() { "stream_error_chunk" } else { "complete" },
+                    termination_reason = if state.failure.is_some() { "stream_error_chunk" } else { "complete" },
                     "chat completion stream terminated"
                 );
                 best_effort_log_stream_result(
@@ -723,7 +726,6 @@ fn wrap_stream_with_request_logging(
                     &state.request_log_context,
                     gateway_service::StreamLogResultInput {
                         provider_key: state.provider_key.clone(),
-                        attempt_count: state.attempt_count,
                         latency_ms: latency_ms_since(state.started_at),
                         collector: state.collector,
                         failure: failure.clone(),
@@ -743,7 +745,6 @@ fn wrap_stream_with_request_logging(
                     },
                     status_code,
                     outcome,
-                    fallback_used: state.attempt_count > 1,
                     latency_seconds: latency_seconds_since(state.started_at),
                 });
                 None
@@ -752,24 +753,42 @@ fn wrap_stream_with_request_logging(
     })
 }
 
+fn extract_stream_error_code(chunk: &[u8]) -> Option<String> {
+    let text = std::str::from_utf8(chunk).ok()?;
+    for line in text.lines() {
+        let Some(payload) = extract_sse_data_payload(line) else {
+            continue;
+        };
+        let payload = payload.trim();
+        if payload.is_empty() || payload == "[DONE]" {
+            continue;
+        }
+
+        let value: Value = serde_json::from_str(payload).ok()?;
+        let Some(error) = value.get("error").and_then(Value::as_object) else {
+            continue;
+        };
+
+        return error
+            .get("code")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .or_else(|| Some("stream_error".to_string()));
+    }
+
+    None
+}
+
 async fn best_effort_log_non_stream_success(
     service: &std::sync::Arc<AppGatewayService>,
     auth: &AuthenticatedApiKey,
     context: &gateway_service::ChatRequestLogContext,
     provider_key: &str,
-    attempt_count: usize,
     latency_ms: i64,
     response_body: &Value,
 ) {
     if let Err(error) = service
-        .log_non_stream_success(
-            auth,
-            context,
-            provider_key,
-            attempt_count,
-            latency_ms,
-            response_body,
-        )
+        .log_non_stream_success(auth, context, provider_key, latency_ms, response_body)
         .await
     {
         tracing::warn!(
@@ -786,19 +805,11 @@ async fn best_effort_log_non_stream_failure(
     auth: &AuthenticatedApiKey,
     context: &gateway_service::ChatRequestLogContext,
     provider_key: &str,
-    attempt_count: usize,
     latency_ms: i64,
     gateway_error: &GatewayError,
 ) {
     if let Err(error) = service
-        .log_non_stream_failure(
-            auth,
-            context,
-            provider_key,
-            attempt_count,
-            latency_ms,
-            gateway_error,
-        )
+        .log_non_stream_failure(auth, context, provider_key, latency_ms, gateway_error)
         .await
     {
         tracing::warn!(
@@ -943,22 +954,11 @@ fn record_request_span_fields(
         field::display(&resolved.selection.execution_model.model_key),
     );
     span.record("stream", stream);
-    span.record("fallback_used", false);
     span.record("ownership_kind", field::display(auth.owner_kind.as_str()));
 }
 
-fn record_attempt_span_fields(
-    span: &Span,
-    provider_key: &str,
-    attempt_count: usize,
-    fallback_used: bool,
-) {
+fn record_provider_execution_span_fields(span: &Span, provider_key: &str) {
     span.record("provider", field::display(provider_key));
-    span.record(
-        "attempt_count",
-        i64::try_from(attempt_count).unwrap_or(i64::MAX),
-    );
-    span.record("fallback_used", fallback_used);
 }
 
 fn record_usage_metrics_from_ref(

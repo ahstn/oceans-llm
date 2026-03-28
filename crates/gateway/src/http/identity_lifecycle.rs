@@ -21,9 +21,7 @@ pub(crate) fn ensure_assignable_membership_role(
     }
 }
 
-pub(crate) fn ensure_mutable_membership(
-    role: Option<MembershipRole>,
-) -> Result<(), GatewayError> {
+pub(crate) fn ensure_mutable_membership(role: Option<MembershipRole>) -> Result<(), GatewayError> {
     if role == Some(MembershipRole::Owner) {
         return Err(GatewayError::InvalidRequest(
             "owner memberships cannot be created, removed, or transferred in this workflow"

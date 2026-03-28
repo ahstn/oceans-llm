@@ -196,8 +196,6 @@ vi.mock('@/server/gateway-client.server', () => ({
               },
               metadata: {
                 stream: false,
-                fallback_used: false,
-                attempt_count: 1,
               },
               occurred_at: '2026-03-10T11:32:00Z',
             },
@@ -238,8 +236,6 @@ vi.mock('@/server/gateway-client.server', () => ({
             },
             metadata: {
               stream: false,
-              fallback_used: false,
-              attempt_count: 1,
             },
             occurred_at: '2026-03-10T11:32:00Z',
           },

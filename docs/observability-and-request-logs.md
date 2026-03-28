@@ -32,7 +32,6 @@ The runtime emits bounded request-level signals for:
 
 - chat request totals
 - request latency
-- provider attempts
 - token totals
 - operational cost totals
 - usage-record totals by pricing status
@@ -43,7 +42,7 @@ The request path also records tracing spans enriched with routing and ownership 
 Metric contract:
 
 - `gateway.chat.requests` describes routed request outcomes, including budget rejections after model resolution
-- `gateway.chat.provider.attempts` describes real upstream calls only and does not move when the request is rejected before provider execution
+- the gateway does not emit separate provider-attempt or fallback counters for chat completions
 
 Request correlation is anchored on `x-request-id`:
 
@@ -102,7 +101,7 @@ The summary row stores:
 - universal caller tags
 - status, latency, and usage totals
 - truncation flags
-- metadata
+- metadata (`operation` and `stream`)
 
 The payload row stores:
 

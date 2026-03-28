@@ -1394,6 +1394,8 @@ mod tests {
         assert_eq!(logs[0].error_code, None);
         assert_eq!(logs[0].metadata["stream"], Value::Bool(false));
         assert_eq!(logs[0].metadata["operation"], "chat_completions");
+        assert!(logs[0].metadata.get("fallback_used").is_none());
+        assert!(logs[0].metadata.get("attempt_count").is_none());
         assert_eq!(logs[0].resolved_model_key.as_deref(), Some("fast"));
 
         let ledgers = load_usage_ledger(&db_path).await;
@@ -1746,7 +1748,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn team_hard_limit_records_request_outcome_without_provider_attempt_metric() {
+    async fn team_hard_limit_records_budget_error_request_outcome() {
         let (calls, provider) = make_chat_provider(
             "openai-prod",
             MockChatResult::Value(json!({
@@ -1836,7 +1838,6 @@ mod tests {
 
         let snapshot = metrics.test_snapshot();
         assert_eq!(snapshot.requests, 1);
-        assert_eq!(snapshot.provider_attempts, 0);
         assert_eq!(snapshot.request_outcomes.get("budget_error"), Some(&1));
     }
 
@@ -2128,6 +2129,8 @@ mod tests {
         assert_eq!(logs[0].error_code.as_deref(), Some("upstream_http_error"));
         assert_eq!(logs[0].metadata["stream"], Value::Bool(false));
         assert_eq!(logs[0].metadata["operation"], "chat_completions");
+        assert!(logs[0].metadata.get("fallback_used").is_none());
+        assert!(logs[0].metadata.get("attempt_count").is_none());
         assert_eq!(logs[0].resolved_model_key.as_deref(), Some("fast"));
         assert!(load_usage_ledger(&db_path).await.is_empty());
     }
@@ -2241,6 +2244,8 @@ mod tests {
         assert_eq!(logs[0].error_code.as_deref(), Some("upstream_http_error"));
         assert_eq!(logs[0].metadata["stream"], Value::Bool(false));
         assert_eq!(logs[0].metadata["operation"], "chat_completions");
+        assert!(logs[0].metadata.get("fallback_used").is_none());
+        assert!(logs[0].metadata.get("attempt_count").is_none());
         assert!(load_usage_ledger(&db_path).await.is_empty());
     }
 

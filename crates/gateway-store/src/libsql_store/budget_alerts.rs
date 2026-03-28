@@ -41,9 +41,9 @@ fn decode_history_row(row: &libsql::Row) -> Result<BudgetAlertHistoryRecord, Sto
         owner_name: row.get(3).map_err(to_query_error)?,
         channel: BudgetAlertChannel::from_db(&channel)
             .ok_or_else(|| StoreError::Serialization(format!("unknown channel `{channel}`")))?,
-        delivery_status: BudgetAlertDeliveryStatus::from_db(&delivery_status).ok_or_else(
-            || StoreError::Serialization(format!("unknown delivery status `{delivery_status}`")),
-        )?,
+        delivery_status: BudgetAlertDeliveryStatus::from_db(&delivery_status).ok_or_else(|| {
+            StoreError::Serialization(format!("unknown delivery status `{delivery_status}`"))
+        })?,
         recipient_summary: row.get(6).map_err(to_query_error)?,
         threshold_bps: row.get(7).map_err(to_query_error)?,
         cadence: BudgetCadence::from_db(&cadence)
@@ -88,9 +88,8 @@ fn decode_dispatch_row(row: &libsql::Row) -> Result<BudgetAlertDispatchTask, Sto
             owner_id: parse_uuid(&owner_id)?,
             owner_name: row.get(4).map_err(to_query_error)?,
             budget_id: parse_uuid(&budget_id)?,
-            cadence: BudgetCadence::from_db(&cadence).ok_or_else(|| {
-                StoreError::Serialization(format!("unknown cadence `{cadence}`"))
-            })?,
+            cadence: BudgetCadence::from_db(&cadence)
+                .ok_or_else(|| StoreError::Serialization(format!("unknown cadence `{cadence}`")))?,
             threshold_bps: row.get(7).map_err(to_query_error)?,
             window_start: unix_to_datetime(window_start)?,
             window_end: unix_to_datetime(window_end)?,
@@ -106,7 +105,11 @@ fn decode_dispatch_row(row: &libsql::Row) -> Result<BudgetAlertDispatchTask, Sto
             channel: BudgetAlertChannel::from_db(&channel)
                 .ok_or_else(|| StoreError::Serialization(format!("unknown channel `{channel}`")))?,
             delivery_status: BudgetAlertDeliveryStatus::from_db(&delivery_status).ok_or_else(
-                || StoreError::Serialization(format!("unknown delivery status `{delivery_status}`")),
+                || {
+                    StoreError::Serialization(format!(
+                        "unknown delivery status `{delivery_status}`"
+                    ))
+                },
             )?,
             recipient: row.get(19).map_err(to_query_error)?,
             provider_message_id: row.get(20).map_err(to_query_error)?,
@@ -216,7 +219,9 @@ impl BudgetAlertRepository for LibsqlStore {
         let (page, page_size, offset) = normalize_query(query);
         let owner_kind = query.owner_kind.map(|value| value.as_str().to_string());
         let channel = query.channel.map(|value| value.as_str().to_string());
-        let delivery_status = query.delivery_status.map(|value| value.as_str().to_string());
+        let delivery_status = query
+            .delivery_status
+            .map(|value| value.as_str().to_string());
         let summary_cte = format!(
             r#"
             WITH summary AS (
@@ -262,13 +267,18 @@ impl BudgetAlertRepository for LibsqlStore {
             status_sql = ALERT_STATUS_SQL.trim()
         );
 
-        let count_sql =
-            format!("{summary_cte} SELECT COUNT(*) FROM summary WHERE (?3 IS NULL OR delivery_status = ?3)");
+        let count_sql = format!(
+            "{summary_cte} SELECT COUNT(*) FROM summary WHERE (?3 IS NULL OR delivery_status = ?3)"
+        );
         let mut count_rows = self
             .connection
             .query(
                 &count_sql,
-                libsql::params![owner_kind.as_deref(), channel.as_deref(), delivery_status.as_deref()],
+                libsql::params![
+                    owner_kind.as_deref(),
+                    channel.as_deref(),
+                    delivery_status.as_deref()
+                ],
             )
             .await
             .map_err(|error| StoreError::Query(error.to_string()))?;
@@ -388,7 +398,7 @@ impl BudgetAlertRepository for LibsqlStore {
         for mut task in candidates {
             let claimed = tx
                 .execute(
-                r#"
+                    r#"
                 UPDATE budget_alert_deliveries
                 SET last_attempted_at = ?1,
                     updated_at = ?2
@@ -396,14 +406,14 @@ impl BudgetAlertRepository for LibsqlStore {
                   AND delivery_status = 'pending'
                   AND last_attempted_at IS NULL
                 "#,
-                libsql::params![
-                    claimed_at.unix_timestamp(),
-                    claimed_at.unix_timestamp(),
-                    task.delivery.budget_alert_delivery_id.to_string()
-                ],
-            )
-            .await
-            .map_err(|error| StoreError::Query(error.to_string()))?;
+                    libsql::params![
+                        claimed_at.unix_timestamp(),
+                        claimed_at.unix_timestamp(),
+                        task.delivery.budget_alert_delivery_id.to_string()
+                    ],
+                )
+                .await
+                .map_err(|error| StoreError::Query(error.to_string()))?;
             if claimed > 0 {
                 task.delivery.last_attempted_at = Some(claimed_at);
                 tasks.push(task);

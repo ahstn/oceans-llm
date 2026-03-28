@@ -476,6 +476,9 @@ mod tests {
             .await
             .expect_err("disabled user-owned api keys must be rejected");
 
-        assert!(matches!(error, GatewayError::Auth(AuthError::ApiKeyOwnerInvalid)));
+        assert!(matches!(
+            error,
+            GatewayError::Auth(AuthError::ApiKeyOwnerInvalid)
+        ));
     }
 }

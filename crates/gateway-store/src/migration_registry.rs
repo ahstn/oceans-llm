@@ -182,6 +182,17 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
             "../migrations/postgres/V15__request_log_tags.sql"
         )),
     },
+    MigrationManifest {
+        version: 16,
+        name: "request_log_metadata_cleanup",
+        checksum: "V16__request_log_metadata_cleanup.sql",
+        libsql: BackendMigrationStep::Sql(include_str!(
+            "../migrations/V16__request_log_metadata_cleanup.sql"
+        )),
+        postgres: BackendMigrationStep::Sql(include_str!(
+            "../migrations/postgres/V16__request_log_metadata_cleanup.sql"
+        )),
+    },
 ];
 
 #[cfg(test)]

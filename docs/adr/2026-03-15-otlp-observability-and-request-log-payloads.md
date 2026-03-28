@@ -53,13 +53,11 @@ The gateway now emits:
 
 - chat request totals,
 - request latency histograms,
-- provider attempt totals,
-- fallback totals,
 - token totals,
 - operational cost totals,
 - usage-record totals by pricing status.
 
-Metric attributes are intentionally bounded to stable routing dimensions such as requested model, resolved model, provider, stream mode, status code, fallback usage, and pricing status.
+Metric attributes are intentionally bounded to stable routing dimensions such as requested model, resolved model, provider, stream mode, status code, outcome, and pricing status.
 
 Why:
 - the handler already knows the logical request boundary and safe labels,
@@ -75,7 +73,7 @@ The summary row stores:
 - request and routing identity,
 - status, latency, usage totals, and error code,
 - payload presence and truncation flags,
-- lightweight metadata such as stream mode, attempt count, and fallback usage.
+- lightweight metadata such as operation and stream mode.
 
 The payload row stores sanitized request and response bodies:
 

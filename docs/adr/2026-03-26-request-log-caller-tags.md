@@ -101,7 +101,7 @@ This matters because attribution is only useful if operators can see and query i
 
 ### Why not put everything in `metadata_json`?
 
-We rejected a JSON-only design because `metadata_json` already carries runtime-owned observability facts such as stream mode and fallback metadata. Mixing caller-supplied attribution into that field would blur ownership and make filtering more backend-specific. It would also encourage future features to treat caller metadata and runtime metadata as interchangeable, which they are not.
+We rejected a JSON-only design because `metadata_json` already carries runtime-owned observability facts such as operation and stream mode. Mixing caller-supplied attribution into that field would blur ownership and make filtering more backend-specific. It would also encourage future features to treat caller metadata and runtime metadata as interchangeable, which they are not.
 
 ### Why not store every tag in a fully exploded tag table?
 
