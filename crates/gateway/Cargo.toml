@@ -29,6 +29,8 @@ tower-http.workspace = true
 tracing.workspace = true
 tracing-opentelemetry.workspace = true
 tracing-subscriber.workspace = true
+utoipa.workspace = true
+utoipa-axum.workspace = true
 url.workspace = true
 uuid.workspace = true
 

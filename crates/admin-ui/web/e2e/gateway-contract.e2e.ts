@@ -216,3 +216,105 @@ test('team budget update triggers hard-limit enforcement for team-owned keys', a
   const capturedResponse = await request.get(stubAdminUrl('/__admin/requests'))
   expect(capturedResponse.ok()).toBe(true)
 })
+
+test('request log detail returns 404 for a missing row', async ({ request, page, baseURL }) => {
+  const root = baseURL ?? requireEnv('E2E_BASE_URL')
+  const adminCookie = await ensureAdminSession(page, request, root)
+
+  const response = await request.get(
+    `${root}/api/v1/admin/observability/request-logs/00000000-0000-0000-0000-000000000000`,
+    {
+      headers: {
+        cookie: adminCookie,
+      },
+    },
+  )
+
+  expect(response.status()).toBe(404)
+  const body = (await response.json()) as {
+    error: {
+      code: string
+      message: string
+    }
+  }
+  expect(body.error.code).toBe('not_found')
+  expect(body.error.message).toContain('request log')
+})
+
+test('identity users endpoints support live create-and-list flows', async ({
+  request,
+  page,
+  baseURL,
+}) => {
+  const root = baseURL ?? requireEnv('E2E_BASE_URL')
+  const adminCookie = await ensureAdminSession(page, request, root)
+
+  const email = `issue-60-${Date.now()}@example.com`
+  const createResponse = await request.post(`${root}/api/v1/admin/identity/users`, {
+    headers: {
+      cookie: adminCookie,
+      'content-type': 'application/json',
+    },
+    data: {
+      name: 'Issue 60 User',
+      email,
+      auth_mode: 'password',
+      global_role: 'user',
+    },
+  })
+
+  expect(createResponse.status()).toBe(200)
+  const createBody = (await createResponse.json()) as {
+    data:
+      | {
+          kind: 'password_invite'
+          user: {
+            id: string
+            email: string
+            global_role: string
+            status: string
+          }
+          invite_url: string
+        }
+      | {
+          kind: string
+        }
+  }
+
+  expect(createBody.data.kind).toBe('password_invite')
+  if (createBody.data.kind !== 'password_invite') {
+    throw new Error(`expected password invite onboarding, received ${createBody.data.kind}`)
+  }
+  expect(createBody.data.user.email).toBe(email)
+  expect(createBody.data.user.global_role).toBe('user')
+  expect(createBody.data.user.status).toBe('invited')
+  expect(createBody.data.invite_url).toContain('/admin/invite/')
+
+  const response = await request.get(`${root}/api/v1/admin/identity/users`, {
+    headers: {
+      cookie: adminCookie,
+    },
+  })
+
+  expect(response.status()).toBe(200)
+  const body = (await response.json()) as {
+    data: {
+      users: Array<{
+        id: string
+        email: string
+        global_role: string
+        status: string
+      }>
+    }
+  }
+
+  expect(
+    body.data.users.some(
+      (user) =>
+        user.id === createBody.data.user.id &&
+        user.email === email &&
+        user.global_role === 'user' &&
+        user.status === 'invited',
+    ),
+  ).toBe(true)
+})

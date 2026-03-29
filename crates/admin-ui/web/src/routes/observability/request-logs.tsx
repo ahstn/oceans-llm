@@ -26,14 +26,14 @@ export const Route = createFileRoute('/observability/request-logs')({
 })
 
 const initialFilters: RequestLogFiltersInput = {
-  requestId: '',
-  modelKey: '',
-  providerKey: '',
+  request_id: '',
+  model_key: '',
+  provider_key: '',
   service: '',
   component: '',
   env: '',
-  tagKey: '',
-  tagValue: '',
+  tag_key: '',
+  tag_value: '',
 }
 
 export function RequestLogsPage() {
@@ -122,7 +122,7 @@ export function RequestLogsPage() {
 
   const normalizedFilters = normalizeFilterSearch(filters)
   const hasPartialTagFilter =
-    Boolean(normalizedFilters.tagKey) !== Boolean(normalizedFilters.tagValue)
+    Boolean(normalizedFilters.tag_key) !== Boolean(normalizedFilters.tag_value)
 
   return (
     <>
@@ -159,14 +159,14 @@ export function RequestLogsPage() {
             <Input
               data-testid="request-log-filter-tag-key"
               placeholder="Tag key"
-              value={filters.tagKey ?? ''}
-              onChange={(event) => updateFilter('tagKey', event.target.value)}
+              value={filters.tag_key ?? ''}
+              onChange={(event) => updateFilter('tag_key', event.target.value)}
             />
             <Input
               data-testid="request-log-filter-tag-value"
               placeholder="Tag value"
-              value={filters.tagValue ?? ''}
-              onChange={(event) => updateFilter('tagValue', event.target.value)}
+              value={filters.tag_value ?? ''}
+              onChange={(event) => updateFilter('tag_value', event.target.value)}
             />
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -206,20 +206,20 @@ export function RequestLogsPage() {
             <div className="flex flex-col gap-3">
               {logPage.items.map((item) => (
                 <article
-                  key={item.requestLogId}
+                  key={item.request_log_id}
                   className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="truncate font-semibold text-[var(--color-text)]">
-                        {item.modelKey}
+                        {item.model_key}
                       </p>
                       <p className="truncate font-mono text-xs text-[var(--color-text-soft)]">
-                        {item.requestId}
+                        {item.request_id}
                       </p>
                     </div>
-                    <Badge variant={badgeVariant(item.statusCode)}>
-                      {item.statusCode ?? 'n/a'}
+                    <Badge variant={badgeVariant(item.status_code)}>
+                      {item.status_code ?? 'n/a'}
                     </Badge>
                   </div>
 
@@ -228,14 +228,14 @@ export function RequestLogsPage() {
                       <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
                         Provider
                       </dt>
-                      <dd className="text-[var(--color-text-muted)]">{item.providerKey}</dd>
+                      <dd className="text-[var(--color-text-muted)]">{item.provider_key}</dd>
                     </div>
                     <div>
                       <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
                         Latency
                       </dt>
                       <dd className="text-[var(--color-text-muted)]">
-                        {formatLatency(item.latencyMs)}
+                        {formatLatency(item.latency_ms)}
                       </dd>
                     </div>
                     <div>
@@ -243,14 +243,14 @@ export function RequestLogsPage() {
                         Tokens
                       </dt>
                       <dd className="text-[var(--color-text-muted)]">
-                        {formatTokenCount(item.totalTokens)}
+                        {formatTokenCount(item.total_tokens)}
                       </dd>
                     </div>
                     <div>
                       <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
                         Timestamp
                       </dt>
-                      <dd className="text-[var(--color-text-muted)]">{item.occurredAt}</dd>
+                      <dd className="text-[var(--color-text-muted)]">{item.occurred_at}</dd>
                     </div>
                   </dl>
 
@@ -264,7 +264,7 @@ export function RequestLogsPage() {
                     <Button
                       type="button"
                       variant="secondary"
-                      onClick={() => openDetail(item.requestLogId)}
+                      onClick={() => openDetail(item.request_log_id)}
                     >
                       Inspect
                     </Button>
@@ -298,7 +298,7 @@ export function RequestLogsPage() {
                   const item = logPage.items[virtualRow.index]
                   return (
                     <div
-                      key={item.requestLogId}
+                      key={item.request_log_id}
                       className="absolute top-0 left-0 grid w-full grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)_minmax(0,1fr)_88px_96px_88px_120px] border-t border-[color:var(--color-border)] align-top text-sm"
                       style={{
                         height: `${virtualRow.size}px`,
@@ -307,35 +307,35 @@ export function RequestLogsPage() {
                     >
                       <div className="min-w-0 px-3 py-3">
                         <div className="truncate font-mono text-xs text-[var(--color-text-soft)]">
-                          {item.requestId}
+                          {item.request_id}
                         </div>
                         <div className="truncate text-xs text-[var(--color-text-muted)]">
-                          {item.requestLogId}
+                          {item.request_log_id}
                         </div>
                       </div>
                       <span className="truncate px-3 py-3 text-[var(--color-text)]">
-                        {item.modelKey}
+                        {item.model_key}
                       </span>
                       <span className="truncate px-3 py-3 text-[var(--color-text-muted)]">
-                        {item.providerKey}
+                        {item.provider_key}
                       </span>
                       <span className="px-3 py-3">
-                        <Badge variant={badgeVariant(item.statusCode)}>
-                          {item.statusCode ?? 'n/a'}
+                        <Badge variant={badgeVariant(item.status_code)}>
+                          {item.status_code ?? 'n/a'}
                         </Badge>
                       </span>
                       <span className="px-3 py-3 text-[var(--color-text-muted)]">
-                        {formatLatency(item.latencyMs)}
+                        {formatLatency(item.latency_ms)}
                       </span>
                       <span className="px-3 py-3 text-[var(--color-text-muted)]">
-                        {formatTokenCount(item.totalTokens)}
+                        {formatTokenCount(item.total_tokens)}
                       </span>
                       <div className="px-3 py-2.5">
                         <Button
                           type="button"
                           variant="secondary"
                           className="w-full"
-                          onClick={() => openDetail(item.requestLogId)}
+                          onClick={() => openDetail(item.request_log_id)}
                         >
                           Inspect
                         </Button>
@@ -370,24 +370,24 @@ export function RequestLogsPage() {
           ) : selectedDetail ? (
             <div className="grid gap-4">
               <div className="grid gap-3 rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4 md:grid-cols-2">
-                <DetailRow label="Request ID" value={selectedDetail.log.requestId} mono />
-                <DetailRow label="Request Log ID" value={selectedDetail.log.requestLogId} mono />
-                <DetailRow label="Model" value={selectedDetail.log.modelKey} />
-                <DetailRow label="Resolved Model" value={selectedDetail.log.resolvedModelKey} />
-                <DetailRow label="Provider" value={selectedDetail.log.providerKey} />
-                <DetailRow label="Occurred At" value={selectedDetail.log.occurredAt} />
+                <DetailRow label="Request ID" value={selectedDetail.log.request_id} mono />
+                <DetailRow label="Request Log ID" value={selectedDetail.log.request_log_id} mono />
+                <DetailRow label="Model" value={selectedDetail.log.model_key} />
+                <DetailRow label="Resolved Model" value={selectedDetail.log.resolved_model_key} />
+                <DetailRow label="Provider" value={selectedDetail.log.provider_key} />
+                <DetailRow label="Occurred At" value={selectedDetail.log.occurred_at} />
                 <DetailRow
                   label="Status"
                   value={
-                    selectedDetail.log.statusCode !== null
-                      ? String(selectedDetail.log.statusCode)
+                    selectedDetail.log.status_code !== null
+                      ? String(selectedDetail.log.status_code)
                       : 'n/a'
                   }
                 />
-                <DetailRow label="Latency" value={formatLatency(selectedDetail.log.latencyMs)} />
+                <DetailRow label="Latency" value={formatLatency(selectedDetail.log.latency_ms)} />
                 <DetailRow
                   label="Tokens"
-                  value={formatTokenCount(selectedDetail.log.totalTokens)}
+                  value={formatTokenCount(selectedDetail.log.total_tokens)}
                 />
                 <DetailRow
                   label="Stream"
@@ -406,20 +406,20 @@ export function RequestLogsPage() {
                 <PayloadCard
                   title="Request Payload"
                   note={
-                    selectedDetail.log.requestPayloadTruncated
+                    selectedDetail.log.request_payload_truncated
                       ? 'Sanitized request payload was truncated before persistence.'
                       : 'Sanitized request payload.'
                   }
-                  payload={selectedDetail.payload?.requestJson}
+                  payload={selectedDetail.payload?.request_json}
                 />
                 <PayloadCard
                   title="Response Payload"
                   note={
-                    selectedDetail.log.responsePayloadTruncated
+                    selectedDetail.log.response_payload_truncated
                       ? 'Sanitized response payload was truncated before persistence.'
                       : 'Sanitized response payload.'
                   }
-                  payload={selectedDetail.payload?.responseJson}
+                  payload={selectedDetail.payload?.response_json}
                 />
               </div>
             </div>
@@ -495,10 +495,10 @@ function metadataBoolean(item: RequestLogView, key: string) {
 
 function RequestTagBadges({ item }: { item: RequestLogView }) {
   const tags = [
-    item.requestTags.service ? `service:${item.requestTags.service}` : null,
-    item.requestTags.component ? `component:${item.requestTags.component}` : null,
-    item.requestTags.env ? `env:${item.requestTags.env}` : null,
-    ...item.requestTags.bespoke.map((tag) => `${tag.key}:${tag.value}`),
+    item.request_tags.service ? `service:${item.request_tags.service}` : null,
+    item.request_tags.component ? `component:${item.request_tags.component}` : null,
+    item.request_tags.env ? `env:${item.request_tags.env}` : null,
+    ...item.request_tags.bespoke.map((tag) => `${tag.key}:${tag.value}`),
   ].filter((value): value is string => value !== null)
 
   if (tags.length === 0) {
@@ -518,14 +518,14 @@ function RequestTagBadges({ item }: { item: RequestLogView }) {
 
 function normalizeFilterSearch(search: Record<string, unknown>): RequestLogFiltersInput {
   return {
-    requestId: searchParamValue(search.requestId),
-    modelKey: searchParamValue(search.modelKey),
-    providerKey: searchParamValue(search.providerKey),
+    request_id: searchParamValue(search.request_id),
+    model_key: searchParamValue(search.model_key),
+    provider_key: searchParamValue(search.provider_key),
     service: searchParamValue(search.service),
     component: searchParamValue(search.component),
     env: searchParamValue(search.env),
-    tagKey: searchParamValue(search.tagKey),
-    tagValue: searchParamValue(search.tagValue),
+    tag_key: searchParamValue(search.tag_key),
+    tag_value: searchParamValue(search.tag_value),
   }
 }
 

@@ -42,4 +42,23 @@ describe('forwardRequestHeadersFromRequest', () => {
     expect(headers.get('x-forwarded-proto')).toBe('http')
     expect(headers.get('x-forwarded-host')).toBe('localhost:3001')
   })
+
+  it('preserves existing request headers while adding forwarded metadata', () => {
+    const request = new Request('http://localhost:3001/admin/login', {
+      headers: {
+        host: 'localhost:3001',
+        cookie: 'ogw_session=test',
+      },
+    })
+
+    const headers = forwardRequestHeadersFromRequest(request, {
+      'content-type': 'application/json',
+      accept: 'application/json',
+    })
+
+    expect(headers.get('content-type')).toBe('application/json')
+    expect(headers.get('accept')).toBe('application/json')
+    expect(headers.get('cookie')).toBe('ogw_session=test')
+    expect(headers.get('x-forwarded-origin')).toBe('http://localhost:3001')
+  })
 })

@@ -33,24 +33,24 @@ vi.mock('@/server/admin-data.functions', () => ({
 
 const items: RequestLogView[] = [
   {
-    requestLogId: 'reqlog_1',
-    requestId: 'req_1',
-    apiKeyId: 'api_key_1',
-    userId: 'user_1',
-    teamId: null,
-    modelKey: 'gpt-4.1-mini',
-    resolvedModelKey: 'gpt-4.1-mini',
-    providerKey: 'openai',
-    statusCode: 200,
-    latencyMs: 482,
-    promptTokens: 400,
-    completionTokens: 942,
-    totalTokens: 1342,
-    errorCode: null,
-    hasPayload: true,
-    requestPayloadTruncated: false,
-    responsePayloadTruncated: false,
-    requestTags: {
+    request_log_id: 'reqlog_1',
+    request_id: 'req_1',
+    api_key_id: 'api_key_1',
+    user_id: 'user_1',
+    team_id: null,
+    model_key: 'gpt-4.1-mini',
+    resolved_model_key: 'gpt-4.1-mini',
+    provider_key: 'openai',
+    status_code: 200,
+    latency_ms: 482,
+    prompt_tokens: 400,
+    completion_tokens: 942,
+    total_tokens: 1342,
+    error_code: null,
+    has_payload: true,
+    request_payload_truncated: false,
+    response_payload_truncated: false,
+    request_tags: {
       service: 'checkout',
       component: 'pricing_api',
       env: 'prod',
@@ -59,7 +59,7 @@ const items: RequestLogView[] = [
     metadata: {
       stream: false,
     },
-    occurredAt: '2026-03-10T11:32:00Z',
+    occurred_at: '2026-03-10T11:32:00Z',
   },
 ]
 
@@ -160,8 +160,8 @@ describe('RequestLogsPage', () => {
       expect(navigateMock).toHaveBeenCalledWith({
         to: '/observability/request-logs',
         search: {
-          tagKey: 'feature',
-          tagValue: 'guest_checkout',
+          tag_key: 'feature',
+          tag_value: 'guest_checkout',
         },
       })
     })

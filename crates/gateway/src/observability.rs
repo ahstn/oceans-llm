@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 use std::{collections::BTreeMap, sync::Mutex};
 
 use anyhow::Context;
@@ -27,7 +27,7 @@ pub struct GatewayMetrics {
     cost_usd: Counter<f64>,
     usage_records: Counter<u64>,
     usage_record_failures: Counter<u64>,
-    #[cfg(test)]
+    #[cfg(any(test, debug_assertions))]
     test_counters: Arc<TestMetricCounters>,
 }
 
@@ -53,14 +53,14 @@ pub struct ChatRequestMetric<'a> {
     pub latency_seconds: f64,
 }
 
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 #[derive(Debug, Default)]
 struct TestMetricCounters {
     requests: Mutex<u64>,
     request_outcomes: Mutex<BTreeMap<String, u64>>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TestMetricSnapshot {
     pub requests: u64,
@@ -103,7 +103,7 @@ impl GatewayMetrics {
                 .u64_counter("gateway.chat.usage_record_failures")
                 .with_description("Post-success chat usage record failures")
                 .build(),
-            #[cfg(test)]
+            #[cfg(any(test, debug_assertions))]
             test_counters: Arc::new(TestMetricCounters::default()),
         }
     }
@@ -120,7 +120,7 @@ impl GatewayMetrics {
 
         self.requests.add(1, &attrs);
         self.request_duration.record(metric.latency_seconds, &attrs);
-        #[cfg(test)]
+        #[cfg(any(test, debug_assertions))]
         {
             let mut requests = self.test_counters.requests.lock().expect("requests lock");
             *requests += 1;
@@ -171,7 +171,7 @@ impl GatewayMetrics {
         self.usage_record_failures.add(1, &attrs);
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, debug_assertions))]
     pub fn test_snapshot(&self) -> TestMetricSnapshot {
         TestMetricSnapshot {
             requests: *self.test_counters.requests.lock().expect("requests lock"),

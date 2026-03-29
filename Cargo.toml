@@ -46,5 +46,7 @@ tower-http = { version = "0.6", features = ["request-id", "trace", "util"] }
 tracing = "0.1"
 tracing-opentelemetry = "0.32"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+utoipa = { version = "5", features = ["axum_extras", "time", "uuid"] }
+utoipa-axum = "0.2"
 url = "2"
 uuid = { version = "1", features = ["serde", "v4", "v5"] }

@@ -1,15 +1,11 @@
-mod cli;
-mod config;
-mod email;
-mod http;
-mod observability;
-
 use std::{env, net::SocketAddr, path::Path, sync::Arc, time::Duration};
 
-use crate::{
+use gateway::{
     cli::{Cli, Command, MigrateAction, ServeArgs},
     config::{BootstrapAdminConfig, BudgetAlertEmailConfig, GatewayConfig},
     email::build_budget_alert_sender,
+    http::{build_router, state::AppState},
+    observability,
 };
 use admin_ui::AdminUiConfig;
 use anyhow::Context;
@@ -24,7 +20,6 @@ use gateway_store::{
     AnyStore, GatewayStore, MigrationStatus, check_migrations_with_options,
     run_migrations_with_options, status_migrations_with_options,
 };
-use http::{build_router, state::AppState};
 use tokio::net::TcpListener;
 
 #[tokio::main]
@@ -384,9 +379,9 @@ mod tests {
     use url::Url;
     use uuid::Uuid;
 
-    use crate::{
+    use crate::ensure_bootstrap_admin;
+    use gateway::{
         config::BootstrapAdminConfig,
-        ensure_bootstrap_admin,
         http::{build_router, state::AppState},
     };
 
@@ -850,7 +845,7 @@ mod tests {
                 service,
                 store,
                 providers: provider_registry,
-                metrics: Arc::new(crate::observability::GatewayMetrics::default()),
+                metrics: Arc::new(gateway::observability::GatewayMetrics::default()),
                 identity_token_secret: Arc::new("local-dev-identity-secret".to_string()),
             },
             AdminUiConfig::default(),
@@ -1011,7 +1006,7 @@ mod tests {
                 service,
                 store: store.clone(),
                 providers,
-                metrics: Arc::new(crate::observability::GatewayMetrics::default()),
+                metrics: Arc::new(gateway::observability::GatewayMetrics::default()),
                 identity_token_secret: Arc::new("local-dev-identity-secret".to_string()),
             },
             AdminUiConfig::default(),
@@ -1085,7 +1080,7 @@ mod tests {
                 service,
                 store,
                 providers: provider_registry,
-                metrics: Arc::new(crate::observability::GatewayMetrics::default()),
+                metrics: Arc::new(gateway::observability::GatewayMetrics::default()),
                 identity_token_secret: Arc::new("local-dev-identity-secret".to_string()),
             },
             AdminUiConfig::default(),

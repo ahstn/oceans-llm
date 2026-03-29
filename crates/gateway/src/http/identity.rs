@@ -11,14 +11,22 @@ use gateway_core::{
     MembershipRole, OidcProviderRecord, PasswordInvitationRecord, UserRecord, UserStatus,
 };
 use gateway_store::{AnyStore, GatewayStore};
-use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use time::{Duration, OffsetDateTime, format_description::well_known::Rfc3339};
+use time::{Duration, OffsetDateTime};
 use url::form_urlencoded;
 use uuid::Uuid;
 
 use crate::http::{
     admin_auth::{require_authenticated_session, require_platform_admin},
+    admin_contract::{
+        AddTeamMembersRequest, AdminIdentityPayload, AdminOidcProviderView,
+        AdminTeamManagementView, AdminTeamView, AdminTeamsPayload, AuthSessionUserView,
+        AuthSessionView, ChangePasswordRequest, CompleteInvitationRequest,
+        CompleteInvitationResponse, CreateTeamRequest, CreateUserRequest, CreateUserResponse,
+        Envelope, IdentityActionStatus, InvitationView, OidcCallbackQuery, OidcStartQuery,
+        PasswordInviteResponse, PasswordLoginRequest, TransferTeamMemberRequest, UpdateTeamRequest,
+        UpdateUserRequest, envelope, format_timestamp,
+    },
     error::AppError,
     identity_lifecycle::{
         ensure_assignable_membership_role, ensure_auth_mode_edit_allowed,
@@ -37,241 +45,12 @@ const SESSION_COOKIE_NAME: &str = "ogw_session";
 const INVITE_TTL_DAYS: i64 = 7;
 const SESSION_TTL_DAYS: i64 = 30;
 
-#[derive(Debug, Serialize)]
-pub(crate) struct Envelope<T> {
-    data: T,
-    meta: ResponseMeta,
-}
-
-#[derive(Debug, Serialize)]
-pub(crate) struct ResponseMeta {
-    generated_at: String,
-}
-
-#[derive(Debug, Serialize)]
-pub(crate) struct AdminIdentityPayload {
-    users: Vec<AdminIdentityUserView>,
-    teams: Vec<AdminTeamView>,
-    oidc_providers: Vec<AdminOidcProviderView>,
-}
-
-#[derive(Debug, Serialize)]
-pub(crate) struct AdminIdentityUserView {
-    pub(crate) id: String,
-    pub(crate) name: String,
-    pub(crate) email: String,
-    pub(crate) auth_mode: String,
-    pub(crate) global_role: String,
-    pub(crate) team_id: Option<String>,
-    pub(crate) team_name: Option<String>,
-    pub(crate) team_role: Option<String>,
-    pub(crate) status: String,
-    pub(crate) onboarding: Option<AdminOnboardingActionView>,
-}
-
-#[derive(Debug, Serialize)]
-pub(crate) struct AdminTeamView {
-    id: String,
-    name: String,
-}
-
-#[derive(Debug, Serialize)]
-pub(crate) struct AdminTeamsPayload {
-    teams: Vec<AdminTeamManagementView>,
-    users: Vec<AdminTeamAssignableUserView>,
-    oidc_providers: Vec<AdminOidcProviderView>,
-}
-
-#[derive(Debug, Serialize)]
-pub(crate) struct AdminTeamManagementView {
-    pub(crate) id: String,
-    pub(crate) name: String,
-    pub(crate) key: String,
-    pub(crate) status: String,
-    pub(crate) member_count: usize,
-    pub(crate) admins: Vec<AdminTeamAdminView>,
-    pub(crate) members: Vec<AdminTeamMemberView>,
-}
-
-#[derive(Debug, Serialize)]
-pub(crate) struct AdminTeamAdminView {
-    pub(crate) id: String,
-    pub(crate) name: String,
-    pub(crate) email: String,
-    pub(crate) status: String,
-}
-
-#[derive(Debug, Serialize)]
-pub(crate) struct AdminTeamMemberView {
-    pub(crate) id: String,
-    pub(crate) name: String,
-    pub(crate) email: String,
-    pub(crate) status: String,
-    pub(crate) role: String,
-}
-
-#[derive(Debug, Serialize)]
-pub(crate) struct AdminTeamAssignableUserView {
-    pub(crate) id: String,
-    pub(crate) name: String,
-    pub(crate) email: String,
-    pub(crate) status: String,
-    pub(crate) team_id: Option<String>,
-    pub(crate) team_name: Option<String>,
-    pub(crate) team_role: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub(crate) struct AdminOidcProviderView {
-    id: String,
-    key: String,
-    label: String,
-}
-
-#[derive(Debug, Serialize)]
-pub(crate) struct AuthSessionUserView {
-    id: String,
-    name: String,
-    email: String,
-    global_role: String,
-}
-
-#[derive(Debug, Serialize)]
-pub(crate) struct AuthSessionView {
-    user: AuthSessionUserView,
-    must_change_password: bool,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub(crate) enum AdminOnboardingActionView {
-    PasswordInvite {
-        invite_url: Option<String>,
-        expires_at: Option<String>,
-        can_resend: bool,
-    },
-    OidcSignIn {
-        sign_in_url: String,
-        provider_key: String,
-        provider_label: String,
-    },
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CreateUserRequest {
-    pub name: String,
-    pub email: String,
-    pub auth_mode: String,
-    pub global_role: String,
-    pub team_id: Option<String>,
-    pub team_role: Option<String>,
-    pub oidc_provider_key: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CreateTeamRequest {
-    pub name: String,
-    pub admin_user_ids: Vec<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct UpdateTeamRequest {
-    pub name: String,
-    pub admin_user_ids: Vec<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct AddTeamMembersRequest {
-    pub user_ids: Vec<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct UpdateUserRequest {
-    pub global_role: String,
-    pub auth_mode: Option<String>,
-    pub team_id: Option<String>,
-    pub team_role: Option<String>,
-    pub oidc_provider_key: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct TransferTeamMemberRequest {
-    pub destination_team_id: String,
-    pub destination_role: String,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum CreateUserResponse {
-    PasswordInvite {
-        user: AdminIdentityUserView,
-        invite_url: String,
-        expires_at: String,
-    },
-    OidcSignIn {
-        user: AdminIdentityUserView,
-        sign_in_url: String,
-        provider_label: String,
-    },
-}
-
-#[derive(Debug, Serialize)]
-pub(crate) struct IdentityActionStatus {
-    status: &'static str,
-}
-
-#[derive(Debug, Serialize)]
-pub(crate) struct PasswordInviteResponse {
-    user_id: String,
-    invite_url: String,
-    expires_at: String,
-}
-
-#[derive(Debug, Serialize)]
-pub(crate) struct InvitationView {
-    state: String,
-    email: Option<String>,
-    name: Option<String>,
-    expires_at: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CompleteInvitationRequest {
-    pub password: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct PasswordLoginRequest {
-    pub email: String,
-    pub password: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ChangePasswordRequest {
-    pub current_password: String,
-    pub new_password: String,
-}
-
-#[derive(Debug, Serialize)]
-pub(crate) struct CompleteInvitationResponse {
-    status: &'static str,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct OidcStartQuery {
-    pub provider_key: String,
-    pub login_hint: String,
-    pub redirect_to: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct OidcCallbackQuery {
-    pub provider_key: String,
-    pub email: String,
-    pub subject: Option<String>,
-    pub redirect_to: Option<String>,
-}
-
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/identity/users",
+    responses((status = 200, body = Envelope<AdminIdentityPayload>)),
+    security(("session_cookie" = []))
+)]
 pub async fn list_identity_users(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -318,6 +97,12 @@ pub async fn list_identity_users(
     })))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/identity/teams",
+    responses((status = 200, body = Envelope<AdminTeamsPayload>)),
+    security(("session_cookie" = []))
+)]
 pub async fn list_identity_teams(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -342,6 +127,13 @@ pub async fn list_identity_teams(
     })))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/admin/identity/teams",
+    request_body = CreateTeamRequest,
+    responses((status = 200, body = Envelope<AdminTeamManagementView>)),
+    security(("session_cookie" = []))
+)]
 pub async fn create_identity_team(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -374,6 +166,14 @@ pub async fn create_identity_team(
     )))
 }
 
+#[utoipa::path(
+    patch,
+    path = "/api/v1/admin/identity/teams/{team_id}",
+    request_body = UpdateTeamRequest,
+    params(("team_id" = String, Path, description = "Team identifier")),
+    responses((status = 200, body = Envelope<AdminTeamManagementView>)),
+    security(("session_cookie" = []))
+)]
 pub async fn update_identity_team(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -409,6 +209,14 @@ pub async fn update_identity_team(
     )))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/admin/identity/teams/{team_id}/members",
+    request_body = AddTeamMembersRequest,
+    params(("team_id" = String, Path, description = "Team identifier")),
+    responses((status = 200, body = Envelope<AdminTeamManagementView>)),
+    security(("session_cookie" = []))
+)]
 pub async fn add_identity_team_members(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -472,6 +280,11 @@ pub async fn add_identity_team_members(
     )))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/auth/session",
+    responses((status = 200, body = Envelope<Option<AuthSessionView>>))
+)]
 pub async fn get_auth_session(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -483,6 +296,12 @@ pub async fn get_auth_session(
     Ok(Json(envelope(session)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/login/password",
+    request_body = PasswordLoginRequest,
+    responses((status = 200, body = Envelope<AuthSessionView>))
+)]
 pub async fn login_with_password(
     State(state): State<AppState>,
     Json(request): Json<PasswordLoginRequest>,
@@ -526,6 +345,13 @@ pub async fn login_with_password(
     Ok(response)
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/password/change",
+    request_body = ChangePasswordRequest,
+    responses((status = 200, body = Envelope<AuthSessionView>)),
+    security(("session_cookie" = []))
+)]
 pub async fn change_password(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -588,6 +414,13 @@ pub async fn change_password(
     Ok(Json(envelope(build_auth_session_view(refreshed_user))))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/admin/identity/users",
+    request_body = CreateUserRequest,
+    responses((status = 200, body = Envelope<CreateUserResponse>)),
+    security(("session_cookie" = []))
+)]
 pub async fn create_identity_user(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -663,6 +496,14 @@ pub async fn create_identity_user(
     Ok(Json(envelope(response)))
 }
 
+#[utoipa::path(
+    patch,
+    path = "/api/v1/admin/identity/users/{user_id}",
+    request_body = UpdateUserRequest,
+    params(("user_id" = String, Path, description = "User identifier")),
+    responses((status = 200, body = Envelope<IdentityActionStatus>)),
+    security(("session_cookie" = []))
+)]
 pub async fn update_identity_user(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -725,6 +566,13 @@ pub async fn update_identity_user(
     Ok(Json(envelope(IdentityActionStatus { status: "ok" })))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/admin/identity/users/{user_id}/deactivate",
+    params(("user_id" = String, Path, description = "User identifier")),
+    responses((status = 200, body = Envelope<IdentityActionStatus>)),
+    security(("session_cookie" = []))
+)]
 pub async fn deactivate_identity_user(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -751,6 +599,13 @@ pub async fn deactivate_identity_user(
     Ok(Json(envelope(IdentityActionStatus { status: "ok" })))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/admin/identity/users/{user_id}/reactivate",
+    params(("user_id" = String, Path, description = "User identifier")),
+    responses((status = 200, body = Envelope<IdentityActionStatus>)),
+    security(("session_cookie" = []))
+)]
 pub async fn reactivate_identity_user(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -775,6 +630,13 @@ pub async fn reactivate_identity_user(
     Ok(Json(envelope(IdentityActionStatus { status: "ok" })))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/admin/identity/users/{user_id}/reset-onboarding",
+    params(("user_id" = String, Path, description = "User identifier")),
+    responses((status = 200, body = Envelope<CreateUserResponse>)),
+    security(("session_cookie" = []))
+)]
 pub async fn reset_identity_user_onboarding(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -833,6 +695,16 @@ pub async fn reset_identity_user_onboarding(
     Ok(Json(envelope(response)))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/v1/admin/identity/teams/{team_id}/members/{user_id}",
+    params(
+        ("team_id" = String, Path, description = "Team identifier"),
+        ("user_id" = String, Path, description = "User identifier")
+    ),
+    responses((status = 200, body = Envelope<IdentityActionStatus>)),
+    security(("session_cookie" = []))
+)]
 pub async fn remove_identity_team_member(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -855,6 +727,17 @@ pub async fn remove_identity_team_member(
     Ok(Json(envelope(IdentityActionStatus { status: "ok" })))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/admin/identity/teams/{team_id}/members/{user_id}/transfer",
+    request_body = TransferTeamMemberRequest,
+    params(
+        ("team_id" = String, Path, description = "Source team identifier"),
+        ("user_id" = String, Path, description = "User identifier")
+    ),
+    responses((status = 200, body = Envelope<IdentityActionStatus>)),
+    security(("session_cookie" = []))
+)]
 pub async fn transfer_identity_team_member(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -903,6 +786,13 @@ pub async fn transfer_identity_team_member(
     Ok(Json(envelope(IdentityActionStatus { status: "ok" })))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/admin/identity/users/{user_id}/password-invite",
+    params(("user_id" = String, Path, description = "User identifier")),
+    responses((status = 200, body = Envelope<PasswordInviteResponse>)),
+    security(("session_cookie" = []))
+)]
 pub async fn regenerate_password_invite(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -944,6 +834,12 @@ pub async fn regenerate_password_invite(
     })))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/auth/invitations/{token}",
+    params(("token" = String, Path, description = "Password invitation token")),
+    responses((status = 200, body = Envelope<InvitationView>))
+)]
 pub async fn validate_password_invitation(
     State(state): State<AppState>,
     Path(token): Path<String>,
@@ -952,6 +848,13 @@ pub async fn validate_password_invitation(
     Ok(Json(envelope(state_view)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/invitations/{token}/password",
+    request_body = CompleteInvitationRequest,
+    params(("token" = String, Path, description = "Password invitation token")),
+    responses((status = 200, body = Envelope<CompleteInvitationResponse>))
+)]
 pub async fn complete_password_invitation(
     State(state): State<AppState>,
     Path(token): Path<String>,
@@ -986,6 +889,12 @@ pub async fn complete_password_invitation(
     })))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/auth/oidc/start",
+    params(OidcStartQuery),
+    responses((status = 302, description = "Redirect to the same-origin OIDC callback"))
+)]
 pub async fn oidc_start(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1010,6 +919,12 @@ pub async fn oidc_start(
     Ok(Redirect::temporary(&callback))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/auth/oidc/callback",
+    params(OidcCallbackQuery),
+    responses((status = 302, description = "Redirect back into the admin UI after OIDC sign-in"))
+)]
 pub async fn oidc_callback(
     State(state): State<AppState>,
     Query(query): Query<OidcCallbackQuery>,
@@ -1088,15 +1003,6 @@ pub async fn oidc_callback(
     let mut response = Redirect::temporary(&redirect_to).into_response();
     response.headers_mut().append(SET_COOKIE, session_cookie);
     Ok(response)
-}
-
-pub(crate) fn envelope<T>(data: T) -> Envelope<T> {
-    Envelope {
-        data,
-        meta: ResponseMeta {
-            generated_at: format_timestamp(OffsetDateTime::now_utc()),
-        },
-    }
 }
 
 fn request_origin(headers: &HeaderMap) -> String {
@@ -1784,11 +1690,6 @@ fn oidc_subject(provider: &OidcProviderRecord, email: &str) -> String {
     format!("mock:{}:{email}", provider.provider_key)
 }
 
-pub(crate) fn format_timestamp(value: OffsetDateTime) -> String {
-    value
-        .format(&Rfc3339)
-        .unwrap_or_else(|_| value.unix_timestamp().to_string())
-}
 
 fn header_value(headers: &HeaderMap, name: &str) -> Option<String> {
     headers

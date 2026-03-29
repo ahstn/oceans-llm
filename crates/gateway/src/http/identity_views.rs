@@ -4,12 +4,13 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::http::{
-    error::AppError,
-    identity::{
+    admin_contract::{
         AdminIdentityUserView, AdminOnboardingActionView, AdminTeamAdminView,
         AdminTeamAssignableUserView, AdminTeamManagementView, AdminTeamMemberView,
-        format_timestamp, invitation_url, oidc_sign_in_url,
+        format_timestamp,
     },
+    error::AppError,
+    identity::{invitation_url, oidc_sign_in_url},
 };
 
 pub(crate) async fn build_admin_identity_user_view(
@@ -34,13 +35,14 @@ pub(crate) async fn build_admin_identity_user_view(
                 can_resend: true,
             })
         }
-        AuthMode::Oidc => user.oidc_provider_key.as_deref().map(|provider_key| {
-            AdminOnboardingActionView::OidcSignIn {
+        AuthMode::Oidc => user
+            .oidc_provider_key
+            .as_deref()
+            .map(|provider_key| AdminOnboardingActionView::OidcSignIn {
                 sign_in_url: oidc_sign_in_url(origin, provider_key, &user.user.email),
                 provider_key: provider_key.to_string(),
                 provider_label: provider_key.to_string(),
-            }
-        }),
+            }),
         _ => None,
     };
 

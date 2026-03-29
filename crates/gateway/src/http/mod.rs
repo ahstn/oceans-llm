@@ -1,3 +1,4 @@
+pub mod admin_contract;
 pub mod admin_auth;
 pub mod error;
 pub mod handlers;

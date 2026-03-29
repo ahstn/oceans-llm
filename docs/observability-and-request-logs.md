@@ -2,7 +2,7 @@
 
 `Owns`: OTLP observability model, request-log storage shape, payload redaction and truncation boundaries, and admin observability API behavior.
 `Depends on`: [data-relationships.md](data-relationships.md), [model-routing-and-api-behavior.md](model-routing-and-api-behavior.md)
-`See also`: [admin-control-plane.md](admin-control-plane.md), [budgets-and-spending.md](budgets-and-spending.md), [deploy-and-operations.md](deploy-and-operations.md), [adr/2026-03-15-otlp-observability-and-request-log-payloads.md](adr/2026-03-15-otlp-observability-and-request-log-payloads.md)
+`See also`: [admin-control-plane.md](admin-control-plane.md), [budgets-and-spending.md](budgets-and-spending.md), [deploy-and-operations.md](deploy-and-operations.md), [adr/2026-03-15-otlp-observability-and-request-log-payloads.md](adr/2026-03-15-otlp-observability-and-request-log-payloads.md), [../crates/gateway/src/http/admin_contract.rs](../crates/gateway/src/http/admin_contract.rs)
 
 This document describes the live observability contract for the gateway.
 
@@ -13,6 +13,7 @@ This document describes the live observability contract for the gateway.
 - Request-log lifecycle: [../crates/gateway-service/src/request_logging.rs](../crates/gateway-service/src/request_logging.rs)
 - Redaction policy: [../crates/gateway-service/src/redaction.rs](../crates/gateway-service/src/redaction.rs)
 - Admin APIs: [../crates/gateway/src/http/observability.rs](../crates/gateway/src/http/observability.rs)
+- Generated admin contract: [../crates/gateway/openapi/admin-api.json](../crates/gateway/openapi/admin-api.json)
 
 ## OTLP-First Model
 
@@ -166,18 +167,18 @@ Current list filters:
 - `service`
 - `component`
 - `env`
-- `tag` using `key=value`
+- `tag_key`
+- `tag_value`
 
 ## Important Current Rough Edges
 
 Current behavior that operators and maintainers should know plainly:
 
-- request-log detail lookups currently return `200` with nullable `data` for missing rows instead of `404`
+- request-log detail lookups return `404 not_found` for missing rows
 - stream and non-stream chat paths still differ on post-provider ledger-write failure behavior
 
 Tracked follow-ups:
 
-- [issue #50](https://github.com/ahstn/oceans-llm/issues/50): missing request-log detail should become `404`
 - [issue #49](https://github.com/ahstn/oceans-llm/issues/49): unify post-provider ledger failure semantics
 
 ## Relationship to Spend Reporting

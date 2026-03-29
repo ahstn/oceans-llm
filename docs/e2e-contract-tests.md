@@ -45,6 +45,8 @@ The current suite already covers more than a browser-only smoke pass:
 - public `/v1/chat/completions`
 - live spend report API behavior
 - team hard-limit enforcement for team-owned keys
+- strict `404` behavior for missing request-log detail
+- live identity-user create-and-list API coverage
 
 Planned contract coverage is now expected for:
 
@@ -78,9 +80,15 @@ The harness is intentionally mixed:
 - browser-admin flows for same-origin control-plane behavior
 - raw API contract assertions for gateway and admin endpoints
 
+Generated admin contract maintenance belongs in the same durability bucket:
+
+- refresh artifacts with `mise run admin-contract-generate`
+- verify drift with `mise run admin-contract-check`
+- keep E2E assertions aligned with the checked-in gateway contract for live surfaces
+
 That split is intentional because some critical contracts are better asserted directly at the HTTP boundary than through page interactions.
 
 ## Still Missing
 
 - password invite completion coverage
-- request-log detail and filtering flows as that surface hardens
+- richer request-log filtering flows as that surface hardens
