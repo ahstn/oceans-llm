@@ -222,7 +222,6 @@ pub async fn v1_chat_completions(
             provider_key: route.provider_key.clone(),
             started_at: request_started_at,
             finished: false,
-            failure: None,
             collector: state.service.new_stream_response_collector(),
         });
 
@@ -593,11 +592,6 @@ impl RequestLogSummary {
     }
 }
 
-struct StreamFailure {
-    status_code: i64,
-    error_code: String,
-}
-
 struct LoggingBodyStreamState {
     upstream: gateway_core::ProviderStream,
     service: std::sync::Arc<AppGatewayService>,
@@ -611,7 +605,6 @@ struct LoggingBodyStreamState {
     provider_key: String,
     started_at: Instant,
     finished: bool,
-    failure: Option<StreamFailure>,
     collector: gateway_service::StreamResponseCollector,
 }
 
@@ -634,14 +627,6 @@ fn wrap_stream_with_request_logging(
 
         match state.upstream.next().await {
             Some(Ok(chunk)) => {
-                if state.failure.is_none()
-                    && let Some(error_code) = extract_stream_error_code(chunk.as_ref())
-                {
-                    state.failure = Some(StreamFailure {
-                        status_code: 502,
-                        error_code,
-                    });
-                }
                 state.collector.observe_chunk(chunk.as_ref());
 
                 Some((Ok(chunk), state))
@@ -685,13 +670,7 @@ fn wrap_stream_with_request_logging(
                 Some((Err(std::io::Error::other(error_message)), state))
             }
             None => {
-                let failure = state
-                    .failure
-                    .as_ref()
-                    .map(|failure| gateway_service::StreamFailureSummary {
-                        status_code: failure.status_code,
-                        error_code: failure.error_code.clone(),
-                    });
+                let failure = state.collector.failure().cloned();
                 if failure.is_none() {
                     let labels = ChatMetricLabels {
                         requested_model: &state.requested_model_key,
@@ -717,7 +696,7 @@ fn wrap_stream_with_request_logging(
                 tracing::info!(
                     request_id = %state.request_log_context.request_id,
                     provider_key = %state.provider_key,
-                    termination_reason = if state.failure.is_some() { "stream_error_chunk" } else { "complete" },
+                    termination_reason = if failure.is_some() { "stream_error_chunk" } else { "complete" },
                     "chat completion stream terminated"
                 );
                 best_effort_log_stream_result(
@@ -751,32 +730,6 @@ fn wrap_stream_with_request_logging(
             }
         }
     })
-}
-
-fn extract_stream_error_code(chunk: &[u8]) -> Option<String> {
-    let text = std::str::from_utf8(chunk).ok()?;
-    for line in text.lines() {
-        let Some(payload) = extract_sse_data_payload(line) else {
-            continue;
-        };
-        let payload = payload.trim();
-        if payload.is_empty() || payload == "[DONE]" {
-            continue;
-        }
-
-        let value: Value = serde_json::from_str(payload).ok()?;
-        let Some(error) = value.get("error").and_then(Value::as_object) else {
-            continue;
-        };
-
-        return error
-            .get("code")
-            .and_then(Value::as_str)
-            .map(str::to_string)
-            .or_else(|| Some("stream_error".to_string()));
-    }
-
-    None
 }
 
 async fn best_effort_log_non_stream_success(
