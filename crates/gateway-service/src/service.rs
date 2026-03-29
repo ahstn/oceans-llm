@@ -5,8 +5,8 @@ use gateway_core::{
     ChatCompletionsRequest, GatewayError, GatewayModel, IdentityRepository, ModelRepository,
     ModelRoute, Money4, PricingCatalogRepository, PricingResolution, PricingUnpricedReason,
     ProviderRepository, RequestLogDetail, RequestLogPage, RequestLogQuery, RequestLogRecord,
-    RequestLogRepository, RequestTags, ResolvedModelPricing, RouteError, RoutePlanner,
-    StoreHealth, TeamBudgetRecord, UsageLedgerRecord, UsagePricingStatus, UserBudgetRecord,
+    RequestLogRepository, RequestTags, ResolvedModelPricing, RouteError, RoutePlanner, StoreHealth,
+    TeamBudgetRecord, UsageLedgerRecord, UsagePricingStatus, UserBudgetRecord,
 };
 use serde_json::{Value, json};
 use time::OffsetDateTime;
@@ -200,19 +200,11 @@ where
         auth: &AuthenticatedApiKey,
         context: &ChatRequestLogContext,
         provider_key: &str,
-        attempt_count: usize,
         latency_ms: i64,
         response_body: &Value,
     ) -> Result<LoggedRequest, GatewayError> {
         self.request_logging
-            .log_non_stream_success(
-                auth,
-                context,
-                provider_key,
-                attempt_count,
-                latency_ms,
-                response_body,
-            )
+            .log_non_stream_success(auth, context, provider_key, latency_ms, response_body)
             .await
     }
 
@@ -221,19 +213,11 @@ where
         auth: &AuthenticatedApiKey,
         context: &ChatRequestLogContext,
         provider_key: &str,
-        attempt_count: usize,
         latency_ms: i64,
         gateway_error: &GatewayError,
     ) -> Result<LoggedRequest, GatewayError> {
         self.request_logging
-            .log_non_stream_failure(
-                auth,
-                context,
-                provider_key,
-                attempt_count,
-                latency_ms,
-                gateway_error,
-            )
+            .log_non_stream_failure(auth, context, provider_key, latency_ms, gateway_error)
             .await
     }
 

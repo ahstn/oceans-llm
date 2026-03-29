@@ -94,9 +94,9 @@ where
 
         match api_key.owner_kind {
             ApiKeyOwnerKind::User => {
-                let user_id = api_key
-                    .owner_user_id
-                    .ok_or_else(|| GatewayError::Internal("user-owned key missing user_id".to_string()))?;
+                let user_id = api_key.owner_user_id.ok_or_else(|| {
+                    GatewayError::Internal("user-owned key missing user_id".to_string())
+                })?;
                 let Some(budget) = self.repo.get_active_budget_for_user(user_id).await? else {
                     return Ok(());
                 };
@@ -106,9 +106,13 @@ where
                     .repo
                     .sum_usage_cost_for_user_in_window(user_id, window_start, window_end)
                     .await?;
-                let spent_before = spent_after.checked_sub(ledger.computed_cost_usd).ok_or_else(|| {
-                    GatewayError::Internal("budget threshold spend subtraction overflow".to_string())
-                })?;
+                let spent_before = spent_after
+                    .checked_sub(ledger.computed_cost_usd)
+                    .ok_or_else(|| {
+                        GatewayError::Internal(
+                            "budget threshold spend subtraction overflow".to_string(),
+                        )
+                    })?;
                 let owner = self.resolve_user_owner(user_id).await?;
                 self.create_alert_if_needed(AlertEvaluation {
                     owner,
@@ -123,9 +127,9 @@ where
                 .await
             }
             ApiKeyOwnerKind::Team => {
-                let team_id = api_key
-                    .owner_team_id
-                    .ok_or_else(|| GatewayError::Internal("team-owned key missing team_id".to_string()))?;
+                let team_id = api_key.owner_team_id.ok_or_else(|| {
+                    GatewayError::Internal("team-owned key missing team_id".to_string())
+                })?;
                 let Some(budget) = self.repo.get_active_budget_for_team(team_id).await? else {
                     return Ok(());
                 };
@@ -135,9 +139,13 @@ where
                     .repo
                     .sum_usage_cost_for_team_in_window(team_id, window_start, window_end)
                     .await?;
-                let spent_before = spent_after.checked_sub(ledger.computed_cost_usd).ok_or_else(|| {
-                    GatewayError::Internal("budget threshold spend subtraction overflow".to_string())
-                })?;
+                let spent_before = spent_after
+                    .checked_sub(ledger.computed_cost_usd)
+                    .ok_or_else(|| {
+                        GatewayError::Internal(
+                            "budget threshold spend subtraction overflow".to_string(),
+                        )
+                    })?;
                 let owner = self.resolve_team_owner(team_id).await?;
                 self.create_alert_if_needed(AlertEvaluation {
                     owner,
@@ -219,7 +227,10 @@ where
 
             let email = BudgetAlertEmail {
                 recipient,
-                subject: format!("Budget alert: {} is below 20% remaining", task.alert.owner_name),
+                subject: format!(
+                    "Budget alert: {} is below 20% remaining",
+                    task.alert.owner_name
+                ),
                 text_body: render_budget_alert_email(&task)?,
             };
 
@@ -254,7 +265,10 @@ where
         Ok(sent_count)
     }
 
-    async fn create_alert_if_needed(&self, evaluation: AlertEvaluation) -> Result<(), GatewayError> {
+    async fn create_alert_if_needed(
+        &self,
+        evaluation: AlertEvaluation,
+    ) -> Result<(), GatewayError> {
         let remaining_before =
             remaining_budget_floor_zero(evaluation.budget_amount, evaluation.spent_before);
         let remaining_after =
@@ -303,11 +317,9 @@ where
     }
 
     async fn resolve_user_owner(&self, user_id: Uuid) -> Result<AlertOwnerContext, GatewayError> {
-        let user = self
-            .repo
-            .get_user_by_id(user_id)
-            .await?
-            .ok_or_else(|| GatewayError::Internal(format!("budget alert user `{user_id}` missing")))?;
+        let user = self.repo.get_user_by_id(user_id).await?.ok_or_else(|| {
+            GatewayError::Internal(format!("budget alert user `{user_id}` missing"))
+        })?;
 
         Ok(AlertOwnerContext {
             owner_kind: ApiKeyOwnerKind::User,
@@ -319,16 +331,17 @@ where
     }
 
     async fn resolve_team_owner(&self, team_id: Uuid) -> Result<AlertOwnerContext, GatewayError> {
-        let team = self
-            .repo
-            .get_team_by_id(team_id)
-            .await?
-            .ok_or_else(|| GatewayError::Internal(format!("budget alert team `{team_id}` missing")))?;
+        let team = self.repo.get_team_by_id(team_id).await?.ok_or_else(|| {
+            GatewayError::Internal(format!("budget alert team `{team_id}` missing"))
+        })?;
         let memberships = self.repo.list_team_memberships(team_id).await?;
         let mut recipients = BTreeSet::new();
 
         for membership in memberships {
-            if !matches!(membership.role, MembershipRole::Owner | MembershipRole::Admin) {
+            if !matches!(
+                membership.role,
+                MembershipRole::Owner | MembershipRole::Admin
+            ) {
                 continue;
             }
             let Some(user) = self.repo.get_user_by_id(membership.user_id).await? else {
@@ -410,16 +423,13 @@ fn usage_window_bounds(
 }
 
 fn render_budget_alert_email(task: &BudgetAlertDispatchTask) -> Result<String, GatewayError> {
-    let window_start = task
-        .alert
-        .window_start
-        .format(&Rfc3339)
-        .map_err(|error| GatewayError::Internal(format!("failed formatting alert start: {error}")))?;
-    let window_end = task
-        .alert
-        .window_end
-        .format(&Rfc3339)
-        .map_err(|error| GatewayError::Internal(format!("failed formatting alert end: {error}")))?;
+    let window_start = task.alert.window_start.format(&Rfc3339).map_err(|error| {
+        GatewayError::Internal(format!("failed formatting alert start: {error}"))
+    })?;
+    let window_end =
+        task.alert.window_end.format(&Rfc3339).map_err(|error| {
+            GatewayError::Internal(format!("failed formatting alert end: {error}"))
+        })?;
 
     Ok(format!(
         "Budget threshold alert\n\nOwner: {owner_name}\nScope: {owner_kind}:{owner_id}\nCadence: {cadence}\nThreshold: 20% remaining\nWindow: {window_start} to {window_end}\nSpend before threshold: ${spend_before}\nSpend after threshold: ${spend_after}\nRemaining budget: ${remaining}\n",
@@ -438,9 +448,9 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use gateway_core::{
-        BudgetAlertDispatchTask, BudgetAlertHistoryPage, BudgetAlertHistoryQuery,
-        BudgetAlertRepository, GlobalRole, IdentityRepository, StoreError, TeamRecord,
-        UserRecord, UserBudgetRecord, TeamMembershipRecord, AuthMode, ModelAccessMode,
+        AuthMode, BudgetAlertDispatchTask, BudgetAlertHistoryPage, BudgetAlertHistoryQuery,
+        BudgetAlertRepository, GlobalRole, IdentityRepository, ModelAccessMode, StoreError,
+        TeamMembershipRecord, TeamRecord, UserBudgetRecord, UserRecord,
     };
     use time::OffsetDateTime;
 
@@ -461,7 +471,11 @@ mod tests {
     #[async_trait]
     impl IdentityRepository for InMemoryRepo {
         async fn get_user_by_id(&self, user_id: Uuid) -> Result<Option<UserRecord>, StoreError> {
-            if self.user.as_ref().is_some_and(|user| user.user_id == user_id) {
+            if self
+                .user
+                .as_ref()
+                .is_some_and(|user| user.user_id == user_id)
+            {
                 return Ok(self.user.clone());
             }
             Ok(self
@@ -724,7 +738,10 @@ mod tests {
         let deliveries = repo.deliveries.lock().expect("deliveries lock");
         assert_eq!(alerts.len(), 1);
         assert_eq!(deliveries.len(), 1);
-        assert_eq!(deliveries[0].delivery_status, BudgetAlertDeliveryStatus::Pending);
+        assert_eq!(
+            deliveries[0].delivery_status,
+            BudgetAlertDeliveryStatus::Pending
+        );
     }
 
     #[tokio::test]
@@ -825,7 +842,12 @@ mod tests {
             team_users: vec![
                 build_user(owner_id, "Owner", "owner@example.com", UserStatus::Active),
                 build_user(admin_id, "Admin", "admin@example.com", UserStatus::Active),
-                build_user(member_id, "Member", "member@example.com", UserStatus::Active),
+                build_user(
+                    member_id,
+                    "Member",
+                    "member@example.com",
+                    UserStatus::Active,
+                ),
             ],
             active_team_budget: Some(TeamBudgetRecord {
                 team_budget_id: Uuid::new_v4(),
@@ -894,7 +916,11 @@ mod tests {
         assert_eq!(alerts.len(), 1);
         assert_eq!(deliveries.len(), 2);
         assert_eq!(sent, 2);
-        assert!(deliveries.iter().all(|delivery| delivery.delivery_status == BudgetAlertDeliveryStatus::Sent));
+        assert!(
+            deliveries
+                .iter()
+                .all(|delivery| delivery.delivery_status == BudgetAlertDeliveryStatus::Sent)
+        );
     }
 
     #[tokio::test]

@@ -65,11 +65,9 @@ impl MigrationTestHook {
 }
 
 pub async fn run_migrations(path: impl AsRef<Path>) -> anyhow::Result<()> {
-    run_migrations_with_options(
-        &StoreConnectionOptions::Libsql {
-            path: path.as_ref().to_path_buf(),
-        },
-    )
+    run_migrations_with_options(&StoreConnectionOptions::Libsql {
+        path: path.as_ref().to_path_buf(),
+    })
     .await
 }
 

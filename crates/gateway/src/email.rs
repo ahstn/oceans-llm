@@ -2,10 +2,11 @@ use std::sync::Arc;
 
 use anyhow::{Context, bail};
 use async_trait::async_trait;
-use gateway_service::{BudgetAlertEmail, BudgetAlertSendResult, BudgetAlertSender, SinkBudgetAlertSender};
+use gateway_service::{
+    BudgetAlertEmail, BudgetAlertSendResult, BudgetAlertSender, SinkBudgetAlertSender,
+};
 use lettre::{
-    AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor,
-    message::Mailbox,
+    AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor, message::Mailbox,
     transport::smtp::authentication::Credentials,
 };
 
@@ -36,13 +37,19 @@ impl SmtpBudgetAlertSender {
         smtp: &SmtpBudgetAlertEmailTransportConfig,
     ) -> anyhow::Result<Self> {
         let from = if let Some(from_name) = &config.from_name {
-            Mailbox::new(Some(from_name.clone()), config.from_email.parse().with_context(|| {
-                format!("invalid budget alert from_email `{}`", config.from_email)
-            })?)
+            Mailbox::new(
+                Some(from_name.clone()),
+                config.from_email.parse().with_context(|| {
+                    format!("invalid budget alert from_email `{}`", config.from_email)
+                })?,
+            )
         } else {
-            Mailbox::new(None, config.from_email.parse().with_context(|| {
-                format!("invalid budget alert from_email `{}`", config.from_email)
-            })?)
+            Mailbox::new(
+                None,
+                config.from_email.parse().with_context(|| {
+                    format!("invalid budget alert from_email `{}`", config.from_email)
+                })?,
+            )
         };
 
         let builder = if smtp.starttls {

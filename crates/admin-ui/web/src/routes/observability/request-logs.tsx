@@ -131,7 +131,7 @@ export function RequestLogsPage() {
           <div className="flex flex-col gap-1">
             <CardTitle>Request Logs</CardTitle>
             <CardDescription>
-              Inspect routed requests, fallback behavior, latency, and sanitized payloads without
+              Inspect single-route request execution, latency, and sanitized payloads without
               dropping into raw traces.
             </CardDescription>
           </div>
@@ -259,9 +259,6 @@ export function RequestLogsPage() {
                       {metadataBoolean(item, 'stream') ? (
                         <Badge variant="outline">stream</Badge>
                       ) : null}
-                      {metadataBoolean(item, 'fallback_used') ? (
-                        <Badge variant="warning">fallback</Badge>
-                      ) : null}
                       <RequestTagBadges item={item} />
                     </div>
                     <Button
@@ -360,7 +357,7 @@ export function RequestLogsPage() {
           <DialogHeader>
             <DialogTitle>Request Log Detail</DialogTitle>
             <DialogDescription>
-              Review summary fields, fallback metadata, and sanitized request and response payloads.
+              Review summary fields and sanitized request and response payloads.
             </DialogDescription>
           </DialogHeader>
 
@@ -391,14 +388,6 @@ export function RequestLogsPage() {
                 <DetailRow
                   label="Tokens"
                   value={formatTokenCount(selectedDetail.log.totalTokens)}
-                />
-                <DetailRow
-                  label="Attempt Count"
-                  value={String(metadataNumber(selectedDetail.log, 'attempt_count') ?? 1)}
-                />
-                <DetailRow
-                  label="Fallback"
-                  value={metadataBoolean(selectedDetail.log, 'fallback_used') ? 'yes' : 'no'}
                 />
                 <DetailRow
                   label="Stream"
@@ -502,11 +491,6 @@ function formatTokenCount(totalTokens: number | null) {
 
 function metadataBoolean(item: RequestLogView, key: string) {
   return item.metadata[key] === true
-}
-
-function metadataNumber(item: RequestLogView, key: string) {
-  const value = item.metadata[key]
-  return typeof value === 'number' ? value : null
 }
 
 function RequestTagBadges({ item }: { item: RequestLogView }) {
