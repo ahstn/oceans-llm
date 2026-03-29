@@ -2,7 +2,7 @@
 
 `Owns`: the current admin UI capability map, live versus preview-backed surfaces, and operator expectations for the control plane.
 `Depends on`: [identity-and-access.md](identity-and-access.md), [budgets-and-spending.md](budgets-and-spending.md), [observability-and-request-logs.md](observability-and-request-logs.md)
-`See also`: [e2e-contract-tests.md](e2e-contract-tests.md), [../crates/admin-ui/web/src/server/admin-data.server.ts](../crates/admin-ui/web/src/server/admin-data.server.ts)
+`See also`: [e2e-contract-tests.md](e2e-contract-tests.md), [../crates/admin-ui/web/src/routes/api-keys.tsx](../crates/admin-ui/web/src/routes/api-keys.tsx), [../crates/gateway/src/http/api_keys.rs](../crates/gateway/src/http/api_keys.rs)
 
 This document describes what operators can actually do in the admin UI today.
 
@@ -21,6 +21,7 @@ For local direct UI dev on `:3001`, the server-side gateway client falls back to
 
 These areas are backed by real gateway APIs today:
 
+- API key inventory, creation, and revocation
 - sign-in, session lookup, and password rotation
 - identity users and lifecycle management
 - identity teams and member transfer/removal workflows
@@ -34,24 +35,39 @@ These areas are backed by real gateway APIs today:
 
 These pages are still powered by local preview data in the admin UI:
 
-- API Keys
 - Models
 
 That is not just an implementation detail. It affects both operator expectations and test scope.
 
 Tracked follow-ups:
 
-- [issue #26](https://github.com/ahstn/oceans-llm/issues/26): replace preview API-key data with live management
 - [issue #27](https://github.com/ahstn/oceans-llm/issues/27): replace preview model inventory with live routing and provider state
 
 ## Operator-Visible Maturity Cues
 
 The admin UI currently teaches this maturity split in live copy and tests:
 
-- identity and spend surfaces are live gateway-backed contracts
-- API keys and models are intentionally preview-backed in this slice
+- API keys, identity, spend, and observability are live gateway-backed contracts
+- model inventory is intentionally preview-backed in this slice
 
 That message is part of the operator contract and should be treated as owned by this page rather than only by UI fixture code or E2E assertions.
+
+## API Key Workflows Available Today
+
+Operators can currently:
+
+- list API keys with owner summary, grant list, issuance timestamps, and revoke state
+- create a new key for an explicit user or team owner
+- grant access to an explicit set of gateway models at creation time
+- copy the raw key exactly once from the create response
+- revoke a key so the runtime rejects it immediately
+
+Current scope limits:
+
+- keys cannot be renamed after creation
+- granted models are fixed at create time in this slice
+- revoked keys are not restorable
+- model selection is limited to the current live gateway model catalog
 
 ## Identity Workflows Available Today
 
@@ -104,14 +120,13 @@ Operators can currently:
 Current scope limits:
 
 - spend reporting does not yet include provider breakdown
-- request-log detail still returns nullable success on missing rows
+- request-log detail returns `404` when a row is missing
 - request-log filtering and ergonomics still have follow-up work
 
 Related follow-ups:
 
 - [issue #45](https://github.com/ahstn/oceans-llm/issues/45)
 - [issue #20](https://github.com/ahstn/oceans-llm/issues/20)
-- [issue #50](https://github.com/ahstn/oceans-llm/issues/50)
 
 ## Relationship to Testing
 

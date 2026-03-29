@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  createApiKey,
   deactivateUser,
   getRequestLogDetail,
   listApiKeys,
@@ -13,13 +14,14 @@ import {
   listUsers,
   reactivateUser,
   removeTeamMember,
+  revokeApiKey,
   resetUserOnboarding,
   transferTeamMember,
   updateUser,
 } from '@/server/admin-data.server'
 
 vi.mock('@/server/gateway-client.server', () => ({
-  fetchGatewayJson: vi.fn(async (path: string) => {
+  fetchGatewayJson: vi.fn(async (path: string, init?: { method?: string }) => {
     if (path === '/api/v1/admin/identity/users') {
       return {
         data: {
@@ -58,6 +60,103 @@ vi.mock('@/server/gateway-client.server', () => ({
 
     if (path === '/api/v1/admin/identity/users/user_1/reactivate') {
       return { data: { status: 'ok' } }
+    }
+
+    if (path === '/api/v1/admin/api-keys' && (!init?.method || init.method === 'GET')) {
+      return {
+        data: {
+          items: [
+            {
+              id: 'api_key_1',
+              name: 'Production Gateway',
+              prefix: 'gwk_prod',
+              status: 'active',
+              owner_kind: 'team',
+              owner_id: 'team_1',
+              owner_name: 'Core Platform',
+              owner_email: null,
+              owner_team_key: 'core-platform',
+              model_keys: ['fast', 'reasoning'],
+              created_at: '2026-03-14T12:00:00Z',
+              last_used_at: '2026-03-18T09:15:00Z',
+              revoked_at: null,
+            },
+          ],
+          users: [
+            {
+              id: 'user_1',
+              name: 'Jane Admin',
+              email: 'jane@example.com',
+            },
+          ],
+          teams: [
+            {
+              id: 'team_1',
+              name: 'Core Platform',
+              key: 'core-platform',
+            },
+          ],
+          models: [
+            {
+              id: 'model_1',
+              key: 'fast',
+              description: 'Fast tier',
+              tags: ['fast'],
+            },
+            {
+              id: 'model_2',
+              key: 'reasoning',
+              description: 'Reasoning tier',
+              tags: ['reasoning'],
+            },
+          ],
+        },
+      }
+    }
+
+    if (path === '/api/v1/admin/api-keys' && init?.method === 'POST') {
+      return {
+        data: {
+          api_key: {
+            id: 'api_key_2',
+            name: 'Production Gateway',
+            prefix: 'gwk_prod_2',
+            status: 'active',
+            owner_kind: 'team',
+            owner_id: 'team_1',
+            owner_name: 'Core Platform',
+            owner_email: null,
+            owner_team_key: 'core-platform',
+            model_keys: ['fast'],
+            created_at: '2026-03-20T09:00:00Z',
+            last_used_at: null,
+            revoked_at: null,
+          },
+          raw_key: 'gwk_prod_2.secret-value',
+        },
+      }
+    }
+
+    if (path === '/api/v1/admin/api-keys/api_key_1/revoke') {
+      return {
+        data: {
+          api_key: {
+            id: 'api_key_1',
+            name: 'Production Gateway',
+            prefix: 'gwk_prod',
+            status: 'revoked',
+            owner_kind: 'team',
+            owner_id: 'team_1',
+            owner_name: 'Core Platform',
+            owner_email: null,
+            owner_team_key: 'core-platform',
+            model_keys: ['fast', 'reasoning'],
+            created_at: '2026-03-14T12:00:00Z',
+            last_used_at: '2026-03-18T09:15:00Z',
+            revoked_at: '2026-03-19T10:00:00Z',
+          },
+        },
+      }
     }
 
     if (path === '/api/v1/admin/identity/users/user_1/reset-onboarding') {
@@ -259,8 +358,8 @@ vi.mock('@/server/gateway-client.server', () => ({
   }),
 }))
 
-describe('server-side mock repositories', () => {
-  it('returns stable API envelopes for phase-1 views', async () => {
+describe('server-side gateway adapters', () => {
+  it('returns stable API envelopes for live admin views', async () => {
     const [apiKeys, models, spendReport, spendBudgets, budgetAlerts, logs, teams, users] =
       await Promise.all([
       listApiKeys(),
@@ -274,6 +373,8 @@ describe('server-side mock repositories', () => {
       ])
 
     expect(apiKeys.data.items.length).toBeGreaterThan(0)
+    expect(apiKeys.data.items[0].owner_kind).toBe('team')
+    expect(apiKeys.data.models.map((model) => model.key)).toContain('fast')
     expect(models.data.length).toBeGreaterThan(0)
     expect(spendReport.data.window_days).toBeGreaterThan(0)
     expect(spendBudgets.data.users.length).toBe(0)
@@ -283,6 +384,35 @@ describe('server-side mock repositories', () => {
     expect(teams.data.users.length).toBeGreaterThan(0)
     expect(users.data.users.length).toBeGreaterThan(0)
     expect(users.data.teams.length).toBeGreaterThan(0)
+  })
+
+  it('wires api key mutations to the documented gateway paths', async () => {
+    await expect(
+      createApiKey({
+        name: 'Production Gateway',
+        owner_kind: 'team',
+        owner_user_id: null,
+        owner_team_id: 'team_1',
+        model_keys: ['fast'],
+      }),
+    ).resolves.toMatchObject({
+      data: {
+        api_key: {
+          id: 'api_key_2',
+          status: 'active',
+        },
+        raw_key: 'gwk_prod_2.secret-value',
+      },
+    })
+
+    await expect(revokeApiKey('api_key_1')).resolves.toMatchObject({
+      data: {
+        api_key: {
+          id: 'api_key_1',
+          status: 'revoked',
+        },
+      },
+    })
   })
 
   it('treats request log detail as a strict fetch', async () => {

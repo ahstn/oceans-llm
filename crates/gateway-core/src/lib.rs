@@ -8,12 +8,12 @@ pub use auth::{
     AuthenticatedApiKey, ParsedGatewayApiKey, extract_bearer_token, parse_gateway_api_key,
 };
 pub use domain::{
-    ApiKeyOwnerKind, ApiKeyRecord, AuthMode, BudgetAlertChannel, BudgetAlertDeliveryRecord,
+    ApiKeyOwnerKind, ApiKeyRecord, ApiKeyStatus, AuthMode, BudgetAlertChannel, BudgetAlertDeliveryRecord,
     BudgetAlertDeliveryStatus, BudgetAlertDispatchTask, BudgetAlertHistoryPage,
     BudgetAlertHistoryQuery, BudgetAlertHistoryRecord, BudgetAlertRecord, BudgetCadence,
     BudgetWindow, GatewayModel, GlobalRole, IdentityUserRecord, MembershipRole,
     ModelAccessMode, ModelPricingRecord, ModelRoute, Money4, OidcProviderRecord,
-    PasswordInvitationRecord, PricingCatalogCacheRecord, PricingLimits, PricingModalities,
+    NewApiKeyRecord, PasswordInvitationRecord, PricingCatalogCacheRecord, PricingLimits, PricingModalities,
     PricingProvenance, PricingResolution, PricingUnpricedReason, ProviderCapabilities,
     ProviderConnection, ProviderRequestContext, RequestLogDetail, RequestLogPage,
     RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestTag, RequestTags,

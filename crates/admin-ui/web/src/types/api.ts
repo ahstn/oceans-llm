@@ -12,12 +12,63 @@ export interface Paginated<T> {
   total: number
 }
 
+export interface ApiKeyOwnerUserView {
+  id: string
+  name: string
+  email: string
+}
+
+export interface ApiKeyOwnerTeamView {
+  id: string
+  name: string
+  key: string
+}
+
+export interface ApiKeyModelOptionView {
+  id: string
+  key: string
+  description: string | null
+  tags: string[]
+}
+
 export interface ApiKeyView {
   id: string
   name: string
   prefix: string
-  createdAt: string
   status: 'active' | 'revoked'
+  owner_kind: 'user' | 'team'
+  owner_id: string
+  owner_name: string
+  owner_email: string | null
+  owner_team_key: string | null
+  model_keys: string[]
+  created_at: string
+  last_used_at: string | null
+  revoked_at: string | null
+}
+
+export interface ApiKeysPayload {
+  items: ApiKeyView[]
+  users: ApiKeyOwnerUserView[]
+  teams: ApiKeyOwnerTeamView[]
+  models: ApiKeyModelOptionView[]
+}
+
+export interface CreateApiKeyInput {
+  name: string
+  owner_kind: 'user' | 'team'
+  owner_user_id: string | null
+  owner_team_id: string | null
+  model_keys: string[]
+}
+
+export interface CreateApiKeyResult {
+  api_key: ApiKeyView
+  raw_key: string
+}
+
+export interface RevokeApiKeyResult {
+  api_key: ApiKeyView
 }
 
 export interface ModelView {

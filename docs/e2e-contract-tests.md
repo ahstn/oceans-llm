@@ -43,6 +43,7 @@ The current suite already covers more than a browser-only smoke pass:
 - browser auth and forced password-rotation flow
 - public `/v1/models`
 - public `/v1/chat/completions`
+- admin UI API-key create, live use, and revoke
 - live spend report API behavior
 - team hard-limit enforcement for team-owned keys
 
@@ -57,10 +58,9 @@ Preview-backed pages may appear in smoke or landing assertions, but they are not
 
 Today that matters for:
 
-- API Keys
 - Models
 
-Those pages still use local preview data in the admin UI. See [admin-control-plane.md](admin-control-plane.md).
+Model inventory still uses local preview data in the admin UI. See [admin-control-plane.md](admin-control-plane.md).
 
 ## Extension Rule
 

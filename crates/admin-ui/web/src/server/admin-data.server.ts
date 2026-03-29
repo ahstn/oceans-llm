@@ -3,6 +3,8 @@ import type {
   AuthSessionView,
   BudgetAlertHistoryView,
   ChangePasswordInput,
+  CreateApiKeyInput,
+  CreateApiKeyResult,
   CreateUserInput,
   CreateUserResult,
   IdentityActionResult,
@@ -10,7 +12,8 @@ import type {
   IdentityTeamsPayload,
   InvitationStateView,
   ApiEnvelope,
-  ApiKeyView,
+  ApiKeysPayload,
+  RevokeApiKeyResult,
   TeamManagementView,
   ModelView,
   Paginated,
@@ -41,37 +44,29 @@ function envelope<T>(data: T): ApiEnvelope<T> {
   }
 }
 
-export async function listApiKeys(): Promise<ApiEnvelope<Paginated<ApiKeyView>>> {
-  const items: ApiKeyView[] = [
-    {
-      id: 'k_01',
-      name: 'Production Gateway',
-      prefix: 'gwk_prod',
-      createdAt: '2026-02-21',
-      status: 'active',
-    },
-    {
-      id: 'k_02',
-      name: 'Staging CI',
-      prefix: 'gwk_stg',
-      createdAt: '2026-02-20',
-      status: 'active',
-    },
-    {
-      id: 'k_03',
-      name: 'Legacy Mobile',
-      prefix: 'gwk_old',
-      createdAt: '2026-01-30',
-      status: 'revoked',
-    },
-  ]
+export async function listApiKeys(): Promise<ApiEnvelope<ApiKeysPayload>> {
+  return fetchGatewayJson<ApiEnvelope<ApiKeysPayload>>('/api/v1/admin/api-keys')
+}
 
-  return envelope({
-    items,
-    page: 1,
-    pageSize: items.length,
-    total: items.length,
+export async function createApiKey(
+  input: CreateApiKeyInput,
+): Promise<ApiEnvelope<CreateApiKeyResult>> {
+  return fetchGatewayJson<ApiEnvelope<CreateApiKeyResult>>('/api/v1/admin/api-keys', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
   })
+}
+
+export async function revokeApiKey(
+  apiKeyId: string,
+): Promise<ApiEnvelope<RevokeApiKeyResult>> {
+  return fetchGatewayJson<ApiEnvelope<RevokeApiKeyResult>>(
+    `/api/v1/admin/api-keys/${apiKeyId}/revoke`,
+    {
+      method: 'POST',
+    },
+  )
 }
 
 export async function listModels(): Promise<ApiEnvelope<ModelView[]>> {

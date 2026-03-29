@@ -38,7 +38,12 @@ pub(super) fn decode_api_key(row: &libsql::Row) -> Result<ApiKeyRecord, StoreErr
         public_id: row.get(1).map_err(to_query_error)?,
         secret_hash: row.get(2).map_err(to_query_error)?,
         name: row.get(3).map_err(to_query_error)?,
-        status: row.get(4).map_err(to_query_error)?,
+        status: {
+            let status: String = row.get(4).map_err(to_query_error)?;
+            ApiKeyStatus::from_db(&status).ok_or_else(|| {
+                StoreError::Serialization(format!("unknown api key status `{status}`"))
+            })?
+        },
         owner_kind: ApiKeyOwnerKind::from_db(&owner_kind).ok_or_else(|| {
             StoreError::Serialization(format!("unknown owner kind `{owner_kind}`"))
         })?,

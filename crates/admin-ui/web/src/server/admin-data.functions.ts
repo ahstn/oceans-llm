@@ -5,6 +5,7 @@ import {
   deactivateUser,
   changePassword,
   completeInvitation,
+  createApiKey,
   createTeam,
   createUser,
   deactivateTeamBudget,
@@ -23,6 +24,7 @@ import {
   listUsers,
   loginWithPassword,
   removeTeamMember,
+  revokeApiKey,
   resendPasswordInvite,
   resetUserOnboarding,
   transferTeamMember,
@@ -35,6 +37,18 @@ import {
 export const getApiKeys = createServerFn({ method: 'GET' }).handler(async () => {
   return listApiKeys()
 })
+
+export const createGatewayApiKey = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: Parameters<typeof createApiKey>[0] }) => {
+    return createApiKey(data)
+  },
+)
+
+export const revokeGatewayApiKey = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: { apiKeyId: string } }) => {
+    return revokeApiKey(data.apiKeyId)
+  },
+)
 
 export const getModels = createServerFn({ method: 'GET' }).handler(async () => {
   return listModels()

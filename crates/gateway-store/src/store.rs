@@ -51,6 +51,25 @@ pub trait GatewayStore:
         email: &str,
         must_change_password: bool,
     ) -> Result<UserRecord, StoreError>;
+    async fn list_api_keys(&self) -> Result<Vec<gateway_core::ApiKeyRecord>, StoreError>;
+    async fn get_api_key_by_id(
+        &self,
+        api_key_id: Uuid,
+    ) -> Result<Option<gateway_core::ApiKeyRecord>, StoreError>;
+    async fn create_api_key(
+        &self,
+        api_key: &gateway_core::NewApiKeyRecord,
+    ) -> Result<gateway_core::ApiKeyRecord, StoreError>;
+    async fn replace_api_key_model_grants(
+        &self,
+        api_key_id: Uuid,
+        model_ids: &[Uuid],
+    ) -> Result<(), StoreError>;
+    async fn revoke_api_key(
+        &self,
+        api_key_id: Uuid,
+        revoked_at: OffsetDateTime,
+    ) -> Result<bool, StoreError>;
     async fn list_identity_users(&self) -> Result<Vec<IdentityUserRecord>, StoreError>;
     async fn get_identity_user(
         &self,
@@ -301,6 +320,10 @@ impl ApiKeyRepository for AnyStore {
 
 #[async_trait]
 impl ModelRepository for AnyStore {
+    async fn list_models(&self) -> Result<Vec<gateway_core::GatewayModel>, StoreError> {
+        dispatch_store!(self, list_models())
+    }
+
     async fn get_model_by_key(
         &self,
         model_key: &str,
@@ -676,6 +699,61 @@ impl GatewayStore for AnyStore {
             self,
             upsert_bootstrap_admin_user(name, email, must_change_password)
         )
+    }
+
+    async fn list_api_keys(&self) -> Result<Vec<gateway_core::ApiKeyRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => GatewayStore::list_api_keys(store).await,
+            Self::Postgres(store) => GatewayStore::list_api_keys(store).await,
+        }
+    }
+
+    async fn get_api_key_by_id(
+        &self,
+        api_key_id: Uuid,
+    ) -> Result<Option<gateway_core::ApiKeyRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => GatewayStore::get_api_key_by_id(store, api_key_id).await,
+            Self::Postgres(store) => GatewayStore::get_api_key_by_id(store, api_key_id).await,
+        }
+    }
+
+    async fn create_api_key(
+        &self,
+        api_key: &gateway_core::NewApiKeyRecord,
+    ) -> Result<gateway_core::ApiKeyRecord, StoreError> {
+        match self {
+            Self::Libsql(store) => GatewayStore::create_api_key(store, api_key).await,
+            Self::Postgres(store) => GatewayStore::create_api_key(store, api_key).await,
+        }
+    }
+
+    async fn replace_api_key_model_grants(
+        &self,
+        api_key_id: Uuid,
+        model_ids: &[Uuid],
+    ) -> Result<(), StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                GatewayStore::replace_api_key_model_grants(store, api_key_id, model_ids).await
+            }
+            Self::Postgres(store) => {
+                GatewayStore::replace_api_key_model_grants(store, api_key_id, model_ids).await
+            }
+        }
+    }
+
+    async fn revoke_api_key(
+        &self,
+        api_key_id: Uuid,
+        revoked_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        match self {
+            Self::Libsql(store) => GatewayStore::revoke_api_key(store, api_key_id, revoked_at).await,
+            Self::Postgres(store) => {
+                GatewayStore::revoke_api_key(store, api_key_id, revoked_at).await
+            }
+        }
     }
 
     async fn list_identity_users(&self) -> Result<Vec<IdentityUserRecord>, StoreError> {

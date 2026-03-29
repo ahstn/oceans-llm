@@ -166,13 +166,12 @@ Current list filters:
 
 Current behavior that operators and maintainers should know plainly:
 
-- request-log detail lookups currently return `200` with nullable `data` for missing rows instead of `404`
+- request-log detail lookups return `404` for missing rows
 - stream and non-stream chat paths still differ on post-provider ledger-write failure behavior
 - streamed request-log capture still has known follow-up work around chunk-boundary parsing and observability correctness
 
 Tracked follow-ups:
 
-- [issue #50](https://github.com/ahstn/oceans-llm/issues/50): missing request-log detail should become `404`
 - [issue #49](https://github.com/ahstn/oceans-llm/issues/49): unify post-provider ledger failure semantics
 - [issue #54](https://github.com/ahstn/oceans-llm/issues/54): harden stream metrics and streamed request-log parsing
 

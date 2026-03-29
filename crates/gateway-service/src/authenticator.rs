@@ -5,8 +5,8 @@ use argon2::{
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
 };
 use gateway_core::{
-    ApiKeyOwnerKind, ApiKeyRepository, AuthError, AuthenticatedApiKey, GatewayError,
-    extract_bearer_token, parse_gateway_api_key,
+    ApiKeyOwnerKind, ApiKeyRepository, ApiKeyStatus, AuthError, AuthenticatedApiKey,
+    GatewayError, extract_bearer_token, parse_gateway_api_key,
 };
 
 #[derive(Clone)]
@@ -47,7 +47,7 @@ where
             .await?
             .ok_or(AuthError::ApiKeyNotFound)?;
 
-        if record.status != "active" || record.revoked_at.is_some() {
+        if record.status != ApiKeyStatus::Active || record.revoked_at.is_some() {
             return Err(AuthError::ApiKeyRevoked.into());
         }
 
@@ -108,8 +108,8 @@ mod tests {
 
     use async_trait::async_trait;
     use gateway_core::{
-        ApiKeyOwnerKind, ApiKeyRecord, ApiKeyRepository, AuthError, GatewayError, StoreError,
-        parse_gateway_api_key,
+        ApiKeyOwnerKind, ApiKeyRecord, ApiKeyRepository, ApiKeyStatus, AuthError, GatewayError,
+        StoreError, parse_gateway_api_key,
     };
     use time::OffsetDateTime;
     use uuid::Uuid;
@@ -149,7 +149,7 @@ mod tests {
                 public_id: parsed.public_id,
                 secret_hash: hash,
                 name: "dev".to_string(),
-                status: "active".to_string(),
+                status: ApiKeyStatus::Active,
                 owner_kind: ApiKeyOwnerKind::Team,
                 owner_user_id: None,
                 owner_team_id: Some(Uuid::new_v4()),
@@ -178,7 +178,7 @@ mod tests {
                 public_id: "dev123".to_string(),
                 secret_hash: hash,
                 name: "dev".to_string(),
-                status: "active".to_string(),
+                status: ApiKeyStatus::Active,
                 owner_kind: ApiKeyOwnerKind::Team,
                 owner_user_id: None,
                 owner_team_id: Some(Uuid::new_v4()),
@@ -209,7 +209,7 @@ mod tests {
                 public_id: "dev123".to_string(),
                 secret_hash: hash,
                 name: "dev".to_string(),
-                status: "active".to_string(),
+                status: ApiKeyStatus::Active,
                 owner_kind: ApiKeyOwnerKind::Team,
                 owner_user_id: Some(Uuid::new_v4()),
                 owner_team_id: Some(Uuid::new_v4()),
