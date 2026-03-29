@@ -1,7 +1,7 @@
 use super::*;
 
 #[async_trait]
-impl ApiKeyRepository for LibsqlStore {
+impl AdminApiKeyRepository for LibsqlStore {
     async fn list_api_keys(&self) -> Result<Vec<ApiKeyRecord>, StoreError> {
         let mut rows = self
             .connection
@@ -58,37 +58,6 @@ impl ApiKeyRepository for LibsqlStore {
         decode_api_key(&row).map(Some)
     }
 
-    async fn get_api_key_by_public_id(
-        &self,
-        public_id: &str,
-    ) -> Result<Option<ApiKeyRecord>, StoreError> {
-        let mut rows = self
-            .connection
-            .query(
-                r#"
-                SELECT id, public_id, secret_hash, name, status,
-                       owner_kind, owner_user_id, owner_team_id,
-                       created_at, last_used_at, revoked_at
-                FROM api_keys
-                WHERE public_id = ?1
-                LIMIT 1
-                "#,
-                [public_id],
-            )
-            .await
-            .map_err(|error| StoreError::Query(error.to_string()))?;
-
-        let Some(row) = rows
-            .next()
-            .await
-            .map_err(|error| StoreError::Query(error.to_string()))?
-        else {
-            return Ok(None);
-        };
-
-        decode_api_key(&row).map(Some)
-    }
-
     async fn create_api_key(
         &self,
         api_key: &NewApiKeyRecord,
@@ -117,7 +86,7 @@ impl ApiKeyRepository for LibsqlStore {
             .await
             .map_err(|error| StoreError::Query(error.to_string()))?;
 
-        ApiKeyRepository::get_api_key_by_id(self, api_key_id)
+        AdminApiKeyRepository::get_api_key_by_id(self, api_key_id)
             .await?
             .ok_or_else(|| StoreError::NotFound(format!("api key `{api_key_id}` missing after create")))
     }
@@ -169,6 +138,41 @@ impl ApiKeyRepository for LibsqlStore {
             .map_err(|error| StoreError::Query(error.to_string()))?;
 
         Ok(rows_affected > 0)
+    }
+
+}
+
+#[async_trait]
+impl ApiKeyRepository for LibsqlStore {
+    async fn get_api_key_by_public_id(
+        &self,
+        public_id: &str,
+    ) -> Result<Option<ApiKeyRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT id, public_id, secret_hash, name, status,
+                       owner_kind, owner_user_id, owner_team_id,
+                       created_at, last_used_at, revoked_at
+                FROM api_keys
+                WHERE public_id = ?1
+                LIMIT 1
+                "#,
+                [public_id],
+            )
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?;
+
+        let Some(row) = rows
+            .next()
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?
+        else {
+            return Ok(None);
+        };
+
+        decode_api_key(&row).map(Some)
     }
 
     async fn touch_api_key_last_used(&self, api_key_id: Uuid) -> Result<(), StoreError> {

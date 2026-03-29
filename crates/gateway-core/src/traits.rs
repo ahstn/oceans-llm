@@ -24,57 +24,33 @@ use crate::{
 
 #[async_trait]
 pub trait ApiKeyRepository: Send + Sync {
-    async fn list_api_keys(&self) -> Result<Vec<ApiKeyRecord>, StoreError> {
-        Err(StoreError::Unexpected(
-            "list_api_keys is not implemented for this repository".to_string(),
-        ))
-    }
-
-    async fn get_api_key_by_id(&self, api_key_id: Uuid) -> Result<Option<ApiKeyRecord>, StoreError> {
-        let _ = api_key_id;
-        Err(StoreError::Unexpected(
-            "get_api_key_by_id is not implemented for this repository".to_string(),
-        ))
-    }
-
     async fn get_api_key_by_public_id(
         &self,
         public_id: &str,
     ) -> Result<Option<ApiKeyRecord>, StoreError>;
 
-    async fn create_api_key(
-        &self,
-        api_key: &NewApiKeyRecord,
-    ) -> Result<ApiKeyRecord, StoreError> {
-        let _ = api_key;
-        Err(StoreError::Unexpected(
-            "create_api_key is not implemented for this repository".to_string(),
-        ))
-    }
+    async fn touch_api_key_last_used(&self, api_key_id: Uuid) -> Result<(), StoreError>;
+}
+
+#[async_trait]
+pub trait AdminApiKeyRepository: Send + Sync {
+    async fn list_api_keys(&self) -> Result<Vec<ApiKeyRecord>, StoreError>;
+
+    async fn get_api_key_by_id(&self, api_key_id: Uuid) -> Result<Option<ApiKeyRecord>, StoreError>;
+
+    async fn create_api_key(&self, api_key: &NewApiKeyRecord) -> Result<ApiKeyRecord, StoreError>;
 
     async fn replace_api_key_model_grants(
         &self,
         api_key_id: Uuid,
         model_ids: &[Uuid],
-    ) -> Result<(), StoreError> {
-        let _ = (api_key_id, model_ids);
-        Err(StoreError::Unexpected(
-            "replace_api_key_model_grants is not implemented for this repository".to_string(),
-        ))
-    }
+    ) -> Result<(), StoreError>;
 
     async fn revoke_api_key(
         &self,
         api_key_id: Uuid,
         revoked_at: OffsetDateTime,
-    ) -> Result<bool, StoreError> {
-        let _ = (api_key_id, revoked_at);
-        Err(StoreError::Unexpected(
-            "revoke_api_key is not implemented for this repository".to_string(),
-        ))
-    }
-
-    async fn touch_api_key_last_used(&self, api_key_id: Uuid) -> Result<(), StoreError>;
+    ) -> Result<bool, StoreError>;
 }
 
 #[async_trait]
@@ -121,6 +97,13 @@ pub trait IdentityRepository: Send + Sync {
             "list_team_memberships is not implemented for this repository".to_string(),
         ))
     }
+}
+
+#[async_trait]
+pub trait AdminIdentityRepository: Send + Sync {
+    async fn list_identity_users(&self) -> Result<Vec<crate::IdentityUserRecord>, StoreError>;
+    async fn list_active_teams(&self) -> Result<Vec<TeamRecord>, StoreError>;
+    async fn list_teams(&self) -> Result<Vec<TeamRecord>, StoreError>;
 }
 
 #[async_trait]

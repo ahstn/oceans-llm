@@ -3212,6 +3212,175 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn admin_api_key_routes_reject_invalid_create_requests() {
+        let (app, store, _) =
+            build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;
+        let session_cookie = bootstrap_admin_session_cookie(&app, &store).await;
+
+        let providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: serde_json::json!({
+                "base_url": "https://api.openai.com/v1",
+                "pricing_provider_id": "openai"
+            }),
+            secrets: None,
+        }];
+        let models = vec![SeedModel {
+            model_key: "fast".to_string(),
+            alias_target_model_key: None,
+            description: Some("Fast tier".to_string()),
+            tags: vec!["fast".to_string()],
+            rank: 10,
+            routes: vec![SeedModelRoute {
+                provider_key: "openai-prod".to_string(),
+                upstream_model: "gpt-5".to_string(),
+                priority: 10,
+                weight: 1.0,
+                enabled: true,
+                extra_headers: Map::<String, Value>::new(),
+                extra_body: Map::<String, Value>::new(),
+                capabilities: ProviderCapabilities::all_enabled(),
+            }],
+        }];
+        store
+            .seed_from_inputs(&providers, &models, &[])
+            .await
+            .expect("seed models");
+
+        let invalid_owner_kind = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/admin/api-keys")
+                    .header("cookie", &session_cookie)
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "name": "Invalid Owner",
+                            "owner_kind": "system",
+                            "owner_user_id": null,
+                            "owner_team_id": null,
+                            "model_keys": ["fast"]
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(invalid_owner_kind.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            read_json(invalid_owner_kind).await["error"]["code"],
+            "invalid_request"
+        );
+
+        let unknown_model = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/admin/api-keys")
+                    .header("cookie", &session_cookie)
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "name": "Unknown Model",
+                            "owner_kind": "team",
+                            "owner_user_id": null,
+                            "owner_team_id": gateway_core::SYSTEM_LEGACY_TEAM_ID,
+                            "model_keys": ["missing"]
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(unknown_model.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(read_json(unknown_model).await["error"]["code"], "invalid_request");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn admin_api_key_routes_return_not_found_for_missing_owner_and_key() {
+        let (app, store, _) =
+            build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;
+        let session_cookie = bootstrap_admin_session_cookie(&app, &store).await;
+
+        let providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: serde_json::json!({
+                "base_url": "https://api.openai.com/v1",
+                "pricing_provider_id": "openai"
+            }),
+            secrets: None,
+        }];
+        let models = vec![SeedModel {
+            model_key: "fast".to_string(),
+            alias_target_model_key: None,
+            description: Some("Fast tier".to_string()),
+            tags: vec!["fast".to_string()],
+            rank: 10,
+            routes: vec![SeedModelRoute {
+                provider_key: "openai-prod".to_string(),
+                upstream_model: "gpt-5".to_string(),
+                priority: 10,
+                weight: 1.0,
+                enabled: true,
+                extra_headers: Map::<String, Value>::new(),
+                extra_body: Map::<String, Value>::new(),
+                capabilities: ProviderCapabilities::all_enabled(),
+            }],
+        }];
+        store
+            .seed_from_inputs(&providers, &models, &[])
+            .await
+            .expect("seed models");
+
+        let missing_owner = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/admin/api-keys")
+                    .header("cookie", &session_cookie)
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "name": "Missing Owner",
+                            "owner_kind": "user",
+                            "owner_user_id": Uuid::new_v4(),
+                            "owner_team_id": null,
+                            "model_keys": ["fast"]
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(missing_owner.status(), StatusCode::NOT_FOUND);
+        assert_eq!(read_json(missing_owner).await["error"]["code"], "not_found");
+
+        let missing_key = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/v1/admin/api-keys/{}/revoke", Uuid::new_v4()))
+                    .header("cookie", &session_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(missing_key.status(), StatusCode::NOT_FOUND);
+        assert_eq!(read_json(missing_key).await["error"]["code"], "not_found");
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn admin_identity_lifecycle_endpoints_enforce_transitions_and_revoke_sessions() {
         let (app, store, db_path) =
             build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;

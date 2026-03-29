@@ -14,21 +14,21 @@ use std::sync::Arc;
 use anyhow::Context;
 use async_trait::async_trait;
 use gateway_core::{
-    ApiKeyOwnerKind, ApiKeyRecord, ApiKeyRepository, ApiKeyStatus, AuthMode, BudgetAlertChannel,
-    BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus, BudgetAlertDispatchTask,
-    BudgetAlertHistoryPage, BudgetAlertHistoryQuery, BudgetAlertHistoryRecord,
-    BudgetAlertRecord, BudgetAlertRepository, BudgetCadence, BudgetRepository, GatewayModel,
-    GlobalRole, IdentityRepository, IdentityUserRecord, MembershipRole, ModelAccessMode,
-    ModelPricingRecord, ModelRepository, ModelRoute, Money4, OidcProviderRecord,
-    NewApiKeyRecord, PasswordInvitationRecord, PricingCatalogCacheRecord, PricingCatalogRepository,
-    PricingLimits, PricingModalities, PricingProvenance, ProviderConnection,
-    ProviderRepository, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
-    RequestLogQuery, RequestLogRecord, RequestLogRepository, SYSTEM_BOOTSTRAP_ADMIN_USER_ID,
-    SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY, SpendDailyAggregateRecord,
-    SpendModelAggregateRecord, SpendOwnerAggregateRecord, StoreError, StoreHealth,
-    TeamBudgetRecord, TeamMembershipRecord, TeamRecord, UsageLedgerRecord, UsagePricingStatus,
-    UserBudgetRecord, UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord,
-    UserStatus,
+    AdminApiKeyRepository, AdminIdentityRepository, ApiKeyOwnerKind, ApiKeyRecord,
+    ApiKeyRepository, ApiKeyStatus, AuthMode, BudgetAlertChannel, BudgetAlertDeliveryRecord,
+    BudgetAlertDeliveryStatus, BudgetAlertDispatchTask, BudgetAlertHistoryPage,
+    BudgetAlertHistoryQuery, BudgetAlertHistoryRecord, BudgetAlertRecord, BudgetAlertRepository,
+    BudgetCadence, BudgetRepository, GatewayModel, GlobalRole, IdentityRepository,
+    IdentityUserRecord, MembershipRole, ModelAccessMode, ModelPricingRecord, ModelRepository,
+    ModelRoute, Money4, NewApiKeyRecord, OidcProviderRecord, PasswordInvitationRecord,
+    PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
+    PricingProvenance, ProviderConnection, ProviderRepository, RequestLogDetail,
+    RequestLogPage, RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord,
+    RequestLogRepository, SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SYSTEM_LEGACY_TEAM_ID,
+    SYSTEM_LEGACY_TEAM_KEY, SpendDailyAggregateRecord, SpendModelAggregateRecord,
+    SpendOwnerAggregateRecord, StoreError, StoreHealth, TeamBudgetRecord,
+    TeamMembershipRecord, TeamRecord, UsageLedgerRecord, UsagePricingStatus, UserBudgetRecord,
+    UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -93,37 +93,6 @@ impl GatewayStore for LibsqlStore {
         must_change_password: bool,
     ) -> Result<UserRecord, StoreError> {
         Self::upsert_bootstrap_admin_user(self, name, email, must_change_password).await
-    }
-
-    async fn list_api_keys(&self) -> Result<Vec<ApiKeyRecord>, StoreError> {
-        ApiKeyRepository::list_api_keys(self).await
-    }
-
-    async fn get_api_key_by_id(&self, api_key_id: Uuid) -> Result<Option<ApiKeyRecord>, StoreError> {
-        ApiKeyRepository::get_api_key_by_id(self, api_key_id).await
-    }
-
-    async fn create_api_key(
-        &self,
-        api_key: &NewApiKeyRecord,
-    ) -> Result<ApiKeyRecord, StoreError> {
-        ApiKeyRepository::create_api_key(self, api_key).await
-    }
-
-    async fn replace_api_key_model_grants(
-        &self,
-        api_key_id: Uuid,
-        model_ids: &[Uuid],
-    ) -> Result<(), StoreError> {
-        ApiKeyRepository::replace_api_key_model_grants(self, api_key_id, model_ids).await
-    }
-
-    async fn revoke_api_key(
-        &self,
-        api_key_id: Uuid,
-        revoked_at: OffsetDateTime,
-    ) -> Result<bool, StoreError> {
-        ApiKeyRepository::revoke_api_key(self, api_key_id, revoked_at).await
     }
 
     async fn list_identity_users(&self) -> Result<Vec<IdentityUserRecord>, StoreError> {
@@ -462,5 +431,20 @@ impl GatewayStore for LibsqlStore {
         api_keys: &[gateway_core::SeedApiKey],
     ) -> Result<(), StoreError> {
         self.seed_from_inputs(providers, models, api_keys).await
+    }
+}
+
+#[async_trait]
+impl AdminIdentityRepository for LibsqlStore {
+    async fn list_identity_users(&self) -> Result<Vec<IdentityUserRecord>, StoreError> {
+        Self::list_identity_users(self).await
+    }
+
+    async fn list_active_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
+        Self::list_active_teams(self).await
+    }
+
+    async fn list_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
+        Self::list_teams(self).await
     }
 }

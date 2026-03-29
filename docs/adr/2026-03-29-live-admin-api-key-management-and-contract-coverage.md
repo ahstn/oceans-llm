@@ -28,6 +28,14 @@ That left an awkward and fragile pattern in the codebase:
 
 We do not want two parallel truths for a security-sensitive control-plane surface. API keys must either be a real managed object or not appear as a live admin workflow at all.
 
+That first implementation deliberately optimized for shipping the live workflow. It left one follow-up architectural weakness behind:
+
+- the admin API-key lifecycle was still modeled as optional behavior on `ApiKeyRepository`,
+- the HTTP module in [crates/gateway/src/http/api_keys.rs](../../crates/gateway/src/http/api_keys.rs) still owned too much validation and lifecycle policy,
+- the API Keys page had become a large route file again as real create/revoke behavior arrived.
+
+That shape worked, but it made the architecture too easy to erode. Optional repository methods become implicit fallbacks. Policy in the HTTP layer invites other handlers to repeat the same pattern. Large route files become default dumping grounds for future UI changes.
+
 ## Decision
 
 We turned API-key management into a real same-origin control-plane contract and removed the preview path.
@@ -39,6 +47,7 @@ The decisions are:
 The authoritative admin API-key lifecycle now lives in:
 
 - [crates/gateway/src/http/api_keys.rs](../../crates/gateway/src/http/api_keys.rs)
+- [crates/gateway-service/src/admin_api_keys.rs](../../crates/gateway-service/src/admin_api_keys.rs)
 - [crates/gateway/src/http/mod.rs](../../crates/gateway/src/http/mod.rs)
 
 The admin UI now consumes that contract through:
@@ -52,6 +61,27 @@ Why:
 - API keys define data-plane access and must share the same source of truth as runtime auth,
 - same-origin control-plane behavior is already the established pattern for identity, spend, and observability,
 - removing fixture data avoids a second, stale contract that future changes would otherwise need to maintain.
+
+### 1a. Admin API-key lifecycle is a dedicated repository concern, not an optional extension of runtime auth
+
+The repository boundary is now explicit in [crates/gateway-core/src/traits.rs](../../crates/gateway-core/src/traits.rs):
+
+- `ApiKeyRepository` is limited to runtime auth lookup and `last_used` mutation,
+- `AdminApiKeyRepository` owns list, fetch-by-id, create, grant replacement, and revoke,
+- `AdminIdentityRepository` provides the owner catalog needed by admin API-key workflows.
+
+The composed store surface in [crates/gateway-store/src/store.rs](../../crates/gateway-store/src/store.rs) requires those traits directly, and both backends implement them in:
+
+- [crates/gateway-store/src/libsql_store/api_keys.rs](../../crates/gateway-store/src/libsql_store/api_keys.rs)
+- [crates/gateway-store/src/postgres_store/api_keys.rs](../../crates/gateway-store/src/postgres_store/api_keys.rs)
+- [crates/gateway-store/src/libsql_store/mod.rs](../../crates/gateway-store/src/libsql_store/mod.rs)
+- [crates/gateway-store/src/postgres_store/mod.rs](../../crates/gateway-store/src/postgres_store/mod.rs)
+
+Why:
+
+- runtime authentication and admin lifecycle are different responsibilities and should not share a soft optional contract,
+- required trait methods remove the last API-key admin compatibility shim at compile time,
+- this makes unsupported store implementations impossible instead of merely deferred to runtime.
 
 ### 2. The API-key lifecycle is intentionally narrow: create and revoke only
 
@@ -76,6 +106,7 @@ The gateway generates the public identifier and secret, hashes the secret with t
 Relevant code:
 
 - [crates/gateway/src/http/api_keys.rs](../../crates/gateway/src/http/api_keys.rs)
+- [crates/gateway-service/src/admin_api_keys.rs](../../crates/gateway-service/src/admin_api_keys.rs)
 - [crates/gateway-service/src/authenticator.rs](../../crates/gateway-service/src/authenticator.rs)
 
 Why:
@@ -94,7 +125,7 @@ Every created key must have:
 
 Relevant code:
 
-- [crates/gateway/src/http/api_keys.rs](../../crates/gateway/src/http/api_keys.rs)
+- [crates/gateway-service/src/admin_api_keys.rs](../../crates/gateway-service/src/admin_api_keys.rs)
 - [crates/gateway-store/src/store.rs](../../crates/gateway-store/src/store.rs)
 - [crates/gateway-store/src/libsql_store/api_keys.rs](../../crates/gateway-store/src/libsql_store/api_keys.rs)
 - [crates/gateway-store/src/postgres_store/api_keys.rs](../../crates/gateway-store/src/postgres_store/api_keys.rs)
@@ -104,6 +135,32 @@ Why:
 - implicit ownership is a long-term audit problem,
 - implicit or inherited grants would make the operator contract harder to explain,
 - create-time validation keeps bad state out of the database instead of tolerating it in the UI.
+
+### 4a. API-key lifecycle policy belongs in a service layer, not in the HTTP handler
+
+The control-plane policy is now centered in [crates/gateway-service/src/admin_api_keys.rs](../../crates/gateway-service/src/admin_api_keys.rs) through `AdminApiKeyService`.
+
+The service owns:
+
+- owner-kind parsing and owner existence checks,
+- active-user and active-team validation,
+- model grant validation,
+- key material generation and secret hashing,
+- payload assembly for list/create/revoke results,
+- reload semantics after create and revoke.
+
+The HTTP module in [crates/gateway/src/http/api_keys.rs](../../crates/gateway/src/http/api_keys.rs) is intentionally thin and now only owns:
+
+- platform-admin session auth,
+- request and path parsing,
+- mapping service errors to HTTP errors,
+- serialization into the existing wire DTOs.
+
+Why:
+
+- lifecycle policy should be testable without an HTTP harness,
+- thin transport keeps other admin endpoints from copying business logic into handlers,
+- the service boundary makes the architecture align with other gateway-service patterns.
 
 ### 5. API-key status is a typed domain concept
 
@@ -131,22 +188,34 @@ Why:
 
 ### Gateway and store contract
 
-The gateway gained a dedicated admin API-key module in [crates/gateway/src/http/api_keys.rs](../../crates/gateway/src/http/api_keys.rs). That module:
+The gateway now splits transport, policy, and persistence explicitly:
+
+- [crates/gateway/src/http/api_keys.rs](../../crates/gateway/src/http/api_keys.rs)
+- [crates/gateway-service/src/admin_api_keys.rs](../../crates/gateway-service/src/admin_api_keys.rs)
+- [crates/gateway-core/src/traits.rs](../../crates/gateway-core/src/traits.rs)
+- [crates/gateway-store/src/store.rs](../../crates/gateway-store/src/store.rs)
+
+The HTTP module:
 
 - requires platform-admin session auth,
+- parses request payloads and path parameters,
+- maps service errors into the existing admin API envelopes.
+
+The service module:
+
 - lists API keys together with assignable owners and live model choices,
 - validates create requests,
 - creates keys through the store,
 - revokes keys and reloads the resulting state.
 
-The store contract was expanded in [crates/gateway-store/src/store.rs](../../crates/gateway-store/src/store.rs) and implemented for both backends in:
+The store contract is split between runtime auth (`ApiKeyRepository`) and admin lifecycle (`AdminApiKeyRepository`), then implemented for both backends in:
 
 - [crates/gateway-store/src/libsql_store/api_keys.rs](../../crates/gateway-store/src/libsql_store/api_keys.rs)
 - [crates/gateway-store/src/postgres_store/api_keys.rs](../../crates/gateway-store/src/postgres_store/api_keys.rs)
-- [crates/gateway-store/src/libsql_store/models.rs](../../crates/gateway-store/src/libsql_store/models.rs)
-- [crates/gateway-store/src/postgres_store/models.rs](../../crates/gateway-store/src/postgres_store/models.rs)
+- [crates/gateway-store/src/libsql_store/mod.rs](../../crates/gateway-store/src/libsql_store/mod.rs)
+- [crates/gateway-store/src/postgres_store/mod.rs](../../crates/gateway-store/src/postgres_store/mod.rs)
 
-Those changes let the admin layer do real list/create/revoke work without bypassing the same storage backends used at runtime.
+Those changes let the admin layer do real list/create/revoke work without bypassing the same storage backends used at runtime and without relying on optional trait defaults.
 
 ### Runtime alignment
 
@@ -162,13 +231,25 @@ This matters because control-plane revoke is only real if the data plane rejects
 
 ### Admin UI
 
-The admin UI no longer fabricates API-key rows locally. The page in [crates/admin-ui/web/src/routes/api-keys.tsx](../../crates/admin-ui/web/src/routes/api-keys.tsx):
+The admin UI no longer fabricates API-key rows locally. The API Keys feature is also now decomposed into feature-local pieces instead of a single large route:
 
-- lists live keys,
-- shows owner and grant context,
-- creates keys through server functions,
-- exposes the raw key once,
-- revokes keys through the live admin contract.
+- [crates/admin-ui/web/src/routes/api-keys.tsx](../../crates/admin-ui/web/src/routes/api-keys.tsx)
+- [crates/admin-ui/web/src/routes/api-keys/-use-api-keys-page.ts](../../crates/admin-ui/web/src/routes/api-keys/-use-api-keys-page.ts)
+- [crates/admin-ui/web/src/routes/api-keys/-components.tsx](../../crates/admin-ui/web/src/routes/api-keys/-components.tsx)
+
+That split keeps:
+
+- the route focused on the loader boundary,
+- orchestration state in one feature-local hook,
+- create/revoke/one-time-secret UI in dedicated local components.
+
+Operators can still:
+
+- list live keys,
+- show owner and grant context,
+- create keys through server functions,
+- expose the raw key once,
+- revoke keys through the live admin contract.
 
 The contract types were updated in [crates/admin-ui/web/src/types/api.ts](../../crates/admin-ui/web/src/types/api.ts), and the shell copy was corrected in [crates/admin-ui/web/src/components/layout/app-shell.tsx](../../crates/admin-ui/web/src/components/layout/app-shell.tsx) so operators are not told that API keys are still preview-only.
 
@@ -213,7 +294,8 @@ Trade-offs:
 
 - grant edits and rename flows remain deferred until we have a clear lifecycle reason to add them,
 - create now depends on live owner and model state rather than tolerating placeholder data,
-- list payload assembly currently reloads grant state per key, which is acceptable at current admin scale but may need batching later.
+- list payload assembly currently reloads grant state per key, which is acceptable at current admin scale but may need batching later,
+- the service introduces one more internal boundary to maintain, but that cost is lower than continuing to let policy spread through transport code.
 
 ## Follow-Up Work
 
