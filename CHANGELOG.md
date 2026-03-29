@@ -6,6 +6,65 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.5.0] - 2026-03-29
+### :rocket: New features
+- *(ops)* Harden migrations and adopt pitchfork-first local postgres by @ahstn
+- *(gateway)* Tighten accounting and request-log contracts by @ahstn
+- *(gateway)* Tighten accounting and request-log contracts by @ahstn in [#55](https://github.com/ahstn/oceans-llm/pull/55)
+- *(gateway)* Add budget threshold alerting by @ahstn
+- *(gateway)* Add budget threshold alerting by @ahstn in [#58](https://github.com/ahstn/oceans-llm/pull/58)
+- *(identity)* Harden admin lifecycle and team membership workflows by @ahstn in [#63](https://github.com/ahstn/oceans-llm/pull/63)
+- *(gateway)* Add caller tags to request logs by @ahstn in [#62](https://github.com/ahstn/oceans-llm/pull/62)
+- *(admin)* Generate live control-plane API contract by @ahstn
+- *(admin)* Generate live control-plane API contract by @ahstn in [#72](https://github.com/ahstn/oceans-llm/pull/72)
+
+### :bug: Bug fixes
+- *(ci)* Skip postgres install in ci by @ahstn
+- *(ci)* Skip postgres install in ci by @ahstn
+- *(gateway)* Include budget id in alert dedupe by @ahstn
+- *(identity)* Address review feedback after rebase by @ahstn
+- *(admin)* Stabilize generated admin contract artifacts by @ahstn
+- *(gateway)* Expose test metrics in debug builds by @ahstn
+- *(observability)* Harden chat metrics and streamed request logging by @ahstn
+- *(observability)* Harden chat metrics and streamed request logging by @ahstn in [#70](https://github.com/ahstn/oceans-llm/pull/70)
+- *(observability)* Remove fallback-era request metadata by @ahstn
+- *(gateway)* Drop duplicate stream error parsing by @ahstn
+- *(gateway)* Finalize stream collector before success path by @ahstn
+- *(store)* Guard postgres metadata cleanup migration by @ahstn
+- *(observability)* Remove fallback-era request metadata by @ahstn in [#71](https://github.com/ahstn/oceans-llm/pull/71)
+
+### Build
+- Post release tasks - v0.4.0 by @ahstn
+
+### Changed
+- Refactor migration hook exposure and simplify local postgres guidance by @ahstn
+- Merge branch 'main' into codex/post-success-accounting-request-log-contracts by @ahstn
+- Merge branch 'main' into codex/issues-3-14-hardening-pitchfork by @ahstn
+- *(gateway-store)* Harden migrations and simplify local postgres workflow by @ahstn in [#57](https://github.com/ahstn/oceans-llm/pull/57)
+- Implement admin identity lifecycle hardening by @ahstn
+- *(identity)* Tighten lifecycle boundaries by @ahstn
+- Add request caller tags to observability by @ahstn
+- *(observability)* Tighten request log tag filters by @ahstn
+- *(main)* Integrate latest observability changes by @ahstn
+- *(main)* Absorb latest observability cleanup by @ahstn
+
+### Documentation
+- Harden documentation graph by @ahstn
+- Add contributing guide by @ahstn
+- Expand canonical operator references by @ahstn
+- Harden documentation graph by @ahstn in [#56](https://github.com/ahstn/oceans-llm/pull/56)
+- *(adr)* Record identity lifecycle hardening by @ahstn
+- *(adr)* Expand request log caller tag decision record by @ahstn
+
+### Miscellaneous
+- *(version)* V0.5.0
+
+### Testing
+- *(admin-ui)* Cover trimmed request log tag filters by @ahstn
+
+
+
+
 ## [0.4.0] - 2026-03-17
 ### :rocket: New features
 - *(admin-ui)* Add team management flow by @ahstn
@@ -80,8 +139,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Post release tasks by @ahstn
 - Removing old semantic release setup by @ahstn
 - Update mise config by @ahstn
-- Resolve conflicts
-- *(version)* V0.4.0
+- Resolve conflicts by @ahstn
+- *(version)* V0.4.0 by @ahstn
 
 ### Testing
 - *(admin-ui)* Add end-to-end contract harness by @ahstn
@@ -135,6 +194,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+[0.5.0]: https://github.com/ahstn/oceans-llm/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/ahstn/oceans-llm/compare/v0.1.0...v0.4.0
 [0.1.0]: https://github.com/ahstn/oceans-llm/tree/v0.1.0
 
