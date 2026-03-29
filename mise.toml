@@ -13,6 +13,10 @@ prek = "latest"
 description = "Install or update tool versions from mise.toml"
 run = "mise install"
 
+[tasks.docs-check]
+description = "Validate markdown links and required docs graph headers"
+run = "./scripts/docs-check.sh"
+
 [tasks.fmt]
 description = "Format Rust sources"
 run = "cargo fmt --all"

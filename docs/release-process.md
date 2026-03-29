@@ -1,30 +1,39 @@
 # Release Process
 
-`Owns`: maintainer release workflow, local release task behavior, and tag-triggered CI release distribution.
+`Owns`: the maintainer release workflow, the local release task behavior, and the tag-triggered CI release distribution flow.
 `Depends on`: [../CONTRIBUTING.md](../CONTRIBUTING.md)
-`See also`: [deploy-and-operations.md](deploy-and-operations.md), [adr/2026-03-06-release-versioning-and-ghcr-publishing.md](adr/2026-03-06-release-versioning-and-ghcr-publishing.md), [../mise.toml](../mise.toml), [../.github/workflows/release.yml](../.github/workflows/release.yml)
+`See also`: [deploy-and-operations.md](deploy-and-operations.md), [operator-runbooks.md](operator-runbooks.md), [adr/2026-03-06-release-versioning-and-ghcr-publishing.md](adr/2026-03-06-release-versioning-and-ghcr-publishing.md), [../mise.toml](../mise.toml), [../.github/workflows/release.yml](../.github/workflows/release.yml)
 
-This page is the canonical maintainer-facing release runbook.
+This page is the maintainer-facing release runbook.
 
 ## Source of Truth
 
-- local task: [../mise.toml](../mise.toml)
-- release workflow: [../.github/workflows/release.yml](../.github/workflows/release.yml)
-- changelog config: [../cliff.toml](../cliff.toml)
+- local release task:
+  - [../mise.toml](../mise.toml)
+- release workflow:
+  - [../.github/workflows/release.yml](../.github/workflows/release.yml)
+- changelog config:
+  - [../cliff.toml](../cliff.toml)
+
+## Release Preflight
+
+Before `mise run release`, confirm:
+
+- `main` is up to date locally
+- the intended release state is already merged
+- normal CI is green for that commit
+- generated admin contract artifacts are current
+- changelog-worthy commits are in the expected shape
+
+The tag workflow is distribution, not the quality gate.
 
 ## Current Release Flow
 
-1. Update `main` locally and confirm the intended release state.
-2. Run `mise run release`.
-3. Review the generated release commit, tag, changelog, and GitHub release draft state.
-4. Push the release commit and tag.
-5. Let the tag-triggered GitHub Actions workflow build and publish images.
-
-Important current reality:
-
-- `mise run release` creates the version bump, changelog, and GitHub release metadata locally
-- the task does not push for you
-- the maintainer is the gate between local release authoring and public CI distribution
+1. update `main` locally
+2. run `mise run release`
+3. review the generated release commit, tag, changelog, and GitHub release draft state
+4. push the release commit and tag
+5. let the tag-triggered GitHub Actions workflow build and publish images
 
 ## What `mise run release` Does
 
@@ -35,7 +44,7 @@ Current task steps:
 3. `gh release create v$(cog get-version) ...`
 4. `cargo release version $(cog get-version) --execute`
 
-That means the task creates release metadata and Cargo version updates locally before any push happens.
+That means release metadata and version updates are authored locally before any push happens.
 
 ## What GitHub Actions Does
 
@@ -46,22 +55,28 @@ Current workflow responsibilities:
 - build and publish the gateway image
 - build and publish the admin UI image
 - attest image provenance
-- publish/update the GitHub release for the tag
+- publish or update the GitHub release for the tag
 
 ## Current Image Reality
 
 The workflow is not symmetric across both deployables today:
 
-- gateway image: `linux/amd64`
-- admin UI image: `linux/amd64` and `linux/arm64`
+- gateway image:
+  - `linux/amd64`
+- admin UI image:
+  - `linux/amd64`
+  - `linux/arm64`
 
-Current workflow tags:
+## Post-Release Verification
 
-- `vX.Y.Z`
-- `sha-<fullsha>`
-- `latest`
+After the workflow finishes, verify:
 
-Floating `X.Y` tags are not part of the current live workflow.
+- the GitHub release exists for the pushed tag
+- the expected image tags were published
+- the release notes look sane
+- the deploy docs still match the image reality
+
+If the release changed operator-visible behavior, update the canonical docs in the same pass.
 
 ## CI Responsibility Boundary
 
@@ -70,11 +85,5 @@ The release workflow does not explicitly depend on prior CI runs.
 In practice:
 
 - maintainers are responsible for cutting releases from a known-good state
-- normal CI workflows are the preflight signal
-- the tag-triggered workflow is the distribution step, not the quality gate
-
-## When To Update Other Docs
-
-- if workflow mechanics change, update this page first
-- if release philosophy changes, update the ADR and link back here
-- if deploy topology changes, update [deploy-and-operations.md](deploy-and-operations.md), not this page
+- normal CI is the preflight signal
+- tag CI is the distribution step

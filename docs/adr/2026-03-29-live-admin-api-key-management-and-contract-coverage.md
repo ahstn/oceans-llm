@@ -10,6 +10,11 @@
   - [2026-03-15-v1-runtime-simplification.md](./2026-03-15-v1-runtime-simplification.md)
   - [2026-03-17-post-success-accounting-and-strict-request-log-lookups.md](./2026-03-17-post-success-accounting-and-strict-request-log-lookups.md)
 
+## Current state
+
+- [../admin-control-plane.md](../admin-control-plane.md)
+- [../admin-api-contract-workflow.md](../admin-api-contract-workflow.md)
+
 ## Context
 
 Before this change, the control plane had an architectural split that was useful for early UI work but no longer acceptable for the product shape we are trying to keep stable:

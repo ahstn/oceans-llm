@@ -10,6 +10,12 @@
   - [../data-relationships.md](../data-relationships.md)
   - [../admin-control-plane.md](../admin-control-plane.md)
 
+## Current state
+
+- [../identity-and-access.md](../identity-and-access.md)
+- [../runtime-bootstrap-and-access.md](../runtime-bootstrap-and-access.md)
+- [../data-relationships.md](../data-relationships.md)
+
 ## Context
 
 The original gateway foundation treated API keys as the primary identity boundary. That was enough for seeded model access, but it did not give us a durable way to represent:

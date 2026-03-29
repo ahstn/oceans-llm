@@ -3,6 +3,12 @@
 - Date: 2026-03-17
 - Status: Accepted
 
+## Current state
+
+- [../deploy-and-operations.md](../deploy-and-operations.md)
+- [../runtime-bootstrap-and-access.md](../runtime-bootstrap-and-access.md)
+- [../operator-runbooks.md](../operator-runbooks.md)
+
 ## Context
 
 Two operational concerns were open at the same time:

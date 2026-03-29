@@ -9,6 +9,11 @@
   - [2026-03-05-identity-foundation.md](./2026-03-05-identity-foundation.md)
   - [2026-03-08-admin-team-management-flow.md](./2026-03-08-admin-team-management-flow.md)
 
+## Current state
+
+- [../identity-and-access.md](../identity-and-access.md)
+- [../admin-control-plane.md](../admin-control-plane.md)
+
 ## Context
 
 The earlier identity and team-management slices established the basic control-plane shape:

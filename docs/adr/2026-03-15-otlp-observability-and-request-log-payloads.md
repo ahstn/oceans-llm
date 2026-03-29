@@ -9,6 +9,11 @@
   - [../observability-and-request-logs.md](../observability-and-request-logs.md)
   - [../admin-control-plane.md](../admin-control-plane.md)
 
+## Current state
+
+- [../observability-and-request-logs.md](../observability-and-request-logs.md)
+- [../request-lifecycle-and-failure-modes.md](../request-lifecycle-and-failure-modes.md)
+
 ## Context
 
 The gateway already had:

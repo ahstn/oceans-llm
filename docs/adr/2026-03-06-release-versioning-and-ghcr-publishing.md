@@ -3,6 +3,11 @@
 - Date: 2026-03-06
 - Status: Accepted
 
+## Current state
+
+- [../release-process.md](../release-process.md)
+- [../deploy-and-operations.md](../deploy-and-operations.md)
+
 ## Context
 
 Implemented by:

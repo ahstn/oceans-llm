@@ -7,6 +7,10 @@
   - [#20: Improve admin request-log filtering and detail UX](https://github.com/ahstn/oceans-llm/issues/20)
   - [#54: Harden chat observability metrics and streamed request-log parsing](https://github.com/ahstn/oceans-llm/issues/54)
 
+## Current state
+
+- [../observability-and-request-logs.md](../observability-and-request-logs.md)
+
 ## Context
 
 Before this change, request logs already had a useful split:
@@ -75,8 +79,8 @@ We store bespoke tags in `request_log_tags`, keyed by `(request_log_id, tag_key)
 
 The schema change is implemented in:
 
-- [`V14__request_log_tags.sql` for PostgreSQL](../../crates/gateway-store/migrations/postgres/V14__request_log_tags.sql)
-- [`V14__request_log_tags.sql` for libSQL](../../crates/gateway-store/migrations/V14__request_log_tags.sql)
+- [`V15__request_log_tags.sql` for PostgreSQL](../../crates/gateway-store/migrations/postgres/V15__request_log_tags.sql)
+- [`V15__request_log_tags.sql` for libSQL](../../crates/gateway-store/migrations/V15__request_log_tags.sql)
 
 Repository implementations were updated in:
 

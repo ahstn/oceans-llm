@@ -3,6 +3,12 @@
 - Date: 2026-03-15
 - Status: Accepted
 
+## Current state
+
+- [../model-routing-and-api-behavior.md](../model-routing-and-api-behavior.md)
+- [../request-lifecycle-and-failure-modes.md](../request-lifecycle-and-failure-modes.md)
+- [../observability-and-request-logs.md](../observability-and-request-logs.md)
+
 ## Context
 
 Two high-priority runtime gaps remained open:

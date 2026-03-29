@@ -1,19 +1,23 @@
 # Observability and Request Logs
 
-`Owns`: OTLP observability model, request-log storage shape, payload redaction and truncation boundaries, and admin observability API behavior.
+`Owns`: the OTLP observability model, request-log storage shape, payload redaction and truncation boundaries, and admin observability API behavior.
 `Depends on`: [data-relationships.md](data-relationships.md), [model-routing-and-api-behavior.md](model-routing-and-api-behavior.md)
-`See also`: [admin-control-plane.md](admin-control-plane.md), [budgets-and-spending.md](budgets-and-spending.md), [deploy-and-operations.md](deploy-and-operations.md), [adr/2026-03-15-otlp-observability-and-request-log-payloads.md](adr/2026-03-15-otlp-observability-and-request-log-payloads.md), [../crates/gateway/src/http/admin_contract.rs](../crates/gateway/src/http/admin_contract.rs)
+`See also`: [request-lifecycle-and-failure-modes.md](request-lifecycle-and-failure-modes.md), [admin-control-plane.md](admin-control-plane.md), [deploy-and-operations.md](deploy-and-operations.md), [adr/2026-03-15-otlp-observability-and-request-log-payloads.md](adr/2026-03-15-otlp-observability-and-request-log-payloads.md)
 
 This document describes the live observability contract for the gateway.
 
 ## Source of Truth
 
-- Observability bootstrap: [../crates/gateway/src/observability.rs](../crates/gateway/src/observability.rs)
-- HTTP request instrumentation: [../crates/gateway/src/http/handlers.rs](../crates/gateway/src/http/handlers.rs)
-- Request-log lifecycle: [../crates/gateway-service/src/request_logging.rs](../crates/gateway-service/src/request_logging.rs)
-- Redaction policy: [../crates/gateway-service/src/redaction.rs](../crates/gateway-service/src/redaction.rs)
-- Admin APIs: [../crates/gateway/src/http/observability.rs](../crates/gateway/src/http/observability.rs)
-- Generated admin contract: [../crates/gateway/openapi/admin-api.json](../crates/gateway/openapi/admin-api.json)
+- observability bootstrap:
+  - [../crates/gateway/src/observability.rs](../crates/gateway/src/observability.rs)
+- HTTP request instrumentation:
+  - [../crates/gateway/src/http/handlers.rs](../crates/gateway/src/http/handlers.rs)
+- request-log lifecycle:
+  - [../crates/gateway-service/src/request_logging.rs](../crates/gateway-service/src/request_logging.rs)
+- redaction policy:
+  - [../crates/gateway-service/src/redaction.rs](../crates/gateway-service/src/redaction.rs)
+- admin APIs:
+  - [../crates/gateway/src/http/observability.rs](../crates/gateway/src/http/observability.rs)
 
 ## OTLP-First Model
 
@@ -25,7 +29,7 @@ Current config knobs:
 - `server.otel_metrics_endpoint`
 - `server.otel_export_interval_secs`
 
-The intended deployment path for this slice is collector-friendly OTLP export rather than an in-process Prometheus endpoint.
+The intended deploy path is collector-friendly OTLP export rather than an in-process Prometheus endpoint.
 
 ## What Gets Recorded
 
@@ -36,62 +40,39 @@ The runtime emits bounded request-level signals for:
 - token totals
 - operational cost totals
 - usage-record totals by pricing status
-- caller request tags in request-log storage for filtering and attribution
+- caller request tags for filtering and attribution
 
-The request path also records tracing spans enriched with routing and ownership context.
-
-Metric contract:
-
-- `gateway.chat.requests` describes routed request outcomes, including budget rejections after model resolution
-- the gateway does not emit separate provider-attempt or fallback counters for chat completions
-
-Request correlation is anchored on `x-request-id`:
-
-- the gateway generates or propagates it at the HTTP edge
-- public `/v1/*` responses return it
-- provider adapters forward it upstream
-- admin request-log lookup can use it as the operator-visible correlation key
+Request correlation is anchored on `x-request-id`.
 
 ## Request Tagging Contract
 
-Callers can attach bounded attribution metadata to requests with these headers:
+Callers can attach bounded attribution metadata with:
 
 - `x-oceans-service`
 - `x-oceans-component`
 - `x-oceans-env`
 - `x-oceans-tags`
 
-Intended use:
-
-- use the universal headers for the stable dimensions most teams will filter on repeatedly
-- use `x-oceans-tags` only for a small number of extra exact-match tags
-
 `x-oceans-tags` uses `key=value; key2=value2` formatting.
 
-Examples:
+Validation rules:
 
-- `x-oceans-service: checkout`
-- `x-oceans-component: pricing_api`
-- `x-oceans-env: prod`
-- `x-oceans-tags: feature=guest_checkout; cohort=beta`
-
-Current validation rules:
-
-- universal headers may only be sent once each
+- the universal headers may only be sent once each
 - `x-oceans-tags` may only be sent once
 - bespoke tags are capped at 5 entries
-- bespoke keys must be unique inside the header
-- bespoke keys may not reuse reserved universal names: `service`, `component`, `env`
-- keys must start with a lowercase ASCII letter and then use only lowercase ASCII letters, digits, `.`, `_`, or `-`
-- values must use only lowercase ASCII letters, digits, `.`, `_`, `-`, `/`, or `:`
-- malformed or duplicate tags are rejected as `400 invalid_request`
+- bespoke keys must be unique
+- reserved universal names cannot be reused as bespoke keys
 
 ## Request Log Storage Shape
 
 Request logs are intentionally split:
 
-- `request_logs`: hot summary row
-- `request_log_payloads`: sanitized payload bodies
+- `request_logs`
+  - hot summary row
+- `request_log_payloads`
+  - sanitized request and response bodies
+- `request_log_tags`
+  - bounded bespoke caller tags
 
 The summary row stores:
 
@@ -102,34 +83,22 @@ The summary row stores:
 - universal caller tags
 - status, latency, and usage totals
 - truncation flags
-- metadata (`operation` and `stream`)
-
-The payload row stores:
-
-- sanitized request JSON
-- sanitized response JSON
-
-The gateway also stores bespoke caller tags in a bounded side table:
-
-- `request_log_tags`
+- metadata such as `operation` and `stream`
 
 Streaming requests persist a bounded transcript payload rather than raw transport bytes.
-Stream payload capture is incremental and boundary-safe across UTF-8 and SSE chunk splits, and the stored `usage` snapshot always reflects the latest coherent usage frame seen before stream termination.
-Postgres cleanup migrations that need to inspect request-log metadata parse legacy `metadata_json` defensively and skip malformed rows rather than failing the entire migration for one bad historical value.
 
 ## Redaction and Truncation Boundaries
 
-Current redaction is key- and header-driven.
+Current redaction is key-driven and header-driven.
 
 Sensitive headers include:
 
 - `authorization`
-- `proxy-authorization`
 - `cookie`
 - `set-cookie`
 - `x-api-key`
 
-Sensitive JSON keys include common fields such as:
+Sensitive JSON keys include:
 
 - `token`
 - `access_token`
@@ -137,15 +106,22 @@ Sensitive JSON keys include common fields such as:
 - `secret`
 - `password`
 
-Current payload policy is intentionally heuristic and bounded. It is not yet a deployment-configurable policy surface. That hardening follow-up is tracked in [issue #18](https://github.com/ahstn/oceans-llm/issues/18).
+Current payload policy is still heuristic and bounded. It is not operator-configurable yet.
 
-## Current Limits and Gaps
+## Recent Contract Cleanup
 
-Operationally important limits that are not configurable today:
+Recent cleanup changed the contract in a few important ways.
 
-- there is no documented retention or archival policy yet for `request_log_payloads`
-- deploy examples do not ship an OTLP collector by default
-- request-log payload policy is bounded and heuristic rather than operator-configurable
+- fallback-era request metadata is gone
+- missing request-log detail rows return strict `404 not_found`
+- stream payload parsing is more boundary-safe than the earlier chunk-by-chunk behavior
+
+Operators and maintainers should stop expecting:
+
+- fallback metadata columns to appear in new request rows
+- nullable detail lookups for missing rows
+
+The remaining stream and ledger mismatch still lives in a smaller rough edge, not in the old fallback-era contract.
 
 ## Admin Observability APIs
 
@@ -170,22 +146,20 @@ Current list filters:
 - `tag_key`
 - `tag_value`
 
-## Important Current Rough Edges
+## Current Gaps
 
-Current behavior that operators and maintainers should know plainly:
-
-- request-log detail lookups return `404 not_found` for missing rows
+- no documented retention or archival policy yet for `request_log_payloads`
+- deploy examples do not ship an OTLP collector by default
+- request-log payload policy is not operator-configurable yet
+  - [issue #18](https://github.com/ahstn/oceans-llm/issues/18)
 - stream and non-stream chat paths still differ on post-provider ledger-write failure behavior
-
-Tracked follow-ups:
-
-- [issue #49](https://github.com/ahstn/oceans-llm/issues/49): unify post-provider ledger failure semantics
+  - [issue #49](https://github.com/ahstn/oceans-llm/issues/49)
 
 ## Relationship to Spend Reporting
 
-Request logs and spend accounting are related but intentionally separate:
+Request logs and spend accounting are related, but intentionally separate.
 
-- request logs describe the user-visible request outcome and payload context
+- request logs describe the user-visible request outcome
 - `usage_cost_events` is the canonical spend ledger
 
-For spend policy and budget windows, see [budgets-and-spending.md](budgets-and-spending.md).
+For the full request path across both systems, use [request-lifecycle-and-failure-modes.md](request-lifecycle-and-failure-modes.md).

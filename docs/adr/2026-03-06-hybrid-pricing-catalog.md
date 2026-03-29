@@ -3,6 +3,12 @@
 - Date: 2026-03-06
 - Status: Accepted
 
+## Current state
+
+- [../pricing-catalog-and-accounting.md](../pricing-catalog-and-accounting.md)
+- [../budgets-and-spending.md](../budgets-and-spending.md)
+- [../request-lifecycle-and-failure-modes.md](../request-lifecycle-and-failure-modes.md)
+
 ## Context
 
 Implemented by:

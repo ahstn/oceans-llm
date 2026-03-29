@@ -3,6 +3,12 @@
 - Date: 2026-03-17
 - Status: Accepted
 
+## Current state
+
+- [../request-lifecycle-and-failure-modes.md](../request-lifecycle-and-failure-modes.md)
+- [../observability-and-request-logs.md](../observability-and-request-logs.md)
+- [../budgets-and-spending.md](../budgets-and-spending.md)
+
 ## Context
 
 Two follow-up issues exposed gaps in the contracts established by earlier work:

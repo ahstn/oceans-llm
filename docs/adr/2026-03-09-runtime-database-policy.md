@@ -3,6 +3,11 @@
 - Date: 2026-03-09
 - Status: Accepted
 
+## Current state
+
+- [../deploy-and-operations.md](../deploy-and-operations.md)
+- [../runtime-bootstrap-and-access.md](../runtime-bootstrap-and-access.md)
+
 ## Context
 
 The gateway started with a local libsql/SQLite runtime, which was a good fit for single-node development and early product slices. That runtime was no longer a good default for production-shaped and pre-production environments because:

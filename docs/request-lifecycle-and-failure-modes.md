@@ -1,0 +1,162 @@
+# Request Lifecycle and Failure Modes
+
+`Owns`: the end-to-end request path from authenticated `/v1/*` calls to route choice, provider execution, request logging, pricing, ledger writes, and budget effects.
+`Depends on`: [model-routing-and-api-behavior.md](model-routing-and-api-behavior.md), [pricing-catalog-and-accounting.md](pricing-catalog-and-accounting.md), [budgets-and-spending.md](budgets-and-spending.md), [observability-and-request-logs.md](observability-and-request-logs.md)
+`See also`: [configuration-reference.md](configuration-reference.md), [identity-and-access.md](identity-and-access.md), [data-relationships.md](data-relationships.md), [adr/2026-03-15-v1-runtime-simplification.md](adr/2026-03-15-v1-runtime-simplification.md)
+
+This page is the cross-cutting view. Neighboring docs own their own policy slices. This page explains how those slices connect during one request.
+
+## Source of Truth
+
+- HTTP handlers: [../crates/gateway/src/http/handlers.rs](../crates/gateway/src/http/handlers.rs)
+- Model access and tag selection: [../crates/gateway-service/src/model_access.rs](../crates/gateway-service/src/model_access.rs)
+- Alias resolution: [../crates/gateway-service/src/model_resolution.rs](../crates/gateway-service/src/model_resolution.rs)
+- Route planning: [../crates/gateway-service/src/route_planner.rs](../crates/gateway-service/src/route_planner.rs)
+- Budget enforcement: [../crates/gateway-service/src/budget_guard.rs](../crates/gateway-service/src/budget_guard.rs)
+- Pricing resolution: [../crates/gateway-service/src/pricing_catalog.rs](../crates/gateway-service/src/pricing_catalog.rs)
+- Request logging: [../crates/gateway-service/src/request_logging.rs](../crates/gateway-service/src/request_logging.rs)
+- Ledger writes: [../crates/gateway-service/src/service.rs](../crates/gateway-service/src/service.rs)
+
+## Request Path
+
+The live request path is single-route in this slice.
+
+1. The gateway authenticates the API key.
+2. The allowed gateway model set is reduced by API-key grants and any user or team allowlists.
+3. The requested model is resolved.
+   - A concrete model key stays concrete.
+   - A `tag:` selector picks one allowed gateway model.
+   - An alias resolves to a canonical execution model.
+4. The route planner builds an ordered route list.
+   - Lower `priority` wins first.
+   - `weight` only matters inside the same priority bucket.
+   - Disabled routes and non-positive weights drop out.
+5. Capability filtering removes routes that cannot satisfy the request.
+6. The budget guard runs before provider execution.
+7. The first eligible route executes.
+8. Request logs are written for the user-visible outcome.
+9. Usage is normalized when possible.
+10. Pricing is resolved exactly or the request is marked `unpriced`.
+11. A ledger row is written when the request has usable usage data.
+12. Post-provider budget math runs before the priced ledger row is committed.
+
+## Worked Example
+
+One common request path looks like this:
+
+- Request:
+  - `POST /v1/chat/completions`
+  - API key belongs to team `growth`
+  - model is `tag:fast`
+- Access:
+  - the API key grant allows `gpt-4o-mini` and `claude-3-5-haiku`
+  - the team allowlist is unrestricted
+- Resolution:
+  - `tag:fast` resolves to gateway model `gpt-4o-mini`
+  - `gpt-4o-mini` is an alias of `openai-gpt-4o-mini`
+- Planning:
+  - `openai-gpt-4o-mini` has two routes in config
+  - route A has priority `50`
+  - route B has priority `100`
+  - route A wins before weight is considered
+- Capability filter:
+  - the request asks for plain chat, no tools, no vision
+  - route A stays eligible
+- Execution:
+  - the provider request goes to the route A provider and upstream model
+- Logging:
+  - `request_logs.model_key` stores `gpt-4o-mini`
+  - `request_logs.resolved_model_key` stores `openai-gpt-4o-mini`
+  - `request_logs.provider_key` stores the route A provider id
+- Accounting:
+  - usage is normalized
+  - pricing resolves exactly
+  - `usage_cost_events.pricing_status` becomes `priced`
+  - the team budget window includes the charge
+
+## Model Visibility Versus Execution
+
+A model can be visible and still fail at runtime.
+
+- `/v1/models` shows grant-visible gateway identities.
+- `/v1/models` does not promise that a route is executable right now.
+- Route viability still depends on:
+  - provider existence
+  - route `enabled`
+  - positive weight
+  - capability match
+  - pricing readiness, if spend accuracy matters for the request path
+
+This is why a model can appear in `/v1/models` and still fail with `invalid_request` or `no_routes_available`.
+
+## Failure Classes
+
+These failures look similar from far away, but they mean different things.
+
+### `invalid_request`
+
+- The model resolved.
+- Capability filtering removed every remaining route.
+- Common causes:
+  - embeddings against a chat-only route
+  - tools against a route with tools disabled
+  - vision against a route that does not advertise vision
+
+### `no_routes_available`
+
+- The model exists.
+- No usable route survived provider and route-viability checks.
+- Common causes:
+  - missing provider id in the live config
+  - all routes disabled
+  - all routes have non-positive weight
+
+### `unpriced`
+
+- The provider request succeeded.
+- Usage exists.
+- Exact pricing could not be resolved.
+- Common causes:
+  - unsupported `pricing_provider_id`
+  - unsupported Vertex publisher or location
+  - unsupported billing modifiers
+  - missing exact rate coverage
+
+`unpriced` requests stay visible in reports but do not count toward budget totals.
+
+### `usage_missing`
+
+- The provider request succeeded.
+- Usage could not be normalized into the gateway accounting model.
+- The request log still records the user-visible outcome.
+- The ledger row stays visible, but it does not count toward spend totals.
+
+## Logging and Ledger Boundaries
+
+Request logs and spend rows are related, but they are not the same object.
+
+- `request_logs` owns the user-visible request outcome.
+- `request_log_payloads` owns sanitized request and response bodies.
+- `usage_cost_events` owns spend enforcement and spend reporting.
+
+That separation matters in two common cases:
+
+- a request can be logged even when it becomes `unpriced`
+- a request can be logged even when a later accounting step hits a rough edge
+
+## Known Rough Edges
+
+- Stream and non-stream chat paths still differ when a post-provider ledger write fails.
+- Request-log payload policy is still bounded and heuristic, not operator-configurable.
+- Provider-attempt and fallback-style metrics are intentionally narrow in this slice.
+
+For the current observability cleanup notes, see [observability-and-request-logs.md](observability-and-request-logs.md).
+
+## What This Page Does Not Own
+
+- config field syntax and validation: [configuration-reference.md](configuration-reference.md)
+- identity and ownership policy: [identity-and-access.md](identity-and-access.md)
+- route-planning contract and endpoint behavior: [model-routing-and-api-behavior.md](model-routing-and-api-behavior.md)
+- exact pricing coverage rules: [pricing-catalog-and-accounting.md](pricing-catalog-and-accounting.md)
+- budget windows and spend APIs: [budgets-and-spending.md](budgets-and-spending.md)
+- request-log storage and payload policy: [observability-and-request-logs.md](observability-and-request-logs.md)
