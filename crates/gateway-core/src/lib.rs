@@ -2,6 +2,7 @@ pub mod auth;
 pub mod domain;
 pub mod error;
 pub mod protocol;
+pub mod streaming;
 pub mod traits;
 
 pub use auth::{
@@ -11,13 +12,12 @@ pub use domain::{
     ApiKeyOwnerKind, ApiKeyRecord, AuthMode, BudgetAlertChannel, BudgetAlertDeliveryRecord,
     BudgetAlertDeliveryStatus, BudgetAlertDispatchTask, BudgetAlertHistoryPage,
     BudgetAlertHistoryQuery, BudgetAlertHistoryRecord, BudgetAlertRecord, BudgetCadence,
-    BudgetWindow, GatewayModel, GlobalRole, IdentityUserRecord, MembershipRole,
-    ModelAccessMode, ModelPricingRecord, ModelRoute, Money4, OidcProviderRecord,
-    PasswordInvitationRecord, PricingCatalogCacheRecord, PricingLimits, PricingModalities,
-    PricingProvenance, PricingResolution, PricingUnpricedReason, ProviderCapabilities,
-    ProviderConnection, ProviderRequestContext, RequestLogDetail, RequestLogPage,
-    RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestTag, RequestTags,
-    ResolvedModelPricing,
+    BudgetWindow, GatewayModel, GlobalRole, IdentityUserRecord, MembershipRole, ModelAccessMode,
+    ModelPricingRecord, ModelRoute, Money4, OidcProviderRecord, PasswordInvitationRecord,
+    PricingCatalogCacheRecord, PricingLimits, PricingModalities, PricingProvenance,
+    PricingResolution, PricingUnpricedReason, ProviderCapabilities, ProviderConnection,
+    ProviderRequestContext, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
+    RequestLogQuery, RequestLogRecord, RequestTag, RequestTags, ResolvedModelPricing,
     SYSTEM_BOOTSTRAP_ADMIN_EMAIL, SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SYSTEM_LEGACY_TEAM_ID,
     SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedModel, SeedModelRoute, SeedProvider,
     SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord,
@@ -38,8 +38,9 @@ pub use protocol::translate::{
     core_chat_request_to_openai, core_embeddings_request_to_openai, openai_chat_request_to_core,
     openai_embeddings_request_to_core,
 };
+pub use streaming::{ParsedSseEvent, SseEventParser, Utf8ChunkDecoder};
 pub use traits::{
-    ApiKeyRepository, BudgetAlertRepository, BudgetRepository, IdentityRepository,
-    ModelRepository, PricingCatalogRepository, ProviderClient, ProviderRegistry,
-    ProviderRepository, ProviderStream, RequestLogRepository, RoutePlanner, StoreHealth,
+    ApiKeyRepository, BudgetAlertRepository, BudgetRepository, IdentityRepository, ModelRepository,
+    PricingCatalogRepository, ProviderClient, ProviderRegistry, ProviderRepository, ProviderStream,
+    RequestLogRepository, RoutePlanner, StoreHealth,
 };

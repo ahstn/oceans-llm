@@ -4,6 +4,7 @@ use gateway_core::{
     ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, ChatCompletionsRequest, GatewayError,
     IdentityRepository, OpenAiErrorEnvelope, RequestLogDetail, RequestLogPage,
     RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestTags,
+    SseEventParser,
 };
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
@@ -25,7 +26,7 @@ pub struct ChatRequestLogContext {
     request_payload_truncated: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StreamFailureSummary {
     pub status_code: i64,
     pub error_code: String,
@@ -42,8 +43,11 @@ pub struct StreamLogResultInput {
 
 #[derive(Debug, Clone, Default)]
 pub struct StreamResponseCollector {
+    parser: SseEventParser,
     events: Vec<Value>,
     usage: Option<Value>,
+    failure: Option<StreamFailureSummary>,
+    finished: bool,
     truncated: bool,
 }
 
@@ -121,41 +125,77 @@ impl UsageSummary {
 
 impl StreamResponseCollector {
     pub fn observe_chunk(&mut self, chunk: &[u8]) {
-        let Ok(text) = std::str::from_utf8(chunk) else {
-            self.truncated = true;
+        if self.finished {
             return;
+        }
+
+        let events = match self.parser.push_bytes(chunk) {
+            Ok(events) => events,
+            Err(_) => {
+                self.truncated = true;
+                self.failure.get_or_insert_with(|| StreamFailureSummary {
+                    status_code: 502,
+                    error_code: "stream_parse_error".to_string(),
+                });
+                return;
+            }
         };
 
-        for line in text.lines() {
-            let Some(payload) = line.strip_prefix("data: ") else {
-                continue;
-            };
-            let payload = payload.trim();
+        for event in events {
+            let payload = event.data.trim();
             if payload.is_empty() || payload == "[DONE]" {
                 continue;
             }
 
-            let event = match serde_json::from_str::<Value>(payload) {
-                Ok(value) => redact_json_value(&value),
-                Err(_) => json!({ "raw": payload }),
-            };
-
-            if self.usage.is_none() {
-                self.usage = event.get("usage").cloned();
+            let parsed = serde_json::from_str::<Value>(payload).ok();
+            if let Some(usage) = parsed
+                .as_ref()
+                .and_then(|value| value.get("usage"))
+                .filter(|usage| !usage.is_null())
+            {
+                self.usage = Some(usage.clone());
             }
+            if let Some(failure) = parsed.as_ref().and_then(stream_failure_from_value) {
+                self.failure = Some(failure);
+            }
+
+            let redacted = parsed
+                .as_ref()
+                .map(redact_json_value)
+                .unwrap_or_else(|| json!({ "raw": payload }));
 
             if self.events.len() >= MAX_STREAM_EVENTS {
                 self.truncated = true;
                 continue;
             }
 
-            self.events.push(event);
+            self.events.push(redacted);
+        }
+    }
+
+    pub fn finish(&mut self) {
+        if self.finished {
+            return;
+        }
+
+        self.finished = true;
+        if self.parser.finish().is_err() {
+            self.truncated = true;
+            self.failure.get_or_insert_with(|| StreamFailureSummary {
+                status_code: 502,
+                error_code: "stream_parse_error".to_string(),
+            });
         }
     }
 
     #[must_use]
     pub fn usage(&self) -> Option<&Value> {
         self.usage.as_ref()
+    }
+
+    #[must_use]
+    pub fn failure(&self) -> Option<&StreamFailureSummary> {
+        self.failure.as_ref()
     }
 
     fn into_payload(self, failure: Option<&StreamFailureSummary>) -> (Value, bool) {
@@ -172,6 +212,18 @@ impl StreamResponseCollector {
         }))
         .map_truncated(self.truncated)
     }
+}
+
+fn stream_failure_from_value(value: &Value) -> Option<StreamFailureSummary> {
+    let error = value.get("error")?.as_object()?;
+    Some(StreamFailureSummary {
+        status_code: 502,
+        error_code: error
+            .get("code")
+            .and_then(Value::as_str)
+            .unwrap_or("stream_error")
+            .to_string(),
+    })
 }
 
 trait PayloadResultExt {
@@ -325,9 +377,11 @@ where
             provider_key,
             attempt_count,
             latency_ms,
-            collector,
+            mut collector,
             failure,
         } = stream_result;
+        collector.finish();
+        let failure = failure.or_else(|| collector.failure().cloned());
         let usage = usage_summary_from_value(collector.usage());
         let (response_json, response_payload_truncated) = collector.into_payload(failure.as_ref());
         let summary = match failure {
@@ -505,7 +559,9 @@ mod tests {
     use time::OffsetDateTime;
     use uuid::Uuid;
 
-    use super::{RequestLogging, StreamFailureSummary, StreamLogResultInput};
+    use super::{
+        RequestLogging, StreamFailureSummary, StreamLogResultInput, StreamResponseCollector,
+    };
 
     #[derive(Clone, Default)]
     struct InMemoryRepo {
@@ -766,7 +822,11 @@ mod tests {
             RequestTags::default(),
         );
         let mut collector = logging.new_stream_response_collector();
-        collector.observe_chunk(br#"data: {"delta":"hello"}"#);
+        collector.observe_chunk(
+            br#"data: {"delta":"hello"}
+
+"#,
+        );
 
         let wrote = logging
             .log_stream_result(
@@ -789,5 +849,62 @@ mod tests {
         assert!(wrote.wrote);
         let payload = repo.payloads.lock().expect("payloads lock");
         assert_eq!(payload[0].response_json["error"]["code"], "stream_error");
+    }
+
+    #[test]
+    fn collector_reassembles_split_frames_and_keeps_latest_usage() {
+        let mut collector = StreamResponseCollector::default();
+
+        collector.observe_chunk("data: {\"usage\":{\"prompt_tokens\":1".as_bytes());
+        collector.observe_chunk(
+            ",\"completion_tokens\":2,\"total_tokens\":3}}\n\ndata:{\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":5,\"total_tokens\":9}}\n\n"
+                .as_bytes(),
+        );
+        collector.finish();
+
+        assert_eq!(
+            collector.usage(),
+            Some(&json!({
+                "prompt_tokens": 4,
+                "completion_tokens": 5,
+                "total_tokens": 9
+            }))
+        );
+    }
+
+    #[test]
+    fn collector_reassembles_split_utf8_and_error_frames() {
+        let mut collector = StreamResponseCollector::default();
+
+        collector.observe_chunk(b"data: {\"delta\":\"");
+        collector.observe_chunk(&[0xF0, 0x9F]);
+        collector.observe_chunk(&[
+            0x99, 0x82, b'"', b'}', b'\n', b'\n', b'd', b'a', b't', b'a', b':', b'{', b'"', b'e',
+            b'r', b'r', b'o', b'r', b'"', b':', b'{', b'"', b'c', b'o', b'd', b'e', b'"', b':',
+            b'"', b'u', b'p', b's', b't', b'r', b'e', b'a', b'm', b'_', b'b', b'a', b'd', b'"',
+            b'}', b'}',
+        ]);
+        collector.observe_chunk(b"\n\n");
+        collector.finish();
+
+        assert_eq!(
+            collector.failure(),
+            Some(&StreamFailureSummary {
+                status_code: 502,
+                error_code: "upstream_bad".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn collector_accepts_data_prefix_without_space() {
+        let mut collector = StreamResponseCollector::default();
+
+        collector.observe_chunk(b"data:{\"value\":1}\n\n");
+        collector.finish();
+
+        let (payload, truncated) = collector.into_payload(None);
+        assert!(!truncated);
+        assert_eq!(payload["events"][0]["value"], 1);
     }
 }

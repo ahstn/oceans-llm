@@ -711,7 +711,14 @@
             }
           },
           "404": {
-            "description": "Request log not found"
+            "description": "Request log not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2716,6 +2723,44 @@
           }
         }
       },
+      "OpenAiErrorBodyView": {
+        "type": "object",
+        "required": [
+          "message",
+          "type"
+        ],
+        "properties": {
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "param": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string"
+          }
+        }
+      },
+      "OpenAiErrorEnvelopeView": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/OpenAiErrorBodyView"
+          }
+        }
+      },
       "PasswordInviteResponse": {
         "type": "object",
         "required": [
@@ -2857,7 +2902,10 @@
             ],
             "format": "int64"
           },
-          "metadata": {},
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true
+          },
           "model_key": {
             "type": "string"
           },

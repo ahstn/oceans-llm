@@ -359,17 +359,16 @@ mod tests {
     use gateway_core::{
         ApiKeyRepository, AuthMode, BudgetAlertChannel, BudgetAlertDeliveryRecord,
         BudgetAlertDeliveryStatus, BudgetAlertRepository, BudgetCadence, BudgetRepository,
-        CoreChatRequest, CoreEmbeddingsRequest, GlobalRole, IdentityRepository,
-        MembershipRole, ModelRepository, Money4, ProviderCapabilities, ProviderClient,
-        ProviderError, ProviderRequestContext,
-        ProviderStream, SeedApiKey, SeedModel, SeedModelRoute, SeedProvider, UsageLedgerRecord,
-        UsagePricingStatus, parse_gateway_api_key,
+        CoreChatRequest, CoreEmbeddingsRequest, GlobalRole, IdentityRepository, MembershipRole,
+        ModelRepository, Money4, ProviderCapabilities, ProviderClient, ProviderError,
+        ProviderRequestContext, ProviderStream, SeedApiKey, SeedModel, SeedModelRoute,
+        SeedProvider, UsageLedgerRecord, UsagePricingStatus, parse_gateway_api_key,
     };
     use gateway_providers::{OpenAiCompatConfig, OpenAiCompatProvider};
     use gateway_service::{GatewayService, WeightedRoutePlanner, hash_gateway_key_secret};
     use gateway_store::{
-        AnyStore, GatewayStore, LibsqlStore, StoreConnectionOptions,
-        run_migrations, run_migrations_with_options,
+        AnyStore, GatewayStore, LibsqlStore, StoreConnectionOptions, run_migrations,
+        run_migrations_with_options,
     };
     use serde_json::{Map, Value, json};
     use serial_test::serial;
@@ -599,6 +598,11 @@ mod tests {
         computed_cost_10000: i64,
     }
 
+    #[derive(Debug)]
+    struct RequestLogPayloadRow {
+        response_json: Value,
+    }
+
     async fn load_request_logs(db_path: &Path) -> Vec<RequestLogRow> {
         let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
             .build()
@@ -678,6 +682,35 @@ mod tests {
         }
 
         ledgers
+    }
+
+    async fn load_request_log_payloads(db_path: &Path) -> Vec<RequestLogPayloadRow> {
+        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
+            .build()
+            .await
+            .expect("libsql db");
+        let connection = db.connect().expect("libsql connection");
+        let mut rows = connection
+            .query(
+                r#"
+                SELECT response_json
+                FROM request_log_payloads
+                ORDER BY rowid ASC
+                "#,
+                (),
+            )
+            .await
+            .expect("request log payloads query");
+
+        let mut payloads = Vec::new();
+        while let Some(row) = rows.next().await.expect("request log payload row") {
+            let response_json: String = row.get(0).expect("response json");
+            payloads.push(RequestLogPayloadRow {
+                response_json: serde_json::from_str(&response_json).expect("response json value"),
+            });
+        }
+
+        payloads
     }
 
     async fn drop_model_pricing_table(db_path: &Path) {
@@ -821,6 +854,62 @@ mod tests {
         (app, raw_key, db_path)
     }
 
+    async fn build_test_app_with_metrics(
+        seed_providers: Vec<SeedProvider>,
+        models: Vec<SeedModel>,
+        provider_registry: gateway_core::ProviderRegistry,
+    ) -> (
+        Router,
+        String,
+        PathBuf,
+        Arc<crate::observability::GatewayMetrics>,
+    ) {
+        let tmp = tempdir().expect("tempdir");
+        let tmp_path = tmp.keep();
+        let db_path = tmp_path.join("gateway.db");
+
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = Arc::new(AnyStore::Libsql(
+            LibsqlStore::new_local(db_path.to_str().expect("db path"))
+                .await
+                .expect("store"),
+        ));
+
+        let raw_key = "gwk_dev123.super-secret".to_string();
+        let parsed = parse_gateway_api_key(&raw_key).expect("parse key");
+        let api_keys = vec![SeedApiKey {
+            name: "dev".to_string(),
+            public_id: parsed.public_id,
+            secret_hash: hash_gateway_key_secret(&parsed.secret).expect("hash"),
+            allowed_models: vec!["fast".to_string()],
+        }];
+
+        store
+            .seed_from_inputs(&seed_providers, &models, &api_keys)
+            .await
+            .expect("seed data");
+
+        let service = Arc::new(GatewayService::new(
+            store.clone(),
+            Arc::new(WeightedRoutePlanner::seeded(11)),
+        ));
+        let metrics = Arc::new(crate::observability::GatewayMetrics::default());
+
+        let app = build_router(
+            AppState {
+                service,
+                store,
+                providers: provider_registry,
+                metrics: metrics.clone(),
+                identity_token_secret: Arc::new("local-dev-identity-secret".to_string()),
+            },
+            AdminUiConfig::default(),
+        );
+
+        (app, raw_key, db_path, metrics)
+    }
+
     async fn build_default_test_app(
         providers: gateway_core::ProviderRegistry,
     ) -> (Router, String, PathBuf) {
@@ -852,6 +941,44 @@ mod tests {
         }];
 
         build_test_app(seed_providers, models, providers).await
+    }
+
+    async fn build_default_test_app_with_metrics(
+        providers: gateway_core::ProviderRegistry,
+    ) -> (
+        Router,
+        String,
+        PathBuf,
+        Arc<crate::observability::GatewayMetrics>,
+    ) {
+        let seed_providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: serde_json::json!({
+                "base_url": "https://api.openai.com/v1",
+                "pricing_provider_id": "openai"
+            }),
+            secrets: None,
+        }];
+        let models = vec![SeedModel {
+            model_key: "fast".to_string(),
+            alias_target_model_key: None,
+            description: Some("Fast tier".to_string()),
+            tags: vec!["fast".to_string()],
+            rank: 10,
+            routes: vec![SeedModelRoute {
+                provider_key: "openai-prod".to_string(),
+                upstream_model: "gpt-5".to_string(),
+                priority: 10,
+                weight: 1.0,
+                enabled: true,
+                extra_headers: Map::<String, Value>::new(),
+                extra_body: Map::<String, Value>::new(),
+                capabilities: ProviderCapabilities::all_enabled(),
+            }],
+        }];
+
+        build_test_app_with_metrics(seed_providers, models, providers).await
     }
 
     async fn build_default_test_app_with_store(
@@ -1442,6 +1569,86 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn stream_request_logging_reassembles_split_sse_and_keeps_latest_usage() {
+        let (_, provider) = make_chat_provider(
+            "openai-prod",
+            MockChatResult::Value(json!({
+                "id": "chatcmpl_unused_split",
+                "object": "chat.completion",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "unused"}, "finish_reason":"stop"}]
+            })),
+            vec![
+                "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"he".to_string(),
+                "llo\"},\"finish_reason\":null}],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}\n\ndata:{\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[],\"usage\":{\"prompt_tokens\":11,\"completion_tokens\":7,\"total_tokens\":18}}\n\n".to_string(),
+                "data: [DONE]\n\n".to_string(),
+            ],
+            ProviderCapabilities::new(true, true, false),
+        );
+        let mut registry = gateway_core::ProviderRegistry::new();
+        registry.register(Arc::new(provider));
+
+        let (app, raw_key, db_path) = build_default_test_app(registry).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .header("x-request-id", "req-stream-split-usage")
+                    .body(Body::from(
+                        json!({
+                            "model": "fast",
+                            "stream": true,
+                            "messages": [{"role": "user", "content": "ping"}]
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        let transcript = String::from_utf8(body.to_vec()).expect("utf8");
+        assert!(transcript.contains("\"content\":\"hello\""));
+        assert!(transcript.contains("data: [DONE]"));
+
+        let logs = load_request_logs(&db_path).await;
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].status_code, Some(200));
+        assert_eq!(logs[0].prompt_tokens, Some(11));
+        assert_eq!(logs[0].completion_tokens, Some(7));
+        assert_eq!(logs[0].total_tokens, Some(18));
+
+        let payloads = load_request_log_payloads(&db_path).await;
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(payloads[0].response_json["usage"]["prompt_tokens"], 11);
+        assert_eq!(payloads[0].response_json["usage"]["completion_tokens"], 7);
+        assert_eq!(payloads[0].response_json["usage"]["total_tokens"], 18);
+        assert_eq!(
+            payloads[0].response_json["events"].as_array().map(Vec::len),
+            Some(2)
+        );
+        assert_eq!(
+            payloads[0].response_json["events"][0]["choices"][0]["delta"]["content"],
+            "hello"
+        );
+
+        let ledgers = load_usage_ledger(&db_path).await;
+        assert_eq!(ledgers.len(), 1);
+        assert_eq!(ledgers[0].request_id, "req-stream-split-usage");
+        assert_eq!(ledgers[0].prompt_tokens, Some(11));
+        assert_eq!(ledgers[0].completion_tokens, Some(7));
+        assert_eq!(ledgers[0].total_tokens, Some(18));
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn team_hard_limit_blocks_before_provider_call() {
         let (calls, provider) = make_chat_provider(
             "openai-prod",
@@ -1530,6 +1737,102 @@ mod tests {
         assert_eq!(payload["error"]["code"], "budget_exceeded");
         assert_eq!(calls.load(Ordering::SeqCst), 0);
         assert_eq!(load_usage_ledger(&db_path).await.len(), 1);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn team_hard_limit_records_request_outcome_without_provider_attempt_metric() {
+        let (calls, provider) = make_chat_provider(
+            "openai-prod",
+            MockChatResult::Value(json!({
+                "id": "chatcmpl_blocked_team_metrics",
+                "object": "chat.completion",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "should-not-run"}, "finish_reason":"stop"}],
+                "usage": {"prompt_tokens": 5, "completion_tokens": 5, "total_tokens": 10}
+            })),
+            vec![],
+            ProviderCapabilities::openai_compat_baseline(),
+        );
+        let mut registry = gateway_core::ProviderRegistry::new();
+        registry.register(Arc::new(provider));
+
+        let (app, raw_key, db_path, metrics) = build_default_test_app_with_metrics(registry).await;
+        let parsed = parse_gateway_api_key(&raw_key).expect("parse key");
+        let store = AnyStore::Libsql(
+            LibsqlStore::new_local(db_path.to_str().expect("db path"))
+                .await
+                .expect("store"),
+        );
+        let api_key = store
+            .get_api_key_by_public_id(&parsed.public_id)
+            .await
+            .expect("load api key")
+            .expect("api key");
+        let team_id = api_key.owner_team_id.expect("team owner");
+        let model = store
+            .get_model_by_key("fast")
+            .await
+            .expect("load model")
+            .expect("model");
+        let now = time::OffsetDateTime::now_utc();
+
+        store
+            .upsert_active_budget_for_team(
+                team_id,
+                BudgetCadence::Daily,
+                Money4::from_scaled(10_000),
+                true,
+                "UTC",
+                now,
+            )
+            .await
+            .expect("upsert team budget");
+        assert!(
+            store
+                .insert_usage_ledger_if_absent(&usage_ledger_record(
+                    "seed-team-over-limit-metrics",
+                    format!("team:{team_id}:actor:none"),
+                    api_key.id,
+                    None,
+                    Some(team_id),
+                    Some(model.id),
+                    "gpt-5",
+                    UsagePricingStatus::Priced,
+                    10_000,
+                    now - time::Duration::minutes(1),
+                ))
+                .await
+                .expect("insert seed spend")
+        );
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .body(Body::from(
+                        json!({
+                            "model": "fast",
+                            "messages": [{"role": "user", "content": "ping"}]
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        let payload: Value = read_json(response).await;
+        assert_eq!(payload["error"]["code"], "budget_exceeded");
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+
+        let snapshot = metrics.test_snapshot();
+        assert_eq!(snapshot.requests, 1);
+        assert_eq!(snapshot.provider_attempts, 0);
+        assert_eq!(snapshot.request_outcomes.get("budget_error"), Some(&1));
     }
 
     #[tokio::test]
@@ -3768,7 +4071,10 @@ mod tests {
             alert.budget_alert_id.to_string()
         );
         assert_eq!(body["data"]["items"][0]["owner_kind"], "user");
-        assert_eq!(body["data"]["items"][0]["owner_id"], user.user_id.to_string());
+        assert_eq!(
+            body["data"]["items"][0]["owner_id"],
+            user.user_id.to_string()
+        );
         assert_eq!(body["data"]["items"][0]["owner_name"], "Member");
         assert_eq!(body["data"]["items"][0]["cadence"], "monthly");
         assert_eq!(body["data"]["items"][0]["threshold_bps"], 2_000);

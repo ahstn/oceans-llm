@@ -41,6 +41,11 @@ The runtime emits bounded request-level signals for:
 
 The request path also records tracing spans enriched with routing and ownership context.
 
+Metric contract:
+
+- `gateway.chat.requests` describes routed request outcomes, including budget rejections after model resolution
+- `gateway.chat.provider.attempts` describes real upstream calls only and does not move when the request is rejected before provider execution
+
 Request correlation is anchored on `x-request-id`:
 
 - the gateway generates or propagates it at the HTTP edge
@@ -110,6 +115,7 @@ The gateway also stores bespoke caller tags in a bounded side table:
 - `request_log_tags`
 
 Streaming requests persist a bounded transcript payload rather than raw transport bytes.
+Stream payload capture is incremental and boundary-safe across UTF-8 and SSE chunk splits, and the stored `usage` snapshot always reflects the latest coherent usage frame seen before stream termination.
 
 ## Redaction and Truncation Boundaries
 
@@ -170,12 +176,10 @@ Current behavior that operators and maintainers should know plainly:
 
 - request-log detail lookups return `404 not_found` for missing rows
 - stream and non-stream chat paths still differ on post-provider ledger-write failure behavior
-- streamed request-log capture still has known follow-up work around chunk-boundary parsing and observability correctness
 
 Tracked follow-ups:
 
 - [issue #49](https://github.com/ahstn/oceans-llm/issues/49): unify post-provider ledger failure semantics
-- [issue #54](https://github.com/ahstn/oceans-llm/issues/54): harden stream metrics and streamed request-log parsing
 
 ## Relationship to Spend Reporting
 

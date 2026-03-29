@@ -2,7 +2,7 @@ use std::{fs, path::Path};
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use utoipa::{
     IntoParams, Modify, OpenApi, ToSchema,
@@ -24,6 +24,20 @@ pub struct Envelope<T> {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ResponseMeta {
     pub generated_at: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct OpenAiErrorBodyView {
+    pub message: String,
+    #[schema(rename = "type")]
+    pub error_type: String,
+    pub code: Option<String>,
+    pub param: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct OpenAiErrorEnvelopeView {
+    pub error: OpenAiErrorBodyView,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -451,7 +465,8 @@ pub struct RequestLogSummaryView {
     pub request_payload_truncated: bool,
     pub response_payload_truncated: bool,
     pub request_tags: RequestTagsView,
-    pub metadata: Value,
+    #[schema(additional_properties = true)]
+    pub metadata: Map<String, Value>,
     pub occurred_at: String,
 }
 

@@ -744,6 +744,15 @@ export interface components {
             name?: string | null;
             state: string;
         };
+        OpenAiErrorBodyView: {
+            code?: string | null;
+            message: string;
+            param?: string | null;
+            type: string;
+        };
+        OpenAiErrorEnvelopeView: {
+            error: components["schemas"]["OpenAiErrorBodyView"];
+        };
         PasswordInviteResponse: {
             expires_at: string;
             invite_url: string;
@@ -778,7 +787,9 @@ export interface components {
             has_payload: boolean;
             /** Format: int64 */
             latency_ms?: number | null;
-            metadata: unknown;
+            metadata: {
+                [key: string]: unknown;
+            };
             model_key: string;
             occurred_at: string;
             /** Format: int64 */
@@ -1289,7 +1300,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
             };
         };
     };

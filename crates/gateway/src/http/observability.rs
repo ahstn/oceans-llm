@@ -7,15 +7,14 @@ use gateway_core::{
     GatewayError, RequestLogDetail, RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord,
     RequestTag, RequestTags,
 };
-use serde_json::Value;
 use uuid::Uuid;
 
 use crate::http::{
     admin_auth::require_platform_admin,
     admin_contract::{
-        Envelope, RequestLogDetailView, RequestLogListQuery, RequestLogPageView,
-        RequestLogPayloadView, RequestLogSummaryView, RequestTagView, RequestTagsView, envelope,
-        format_timestamp,
+        Envelope, OpenAiErrorEnvelopeView, RequestLogDetailView, RequestLogListQuery,
+        RequestLogPageView, RequestLogPayloadView, RequestLogSummaryView, RequestTagView,
+        RequestTagsView, envelope, format_timestamp,
     },
     error::AppError,
     request_tags::build_bespoke_tag_filter,
@@ -80,7 +79,7 @@ pub async fn list_request_logs(
     params(("request_log_id" = String, Path, description = "Request log identifier")),
     responses(
         (status = 200, body = Envelope<RequestLogDetailView>),
-        (status = 404, description = "Request log not found")
+        (status = 404, body = OpenAiErrorEnvelopeView, description = "Request log not found")
     ),
     security(("session_cookie" = []))
 )]
@@ -115,7 +114,7 @@ fn summary_view(log: &RequestLogRecord) -> RequestLogSummaryView {
         request_payload_truncated: log.request_payload_truncated,
         response_payload_truncated: log.response_payload_truncated,
         request_tags: request_tags_view(&log.request_tags),
-        metadata: Value::Object(log.metadata.clone()),
+        metadata: log.metadata.clone(),
         occurred_at: format_timestamp(log.occurred_at),
     }
 }
