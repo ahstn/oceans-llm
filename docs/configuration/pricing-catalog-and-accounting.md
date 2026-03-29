@@ -1,8 +1,6 @@
 # Pricing Catalog and Accounting
 
-`Owns`: pricing catalog source layers, effective-dated pricing rows, exact-only coverage limits, and `unpriced` accounting behavior.
-`Depends on`: [configuration-reference.md](configuration-reference.md), [data-relationships.md](../reference/data-relationships.md)
-`See also`: [request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md), [budgets-and-spending.md](../operations/budgets-and-spending.md), [adr/2026-03-06-hybrid-pricing-catalog.md](../adr/2026-03-06-hybrid-pricing-catalog.md)
+`See also`: [Configuration Reference](configuration-reference.md), [Data Relationships](../reference/data-relationships.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Budgets and Spending](../operations/budgets-and-spending.md), [ADR: Hybrid Pricing Catalog from models.dev](../adr/2026-03-06-hybrid-pricing-catalog.md)
 
 This page explains how the gateway turns provider usage into durable pricing records and why some successful requests are intentionally not charged.
 

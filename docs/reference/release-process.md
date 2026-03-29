@@ -1,8 +1,6 @@
 # Release Process
 
-`Owns`: the maintainer release workflow, the local release task behavior, and the tag-triggered CI release distribution flow.
-`Depends on`: [../CONTRIBUTING.md](../../CONTRIBUTING.md)
-`See also`: [deploy-and-operations.md](../setup/deploy-and-operations.md), [operator-runbooks.md](../operations/operator-runbooks.md), [adr/2026-03-06-release-versioning-and-ghcr-publishing.md](../adr/2026-03-06-release-versioning-and-ghcr-publishing.md), [../mise.toml](../../mise.toml), [../.github/workflows/release.yml](../../.github/workflows/release.yml)
+`See also`: [Contributing](../../CONTRIBUTING.md), [Deploy and Operations](../setup/deploy-and-operations.md), [Operator Runbooks](../operations/operator-runbooks.md), [ADR: Cocogitto Releases, git-cliff Changelogs, and GHCR Image Publishing](../adr/2026-03-06-release-versioning-and-ghcr-publishing.md)
 
 This page is the maintainer-facing release runbook.
 

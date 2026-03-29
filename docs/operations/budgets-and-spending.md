@@ -1,8 +1,6 @@
 # Budgets and Spending
 
-`Owns`: spend ledger semantics, budget enforcement rules, budget alerts, spend APIs, and current spend-policy deferrals.
-`Depends on`: [data-relationships.md](../reference/data-relationships.md), [pricing-catalog-and-accounting.md](../configuration/pricing-catalog-and-accounting.md)
-`See also`: [request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md), [identity-and-access.md](../access/identity-and-access.md), [admin-control-plane.md](../access/admin-control-plane.md), [adr/2026-03-15-spend-control-plane-reporting-and-team-hard-limits.md](../adr/2026-03-15-spend-control-plane-reporting-and-team-hard-limits.md)
+`See also`: [Data Relationships](../reference/data-relationships.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Identity and Access](../access/identity-and-access.md), [Admin Control Plane](../access/admin-control-plane.md), [ADR: Spend Control Plane Reporting and Team Hard-Limit Enforcement](../adr/2026-03-15-spend-control-plane-reporting-and-team-hard-limits.md)
 
 This page describes the live spend contract in the gateway.
 

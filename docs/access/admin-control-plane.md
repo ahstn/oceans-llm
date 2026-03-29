@@ -1,8 +1,6 @@
 # Admin Control Plane
 
-`Owns`: the current admin UI capability map, the live-versus-preview surface split, and operator expectations for the control plane.
-`Depends on`: [identity-and-access.md](identity-and-access.md), [budgets-and-spending.md](../operations/budgets-and-spending.md), [observability-and-request-logs.md](../operations/observability-and-request-logs.md)
-`See also`: [admin-api-contract-workflow.md](../reference/admin-api-contract-workflow.md), [e2e-contract-tests.md](../reference/e2e-contract-tests.md), [oidc-and-sso-status.md](oidc-and-sso-status.md)
+`See also`: [Identity and Access](identity-and-access.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Admin API Contract Workflow](../reference/admin-api-contract-workflow.md), [End-to-End Contract Tests](../reference/e2e-contract-tests.md), [OIDC and SSO Status](oidc-and-sso-status.md)
 
 This page describes what operators can actually do in the admin UI today.
 

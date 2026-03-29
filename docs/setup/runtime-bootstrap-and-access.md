@@ -1,8 +1,6 @@
 # Runtime Bootstrap and Access
 
-`Owns`: startup behavior, first-access behavior, bootstrap admin rules, seeded API-key rules, and the difference between local dev, production-shaped local runs, and compose deploys.
-`Depends on`: [configuration-reference.md](../configuration/configuration-reference.md), [identity-and-access.md](../access/identity-and-access.md)
-`See also`: [../README.md](../../README.md), [../deploy/README.md](../../deploy/README.md), [deploy-and-operations.md](deploy-and-operations.md), [operator-runbooks.md](../operations/operator-runbooks.md)
+`See also`: [Configuration Reference](../configuration/configuration-reference.md), [Identity and Access](../access/identity-and-access.md), [Oceans LLM Gateway](../../README.md), [Deploy Compose](../../deploy/README.md), [Deploy and Operations](deploy-and-operations.md), [Operator Runbooks](../operations/operator-runbooks.md)
 
 This page explains what the gateway does when it starts and what access exists right after boot.
 

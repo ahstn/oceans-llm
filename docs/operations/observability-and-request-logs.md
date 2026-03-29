@@ -1,8 +1,6 @@
 # Observability and Request Logs
 
-`Owns`: the OTLP observability model, request-log storage shape, payload redaction and truncation boundaries, and admin observability API behavior.
-`Depends on`: [data-relationships.md](../reference/data-relationships.md), [model-routing-and-api-behavior.md](../configuration/model-routing-and-api-behavior.md)
-`See also`: [request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md), [admin-control-plane.md](../access/admin-control-plane.md), [deploy-and-operations.md](../setup/deploy-and-operations.md), [adr/2026-03-15-otlp-observability-and-request-log-payloads.md](../adr/2026-03-15-otlp-observability-and-request-log-payloads.md)
+`See also`: [Data Relationships](../reference/data-relationships.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Admin Control Plane](../access/admin-control-plane.md), [Deploy and Operations](../setup/deploy-and-operations.md), [ADR: OTLP-First Observability and Payload-Backed Request Logs](../adr/2026-03-15-otlp-observability-and-request-log-payloads.md)
 
 This document describes the live observability contract for the gateway.
 

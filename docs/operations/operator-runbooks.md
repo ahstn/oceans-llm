@@ -1,8 +1,6 @@
 # Operator Runbooks
 
-`Owns`: step-by-step operator actions for first deploy, upgrades, migration recovery, admin access recovery, provider auth failures, missing OTLP collectors, and secret rotation checkpoints.
-`Depends on`: [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md), [deploy-and-operations.md](../setup/deploy-and-operations.md)
-`See also`: [../deploy/README.md](../../deploy/README.md), [configuration-reference.md](../configuration/configuration-reference.md), [identity-and-access.md](../access/identity-and-access.md), [observability-and-request-logs.md](observability-and-request-logs.md)
+`See also`: [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Deploy and Operations](../setup/deploy-and-operations.md), [Deploy Compose](../../deploy/README.md), [Configuration Reference](../configuration/configuration-reference.md), [Identity and Access](../access/identity-and-access.md), [Observability and Request Logs](observability-and-request-logs.md)
 
 This page is action-oriented. It is not the place for broad topology or config reference detail.
 

@@ -1,8 +1,6 @@
 # End-to-End Contract Tests
 
-`Owns`: the E2E harness shape, the reason it mixes browser and HTTP checks, and the extension rules for cross-layer contract coverage.
-`Depends on`: [../access/admin-control-plane.md](../access/admin-control-plane.md), [admin-api-contract-workflow.md](admin-api-contract-workflow.md)
-`See also`: [../../crates/admin-ui/web/e2e/](../../crates/admin-ui/web/e2e), [../../mise.toml](../../mise.toml)
+`See also`: [Admin Control Plane](../access/admin-control-plane.md), [Admin API Contract Workflow](admin-api-contract-workflow.md)
 
 The E2E harness boots three real processes:
 

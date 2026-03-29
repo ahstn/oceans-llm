@@ -1,8 +1,6 @@
 # Deploy and Operations
 
-`Owns`: runtime topology, the same-origin admin model, local-vs-prod differences, and deploy-time caveats that are easy to miss from one config file.
-`Depends on`: [../README.md](../../README.md), [configuration-reference.md](../configuration/configuration-reference.md)
-`See also`: [runtime-bootstrap-and-access.md](runtime-bootstrap-and-access.md), [operator-runbooks.md](../operations/operator-runbooks.md), [../deploy/README.md](../../deploy/README.md), [release-process.md](../reference/release-process.md)
+`See also`: [Oceans LLM Gateway](../../README.md), [Configuration Reference](../configuration/configuration-reference.md), [Runtime Bootstrap and Access](runtime-bootstrap-and-access.md), [Operator Runbooks](../operations/operator-runbooks.md), [Deploy Compose](../../deploy/README.md), [Release Process](../reference/release-process.md)
 
 This page owns the runtime shape. It does not own the action-by-action runbooks.
 

@@ -1,8 +1,6 @@
 # Admin API Contract Workflow
 
-`Owns`: the generated admin API contract pipeline, checked-in artifacts, same-origin client boundary, drift rules, and the maintainer update flow when admin APIs change.
-`Depends on`: [admin-control-plane.md](../access/admin-control-plane.md), [e2e-contract-tests.md](e2e-contract-tests.md)
-`See also`: [../README.md](../../README.md), [../mise.toml](../../mise.toml), [../crates/gateway/openapi/admin-api.json](../../crates/gateway/openapi/admin-api.json), [../crates/admin-ui/web/src/generated/admin-api.ts](../../crates/admin-ui/web/src/generated/admin-api.ts), [adr/2026-03-28-generated-admin-api-contract-and-typed-same-origin-client.md](../adr/2026-03-28-generated-admin-api-contract-and-typed-same-origin-client.md), [adr/2026-03-29-live-admin-api-key-management-and-contract-coverage.md](../adr/2026-03-29-live-admin-api-key-management-and-contract-coverage.md)
+`See also`: [Admin Control Plane](../access/admin-control-plane.md), [End-to-End Contract Tests](e2e-contract-tests.md), [Oceans LLM Gateway](../../README.md), [ADR: Generated Admin API Contract and Typed Same-Origin Client](../adr/2026-03-28-generated-admin-api-contract-and-typed-same-origin-client.md), [ADR: Live Admin API-Key Management and Contract Coverage](../adr/2026-03-29-live-admin-api-key-management-and-contract-coverage.md)
 
 This page is maintainer-facing. It explains how the live admin contract is generated and why the checked-in artifacts are part of the review surface.
 

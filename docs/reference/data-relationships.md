@@ -1,8 +1,6 @@
 # Data Relationships
 
-`Owns`: schema-level entities, table relationships, ownership boundaries, and cross-table invariants.
-`Depends on`: [identity-and-access.md](../access/identity-and-access.md), [model-routing-and-api-behavior.md](../configuration/model-routing-and-api-behavior.md)
-`See also`: [budgets-and-spending.md](../operations/budgets-and-spending.md), [observability-and-request-logs.md](../operations/observability-and-request-logs.md), [adr/2026-03-05-identity-foundation.md](../adr/2026-03-05-identity-foundation.md)
+`See also`: [Identity and Access](../access/identity-and-access.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [ADR: Identity Foundation for Users, Teams, and API Key Ownership](../adr/2026-03-05-identity-foundation.md)
 
 This document is schema-oriented. It describes the persistent relationships that are hard to infer from a single file, but it does not try to restate every runtime rule owned by neighboring docs.
 

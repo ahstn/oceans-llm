@@ -1,8 +1,6 @@
 # Identity and Access
 
-`Owns`: user and team lifecycle, onboarding, ownership rules, request-logging preference, and model-access overlays.
-`Depends on`: [data-relationships.md](../reference/data-relationships.md)
-`See also`: [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md), [oidc-and-sso-status.md](oidc-and-sso-status.md), [admin-control-plane.md](admin-control-plane.md), [budgets-and-spending.md](../operations/budgets-and-spending.md), [adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md](../adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md)
+`See also`: [Data Relationships](../reference/data-relationships.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [OIDC and SSO Status](oidc-and-sso-status.md), [Admin Control Plane](admin-control-plane.md), [Budgets and Spending](../operations/budgets-and-spending.md), [ADR: Admin Identity Lifecycle and Team Member Workflow Hardening](../adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md)
 
 This page describes the live identity model across the gateway and admin control plane.
 

@@ -63,6 +63,12 @@ function extractSiteLinks(configText: string): string[] {
   return links;
 }
 
+function titleOf(filePath: string): string | null {
+  const text = fs.readFileSync(filePath, "utf8");
+  const match = text.match(/^#\s+(.+)$/m);
+  return match ? match[1].trim() : null;
+}
+
 const files = [
   path.join(repoRoot, "README.md"),
   path.join(repoRoot, "CONTRIBUTING.md"),
@@ -104,14 +110,28 @@ for (const filePath of files) {
 
 for (const filePath of canonicalDocs) {
   const text = fs.readFileSync(filePath, "utf8");
-  if (!/^`Owns`:/m.test(text)) {
-    errors.push(`${rel(filePath)} -> missing \`Owns\` header`);
-  }
-  if (!/^`Depends on`:/m.test(text)) {
-    errors.push(`${rel(filePath)} -> missing \`Depends on\` header`);
-  }
   if (!/^`See also`:/m.test(text)) {
     errors.push(`${rel(filePath)} -> missing \`See also\` header`);
+  }
+  const seeAlsoMatch = text.match(/^`See also`:(.+)$/m);
+  if (seeAlsoMatch) {
+    const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
+    let match: RegExpExecArray | null;
+    while ((match = linkRegex.exec(seeAlsoMatch[1])) !== null) {
+      const label = match[1].trim();
+      const target = match[2].trim();
+      if (!target.endsWith(".md")) {
+        errors.push(`${rel(filePath)} -> \`See also\` must only link to markdown files`);
+        continue;
+      }
+      const resolved = path.resolve(path.dirname(filePath), target);
+      const expectedTitle = fs.existsSync(resolved) ? titleOf(resolved) : null;
+      if (expectedTitle && label !== expectedTitle) {
+        errors.push(
+          `${rel(filePath)} -> \`See also\` label "${label}" does not match destination title "${expectedTitle}"`,
+        );
+      }
+    }
   }
   if (crossCuttingPages.has(rel(filePath)) && !/^## What This Page Does Not Own$/m.test(text)) {
     errors.push(`${rel(filePath)} -> missing "What This Page Does Not Own" section`);
