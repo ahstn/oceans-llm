@@ -114,6 +114,7 @@ The gateway also stores bespoke caller tags in a bounded side table:
 
 Streaming requests persist a bounded transcript payload rather than raw transport bytes.
 Stream payload capture is incremental and boundary-safe across UTF-8 and SSE chunk splits, and the stored `usage` snapshot always reflects the latest coherent usage frame seen before stream termination.
+Postgres cleanup migrations that need to inspect request-log metadata parse legacy `metadata_json` defensively and skip malformed rows rather than failing the entire migration for one bad historical value.
 
 ## Redaction and Truncation Boundaries
 

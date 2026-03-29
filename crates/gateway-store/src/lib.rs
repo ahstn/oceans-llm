@@ -3460,6 +3460,28 @@ mod tests {
         .await
         .expect("insert clean row");
 
+        sqlx::query(
+            r#"
+            INSERT INTO request_logs (
+                request_log_id, request_id, api_key_id, user_id, team_id, model_key,
+                resolved_model_key, provider_key, status_code, latency_ms, prompt_tokens,
+                completion_tokens, total_tokens, has_payload, request_payload_truncated,
+                response_payload_truncated, caller_service, caller_component, caller_env,
+                error_code, metadata_json, occurred_at
+            ) VALUES ($1, $2, $3, NULL, NULL, $4, $5, $6, 200, 42, 10, 20, 30, 0, 0, 0, NULL, NULL, NULL, NULL, $7, extract(epoch from now())::bigint)
+            "#,
+        )
+        .bind(Uuid::new_v4().to_string())
+        .bind("req-invalid")
+        .bind("api-key-legacy")
+        .bind("fast")
+        .bind("fast")
+        .bind("openai-prod")
+        .bind("{\"operation\": ".to_string())
+        .execute(&pool)
+        .await
+        .expect("insert invalid row");
+
         run_migrations_with_options(&StoreConnectionOptions::Postgres {
             url: test_db.database_url.clone(),
             max_connections: 2,
@@ -3473,30 +3495,35 @@ mod tests {
         .fetch_all(&pool)
         .await
         .expect("load request logs");
-        let metadata_by_request_id = rows
+        let metadata_json_by_request_id = rows
             .into_iter()
             .map(|row| {
                 let request_id = row.try_get::<String, _>(0).expect("request id");
-                let metadata = serde_json::from_str::<Value>(
-                    row.try_get::<String, _>(1).expect("metadata json").as_str(),
-                )
-                .expect("metadata");
-                (request_id, metadata)
+                let metadata_json = row.try_get::<String, _>(1).expect("metadata json");
+                (request_id, metadata_json)
             })
             .collect::<std::collections::BTreeMap<_, _>>();
         assert_eq!(
-            metadata_by_request_id.get("req-clean"),
-            Some(&json!({
+            metadata_json_by_request_id
+                .get("req-clean")
+                .map(|metadata_json| serde_json::from_str::<Value>(metadata_json).expect("metadata")),
+            Some(json!({
                 "operation": "chat_completions",
                 "stream": true
             }))
         );
         assert_eq!(
-            metadata_by_request_id.get("req-legacy"),
-            Some(&json!({
+            metadata_json_by_request_id
+                .get("req-legacy")
+                .map(|metadata_json| serde_json::from_str::<Value>(metadata_json).expect("metadata")),
+            Some(json!({
                 "operation": "chat_completions",
                 "stream": false
             }))
+        );
+        assert_eq!(
+            metadata_json_by_request_id.get("req-invalid"),
+            Some(&"{\"operation\": ".to_string())
         );
 
         pool.close().await;
