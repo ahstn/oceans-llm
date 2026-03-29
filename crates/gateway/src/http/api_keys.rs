@@ -14,13 +14,13 @@ use uuid::Uuid;
 
 use crate::http::{
     admin_auth::require_platform_admin,
+    admin_contract::{Envelope, envelope, format_timestamp},
     error::AppError,
-    identity::{Envelope, envelope, format_timestamp},
     state::AppState,
 };
 
 #[derive(Debug, Serialize)]
-pub(crate) struct AdminApiKeysPayload {
+pub struct AdminApiKeysPayload {
     items: Vec<AdminApiKeyView>,
     users: Vec<AdminApiKeyUserOwnerView>,
     teams: Vec<AdminApiKeyTeamOwnerView>,
@@ -28,7 +28,7 @@ pub(crate) struct AdminApiKeysPayload {
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct AdminApiKeyView {
+pub struct AdminApiKeyView {
     id: String,
     name: String,
     prefix: String,
@@ -45,21 +45,21 @@ pub(crate) struct AdminApiKeyView {
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct AdminApiKeyUserOwnerView {
+pub struct AdminApiKeyUserOwnerView {
     id: String,
     name: String,
     email: String,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct AdminApiKeyTeamOwnerView {
+pub struct AdminApiKeyTeamOwnerView {
     id: String,
     name: String,
     key: String,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct AdminApiKeyModelView {
+pub struct AdminApiKeyModelView {
     id: String,
     key: String,
     description: Option<String>,
@@ -67,7 +67,7 @@ pub(crate) struct AdminApiKeyModelView {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct CreateApiKeyRequest {
+pub struct CreateApiKeyRequest {
     name: String,
     owner_kind: String,
     owner_user_id: Option<String>,
@@ -76,13 +76,13 @@ pub(crate) struct CreateApiKeyRequest {
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct CreateApiKeyResponse {
+pub struct CreateApiKeyResponse {
     api_key: AdminApiKeyView,
     raw_key: String,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct RevokeApiKeyResponse {
+pub struct RevokeApiKeyResponse {
     api_key: AdminApiKeyView,
 }
 
