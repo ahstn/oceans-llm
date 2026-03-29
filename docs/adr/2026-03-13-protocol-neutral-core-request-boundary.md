@@ -3,6 +3,11 @@
 - Date: 2026-03-13
 - Status: Accepted
 
+## Current state
+
+- [../model-routing-and-api-behavior.md](../model-routing-and-api-behavior.md)
+- [../request-lifecycle-and-failure-modes.md](../request-lifecycle-and-failure-modes.md)
+
 ## Context
 
 Issue #23 requires the gateway to stop coupling execution directly to OpenAI wire DTOs. The prior shape made provider adapters and handler flow implicitly OpenAI-centric, which increases long-term risk as model APIs evolve toward Responses-style and multimodal-first interfaces.

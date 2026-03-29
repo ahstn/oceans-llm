@@ -1,10 +1,10 @@
 # Admin Control Plane
 
-`Owns`: the current admin UI capability map, live versus preview-backed surfaces, and operator expectations for the control plane.
+`Owns`: the current admin UI capability map, the live-versus-preview surface split, and operator expectations for the control plane.
 `Depends on`: [identity-and-access.md](identity-and-access.md), [budgets-and-spending.md](budgets-and-spending.md), [observability-and-request-logs.md](observability-and-request-logs.md)
-`See also`: [e2e-contract-tests.md](e2e-contract-tests.md), [../crates/gateway/src/http/admin_contract.rs](../crates/gateway/src/http/admin_contract.rs), [../crates/gateway/src/http/api_keys.rs](../crates/gateway/src/http/api_keys.rs), [../crates/gateway-service/src/admin_api_keys.rs](../crates/gateway-service/src/admin_api_keys.rs), [../crates/gateway-core/src/traits.rs](../crates/gateway-core/src/traits.rs), [../crates/admin-ui/web/src/routes/api-keys.tsx](../crates/admin-ui/web/src/routes/api-keys.tsx), [../crates/admin-ui/web/src/routes/api-keys/-use-api-keys-page.ts](../crates/admin-ui/web/src/routes/api-keys/-use-api-keys-page.ts), [../crates/gateway/openapi/admin-api.json](../crates/gateway/openapi/admin-api.json), [../crates/admin-ui/web/src/generated/admin-api.ts](../crates/admin-ui/web/src/generated/admin-api.ts)
+`See also`: [admin-api-contract-workflow.md](admin-api-contract-workflow.md), [e2e-contract-tests.md](e2e-contract-tests.md), [oidc-and-sso-status.md](oidc-and-sso-status.md)
 
-This document describes what operators can actually do in the admin UI today.
+This page describes what operators can actually do in the admin UI today.
 
 ## Same-Origin Control Plane
 
@@ -12,16 +12,10 @@ The control plane is served through the gateway at `/admin`.
 
 Normal runtime model:
 
-- gateway handles auth, admin APIs, and reverse proxying
-- the Bun SSR app calls back into the gateway using a typed same-origin client with forwarded-origin resolution
+- the gateway handles auth, admin APIs, and reverse proxying
+- the SSR app calls back into the gateway through the same-origin client boundary
 
-Live admin and auth surfaces now use a generated contract pipeline:
-
-- Rust transport DTOs and handler annotations live in [../crates/gateway/src/http/admin_contract.rs](../crates/gateway/src/http/admin_contract.rs)
-- the checked-in OpenAPI artifact lives at [../crates/gateway/openapi/admin-api.json](../crates/gateway/openapi/admin-api.json)
-- the admin UI consumes generated types from [../crates/admin-ui/web/src/generated/admin-api.ts](../crates/admin-ui/web/src/generated/admin-api.ts)
-
-For local direct UI dev on `:3001`, the server-side gateway client falls back to `:8080` unless `ADMIN_GATEWAY_ORIGIN` is explicitly set.
+For the generated contract and artifact workflow, use [admin-api-contract-workflow.md](admin-api-contract-workflow.md).
 
 ## Live Gateway-Backed Surfaces
 
@@ -30,61 +24,52 @@ These areas are backed by real gateway APIs today:
 - sign-in, session lookup, and password rotation
 - API key inventory, creation, and revocation
 - identity users and lifecycle management
-- identity teams and member transfer/removal workflows
-- password invites and onboarding links
+- identity teams and member transfer or removal workflows
+- password invite and onboarding links
 - OIDC pre-provisioning flows
 - spend usage reporting
 - spend budget management for users and teams
 - request-log list and detail inspection
 
-Those live surfaces are expected to track the generated gateway contract directly. We do not keep a separate hand-maintained frontend transport model for them.
-
 ## Preview-Backed Surfaces
 
-These pages are still powered by local preview data in the admin UI:
+These pages still use local preview data in the admin UI:
 
 - Models
 
-That is not just an implementation detail. It affects both operator expectations and test scope.
-
-Tracked follow-ups:
-
-- [issue #27](https://github.com/ahstn/oceans-llm/issues/27): replace preview model inventory with live routing and provider state
+That split matters for operator expectations and test scope.
 
 ## Operator-Visible Maturity Cues
 
-The admin UI currently teaches this maturity split in live copy and tests:
+The current product contract is mixed on purpose:
 
-- identity and spend surfaces are live gateway-backed contracts
-- models remain intentionally preview-backed in this slice
+- identity, spend, API keys, and request logs are live gateway-backed surfaces
+- Models is still preview-backed in this slice
 
-That message is part of the operator contract and should be treated as owned by this page rather than only by UI fixture code or E2E assertions.
+Tracked follow-up:
 
-## API Key Workflows Available Today
+- [issue #27](https://github.com/ahstn/oceans-llm/issues/27)
 
-Operators can currently:
+## API-Key Workflows Available Today
 
-- list API keys with owner summary, grant list, issuance timestamps, and revoke state
+Operators can:
+
+- list API keys with owner summary and grant list
 - create a new key for an explicit user or team owner
 - grant access to an explicit set of gateway models at creation time
-- copy the raw key exactly once from the create response
-- revoke a key so the runtime rejects it immediately
+- copy the raw key once from the create response
+- revoke a key so runtime auth rejects it immediately
 
-Current scope limits:
+Current limits:
 
-- keys cannot be renamed after creation
-- granted models are fixed at create time in this slice
-- revoked keys are not restorable
-- model selection is limited to the current live gateway model catalog
+- no rename flow
+- no in-place grant edit flow
+- no restore-from-revoked flow
+- model choice is limited to the live gateway model catalog
 
-Implementation boundary:
-
-- the HTTP layer at [../crates/gateway/src/http/api_keys.rs](../crates/gateway/src/http/api_keys.rs) owns session auth, request parsing, and response envelopes
-- the lifecycle policy lives in [../crates/gateway-service/src/admin_api_keys.rs](../crates/gateway-service/src/admin_api_keys.rs)
-- admin persistence is split between runtime auth in `ApiKeyRepository` and control-plane lifecycle in `AdminApiKeyRepository` inside [../crates/gateway-core/src/traits.rs](../crates/gateway-core/src/traits.rs)
 ## Identity Workflows Available Today
 
-Operators can currently:
+Operators can:
 
 - sign in as the bootstrap or existing platform admin
 - rotate the bootstrap password when required
@@ -98,56 +83,58 @@ Operators can currently:
 - remove team members
 - transfer team members between teams with an explicit destination role
 
-Current scope limits:
+Current limits:
 
-- no admin logout/session-management flow yet
-- owner memberships are visible but blocked from removal/transfer in this slice
+- no admin logout flow yet
+- owner memberships stay blocked from removal or transfer in this slice
 - auth-mode switching is limited to invited users
-- OIDC remains development-style, not hardened
+- OIDC is still development-style
 
-## Auth And Session UX Limits
+## Admin Auth and Session Behavior
 
-Current session state is mostly implicit:
+Current session behavior is mostly implicit:
 
 - browser cookie state carries the admin session
-- `/api/v1/auth/session` is the main machine-readable session lookup
-- there is not yet a dedicated logout/session-management shell in the control plane
+- `/api/v1/auth/session` is the machine-readable session lookup
+- expired or missing session state sends the operator back through the auth flow
+- bootstrap admin and regular admin accounts share the same session mechanics after sign-in
 
-Related follow-ups:
+What is still missing:
 
-- [issue #34](https://github.com/ahstn/oceans-llm/issues/34)
-- [issue #33](https://github.com/ahstn/oceans-llm/issues/33)
-- [issue #46](https://github.com/ahstn/oceans-llm/issues/46)
+- a dedicated logout shell
+- broader session-management UI
 
 ## Spend and Observability Workflows Available Today
 
-Operators can currently:
+Operators can:
 
-- inspect 7- and 30-day spend windows
+- inspect 7-day and 30-day spend windows
 - filter spend by owner kind
 - manage user and team budgets
 - inspect request-log summaries
 - filter request logs by caller service, component, environment, and one bespoke tag match
 - inspect sanitized request-log payload detail
 
-Current scope limits:
+Current limits:
 
-- spend reporting does not yet include provider breakdown
-- request-log detail missing rows now return `404 not_found`
-- request-log filtering and ergonomics still have follow-up work
+- spend reporting still lacks provider breakdown
+- request-log detail missing rows return `404 not_found`
+- request-log filtering ergonomics still have follow-up work
 
-Related follow-ups:
+## Current Gaps
 
-- [issue #45](https://github.com/ahstn/oceans-llm/issues/45)
-- [issue #20](https://github.com/ahstn/oceans-llm/issues/20)
-- [issue #50](https://github.com/ahstn/oceans-llm/issues/50)
+- no logout or richer session management yet:
+  - [issue #34](https://github.com/ahstn/oceans-llm/issues/34)
+- OIDC still development-style:
+  - [oidc-and-sso-status.md](oidc-and-sso-status.md)
+- Models page still preview-backed:
+  - [issue #27](https://github.com/ahstn/oceans-llm/issues/27)
 
 ## Relationship to Testing
 
 The E2E harness treats only live gateway-backed surfaces as contract flows.
 
 - live surfaces should gain targeted cross-layer coverage as they harden
-- preview-backed pages can appear in landing assertions, but not as business-flow coverage
-- user lifecycle and team member workflows now belong in the live contract suite
+- preview-backed pages can appear in smoke coverage, not business-flow coverage
 
-See [e2e-contract-tests.md](e2e-contract-tests.md).
+Use [e2e-contract-tests.md](e2e-contract-tests.md) for the test boundary.

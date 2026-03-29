@@ -1,16 +1,18 @@
 # Configuration Reference
 
-`Owns`: gateway config shape, defaults, validation rules, provider-specific config constraints, and env-backed secret references.
+`Owns`: gateway YAML shape, defaults, validation rules, provider auth modes, and env-backed secret references.
 `Depends on`: [../README.md](../README.md)
-`See also`: [model-routing-and-api-behavior.md](model-routing-and-api-behavior.md), [pricing-catalog-and-accounting.md](pricing-catalog-and-accounting.md), [deploy-and-operations.md](deploy-and-operations.md), [adr/2026-03-10-model-aliases-and-provider-route-config.md](adr/2026-03-10-model-aliases-and-provider-route-config.md)
+`See also`: [runtime-bootstrap-and-access.md](runtime-bootstrap-and-access.md), [model-routing-and-api-behavior.md](model-routing-and-api-behavior.md), [pricing-catalog-and-accounting.md](pricing-catalog-and-accounting.md), [oidc-and-sso-status.md](oidc-and-sso-status.md)
 
-This page is the canonical reference for gateway YAML config. Runtime policy and API behavior live in neighboring docs; this page only owns the config contract itself.
+This page owns config syntax and parse-time rules. It does not own the full runtime story after a request starts moving.
 
 ## Source of Truth
 
-- Config parsing and validation: [../crates/gateway/src/config.rs](../crates/gateway/src/config.rs)
-- Provider capability defaults: [../crates/gateway-core/src/domain.rs](../crates/gateway-core/src/domain.rs)
-- Checked-in examples:
+- config parsing and validation:
+  - [../crates/gateway/src/config.rs](../crates/gateway/src/config.rs)
+- provider capability defaults:
+  - [../crates/gateway-core/src/domain.rs](../crates/gateway-core/src/domain.rs)
+- checked-in examples:
   - [../gateway.yaml](../gateway.yaml)
   - [../gateway.prod.yaml](../gateway.prod.yaml)
   - [../deploy/config/gateway.yaml](../deploy/config/gateway.yaml)
@@ -25,7 +27,7 @@ This page is the canonical reference for gateway YAML config. Runtime policy and
 
 ## Value Sources
 
-Checked-in config supports literal values and env references.
+The config supports literal values and env references.
 
 Common patterns:
 
@@ -33,7 +35,76 @@ Common patterns:
 - `env.OPENAI_API_KEY`
 - `env.POSTGRES_URL`
 
-Operationally, this means the YAML file defines structure while secrets and deploy-specific values should usually come from the environment.
+The YAML holds structure. Secrets and deploy-specific values usually come from the environment.
+
+## Minimal Local Example
+
+```yaml
+server:
+  bind: "127.0.0.1:8080"
+
+database:
+  kind: libsql
+  path: "./var/oceans.db"
+
+auth:
+  bootstrap_admin:
+    email: "admin@local"
+    password: "admin"
+    require_password_change: false
+
+providers:
+  - id: openai
+    type: openai_compat
+    base_url: "https://api.openai.com/v1"
+    pricing_provider_id: openai
+    auth:
+      kind: bearer
+      token: env.OPENAI_API_KEY
+
+models:
+  - id: gpt-4o-mini
+    routes:
+      - provider: openai
+        upstream_model: gpt-4o-mini
+```
+
+## Production-Shaped Example
+
+```yaml
+server:
+  bind: "0.0.0.0:8080"
+
+database:
+  kind: postgres
+  url: env.POSTGRES_URL
+
+auth:
+  bootstrap_admin:
+    email: "admin@local"
+    password: "admin"
+    require_password_change: true
+  seed_api_keys:
+    - name: "gateway"
+      key: env.GATEWAY_API_KEY
+
+providers:
+  - id: vertex
+    type: gcp_vertex
+    project_id: env.GCP_PROJECT_ID
+    location: global
+    auth:
+      mode: service_account
+      service_account_json: env.GCP_SERVICE_ACCOUNT_JSON
+
+models:
+  - id: gemini-2.0-flash
+    routes:
+      - provider: vertex
+        upstream_model: google/gemini-2.0-flash
+```
+
+The checked-in examples are opinionated. They are not the full config space.
 
 ## Defaults That Matter
 
@@ -46,9 +117,8 @@ Important defaults from config parsing and domain deserialization:
 - route capability flags default to all enabled
 - Vertex `location` defaults to `global`
 - Vertex `api_host` defaults to `aiplatform.googleapis.com`
-- bootstrap admin defaults to enabled with `admin@local`
 
-Those defaults materially affect routing and operator expectations, so they should be treated as part of the runtime contract rather than implementation trivia.
+The startup meaning of bootstrap-admin and seeded API keys lives in [runtime-bootstrap-and-access.md](runtime-bootstrap-and-access.md).
 
 ## `server`
 
@@ -60,16 +130,16 @@ Important fields:
 - `otel_metrics_endpoint`
 - `otel_export_interval_secs`
 
-For observability semantics and current collector assumptions, see [observability-and-request-logs.md](observability-and-request-logs.md).
+For collector assumptions and request-log implications, see [observability-and-request-logs.md](observability-and-request-logs.md).
 
 ## `database`
 
-Checked-in examples use two runtime shapes:
+The checked-in configs use two runtime shapes:
 
-- local development: libsql/SQLite with `path`
-- production-shaped and deploy flows: PostgreSQL with `kind: postgres` and `url`
-
-For topology, migrations, and local-vs-deploy differences, see [deploy-and-operations.md](deploy-and-operations.md).
+- local development:
+  - libsql or SQLite with `path`
+- production-shaped and deploy flows:
+  - PostgreSQL with `kind: postgres` and `url`
 
 ## `auth`
 
@@ -80,18 +150,26 @@ Important fields:
 
 Important distinctions:
 
-- `seed_api_keys` is used in deploy-style or test-style setups to pre-create gateway keys
-- `bootstrap_admin` controls whether the gateway ensures a platform admin exists at startup
-- `bootstrap_admin.require_password_change` changes first-login behavior and is part of the live auth contract
+- `seed_api_keys` creates data-plane access
+- `bootstrap_admin` creates control-plane access
+- `bootstrap_admin.require_password_change` changes first-login behavior
 
-Identity semantics are owned by [identity-and-access.md](identity-and-access.md).
+For startup behavior and first access after boot, use [runtime-bootstrap-and-access.md](runtime-bootstrap-and-access.md).
 
-## Provider Config
+## Provider Types
 
 Supported provider types in the checked-in configs:
 
 - `openai_compat`
 - `gcp_vertex`
+
+### Provider Auth Modes
+
+| Provider type | Auth field | Expected secret material |
+| --- | --- | --- |
+| `openai_compat` | `auth.token` | bearer-style token |
+| `gcp_vertex` | `auth.mode: adc` | ADC available in the runtime environment |
+| `gcp_vertex` | `auth.mode: service_account` | service-account JSON or equivalent secret source |
 
 ### `openai_compat`
 
@@ -103,12 +181,10 @@ Important fields:
 - `auth.kind`
 - `auth.token`
 
-Validation rules that matter operationally:
+Validation rules that matter:
 
 - `pricing_provider_id` cannot be empty
-- `pricing_provider_id` must be one of the supported internal pricing providers
-
-That pricing mapping is part of accounting integrity, not just config hygiene. See [pricing-catalog-and-accounting.md](pricing-catalog-and-accounting.md).
+- `pricing_provider_id` must map to a supported internal pricing family
 
 ### `gcp_vertex`
 
@@ -120,16 +196,11 @@ Important fields:
 - `api_host`
 - `auth.mode`
 
-Current checked-in auth examples:
+Routing and pricing caveats:
 
-- `adc`
-- `service_account`
-
-Routing and accounting caveats:
-
-- `upstream_model` must use the `<publisher>/<model_id>` form
+- `upstream_model` must use `<publisher>/<model_id>`
 - pricing identity is inferred from the publisher prefix
-- Anthropic-on-Vertex is only priced for `location=global`
+- Anthropic-on-Vertex pricing is only supported for `location=global`
 
 ## Model Config
 
@@ -149,8 +220,6 @@ Important fields:
 - `routes`
 - `alias_of`
 
-Alias resolution and request-time behavior are owned by [model-routing-and-api-behavior.md](model-routing-and-api-behavior.md).
-
 ## Route Config
 
 Important fields:
@@ -164,23 +233,38 @@ Important fields:
 - `extra_headers`
 - `extra_body`
 
-Capability flags default permissively, but runtime execution still intersects route config with provider adapter truth. A route can constrain provider capability, not expand it.
+Capability flags default permissively. A route can constrain provider capability. It cannot expand provider truth.
 
-## Validation And Failure Boundaries
+## Validation and Failure Boundaries
 
 Config load catches several classes of failure up front:
 
 - invalid or empty provider fields
 - unsupported pricing-provider mappings
-- invalid model alias references
-- invalid route/provider wiring
+- invalid alias references
+- invalid route or provider wiring
 
-At runtime, config shape is already fixed. Later failures are usually about request resolution, missing providers, capability mismatch, or pricing coverage.
+Later failures are usually runtime problems such as:
+
+- request resolution failure
+- missing providers
+- capability mismatch
+- exact-pricing gaps
+
+## Current Gaps
+
+- Declarative teams, users, and budgets are not part of the config contract yet.
+- The future direction is tracked in [issue #64](https://github.com/ahstn/oceans-llm/issues/64) and [issue #65](https://github.com/ahstn/oceans-llm/issues/65).
 
 ## What This Page Does Not Own
 
-- request routing and `/v1/*` behavior: [model-routing-and-api-behavior.md](model-routing-and-api-behavior.md)
-- identity/onboarding semantics: [identity-and-access.md](identity-and-access.md)
-- spend enforcement and budget windows: [budgets-and-spending.md](budgets-and-spending.md)
-- pricing coverage and unpriced reasons: [pricing-catalog-and-accounting.md](pricing-catalog-and-accounting.md)
-- deploy topology and release/ops workflow: [deploy-and-operations.md](deploy-and-operations.md), [release-process.md](release-process.md)
+- startup behavior and first access:
+  - [runtime-bootstrap-and-access.md](runtime-bootstrap-and-access.md)
+- request routing and `/v1/*` behavior:
+  - [model-routing-and-api-behavior.md](model-routing-and-api-behavior.md)
+- cross-cutting request cause and effect:
+  - [request-lifecycle-and-failure-modes.md](request-lifecycle-and-failure-modes.md)
+- spend windows and budget policy:
+  - [budgets-and-spending.md](budgets-and-spending.md)
+- hardened OIDC status:
+  - [oidc-and-sso-status.md](oidc-and-sso-status.md)

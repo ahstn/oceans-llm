@@ -158,3 +158,26 @@ Keep the docs graph intact when you document new behavior:
 - update the canonical doc that owns the behavior instead of copying policy into several files,
 - add or update an ADR in [docs/adr/](docs/adr/) when the change is architectural,
 - link to source files and workflow files when those are the true source of operational detail.
+
+## Docs Maintenance
+
+When behavior changes, update the owning page instead of adding a second explanation.
+
+- startup flow, bootstrap admin, seeded API keys:
+  - [docs/runtime-bootstrap-and-access.md](docs/runtime-bootstrap-and-access.md)
+- topology, same-origin runtime model, local-vs-prod differences:
+  - [docs/deploy-and-operations.md](docs/deploy-and-operations.md)
+- recovery and upgrade steps:
+  - [docs/operator-runbooks.md](docs/operator-runbooks.md)
+- config syntax and defaults:
+  - [docs/configuration-reference.md](docs/configuration-reference.md)
+- identity lifecycle and ownership rules:
+  - [docs/identity-and-access.md](docs/identity-and-access.md)
+- OIDC and SSO boundary:
+  - [docs/oidc-and-sso-status.md](docs/oidc-and-sso-status.md)
+- admin contract generation and drift rules:
+  - [docs/admin-api-contract-workflow.md](docs/admin-api-contract-workflow.md)
+- request routing, pricing, spend, and logging as one path:
+  - [docs/request-lifecycle-and-failure-modes.md](docs/request-lifecycle-and-failure-modes.md)
+
+Run `mise run docs-check` after touching Markdown in the canonical docs set.

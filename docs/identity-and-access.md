@@ -1,121 +1,104 @@
 # Identity and Access
 
-`Owns`: bootstrap admin behavior, users, teams, onboarding, ownership model, request-logging preference, and access overlays.
+`Owns`: user and team lifecycle, onboarding, ownership rules, request-logging preference, and model-access overlays.
 `Depends on`: [data-relationships.md](data-relationships.md)
-`See also`: [admin-control-plane.md](admin-control-plane.md), [budgets-and-spending.md](budgets-and-spending.md), [adr/2026-03-05-identity-foundation.md](adr/2026-03-05-identity-foundation.md), [adr/2026-03-08-admin-team-management-flow.md](adr/2026-03-08-admin-team-management-flow.md), [adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md](adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md)
+`See also`: [runtime-bootstrap-and-access.md](runtime-bootstrap-and-access.md), [oidc-and-sso-status.md](oidc-and-sso-status.md), [admin-control-plane.md](admin-control-plane.md), [budgets-and-spending.md](budgets-and-spending.md), [adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md](adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md)
 
-This document describes the live identity and access model across the gateway and admin control plane.
+This page describes the live identity model across the gateway and admin control plane.
 
 ## Source of Truth
 
-- Identity APIs: [../crates/gateway/src/http/identity.rs](../crates/gateway/src/http/identity.rs)
-- Access evaluation: [../crates/gateway-service/src/model_access.rs](../crates/gateway-service/src/model_access.rs)
-- Bootstrap admin creation: [../crates/gateway/src/main.rs](../crates/gateway/src/main.rs)
+- identity APIs:
+  - [../crates/gateway/src/http/identity.rs](../crates/gateway/src/http/identity.rs)
+- lifecycle policy:
+  - [../crates/gateway/src/http/identity_lifecycle.rs](../crates/gateway/src/http/identity_lifecycle.rs)
+- access evaluation:
+  - [../crates/gateway-service/src/model_access.rs](../crates/gateway-service/src/model_access.rs)
 
 ## Ownership Model
 
-The product uses first-class users, teams, and API key ownership:
+The product uses first-class users, teams, and API-key ownership.
 
-- API keys are either user-owned or team-owned
-- teams are durable ownership boundaries for team budgets and future team-owned resources
-- one user belongs to at most one team in this slice
-- users can exist without a team
-- team transfers are future-membership changes only; they do not migrate historical request logs, spend, budgets, or API-key ownership
-
-Legacy keys are preserved through the reserved `system-legacy` team.
+- API keys are either user-owned or team-owned.
+- Teams are durable ownership boundaries for team budgets and future team-owned resources.
+- One user belongs to at most one team in this slice.
+- Users can exist without a team.
+- Legacy keys are preserved through the reserved `system-legacy` team.
 
 ## User Lifecycle
 
-User status is a typed lifecycle rather than an incidental string:
+User status is typed, not free-form text.
 
 - `invited`
 - `active`
 - `disabled`
 
-The lifecycle rules are intentionally conservative:
+Important rules:
 
-- auth-mode changes are allowed only while a user is still `invited`
-- deactivation revokes runtime access and outstanding invite state
-- reactivation restores access only when the current auth proof still exists
-- reset-onboarding returns the user to `invited` and reissues the onboarding link
+- auth-mode changes are only allowed while the user is still `invited`
+- deactivation revokes runtime access
+- reactivation only restores access when the current auth proof still exists
+- reset-onboarding returns the user to `invited`
 - the last active platform admin cannot be deactivated or demoted
-- bootstrap admin remains out of band and is excluded from normal user-management views
+- the bootstrap admin stays out of normal user-management views
 
 ## Bootstrap Admin
 
-The gateway can ensure a bootstrap platform admin exists at startup.
+Bootstrap admin is the first control-plane access path, not a normal user-management path.
 
-Default checked-in behavior:
+- local config keeps it enabled without forced password rotation
+- production-shaped local config keeps it enabled with forced password rotation
+- the active config and startup toggles decide whether it is created on boot
 
-- local config (`gateway.yaml`): `admin@local` / `admin`, no forced password change
-- production-shaped config (`gateway.prod.yaml`): `admin@local` / `admin`, forced password change on first login
+For the startup and first-access path, use [runtime-bootstrap-and-access.md](runtime-bootstrap-and-access.md).
 
-Relevant controls:
+## Onboarding Model
 
-- `GATEWAY_BOOTSTRAP_ADMIN`
-- `gateway bootstrap-admin`
-- `auth.bootstrap_admin` in the active YAML config
-
-## Admin Auth and Onboarding
-
-The current admin/auth surface includes:
-
-- password login
-- password rotation
-- password invite validation and completion
-- pre-provisioned OIDC sign-in
-- authenticated admin session lookup
-
-Password onboarding:
-
-- invited password users receive a time-limited invitation token
-- setting the password activates the user
-
-OIDC onboarding:
-
-- the admin UI can pre-provision an invited OIDC user against an enabled provider
-- first successful callback activates the user and creates the durable provider subject link
-
-## Onboarding Handoff Model
-
-Admin onboarding is intentionally operator-mediated today:
+Current onboarding is operator-mediated.
 
 - admins create users or invite them into teams
-- the control plane generates password invite URLs or OIDC sign-in URLs
-- the admin then shares that onboarding link out of band
+- the control plane generates password invite links or OIDC sign-in links
+- the admin shares that link out of band
 
-That handoff model is part of the current product contract. There is no separate self-service discovery flow in this slice.
+There is no self-service discovery flow in this slice.
 
-## Important Current Limitation: OIDC Is Still Development-Style
-
-Current OIDC behavior is intentionally not a hardened standards-complete provider flow.
-
-Today the implementation still:
-
-- redirects `oidc_start` directly into the callback path
-- accepts callback identity through query parameters
-- synthesizes the provider subject as `mock:{provider_key}:{email}` when no explicit subject is provided
-
-That is useful for local and slice-level testing, but it is not the final production design. The follow-up direction is tracked in [issue #46](https://github.com/ahstn/oceans-llm/issues/46), and the earlier hardening intent is recorded in [issue #29](https://github.com/ahstn/oceans-llm/issues/29).
-
-## Teams
+## Team Lifecycle
 
 Current team-management rules:
 
 - teams can be created before users exist
 - teams can be created with zero admins
-- the admin UI can add existing teamless users or invite new members directly into a team
+- the admin UI can add existing teamless users or invite new users directly into a team
 - cross-team reassignment is rejected in this slice
-- `owner` remains visible but is not removable or transferable through the admin UI in this slice
+- `owner` memberships are visible but blocked from casual lifecycle edits
 
-## Current Team Lifecycle Boundaries
+## Team Transfer Rule
 
-Additional boundaries that are easy to miss from one page or one API response:
+Team transfer is easy to overread. The rule is narrow on purpose.
 
-- `team_key` is server-generated and durable
-- empty teams are valid and expected
-- current edit flows now include explicit member removal and transfer actions
-- owner memberships remain blocked from casual lifecycle edits until the broader ownership model is defined
+Transfer changes:
+
+- the user’s current membership
+- future membership-derived access
+
+Transfer does not change:
+
+- historical request logs
+- historical spend rows
+- existing budgets
+- API-key ownership
+
+That boundary is a policy rule, not a UI shortcut.
+
+## OIDC Boundary
+
+OIDC exists in the product, but it is still development-style in this slice.
+
+- pre-provisioned OIDC users are supported
+- OIDC onboarding links exist
+- hardened production-grade SSO is still a follow-up
+
+Use [oidc-and-sso-status.md](oidc-and-sso-status.md) for the practical boundary and future direction.
 
 ## Model Access Overlays
 
@@ -125,19 +108,32 @@ Effective model access is layered:
 2. team allowlist when the team is `restricted`
 3. user allowlist when the user is `restricted`
 
-This keeps API key grants as the baseline contract while allowing narrower team or user restrictions above them.
+This keeps API-key grants as the baseline contract while allowing narrower restrictions above them.
 
 ## Request Logging Preference
 
-Request logging policy is owned partly by identity:
+Request logging policy is partly owned by identity.
 
 - user-owned requests honor `users.request_logging_enabled`
 - team-owned requests always persist request logs
 
-Request-log storage and observability behavior are documented in [observability-and-request-logs.md](observability-and-request-logs.md).
+## Current Gaps
+
+- Hardened OIDC flow is still pending:
+  - [issue #29](https://github.com/ahstn/oceans-llm/issues/29)
+- Self-hosted test-IdP guidance is still pending:
+  - [issue #46](https://github.com/ahstn/oceans-llm/issues/46)
+- Declarative config-driven identity is still pending:
+  - [issue #64](https://github.com/ahstn/oceans-llm/issues/64)
+  - [issue #65](https://github.com/ahstn/oceans-llm/issues/65)
 
 ## Where Identity Appears Operationally
 
-- [Admin Control Plane](admin-control-plane.md): what admins can manage today
-- [Budgets and Spending](budgets-and-spending.md): how user and team ownership affects spend enforcement
-- [Model Routing and API Behavior](model-routing-and-api-behavior.md): how model grants and overlays affect `/v1/models` and request resolution
+- admin workflows:
+  - [admin-control-plane.md](admin-control-plane.md)
+- startup and first access:
+  - [runtime-bootstrap-and-access.md](runtime-bootstrap-and-access.md)
+- spend ownership effects:
+  - [budgets-and-spending.md](budgets-and-spending.md)
+- request resolution effects:
+  - [model-routing-and-api-behavior.md](model-routing-and-api-behavior.md)

@@ -11,6 +11,12 @@
   - [2026-03-17-post-success-accounting-and-strict-request-log-lookups.md](./2026-03-17-post-success-accounting-and-strict-request-log-lookups.md)
   - [2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md](./2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md)
 
+## Current state
+
+- [../admin-api-contract-workflow.md](../admin-api-contract-workflow.md)
+- [../admin-control-plane.md](../admin-control-plane.md)
+- [../e2e-contract-tests.md](../e2e-contract-tests.md)
+
 ## Context
 
 The admin control plane had reached the point where the gateway owned the real behavior, but the contract between the gateway and the admin UI was still partly hand-maintained. That created a familiar failure mode:

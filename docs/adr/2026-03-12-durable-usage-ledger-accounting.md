@@ -3,6 +3,12 @@
 - Date: 2026-03-12
 - Status: Accepted
 
+## Current state
+
+- [../pricing-catalog-and-accounting.md](../pricing-catalog-and-accounting.md)
+- [../budgets-and-spending.md](../budgets-and-spending.md)
+- [../data-relationships.md](../data-relationships.md)
+
 ## Context
 
 The gateway already had identity-aware ownership, request logging, user budgets, and a hybrid pricing catalog, but spend accounting was still incomplete in ways that would have made enforcement unsafe:

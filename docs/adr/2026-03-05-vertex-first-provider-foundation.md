@@ -3,6 +3,12 @@
 - Date: 2026-03-05
 - Status: Accepted
 
+## Current state
+
+- [../configuration-reference.md](../configuration-reference.md)
+- [../model-routing-and-api-behavior.md](../model-routing-and-api-behavior.md)
+- [../pricing-catalog-and-accounting.md](../pricing-catalog-and-accounting.md)
+
 ## Context
 
 The gateway exposed an OpenAI-compatible API surface (`/v1/chat/completions`, `/v1/embeddings`) but chat execution was not implemented end-to-end. We needed a production-ready first provider slice that:

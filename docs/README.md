@@ -1,32 +1,82 @@
 # Documentation Hub
 
-`Owns`: the documentation map, canonical doc graph, and doc maturity overview.
+`Owns`: the documentation map, the canonical doc graph, and the audience-level entry points into the repo docs.
 `Depends on`: [../README.md](../README.md)
 `See also`: [adr/](adr/), [internal/](internal/)
 
-This repository uses a documentation graph instead of repeating the same policy in many files.
+This repo uses a docs graph instead of repeating the same policy in many places.
 
-- Canonical docs own facts.
+- Canonical docs explain current behavior.
 - ADRs explain why a decision was made.
-- Internal docs capture background research and inception context.
+- Internal notes hold background research that should not be treated as the live contract.
 
-## Start Here
+## Operator Guides
 
-| Type | Document | Owns |
-| --- | --- | --- |
-| Guide | [../CONTRIBUTING.md](../CONTRIBUTING.md) | contributor setup, task workflow, CI map, workspace primer |
-| Reference | [Configuration Reference](configuration-reference.md) | gateway config shape, defaults, and validation rules |
-| Guide | [Identity and Access](identity-and-access.md) | bootstrap admin, users, teams, onboarding, OIDC status, access overlays |
-| Guide | [Model Routing and API Behavior](model-routing-and-api-behavior.md) | model aliases, `tag:` selection, capabilities, `/v1/*` behavior |
-| Guide | [Budgets and Spending](budgets-and-spending.md) | ledger semantics, budget enforcement, spend APIs, current deferrals |
-| Reference | [Pricing Catalog and Accounting](pricing-catalog-and-accounting.md) | pricing inputs, effective-dated pricing rows, and unpriced behavior |
-| Guide | [Observability and Request Logs](observability-and-request-logs.md) | OTLP model, metrics/logging, payload capture, observability APIs |
-| Reference | [Data Relationships](data-relationships.md) | tables, ownership graph, schema-level relationships |
-| Guide | [Admin Control Plane](admin-control-plane.md) | what the admin UI can do today, and what is still preview-backed |
-| Guide | [End-to-End Contract Tests](e2e-contract-tests.md) | test harness scope and extension rules |
-| Guide | [Deploy and Operations](deploy-and-operations.md) | topology, auth bootstrap differences, and operational caveats |
-| Guide | [Release Process](release-process.md) | maintainer release runbook and tag-triggered CI flow |
-| Guide | [../deploy/README.md](../deploy/README.md) | deploy compose usage |
+| Document | Owns |
+| --- | --- |
+| [Runtime Bootstrap and Access](runtime-bootstrap-and-access.md) | startup behavior, first access, bootstrap admin, seeded API keys |
+| [Deploy and Operations](deploy-and-operations.md) | runtime topology, same-origin contract, local-vs-prod differences |
+| [Operator Runbooks](operator-runbooks.md) | first deploy, upgrade, recovery, rotation checkpoints |
+| [Configuration Reference](configuration-reference.md) | gateway YAML shape, defaults, validation, auth modes |
+| [Identity and Access](identity-and-access.md) | users, teams, onboarding, ownership, access overlays |
+| [OIDC and SSO Status](oidc-and-sso-status.md) | current OIDC boundary, hardened direction, missing test-IdP story |
+| [Model Routing and API Behavior](model-routing-and-api-behavior.md) | model identity, selectors, planner inputs, `/v1/*` behavior |
+| [Request Lifecycle and Failure Modes](request-lifecycle-and-failure-modes.md) | end-to-end request path across routing, logging, pricing, and spend |
+| [Pricing Catalog and Accounting](pricing-catalog-and-accounting.md) | pricing inputs, effective-dated pricing rows, exact-only coverage |
+| [Budgets and Spending](budgets-and-spending.md) | spend ledger rules, hard limits, budget alerts, spend APIs |
+| [Observability and Request Logs](observability-and-request-logs.md) | OTLP model, request-log shape, payload policy, observability APIs |
+| [Data Relationships](data-relationships.md) | schema-level relationships and cross-table invariants |
+| [Admin Control Plane](admin-control-plane.md) | what the admin UI can do today and what is still preview-backed |
+| [../deploy/README.md](../deploy/README.md) | compose quick start for GHCR deploys |
+
+## Maintainer Guides
+
+| Document | Owns |
+| --- | --- |
+| [../CONTRIBUTING.md](../CONTRIBUTING.md) | contributor setup, repo workflow, CI map |
+| [Admin API Contract Workflow](admin-api-contract-workflow.md) | generated admin contract artifacts, drift rules, same-origin client boundary |
+| [End-to-End Contract Tests](e2e-contract-tests.md) | E2E harness intent, scope rules, extension rules |
+| [Release Process](release-process.md) | release authoring flow, tag-triggered CI, release verification |
+
+## Decision History
+
+Start here when the current docs are clear but the reasons are not.
+
+- [Identity Foundation](adr/2026-03-05-identity-foundation.md)
+- [Model Aliases and Provider Route Config](adr/2026-03-10-model-aliases-and-provider-route-config.md)
+- [Capability-Aware Route Gating](adr/2026-03-13-capability-aware-route-gating.md)
+- [OTLP Observability and Request Log Payloads](adr/2026-03-15-otlp-observability-and-request-log-payloads.md)
+- [Generated Admin API Contract and Typed Same-Origin Client](adr/2026-03-28-generated-admin-api-contract-and-typed-same-origin-client.md)
+- [Live Admin API-Key Management and Contract Coverage](adr/2026-03-29-live-admin-api-key-management-and-contract-coverage.md)
+
+## Internal Background
+
+The docs in [internal/](internal/) stay useful for maintainers:
+
+- front-end stack research
+- provider API research
+- inception architecture notes
+
+They are context, not policy.
+
+## Common Questions
+
+Use the map. Do not hunt through unrelated pages.
+
+- Model shows up but fails:
+  - [Model Routing and API Behavior](model-routing-and-api-behavior.md)
+  - [Request Lifecycle and Failure Modes](request-lifecycle-and-failure-modes.md)
+- Request succeeds but is not charged:
+  - [Pricing Catalog and Accounting](pricing-catalog-and-accounting.md)
+  - [Budgets and Spending](budgets-and-spending.md)
+  - [Request Lifecycle and Failure Modes](request-lifecycle-and-failure-modes.md)
+- Compose boot finishes but admin access is unclear:
+  - [Runtime Bootstrap and Access](runtime-bootstrap-and-access.md)
+  - [Deploy and Operations](deploy-and-operations.md)
+  - [Operator Runbooks](operator-runbooks.md)
+- Live admin contract changed and the UI drifted:
+  - [Admin API Contract Workflow](admin-api-contract-workflow.md)
+  - [End-to-End Contract Tests](e2e-contract-tests.md)
 
 ## Graph
 
@@ -35,16 +85,21 @@ graph TD
     root["README.md"]
     hub["docs/README.md"]
     contributing["CONTRIBUTING.md"]
+    bootstrap["runtime-bootstrap-and-access.md"]
+    ops["deploy-and-operations.md"]
+    runbooks["operator-runbooks.md"]
     config["configuration-reference.md"]
     identity["identity-and-access.md"]
+    oidc["oidc-and-sso-status.md"]
     routing["model-routing-and-api-behavior.md"]
-    spend["budgets-and-spending.md"]
+    lifecycle["request-lifecycle-and-failure-modes.md"]
     pricing["pricing-catalog-and-accounting.md"]
-    observability["observability-and-request-logs.md"]
+    spend["budgets-and-spending.md"]
+    obs["observability-and-request-logs.md"]
     data["data-relationships.md"]
     admin["admin-control-plane.md"]
+    contract["admin-api-contract-workflow.md"]
     e2e["e2e-contract-tests.md"]
-    ops["deploy-and-operations.md"]
     release["release-process.md"]
     deploy["deploy/README.md"]
     adrs["docs/adr/*"]
@@ -52,71 +107,38 @@ graph TD
 
     root --> hub
     root --> contributing
-    hub --> identity
+    hub --> bootstrap
+    hub --> ops
+    hub --> runbooks
     hub --> config
+    hub --> identity
+    hub --> oidc
     hub --> routing
-    hub --> spend
+    hub --> lifecycle
     hub --> pricing
-    hub --> observability
+    hub --> spend
+    hub --> obs
     hub --> data
     hub --> admin
+    hub --> contract
     hub --> e2e
-    hub --> ops
     hub --> release
     hub --> deploy
-    hub --> contributing
 
-    config --> routing
-    config --> pricing
-    identity --> data
-    routing --> data
-    spend --> data
-    pricing --> data
-    observability --> data
+    bootstrap --> identity
+    bootstrap --> config
+    ops --> bootstrap
+    runbooks --> bootstrap
+    runbooks --> ops
+    identity --> oidc
+    routing --> lifecycle
+    pricing --> lifecycle
+    spend --> lifecycle
+    obs --> lifecycle
+    admin --> contract
     admin --> identity
-    admin --> spend
-    admin --> observability
-    ops --> config
-    ops --> identity
+    e2e --> contract
     release --> ops
-
-    identity --> adrs
-    routing --> adrs
-    spend --> adrs
-    pricing --> adrs
-    observability --> adrs
+    hub --> adrs
     hub --> internal
 ```
-
-## Admin Surface Maturity
-
-The admin UI is intentionally mixed maturity right now:
-
-- Live gateway-backed surfaces: API Keys, Identity, Spend Controls, Usage Costs, Request Logs, auth/session flows
-- Preview-backed surfaces: Models
-
-That distinction is part of the current product contract. See [Admin Control Plane](admin-control-plane.md) for the operator-facing view and linked follow-up issues.
-
-## ADRs
-
-Use ADRs for decision history and rationale, not as the primary operator manual.
-
-Suggested starting points:
-
-- [Identity Foundation](adr/2026-03-05-identity-foundation.md)
-- [Admin Team Management Flow](adr/2026-03-08-admin-team-management-flow.md)
-- [Model Aliases and Provider Route Config](adr/2026-03-10-model-aliases-and-provider-route-config.md)
-- [Capability-Aware Route Gating](adr/2026-03-13-capability-aware-route-gating.md)
-- [V1 Runtime Simplification](adr/2026-03-15-v1-runtime-simplification.md)
-- [Spend Control Plane Reporting and Team Hard Limits](adr/2026-03-15-spend-control-plane-reporting-and-team-hard-limits.md)
-- [OTLP Observability and Request Log Payloads](adr/2026-03-15-otlp-observability-and-request-log-payloads.md)
-
-## Internal Background
-
-The docs in [internal/](internal/) remain useful background for maintainers:
-
-- front-end stack evaluation
-- provider API research
-- inception architecture and MVP framing
-
-Treat them as background context, not as the canonical operator contract.

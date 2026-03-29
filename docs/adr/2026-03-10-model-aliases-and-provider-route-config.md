@@ -9,6 +9,12 @@
   - [../model-routing-and-api-behavior.md](../model-routing-and-api-behavior.md)
   - [../data-relationships.md](../data-relationships.md)
 
+## Current state
+
+- [../model-routing-and-api-behavior.md](../model-routing-and-api-behavior.md)
+- [../configuration-reference.md](../configuration-reference.md)
+- [../request-lifecycle-and-failure-modes.md](../request-lifecycle-and-failure-modes.md)
+
 ## Context
 
 The gateway already separates two concepts:
