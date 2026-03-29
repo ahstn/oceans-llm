@@ -2965,6 +2965,74 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn truncated_terminal_stream_frame_records_failure_without_usage_accounting() {
+        let (calls, provider) = make_chat_provider(
+            "openai-prod",
+            MockChatResult::Value(json!({
+                "id": "unused-for-stream",
+                "object": "chat.completion",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "unused"}, "finish_reason":"stop"}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+            })),
+            vec![
+                "data: {\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":5,\"total_tokens\":9}}\n\n"
+                    .to_string(),
+                "data: {\"choices\":[{\"delta\":{\"content\":\"oops\"}".to_string(),
+            ],
+            ProviderCapabilities::openai_compat_baseline(),
+        );
+        let mut registry = gateway_core::ProviderRegistry::new();
+        registry.register(Arc::new(provider));
+
+        let (app, raw_key, db_path, metrics) = build_default_test_app_with_metrics(registry).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .body(Body::from(
+                        json!({
+                            "model": "fast",
+                            "stream": true,
+                            "messages": [{"role":"user","content":"ping"}]
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        let transcript = String::from_utf8(body.to_vec()).expect("utf8");
+        assert!(transcript.contains("\"prompt_tokens\":4"));
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+
+        let logs = load_request_logs(&db_path).await;
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].provider_key, "openai-prod");
+        assert_eq!(logs[0].status_code, Some(502));
+        assert_eq!(logs[0].error_code.as_deref(), Some("stream_parse_error"));
+        assert_eq!(logs[0].metadata["stream"], Value::Bool(true));
+        assert_eq!(logs[0].metadata["operation"], "chat_completions");
+        assert!(logs[0].prompt_tokens.is_none());
+        assert!(logs[0].completion_tokens.is_none());
+        assert!(logs[0].total_tokens.is_none());
+        assert!(load_usage_ledger(&db_path).await.is_empty());
+
+        let snapshot = metrics.test_snapshot();
+        assert_eq!(snapshot.requests, 1);
+        assert_eq!(snapshot.request_outcomes.get("upstream_error"), Some(&1));
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn admin_identity_routes_require_authenticated_session() {
         let (app, _, _) =
             build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;

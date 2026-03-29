@@ -670,6 +670,7 @@ fn wrap_stream_with_request_logging(
                 Some((Err(std::io::Error::other(error_message)), state))
             }
             None => {
+                state.collector.finish();
                 let failure = state.collector.failure().cloned();
                 if failure.is_none() {
                     let labels = ChatMetricLabels {
