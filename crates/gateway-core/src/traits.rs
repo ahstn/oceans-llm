@@ -9,13 +9,14 @@ use uuid::Uuid;
 
 use crate::{
     domain::{
-        ApiKeyRecord, BudgetAlertDeliveryRecord, BudgetAlertDispatchTask, BudgetAlertHistoryPage,
-        BudgetAlertHistoryQuery, BudgetAlertRecord, GatewayModel, ModelPricingRecord, ModelRoute,
-        Money4, PricingCatalogCacheRecord, ProviderCapabilities, ProviderConnection,
-        ProviderRequestContext, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
-        RequestLogQuery, RequestLogRecord, SpendDailyAggregateRecord, SpendModelAggregateRecord,
-        SpendOwnerAggregateRecord, TeamBudgetRecord, TeamMembershipRecord, TeamRecord,
-        UsageLedgerRecord, UserBudgetRecord, UserRecord,
+        ApiKeyRecord, BudgetAlertDeliveryRecord, BudgetAlertDispatchTask,
+        BudgetAlertHistoryPage, BudgetAlertHistoryQuery, BudgetAlertRecord, GatewayModel,
+        ModelPricingRecord, ModelRoute, Money4, NewApiKeyRecord, PricingCatalogCacheRecord,
+        ProviderCapabilities, ProviderConnection, ProviderRequestContext, RequestLogDetail,
+        RequestLogPage, RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord,
+        SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord,
+        TeamBudgetRecord, TeamMembershipRecord, TeamRecord, UsageLedgerRecord,
+        UserBudgetRecord, UserRecord,
     },
     error::{ProviderError, RouteError, StoreError},
     protocol::core::{ChatRequest, EmbeddingsRequest},
@@ -32,7 +33,29 @@ pub trait ApiKeyRepository: Send + Sync {
 }
 
 #[async_trait]
+pub trait AdminApiKeyRepository: Send + Sync {
+    async fn list_api_keys(&self) -> Result<Vec<ApiKeyRecord>, StoreError>;
+
+    async fn get_api_key_by_id(&self, api_key_id: Uuid) -> Result<Option<ApiKeyRecord>, StoreError>;
+
+    async fn create_api_key(&self, api_key: &NewApiKeyRecord) -> Result<ApiKeyRecord, StoreError>;
+
+    async fn replace_api_key_model_grants(
+        &self,
+        api_key_id: Uuid,
+        model_ids: &[Uuid],
+    ) -> Result<(), StoreError>;
+
+    async fn revoke_api_key(
+        &self,
+        api_key_id: Uuid,
+        revoked_at: OffsetDateTime,
+    ) -> Result<bool, StoreError>;
+}
+
+#[async_trait]
 pub trait ModelRepository: Send + Sync {
+    async fn list_models(&self) -> Result<Vec<GatewayModel>, StoreError>;
     async fn get_model_by_key(&self, model_key: &str) -> Result<Option<GatewayModel>, StoreError>;
     async fn list_models_for_api_key(
         &self,
@@ -74,6 +97,13 @@ pub trait IdentityRepository: Send + Sync {
             "list_team_memberships is not implemented for this repository".to_string(),
         ))
     }
+}
+
+#[async_trait]
+pub trait AdminIdentityRepository: Send + Sync {
+    async fn list_identity_users(&self) -> Result<Vec<crate::IdentityUserRecord>, StoreError>;
+    async fn list_active_teams(&self) -> Result<Vec<TeamRecord>, StoreError>;
+    async fn list_teams(&self) -> Result<Vec<TeamRecord>, StoreError>;
 }
 
 #[async_trait]
@@ -260,7 +290,8 @@ pub trait BudgetAlertRepository: Send + Sync {
     ) -> Result<(), StoreError> {
         let _ = (delivery_id, failure_reason, failed_at);
         Err(StoreError::Unexpected(
-            "mark_budget_alert_delivery_failed is not implemented for this repository".to_string(),
+            "mark_budget_alert_delivery_failed is not implemented for this repository"
+                .to_string(),
         ))
     }
 }

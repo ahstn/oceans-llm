@@ -2,6 +2,33 @@ use super::*;
 
 #[async_trait]
 impl ModelRepository for LibsqlStore {
+    async fn list_models(&self) -> Result<Vec<GatewayModel>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT gm.id, gm.model_key, alias_target.model_key, gm.description, gm.tags_json, gm.rank
+                FROM gateway_models gm
+                LEFT JOIN gateway_models alias_target ON alias_target.id = gm.alias_target_model_id
+                ORDER BY gm.rank ASC, gm.model_key ASC
+                "#,
+                (),
+            )
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?;
+
+        let mut models = Vec::new();
+        while let Some(row) = rows
+            .next()
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?
+        {
+            models.push(decode_gateway_model(&row)?);
+        }
+
+        Ok(models)
+    }
+
     async fn get_model_by_key(&self, model_key: &str) -> Result<Option<GatewayModel>, StoreError> {
         let mut rows = self
             .connection

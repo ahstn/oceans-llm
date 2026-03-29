@@ -92,8 +92,8 @@ graph TD
 
 The admin UI is intentionally mixed maturity right now:
 
-- Live gateway-backed surfaces: Identity, Spend Controls, Usage Costs, Request Logs, auth/session flows
-- Preview-backed surfaces: API Keys, Models
+- Live gateway-backed surfaces: API Keys, Identity, Spend Controls, Usage Costs, Request Logs, auth/session flows
+- Preview-backed surfaces: Models
 
 That distinction is part of the current product contract. See [Admin Control Plane](admin-control-plane.md) for the operator-facing view and linked follow-up issues.
 

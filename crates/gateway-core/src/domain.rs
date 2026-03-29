@@ -392,19 +392,56 @@ impl ApiKeyOwnerKind {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApiKeyStatus {
+    Active,
+    Revoked,
+}
+
+impl ApiKeyStatus {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Revoked => "revoked",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "active" => Some(Self::Active),
+            "revoked" => Some(Self::Revoked),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiKeyRecord {
     pub id: Uuid,
     pub public_id: String,
     pub secret_hash: String,
     pub name: String,
-    pub status: String,
+    pub status: ApiKeyStatus,
     pub owner_kind: ApiKeyOwnerKind,
     pub owner_user_id: Option<Uuid>,
     pub owner_team_id: Option<Uuid>,
     pub created_at: OffsetDateTime,
     pub last_used_at: Option<OffsetDateTime>,
     pub revoked_at: Option<OffsetDateTime>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewApiKeyRecord {
+    pub name: String,
+    pub public_id: String,
+    pub secret_hash: String,
+    pub owner_kind: ApiKeyOwnerKind,
+    pub owner_user_id: Option<Uuid>,
+    pub owner_team_id: Option<Uuid>,
+    pub created_at: OffsetDateTime,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

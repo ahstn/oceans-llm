@@ -1,3 +1,4 @@
+pub mod admin_api_keys;
 pub mod authenticator;
 pub mod budget_alerts;
 pub mod budget_guard;
@@ -9,6 +10,10 @@ pub mod request_logging;
 pub mod route_planner;
 pub mod service;
 
+pub use admin_api_keys::{
+    AdminApiKeyModelOption, AdminApiKeyService, AdminApiKeySummary, AdminApiKeyTeamOwner,
+    AdminApiKeyUserOwner, AdminApiKeysPayload, CreateAdminApiKeyInput, CreateAdminApiKeyResult,
+};
 pub use authenticator::{Authenticator, hash_gateway_key_secret, verify_gateway_key_secret};
 pub use budget_alerts::{
     BUDGET_ALERT_THRESHOLD_BPS, BudgetAlertEmail, BudgetAlertSendResult, BudgetAlertSender,

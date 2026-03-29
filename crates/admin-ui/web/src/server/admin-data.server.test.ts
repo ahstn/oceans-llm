@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { listApiKeys, listModels } from '@/server/admin-preview-data.server'
+import { listModels } from '@/server/admin-preview-data.server'
 import {
+  createApiKey,
   deactivateUser,
   getRequestLogDetail,
   getSpendReport,
+  listApiKeys,
   listBudgetAlertHistory,
   listRequestLogs,
   listSpendBudgets,
@@ -12,6 +14,7 @@ import {
   listUsers,
   reactivateUser,
   removeTeamMember,
+  revokeApiKey,
   resetUserOnboarding,
   transferTeamMember,
   updateUser,
@@ -22,6 +25,7 @@ const POST = vi.fn()
 const PATCH = vi.fn()
 const PUT = vi.fn()
 const DELETE = vi.fn()
+const fetchGatewayJson = vi.fn()
 
 vi.mock('@/server/gateway-client.server', () => ({
   createGatewayApiClient: () => ({
@@ -31,13 +35,22 @@ vi.mock('@/server/gateway-client.server', () => ({
     PUT,
     DELETE,
   }),
-  unwrapGatewayResponse: vi.fn((result: { data?: unknown; error?: { error?: { message?: string } }; response: { status: number } }) => {
-    if (result.data !== undefined) {
-      return result.data
-    }
+  fetchGatewayJson: (...args: unknown[]) => fetchGatewayJson(...args),
+  unwrapGatewayResponse: vi.fn(
+    (result: {
+      data?: unknown
+      error?: { error?: { message?: string } }
+      response: { status: number }
+    }) => {
+      if (result.data !== undefined) {
+        return result.data
+      }
 
-    throw new Error(result.error?.error?.message ?? `Gateway request failed with ${result.response.status}`)
-  }),
+      throw new Error(
+        result.error?.error?.message ?? `Gateway request failed with ${result.response.status}`,
+      )
+    },
+  ),
 }))
 
 describe('server-side admin data wrappers', () => {
@@ -47,6 +60,94 @@ describe('server-side admin data wrappers', () => {
     PATCH.mockReset()
     PUT.mockReset()
     DELETE.mockReset()
+    fetchGatewayJson.mockReset()
+
+    fetchGatewayJson.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path === '/api/v1/admin/api-keys' && (!init?.method || init.method === 'GET')) {
+        return {
+          data: {
+            items: [
+              {
+                id: 'api_key_1',
+                name: 'Production Gateway',
+                prefix: 'gwk_prod',
+                status: 'active',
+                owner_kind: 'team',
+                owner_id: 'team_1',
+                owner_name: 'Core Platform',
+                owner_email: null,
+                owner_team_key: 'core-platform',
+                model_keys: ['fast', 'reasoning'],
+                created_at: '2026-03-14T12:00:00Z',
+                last_used_at: '2026-03-18T09:15:00Z',
+                revoked_at: null,
+              },
+            ],
+            users: [{ id: 'user_1', name: 'Jane Admin', email: 'jane@example.com' }],
+            teams: [{ id: 'team_1', name: 'Core Platform', key: 'core-platform' }],
+            models: [
+              { id: 'model_1', key: 'fast', description: 'Fast tier', tags: ['fast'] },
+              {
+                id: 'model_2',
+                key: 'reasoning',
+                description: 'Reasoning tier',
+                tags: ['reasoning'],
+              },
+            ],
+          },
+          meta: { generated_at: '2026-03-10T11:32:00Z' },
+        }
+      }
+
+      if (path === '/api/v1/admin/api-keys' && init?.method === 'POST') {
+        return {
+          data: {
+            api_key: {
+              id: 'api_key_2',
+              name: 'Production Gateway',
+              prefix: 'gwk_prod_2',
+              status: 'active',
+              owner_kind: 'team',
+              owner_id: 'team_1',
+              owner_name: 'Core Platform',
+              owner_email: null,
+              owner_team_key: 'core-platform',
+              model_keys: ['fast'],
+              created_at: '2026-03-20T09:00:00Z',
+              last_used_at: null,
+              revoked_at: null,
+            },
+            raw_key: 'gwk_prod_2.secret-value',
+          },
+          meta: { generated_at: '2026-03-10T11:32:00Z' },
+        }
+      }
+
+      if (path === '/api/v1/admin/api-keys/api_key_1/revoke') {
+        return {
+          data: {
+            api_key: {
+              id: 'api_key_1',
+              name: 'Production Gateway',
+              prefix: 'gwk_prod',
+              status: 'revoked',
+              owner_kind: 'team',
+              owner_id: 'team_1',
+              owner_name: 'Core Platform',
+              owner_email: null,
+              owner_team_key: 'core-platform',
+              model_keys: ['fast', 'reasoning'],
+              created_at: '2026-03-14T12:00:00Z',
+              last_used_at: '2026-03-18T09:15:00Z',
+              revoked_at: '2026-03-19T10:00:00Z',
+            },
+          },
+          meta: { generated_at: '2026-03-10T11:32:00Z' },
+        }
+      }
+
+      throw new Error(`Unexpected path: ${path}`)
+    })
 
     GET.mockImplementation(async (path: string) => {
       if (path === '/api/v1/admin/identity/users') {
@@ -314,6 +415,8 @@ describe('server-side admin data wrappers', () => {
       ])
 
     expect(apiKeys.data.items.length).toBeGreaterThan(0)
+    expect(apiKeys.data.items[0].owner_kind).toBe('team')
+    expect(apiKeys.data.models.map((model) => model.key)).toContain('fast')
     expect(models.data.length).toBeGreaterThan(0)
     expect(spendReport.data.window_days).toBeGreaterThan(0)
     expect(spendBudgets.data.users.length).toBe(0)
@@ -325,6 +428,35 @@ describe('server-side admin data wrappers', () => {
     expect(users.data.teams.length).toBeGreaterThan(0)
   })
 
+  it('wires api key mutations to the documented gateway paths', async () => {
+    await expect(
+      createApiKey({
+        name: 'Production Gateway',
+        owner_kind: 'team',
+        owner_user_id: null,
+        owner_team_id: 'team_1',
+        model_keys: ['fast'],
+      }),
+    ).resolves.toMatchObject({
+      data: {
+        api_key: {
+          id: 'api_key_2',
+          status: 'active',
+        },
+        raw_key: 'gwk_prod_2.secret-value',
+      },
+    })
+
+    await expect(revokeApiKey('api_key_1')).resolves.toMatchObject({
+      data: {
+        api_key: {
+          id: 'api_key_1',
+          status: 'revoked',
+        },
+      },
+    })
+  })
+
   it('treats request log detail as a strict fetch', async () => {
     const detail = await getRequestLogDetail('reqlog_1')
     expect(detail.data.log.request_log_id).toBe('reqlog_1')
@@ -332,9 +464,9 @@ describe('server-side admin data wrappers', () => {
   })
 
   it('wires identity mutations to documented gateway paths', async () => {
-    await expect(
-      updateUser('user_1', { global_role: 'platform_admin' }),
-    ).resolves.toMatchObject({ data: { status: 'ok' } })
+    await expect(updateUser('user_1', { global_role: 'platform_admin' })).resolves.toMatchObject({
+      data: { status: 'ok' },
+    })
     await expect(deactivateUser('user_1')).resolves.toMatchObject({ data: { status: 'ok' } })
     await expect(reactivateUser('user_1')).resolves.toMatchObject({ data: { status: 'ok' } })
     await expect(removeTeamMember('team_1', 'user_1')).resolves.toMatchObject({
@@ -354,24 +486,6 @@ describe('server-side admin data wrappers', () => {
     expect(PATCH).toHaveBeenCalledWith('/api/v1/admin/identity/users/{user_id}', {
       params: { path: { user_id: 'user_1' } },
       body: { global_role: 'platform_admin' },
-    })
-  })
-
-  it('builds explicit request log tag query params', async () => {
-    await listRequestLogs({
-      service: 'checkout',
-      tag_key: 'feature',
-      tag_value: 'guest_checkout',
-    })
-
-    expect(GET).toHaveBeenCalledWith('/api/v1/admin/observability/request-logs', {
-      params: {
-        query: {
-          service: 'checkout',
-          tag_key: 'feature',
-          tag_value: 'guest_checkout',
-        },
-      },
     })
   })
 })

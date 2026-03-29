@@ -63,8 +63,8 @@ export function AppShell({ children }: AppShellProps) {
               Local-only preview mode
             </p>
             <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-              Identity and spend controls are gateway-backed. API keys and model inventory still use
-              local preview data in this environment.
+              API keys, identity, spend, and observability are gateway-backed. Model inventory is
+              still preview-only in this environment.
             </p>
           </div>
         </aside>

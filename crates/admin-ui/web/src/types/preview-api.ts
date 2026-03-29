@@ -5,14 +5,6 @@ export interface Paginated<T> {
   total: number
 }
 
-export interface ApiKeyView {
-  id: string
-  name: string
-  prefix: string
-  createdAt: string
-  status: 'active' | 'revoked'
-}
-
 export interface ModelView {
   id: string
   provider: string

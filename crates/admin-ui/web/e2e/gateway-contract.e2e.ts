@@ -318,3 +318,55 @@ test('identity users endpoints support live create-and-list flows', async ({
     ),
   ).toBe(true)
 })
+
+test('admin ui can create and revoke an api key that gates live gateway access', async ({
+  request,
+  page,
+  baseURL,
+}) => {
+  const root = baseURL ?? requireEnv('E2E_BASE_URL')
+  await ensureAdminSession(page, request, root)
+
+  const keyName = `E2E Live Key ${Date.now()}`
+
+  await page.goto('/admin/api-keys')
+  await page.getByRole('button', { name: 'Create API key' }).click()
+  await page.getByLabel('Name').fill(keyName)
+  await page.getByRole('combobox', { name: 'Owner type' }).click()
+  await page.getByRole('option', { name: 'Team' }).click()
+  await page.getByRole('combobox', { name: 'Owner team' }).click()
+  await page.getByRole('option', { name: /System Legacy/ }).click()
+  await page.getByRole('checkbox', { name: 'fast E2E test route' }).check()
+  await page.getByRole('button', { name: 'Create API key' }).last().click()
+
+  const rawKey = (await page.getByTestId('new-api-key-raw-key').textContent())?.trim()
+  expect(rawKey).toBeTruthy()
+
+  const modelsResponse = await request.get(`${root}/v1/models`, {
+    headers: {
+      authorization: `Bearer ${rawKey}`,
+    },
+  })
+  expect(modelsResponse.status()).toBe(200)
+  const modelsBody = (await modelsResponse.json()) as {
+    data: Array<{ id: string }>
+  }
+  expect(modelsBody.data.some((model) => model.id === 'fast')).toBe(true)
+
+  const row = page.locator('tr', { hasText: keyName }).first()
+  await expect(row).toBeVisible()
+  await row.getByRole('button', { name: 'Revoke' }).click()
+  await page.getByRole('button', { name: 'Revoke key' }).click()
+  await expect(row.getByText('revoked')).toBeVisible()
+
+  const revokedResponse = await request.get(`${root}/v1/models`, {
+    headers: {
+      authorization: `Bearer ${rawKey}`,
+    },
+  })
+  expect(revokedResponse.status()).toBe(401)
+  const revokedBody = (await revokedResponse.json()) as {
+    error: { code: string }
+  }
+  expect(revokedBody.error.code).toBe('api_key_revoked')
+})

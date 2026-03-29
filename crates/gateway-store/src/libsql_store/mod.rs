@@ -14,20 +14,21 @@ use std::sync::Arc;
 use anyhow::Context;
 use async_trait::async_trait;
 use gateway_core::{
-    ApiKeyOwnerKind, ApiKeyRecord, ApiKeyRepository, AuthMode, BudgetAlertChannel,
-    BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus, BudgetAlertDispatchTask,
-    BudgetAlertHistoryPage, BudgetAlertHistoryQuery, BudgetAlertHistoryRecord, BudgetAlertRecord,
-    BudgetAlertRepository, BudgetCadence, BudgetRepository, GatewayModel, GlobalRole,
-    IdentityRepository, IdentityUserRecord, MembershipRole, ModelAccessMode, ModelPricingRecord,
-    ModelRepository, ModelRoute, Money4, OidcProviderRecord, PasswordInvitationRecord,
+    AdminApiKeyRepository, AdminIdentityRepository, ApiKeyOwnerKind, ApiKeyRecord,
+    ApiKeyRepository, ApiKeyStatus, AuthMode, BudgetAlertChannel, BudgetAlertDeliveryRecord,
+    BudgetAlertDeliveryStatus, BudgetAlertDispatchTask, BudgetAlertHistoryPage,
+    BudgetAlertHistoryQuery, BudgetAlertHistoryRecord, BudgetAlertRecord, BudgetAlertRepository,
+    BudgetCadence, BudgetRepository, GatewayModel, GlobalRole, IdentityRepository,
+    IdentityUserRecord, MembershipRole, ModelAccessMode, ModelPricingRecord, ModelRepository,
+    ModelRoute, Money4, NewApiKeyRecord, OidcProviderRecord, PasswordInvitationRecord,
     PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
-    PricingProvenance, ProviderConnection, ProviderRepository, RequestLogDetail, RequestLogPage,
-    RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository,
-    SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY,
-    SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord, StoreError,
-    StoreHealth, TeamBudgetRecord, TeamMembershipRecord, TeamRecord, UsageLedgerRecord,
-    UsagePricingStatus, UserBudgetRecord, UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord,
-    UserSessionRecord, UserStatus,
+    PricingProvenance, ProviderConnection, ProviderRepository, RequestLogDetail,
+    RequestLogPage, RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord,
+    RequestLogRepository, SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SYSTEM_LEGACY_TEAM_ID,
+    SYSTEM_LEGACY_TEAM_KEY, SpendDailyAggregateRecord, SpendModelAggregateRecord,
+    SpendOwnerAggregateRecord, StoreError, StoreHealth, TeamBudgetRecord,
+    TeamMembershipRecord, TeamRecord, UsageLedgerRecord, UsagePricingStatus, UserBudgetRecord,
+    UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -430,5 +431,20 @@ impl GatewayStore for LibsqlStore {
         api_keys: &[gateway_core::SeedApiKey],
     ) -> Result<(), StoreError> {
         self.seed_from_inputs(providers, models, api_keys).await
+    }
+}
+
+#[async_trait]
+impl AdminIdentityRepository for LibsqlStore {
+    async fn list_identity_users(&self) -> Result<Vec<IdentityUserRecord>, StoreError> {
+        Self::list_identity_users(self).await
+    }
+
+    async fn list_active_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
+        Self::list_active_teams(self).await
+    }
+
+    async fn list_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
+        Self::list_teams(self).await
     }
 }

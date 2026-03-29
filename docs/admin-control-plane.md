@@ -2,7 +2,7 @@
 
 `Owns`: the current admin UI capability map, live versus preview-backed surfaces, and operator expectations for the control plane.
 `Depends on`: [identity-and-access.md](identity-and-access.md), [budgets-and-spending.md](budgets-and-spending.md), [observability-and-request-logs.md](observability-and-request-logs.md)
-`See also`: [e2e-contract-tests.md](e2e-contract-tests.md), [../crates/gateway/src/http/admin_contract.rs](../crates/gateway/src/http/admin_contract.rs), [../crates/gateway/openapi/admin-api.json](../crates/gateway/openapi/admin-api.json), [../crates/admin-ui/web/src/generated/admin-api.ts](../crates/admin-ui/web/src/generated/admin-api.ts)
+`See also`: [e2e-contract-tests.md](e2e-contract-tests.md), [../crates/gateway/src/http/admin_contract.rs](../crates/gateway/src/http/admin_contract.rs), [../crates/gateway/src/http/api_keys.rs](../crates/gateway/src/http/api_keys.rs), [../crates/gateway-service/src/admin_api_keys.rs](../crates/gateway-service/src/admin_api_keys.rs), [../crates/gateway-core/src/traits.rs](../crates/gateway-core/src/traits.rs), [../crates/admin-ui/web/src/routes/api-keys.tsx](../crates/admin-ui/web/src/routes/api-keys.tsx), [../crates/admin-ui/web/src/routes/api-keys/-use-api-keys-page.ts](../crates/admin-ui/web/src/routes/api-keys/-use-api-keys-page.ts), [../crates/gateway/openapi/admin-api.json](../crates/gateway/openapi/admin-api.json), [../crates/admin-ui/web/src/generated/admin-api.ts](../crates/admin-ui/web/src/generated/admin-api.ts)
 
 This document describes what operators can actually do in the admin UI today.
 
@@ -28,6 +28,7 @@ For local direct UI dev on `:3001`, the server-side gateway client falls back to
 These areas are backed by real gateway APIs today:
 
 - sign-in, session lookup, and password rotation
+- API key inventory, creation, and revocation
 - identity users and lifecycle management
 - identity teams and member transfer/removal workflows
 - password invites and onboarding links
@@ -42,14 +43,12 @@ Those live surfaces are expected to track the generated gateway contract directl
 
 These pages are still powered by local preview data in the admin UI:
 
-- API Keys
 - Models
 
 That is not just an implementation detail. It affects both operator expectations and test scope.
 
 Tracked follow-ups:
 
-- [issue #26](https://github.com/ahstn/oceans-llm/issues/26): replace preview API-key data with live management
 - [issue #27](https://github.com/ahstn/oceans-llm/issues/27): replace preview model inventory with live routing and provider state
 
 ## Operator-Visible Maturity Cues
@@ -57,10 +56,32 @@ Tracked follow-ups:
 The admin UI currently teaches this maturity split in live copy and tests:
 
 - identity and spend surfaces are live gateway-backed contracts
-- API keys and models are intentionally preview-backed in this slice
+- models remain intentionally preview-backed in this slice
 
 That message is part of the operator contract and should be treated as owned by this page rather than only by UI fixture code or E2E assertions.
 
+## API Key Workflows Available Today
+
+Operators can currently:
+
+- list API keys with owner summary, grant list, issuance timestamps, and revoke state
+- create a new key for an explicit user or team owner
+- grant access to an explicit set of gateway models at creation time
+- copy the raw key exactly once from the create response
+- revoke a key so the runtime rejects it immediately
+
+Current scope limits:
+
+- keys cannot be renamed after creation
+- granted models are fixed at create time in this slice
+- revoked keys are not restorable
+- model selection is limited to the current live gateway model catalog
+
+Implementation boundary:
+
+- the HTTP layer at [../crates/gateway/src/http/api_keys.rs](../crates/gateway/src/http/api_keys.rs) owns session auth, request parsing, and response envelopes
+- the lifecycle policy lives in [../crates/gateway-service/src/admin_api_keys.rs](../crates/gateway-service/src/admin_api_keys.rs)
+- admin persistence is split between runtime auth in `ApiKeyRepository` and control-plane lifecycle in `AdminApiKeyRepository` inside [../crates/gateway-core/src/traits.rs](../crates/gateway-core/src/traits.rs)
 ## Identity Workflows Available Today
 
 Operators can currently:

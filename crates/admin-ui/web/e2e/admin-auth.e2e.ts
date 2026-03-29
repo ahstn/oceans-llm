@@ -33,7 +33,7 @@ test('bootstrap admin must rotate the password before accessing the control plan
   await expect(page.getByText('Oceans Gateway')).toBeVisible()
   await expect(
     page.getByText(
-      'Identity and spend controls are gateway-backed. API keys and model inventory still use local preview data in this environment.',
+      'API keys, identity, spend, and observability are gateway-backed. Model inventory is still preview-only in this environment.',
     ),
   ).toBeVisible()
 

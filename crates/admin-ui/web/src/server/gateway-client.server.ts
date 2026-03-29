@@ -118,6 +118,21 @@ async function gatewayFetch(input: RequestInfo | URL, init?: RequestInit) {
   return response
 }
 
+export async function fetchGatewayJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await gatewayFetch(new URL(path, resolveGatewayOrigin()), init)
+  if (!response.ok) {
+    let errorBody: unknown
+    try {
+      errorBody = await response.json()
+    } catch {
+      errorBody = undefined
+    }
+    throw new Error(readGatewayErrorBody(errorBody, response.status))
+  }
+
+  return (await response.json()) as T
+}
+
 export function createGatewayApiClient() {
   return createClient<GatewayPaths>({
     baseUrl: resolveGatewayOrigin(),

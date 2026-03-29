@@ -2,8 +2,9 @@ use std::path::PathBuf;
 
 use async_trait::async_trait;
 use gateway_core::{
-    ApiKeyRepository, AuthMode, BudgetAlertRepository, BudgetRepository, GlobalRole,
-    IdentityRepository, IdentityUserRecord, MembershipRole, ModelRepository, OidcProviderRecord,
+    AdminApiKeyRepository, AdminIdentityRepository, ApiKeyRepository, AuthMode,
+    BudgetAlertRepository, BudgetRepository, GlobalRole, IdentityRepository,
+    IdentityUserRecord, MembershipRole, ModelRepository, OidcProviderRecord,
     PasswordInvitationRecord, PricingCatalogRepository, ProviderRepository, RequestLogRepository,
     SeedApiKey, SeedModel, SeedProvider, StoreError, StoreHealth, TeamMembershipRecord, TeamRecord,
     UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
@@ -32,6 +33,7 @@ impl StoreConnectionOptions {
 #[async_trait]
 pub trait GatewayStore:
     ApiKeyRepository
+    + AdminApiKeyRepository
     + ModelRepository
     + ProviderRepository
     + IdentityRepository
@@ -299,7 +301,48 @@ impl ApiKeyRepository for AnyStore {
 }
 
 #[async_trait]
+impl AdminApiKeyRepository for AnyStore {
+    async fn list_api_keys(&self) -> Result<Vec<gateway_core::ApiKeyRecord>, StoreError> {
+        dispatch_store!(self, list_api_keys())
+    }
+
+    async fn get_api_key_by_id(
+        &self,
+        api_key_id: Uuid,
+    ) -> Result<Option<gateway_core::ApiKeyRecord>, StoreError> {
+        dispatch_store!(self, get_api_key_by_id(api_key_id))
+    }
+
+    async fn create_api_key(
+        &self,
+        api_key: &gateway_core::NewApiKeyRecord,
+    ) -> Result<gateway_core::ApiKeyRecord, StoreError> {
+        dispatch_store!(self, create_api_key(api_key))
+    }
+
+    async fn replace_api_key_model_grants(
+        &self,
+        api_key_id: Uuid,
+        model_ids: &[Uuid],
+    ) -> Result<(), StoreError> {
+        dispatch_store!(self, replace_api_key_model_grants(api_key_id, model_ids))
+    }
+
+    async fn revoke_api_key(
+        &self,
+        api_key_id: Uuid,
+        revoked_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        dispatch_store!(self, revoke_api_key(api_key_id, revoked_at))
+    }
+}
+
+#[async_trait]
 impl ModelRepository for AnyStore {
+    async fn list_models(&self) -> Result<Vec<gateway_core::GatewayModel>, StoreError> {
+        dispatch_store!(self, list_models())
+    }
+
     async fn get_model_by_key(
         &self,
         model_key: &str,
@@ -368,6 +411,21 @@ impl IdentityRepository for AnyStore {
         team_id: Uuid,
     ) -> Result<Vec<TeamMembershipRecord>, StoreError> {
         dispatch_store!(self, list_team_memberships(team_id))
+    }
+}
+
+#[async_trait]
+impl AdminIdentityRepository for AnyStore {
+    async fn list_identity_users(&self) -> Result<Vec<IdentityUserRecord>, StoreError> {
+        dispatch_store!(self, list_identity_users())
+    }
+
+    async fn list_active_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
+        dispatch_store!(self, list_active_teams())
+    }
+
+    async fn list_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
+        dispatch_store!(self, list_teams())
     }
 }
 

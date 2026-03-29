@@ -1,9 +1,12 @@
 import type {
   AddTeamMembersInput,
   ApiEnvelope,
+  ApiKeysPayload,
   AuthSessionView,
   BudgetAlertHistoryView,
   ChangePasswordInput,
+  CreateApiKeyInput,
+  CreateApiKeyResult,
   CreateTeamInput,
   CreateUserInput,
   CreateUserResult,
@@ -17,6 +20,7 @@ import type {
   RequestLogDetailView,
   RequestLogFiltersInput,
   RequestLogPageView,
+  RevokeApiKeyResult,
   SpendBudgetsView,
   SpendOwnerKind,
   SpendReportView,
@@ -27,7 +31,36 @@ import type {
   UpsertBudgetInput,
   UpsertBudgetResultView,
 } from '@/types/api'
-import { createGatewayApiClient, unwrapGatewayResponse } from '@/server/gateway-client.server'
+import {
+  createGatewayApiClient,
+  fetchGatewayJson,
+  unwrapGatewayResponse,
+} from '@/server/gateway-client.server'
+
+export async function listApiKeys(): Promise<ApiEnvelope<ApiKeysPayload>> {
+  return fetchGatewayJson<ApiEnvelope<ApiKeysPayload>>('/api/v1/admin/api-keys')
+}
+
+export async function createApiKey(
+  input: CreateApiKeyInput,
+): Promise<ApiEnvelope<CreateApiKeyResult>> {
+  return fetchGatewayJson<ApiEnvelope<CreateApiKeyResult>>('/api/v1/admin/api-keys', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+}
+
+export async function revokeApiKey(
+  apiKeyId: string,
+): Promise<ApiEnvelope<RevokeApiKeyResult>> {
+  return fetchGatewayJson<ApiEnvelope<RevokeApiKeyResult>>(
+    `/api/v1/admin/api-keys/${apiKeyId}/revoke`,
+    {
+      method: 'POST',
+    },
+  )
+}
 
 export async function getSpendReport(params?: {
   days?: number
