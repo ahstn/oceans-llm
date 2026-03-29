@@ -12,20 +12,21 @@ mod support;
 use anyhow::Context;
 use async_trait::async_trait;
 use gateway_core::{
-    ApiKeyOwnerKind, ApiKeyRecord, ApiKeyRepository, AuthMode, BudgetAlertChannel,
+    ApiKeyOwnerKind, ApiKeyRecord, ApiKeyRepository, ApiKeyStatus, AuthMode, BudgetAlertChannel,
     BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus, BudgetAlertDispatchTask,
-    BudgetAlertHistoryPage, BudgetAlertHistoryQuery, BudgetAlertHistoryRecord, BudgetAlertRecord,
-    BudgetAlertRepository, BudgetCadence, BudgetRepository, GatewayModel, GlobalRole,
-    IdentityRepository, IdentityUserRecord, MembershipRole, ModelAccessMode, ModelPricingRecord,
-    ModelRepository, ModelRoute, Money4, OidcProviderRecord, PasswordInvitationRecord,
-    PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
-    PricingProvenance, ProviderConnection, ProviderRepository, RequestLogDetail, RequestLogPage,
-    RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository,
-    SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY,
-    SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord, StoreError,
-    StoreHealth, TeamBudgetRecord, TeamMembershipRecord, TeamRecord, UsageLedgerRecord,
-    UsagePricingStatus, UserBudgetRecord, UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord,
-    UserSessionRecord, UserStatus,
+    BudgetAlertHistoryPage, BudgetAlertHistoryQuery, BudgetAlertHistoryRecord,
+    BudgetAlertRecord, BudgetAlertRepository, BudgetCadence, BudgetRepository, GatewayModel,
+    GlobalRole, IdentityRepository, IdentityUserRecord, MembershipRole, ModelAccessMode,
+    ModelPricingRecord, ModelRepository, ModelRoute, Money4, OidcProviderRecord,
+    NewApiKeyRecord, PasswordInvitationRecord, PricingCatalogCacheRecord, PricingCatalogRepository,
+    PricingLimits, PricingModalities, PricingProvenance, ProviderConnection,
+    ProviderRepository, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
+    RequestLogQuery, RequestLogRecord, RequestLogRepository, SYSTEM_BOOTSTRAP_ADMIN_USER_ID,
+    SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY, SpendDailyAggregateRecord,
+    SpendModelAggregateRecord, SpendOwnerAggregateRecord, StoreError, StoreHealth,
+    TeamBudgetRecord, TeamMembershipRecord, TeamRecord, UsageLedgerRecord, UsagePricingStatus,
+    UserBudgetRecord, UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord,
+    UserStatus,
 };
 use sqlx::{
     PgPool, Row,
@@ -87,6 +88,37 @@ impl GatewayStore for PostgresStore {
         must_change_password: bool,
     ) -> Result<UserRecord, StoreError> {
         Self::upsert_bootstrap_admin_user(self, name, email, must_change_password).await
+    }
+
+    async fn list_api_keys(&self) -> Result<Vec<ApiKeyRecord>, StoreError> {
+        ApiKeyRepository::list_api_keys(self).await
+    }
+
+    async fn get_api_key_by_id(&self, api_key_id: Uuid) -> Result<Option<ApiKeyRecord>, StoreError> {
+        ApiKeyRepository::get_api_key_by_id(self, api_key_id).await
+    }
+
+    async fn create_api_key(
+        &self,
+        api_key: &NewApiKeyRecord,
+    ) -> Result<ApiKeyRecord, StoreError> {
+        ApiKeyRepository::create_api_key(self, api_key).await
+    }
+
+    async fn replace_api_key_model_grants(
+        &self,
+        api_key_id: Uuid,
+        model_ids: &[Uuid],
+    ) -> Result<(), StoreError> {
+        ApiKeyRepository::replace_api_key_model_grants(self, api_key_id, model_ids).await
+    }
+
+    async fn revoke_api_key(
+        &self,
+        api_key_id: Uuid,
+        revoked_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        ApiKeyRepository::revoke_api_key(self, api_key_id, revoked_at).await
     }
 
     async fn list_identity_users(&self) -> Result<Vec<IdentityUserRecord>, StoreError> {

@@ -1,4 +1,5 @@
 pub mod admin_contract;
+pub mod api_keys;
 pub mod admin_auth;
 pub mod error;
 pub mod handlers;
@@ -21,7 +22,7 @@ use tower_http::{
     trace::TraceLayer,
 };
 
-use self::{handlers::*, identity::*, observability::*, spend::*, state::AppState};
+use self::{api_keys::*, handlers::*, identity::*, observability::*, spend::*, state::AppState};
 
 pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
     let request_id_header = HeaderName::from_static("x-request-id");
@@ -30,6 +31,14 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .route("/api/v1/health", get(api_health))
+        .route(
+            "/api/v1/admin/api-keys",
+            get(list_api_keys).post(create_api_key),
+        )
+        .route(
+            "/api/v1/admin/api-keys/{api_key_id}/revoke",
+            post(revoke_api_key),
+        )
         .route(
             "/api/v1/admin/identity/users",
             get(list_identity_users).post(create_identity_user),
@@ -131,6 +140,8 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
                     resolved_model = tracing::field::Empty,
                     provider = tracing::field::Empty,
                     stream = tracing::field::Empty,
+                    attempt_count = tracing::field::Empty,
+                    fallback_used = tracing::field::Empty,
                     ownership_kind = tracing::field::Empty
                 )
             }),

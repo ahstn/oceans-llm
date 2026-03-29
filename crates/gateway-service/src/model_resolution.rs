@@ -110,6 +110,10 @@ mod tests {
             Ok(self.models.get(model_key).cloned())
         }
 
+        async fn list_models(&self) -> Result<Vec<GatewayModel>, StoreError> {
+            Ok(self.models.values().cloned().collect())
+        }
+
         async fn list_models_for_api_key(
             &self,
             api_key_id: Uuid,

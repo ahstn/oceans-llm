@@ -2,7 +2,7 @@
 
 `Owns`: the current admin UI capability map, live versus preview-backed surfaces, and operator expectations for the control plane.
 `Depends on`: [identity-and-access.md](identity-and-access.md), [budgets-and-spending.md](budgets-and-spending.md), [observability-and-request-logs.md](observability-and-request-logs.md)
-`See also`: [e2e-contract-tests.md](e2e-contract-tests.md), [../crates/gateway/src/http/admin_contract.rs](../crates/gateway/src/http/admin_contract.rs), [../crates/gateway/openapi/admin-api.json](../crates/gateway/openapi/admin-api.json), [../crates/admin-ui/web/src/generated/admin-api.ts](../crates/admin-ui/web/src/generated/admin-api.ts)
+`See also`: [e2e-contract-tests.md](e2e-contract-tests.md), [../crates/gateway/src/http/admin_contract.rs](../crates/gateway/src/http/admin_contract.rs), [../crates/gateway/src/http/api_keys.rs](../crates/gateway/src/http/api_keys.rs), [../crates/gateway/openapi/admin-api.json](../crates/gateway/openapi/admin-api.json), [../crates/admin-ui/web/src/generated/admin-api.ts](../crates/admin-ui/web/src/generated/admin-api.ts)
 
 This document describes what operators can actually do in the admin UI today.
 

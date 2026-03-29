@@ -1,4 +1,4 @@
-import type { ApiEnvelope, ApiKeyView, ModelView, Paginated } from '@/types/api'
+import type { ApiEnvelope, ModelView } from '@/types/api'
 
 function envelope<T>(data: T): ApiEnvelope<T> {
   return {
@@ -7,39 +7,6 @@ function envelope<T>(data: T): ApiEnvelope<T> {
       generated_at: new Date().toISOString(),
     },
   }
-}
-
-export async function listApiKeys(): Promise<ApiEnvelope<Paginated<ApiKeyView>>> {
-  const items: ApiKeyView[] = [
-    {
-      id: 'k_01',
-      name: 'Production Gateway',
-      prefix: 'gwk_prod',
-      createdAt: '2026-02-21',
-      status: 'active',
-    },
-    {
-      id: 'k_02',
-      name: 'Staging CI',
-      prefix: 'gwk_stg',
-      createdAt: '2026-02-20',
-      status: 'active',
-    },
-    {
-      id: 'k_03',
-      name: 'Legacy Mobile',
-      prefix: 'gwk_old',
-      createdAt: '2026-01-30',
-      status: 'revoked',
-    },
-  ]
-
-  return envelope({
-    items,
-    page: 1,
-    pageSize: items.length,
-    total: items.length,
-  })
 }
 
 export async function listModels(): Promise<ApiEnvelope<ModelView[]>> {

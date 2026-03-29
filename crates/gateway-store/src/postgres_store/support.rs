@@ -30,7 +30,12 @@ pub(super) fn decode_api_key(row: &PgRow) -> Result<ApiKeyRecord, StoreError> {
         public_id: row.try_get(1).map_err(to_query_error)?,
         secret_hash: row.try_get(2).map_err(to_query_error)?,
         name: row.try_get(3).map_err(to_query_error)?,
-        status: row.try_get(4).map_err(to_query_error)?,
+        status: {
+            let status: String = row.try_get(4).map_err(to_query_error)?;
+            ApiKeyStatus::from_db(&status).ok_or_else(|| {
+                StoreError::Serialization(format!("unknown api key status `{status}`"))
+            })?
+        },
         owner_kind: ApiKeyOwnerKind::from_db(&owner_kind).ok_or_else(|| {
             StoreError::Serialization(format!("unknown owner kind `{owner_kind}`"))
         })?,

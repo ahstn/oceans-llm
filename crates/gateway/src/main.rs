@@ -3048,6 +3048,170 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn admin_api_key_routes_create_list_and_revoke_live_gateway_keys() {
+        let (app, store, _) =
+            build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;
+        let session_cookie = bootstrap_admin_session_cookie(&app, &store).await;
+
+        let providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: serde_json::json!({
+                "base_url": "https://api.openai.com/v1",
+                "pricing_provider_id": "openai"
+            }),
+            secrets: None,
+        }];
+        let models = vec![SeedModel {
+            model_key: "fast".to_string(),
+            alias_target_model_key: None,
+            description: Some("Fast tier".to_string()),
+            tags: vec!["fast".to_string()],
+            rank: 10,
+            routes: vec![SeedModelRoute {
+                provider_key: "openai-prod".to_string(),
+                upstream_model: "gpt-5".to_string(),
+                priority: 10,
+                weight: 1.0,
+                enabled: true,
+                extra_headers: Map::<String, Value>::new(),
+                extra_body: Map::<String, Value>::new(),
+                capabilities: ProviderCapabilities::all_enabled(),
+            }],
+        }];
+        store
+            .seed_from_inputs(&providers, &models, &[])
+            .await
+            .expect("seed models");
+
+        let user = store
+            .create_identity_user(
+                "Member",
+                "member@example.com",
+                "member@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                gateway_core::UserStatus::Active,
+            )
+            .await
+            .expect("create user");
+
+        let create_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/admin/api-keys")
+                    .header("cookie", &session_cookie)
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "name": "Production Web",
+                            "owner_kind": "user",
+                            "owner_user_id": user.user_id,
+                            "owner_team_id": null,
+                            "model_keys": ["fast"]
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(create_response.status(), StatusCode::OK);
+        let create_body = read_json(create_response).await;
+        assert_eq!(create_body["data"]["api_key"]["name"], "Production Web");
+        assert_eq!(create_body["data"]["api_key"]["owner_kind"], "user");
+        assert_eq!(create_body["data"]["api_key"]["owner_id"], user.user_id.to_string());
+        assert_eq!(create_body["data"]["api_key"]["model_keys"][0], "fast");
+        let raw_key = create_body["data"]["raw_key"]
+            .as_str()
+            .expect("raw key")
+            .to_string();
+        let api_key_id = create_body["data"]["api_key"]["id"]
+            .as_str()
+            .expect("api key id")
+            .to_string();
+        assert!(raw_key.starts_with("gwk_"));
+
+        let list_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/v1/admin/api-keys")
+                    .header("cookie", &session_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(list_response.status(), StatusCode::OK);
+        let list_body = read_json(list_response).await;
+        assert!(
+            list_body["data"]["items"]
+                .as_array()
+                .expect("api key items")
+                .iter()
+                .any(|item| {
+                    item["id"] == api_key_id
+                        && item["owner_name"] == "Member"
+                        && item["model_keys"] == json!(["fast"])
+                })
+        );
+
+        let models_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/models")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(models_response.status(), StatusCode::OK);
+        assert_eq!(
+            read_json(models_response).await["data"][0]["id"],
+            Value::String("fast".to_string())
+        );
+
+        let revoke_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/v1/admin/api-keys/{api_key_id}/revoke"))
+                    .header("cookie", &session_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(revoke_response.status(), StatusCode::OK);
+        let revoke_body = read_json(revoke_response).await;
+        assert_eq!(revoke_body["data"]["api_key"]["status"], "revoked");
+        assert!(revoke_body["data"]["api_key"]["revoked_at"].is_string());
+
+        let rejected_response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/models")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(rejected_response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(read_json(rejected_response).await["error"]["code"], "api_key_revoked");
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn admin_identity_lifecycle_endpoints_enforce_transitions_and_revoke_sessions() {
         let (app, store, db_path) =
             build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;
