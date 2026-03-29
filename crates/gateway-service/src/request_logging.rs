@@ -35,7 +35,6 @@ pub struct StreamFailureSummary {
 #[derive(Debug, Clone)]
 pub struct StreamLogResultInput {
     pub provider_key: String,
-    pub attempt_count: usize,
     pub latency_ms: i64,
     pub collector: StreamResponseCollector,
     pub failure: Option<StreamFailureSummary>,
@@ -67,7 +66,6 @@ pub struct UsageSummary {
 #[derive(Debug, Clone)]
 struct ChatCompletionLogSummary {
     provider_key: String,
-    attempt_count: usize,
     stream: bool,
     status_code: i64,
     error_code: Option<String>,
@@ -76,16 +74,9 @@ struct ChatCompletionLogSummary {
 }
 
 impl ChatCompletionLogSummary {
-    fn success(
-        provider_key: String,
-        attempt_count: usize,
-        stream: bool,
-        latency_ms: i64,
-        usage: UsageSummary,
-    ) -> Self {
+    fn success(provider_key: String, stream: bool, latency_ms: i64, usage: UsageSummary) -> Self {
         Self {
             provider_key,
-            attempt_count,
             stream,
             status_code: 200,
             error_code: None,
@@ -96,7 +87,6 @@ impl ChatCompletionLogSummary {
 
     fn failure(
         provider_key: String,
-        attempt_count: usize,
         stream: bool,
         latency_ms: i64,
         status_code: i64,
@@ -104,7 +94,6 @@ impl ChatCompletionLogSummary {
     ) -> Self {
         Self {
             provider_key,
-            attempt_count,
             stream,
             status_code,
             error_code: Some(error_code),
@@ -310,7 +299,6 @@ where
         api_key: &AuthenticatedApiKey,
         context: &ChatRequestLogContext,
         provider_key: &str,
-        attempt_count: usize,
         latency_ms: i64,
         response_body: &Value,
     ) -> Result<LoggedRequest, GatewayError> {
@@ -321,13 +309,7 @@ where
         self.persist_chat_log(
             api_key,
             context,
-            ChatCompletionLogSummary::success(
-                provider_key.to_string(),
-                attempt_count,
-                false,
-                latency_ms,
-                usage,
-            ),
+            ChatCompletionLogSummary::success(provider_key.to_string(), false, latency_ms, usage),
             response_json,
             response_payload_truncated,
         )
@@ -339,7 +321,6 @@ where
         api_key: &AuthenticatedApiKey,
         context: &ChatRequestLogContext,
         provider_key: &str,
-        attempt_count: usize,
         latency_ms: i64,
         gateway_error: &GatewayError,
     ) -> Result<LoggedRequest, GatewayError> {
@@ -355,7 +336,6 @@ where
             context,
             ChatCompletionLogSummary::failure(
                 provider_key.to_string(),
-                attempt_count,
                 false,
                 latency_ms,
                 gateway_error.http_status_code().into(),
@@ -375,7 +355,6 @@ where
     ) -> Result<LoggedRequest, GatewayError> {
         let StreamLogResultInput {
             provider_key,
-            attempt_count,
             latency_ms,
             mut collector,
             failure,
@@ -387,19 +366,12 @@ where
         let summary = match failure {
             Some(failure) => ChatCompletionLogSummary::failure(
                 provider_key,
-                attempt_count,
                 true,
                 latency_ms,
                 failure.status_code,
                 failure.error_code,
             ),
-            None => ChatCompletionLogSummary::success(
-                provider_key,
-                attempt_count,
-                true,
-                latency_ms,
-                usage,
-            ),
+            None => ChatCompletionLogSummary::success(provider_key, true, latency_ms, usage),
         };
         self.persist_chat_log(
             api_key,
@@ -443,7 +415,7 @@ where
             });
         }
 
-        let metadata = request_log_metadata(summary.attempt_count, summary.stream);
+        let metadata = request_log_metadata(summary.stream);
         let log = RequestLogRecord {
             request_log_id: context.request_log_id,
             request_id: context.request_id.clone(),
@@ -504,18 +476,13 @@ pub fn usage_summary_from_value(value: Option<&Value>) -> UsageSummary {
     }
 }
 
-fn request_log_metadata(attempt_count: usize, stream: bool) -> Map<String, Value> {
+fn request_log_metadata(stream: bool) -> Map<String, Value> {
     let mut metadata = Map::new();
     metadata.insert(
         "operation".to_string(),
         Value::String("chat_completions".to_string()),
     );
     metadata.insert("stream".to_string(), Value::Bool(stream));
-    metadata.insert("fallback_used".to_string(), Value::Bool(attempt_count > 1));
-    metadata.insert(
-        "attempt_count".to_string(),
-        Value::Number(i64::try_from(attempt_count).unwrap_or(i64::MAX).into()),
-    );
     metadata
 }
 
@@ -719,7 +686,6 @@ mod tests {
                 &auth,
                 &context,
                 "openai-prod",
-                1,
                 120,
                 &json!({"usage": {"prompt_tokens": 1, "completion_tokens": 2}}),
             )
@@ -772,7 +738,6 @@ mod tests {
                 &auth,
                 &context,
                 "openai-prod",
-                2,
                 120,
                 &json!({"usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30}}),
             )
@@ -793,7 +758,13 @@ mod tests {
         assert_eq!(payloads[0].request_json["body"]["token"], "[REDACTED]");
         assert_eq!(logs[0].request_tags.service.as_deref(), Some("checkout"));
         assert_eq!(logs[0].request_tags.bespoke[0].key, "feature");
-        assert_eq!(logs[0].metadata["fallback_used"], Value::Bool(true));
+        assert_eq!(
+            logs[0].metadata["operation"],
+            Value::String("chat_completions".to_string())
+        );
+        assert_eq!(logs[0].metadata["stream"], Value::Bool(false));
+        assert!(logs[0].metadata.get("fallback_used").is_none());
+        assert!(logs[0].metadata.get("attempt_count").is_none());
     }
 
     #[tokio::test]
@@ -834,7 +805,6 @@ mod tests {
                 &context,
                 StreamLogResultInput {
                     provider_key: "openai-prod".to_string(),
-                    attempt_count: 1,
                     latency_ms: 120,
                     collector,
                     failure: Some(StreamFailureSummary {
@@ -847,7 +817,15 @@ mod tests {
             .expect("stream failure log");
 
         assert!(wrote.wrote);
+        let logs = repo.logs.lock().expect("logs lock");
         let payload = repo.payloads.lock().expect("payloads lock");
+        assert_eq!(
+            logs[0].metadata["operation"],
+            Value::String("chat_completions".to_string())
+        );
+        assert_eq!(logs[0].metadata["stream"], Value::Bool(true));
+        assert!(logs[0].metadata.get("fallback_used").is_none());
+        assert!(logs[0].metadata.get("attempt_count").is_none());
         assert_eq!(payload[0].response_json["error"]["code"], "stream_error");
     }
 

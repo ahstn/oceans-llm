@@ -36,9 +36,9 @@ fn decode_history_row(row: &PgRow) -> Result<BudgetAlertHistoryRecord, StoreErro
         owner_name: row.try_get(3).map_err(to_query_error)?,
         channel: BudgetAlertChannel::from_db(&channel)
             .ok_or_else(|| StoreError::Serialization(format!("unknown channel `{channel}`")))?,
-        delivery_status: BudgetAlertDeliveryStatus::from_db(&delivery_status).ok_or_else(
-            || StoreError::Serialization(format!("unknown delivery status `{delivery_status}`")),
-        )?,
+        delivery_status: BudgetAlertDeliveryStatus::from_db(&delivery_status).ok_or_else(|| {
+            StoreError::Serialization(format!("unknown delivery status `{delivery_status}`"))
+        })?,
         recipient_summary: row.try_get(6).map_err(to_query_error)?,
         threshold_bps: row.try_get(7).map_err(to_query_error)?,
         cadence: BudgetCadence::from_db(&cadence)
@@ -91,12 +91,18 @@ fn decode_dispatch_row(row: &PgRow) -> Result<BudgetAlertDispatchTask, StoreErro
             updated_at: unix_to_datetime(updated_at)?,
         },
         delivery: BudgetAlertDeliveryRecord {
-            budget_alert_delivery_id: parse_uuid(&row.try_get::<String, _>(15).map_err(to_query_error)?)?,
+            budget_alert_delivery_id: parse_uuid(
+                &row.try_get::<String, _>(15).map_err(to_query_error)?,
+            )?,
             budget_alert_id: parse_uuid(&row.try_get::<String, _>(16).map_err(to_query_error)?)?,
             channel: BudgetAlertChannel::from_db(&channel)
                 .ok_or_else(|| StoreError::Serialization(format!("unknown channel `{channel}`")))?,
             delivery_status: BudgetAlertDeliveryStatus::from_db(&delivery_status).ok_or_else(
-                || StoreError::Serialization(format!("unknown delivery status `{delivery_status}`")),
+                || {
+                    StoreError::Serialization(format!(
+                        "unknown delivery status `{delivery_status}`"
+                    ))
+                },
             )?,
             recipient: row.try_get(19).map_err(to_query_error)?,
             provider_message_id: row.try_get(20).map_err(to_query_error)?,
@@ -201,7 +207,9 @@ impl BudgetAlertRepository for PostgresStore {
         let (page, page_size, offset) = normalize_query(query);
         let owner_kind = query.owner_kind.map(|value| value.as_str().to_string());
         let channel = query.channel.map(|value| value.as_str().to_string());
-        let delivery_status = query.delivery_status.map(|value| value.as_str().to_string());
+        let delivery_status = query
+            .delivery_status
+            .map(|value| value.as_str().to_string());
         let summary_cte = format!(
             r#"
             WITH summary AS (

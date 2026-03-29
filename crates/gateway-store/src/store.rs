@@ -5,9 +5,8 @@ use gateway_core::{
     ApiKeyRepository, AuthMode, BudgetAlertRepository, BudgetRepository, GlobalRole,
     IdentityRepository, IdentityUserRecord, MembershipRole, ModelRepository, OidcProviderRecord,
     PasswordInvitationRecord, PricingCatalogRepository, ProviderRepository, RequestLogRepository,
-    SeedApiKey, SeedModel, SeedProvider, StoreError, StoreHealth, TeamMembershipRecord,
-    TeamRecord, UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord,
-    UserStatus,
+    SeedApiKey, SeedModel, SeedProvider, StoreError, StoreHealth, TeamMembershipRecord, TeamRecord,
+    UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;

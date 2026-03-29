@@ -131,8 +131,6 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
                     resolved_model = tracing::field::Empty,
                     provider = tracing::field::Empty,
                     stream = tracing::field::Empty,
-                    attempt_count = tracing::field::Empty,
-                    fallback_used = tracing::field::Empty,
                     ownership_kind = tracing::field::Empty
                 )
             }),

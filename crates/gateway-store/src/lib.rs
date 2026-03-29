@@ -22,17 +22,16 @@ mod tests {
     use std::env;
 
     use gateway_core::{
-        ApiKeyOwnerKind, ApiKeyRepository, AuthMode, BudgetAlertChannel,
-        BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus, BudgetAlertHistoryQuery,
-        BudgetAlertRecord, BudgetAlertRepository, BudgetCadence, BudgetRepository, GlobalRole,
-        IdentityRepository, MembershipRole, ModelPricingRecord, ModelRepository, Money4,
-        PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
-        PricingProvenance, ProviderCapabilities, RequestLogRecord, RequestLogRepository,
-        RequestTags, SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedModel,
-        SeedModelRoute, SeedProvider, StoreError, StoreHealth, UsageLedgerRecord,
-        UsagePricingStatus, UserStatus,
+        ApiKeyOwnerKind, ApiKeyRepository, AuthMode, BudgetAlertChannel, BudgetAlertDeliveryRecord,
+        BudgetAlertDeliveryStatus, BudgetAlertHistoryQuery, BudgetAlertRecord,
+        BudgetAlertRepository, BudgetCadence, BudgetRepository, GlobalRole, IdentityRepository,
+        MembershipRole, ModelPricingRecord, ModelRepository, Money4, PricingCatalogCacheRecord,
+        PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
+        ProviderCapabilities, RequestLogRecord, RequestLogRepository, RequestTags,
+        SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedModel, SeedModelRoute,
+        SeedProvider, StoreError, StoreHealth, UsageLedgerRecord, UsagePricingStatus, UserStatus,
     };
-    use serde_json::{Map, json};
+    use serde_json::{Map, Value, json};
     use serial_test::serial;
     use sqlx::Row;
     use tempfile::tempdir;
@@ -105,7 +104,9 @@ mod tests {
     where
         R: BudgetAlertRepository + Sync,
     {
-        let now = OffsetDateTime::now_utc().replace_nanosecond(0).expect("zero nanos");
+        let now = OffsetDateTime::now_utc()
+            .replace_nanosecond(0)
+            .expect("zero nanos");
         let alert_one = BudgetAlertRecord {
             budget_alert_id: Uuid::new_v4(),
             ownership_scope_key: format!("user:{}", Uuid::new_v4()),
@@ -146,12 +147,13 @@ mod tests {
             .expect("insert first alert")
         );
         assert!(
-            !repo.create_budget_alert_with_deliveries(
-                &alert_one,
-                std::slice::from_ref(&pending_delivery),
-            )
-            .await
-            .expect("suppress duplicate alert")
+            !repo
+                .create_budget_alert_with_deliveries(
+                    &alert_one,
+                    std::slice::from_ref(&pending_delivery),
+                )
+                .await
+                .expect("suppress duplicate alert")
         );
 
         let reconfigured_alert = BudgetAlertRecord {
@@ -245,10 +247,19 @@ mod tests {
         assert_eq!(page.total, 3);
         assert_eq!(page.items.len(), 3);
         assert_eq!(page.items[0].budget_alert_id, alert_two.budget_alert_id);
-        assert_eq!(page.items[0].delivery_status, BudgetAlertDeliveryStatus::Failed);
+        assert_eq!(
+            page.items[0].delivery_status,
+            BudgetAlertDeliveryStatus::Failed
+        );
         assert_eq!(page.items[0].recipient_summary, "ops@example.com");
-        assert_eq!(page.items[0].failure_reason.as_deref(), Some("smtp timeout"));
-        assert_eq!(page.items[1].budget_alert_id, reconfigured_alert.budget_alert_id);
+        assert_eq!(
+            page.items[0].failure_reason.as_deref(),
+            Some("smtp timeout")
+        );
+        assert_eq!(
+            page.items[1].budget_alert_id,
+            reconfigured_alert.budget_alert_id
+        );
         assert_eq!(page.items[1].cadence, BudgetCadence::Weekly);
         assert_eq!(page.items[2].budget_alert_id, alert_one.budget_alert_id);
         assert_eq!(page.items[2].cadence, BudgetCadence::Monthly);
@@ -264,7 +275,10 @@ mod tests {
             .await
             .expect("filter alert history");
         assert_eq!(team_only.total, 1);
-        assert_eq!(team_only.items[0].budget_alert_id, alert_two.budget_alert_id);
+        assert_eq!(
+            team_only.items[0].budget_alert_id,
+            alert_two.budget_alert_id
+        );
 
         let claimed_at = now + Duration::minutes(1);
         let claimed = repo
@@ -304,11 +318,20 @@ mod tests {
             .await
             .expect("list sent alerts");
         assert_eq!(sent_page.total, 1);
-        assert_eq!(sent_page.items[0].budget_alert_id, alert_one.budget_alert_id);
-        assert_eq!(sent_page.items[0].delivery_status, BudgetAlertDeliveryStatus::Sent);
+        assert_eq!(
+            sent_page.items[0].budget_alert_id,
+            alert_one.budget_alert_id
+        );
+        assert_eq!(
+            sent_page.items[0].delivery_status,
+            BudgetAlertDeliveryStatus::Sent
+        );
         assert_eq!(sent_page.items[0].last_attempted_at, Some(claimed_at));
         assert_eq!(sent_page.items[0].sent_at, Some(sent_at));
-        assert_eq!(sent_page.items[0].recipient_summary, "member.one@example.com");
+        assert_eq!(
+            sent_page.items[0].recipient_summary,
+            "member.one@example.com"
+        );
     }
 
     #[tokio::test]
@@ -743,11 +766,9 @@ mod tests {
         .await
         .expect("insert legacy row");
 
-        run_migrations_with_options(
-            &StoreConnectionOptions::Libsql {
-                path: db_path.clone(),
-            },
-        )
+        run_migrations_with_options(&StoreConnectionOptions::Libsql {
+            path: db_path.clone(),
+        })
         .await
         .expect("apply v11");
 
@@ -767,6 +788,127 @@ mod tests {
         let resolved_model_key: Option<String> = row.get(1).expect("resolved model key");
         assert_eq!(model_key, "fast");
         assert_eq!(resolved_model_key.as_deref(), Some("fast"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_request_log_migration_scrubs_fallback_metadata() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+
+        apply_libsql_migrations_through(&db_path, 15)
+            .await
+            .expect("migrations through v15");
+
+        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
+            .build()
+            .await
+            .expect("db");
+        let conn = db.connect().expect("connection");
+
+        conn.execute(
+            r#"
+            INSERT INTO api_keys (
+                id, public_id, secret_hash, name, status,
+                owner_kind, owner_user_id, owner_team_id, created_at
+            ) VALUES (?1, 'legacy', 'hash', 'Legacy', 'active', 'team', NULL, ?2, unixepoch())
+            "#,
+            libsql::params!["api-key-legacy", SYSTEM_LEGACY_TEAM_ID],
+        )
+        .await
+        .expect("insert api key");
+
+        conn.execute(
+            r#"
+            INSERT INTO request_logs (
+                request_log_id, request_id, api_key_id, user_id, team_id, model_key,
+                resolved_model_key, provider_key, status_code, latency_ms, prompt_tokens,
+                completion_tokens, total_tokens, has_payload, request_payload_truncated,
+                response_payload_truncated, caller_service, caller_component, caller_env,
+                error_code, metadata_json, occurred_at
+            ) VALUES (?1, ?2, ?3, NULL, NULL, ?4, ?5, ?6, 200, 42, 10, 20, 30, 0, 0, 0, NULL, NULL, NULL, NULL, ?7, unixepoch())
+            "#,
+            libsql::params![
+                Uuid::new_v4().to_string(),
+                "req-legacy",
+                "api-key-legacy",
+                "fast",
+                "fast",
+                "openai-prod",
+                json!({
+                    "operation": "chat_completions",
+                    "stream": false,
+                    "fallback_used": true,
+                    "attempt_count": 2
+                })
+                .to_string()
+            ],
+        )
+        .await
+        .expect("insert legacy row");
+
+        conn.execute(
+            r#"
+            INSERT INTO request_logs (
+                request_log_id, request_id, api_key_id, user_id, team_id, model_key,
+                resolved_model_key, provider_key, status_code, latency_ms, prompt_tokens,
+                completion_tokens, total_tokens, has_payload, request_payload_truncated,
+                response_payload_truncated, caller_service, caller_component, caller_env,
+                error_code, metadata_json, occurred_at
+            ) VALUES (?1, ?2, ?3, NULL, NULL, ?4, ?5, ?6, 200, 42, 10, 20, 30, 0, 0, 0, NULL, NULL, NULL, NULL, ?7, unixepoch())
+            "#,
+            libsql::params![
+                Uuid::new_v4().to_string(),
+                "req-clean",
+                "api-key-legacy",
+                "fast",
+                "fast",
+                "openai-prod",
+                json!({
+                    "operation": "chat_completions",
+                    "stream": true
+                })
+                .to_string()
+            ],
+        )
+        .await
+        .expect("insert clean row");
+
+        run_migrations_with_options(&StoreConnectionOptions::Libsql {
+            path: db_path.clone(),
+        })
+        .await
+        .expect("apply v16");
+
+        let mut rows = conn
+            .query(
+                "SELECT request_id, metadata_json FROM request_logs ORDER BY request_id ASC",
+                (),
+            )
+            .await
+            .expect("query request logs");
+        let mut metadata_by_request_id = std::collections::BTreeMap::new();
+        while let Some(row) = rows.next().await.expect("row fetch") {
+            let request_id: String = row.get(0).expect("request id");
+            let metadata_json: String = row.get(1).expect("metadata json");
+            let metadata: Value = serde_json::from_str(&metadata_json).expect("metadata json");
+            metadata_by_request_id.insert(request_id, metadata);
+        }
+
+        assert_eq!(
+            metadata_by_request_id.get("req-clean"),
+            Some(&json!({
+                "operation": "chat_completions",
+                "stream": true
+            }))
+        );
+        assert_eq!(
+            metadata_by_request_id.get("req-legacy"),
+            Some(&json!({
+                "operation": "chat_completions",
+                "stream": false
+            }))
+        );
     }
 
     #[tokio::test]
@@ -1239,7 +1381,12 @@ mod tests {
         assert_eq!(disabled_admin.status, UserStatus::Disabled);
 
         let last_admin_demote = store
-            .update_identity_user(second_admin.user_id, GlobalRole::User, AuthMode::Password, now)
+            .update_identity_user(
+                second_admin.user_id,
+                GlobalRole::User,
+                AuthMode::Password,
+                now,
+            )
             .await;
         assert!(matches!(last_admin_demote, Err(StoreError::Conflict(_))));
     }
@@ -3184,12 +3331,10 @@ mod tests {
         .await
         .expect("insert legacy row");
 
-        run_migrations_with_options(
-            &StoreConnectionOptions::Postgres {
-                url: test_db.database_url.clone(),
-                max_connections: 2,
-            },
-        )
+        run_migrations_with_options(&StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 2,
+        })
         .await
         .expect("apply v11");
 
@@ -3211,6 +3356,182 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn postgres_request_log_migration_scrubs_fallback_metadata() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres request log metadata cleanup test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        apply_postgres_migrations_through(&test_db.database_url, 15)
+            .await
+            .expect("migrations through v15");
+
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&test_db.database_url)
+            .await
+            .expect("postgres pool");
+
+        sqlx::query(
+            r#"
+            INSERT INTO teams (
+                team_id, team_key, team_name, status, model_access_mode, created_at, updated_at
+            ) VALUES ($1, $2, $3, 'active', 'all', extract(epoch from now())::bigint, extract(epoch from now())::bigint)
+            "#,
+        )
+        .bind(SYSTEM_LEGACY_TEAM_ID)
+        .bind(SYSTEM_LEGACY_TEAM_KEY)
+        .bind("System Legacy")
+        .execute(&pool)
+        .await
+        .expect("insert team");
+
+        sqlx::query(
+            r#"
+            INSERT INTO api_keys (
+                id, public_id, secret_hash, name, status,
+                owner_kind, owner_user_id, owner_team_id, created_at
+            ) VALUES ($1, 'legacy', 'hash', 'Legacy', 'active', 'team', NULL, $2, extract(epoch from now())::bigint)
+            "#,
+        )
+        .bind("api-key-legacy")
+        .bind(SYSTEM_LEGACY_TEAM_ID)
+        .execute(&pool)
+        .await
+        .expect("insert api key");
+
+        sqlx::query(
+            r#"
+            INSERT INTO request_logs (
+                request_log_id, request_id, api_key_id, user_id, team_id, model_key,
+                resolved_model_key, provider_key, status_code, latency_ms, prompt_tokens,
+                completion_tokens, total_tokens, has_payload, request_payload_truncated,
+                response_payload_truncated, caller_service, caller_component, caller_env,
+                error_code, metadata_json, occurred_at
+            ) VALUES ($1, $2, $3, NULL, NULL, $4, $5, $6, 200, 42, 10, 20, 30, 0, 0, 0, NULL, NULL, NULL, NULL, $7, extract(epoch from now())::bigint)
+            "#,
+        )
+        .bind(Uuid::new_v4().to_string())
+        .bind("req-legacy")
+        .bind("api-key-legacy")
+        .bind("fast")
+        .bind("fast")
+        .bind("openai-prod")
+        .bind(
+            json!({
+                "operation": "chat_completions",
+                "stream": false,
+                "fallback_used": true,
+                "attempt_count": 2
+            })
+            .to_string(),
+        )
+        .execute(&pool)
+        .await
+        .expect("insert legacy row");
+
+        sqlx::query(
+            r#"
+            INSERT INTO request_logs (
+                request_log_id, request_id, api_key_id, user_id, team_id, model_key,
+                resolved_model_key, provider_key, status_code, latency_ms, prompt_tokens,
+                completion_tokens, total_tokens, has_payload, request_payload_truncated,
+                response_payload_truncated, caller_service, caller_component, caller_env,
+                error_code, metadata_json, occurred_at
+            ) VALUES ($1, $2, $3, NULL, NULL, $4, $5, $6, 200, 42, 10, 20, 30, 0, 0, 0, NULL, NULL, NULL, NULL, $7, extract(epoch from now())::bigint)
+            "#,
+        )
+        .bind(Uuid::new_v4().to_string())
+        .bind("req-clean")
+        .bind("api-key-legacy")
+        .bind("fast")
+        .bind("fast")
+        .bind("openai-prod")
+        .bind(
+            json!({
+                "operation": "chat_completions",
+                "stream": true
+            })
+            .to_string(),
+        )
+        .execute(&pool)
+        .await
+        .expect("insert clean row");
+
+        sqlx::query(
+            r#"
+            INSERT INTO request_logs (
+                request_log_id, request_id, api_key_id, user_id, team_id, model_key,
+                resolved_model_key, provider_key, status_code, latency_ms, prompt_tokens,
+                completion_tokens, total_tokens, has_payload, request_payload_truncated,
+                response_payload_truncated, caller_service, caller_component, caller_env,
+                error_code, metadata_json, occurred_at
+            ) VALUES ($1, $2, $3, NULL, NULL, $4, $5, $6, 200, 42, 10, 20, 30, 0, 0, 0, NULL, NULL, NULL, NULL, $7, extract(epoch from now())::bigint)
+            "#,
+        )
+        .bind(Uuid::new_v4().to_string())
+        .bind("req-invalid")
+        .bind("api-key-legacy")
+        .bind("fast")
+        .bind("fast")
+        .bind("openai-prod")
+        .bind("{\"operation\": ".to_string())
+        .execute(&pool)
+        .await
+        .expect("insert invalid row");
+
+        run_migrations_with_options(&StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 2,
+        })
+        .await
+        .expect("apply postgres migrations");
+
+        let rows = sqlx::query(
+            "SELECT request_id, metadata_json FROM request_logs ORDER BY request_id ASC",
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("load request logs");
+        let metadata_json_by_request_id = rows
+            .into_iter()
+            .map(|row| {
+                let request_id = row.try_get::<String, _>(0).expect("request id");
+                let metadata_json = row.try_get::<String, _>(1).expect("metadata json");
+                (request_id, metadata_json)
+            })
+            .collect::<std::collections::BTreeMap<_, _>>();
+        assert_eq!(
+            metadata_json_by_request_id
+                .get("req-clean")
+                .map(|metadata_json| serde_json::from_str::<Value>(metadata_json).expect("metadata")),
+            Some(json!({
+                "operation": "chat_completions",
+                "stream": true
+            }))
+        );
+        assert_eq!(
+            metadata_json_by_request_id
+                .get("req-legacy")
+                .map(|metadata_json| serde_json::from_str::<Value>(metadata_json).expect("metadata")),
+            Some(json!({
+                "operation": "chat_completions",
+                "stream": false
+            }))
+        );
+        assert_eq!(
+            metadata_json_by_request_id.get("req-invalid"),
+            Some(&"{\"operation\": ".to_string())
+        );
+
+        pool.close().await;
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn postgres_request_log_detail_missing_returns_not_found() {
         let Some(test_db) = create_postgres_test_database().await else {
             eprintln!(
@@ -3219,12 +3540,10 @@ mod tests {
             return;
         };
 
-        run_migrations_with_options(
-            &StoreConnectionOptions::Postgres {
-                url: test_db.database_url.clone(),
-                max_connections: 2,
-            },
-        )
+        run_migrations_with_options(&StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 2,
+        })
         .await
         .expect("apply postgres migrations");
 

@@ -441,10 +441,8 @@ pub async fn create_identity_user(
         )));
     }
 
-    let membership = parse_requested_membership(
-        request.team_id.as_deref(),
-        request.team_role.as_deref(),
-    )?;
+    let membership =
+        parse_requested_membership(request.team_id.as_deref(), request.team_role.as_deref())?;
     let oidc_provider = resolve_requested_oidc_provider(
         &state.store,
         auth_mode,
@@ -522,10 +520,8 @@ pub async fn update_identity_user(
         .map(parse_auth_mode)
         .transpose()?
         .unwrap_or(identity_user.user.auth_mode);
-    let requested_membership = parse_requested_membership(
-        request.team_id.as_deref(),
-        request.team_role.as_deref(),
-    )?;
+    let requested_membership =
+        parse_requested_membership(request.team_id.as_deref(), request.team_role.as_deref())?;
     let oidc_provider = resolve_requested_oidc_provider(
         &state.store,
         next_auth_mode,
@@ -557,8 +553,14 @@ pub async fn update_identity_user(
         .store
         .update_identity_user(user_id, next_global_role, next_auth_mode, now)
         .await?;
-    sync_identity_user_auth_mode(&state.store, &identity_user, next_auth_mode, oidc_provider.as_ref(), now)
-        .await?;
+    sync_identity_user_auth_mode(
+        &state.store,
+        &identity_user,
+        next_auth_mode,
+        oidc_provider.as_ref(),
+        now,
+    )
+    .await?;
     sync_identity_user_membership(&state.store, &identity_user, requested_membership, now).await?;
 
     Ok(Json(envelope(IdentityActionStatus { status: "ok" })))
@@ -1258,18 +1260,17 @@ async fn sync_identity_user_membership(
             Ok(())
         }
         (Some(team_id), None) => {
-            store.remove_team_membership(team_id, user.user.user_id).await?;
+            store
+                .remove_team_membership(team_id, user.user.user_id)
+                .await?;
             Ok(())
         }
-        (Some(current_team_id), Some((next_team_id, next_role))) if current_team_id == next_team_id => {
+        (Some(current_team_id), Some((next_team_id, next_role)))
+            if current_team_id == next_team_id =>
+        {
             if user.membership_role != Some(next_role) {
                 store
-                    .update_team_membership_role(
-                        current_team_id,
-                        user.user.user_id,
-                        next_role,
-                        now,
-                    )
+                    .update_team_membership_role(current_team_id, user.user.user_id, next_role, now)
                     .await?;
             }
             Ok(())
@@ -1311,9 +1312,7 @@ async fn sync_identity_user_auth_mode(
     now: OffsetDateTime,
 ) -> Result<(), AppError> {
     if user.user.auth_mode == AuthMode::Password && next_auth_mode != AuthMode::Password {
-        store
-            .delete_user_password_auth(user.user.user_id)
-            .await?;
+        store.delete_user_password_auth(user.user.user_id).await?;
         store
             .revoke_password_invitations_for_user(user.user.user_id, now)
             .await?;
@@ -1348,7 +1347,10 @@ async fn sync_identity_user_auth_mode(
     Ok(())
 }
 
-async fn user_has_auth_proof(store: &AnyStore, user: &IdentityUserRecord) -> Result<bool, AppError> {
+async fn user_has_auth_proof(
+    store: &AnyStore,
+    user: &IdentityUserRecord,
+) -> Result<bool, AppError> {
     match user.user.auth_mode {
         AuthMode::Password => Ok(store
             .get_user_password_auth(user.user.user_id)
@@ -1375,9 +1377,13 @@ async fn build_onboarding_response(
 ) -> Result<CreateUserResponse, AppError> {
     match user.user.auth_mode {
         AuthMode::Password => {
-            let invitation =
-                create_password_invite(&state.store, &state.identity_token_secret, origin, user.user.user_id)
-                    .await?;
+            let invitation = create_password_invite(
+                &state.store,
+                &state.identity_token_secret,
+                origin,
+                user.user.user_id,
+            )
+            .await?;
             let view = build_admin_identity_user_view(
                 &state.store,
                 &state.identity_token_secret,

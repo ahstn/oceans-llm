@@ -568,8 +568,7 @@ impl PostgresStore {
         .bind(from_team_id.to_string())
         .fetch_optional(&mut *tx)
         .await
-        .map_err(to_query_error)?
-        ;
+        .map_err(to_query_error)?;
         let Some(row) = exists else {
             return Err(StoreError::NotFound(
                 "team membership missing for requested source team".to_string(),

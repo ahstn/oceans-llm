@@ -23,8 +23,6 @@ use crate::config::ServerConfig;
 pub struct GatewayMetrics {
     requests: Counter<u64>,
     request_duration: Histogram<f64>,
-    provider_attempts: Counter<u64>,
-    fallbacks: Counter<u64>,
     tokens: Counter<u64>,
     cost_usd: Counter<f64>,
     usage_records: Counter<u64>,
@@ -52,7 +50,6 @@ pub struct ChatRequestMetric<'a> {
     pub labels: ChatMetricLabels<'a>,
     pub status_code: i64,
     pub outcome: &'a str,
-    pub fallback_used: bool,
     pub latency_seconds: f64,
 }
 
@@ -60,7 +57,6 @@ pub struct ChatRequestMetric<'a> {
 #[derive(Debug, Default)]
 struct TestMetricCounters {
     requests: Mutex<u64>,
-    provider_attempts: Mutex<u64>,
     request_outcomes: Mutex<BTreeMap<String, u64>>,
 }
 
@@ -68,7 +64,6 @@ struct TestMetricCounters {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TestMetricSnapshot {
     pub requests: u64,
-    pub provider_attempts: u64,
     pub request_outcomes: BTreeMap<String, u64>,
 }
 
@@ -92,14 +87,6 @@ impl GatewayMetrics {
                 .with_unit("s")
                 .with_description("Chat completion request duration in seconds")
                 .build(),
-            provider_attempts: meter
-                .u64_counter("gateway.chat.provider.attempts")
-                .with_description("Provider attempts for chat completions")
-                .build(),
-            fallbacks: meter
-                .u64_counter("gateway.chat.fallbacks")
-                .with_description("Successful chat requests that required fallback")
-                .build(),
             tokens: meter
                 .u64_counter("gateway.chat.tokens")
                 .with_description("Chat token totals by token type")
@@ -121,19 +108,6 @@ impl GatewayMetrics {
         }
     }
 
-    pub fn record_provider_attempt(&self, labels: &ChatMetricLabels<'_>) {
-        self.provider_attempts.add(1, &base_attrs(labels));
-        #[cfg(any(test, debug_assertions))]
-        {
-            let mut attempts = self
-                .test_counters
-                .provider_attempts
-                .lock()
-                .expect("provider attempts lock");
-            *attempts += 1;
-        }
-    }
-
     pub fn record_chat_request(&self, metric: &ChatRequestMetric<'_>) {
         let mut attrs = base_attrs(&metric.labels);
         attrs.push(KeyValue::new("http.route", "/v1/chat/completions"));
@@ -143,7 +117,6 @@ impl GatewayMetrics {
             metric.status_code,
         ));
         attrs.push(KeyValue::new("outcome", metric.outcome.to_string()));
-        attrs.push(KeyValue::new("fallback_used", metric.fallback_used));
 
         self.requests.add(1, &attrs);
         self.request_duration.record(metric.latency_seconds, &attrs);
@@ -157,10 +130,6 @@ impl GatewayMetrics {
                 .lock()
                 .expect("request outcomes lock");
             *outcomes.entry(metric.outcome.to_string()).or_default() += 1;
-        }
-
-        if metric.fallback_used && metric.outcome == "success" {
-            self.fallbacks.add(1, &base_attrs(&metric.labels));
         }
     }
 
@@ -206,11 +175,6 @@ impl GatewayMetrics {
     pub fn test_snapshot(&self) -> TestMetricSnapshot {
         TestMetricSnapshot {
             requests: *self.test_counters.requests.lock().expect("requests lock"),
-            provider_attempts: *self
-                .test_counters
-                .provider_attempts
-                .lock()
-                .expect("provider attempts lock"),
             request_outcomes: self
                 .test_counters
                 .request_outcomes

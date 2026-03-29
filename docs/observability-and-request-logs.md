@@ -33,7 +33,6 @@ The runtime emits bounded request-level signals for:
 
 - chat request totals
 - request latency
-- provider attempts
 - token totals
 - operational cost totals
 - usage-record totals by pricing status
@@ -44,7 +43,7 @@ The request path also records tracing spans enriched with routing and ownership 
 Metric contract:
 
 - `gateway.chat.requests` describes routed request outcomes, including budget rejections after model resolution
-- `gateway.chat.provider.attempts` describes real upstream calls only and does not move when the request is rejected before provider execution
+- the gateway does not emit separate provider-attempt or fallback counters for chat completions
 
 Request correlation is anchored on `x-request-id`:
 
@@ -103,7 +102,7 @@ The summary row stores:
 - universal caller tags
 - status, latency, and usage totals
 - truncation flags
-- metadata
+- metadata (`operation` and `stream`)
 
 The payload row stores:
 
@@ -116,6 +115,7 @@ The gateway also stores bespoke caller tags in a bounded side table:
 
 Streaming requests persist a bounded transcript payload rather than raw transport bytes.
 Stream payload capture is incremental and boundary-safe across UTF-8 and SSE chunk splits, and the stored `usage` snapshot always reflects the latest coherent usage frame seen before stream termination.
+Postgres cleanup migrations that need to inspect request-log metadata parse legacy `metadata_json` defensively and skip malformed rows rather than failing the entire migration for one bad historical value.
 
 ## Redaction and Truncation Boundaries
 

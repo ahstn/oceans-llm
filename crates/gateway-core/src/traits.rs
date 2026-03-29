@@ -9,14 +9,13 @@ use uuid::Uuid;
 
 use crate::{
     domain::{
-        ApiKeyRecord, BudgetAlertDeliveryRecord, BudgetAlertDispatchTask,
-        BudgetAlertHistoryPage, BudgetAlertHistoryQuery, BudgetAlertRecord, GatewayModel,
-        ModelPricingRecord, ModelRoute, Money4, PricingCatalogCacheRecord,
-        ProviderCapabilities, ProviderConnection, ProviderRequestContext, RequestLogDetail,
-        RequestLogPage, RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord,
-        SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord,
-        TeamBudgetRecord, TeamMembershipRecord, TeamRecord, UsageLedgerRecord,
-        UserBudgetRecord, UserRecord,
+        ApiKeyRecord, BudgetAlertDeliveryRecord, BudgetAlertDispatchTask, BudgetAlertHistoryPage,
+        BudgetAlertHistoryQuery, BudgetAlertRecord, GatewayModel, ModelPricingRecord, ModelRoute,
+        Money4, PricingCatalogCacheRecord, ProviderCapabilities, ProviderConnection,
+        ProviderRequestContext, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
+        RequestLogQuery, RequestLogRecord, SpendDailyAggregateRecord, SpendModelAggregateRecord,
+        SpendOwnerAggregateRecord, TeamBudgetRecord, TeamMembershipRecord, TeamRecord,
+        UsageLedgerRecord, UserBudgetRecord, UserRecord,
     },
     error::{ProviderError, RouteError, StoreError},
     protocol::core::{ChatRequest, EmbeddingsRequest},
@@ -261,8 +260,7 @@ pub trait BudgetAlertRepository: Send + Sync {
     ) -> Result<(), StoreError> {
         let _ = (delivery_id, failure_reason, failed_at);
         Err(StoreError::Unexpected(
-            "mark_budget_alert_delivery_failed is not implemented for this repository"
-                .to_string(),
+            "mark_budget_alert_delivery_failed is not implemented for this repository".to_string(),
         ))
     }
 }

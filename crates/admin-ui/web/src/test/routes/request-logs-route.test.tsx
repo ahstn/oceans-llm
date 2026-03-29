@@ -58,8 +58,6 @@ const items: RequestLogView[] = [
     },
     metadata: {
       stream: false,
-      fallback_used: false,
-      attempt_count: 1,
     },
     occurred_at: '2026-03-10T11:32:00Z',
   },
@@ -83,9 +81,42 @@ describe('RequestLogsPage', () => {
 
     expect(screen.getByTestId('request-log-mobile-list')).toBeInTheDocument()
     expect(screen.getByTestId('request-log-desktop-table')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Inspect single-route request execution, latency, and sanitized payloads without dropping into raw traces.',
+      ),
+    ).toBeInTheDocument()
     expect(screen.getAllByText('gpt-4.1-mini')).toHaveLength(2)
     expect(screen.getAllByText('openai')).toHaveLength(2)
     expect(screen.getAllByText('req_1')).toHaveLength(2)
+  })
+
+  it('renders request-log detail without fallback-era fields', async () => {
+    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
+    getObservabilityRequestLogDetailMock.mockResolvedValue({
+      data: {
+        log: items[0],
+        payload: {
+          requestJson: { body: { prompt: 'ping' } },
+          responseJson: { body: { output: 'pong' } },
+        },
+      },
+    })
+
+    const { RequestLogsPage } = await import('@/routes/observability/request-logs')
+
+    render(<RequestLogsPage />)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Inspect' })[0])
+
+    await waitFor(() => {
+      expect(screen.getByText('Request Log Detail')).toBeInTheDocument()
+    })
+
+    expect(
+      screen.getByText('Review summary fields and sanitized request and response payloads.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Attempt Count')).not.toBeInTheDocument()
+    expect(screen.queryByText('Fallback')).not.toBeInTheDocument()
   })
 
   it('renders an error banner when detail lookup fails', async () => {
