@@ -5,9 +5,9 @@
 
 ## Current state
 
-- [../deploy-and-operations.md](../deploy-and-operations.md)
-- [../runtime-bootstrap-and-access.md](../runtime-bootstrap-and-access.md)
-- [../operator-runbooks.md](../operator-runbooks.md)
+- [../deploy-and-operations.md](../setup/deploy-and-operations.md)
+- [../runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md)
+- [../operator-runbooks.md](../operations/operator-runbooks.md)
 
 ## Context
 

@@ -6,20 +6,20 @@
   - [#26](https://github.com/ahstn/oceans-llm/issues/26)
   - [#31](https://github.com/ahstn/oceans-llm/issues/31)
 - Builds On:
-  - [2026-03-05-identity-foundation.md](./2026-03-05-identity-foundation.md)
-  - [2026-03-15-v1-runtime-simplification.md](./2026-03-15-v1-runtime-simplification.md)
-  - [2026-03-17-post-success-accounting-and-strict-request-log-lookups.md](./2026-03-17-post-success-accounting-and-strict-request-log-lookups.md)
+  - [2026-03-05-identity-foundation.md](2026-03-05-identity-foundation.md)
+  - [2026-03-15-v1-runtime-simplification.md](2026-03-15-v1-runtime-simplification.md)
+  - [2026-03-17-post-success-accounting-and-strict-request-log-lookups.md](2026-03-17-post-success-accounting-and-strict-request-log-lookups.md)
 
 ## Current state
 
-- [../admin-control-plane.md](../admin-control-plane.md)
-- [../admin-api-contract-workflow.md](../admin-api-contract-workflow.md)
+- [../admin-control-plane.md](../access/admin-control-plane.md)
+- [../admin-api-contract-workflow.md](../reference/admin-api-contract-workflow.md)
 
 ## Context
 
 Before this change, the control plane had an architectural split that was useful for early UI work but no longer acceptable for the product shape we are trying to keep stable:
 
-- the API Keys page in [crates/admin-ui/web/src/routes/api-keys.tsx](../../crates/admin-ui/web/src/routes/api-keys.tsx) was read-only and backed by fixture data in [crates/admin-ui/web/src/server/admin-data.server.ts](../../crates/admin-ui/web/src/server/admin-data.server.ts),
+- the API Keys page in [../../crates/admin-ui/web/src/routes/api-keys.tsx](../../crates/admin-ui/web/src/routes/api-keys.tsx) was read-only and backed by fixture data in [../../crates/admin-ui/web/src/server/admin-data.server.ts](../../crates/admin-ui/web/src/server/admin-data.server.ts),
 - the gateway had no admin API-key routes even though the rest of the admin surface was same-origin and live,
 - the store contract only supported runtime lookup and `last_used` mutation for API keys,
 - the end-to-end harness from [#31](https://github.com/ahstn/oceans-llm/issues/31) existed already, but it did not yet cover the missing admin API-key lifecycle.
@@ -36,7 +36,7 @@ We do not want two parallel truths for a security-sensitive control-plane surfac
 That first implementation deliberately optimized for shipping the live workflow. It left one follow-up architectural weakness behind:
 
 - the admin API-key lifecycle was still modeled as optional behavior on `ApiKeyRepository`,
-- the HTTP module in [crates/gateway/src/http/api_keys.rs](../../crates/gateway/src/http/api_keys.rs) still owned too much validation and lifecycle policy,
+- the HTTP module in [../../crates/gateway/src/http/api_keys.rs](../../crates/gateway/src/http/api_keys.rs) still owned too much validation and lifecycle policy,
 - the API Keys page had become a large route file again as real create/revoke behavior arrived.
 
 That shape worked, but it made the architecture too easy to erode. Optional repository methods become implicit fallbacks. Policy in the HTTP layer invites other handlers to repeat the same pattern. Large route files become default dumping grounds for future UI changes.
@@ -51,15 +51,15 @@ The decisions are:
 
 The authoritative admin API-key lifecycle now lives in:
 
-- [crates/gateway/src/http/api_keys.rs](../../crates/gateway/src/http/api_keys.rs)
-- [crates/gateway-service/src/admin_api_keys.rs](../../crates/gateway-service/src/admin_api_keys.rs)
-- [crates/gateway/src/http/mod.rs](../../crates/gateway/src/http/mod.rs)
+- [../../crates/gateway/src/http/api_keys.rs](../../crates/gateway/src/http/api_keys.rs)
+- [../../crates/gateway-service/src/admin_api_keys.rs](../../crates/gateway-service/src/admin_api_keys.rs)
+- [../../crates/gateway/src/http/mod.rs](../../crates/gateway/src/http/mod.rs)
 
 The admin UI now consumes that contract through:
 
-- [crates/admin-ui/web/src/server/admin-data.server.ts](../../crates/admin-ui/web/src/server/admin-data.server.ts)
-- [crates/admin-ui/web/src/server/admin-data.functions.ts](../../crates/admin-ui/web/src/server/admin-data.functions.ts)
-- [crates/admin-ui/web/src/routes/api-keys.tsx](../../crates/admin-ui/web/src/routes/api-keys.tsx)
+- [../../crates/admin-ui/web/src/server/admin-data.server.ts](../../crates/admin-ui/web/src/server/admin-data.server.ts)
+- [../../crates/admin-ui/web/src/server/admin-data.functions.ts](../../crates/admin-ui/web/src/server/admin-data.functions.ts)
+- [../../crates/admin-ui/web/src/routes/api-keys.tsx](../../crates/admin-ui/web/src/routes/api-keys.tsx)
 
 Why:
 
@@ -69,18 +69,18 @@ Why:
 
 ### 1a. Admin API-key lifecycle is a dedicated repository concern, not an optional extension of runtime auth
 
-The repository boundary is now explicit in [crates/gateway-core/src/traits.rs](../../crates/gateway-core/src/traits.rs):
+The repository boundary is now explicit in [../../crates/gateway-core/src/traits.rs](../../crates/gateway-core/src/traits.rs):
 
 - `ApiKeyRepository` is limited to runtime auth lookup and `last_used` mutation,
 - `AdminApiKeyRepository` owns list, fetch-by-id, create, grant replacement, and revoke,
 - `AdminIdentityRepository` provides the owner catalog needed by admin API-key workflows.
 
-The composed store surface in [crates/gateway-store/src/store.rs](../../crates/gateway-store/src/store.rs) requires those traits directly, and both backends implement them in:
+The composed store surface in [../../crates/gateway-store/src/store.rs](../../crates/gateway-store/src/store.rs) requires those traits directly, and both backends implement them in:
 
-- [crates/gateway-store/src/libsql_store/api_keys.rs](../../crates/gateway-store/src/libsql_store/api_keys.rs)
-- [crates/gateway-store/src/postgres_store/api_keys.rs](../../crates/gateway-store/src/postgres_store/api_keys.rs)
-- [crates/gateway-store/src/libsql_store/mod.rs](../../crates/gateway-store/src/libsql_store/mod.rs)
-- [crates/gateway-store/src/postgres_store/mod.rs](../../crates/gateway-store/src/postgres_store/mod.rs)
+- [../../crates/gateway-store/src/libsql_store/api_keys.rs](../../crates/gateway-store/src/libsql_store/api_keys.rs)
+- [../../crates/gateway-store/src/postgres_store/api_keys.rs](../../crates/gateway-store/src/postgres_store/api_keys.rs)
+- [../../crates/gateway-store/src/libsql_store/mod.rs](../../crates/gateway-store/src/libsql_store/mod.rs)
+- [../../crates/gateway-store/src/postgres_store/mod.rs](../../crates/gateway-store/src/postgres_store/mod.rs)
 
 Why:
 
@@ -110,9 +110,9 @@ The gateway generates the public identifier and secret, hashes the secret with t
 
 Relevant code:
 
-- [crates/gateway/src/http/api_keys.rs](../../crates/gateway/src/http/api_keys.rs)
-- [crates/gateway-service/src/admin_api_keys.rs](../../crates/gateway-service/src/admin_api_keys.rs)
-- [crates/gateway-service/src/authenticator.rs](../../crates/gateway-service/src/authenticator.rs)
+- [../../crates/gateway/src/http/api_keys.rs](../../crates/gateway/src/http/api_keys.rs)
+- [../../crates/gateway-service/src/admin_api_keys.rs](../../crates/gateway-service/src/admin_api_keys.rs)
+- [../../crates/gateway-service/src/authenticator.rs](../../crates/gateway-service/src/authenticator.rs)
 
 Why:
 
@@ -130,10 +130,10 @@ Every created key must have:
 
 Relevant code:
 
-- [crates/gateway-service/src/admin_api_keys.rs](../../crates/gateway-service/src/admin_api_keys.rs)
-- [crates/gateway-store/src/store.rs](../../crates/gateway-store/src/store.rs)
-- [crates/gateway-store/src/libsql_store/api_keys.rs](../../crates/gateway-store/src/libsql_store/api_keys.rs)
-- [crates/gateway-store/src/postgres_store/api_keys.rs](../../crates/gateway-store/src/postgres_store/api_keys.rs)
+- [../../crates/gateway-service/src/admin_api_keys.rs](../../crates/gateway-service/src/admin_api_keys.rs)
+- [../../crates/gateway-store/src/store.rs](../../crates/gateway-store/src/store.rs)
+- [../../crates/gateway-store/src/libsql_store/api_keys.rs](../../crates/gateway-store/src/libsql_store/api_keys.rs)
+- [../../crates/gateway-store/src/postgres_store/api_keys.rs](../../crates/gateway-store/src/postgres_store/api_keys.rs)
 
 Why:
 
@@ -143,7 +143,7 @@ Why:
 
 ### 4a. API-key lifecycle policy belongs in a service layer, not in the HTTP handler
 
-The control-plane policy is now centered in [crates/gateway-service/src/admin_api_keys.rs](../../crates/gateway-service/src/admin_api_keys.rs) through `AdminApiKeyService`.
+The control-plane policy is now centered in [../../crates/gateway-service/src/admin_api_keys.rs](../../crates/gateway-service/src/admin_api_keys.rs) through `AdminApiKeyService`.
 
 The service owns:
 
@@ -154,7 +154,7 @@ The service owns:
 - payload assembly for list/create/revoke results,
 - reload semantics after create and revoke.
 
-The HTTP module in [crates/gateway/src/http/api_keys.rs](../../crates/gateway/src/http/api_keys.rs) is intentionally thin and now only owns:
+The HTTP module in [../../crates/gateway/src/http/api_keys.rs](../../crates/gateway/src/http/api_keys.rs) is intentionally thin and now only owns:
 
 - platform-admin session auth,
 - request and path parsing,
@@ -169,7 +169,7 @@ Why:
 
 ### 5. API-key status is a typed domain concept
 
-API-key status now lives in [crates/gateway-core/src/domain.rs](../../crates/gateway-core/src/domain.rs) as `ApiKeyStatus`, with store decoding and runtime auth checks updated accordingly.
+API-key status now lives in [../../crates/gateway-core/src/domain.rs](../../crates/gateway-core/src/domain.rs) as `ApiKeyStatus`, with store decoding and runtime auth checks updated accordingly.
 
 Why:
 
@@ -181,7 +181,7 @@ Why:
 
 The cross-layer coverage for [#31](https://github.com/ahstn/oceans-llm/issues/31) now includes the live API-key flow in:
 
-- [crates/admin-ui/web/e2e/gateway-contract.e2e.ts](../../crates/admin-ui/web/e2e/gateway-contract.e2e.ts)
+- [../../crates/admin-ui/web/e2e/gateway-contract.e2e.ts](../../crates/admin-ui/web/e2e/gateway-contract.e2e.ts)
 
 Why:
 
@@ -195,10 +195,10 @@ Why:
 
 The gateway now splits transport, policy, and persistence explicitly:
 
-- [crates/gateway/src/http/api_keys.rs](../../crates/gateway/src/http/api_keys.rs)
-- [crates/gateway-service/src/admin_api_keys.rs](../../crates/gateway-service/src/admin_api_keys.rs)
-- [crates/gateway-core/src/traits.rs](../../crates/gateway-core/src/traits.rs)
-- [crates/gateway-store/src/store.rs](../../crates/gateway-store/src/store.rs)
+- [../../crates/gateway/src/http/api_keys.rs](../../crates/gateway/src/http/api_keys.rs)
+- [../../crates/gateway-service/src/admin_api_keys.rs](../../crates/gateway-service/src/admin_api_keys.rs)
+- [../../crates/gateway-core/src/traits.rs](../../crates/gateway-core/src/traits.rs)
+- [../../crates/gateway-store/src/store.rs](../../crates/gateway-store/src/store.rs)
 
 The HTTP module:
 
@@ -215,10 +215,10 @@ The service module:
 
 The store contract is split between runtime auth (`ApiKeyRepository`) and admin lifecycle (`AdminApiKeyRepository`), then implemented for both backends in:
 
-- [crates/gateway-store/src/libsql_store/api_keys.rs](../../crates/gateway-store/src/libsql_store/api_keys.rs)
-- [crates/gateway-store/src/postgres_store/api_keys.rs](../../crates/gateway-store/src/postgres_store/api_keys.rs)
-- [crates/gateway-store/src/libsql_store/mod.rs](../../crates/gateway-store/src/libsql_store/mod.rs)
-- [crates/gateway-store/src/postgres_store/mod.rs](../../crates/gateway-store/src/postgres_store/mod.rs)
+- [../../crates/gateway-store/src/libsql_store/api_keys.rs](../../crates/gateway-store/src/libsql_store/api_keys.rs)
+- [../../crates/gateway-store/src/postgres_store/api_keys.rs](../../crates/gateway-store/src/postgres_store/api_keys.rs)
+- [../../crates/gateway-store/src/libsql_store/mod.rs](../../crates/gateway-store/src/libsql_store/mod.rs)
+- [../../crates/gateway-store/src/postgres_store/mod.rs](../../crates/gateway-store/src/postgres_store/mod.rs)
 
 Those changes let the admin layer do real list/create/revoke work without bypassing the same storage backends used at runtime and without relying on optional trait defaults.
 
@@ -226,11 +226,11 @@ Those changes let the admin layer do real list/create/revoke work without bypass
 
 API-key status parsing and runtime auth checks were hardened in:
 
-- [crates/gateway-core/src/domain.rs](../../crates/gateway-core/src/domain.rs)
-- [crates/gateway-core/src/traits.rs](../../crates/gateway-core/src/traits.rs)
-- [crates/gateway-store/src/libsql_store/support.rs](../../crates/gateway-store/src/libsql_store/support.rs)
-- [crates/gateway-store/src/postgres_store/support.rs](../../crates/gateway-store/src/postgres_store/support.rs)
-- [crates/gateway-service/src/authenticator.rs](../../crates/gateway-service/src/authenticator.rs)
+- [../../crates/gateway-core/src/domain.rs](../../crates/gateway-core/src/domain.rs)
+- [../../crates/gateway-core/src/traits.rs](../../crates/gateway-core/src/traits.rs)
+- [../../crates/gateway-store/src/libsql_store/support.rs](../../crates/gateway-store/src/libsql_store/support.rs)
+- [../../crates/gateway-store/src/postgres_store/support.rs](../../crates/gateway-store/src/postgres_store/support.rs)
+- [../../crates/gateway-service/src/authenticator.rs](../../crates/gateway-service/src/authenticator.rs)
 
 This matters because control-plane revoke is only real if the data plane rejects revoked credentials immediately.
 
@@ -238,9 +238,9 @@ This matters because control-plane revoke is only real if the data plane rejects
 
 The admin UI no longer fabricates API-key rows locally. The API Keys feature is also now decomposed into feature-local pieces instead of a single large route:
 
-- [crates/admin-ui/web/src/routes/api-keys.tsx](../../crates/admin-ui/web/src/routes/api-keys.tsx)
-- [crates/admin-ui/web/src/routes/api-keys/-use-api-keys-page.ts](../../crates/admin-ui/web/src/routes/api-keys/-use-api-keys-page.ts)
-- [crates/admin-ui/web/src/routes/api-keys/-components.tsx](../../crates/admin-ui/web/src/routes/api-keys/-components.tsx)
+- [../../crates/admin-ui/web/src/routes/api-keys.tsx](../../crates/admin-ui/web/src/routes/api-keys.tsx)
+- [../../crates/admin-ui/web/src/routes/api-keys/-use-api-keys-page.ts](../../crates/admin-ui/web/src/routes/api-keys/-use-api-keys-page.ts)
+- [../../crates/admin-ui/web/src/routes/api-keys/-components.tsx](../../crates/admin-ui/web/src/routes/api-keys/-components.tsx)
 
 That split keeps:
 
@@ -256,16 +256,16 @@ Operators can still:
 - expose the raw key once,
 - revoke keys through the live admin contract.
 
-The contract types were updated in [crates/admin-ui/web/src/types/api.ts](../../crates/admin-ui/web/src/types/api.ts), and the shell copy was corrected in [crates/admin-ui/web/src/components/layout/app-shell.tsx](../../crates/admin-ui/web/src/components/layout/app-shell.tsx) so operators are not told that API keys are still preview-only.
+The contract types were updated in [../../crates/admin-ui/web/src/types/api.ts](../../crates/admin-ui/web/src/types/api.ts), and the shell copy was corrected in [../../crates/admin-ui/web/src/components/layout/app-shell.tsx](../../crates/admin-ui/web/src/components/layout/app-shell.tsx) so operators are not told that API keys are still preview-only.
 
 ### Tests
 
 Coverage was added or updated in:
 
-- [crates/gateway/src/main.rs](../../crates/gateway/src/main.rs)
-- [crates/admin-ui/web/src/server/admin-data.server.test.ts](../../crates/admin-ui/web/src/server/admin-data.server.test.ts)
-- [crates/admin-ui/web/e2e/gateway-contract.e2e.ts](../../crates/admin-ui/web/e2e/gateway-contract.e2e.ts)
-- [crates/admin-ui/web/e2e/admin-auth.e2e.ts](../../crates/admin-ui/web/e2e/admin-auth.e2e.ts)
+- [../../crates/gateway/src/main.rs](../../crates/gateway/src/main.rs)
+- [../../crates/admin-ui/web/src/server/admin-data.server.test.ts](../../crates/admin-ui/web/src/server/admin-data.server.test.ts)
+- [../../crates/admin-ui/web/e2e/gateway-contract.e2e.ts](../../crates/admin-ui/web/e2e/gateway-contract.e2e.ts)
+- [../../crates/admin-ui/web/e2e/admin-auth.e2e.ts](../../crates/admin-ui/web/e2e/admin-auth.e2e.ts)
 
 The important contract now covered is:
 
@@ -279,9 +279,9 @@ The important contract now covered is:
 Canonical docs were updated in:
 
 - [../README.md](../README.md)
-- [../admin-control-plane.md](../admin-control-plane.md)
-- [../e2e-contract-tests.md](../e2e-contract-tests.md)
-- [../observability-and-request-logs.md](../observability-and-request-logs.md)
+- [../admin-control-plane.md](../access/admin-control-plane.md)
+- [../e2e-contract-tests.md](../reference/e2e-contract-tests.md)
+- [../observability-and-request-logs.md](../operations/observability-and-request-logs.md)
 
 The observability update is not directly about API keys, but this work intentionally fixed the stale request-log-detail wording at the same time because the runtime had already moved to strict `404` semantics.
 

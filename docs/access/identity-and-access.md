@@ -1,19 +1,19 @@
 # Identity and Access
 
 `Owns`: user and team lifecycle, onboarding, ownership rules, request-logging preference, and model-access overlays.
-`Depends on`: [data-relationships.md](data-relationships.md)
-`See also`: [runtime-bootstrap-and-access.md](runtime-bootstrap-and-access.md), [oidc-and-sso-status.md](oidc-and-sso-status.md), [admin-control-plane.md](admin-control-plane.md), [budgets-and-spending.md](budgets-and-spending.md), [adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md](adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md)
+`Depends on`: [data-relationships.md](../reference/data-relationships.md)
+`See also`: [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md), [oidc-and-sso-status.md](oidc-and-sso-status.md), [admin-control-plane.md](admin-control-plane.md), [budgets-and-spending.md](../operations/budgets-and-spending.md), [adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md](../adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md)
 
 This page describes the live identity model across the gateway and admin control plane.
 
 ## Source of Truth
 
 - identity APIs:
-  - [../crates/gateway/src/http/identity.rs](../crates/gateway/src/http/identity.rs)
+  - [../crates/gateway/src/http/identity.rs](../../crates/gateway/src/http/identity.rs)
 - lifecycle policy:
-  - [../crates/gateway/src/http/identity_lifecycle.rs](../crates/gateway/src/http/identity_lifecycle.rs)
+  - [../crates/gateway/src/http/identity_lifecycle.rs](../../crates/gateway/src/http/identity_lifecycle.rs)
 - access evaluation:
-  - [../crates/gateway-service/src/model_access.rs](../crates/gateway-service/src/model_access.rs)
+  - [../crates/gateway-service/src/model_access.rs](../../crates/gateway-service/src/model_access.rs)
 
 ## Ownership Model
 
@@ -50,7 +50,7 @@ Bootstrap admin is the first control-plane access path, not a normal user-manage
 - production-shaped local config keeps it enabled with forced password rotation
 - the active config and startup toggles decide whether it is created on boot
 
-For the startup and first-access path, use [runtime-bootstrap-and-access.md](runtime-bootstrap-and-access.md).
+For the startup and first-access path, use [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md).
 
 ## Onboarding Model
 
@@ -132,8 +132,8 @@ Request logging policy is partly owned by identity.
 - admin workflows:
   - [admin-control-plane.md](admin-control-plane.md)
 - startup and first access:
-  - [runtime-bootstrap-and-access.md](runtime-bootstrap-and-access.md)
+  - [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md)
 - spend ownership effects:
-  - [budgets-and-spending.md](budgets-and-spending.md)
+  - [budgets-and-spending.md](../operations/budgets-and-spending.md)
 - request resolution effects:
-  - [model-routing-and-api-behavior.md](model-routing-and-api-behavior.md)
+  - [model-routing-and-api-behavior.md](../configuration/model-routing-and-api-behavior.md)

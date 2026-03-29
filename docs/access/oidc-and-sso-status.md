@@ -1,8 +1,8 @@
 # OIDC and SSO Status
 
 `Owns`: the current OIDC state, the boundary of the development-style flow, the planned hardened direction, and the missing local test-IdP story.
-`Depends on`: [identity-and-access.md](identity-and-access.md), [runtime-bootstrap-and-access.md](runtime-bootstrap-and-access.md)
-`See also`: [configuration-reference.md](configuration-reference.md), [deploy-and-operations.md](deploy-and-operations.md), [admin-control-plane.md](admin-control-plane.md), [adr/2026-03-05-identity-foundation.md](adr/2026-03-05-identity-foundation.md)
+`Depends on`: [identity-and-access.md](identity-and-access.md), [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md)
+`See also`: [configuration-reference.md](../configuration/configuration-reference.md), [deploy-and-operations.md](../setup/deploy-and-operations.md), [admin-control-plane.md](admin-control-plane.md), [adr/2026-03-05-identity-foundation.md](../adr/2026-03-05-identity-foundation.md)
 
 This page exists because the current OIDC story is easy to overread. OIDC exists in the product, but it is not hardened production-grade SSO yet.
 
@@ -76,6 +76,6 @@ That means:
 ## What This Page Does Not Own
 
 - user lifecycle and team rules: [identity-and-access.md](identity-and-access.md)
-- config field syntax for providers: [configuration-reference.md](configuration-reference.md)
+- config field syntax for providers: [configuration-reference.md](../configuration/configuration-reference.md)
 - admin UI capability map: [admin-control-plane.md](admin-control-plane.md)
-- deploy topology and first-access behavior: [deploy-and-operations.md](deploy-and-operations.md), [runtime-bootstrap-and-access.md](runtime-bootstrap-and-access.md)
+- deploy topology and first-access behavior: [deploy-and-operations.md](../setup/deploy-and-operations.md), [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md)

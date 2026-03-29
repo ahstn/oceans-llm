@@ -1,8 +1,8 @@
 # Deploy and Operations
 
 `Owns`: runtime topology, the same-origin admin model, local-vs-prod differences, and deploy-time caveats that are easy to miss from one config file.
-`Depends on`: [../README.md](../README.md), [configuration-reference.md](configuration-reference.md)
-`See also`: [runtime-bootstrap-and-access.md](runtime-bootstrap-and-access.md), [operator-runbooks.md](operator-runbooks.md), [../deploy/README.md](../deploy/README.md), [release-process.md](release-process.md)
+`Depends on`: [../README.md](../../README.md), [configuration-reference.md](../configuration/configuration-reference.md)
+`See also`: [runtime-bootstrap-and-access.md](runtime-bootstrap-and-access.md), [operator-runbooks.md](../operations/operator-runbooks.md), [../deploy/README.md](../../deploy/README.md), [release-process.md](../reference/release-process.md)
 
 This page owns the runtime shape. It does not own the action-by-action runbooks.
 
@@ -21,31 +21,31 @@ This is a product constraint, not only a local-dev convenience.
 ### Local development
 
 - config:
-  - [../gateway.yaml](../gateway.yaml)
+  - [../gateway.yaml](../../gateway.yaml)
 - database:
   - libsql or SQLite
 - entry point:
-  - [../scripts/start-dev-stack.sh](../scripts/start-dev-stack.sh)
+  - [../scripts/start-dev-stack.sh](../../scripts/start-dev-stack.sh)
 - bootstrap admin:
   - enabled, no forced password change
 
 ### Production-shaped local run
 
 - config:
-  - [../gateway.prod.yaml](../gateway.prod.yaml)
+  - [../gateway.prod.yaml](../../gateway.prod.yaml)
 - database:
   - PostgreSQL
 - entry point:
-  - [../scripts/start-prod.sh](../scripts/start-prod.sh)
+  - [../scripts/start-prod.sh](../../scripts/start-prod.sh)
 - bootstrap admin:
   - enabled, forced password rotation
 
 ### GHCR compose deployment
 
 - compose:
-  - [../deploy/compose.yaml](../deploy/compose.yaml)
+  - [../deploy/compose.yaml](../../deploy/compose.yaml)
 - config:
-  - [../deploy/config/gateway.yaml](../deploy/config/gateway.yaml)
+  - [../deploy/config/gateway.yaml](../../deploy/config/gateway.yaml)
 - database:
   - PostgreSQL
 - checked-in first access:
@@ -104,15 +104,15 @@ Current image support is not symmetric:
   - `linux/amd64`
   - `linux/arm64`
 
-Release mechanics live in [release-process.md](release-process.md). Upgrade and recovery steps live in [operator-runbooks.md](operator-runbooks.md).
+Release mechanics live in [release-process.md](../reference/release-process.md). Upgrade and recovery steps live in [operator-runbooks.md](../operations/operator-runbooks.md).
 
 ## What This Page Does Not Own
 
 - startup behavior and first access:
   - [runtime-bootstrap-and-access.md](runtime-bootstrap-and-access.md)
 - compose quick start:
-  - [../deploy/README.md](../deploy/README.md)
+  - [../deploy/README.md](../../deploy/README.md)
 - action-oriented recovery:
-  - [operator-runbooks.md](operator-runbooks.md)
+  - [operator-runbooks.md](../operations/operator-runbooks.md)
 - request routing semantics:
-  - [model-routing-and-api-behavior.md](model-routing-and-api-behavior.md)
+  - [model-routing-and-api-behavior.md](../configuration/model-routing-and-api-behavior.md)

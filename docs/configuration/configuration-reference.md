@@ -1,21 +1,21 @@
 # Configuration Reference
 
 `Owns`: gateway YAML shape, defaults, validation rules, provider auth modes, and env-backed secret references.
-`Depends on`: [../README.md](../README.md)
-`See also`: [runtime-bootstrap-and-access.md](runtime-bootstrap-and-access.md), [model-routing-and-api-behavior.md](model-routing-and-api-behavior.md), [pricing-catalog-and-accounting.md](pricing-catalog-and-accounting.md), [oidc-and-sso-status.md](oidc-and-sso-status.md)
+`Depends on`: [../README.md](../../README.md)
+`See also`: [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md), [model-routing-and-api-behavior.md](model-routing-and-api-behavior.md), [pricing-catalog-and-accounting.md](pricing-catalog-and-accounting.md), [oidc-and-sso-status.md](../access/oidc-and-sso-status.md)
 
 This page owns config syntax and parse-time rules. It does not own the full runtime story after a request starts moving.
 
 ## Source of Truth
 
 - config parsing and validation:
-  - [../crates/gateway/src/config.rs](../crates/gateway/src/config.rs)
+  - [../crates/gateway/src/config.rs](../../crates/gateway/src/config.rs)
 - provider capability defaults:
-  - [../crates/gateway-core/src/domain.rs](../crates/gateway-core/src/domain.rs)
+  - [../crates/gateway-core/src/domain.rs](../../crates/gateway-core/src/domain.rs)
 - checked-in examples:
-  - [../gateway.yaml](../gateway.yaml)
-  - [../gateway.prod.yaml](../gateway.prod.yaml)
-  - [../deploy/config/gateway.yaml](../deploy/config/gateway.yaml)
+  - [../gateway.yaml](../../gateway.yaml)
+  - [../gateway.prod.yaml](../../gateway.prod.yaml)
+  - [../deploy/config/gateway.yaml](../../deploy/config/gateway.yaml)
 
 ## Top-Level Sections
 
@@ -118,7 +118,7 @@ Important defaults from config parsing and domain deserialization:
 - Vertex `location` defaults to `global`
 - Vertex `api_host` defaults to `aiplatform.googleapis.com`
 
-The startup meaning of bootstrap-admin and seeded API keys lives in [runtime-bootstrap-and-access.md](runtime-bootstrap-and-access.md).
+The startup meaning of bootstrap-admin and seeded API keys lives in [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md).
 
 ## `server`
 
@@ -130,7 +130,7 @@ Important fields:
 - `otel_metrics_endpoint`
 - `otel_export_interval_secs`
 
-For collector assumptions and request-log implications, see [observability-and-request-logs.md](observability-and-request-logs.md).
+For collector assumptions and request-log implications, see [observability-and-request-logs.md](../operations/observability-and-request-logs.md).
 
 ## `database`
 
@@ -154,7 +154,7 @@ Important distinctions:
 - `bootstrap_admin` creates control-plane access
 - `bootstrap_admin.require_password_change` changes first-login behavior
 
-For startup behavior and first access after boot, use [runtime-bootstrap-and-access.md](runtime-bootstrap-and-access.md).
+For startup behavior and first access after boot, use [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md).
 
 ## Provider Types
 
@@ -259,12 +259,12 @@ Later failures are usually runtime problems such as:
 ## What This Page Does Not Own
 
 - startup behavior and first access:
-  - [runtime-bootstrap-and-access.md](runtime-bootstrap-and-access.md)
+  - [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md)
 - request routing and `/v1/*` behavior:
   - [model-routing-and-api-behavior.md](model-routing-and-api-behavior.md)
 - cross-cutting request cause and effect:
-  - [request-lifecycle-and-failure-modes.md](request-lifecycle-and-failure-modes.md)
+  - [request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md)
 - spend windows and budget policy:
-  - [budgets-and-spending.md](budgets-and-spending.md)
+  - [budgets-and-spending.md](../operations/budgets-and-spending.md)
 - hardened OIDC status:
-  - [oidc-and-sso-status.md](oidc-and-sso-status.md)
+  - [oidc-and-sso-status.md](../access/oidc-and-sso-status.md)

@@ -69,29 +69,31 @@ Default local endpoints:
 
 ## Documentation Map
 
-Use the canonical docs instead of treating this file as the full operator manual.
+Use the docs site instead of treating this file as the full operator manual.
 
 - repo workflow:
   - [Contributing](CONTRIBUTING.md)
-- docs graph:
-  - [Documentation Hub](docs/README.md)
+- docs site:
+  - [Documentation Home](docs/index.md)
 - startup and first access:
-  - [Runtime Bootstrap and Access](docs/runtime-bootstrap-and-access.md)
+  - [Runtime Bootstrap and Access](docs/setup/runtime-bootstrap-and-access.md)
 - config contract:
-  - [Configuration Reference](docs/configuration-reference.md)
+  - [Configuration Reference](docs/configuration/configuration-reference.md)
 - identity:
-  - [Identity and Access](docs/identity-and-access.md)
+  - [Identity and Access](docs/access/identity-and-access.md)
 - routing:
-  - [Model Routing and API Behavior](docs/model-routing-and-api-behavior.md)
+  - [Model Routing and API Behavior](docs/configuration/model-routing-and-api-behavior.md)
 - cross-cutting request flow:
-  - [Request Lifecycle and Failure Modes](docs/request-lifecycle-and-failure-modes.md)
+  - [Request Lifecycle and Failure Modes](docs/reference/request-lifecycle-and-failure-modes.md)
 - pricing and spend:
-  - [Pricing Catalog and Accounting](docs/pricing-catalog-and-accounting.md)
-  - [Budgets and Spending](docs/budgets-and-spending.md)
+  - [Pricing Catalog and Accounting](docs/configuration/pricing-catalog-and-accounting.md)
+  - [Budgets and Spending](docs/operations/budgets-and-spending.md)
 - observability:
-  - [Observability and Request Logs](docs/observability-and-request-logs.md)
+  - [Observability and Request Logs](docs/operations/observability-and-request-logs.md)
 - admin UI:
-  - [Admin Control Plane](docs/admin-control-plane.md)
+  - [Admin Control Plane](docs/access/admin-control-plane.md)
+- maintainer-facing docs source notes:
+  - [Documentation Source Notes](docs/README.md)
 - deploy quick start:
   - [Deploy Compose](deploy/README.md)
 
@@ -126,4 +128,4 @@ Verify drift with:
 mise run admin-contract-check
 ```
 
-For the full maintainer workflow, use [Admin API Contract Workflow](docs/admin-api-contract-workflow.md).
+For the full maintainer workflow, use [Admin API Contract Workflow](docs/reference/admin-api-contract-workflow.md).

@@ -5,16 +5,16 @@
 
 ## Current state
 
-- [../pricing-catalog-and-accounting.md](../pricing-catalog-and-accounting.md)
-- [../budgets-and-spending.md](../budgets-and-spending.md)
-- [../request-lifecycle-and-failure-modes.md](../request-lifecycle-and-failure-modes.md)
+- [../pricing-catalog-and-accounting.md](../configuration/pricing-catalog-and-accounting.md)
+- [../budgets-and-spending.md](../operations/budgets-and-spending.md)
+- [../request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md)
 
 ## Context
 
 Implemented by:
 
-- [../pricing-catalog-and-accounting.md](../pricing-catalog-and-accounting.md)
-- [../budgets-and-spending.md](../budgets-and-spending.md)
+- [../pricing-catalog-and-accounting.md](../configuration/pricing-catalog-and-accounting.md)
+- [../budgets-and-spending.md](../operations/budgets-and-spending.md)
 
 We added budget and spend-accounting schema groundwork (`user_budgets`, `usage_cost_events`), but the gateway still lacked a reliable pricing source for live enforcement. Provider `/v1/models` endpoints were not sufficient because they do not expose stable billing data, and provider pricing pages are documented separately and can change independently of model discovery APIs.
 
@@ -113,7 +113,7 @@ This ADR reflects the initial pricing-catalog slice. The live system has moved b
 - `usage_cost_events` writes are live
 - pricing coverage still remains intentionally exact-only
 
-Treat [../pricing-catalog-and-accounting.md](../pricing-catalog-and-accounting.md) and [../budgets-and-spending.md](../budgets-and-spending.md) as the canonical current-state docs.
+Treat [../pricing-catalog-and-accounting.md](../configuration/pricing-catalog-and-accounting.md) and [../budgets-and-spending.md](../operations/budgets-and-spending.md) as the canonical current-state docs.
 
 ## Consequences
 

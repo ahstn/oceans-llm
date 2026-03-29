@@ -1,8 +1,8 @@
 # Deploy Compose
 
 `Owns`: the GHCR-based compose quick start in `deploy/`.
-`Depends on`: [../README.md](../README.md), [../docs/deploy-and-operations.md](../docs/deploy-and-operations.md)
-`See also`: [../docs/runtime-bootstrap-and-access.md](../docs/runtime-bootstrap-and-access.md), [../docs/operator-runbooks.md](../docs/operator-runbooks.md)
+`Depends on`: [../README.md](../README.md), [../docs/deploy-and-operations.md](../docs/setup/deploy-and-operations.md)
+`See also`: [../docs/runtime-bootstrap-and-access.md](../docs/setup/runtime-bootstrap-and-access.md), [../docs/operator-runbooks.md](../docs/operations/operator-runbooks.md)
 
 This directory is the quick start for the checked-in compose deploy path.
 
@@ -65,10 +65,12 @@ That missing declarative identity path is part of the future config-as-code dire
 Use the quick start here, then switch to the canonical pages for the rest:
 
 - startup and first access:
-  - [Runtime Bootstrap and Access](../docs/runtime-bootstrap-and-access.md)
+  - [Runtime Bootstrap and Access](../docs/setup/runtime-bootstrap-and-access.md)
 - topology and caveats:
-  - [Deploy and Operations](../docs/deploy-and-operations.md)
+  - [Deploy and Operations](../docs/setup/deploy-and-operations.md)
 - action-oriented recovery:
-  - [Operator Runbooks](../docs/operator-runbooks.md)
+  - [Operator Runbooks](../docs/operations/operator-runbooks.md)
 - config contract:
-  - [Configuration Reference](../docs/configuration-reference.md)
+  - [Configuration Reference](../docs/configuration/configuration-reference.md)
+
+Use [Documentation Home](../docs/index.md) when you need the full operator map.

@@ -1,19 +1,19 @@
 # Admin API Contract Workflow
 
 `Owns`: the generated admin API contract pipeline, checked-in artifacts, same-origin client boundary, drift rules, and the maintainer update flow when admin APIs change.
-`Depends on`: [admin-control-plane.md](admin-control-plane.md), [e2e-contract-tests.md](e2e-contract-tests.md)
-`See also`: [../README.md](../README.md), [../mise.toml](../mise.toml), [../crates/gateway/openapi/admin-api.json](../crates/gateway/openapi/admin-api.json), [../crates/admin-ui/web/src/generated/admin-api.ts](../crates/admin-ui/web/src/generated/admin-api.ts), [adr/2026-03-28-generated-admin-api-contract-and-typed-same-origin-client.md](adr/2026-03-28-generated-admin-api-contract-and-typed-same-origin-client.md), [adr/2026-03-29-live-admin-api-key-management-and-contract-coverage.md](adr/2026-03-29-live-admin-api-key-management-and-contract-coverage.md)
+`Depends on`: [admin-control-plane.md](../access/admin-control-plane.md), [e2e-contract-tests.md](e2e-contract-tests.md)
+`See also`: [../README.md](../../README.md), [../mise.toml](../../mise.toml), [../crates/gateway/openapi/admin-api.json](../../crates/gateway/openapi/admin-api.json), [../crates/admin-ui/web/src/generated/admin-api.ts](../../crates/admin-ui/web/src/generated/admin-api.ts), [adr/2026-03-28-generated-admin-api-contract-and-typed-same-origin-client.md](../adr/2026-03-28-generated-admin-api-contract-and-typed-same-origin-client.md), [adr/2026-03-29-live-admin-api-key-management-and-contract-coverage.md](../adr/2026-03-29-live-admin-api-key-management-and-contract-coverage.md)
 
 This page is maintainer-facing. It explains how the live admin contract is generated and why the checked-in artifacts are part of the review surface.
 
 ## Source of Truth
 
-- contract DTOs and OpenAPI document: [../crates/gateway/src/http/admin_contract.rs](../crates/gateway/src/http/admin_contract.rs)
-- route annotations: [../crates/gateway/src/http/identity.rs](../crates/gateway/src/http/identity.rs), [../crates/gateway/src/http/spend.rs](../crates/gateway/src/http/spend.rs), [../crates/gateway/src/http/observability.rs](../crates/gateway/src/http/observability.rs), [../crates/gateway/src/http/api_keys.rs](../crates/gateway/src/http/api_keys.rs)
-- OpenAPI export binary: [../crates/gateway/src/bin/export_admin_openapi.rs](../crates/gateway/src/bin/export_admin_openapi.rs)
-- generated artifact: [../crates/gateway/openapi/admin-api.json](../crates/gateway/openapi/admin-api.json)
-- generated TypeScript types: [../crates/admin-ui/web/src/generated/admin-api.ts](../crates/admin-ui/web/src/generated/admin-api.ts)
-- same-origin client: [../crates/admin-ui/web/src/server/gateway-client.server.ts](../crates/admin-ui/web/src/server/gateway-client.server.ts)
+- contract DTOs and OpenAPI document: [../crates/gateway/src/http/admin_contract.rs](../../crates/gateway/src/http/admin_contract.rs)
+- route annotations: [../crates/gateway/src/http/identity.rs](../../crates/gateway/src/http/identity.rs), [../crates/gateway/src/http/spend.rs](../../crates/gateway/src/http/spend.rs), [../crates/gateway/src/http/observability.rs](../../crates/gateway/src/http/observability.rs), [../crates/gateway/src/http/api_keys.rs](../../crates/gateway/src/http/api_keys.rs)
+- OpenAPI export binary: [../crates/gateway/src/bin/export_admin_openapi.rs](../../crates/gateway/src/bin/export_admin_openapi.rs)
+- generated artifact: [../crates/gateway/openapi/admin-api.json](../../crates/gateway/openapi/admin-api.json)
+- generated TypeScript types: [../crates/admin-ui/web/src/generated/admin-api.ts](../../crates/admin-ui/web/src/generated/admin-api.ts)
+- same-origin client: [../crates/admin-ui/web/src/server/gateway-client.server.ts](../../crates/admin-ui/web/src/server/gateway-client.server.ts)
 
 ## Contract Boundary
 
@@ -97,7 +97,7 @@ Recent API-key work tightened the control-plane boundary.
 
 - runtime auth stays in `ApiKeyRepository`
 - admin lifecycle moved into `AdminApiKeyRepository`
-- lifecycle policy moved into [../crates/gateway-service/src/admin_api_keys.rs](../crates/gateway-service/src/admin_api_keys.rs)
+- lifecycle policy moved into [../crates/gateway-service/src/admin_api_keys.rs](../../crates/gateway-service/src/admin_api_keys.rs)
 
 That split keeps a security-sensitive control-plane feature from living as optional runtime-auth behavior.
 
@@ -108,7 +108,7 @@ Use this rough rule:
 - route shape, query params, or response envelopes changed:
   - update this page
 - admin UI capability changed:
-  - update [admin-control-plane.md](admin-control-plane.md)
+  - update [admin-control-plane.md](../access/admin-control-plane.md)
 - test coverage rules changed:
   - update [e2e-contract-tests.md](e2e-contract-tests.md)
 - architectural reasoning changed:
@@ -116,6 +116,6 @@ Use this rough rule:
 
 ## What This Page Does Not Own
 
-- operator-facing UI capability map: [admin-control-plane.md](admin-control-plane.md)
+- operator-facing UI capability map: [admin-control-plane.md](../access/admin-control-plane.md)
 - browser and HTTP contract test scope: [e2e-contract-tests.md](e2e-contract-tests.md)
-- local quick-start commands: [../README.md](../README.md)
+- local quick-start commands: [../README.md](../../README.md)

@@ -1,23 +1,23 @@
 # Observability and Request Logs
 
 `Owns`: the OTLP observability model, request-log storage shape, payload redaction and truncation boundaries, and admin observability API behavior.
-`Depends on`: [data-relationships.md](data-relationships.md), [model-routing-and-api-behavior.md](model-routing-and-api-behavior.md)
-`See also`: [request-lifecycle-and-failure-modes.md](request-lifecycle-and-failure-modes.md), [admin-control-plane.md](admin-control-plane.md), [deploy-and-operations.md](deploy-and-operations.md), [adr/2026-03-15-otlp-observability-and-request-log-payloads.md](adr/2026-03-15-otlp-observability-and-request-log-payloads.md)
+`Depends on`: [data-relationships.md](../reference/data-relationships.md), [model-routing-and-api-behavior.md](../configuration/model-routing-and-api-behavior.md)
+`See also`: [request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md), [admin-control-plane.md](../access/admin-control-plane.md), [deploy-and-operations.md](../setup/deploy-and-operations.md), [adr/2026-03-15-otlp-observability-and-request-log-payloads.md](../adr/2026-03-15-otlp-observability-and-request-log-payloads.md)
 
 This document describes the live observability contract for the gateway.
 
 ## Source of Truth
 
 - observability bootstrap:
-  - [../crates/gateway/src/observability.rs](../crates/gateway/src/observability.rs)
+  - [../crates/gateway/src/observability.rs](../../crates/gateway/src/observability.rs)
 - HTTP request instrumentation:
-  - [../crates/gateway/src/http/handlers.rs](../crates/gateway/src/http/handlers.rs)
+  - [../crates/gateway/src/http/handlers.rs](../../crates/gateway/src/http/handlers.rs)
 - request-log lifecycle:
-  - [../crates/gateway-service/src/request_logging.rs](../crates/gateway-service/src/request_logging.rs)
+  - [../crates/gateway-service/src/request_logging.rs](../../crates/gateway-service/src/request_logging.rs)
 - redaction policy:
-  - [../crates/gateway-service/src/redaction.rs](../crates/gateway-service/src/redaction.rs)
+  - [../crates/gateway-service/src/redaction.rs](../../crates/gateway-service/src/redaction.rs)
 - admin APIs:
-  - [../crates/gateway/src/http/observability.rs](../crates/gateway/src/http/observability.rs)
+  - [../crates/gateway/src/http/observability.rs](../../crates/gateway/src/http/observability.rs)
 
 ## OTLP-First Model
 
@@ -162,4 +162,4 @@ Request logs and spend accounting are related, but intentionally separate.
 - request logs describe the user-visible request outcome
 - `usage_cost_events` is the canonical spend ledger
 
-For the full request path across both systems, use [request-lifecycle-and-failure-modes.md](request-lifecycle-and-failure-modes.md).
+For the full request path across both systems, use [request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md).

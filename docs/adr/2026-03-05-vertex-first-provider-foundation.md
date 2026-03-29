@@ -5,9 +5,9 @@
 
 ## Current state
 
-- [../configuration-reference.md](../configuration-reference.md)
-- [../model-routing-and-api-behavior.md](../model-routing-and-api-behavior.md)
-- [../pricing-catalog-and-accounting.md](../pricing-catalog-and-accounting.md)
+- [../configuration-reference.md](../configuration/configuration-reference.md)
+- [../model-routing-and-api-behavior.md](../configuration/model-routing-and-api-behavior.md)
+- [../pricing-catalog-and-accounting.md](../configuration/pricing-catalog-and-accounting.md)
 
 ## Context
 

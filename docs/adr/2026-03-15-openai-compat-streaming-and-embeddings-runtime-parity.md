@@ -5,9 +5,9 @@
 
 ## Current state
 
-- [../model-routing-and-api-behavior.md](../model-routing-and-api-behavior.md)
-- [../request-lifecycle-and-failure-modes.md](../request-lifecycle-and-failure-modes.md)
-- [../observability-and-request-logs.md](../observability-and-request-logs.md)
+- [../model-routing-and-api-behavior.md](../configuration/model-routing-and-api-behavior.md)
+- [../request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md)
+- [../observability-and-request-logs.md](../operations/observability-and-request-logs.md)
 
 ## Context
 

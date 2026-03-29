@@ -6,14 +6,14 @@
 ## Implemented By
 
 - Canonical docs:
-  - [../model-routing-and-api-behavior.md](../model-routing-and-api-behavior.md)
-  - [../data-relationships.md](../data-relationships.md)
+  - [../model-routing-and-api-behavior.md](../configuration/model-routing-and-api-behavior.md)
+  - [../data-relationships.md](../reference/data-relationships.md)
 
 ## Current state
 
-- [../model-routing-and-api-behavior.md](../model-routing-and-api-behavior.md)
-- [../configuration-reference.md](../configuration-reference.md)
-- [../request-lifecycle-and-failure-modes.md](../request-lifecycle-and-failure-modes.md)
+- [../model-routing-and-api-behavior.md](../configuration/model-routing-and-api-behavior.md)
+- [../configuration-reference.md](../configuration/configuration-reference.md)
+- [../request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md)
 
 ## Context
 

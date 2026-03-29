@@ -1,8 +1,8 @@
 # Budgets and Spending
 
 `Owns`: spend ledger semantics, budget enforcement rules, budget alerts, spend APIs, and current spend-policy deferrals.
-`Depends on`: [data-relationships.md](data-relationships.md), [pricing-catalog-and-accounting.md](pricing-catalog-and-accounting.md)
-`See also`: [request-lifecycle-and-failure-modes.md](request-lifecycle-and-failure-modes.md), [identity-and-access.md](identity-and-access.md), [admin-control-plane.md](admin-control-plane.md), [adr/2026-03-15-spend-control-plane-reporting-and-team-hard-limits.md](adr/2026-03-15-spend-control-plane-reporting-and-team-hard-limits.md)
+`Depends on`: [data-relationships.md](../reference/data-relationships.md), [pricing-catalog-and-accounting.md](../configuration/pricing-catalog-and-accounting.md)
+`See also`: [request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md), [identity-and-access.md](../access/identity-and-access.md), [admin-control-plane.md](../access/admin-control-plane.md), [adr/2026-03-15-spend-control-plane-reporting-and-team-hard-limits.md](../adr/2026-03-15-spend-control-plane-reporting-and-team-hard-limits.md)
 
 This page describes the live spend contract in the gateway.
 
@@ -11,11 +11,11 @@ This page describes the live spend contract in the gateway.
 - spend ledger:
   - `usage_cost_events`
 - request-path enforcement:
-  - [../crates/gateway-service/src/budget_guard.rs](../crates/gateway-service/src/budget_guard.rs)
+  - [../crates/gateway-service/src/budget_guard.rs](../../crates/gateway-service/src/budget_guard.rs)
 - ledger writes:
-  - [../crates/gateway-service/src/service.rs](../crates/gateway-service/src/service.rs)
+  - [../crates/gateway-service/src/service.rs](../../crates/gateway-service/src/service.rs)
 - admin spend APIs:
-  - [../crates/gateway/src/http/spend.rs](../crates/gateway/src/http/spend.rs)
+  - [../crates/gateway/src/http/spend.rs](../../crates/gateway/src/http/spend.rs)
 
 ## Ledger Contract
 
@@ -75,7 +75,7 @@ Ownership scope keys:
 - if pricing cannot be matched exactly, the row is marked `unpriced`
 - `unpriced` and `usage_missing` rows stay visible in reporting but do not count toward spend totals
 
-Use [request-lifecycle-and-failure-modes.md](request-lifecycle-and-failure-modes.md) for the cross-cutting path from request execution to ledger state.
+Use [request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md) for the cross-cutting path from request execution to ledger state.
 
 ## Budget Configuration Model
 
@@ -155,10 +155,10 @@ These routes require an authenticated platform-admin session.
 ## What This Page Does Not Own
 
 - exact pricing coverage and `unpriced` causes:
-  - [pricing-catalog-and-accounting.md](pricing-catalog-and-accounting.md)
+  - [pricing-catalog-and-accounting.md](../configuration/pricing-catalog-and-accounting.md)
 - end-to-end request path:
-  - [request-lifecycle-and-failure-modes.md](request-lifecycle-and-failure-modes.md)
+  - [request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md)
 - operator-facing admin UI behavior:
-  - [admin-control-plane.md](admin-control-plane.md)
+  - [admin-control-plane.md](../access/admin-control-plane.md)
 - identity lifecycle and email readiness:
-  - [identity-and-access.md](identity-and-access.md)
+  - [identity-and-access.md](../access/identity-and-access.md)

@@ -1,19 +1,19 @@
 # Release Process
 
 `Owns`: the maintainer release workflow, the local release task behavior, and the tag-triggered CI release distribution flow.
-`Depends on`: [../CONTRIBUTING.md](../CONTRIBUTING.md)
-`See also`: [deploy-and-operations.md](deploy-and-operations.md), [operator-runbooks.md](operator-runbooks.md), [adr/2026-03-06-release-versioning-and-ghcr-publishing.md](adr/2026-03-06-release-versioning-and-ghcr-publishing.md), [../mise.toml](../mise.toml), [../.github/workflows/release.yml](../.github/workflows/release.yml)
+`Depends on`: [../CONTRIBUTING.md](../../CONTRIBUTING.md)
+`See also`: [deploy-and-operations.md](../setup/deploy-and-operations.md), [operator-runbooks.md](../operations/operator-runbooks.md), [adr/2026-03-06-release-versioning-and-ghcr-publishing.md](../adr/2026-03-06-release-versioning-and-ghcr-publishing.md), [../mise.toml](../../mise.toml), [../.github/workflows/release.yml](../../.github/workflows/release.yml)
 
 This page is the maintainer-facing release runbook.
 
 ## Source of Truth
 
 - local release task:
-  - [../mise.toml](../mise.toml)
+  - [../mise.toml](../../mise.toml)
 - release workflow:
-  - [../.github/workflows/release.yml](../.github/workflows/release.yml)
+  - [../.github/workflows/release.yml](../../.github/workflows/release.yml)
 - changelog config:
-  - [../cliff.toml](../cliff.toml)
+  - [../cliff.toml](../../cliff.toml)
 
 ## Release Preflight
 
@@ -48,7 +48,7 @@ That means release metadata and version updates are authored locally before any 
 
 ## What GitHub Actions Does
 
-The pushed `v*` tag triggers [../.github/workflows/release.yml](../.github/workflows/release.yml).
+The pushed `v*` tag triggers [../.github/workflows/release.yml](../../.github/workflows/release.yml).
 
 Current workflow responsibilities:
 
