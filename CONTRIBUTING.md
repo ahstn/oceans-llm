@@ -38,6 +38,7 @@ Use [`mise.toml`](mise.toml) as the task catalog instead of memorizing ad hoc co
 - Admin UI workflows: `mise run ui-dev`, `mise run ui-check`, `mise run ui-build`
 - End-to-end suite: `mise run e2e-test`
 - Docs site workflows: `mise run docs-install`, `mise run docs-dev`, `mise run docs-build`, `mise run docs-verify`
+- Release-only docs publish: `mise run docs-deploy` (requires Cloudflare secrets)
 
 For local stack startup and runtime entry points, see [README.md](README.md). For deploy-oriented runs, see [deploy/README.md](deploy/README.md).
 
@@ -125,7 +126,7 @@ The CI contract lives in the workflow files under [.github/workflows](.github/wo
 | [.github/workflows/e2e-ci.yml](.github/workflows/e2e-ci.yml) | Playwright contract suite via `mise run e2e-test` |
 | [.github/workflows/docs-ci.yml](.github/workflows/docs-ci.yml) | VitePress docs graph checks and static-site build via `mise run docs-verify` |
 | [.github/workflows/pr-title.yml](.github/workflows/pr-title.yml) | PR title validation against Conventional Commit format |
-| [.github/workflows/release.yml](.github/workflows/release.yml) | tag-driven image build, GHCR publish, provenance, and GitHub release steps |
+| [.github/workflows/release.yml](.github/workflows/release.yml) | tag-driven docs deploy to Cloudflare Pages plus image build, GHCR publish, and provenance |
 
 Release rationale and the local-to-CI handoff are documented in [docs/adr/2026-03-06-release-versioning-and-ghcr-publishing.md](docs/adr/2026-03-06-release-versioning-and-ghcr-publishing.md).
 
