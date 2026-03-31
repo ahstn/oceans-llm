@@ -34,7 +34,7 @@ The checked-in stack creates:
 - a PostgreSQL container
 - a gateway container
 - an admin UI container
-- config-seeded runtime objects on gateway boot
+- config-seeded runtime objects on gateway boot, including teams, invited users, and budgets
 
 The gateway can run migrations and seed config-backed objects on startup.
 
@@ -43,22 +43,21 @@ The gateway can run migrations and seed config-backed objects on startup.
 The checked-in compose path guarantees:
 
 - data-plane access through the seeded `GATEWAY_API_KEY`
+- a bootstrap admin at `admin@local` once `GATEWAY_BOOTSTRAP_ADMIN_PASSWORD` is set
+- the example seeded teams, users, and budgets from `config/gateway.yaml`
 
 The checked-in compose path does not guarantee:
 
-- a bootstrap admin user
-- a first-login password flow
 - hardened OIDC or SSO bootstrap
 
-Admin access depends on the mounted runtime config and any existing admin rows in the database.
+Seeded password and OIDC users are created as invited identities. Operators still generate onboarding links from the admin UI when those accounts need to sign in.
 
 ## What This Quick Start Does Not Configure
 
 - no checked-in OTLP collector
-- no checked-in bootstrap-admin block
-- no declarative users, teams, or budgets
+- no hardened SSO-first bootstrap path
 
-That missing declarative identity path is part of the future config-as-code direction tracked in [issue #64](https://github.com/ahstn/oceans-llm/issues/64) and [issue #65](https://github.com/ahstn/oceans-llm/issues/65).
+Hardened declarative SSO-backed identity matching remains tracked in [issue #65](https://github.com/ahstn/oceans-llm/issues/65).
 
 ## Follow The Canonical Docs
 

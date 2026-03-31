@@ -91,6 +91,15 @@ Budget fields:
 
 `timezone` is stored now, but enforcement windows still use UTC.
 
+## Declarative Budget Seed
+
+Active user and team budgets can also come from config-backed seed inputs.
+
+- `teams[*].budget` reconciles the listed team's active budget
+- `users[*].budget` reconciles the listed user's active budget
+- removing a listed owner's `budget` block deactivates that active budget
+- historical budget rows remain historical; config only owns the active row
+
 ## Budget Threshold Alerts
 
 Budget alerts have deeper behavior than a plain email side effect.
@@ -146,8 +155,7 @@ These routes require an authenticated platform-admin session.
 - provider breakdown is not part of spend reporting v1
 - acting-user attribution for team-owned keys remains `actor:none`
 - timezone-aware budget windows are still deferred
-- declarative config-driven budgets are not supported yet
-  - [issue #64](https://github.com/ahstn/oceans-llm/issues/64)
+- hardened declarative SSO-backed identity matching remains deferred
   - [issue #65](https://github.com/ahstn/oceans-llm/issues/65)
 
 ## What This Page Does Not Own

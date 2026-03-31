@@ -7,9 +7,38 @@ database:
   url: env.POSTGRES_URL
 
 auth:
+  bootstrap_admin:
+    enabled: true
+    email: admin@local
+    password: env.GATEWAY_BOOTSTRAP_ADMIN_PASSWORD
+    require_password_change: true
   seed_api_keys:
     - name: default
       value: env.GATEWAY_API_KEY
+
+teams:
+  - key: platform
+    name: Platform
+    budget:
+      cadence: monthly
+      amount_usd: "500.0000"
+      hard_limit: true
+      timezone: UTC
+
+users:
+  - name: Platform Admin
+    email: ops@example.com
+    auth_mode: password
+    global_role: platform_admin
+    request_logging_enabled: true
+    membership:
+      team: platform
+      role: admin
+    budget:
+      cadence: monthly
+      amount_usd: "100.0000"
+      hard_limit: true
+      timezone: UTC
 
 providers:
   - id: openai-prod
@@ -40,5 +69,5 @@ models:
         weight: 1.0
 
   - id: openai-fast
-    description: Alias kept for backward compatibility
+    description: Stable alias for the weighted OpenAI route set
     alias_of: openai-fast-v2

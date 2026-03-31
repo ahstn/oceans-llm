@@ -72,9 +72,17 @@ where
     let providers_seed = config.seed_providers()?;
     let models_seed = config.seed_models()?;
     let api_keys_seed = config.seed_api_keys()?;
+    let teams_seed = config.seed_teams()?;
+    let users_seed = config.seed_users()?;
 
     store
-        .seed_from_inputs(&providers_seed, &models_seed, &api_keys_seed)
+        .seed_from_inputs(
+            &providers_seed,
+            &models_seed,
+            &api_keys_seed,
+            &teams_seed,
+            &users_seed,
+        )
         .await
         .context("failed to seed foundational config data")
 }
@@ -831,7 +839,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&seed_providers, &models, &api_keys)
+            .seed_from_inputs(&seed_providers, &models, &api_keys, &[], &[])
             .await
             .expect("seed data");
 
@@ -886,7 +894,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&seed_providers, &models, &api_keys)
+            .seed_from_inputs(&seed_providers, &models, &api_keys, &[], &[])
             .await
             .expect("seed data");
 
@@ -1066,7 +1074,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&seed_providers, &models, &api_keys)
+            .seed_from_inputs(&seed_providers, &models, &api_keys, &[], &[])
             .await
             .expect("seed");
 
@@ -3080,7 +3088,7 @@ mod tests {
             }],
         }];
         store
-            .seed_from_inputs(&providers, &models, &[])
+            .seed_from_inputs(&providers, &models, &[], &[], &[])
             .await
             .expect("seed models");
 
@@ -3244,7 +3252,7 @@ mod tests {
             }],
         }];
         store
-            .seed_from_inputs(&providers, &models, &[])
+            .seed_from_inputs(&providers, &models, &[], &[], &[])
             .await
             .expect("seed models");
 
@@ -3335,7 +3343,7 @@ mod tests {
             }],
         }];
         store
-            .seed_from_inputs(&providers, &models, &[])
+            .seed_from_inputs(&providers, &models, &[], &[], &[])
             .await
             .expect("seed models");
 
@@ -4005,7 +4013,7 @@ mod tests {
             allowed_models: vec!["fast".to_string()],
         }];
         store
-            .seed_from_inputs(&providers, &models, &api_keys)
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[])
             .await
             .expect("seed");
         let api_key = store

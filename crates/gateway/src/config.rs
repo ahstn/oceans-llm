@@ -2,8 +2,9 @@ use std::{collections::BTreeMap, env, fs, path::Path};
 
 use anyhow::{Context, bail};
 use gateway_core::{
-    ProviderCapabilities, SeedApiKey, SeedModel, SeedModelRoute, SeedProvider,
-    parse_gateway_api_key,
+    AuthMode, BudgetCadence, GlobalRole, MembershipRole, Money4, ProviderCapabilities,
+    SYSTEM_BOOTSTRAP_ADMIN_EMAIL, SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedBudget, SeedModel,
+    SeedModelRoute, SeedProvider, SeedTeam, SeedUser, SeedUserMembership, parse_gateway_api_key,
 };
 use gateway_providers::{OpenAiCompatConfig, VertexAuthConfig, VertexProviderConfig};
 use gateway_service::{hash_gateway_key_secret, is_supported_pricing_provider_id};
@@ -25,6 +26,10 @@ pub struct GatewayConfig {
     pub providers: Vec<ProviderConfig>,
     #[serde(default)]
     pub models: Vec<ModelConfig>,
+    #[serde(default)]
+    pub teams: Vec<TeamConfig>,
+    #[serde(default)]
+    pub users: Vec<UserConfig>,
 }
 
 impl GatewayConfig {
@@ -187,6 +192,88 @@ impl GatewayConfig {
             }
         }
 
+        let mut team_keys = std::collections::BTreeSet::new();
+        for team in &self.teams {
+            if team.key.trim().is_empty() {
+                bail!("team key cannot be empty");
+            }
+            if team.name.trim().is_empty() {
+                bail!("team `{}` name cannot be empty", team.key);
+            }
+            if team.key == SYSTEM_LEGACY_TEAM_KEY {
+                bail!("team key `{SYSTEM_LEGACY_TEAM_KEY}` is reserved");
+            }
+            if !team_keys.insert(team.key.as_str()) {
+                bail!("duplicate team key `{}`", team.key);
+            }
+            if let Some(budget) = &team.budget {
+                budget.validate(&format!("team `{}` budget", team.key))?;
+            }
+        }
+
+        let mut user_emails = std::collections::BTreeSet::new();
+        for user in &self.users {
+            if user.name.trim().is_empty() {
+                bail!("user name cannot be empty");
+            }
+            let email_normalized = normalize_config_email(&user.email)?;
+            if email_normalized == SYSTEM_BOOTSTRAP_ADMIN_EMAIL {
+                bail!("user email `{SYSTEM_BOOTSTRAP_ADMIN_EMAIL}` is reserved for bootstrap admin");
+            }
+            if !user_emails.insert(email_normalized.clone()) {
+                bail!("duplicate user email `{email_normalized}`");
+            }
+            if user.auth_mode == AuthMode::Oauth {
+                bail!("users config does not support auth_mode `oauth`");
+            }
+            match user.auth_mode {
+                AuthMode::Oidc => {
+                    let Some(provider_key) = user.oidc_provider_key.as_deref() else {
+                        bail!(
+                            "user `{}` with auth_mode `oidc` requires oidc_provider_key",
+                            user.email
+                        );
+                    };
+                    if provider_key.trim().is_empty() {
+                        bail!(
+                            "user `{}` oidc_provider_key cannot be empty",
+                            user.email
+                        );
+                    }
+                }
+                AuthMode::Password => {
+                    if user.oidc_provider_key.is_some() {
+                        bail!(
+                            "user `{}` cannot set oidc_provider_key unless auth_mode is `oidc`",
+                            user.email
+                        );
+                    }
+                }
+                AuthMode::Oauth => unreachable!(),
+            }
+            if let Some(membership) = &user.membership {
+                if membership.team.trim().is_empty() {
+                    bail!("user `{}` membership team cannot be empty", user.email);
+                }
+                if !team_keys.contains(membership.team.as_str()) {
+                    bail!(
+                        "user `{}` references unknown team `{}`",
+                        user.email,
+                        membership.team
+                    );
+                }
+                if membership.role == MembershipRole::Owner {
+                    bail!(
+                        "user `{}` cannot seed membership role `owner`",
+                        user.email
+                    );
+                }
+            }
+            if let Some(budget) = &user.budget {
+                budget.validate(&format!("user `{}` budget", user.email))?;
+            }
+        }
+
         Ok(())
     }
 
@@ -322,6 +409,41 @@ impl GatewayConfig {
         }
 
         Ok(api_keys)
+    }
+
+    pub fn seed_teams(&self) -> anyhow::Result<Vec<SeedTeam>> {
+        self.teams
+            .iter()
+            .map(|team| {
+                Ok(SeedTeam {
+                    team_key: team.key.trim().to_string(),
+                    team_name: team.name.trim().to_string(),
+                    budget: team.budget.as_ref().map(BudgetConfig::seed_budget).transpose()?,
+                })
+            })
+            .collect()
+    }
+
+    pub fn seed_users(&self) -> anyhow::Result<Vec<SeedUser>> {
+        self.users
+            .iter()
+            .map(|user| {
+                Ok(SeedUser {
+                    name: user.name.trim().to_string(),
+                    email: user.email.trim().to_string(),
+                    email_normalized: normalize_config_email(&user.email)?,
+                    global_role: user.global_role,
+                    auth_mode: user.auth_mode,
+                    request_logging_enabled: user.request_logging_enabled,
+                    oidc_provider_key: user.oidc_provider_key.clone(),
+                    membership: user.membership.as_ref().map(|membership| SeedUserMembership {
+                        team_key: membership.team.trim().to_string(),
+                        role: membership.role,
+                    }),
+                    budget: user.budget.as_ref().map(BudgetConfig::seed_budget).transpose()?,
+                })
+            })
+            .collect()
     }
 
     pub fn openai_compat_provider_configs(&self) -> anyhow::Result<Vec<OpenAiCompatConfig>> {
@@ -614,6 +736,73 @@ pub struct SeedApiKeyConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct TeamConfig {
+    pub key: String,
+    pub name: String,
+    #[serde(default)]
+    pub budget: Option<BudgetConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UserConfig {
+    pub name: String,
+    pub email: String,
+    pub auth_mode: AuthMode,
+    #[serde(default = "default_user_global_role")]
+    pub global_role: GlobalRole,
+    #[serde(default = "default_request_logging_enabled")]
+    pub request_logging_enabled: bool,
+    #[serde(default)]
+    pub oidc_provider_key: Option<String>,
+    #[serde(default)]
+    pub membership: Option<UserMembershipConfig>,
+    #[serde(default)]
+    pub budget: Option<BudgetConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UserMembershipConfig {
+    pub team: String,
+    #[serde(default = "default_membership_role")]
+    pub role: MembershipRole,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BudgetConfig {
+    pub cadence: BudgetCadence,
+    pub amount_usd: String,
+    #[serde(default = "default_enabled")]
+    pub hard_limit: bool,
+    #[serde(default = "default_budget_timezone")]
+    pub timezone: String,
+}
+
+impl BudgetConfig {
+    fn validate(&self, label: &str) -> anyhow::Result<()> {
+        if self.timezone.trim().is_empty() {
+            bail!("{label} timezone cannot be empty");
+        }
+        let amount = Money4::from_decimal_str(&self.amount_usd)
+            .map_err(|error| anyhow::anyhow!("{label} amount_usd is invalid: {error}"))?;
+        if amount.is_negative() {
+            bail!("{label} amount_usd cannot be negative");
+        }
+        Ok(())
+    }
+
+    fn seed_budget(&self) -> anyhow::Result<SeedBudget> {
+        let amount_usd = Money4::from_decimal_str(&self.amount_usd)
+            .map_err(|error| anyhow::anyhow!("invalid amount_usd `{}`: {error}", self.amount_usd))?;
+        Ok(SeedBudget {
+            cadence: self.cadence,
+            amount_usd,
+            hard_limit: self.hard_limit,
+            timezone: self.timezone.trim().to_string(),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ProviderConfig {
     #[serde(rename = "openai_compat")]
@@ -810,6 +999,14 @@ fn validate_vertex_upstream_model_format(value: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn normalize_config_email(email: &str) -> anyhow::Result<String> {
+    let normalized = email.trim().to_ascii_lowercase();
+    if normalized.is_empty() || !normalized.contains('@') {
+        bail!("email must be a valid email address");
+    }
+    Ok(normalized)
+}
+
 fn default_bind() -> String {
     "0.0.0.0:8080".to_string()
 }
@@ -852,6 +1049,22 @@ const fn default_route_weight() -> f64 {
 
 const fn default_enabled() -> bool {
     true
+}
+
+const fn default_request_logging_enabled() -> bool {
+    true
+}
+
+const fn default_user_global_role() -> GlobalRole {
+    GlobalRole::User
+}
+
+const fn default_membership_role() -> MembershipRole {
+    MembershipRole::Member
+}
+
+fn default_budget_timezone() -> String {
+    "UTC".to_string()
 }
 
 const fn default_bootstrap_admin_enabled() -> bool {
@@ -898,6 +1111,7 @@ fn default_vertex_api_host() -> String {
 mod tests {
     use std::{env, path::Path};
 
+    use gateway_core::{AuthMode, BudgetCadence, GlobalRole, MembershipRole, Money4};
     use tempfile::tempdir;
 
     use super::GatewayConfig;
@@ -1276,5 +1490,119 @@ models:
         assert!(config.auth.bootstrap_admin.enabled);
         assert_eq!(config.auth.bootstrap_admin.email, "admin@local");
         assert!(config.auth.bootstrap_admin.require_password_change);
+    }
+
+    #[test]
+    fn parses_declarative_teams_and_users_into_seed_inputs() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+teams:
+  - key: platform
+    name: Platform
+    budget:
+      cadence: monthly
+      amount_usd: "250.0000"
+      hard_limit: true
+      timezone: UTC
+users:
+  - name: Member
+    email: Member@Example.com
+    auth_mode: oidc
+    global_role: platform_admin
+    request_logging_enabled: false
+    oidc_provider_key: okta
+    membership:
+      team: platform
+      role: admin
+    budget:
+      cadence: weekly
+      amount_usd: "75.0000"
+      hard_limit: false
+      timezone: Europe/London
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let teams = config.seed_teams().expect("seed teams");
+        let users = config.seed_users().expect("seed users");
+
+        assert_eq!(teams.len(), 1);
+        assert_eq!(teams[0].team_key, "platform");
+        assert_eq!(teams[0].team_name, "Platform");
+        let team_budget = teams[0].budget.as_ref().expect("team budget");
+        assert_eq!(team_budget.cadence, BudgetCadence::Monthly);
+        assert_eq!(team_budget.amount_usd, Money4::from_scaled(2_500_000));
+        assert!(team_budget.hard_limit);
+        assert_eq!(team_budget.timezone, "UTC");
+
+        assert_eq!(users.len(), 1);
+        assert_eq!(users[0].email_normalized, "member@example.com");
+        assert_eq!(users[0].auth_mode, AuthMode::Oidc);
+        assert_eq!(users[0].global_role, GlobalRole::PlatformAdmin);
+        assert!(!users[0].request_logging_enabled);
+        assert_eq!(users[0].oidc_provider_key.as_deref(), Some("okta"));
+        let membership = users[0].membership.as_ref().expect("membership");
+        assert_eq!(membership.team_key, "platform");
+        assert_eq!(membership.role, MembershipRole::Admin);
+        let user_budget = users[0].budget.as_ref().expect("user budget");
+        assert_eq!(user_budget.cadence, BudgetCadence::Weekly);
+        assert_eq!(user_budget.amount_usd, Money4::from_scaled(750_000));
+        assert!(!user_budget.hard_limit);
+        assert_eq!(user_budget.timezone, "Europe/London");
+    }
+
+    #[test]
+    fn rejects_reserved_declarative_team_keys() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+teams:
+  - key: system-legacy
+    name: Reserved
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("team key `system-legacy` is reserved"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_declarative_user_memberships() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+teams:
+  - key: platform
+    name: Platform
+users:
+  - name: Member
+    email: member@example.com
+    auth_mode: password
+    membership:
+      team: platform
+      role: owner
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("cannot seed membership role `owner`"),
+            "unexpected error: {error_text}"
+        );
     }
 }

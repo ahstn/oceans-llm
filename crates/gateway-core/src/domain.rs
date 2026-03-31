@@ -1159,3 +1159,41 @@ pub struct SeedApiKey {
     #[serde(default)]
     pub allowed_models: Vec<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeedBudget {
+    pub cadence: BudgetCadence,
+    pub amount_usd: Money4,
+    pub hard_limit: bool,
+    pub timezone: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeedTeam {
+    pub team_key: String,
+    pub team_name: String,
+    #[serde(default)]
+    pub budget: Option<SeedBudget>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeedUserMembership {
+    pub team_key: String,
+    pub role: MembershipRole,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeedUser {
+    pub name: String,
+    pub email: String,
+    pub email_normalized: String,
+    pub global_role: GlobalRole,
+    pub auth_mode: AuthMode,
+    pub request_logging_enabled: bool,
+    #[serde(default)]
+    pub oidc_provider_key: Option<String>,
+    #[serde(default)]
+    pub membership: Option<SeedUserMembership>,
+    #[serde(default)]
+    pub budget: Option<SeedBudget>,
+}

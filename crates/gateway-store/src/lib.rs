@@ -28,8 +28,9 @@ mod tests {
         MembershipRole, ModelPricingRecord, ModelRepository, Money4, PricingCatalogCacheRecord,
         PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
         ProviderCapabilities, RequestLogRecord, RequestLogRepository, RequestTags,
-        SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedModel, SeedModelRoute,
-        SeedProvider, StoreError, StoreHealth, UsageLedgerRecord, UsagePricingStatus, UserStatus,
+        SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedBudget, SeedModel,
+        SeedModelRoute, SeedProvider, SeedTeam, SeedUser, SeedUserMembership, StoreError,
+        StoreHealth, UsageLedgerRecord, UsagePricingStatus, UserStatus,
     };
     use serde_json::{Map, Value, json};
     use serial_test::serial;
@@ -98,6 +99,47 @@ mod tests {
             computed_cost_usd: Money4::from_scaled(computed_cost_10000),
             occurred_at,
         }
+    }
+
+    async fn insert_libsql_oidc_provider(store: &LibsqlStore, provider_key: &str) -> String {
+        let provider_id = format!("oidc-{provider_key}");
+        let now = OffsetDateTime::now_utc().unix_timestamp();
+        store
+            .connection()
+            .execute(
+                r#"
+                INSERT INTO oidc_providers (
+                    oidc_provider_id, provider_key, provider_type, issuer_url, client_id,
+                    client_secret_ref, scopes_json, enabled, created_at, updated_at
+                ) VALUES (?1, ?2, 'generic_oidc', 'https://id.example.com', 'client-id',
+                          'env.OIDC_CLIENT_SECRET', '["openid","email","profile"]', 1, ?3, ?3)
+                "#,
+                libsql::params![provider_id.as_str(), provider_key, now],
+            )
+            .await
+            .expect("insert oidc provider");
+        provider_id
+    }
+
+    async fn insert_postgres_oidc_provider(store: &PostgresStore, provider_key: &str) -> String {
+        let provider_id = format!("oidc-{provider_key}");
+        let now = OffsetDateTime::now_utc().unix_timestamp();
+        sqlx::query(
+            r#"
+            INSERT INTO oidc_providers (
+                oidc_provider_id, provider_key, provider_type, issuer_url, client_id,
+                client_secret_ref, scopes_json, enabled, created_at, updated_at
+            ) VALUES ($1, $2, 'generic_oidc', 'https://id.example.com', 'client-id',
+                      'env.OIDC_CLIENT_SECRET', '["openid","email","profile"]', 1, $3, $3)
+            "#,
+        )
+        .bind(provider_id.as_str())
+        .bind(provider_key)
+        .bind(now)
+        .execute(store.pool())
+        .await
+        .expect("insert oidc provider");
+        provider_id
     }
 
     async fn exercise_budget_alert_repository<R>(repo: &R)
@@ -580,12 +622,12 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&providers, &models, &api_keys)
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[])
             .await
             .expect("seed #1");
 
         store
-            .seed_from_inputs(&providers, &models, &api_keys)
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[])
             .await
             .expect("seed #2 idempotent");
 
@@ -676,7 +718,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&providers, &models, &api_keys)
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[])
             .await
             .expect("seed");
 
@@ -2159,6 +2201,418 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn libsql_seed_reconciles_declarative_teams_users_memberships_and_budgets() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        let initial_teams = vec![
+            SeedTeam {
+                team_key: "platform".to_string(),
+                team_name: "Platform".to_string(),
+                budget: Some(SeedBudget {
+                    cadence: BudgetCadence::Monthly,
+                    amount_usd: Money4::from_scaled(2_500_000),
+                    hard_limit: true,
+                    timezone: "UTC".to_string(),
+                }),
+            },
+            SeedTeam {
+                team_key: "ops".to_string(),
+                team_name: "Ops".to_string(),
+                budget: None,
+            },
+        ];
+        let initial_users = vec![SeedUser {
+            name: "Member".to_string(),
+            email: "member@example.com".to_string(),
+            email_normalized: "member@example.com".to_string(),
+            global_role: GlobalRole::User,
+            auth_mode: AuthMode::Password,
+            request_logging_enabled: false,
+            oidc_provider_key: None,
+            membership: Some(SeedUserMembership {
+                team_key: "platform".to_string(),
+                role: MembershipRole::Admin,
+            }),
+            budget: Some(SeedBudget {
+                cadence: BudgetCadence::Weekly,
+                amount_usd: Money4::from_scaled(750_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            }),
+        }];
+
+        store
+            .seed_from_inputs(&[], &[], &[], &initial_teams, &initial_users)
+            .await
+            .expect("initial seed");
+
+        let platform_team = store
+            .get_team_by_key("platform")
+            .await
+            .expect("load team")
+            .expect("team exists");
+        let user = store
+            .get_user_by_email_normalized("member@example.com")
+            .await
+            .expect("load user")
+            .expect("user exists");
+        assert!(!user.request_logging_enabled);
+        assert_eq!(user.auth_mode, AuthMode::Password);
+        assert_eq!(user.status, UserStatus::Invited);
+        let identity_user = store
+            .get_identity_user(user.user_id)
+            .await
+            .expect("identity user")
+            .expect("identity user exists");
+        assert_eq!(identity_user.team_name.as_deref(), Some("Platform"));
+        assert_eq!(identity_user.membership_role, Some(MembershipRole::Admin));
+        assert_eq!(
+            store
+                .get_active_budget_for_team(platform_team.team_id)
+                .await
+                .expect("team budget")
+                .expect("platform budget")
+                .amount_usd,
+            Money4::from_scaled(2_500_000)
+        );
+        assert_eq!(
+            store
+                .get_active_budget_for_user(user.user_id)
+                .await
+                .expect("user budget")
+                .expect("user budget exists")
+                .amount_usd,
+            Money4::from_scaled(750_000)
+        );
+
+        let oidc_provider_id = insert_libsql_oidc_provider(&store, "okta").await;
+
+        let updated_teams = vec![
+            SeedTeam {
+                team_key: "platform".to_string(),
+                team_name: "Platform Engineering".to_string(),
+                budget: None,
+            },
+            SeedTeam {
+                team_key: "ops".to_string(),
+                team_name: "Operations".to_string(),
+                budget: Some(SeedBudget {
+                    cadence: BudgetCadence::Daily,
+                    amount_usd: Money4::from_scaled(125_000),
+                    hard_limit: false,
+                    timezone: "UTC".to_string(),
+                }),
+            },
+        ];
+        let updated_users = vec![SeedUser {
+            name: "Member".to_string(),
+            email: "member@example.com".to_string(),
+            email_normalized: "member@example.com".to_string(),
+            global_role: GlobalRole::User,
+            auth_mode: AuthMode::Oidc,
+            request_logging_enabled: true,
+            oidc_provider_key: Some("okta".to_string()),
+            membership: Some(SeedUserMembership {
+                team_key: "ops".to_string(),
+                role: MembershipRole::Member,
+            }),
+            budget: None,
+        }];
+
+        store
+            .seed_from_inputs(&[], &[], &[], &updated_teams, &updated_users)
+            .await
+            .expect("updated seed");
+        store
+            .seed_from_inputs(&[], &[], &[], &updated_teams, &updated_users)
+            .await
+            .expect("updated seed idempotent");
+
+        let refreshed_user = store
+            .get_user_by_email_normalized("member@example.com")
+            .await
+            .expect("reload user")
+            .expect("user exists");
+        assert_eq!(refreshed_user.user_id, user.user_id);
+        assert!(refreshed_user.request_logging_enabled);
+        assert_eq!(refreshed_user.auth_mode, AuthMode::Oidc);
+
+        let refreshed_identity = store
+            .get_identity_user(user.user_id)
+            .await
+            .expect("reload identity user")
+            .expect("identity user exists");
+        assert_eq!(
+            refreshed_identity.team_name.as_deref(),
+            Some("Operations")
+        );
+        assert_eq!(refreshed_identity.membership_role, Some(MembershipRole::Member));
+        assert_eq!(refreshed_identity.oidc_provider_id.as_deref(), Some(oidc_provider_id.as_str()));
+        assert_eq!(refreshed_identity.oidc_provider_key.as_deref(), Some("okta"));
+        assert!(
+            store
+                .find_invited_oidc_user("member@example.com", &oidc_provider_id)
+                .await
+                .expect("find invited oidc user")
+                .is_some()
+        );
+
+        let refreshed_platform = store
+            .get_team_by_key("platform")
+            .await
+            .expect("reload platform team")
+            .expect("platform team exists");
+        let ops_team = store
+            .get_team_by_key("ops")
+            .await
+            .expect("reload ops team")
+            .expect("ops team exists");
+        assert_eq!(refreshed_platform.team_name, "Platform Engineering");
+        assert!(
+            store
+                .get_active_budget_for_team(refreshed_platform.team_id)
+                .await
+                .expect("platform budget after reseed")
+                .is_none()
+        );
+        assert_eq!(
+            store
+                .get_active_budget_for_team(ops_team.team_id)
+                .await
+                .expect("ops budget")
+                .expect("ops budget exists")
+                .amount_usd,
+            Money4::from_scaled(125_000)
+        );
+        assert!(
+            store
+                .get_active_budget_for_user(user.user_id)
+                .await
+                .expect("user budget after reseed")
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_seed_reconciles_declarative_teams_users_memberships_and_budgets() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!("skipping postgres declarative seed test because TEST_POSTGRES_URL is not set");
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options)
+            .await
+            .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        let initial_teams = vec![
+            SeedTeam {
+                team_key: "platform".to_string(),
+                team_name: "Platform".to_string(),
+                budget: Some(SeedBudget {
+                    cadence: BudgetCadence::Monthly,
+                    amount_usd: Money4::from_scaled(2_500_000),
+                    hard_limit: true,
+                    timezone: "UTC".to_string(),
+                }),
+            },
+            SeedTeam {
+                team_key: "ops".to_string(),
+                team_name: "Ops".to_string(),
+                budget: None,
+            },
+        ];
+        let initial_users = vec![SeedUser {
+            name: "Member".to_string(),
+            email: "member@example.com".to_string(),
+            email_normalized: "member@example.com".to_string(),
+            global_role: GlobalRole::User,
+            auth_mode: AuthMode::Password,
+            request_logging_enabled: false,
+            oidc_provider_key: None,
+            membership: Some(SeedUserMembership {
+                team_key: "platform".to_string(),
+                role: MembershipRole::Admin,
+            }),
+            budget: Some(SeedBudget {
+                cadence: BudgetCadence::Weekly,
+                amount_usd: Money4::from_scaled(750_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            }),
+        }];
+
+        store
+            .seed_from_inputs(&[], &[], &[], &initial_teams, &initial_users)
+            .await
+            .expect("initial seed");
+
+        let platform_team = store
+            .get_team_by_key("platform")
+            .await
+            .expect("load team")
+            .expect("team exists");
+        let user = store
+            .get_user_by_email_normalized("member@example.com")
+            .await
+            .expect("load user")
+            .expect("user exists");
+        assert!(!user.request_logging_enabled);
+        assert_eq!(user.auth_mode, AuthMode::Password);
+        assert_eq!(user.status, UserStatus::Invited);
+        let identity_user = store
+            .get_identity_user(user.user_id)
+            .await
+            .expect("identity user")
+            .expect("identity user exists");
+        assert_eq!(identity_user.team_name.as_deref(), Some("Platform"));
+        assert_eq!(identity_user.membership_role, Some(MembershipRole::Admin));
+        assert_eq!(
+            store
+                .get_active_budget_for_team(platform_team.team_id)
+                .await
+                .expect("team budget")
+                .expect("platform budget")
+                .amount_usd,
+            Money4::from_scaled(2_500_000)
+        );
+        assert_eq!(
+            store
+                .get_active_budget_for_user(user.user_id)
+                .await
+                .expect("user budget")
+                .expect("user budget exists")
+                .amount_usd,
+            Money4::from_scaled(750_000)
+        );
+
+        let oidc_provider_id = insert_postgres_oidc_provider(&store, "okta").await;
+
+        let updated_teams = vec![
+            SeedTeam {
+                team_key: "platform".to_string(),
+                team_name: "Platform Engineering".to_string(),
+                budget: None,
+            },
+            SeedTeam {
+                team_key: "ops".to_string(),
+                team_name: "Operations".to_string(),
+                budget: Some(SeedBudget {
+                    cadence: BudgetCadence::Daily,
+                    amount_usd: Money4::from_scaled(125_000),
+                    hard_limit: false,
+                    timezone: "UTC".to_string(),
+                }),
+            },
+        ];
+        let updated_users = vec![SeedUser {
+            name: "Member".to_string(),
+            email: "member@example.com".to_string(),
+            email_normalized: "member@example.com".to_string(),
+            global_role: GlobalRole::User,
+            auth_mode: AuthMode::Oidc,
+            request_logging_enabled: true,
+            oidc_provider_key: Some("okta".to_string()),
+            membership: Some(SeedUserMembership {
+                team_key: "ops".to_string(),
+                role: MembershipRole::Member,
+            }),
+            budget: None,
+        }];
+
+        store
+            .seed_from_inputs(&[], &[], &[], &updated_teams, &updated_users)
+            .await
+            .expect("updated seed");
+        store
+            .seed_from_inputs(&[], &[], &[], &updated_teams, &updated_users)
+            .await
+            .expect("updated seed idempotent");
+
+        let refreshed_user = store
+            .get_user_by_email_normalized("member@example.com")
+            .await
+            .expect("reload user")
+            .expect("user exists");
+        assert_eq!(refreshed_user.user_id, user.user_id);
+        assert!(refreshed_user.request_logging_enabled);
+        assert_eq!(refreshed_user.auth_mode, AuthMode::Oidc);
+
+        let refreshed_identity = store
+            .get_identity_user(user.user_id)
+            .await
+            .expect("reload identity user")
+            .expect("identity user exists");
+        assert_eq!(
+            refreshed_identity.team_name.as_deref(),
+            Some("Operations")
+        );
+        assert_eq!(refreshed_identity.membership_role, Some(MembershipRole::Member));
+        assert_eq!(refreshed_identity.oidc_provider_id.as_deref(), Some(oidc_provider_id.as_str()));
+        assert_eq!(refreshed_identity.oidc_provider_key.as_deref(), Some("okta"));
+        assert!(
+            store
+                .find_invited_oidc_user("member@example.com", &oidc_provider_id)
+                .await
+                .expect("find invited oidc user")
+                .is_some()
+        );
+
+        let refreshed_platform = store
+            .get_team_by_key("platform")
+            .await
+            .expect("reload platform team")
+            .expect("platform team exists");
+        let ops_team = store
+            .get_team_by_key("ops")
+            .await
+            .expect("reload ops team")
+            .expect("ops team exists");
+        assert_eq!(refreshed_platform.team_name, "Platform Engineering");
+        assert!(
+            store
+                .get_active_budget_for_team(refreshed_platform.team_id)
+                .await
+                .expect("platform budget after reseed")
+                .is_none()
+        );
+        assert_eq!(
+            store
+                .get_active_budget_for_team(ops_team.team_id)
+                .await
+                .expect("ops budget")
+                .expect("ops budget exists")
+                .amount_usd,
+            Money4::from_scaled(125_000)
+        );
+        assert!(
+            store
+                .get_active_budget_for_user(user.user_id)
+                .await
+                .expect("user budget after reseed")
+                .is_none()
+        );
+
+        store.pool().close().await;
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn libsql_spend_reporting_aggregates_and_team_window_sum_filter_chargeable_statuses() {
         let tmp = tempdir().expect("tempdir");
         let db_path = tmp.path().join("gateway.db");
@@ -2201,7 +2655,7 @@ mod tests {
             allowed_models: vec!["fast".to_string()],
         }];
         store
-            .seed_from_inputs(&providers, &models, &api_keys)
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[])
             .await
             .expect("seed");
 
@@ -2454,7 +2908,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&providers, &models, &api_keys)
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[])
             .await
             .expect("seed");
 
@@ -2956,7 +3410,7 @@ mod tests {
             allowed_models: vec!["fast".to_string()],
         }];
         store
-            .seed_from_inputs(&providers, &models, &api_keys)
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[])
             .await
             .expect("seed");
 
@@ -3219,7 +3673,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&providers, &models, &api_keys)
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[])
             .await
             .expect("seed");
 

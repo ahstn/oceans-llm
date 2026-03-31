@@ -67,7 +67,7 @@ Current team-management rules:
 - teams can be created before users exist
 - teams can be created with zero admins
 - the admin UI can add existing teamless users or invite new users directly into a team
-- cross-team reassignment is rejected in this slice
+- non-owner memberships can be transferred between teams
 - `owner` memberships are visible but blocked from casual lifecycle edits
 
 ## Team Transfer Rule
@@ -93,6 +93,7 @@ That boundary is a policy rule, not a UI shortcut.
 OIDC exists in the product, but it is still development-style in this slice.
 
 - pre-provisioned OIDC users are supported
+- config-seeded OIDC users can be pre-provisioned by provider key
 - OIDC onboarding links exist
 - hardened production-grade SSO is still a follow-up
 
@@ -114,6 +115,17 @@ Request logging policy is partly owned by identity.
 
 - user-owned requests honor `users.request_logging_enabled`
 - team-owned requests always persist request logs
+- the admin identity view exposes the current user preference read-only
+
+## Declarative Identity Seed
+
+Config-backed identity is now part of the startup seed path.
+
+- `teams` are reconciled by `team_key`
+- `users` are reconciled by normalized email
+- listed users can reconcile team membership and active budgets
+- new config-seeded users start as `invited`
+- config seeding does not emit invite URLs; operators generate onboarding links from the admin UI when needed
 
 ## Current Gaps
 
@@ -121,8 +133,7 @@ Request logging policy is partly owned by identity.
   - [issue #29](https://github.com/ahstn/oceans-llm/issues/29)
 - Self-hosted test-IdP guidance is still pending:
   - [issue #46](https://github.com/ahstn/oceans-llm/issues/46)
-- Declarative config-driven identity is still pending:
-  - [issue #64](https://github.com/ahstn/oceans-llm/issues/64)
+- Hardened declarative SSO-backed identity matching is still pending:
   - [issue #65](https://github.com/ahstn/oceans-llm/issues/65)
 
 ## Where Identity Appears Operationally
