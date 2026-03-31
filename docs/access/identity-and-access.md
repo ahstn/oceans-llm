@@ -21,7 +21,7 @@ The product uses first-class users, teams, and API-key ownership.
 - Teams are durable ownership boundaries for team budgets and future team-owned resources.
 - One user belongs to at most one team in this slice.
 - Users can exist without a team.
-- Legacy keys are preserved through the reserved `system-legacy` team.
+- Seeded system-owned API keys use the reserved `system-legacy` team.
 
 ## User Lifecycle
 

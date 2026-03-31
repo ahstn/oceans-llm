@@ -1,5 +1,8 @@
 use std::{env, net::SocketAddr, path::Path, sync::Arc, time::Duration};
 
+use admin_ui::AdminUiConfig;
+use anyhow::Context;
+use clap::Parser;
 use gateway::{
     cli::{Cli, Command, MigrateAction, ServeArgs},
     config::{BootstrapAdminConfig, BudgetAlertEmailConfig, GatewayConfig},
@@ -7,9 +10,6 @@ use gateway::{
     http::{build_router, state::AppState},
     observability,
 };
-use admin_ui::AdminUiConfig;
-use anyhow::Context;
-use clap::Parser;
 use gateway_core::ProviderRegistry;
 use gateway_providers::{OpenAiCompatProvider, VertexProvider};
 use gateway_service::{
@@ -208,10 +208,7 @@ fn print_migration_status(status: &MigrationStatus) {
     println!("backend: {}", status.backend);
     for entry in &status.entries {
         let state = if entry.applied { "applied" } else { "pending" };
-        match entry.backend_note {
-            Some(note) => println!("v{} {} [{}] ({})", entry.version, entry.name, state, note),
-            None => println!("v{} {} [{}]", entry.version, entry.name, state),
-        }
+        println!("v{} {} [{}]", entry.version, entry.name, state);
     }
 }
 
@@ -3122,7 +3119,10 @@ mod tests {
         let create_body = read_json(create_response).await;
         assert_eq!(create_body["data"]["api_key"]["name"], "Production Web");
         assert_eq!(create_body["data"]["api_key"]["owner_kind"], "user");
-        assert_eq!(create_body["data"]["api_key"]["owner_id"], user.user_id.to_string());
+        assert_eq!(
+            create_body["data"]["api_key"]["owner_id"],
+            user.user_id.to_string()
+        );
         assert_eq!(create_body["data"]["api_key"]["model_keys"][0], "fast");
         let raw_key = create_body["data"]["raw_key"]
             .as_str()
@@ -3207,7 +3207,10 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(rejected_response.status(), StatusCode::UNAUTHORIZED);
-        assert_eq!(read_json(rejected_response).await["error"]["code"], "api_key_revoked");
+        assert_eq!(
+            read_json(rejected_response).await["error"]["code"],
+            "api_key_revoked"
+        );
     }
 
     #[tokio::test]
@@ -3298,7 +3301,10 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(unknown_model.status(), StatusCode::BAD_REQUEST);
-        assert_eq!(read_json(unknown_model).await["error"]["code"], "invalid_request");
+        assert_eq!(
+            read_json(unknown_model).await["error"]["code"],
+            "invalid_request"
+        );
     }
 
     #[tokio::test]

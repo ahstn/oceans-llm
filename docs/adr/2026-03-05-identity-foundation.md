@@ -61,14 +61,14 @@ Why:
 - ownership can be validated at the database boundary instead of only in service code,
 - downstream authz, logging, and future accounting can all read from one ownership model.
 
-### 3. Preserve backward compatibility with a reserved `system-legacy` team
+### 3. Preserve system-owned API key ownership with a reserved `system-legacy` team
 
-Legacy and seeded keys are backfilled to a reserved team (`system-legacy`) during migration and seeding.
+Seeded system-owned keys use a reserved team (`system-legacy`) during seeding and runtime ownership evaluation.
 
 Why:
-- avoids breaking existing deployments and config-driven seed data,
-- gives all pre-identity keys a valid owner without inventing synthetic users,
-- lets the system move to ownership-aware auth without forcing immediate operator cleanup.
+- keeps seeded platform-owned credentials on the same ownership model as other team-owned keys,
+- avoids inventing synthetic users for non-human system credentials,
+- preserves a stable team-scoped owner for seeded keys across bootstrap and runtime flows.
 
 ### 4. Model authorization is layered as grants plus optional user/team restrictions
 
@@ -158,7 +158,7 @@ Why:
 
 Positive:
 - the gateway now has a durable ownership model for users, teams, and API keys,
-- legacy keys remain compatible through the reserved `system-legacy` team,
+- seeded system-owned keys remain first-class through the reserved `system-legacy` team,
 - model authorization has a clear, layered policy model,
 - request logging and future spend/accounting work can evolve without redesigning the base schema,
 - persisted money values are now safe for exact future accounting.

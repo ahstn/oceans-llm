@@ -67,6 +67,12 @@ Default local endpoints:
 - E2E contract suite:
   - `mise run e2e-test`
 
+## Migration Policy
+
+- Fresh databases apply one active `V17` baseline per backend.
+- Databases carrying pre-baseline `V1` through `V16` history must be recreated instead of upgraded in place.
+- Use `mise run gateway-migrate` to apply or inspect the active migration state.
+
 ## Documentation Map
 
 Use the docs site instead of treating this file as the full operator manual.

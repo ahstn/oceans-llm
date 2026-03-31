@@ -15,7 +15,7 @@
 
 Before this change, request logs already had a useful split:
 
-- [`request_logs`](../../crates/gateway-store/migrations/postgres/V13__request_log_payloads_and_indexes.sql) held hot summary fields used by the observability list views.
+- [`request_logs`](../reference/data-relationships.md) held hot summary fields used by the observability list views.
 - `request_log_payloads` held sanitized request and response bodies for detail inspection.
 
 That shape worked well for provider, model, latency, status, and payload inspection, but it had a blind spot: teams sharing one API key could not reliably attribute traffic back to the calling service or component. Operators could answer "what happened to this request?" but not "which caller produced this class of requests?" without inferring from payloads or external systems.
@@ -77,10 +77,10 @@ We store the three universal caller dimensions directly on `request_logs`:
 
 We store bespoke tags in `request_log_tags`, keyed by `(request_log_id, tag_key)`.
 
-The schema change is implemented in:
+The schema change is implemented in the active backend baselines:
 
-- [`V15__request_log_tags.sql` for PostgreSQL](../../crates/gateway-store/migrations/postgres/V15__request_log_tags.sql)
-- [`V15__request_log_tags.sql` for libSQL](../../crates/gateway-store/migrations/V15__request_log_tags.sql)
+- [`V17__baseline.sql` for PostgreSQL](../../crates/gateway-store/migrations/postgres/V17__baseline.sql)
+- [`V17__baseline.sql` for libSQL](../../crates/gateway-store/migrations/V17__baseline.sql)
 
 Repository implementations were updated in:
 
