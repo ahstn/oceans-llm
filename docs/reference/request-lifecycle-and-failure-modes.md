@@ -31,6 +31,8 @@ The live request path is single-route in this slice.
    - Disabled routes and non-positive weights drop out.
 5. Capability filtering removes routes that cannot satisfy the request.
 6. The budget guard runs before provider execution.
+   - hard-limit rejection returns `429 budget_exceeded`
+   - no provider call occurs on this path
 7. The first eligible route executes.
 8. Request logs are written for the user-visible outcome.
 9. Usage is normalized when possible.
@@ -109,6 +111,13 @@ These failures look similar from far away, but they mean different things.
   - all routes disabled
   - all routes have non-positive weight
 
+### `budget_exceeded`
+
+- A pre-provider hard-limit check blocked the request.
+- The HTTP response is `429`.
+- No provider call occurs on this path.
+- Observability records this as a request outcome rather than as provider execution.
+
 ### `unpriced`
 
 - The provider request succeeded.
@@ -142,11 +151,12 @@ That separation matters in two common cases:
 - a request can be logged even when it becomes `unpriced`
 - a request can be logged even when a later accounting step hits a rough edge
 
+For streaming requests, the request-log payload path parses SSE incrementally across UTF-8 and frame boundaries and retains the latest coherent usage snapshot seen before stream completion or failure.
+
 ## Known Rough Edges
 
 - Stream and non-stream chat paths still differ when a post-provider ledger write fails.
 - Request-log payload policy is still bounded and heuristic, not operator-configurable.
-- Provider-attempt and fallback-style metrics are intentionally narrow in this slice.
 
 For the current observability cleanup notes, see [observability-and-request-logs.md](../operations/observability-and-request-logs.md).
 
