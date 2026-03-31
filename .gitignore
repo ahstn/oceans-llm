@@ -10,3 +10,6 @@ crates/admin-ui/web/dist/
 crates/admin-ui/web/.tanstack/
 crates/admin-ui/web/playwright-report/
 crates/admin-ui/web/test-results/
+docs/node_modules/
+docs/.vitepress/cache/
+docs/.vitepress/dist/

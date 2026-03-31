@@ -1,24 +1,22 @@
 # Data Relationships
 
-`Owns`: schema-level entities, table relationships, ownership boundaries, and cross-table invariants.
-`Depends on`: [identity-and-access.md](identity-and-access.md), [model-routing-and-api-behavior.md](model-routing-and-api-behavior.md)
-`See also`: [budgets-and-spending.md](budgets-and-spending.md), [observability-and-request-logs.md](observability-and-request-logs.md), [adr/2026-03-05-identity-foundation.md](adr/2026-03-05-identity-foundation.md)
+`See also`: [Identity and Access](../access/identity-and-access.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [ADR: Identity Foundation for Users, Teams, and API Key Ownership](../adr/2026-03-05-identity-foundation.md)
 
 This document is schema-oriented. It describes the persistent relationships that are hard to infer from a single file, but it does not try to restate every runtime rule owned by neighboring docs.
 
 ## Source of Truth
 
 - Migrations:
-  - [../crates/gateway-store/migrations/](../crates/gateway-store/migrations/)
-  - [../crates/gateway-store/migrations/postgres/](../crates/gateway-store/migrations/postgres/)
+  - [../crates/gateway-store/migrations/](../../crates/gateway-store/migrations)
+  - [../crates/gateway-store/migrations/postgres/](../../crates/gateway-store/migrations/postgres)
 - Core types:
-  - [../crates/gateway-core/src/domain.rs](../crates/gateway-core/src/domain.rs)
-  - [../crates/gateway-core/src/traits.rs](../crates/gateway-core/src/traits.rs)
+  - [../crates/gateway-core/src/domain.rs](../../crates/gateway-core/src/domain.rs)
+  - [../crates/gateway-core/src/traits.rs](../../crates/gateway-core/src/traits.rs)
 - Runtime behavior:
-  - [../crates/gateway-service/src/model_access.rs](../crates/gateway-service/src/model_access.rs)
-  - [../crates/gateway-service/src/model_resolution.rs](../crates/gateway-service/src/model_resolution.rs)
-  - [../crates/gateway-service/src/request_logging.rs](../crates/gateway-service/src/request_logging.rs)
-  - [../crates/gateway-service/src/budget_guard.rs](../crates/gateway-service/src/budget_guard.rs)
+  - [../crates/gateway-service/src/model_access.rs](../../crates/gateway-service/src/model_access.rs)
+  - [../crates/gateway-service/src/model_resolution.rs](../../crates/gateway-service/src/model_resolution.rs)
+  - [../crates/gateway-service/src/request_logging.rs](../../crates/gateway-service/src/request_logging.rs)
+  - [../crates/gateway-service/src/budget_guard.rs](../../crates/gateway-service/src/budget_guard.rs)
 
 ## Core Entity Graph
 
@@ -150,7 +148,7 @@ If neither the team nor the user is restricted, grants remain unchanged.
 - `request_logs.model_key` stores the requested gateway model
 - `request_logs.resolved_model_key` stores the canonical execution model after alias resolution
 
-This distinction matters for operator-facing observability and historical debugging. See [model-routing-and-api-behavior.md](model-routing-and-api-behavior.md).
+This distinction matters for operator-facing observability and historical debugging. See [model-routing-and-api-behavior.md](../configuration/model-routing-and-api-behavior.md).
 
 ## Route Viability Note
 
@@ -163,7 +161,7 @@ Operational viability also depends on:
 - positive route weights
 - capability filtering
 
-Those rules are owned by [configuration-reference.md](configuration-reference.md) and [model-routing-and-api-behavior.md](model-routing-and-api-behavior.md).
+Those rules are owned by [configuration-reference.md](../configuration/configuration-reference.md) and [model-routing-and-api-behavior.md](../configuration/model-routing-and-api-behavior.md).
 
 ## Ownership Notes
 
@@ -171,7 +169,7 @@ Those rules are owned by [configuration-reference.md](configuration-reference.md
 - Team-owned usage and request logs can exist without an acting user
 - Current team spend attribution remains `actor:none` at the ownership-scope level
 
-That ownership model is explained operationally in [identity-and-access.md](identity-and-access.md) and [budgets-and-spending.md](budgets-and-spending.md).
+That ownership model is explained operationally in [identity-and-access.md](../access/identity-and-access.md) and [budgets-and-spending.md](../operations/budgets-and-spending.md).
 
 ## PostgreSQL and libsql Parity
 
@@ -184,4 +182,4 @@ Both runtime backends are expected to stay logically aligned for:
 - spend ledger behavior
 - request-log summary and payload persistence
 
-See [../crates/gateway-store/README.md](../crates/gateway-store/README.md) for the storage-layer overview.
+See [../crates/gateway-store/README.md](../../crates/gateway-store/README.md) for the storage-layer overview.

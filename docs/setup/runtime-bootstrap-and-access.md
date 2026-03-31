@@ -1,17 +1,15 @@
 # Runtime Bootstrap and Access
 
-`Owns`: startup behavior, first-access behavior, bootstrap admin rules, seeded API-key rules, and the difference between local dev, production-shaped local runs, and compose deploys.
-`Depends on`: [configuration-reference.md](configuration-reference.md), [identity-and-access.md](identity-and-access.md)
-`See also`: [../README.md](../README.md), [../deploy/README.md](../deploy/README.md), [deploy-and-operations.md](deploy-and-operations.md), [operator-runbooks.md](operator-runbooks.md)
+`See also`: [Configuration Reference](../configuration/configuration-reference.md), [Identity and Access](../access/identity-and-access.md), [Oceans LLM Gateway](../../README.md), [Deploy Compose](../../deploy/README.md), [Deploy and Operations](deploy-and-operations.md), [Operator Runbooks](../operations/operator-runbooks.md)
 
 This page explains what the gateway does when it starts and what access exists right after boot.
 
 ## Source of Truth
 
-- CLI entry points: [../crates/gateway/src/main.rs](../crates/gateway/src/main.rs)
-- Startup scripts: [../scripts/start-dev-stack.sh](../scripts/start-dev-stack.sh), [../scripts/start-prod.sh](../scripts/start-prod.sh)
-- Runtime commands: [../mise.toml](../mise.toml)
-- Checked-in configs: [../gateway.yaml](../gateway.yaml), [../gateway.prod.yaml](../gateway.prod.yaml), [../deploy/config/gateway.yaml](../deploy/config/gateway.yaml)
+- CLI entry points: [../crates/gateway/src/main.rs](../../crates/gateway/src/main.rs)
+- Startup scripts: [../scripts/start-dev-stack.sh](../../scripts/start-dev-stack.sh), [../scripts/start-prod.sh](../../scripts/start-prod.sh)
+- Runtime commands: [../mise.toml](../../mise.toml)
+- Checked-in configs: [../gateway.yaml](../../gateway.yaml), [../gateway.prod.yaml](../../gateway.prod.yaml), [../deploy/config/gateway.yaml](../../deploy/config/gateway.yaml)
 
 ## Startup Actions
 
@@ -39,9 +37,9 @@ The same behavior is also exposed through explicit commands:
 
 ### Local development
 
-- config: [../gateway.yaml](../gateway.yaml)
+- config: [../gateway.yaml](../../gateway.yaml)
 - database: libsql or SQLite
-- usual entry point: [../scripts/start-dev-stack.sh](../scripts/start-dev-stack.sh)
+- usual entry point: [../scripts/start-dev-stack.sh](../../scripts/start-dev-stack.sh)
 - bootstrap admin: enabled
 - forced password change: off
 - seed API keys: driven by config
@@ -54,9 +52,9 @@ What exists after boot:
 
 ### Production-shaped local run
 
-- config: [../gateway.prod.yaml](../gateway.prod.yaml)
+- config: [../gateway.prod.yaml](../../gateway.prod.yaml)
 - database: PostgreSQL
-- usual entry point: [../scripts/start-prod.sh](../scripts/start-prod.sh)
+- usual entry point: [../scripts/start-prod.sh](../../scripts/start-prod.sh)
 - bootstrap admin: enabled
 - forced password change: on
 - seed API keys: driven by config
@@ -69,8 +67,8 @@ What exists after boot:
 
 ### GHCR compose deploy
 
-- compose entry point: [../deploy/compose.yaml](../deploy/compose.yaml)
-- mounted config: [../deploy/config/gateway.yaml](../deploy/config/gateway.yaml)
+- compose entry point: [../deploy/compose.yaml](../../deploy/compose.yaml)
+- mounted config: [../deploy/config/gateway.yaml](../../deploy/config/gateway.yaml)
 - database: PostgreSQL
 - bootstrap admin: not defined in the checked-in deploy config
 - seeded API key: defined through `GATEWAY_API_KEY`
@@ -94,7 +92,7 @@ Checked-in defaults:
 - local config keeps the bootstrap admin on and does not force password rotation
 - production-shaped local config keeps the bootstrap admin on and forces password rotation
 
-For the lifecycle and ownership rules after that first sign-in, see [identity-and-access.md](identity-and-access.md).
+For the lifecycle and ownership rules after that first sign-in, see [identity-and-access.md](../access/identity-and-access.md).
 
 ## Seeded API Keys
 
@@ -151,7 +149,7 @@ That means one environment can have:
 
 ## What This Page Does Not Own
 
-- config field syntax and examples: [configuration-reference.md](configuration-reference.md)
+- config field syntax and examples: [configuration-reference.md](../configuration/configuration-reference.md)
 - deploy topology and runtime caveats: [deploy-and-operations.md](deploy-and-operations.md)
-- step-by-step recovery and upgrade actions: [operator-runbooks.md](operator-runbooks.md)
-- user lifecycle, onboarding, and OIDC policy: [identity-and-access.md](identity-and-access.md)
+- step-by-step recovery and upgrade actions: [operator-runbooks.md](../operations/operator-runbooks.md)
+- user lifecycle, onboarding, and OIDC policy: [identity-and-access.md](../access/identity-and-access.md)

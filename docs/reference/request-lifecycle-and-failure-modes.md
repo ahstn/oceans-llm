@@ -1,21 +1,19 @@
 # Request Lifecycle and Failure Modes
 
-`Owns`: the end-to-end request path from authenticated `/v1/*` calls to route choice, provider execution, request logging, pricing, ledger writes, and budget effects.
-`Depends on`: [model-routing-and-api-behavior.md](model-routing-and-api-behavior.md), [pricing-catalog-and-accounting.md](pricing-catalog-and-accounting.md), [budgets-and-spending.md](budgets-and-spending.md), [observability-and-request-logs.md](observability-and-request-logs.md)
-`See also`: [configuration-reference.md](configuration-reference.md), [identity-and-access.md](identity-and-access.md), [data-relationships.md](data-relationships.md), [adr/2026-03-15-v1-runtime-simplification.md](adr/2026-03-15-v1-runtime-simplification.md)
+`See also`: [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Configuration Reference](../configuration/configuration-reference.md), [Identity and Access](../access/identity-and-access.md), [Data Relationships](data-relationships.md), [ADR: V1 Runtime Simplification for Routing and Streaming](../adr/2026-03-15-v1-runtime-simplification.md)
 
 This page is the cross-cutting view. Neighboring docs own their own policy slices. This page explains how those slices connect during one request.
 
 ## Source of Truth
 
-- HTTP handlers: [../crates/gateway/src/http/handlers.rs](../crates/gateway/src/http/handlers.rs)
-- Model access and tag selection: [../crates/gateway-service/src/model_access.rs](../crates/gateway-service/src/model_access.rs)
-- Alias resolution: [../crates/gateway-service/src/model_resolution.rs](../crates/gateway-service/src/model_resolution.rs)
-- Route planning: [../crates/gateway-service/src/route_planner.rs](../crates/gateway-service/src/route_planner.rs)
-- Budget enforcement: [../crates/gateway-service/src/budget_guard.rs](../crates/gateway-service/src/budget_guard.rs)
-- Pricing resolution: [../crates/gateway-service/src/pricing_catalog.rs](../crates/gateway-service/src/pricing_catalog.rs)
-- Request logging: [../crates/gateway-service/src/request_logging.rs](../crates/gateway-service/src/request_logging.rs)
-- Ledger writes: [../crates/gateway-service/src/service.rs](../crates/gateway-service/src/service.rs)
+- HTTP handlers: [../crates/gateway/src/http/handlers.rs](../../crates/gateway/src/http/handlers.rs)
+- Model access and tag selection: [../crates/gateway-service/src/model_access.rs](../../crates/gateway-service/src/model_access.rs)
+- Alias resolution: [../crates/gateway-service/src/model_resolution.rs](../../crates/gateway-service/src/model_resolution.rs)
+- Route planning: [../crates/gateway-service/src/route_planner.rs](../../crates/gateway-service/src/route_planner.rs)
+- Budget enforcement: [../crates/gateway-service/src/budget_guard.rs](../../crates/gateway-service/src/budget_guard.rs)
+- Pricing resolution: [../crates/gateway-service/src/pricing_catalog.rs](../../crates/gateway-service/src/pricing_catalog.rs)
+- Request logging: [../crates/gateway-service/src/request_logging.rs](../../crates/gateway-service/src/request_logging.rs)
+- Ledger writes: [../crates/gateway-service/src/service.rs](../../crates/gateway-service/src/service.rs)
 
 ## Request Path
 
@@ -150,13 +148,13 @@ That separation matters in two common cases:
 - Request-log payload policy is still bounded and heuristic, not operator-configurable.
 - Provider-attempt and fallback-style metrics are intentionally narrow in this slice.
 
-For the current observability cleanup notes, see [observability-and-request-logs.md](observability-and-request-logs.md).
+For the current observability cleanup notes, see [observability-and-request-logs.md](../operations/observability-and-request-logs.md).
 
 ## What This Page Does Not Own
 
-- config field syntax and validation: [configuration-reference.md](configuration-reference.md)
-- identity and ownership policy: [identity-and-access.md](identity-and-access.md)
-- route-planning contract and endpoint behavior: [model-routing-and-api-behavior.md](model-routing-and-api-behavior.md)
-- exact pricing coverage rules: [pricing-catalog-and-accounting.md](pricing-catalog-and-accounting.md)
-- budget windows and spend APIs: [budgets-and-spending.md](budgets-and-spending.md)
-- request-log storage and payload policy: [observability-and-request-logs.md](observability-and-request-logs.md)
+- config field syntax and validation: [configuration-reference.md](../configuration/configuration-reference.md)
+- identity and ownership policy: [identity-and-access.md](../access/identity-and-access.md)
+- route-planning contract and endpoint behavior: [model-routing-and-api-behavior.md](../configuration/model-routing-and-api-behavior.md)
+- exact pricing coverage rules: [pricing-catalog-and-accounting.md](../configuration/pricing-catalog-and-accounting.md)
+- budget windows and spend APIs: [budgets-and-spending.md](../operations/budgets-and-spending.md)
+- request-log storage and payload policy: [observability-and-request-logs.md](../operations/observability-and-request-logs.md)

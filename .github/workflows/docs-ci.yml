@@ -1,0 +1,28 @@
+name: docs-ci
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  MISE_EXPERIMENTAL: true
+
+jobs:
+  docs-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Setup mise + tools
+        uses: jdx/mise-action@e79ddf65a11cec7b0e882bedced08d6e976efb2d
+
+      - name: Verify docs site
+        run: mise run docs-verify

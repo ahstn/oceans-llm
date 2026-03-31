@@ -1,8 +1,6 @@
 # Operator Runbooks
 
-`Owns`: step-by-step operator actions for first deploy, upgrades, migration recovery, admin access recovery, provider auth failures, missing OTLP collectors, and secret rotation checkpoints.
-`Depends on`: [runtime-bootstrap-and-access.md](runtime-bootstrap-and-access.md), [deploy-and-operations.md](deploy-and-operations.md)
-`See also`: [../deploy/README.md](../deploy/README.md), [configuration-reference.md](configuration-reference.md), [identity-and-access.md](identity-and-access.md), [observability-and-request-logs.md](observability-and-request-logs.md)
+`See also`: [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Deploy and Operations](../setup/deploy-and-operations.md), [Deploy Compose](../../deploy/README.md), [Configuration Reference](../configuration/configuration-reference.md), [Identity and Access](../access/identity-and-access.md), [Observability and Request Logs](observability-and-request-logs.md)
 
 This page is action-oriented. It is not the place for broad topology or config reference detail.
 
@@ -10,7 +8,7 @@ This page is action-oriented. It is not the place for broad topology or config r
 
 - copy `deploy/.env.example` to `deploy/.env`
 - set image tags and secret values
-- inspect the mounted config at [../deploy/config/gateway.yaml](../deploy/config/gateway.yaml)
+- inspect the mounted config at [../deploy/config/gateway.yaml](../../deploy/config/gateway.yaml)
 - start the stack:
 
 ```bash
@@ -72,7 +70,7 @@ mise run gateway-bootstrap-admin
   - production-shaped local config does force password rotation
 - confirm the session is not simply expired or stale
 
-If the environment relies on OIDC, also review [oidc-and-sso-status.md](oidc-and-sso-status.md). The current OIDC flow is still development-style.
+If the environment relies on OIDC, also review [oidc-and-sso-status.md](../access/oidc-and-sso-status.md). The current OIDC flow is still development-style.
 
 ## Provider Auth Failure
 
@@ -85,7 +83,7 @@ Provider auth failures usually come from config shape or missing secrets.
 - confirm the route is enabled and has positive weight
 - confirm the model is not only visible in `/v1/models`, but actually viable for the requested operation
 
-If the symptom is “model is visible but fails,” follow [request-lifecycle-and-failure-modes.md](request-lifecycle-and-failure-modes.md).
+If the symptom is “model is visible but fails,” follow [request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md).
 
 ## Missing OTLP Collector
 
@@ -128,8 +126,8 @@ When rotating secrets, check the dependent path instead of rotating blindly.
 
 ## What This Page Does Not Own
 
-- compose file syntax: [../deploy/README.md](../deploy/README.md)
-- startup and first-access rules: [runtime-bootstrap-and-access.md](runtime-bootstrap-and-access.md)
-- topology and same-origin contract: [deploy-and-operations.md](deploy-and-operations.md)
-- identity lifecycle rules: [identity-and-access.md](identity-and-access.md)
+- compose file syntax: [../deploy/README.md](../../deploy/README.md)
+- startup and first-access rules: [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md)
+- topology and same-origin contract: [deploy-and-operations.md](../setup/deploy-and-operations.md)
+- identity lifecycle rules: [identity-and-access.md](../access/identity-and-access.md)
 - request-log payload policy: [observability-and-request-logs.md](observability-and-request-logs.md)

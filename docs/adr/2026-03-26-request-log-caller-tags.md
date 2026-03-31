@@ -9,7 +9,7 @@
 
 ## Current state
 
-- [../observability-and-request-logs.md](../observability-and-request-logs.md)
+- [../observability-and-request-logs.md](../operations/observability-and-request-logs.md)
 
 ## Context
 

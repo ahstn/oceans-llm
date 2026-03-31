@@ -5,9 +5,9 @@
 
 ## Current state
 
-- [../request-lifecycle-and-failure-modes.md](../request-lifecycle-and-failure-modes.md)
-- [../observability-and-request-logs.md](../observability-and-request-logs.md)
-- [../budgets-and-spending.md](../budgets-and-spending.md)
+- [../request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md)
+- [../observability-and-request-logs.md](../operations/observability-and-request-logs.md)
+- [../budgets-and-spending.md](../operations/budgets-and-spending.md)
 
 ## Context
 
@@ -18,8 +18,8 @@ Two follow-up issues exposed gaps in the contracts established by earlier work:
 
 These problems sat directly on top of earlier accepted decisions:
 
-- [2026-03-12 durable usage ledger accounting](./2026-03-12-durable-usage-ledger-accounting.md) made `usage_cost_events` the authoritative accounting ledger.
-- [2026-03-15 OTLP observability and request logs](./2026-03-15-otlp-observability-and-request-log-payloads.md) moved request-log assembly into a dedicated lifecycle service and exposed admin list/detail APIs.
+- [2026-03-12 durable usage ledger accounting](2026-03-12-durable-usage-ledger-accounting.md) made `usage_cost_events` the authoritative accounting ledger.
+- [2026-03-15 OTLP observability and request logs](2026-03-15-otlp-observability-and-request-log-payloads.md) moved request-log assembly into a dedicated lifecycle service and exposed admin list/detail APIs.
 
 The resulting implementation had two contract mismatches:
 
@@ -116,7 +116,7 @@ Tradeoffs:
 
 - Add dashboards and alert thresholds for post-success accounting failures using the new metric.
 - Consider whether other admin detail endpoints should adopt the same strict “resource or 404” contract by default.
-- Continue documenting request/accounting policy in user-facing runtime docs such as [README.md](../../README.md) whenever the operational contract changes.
+- Continue documenting request/accounting policy in user-facing runtime docs such as [../../README.md](../../README.md) whenever the operational contract changes.
 
 ## Attribution
 

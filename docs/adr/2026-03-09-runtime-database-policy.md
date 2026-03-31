@@ -5,8 +5,8 @@
 
 ## Current state
 
-- [../deploy-and-operations.md](../deploy-and-operations.md)
-- [../runtime-bootstrap-and-access.md](../runtime-bootstrap-and-access.md)
+- [../deploy-and-operations.md](../setup/deploy-and-operations.md)
+- [../runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md)
 
 ## Context
 

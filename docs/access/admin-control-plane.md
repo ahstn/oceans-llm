@@ -1,8 +1,6 @@
 # Admin Control Plane
 
-`Owns`: the current admin UI capability map, the live-versus-preview surface split, and operator expectations for the control plane.
-`Depends on`: [identity-and-access.md](identity-and-access.md), [budgets-and-spending.md](budgets-and-spending.md), [observability-and-request-logs.md](observability-and-request-logs.md)
-`See also`: [admin-api-contract-workflow.md](admin-api-contract-workflow.md), [e2e-contract-tests.md](e2e-contract-tests.md), [oidc-and-sso-status.md](oidc-and-sso-status.md)
+`See also`: [Identity and Access](identity-and-access.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Admin API Contract Workflow](../reference/admin-api-contract-workflow.md), [End-to-End Contract Tests](../reference/e2e-contract-tests.md), [OIDC and SSO Status](oidc-and-sso-status.md)
 
 This page describes what operators can actually do in the admin UI today.
 
@@ -15,7 +13,7 @@ Normal runtime model:
 - the gateway handles auth, admin APIs, and reverse proxying
 - the SSR app calls back into the gateway through the same-origin client boundary
 
-For the generated contract and artifact workflow, use [admin-api-contract-workflow.md](admin-api-contract-workflow.md).
+For the generated contract and artifact workflow, use [admin-api-contract-workflow.md](../reference/admin-api-contract-workflow.md).
 
 ## Live Gateway-Backed Surfaces
 
@@ -137,4 +135,4 @@ The E2E harness treats only live gateway-backed surfaces as contract flows.
 - live surfaces should gain targeted cross-layer coverage as they harden
 - preview-backed pages can appear in smoke coverage, not business-flow coverage
 
-Use [e2e-contract-tests.md](e2e-contract-tests.md) for the test boundary.
+Use [e2e-contract-tests.md](../reference/e2e-contract-tests.md) for the test boundary.

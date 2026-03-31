@@ -6,12 +6,12 @@
 ## Implemented By
 
 - Canonical docs:
-  - [../model-routing-and-api-behavior.md](../model-routing-and-api-behavior.md)
+  - [../model-routing-and-api-behavior.md](../configuration/model-routing-and-api-behavior.md)
 
 ## Current state
 
-- [../model-routing-and-api-behavior.md](../model-routing-and-api-behavior.md)
-- [../request-lifecycle-and-failure-modes.md](../request-lifecycle-and-failure-modes.md)
+- [../model-routing-and-api-behavior.md](../configuration/model-routing-and-api-behavior.md)
+- [../request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md)
 
 ## Context
 

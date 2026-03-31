@@ -5,17 +5,17 @@
 - Related Issues:
   - [#60](https://github.com/ahstn/oceans-llm/issues/60)
 - Builds On:
-  - [2026-03-05-identity-foundation.md](./2026-03-05-identity-foundation.md)
-  - [2026-03-15-otlp-observability-and-request-log-payloads.md](./2026-03-15-otlp-observability-and-request-log-payloads.md)
-  - [2026-03-15-spend-control-plane-reporting-and-team-hard-limits.md](./2026-03-15-spend-control-plane-reporting-and-team-hard-limits.md)
-  - [2026-03-17-post-success-accounting-and-strict-request-log-lookups.md](./2026-03-17-post-success-accounting-and-strict-request-log-lookups.md)
-  - [2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md](./2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md)
+  - [2026-03-05-identity-foundation.md](2026-03-05-identity-foundation.md)
+  - [2026-03-15-otlp-observability-and-request-log-payloads.md](2026-03-15-otlp-observability-and-request-log-payloads.md)
+  - [2026-03-15-spend-control-plane-reporting-and-team-hard-limits.md](2026-03-15-spend-control-plane-reporting-and-team-hard-limits.md)
+  - [2026-03-17-post-success-accounting-and-strict-request-log-lookups.md](2026-03-17-post-success-accounting-and-strict-request-log-lookups.md)
+  - [2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md](2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md)
 
 ## Current state
 
-- [../admin-api-contract-workflow.md](../admin-api-contract-workflow.md)
-- [../admin-control-plane.md](../admin-control-plane.md)
-- [../e2e-contract-tests.md](../e2e-contract-tests.md)
+- [../admin-api-contract-workflow.md](../reference/admin-api-contract-workflow.md)
+- [../admin-control-plane.md](../access/admin-control-plane.md)
+- [../e2e-contract-tests.md](../reference/e2e-contract-tests.md)
 
 ## Context
 
@@ -38,7 +38,7 @@ The key decisions are:
 
 ### 1. Make the gateway HTTP layer the source of truth
 
-The canonical contract now lives in [crates/gateway/src/http/admin_contract.rs](../../crates/gateway/src/http/admin_contract.rs), with route annotations on the live handlers in the gateway HTTP layer.
+The canonical contract now lives in [../../crates/gateway/src/http/admin_contract.rs](../../crates/gateway/src/http/admin_contract.rs), with route annotations on the live handlers in the gateway HTTP layer.
 
 Why:
 
@@ -49,7 +49,7 @@ Why:
 
 ### 2. Generate the admin OpenAPI document from the gateway
 
-The gateway exports a checked-in OpenAPI artifact at [crates/gateway/openapi/admin-api.json](../../crates/gateway/openapi/admin-api.json) through [crates/gateway/src/bin/export_admin_openapi.rs](../../crates/gateway/src/bin/export_admin_openapi.rs) and the new library target in [crates/gateway/src/lib.rs](../../crates/gateway/src/lib.rs).
+The gateway exports a checked-in OpenAPI artifact at [../../crates/gateway/openapi/admin-api.json](../../crates/gateway/openapi/admin-api.json) through [../../crates/gateway/src/bin/export_admin_openapi.rs](../../crates/gateway/src/bin/export_admin_openapi.rs) and the new library target in [../../crates/gateway/src/lib.rs](../../crates/gateway/src/lib.rs).
 
 Why:
 
@@ -59,7 +59,7 @@ Why:
 
 ### 3. Generate the frontend contract from OpenAPI and consume it directly
 
-The admin UI now consumes generated types from [crates/admin-ui/web/src/generated/admin-api.ts](../../crates/admin-ui/web/src/generated/admin-api.ts), with live-specific aliases in [crates/admin-ui/web/src/types/live-api.ts](../../crates/admin-ui/web/src/types/live-api.ts).
+The admin UI now consumes generated types from [../../crates/admin-ui/web/src/generated/admin-api.ts](../../crates/admin-ui/web/src/generated/admin-api.ts), with live-specific aliases in [../../crates/admin-ui/web/src/types/live-api.ts](../../crates/admin-ui/web/src/types/live-api.ts).
 
 Why:
 
@@ -69,7 +69,7 @@ Why:
 
 ### 4. Keep a thin same-origin client rather than inventing a new SDK
 
-The admin UI uses [crates/admin-ui/web/src/server/gateway-client.server.ts](../../crates/admin-ui/web/src/server/gateway-client.server.ts) as the same-origin fetch adapter and `openapi-fetch` as the typed client surface.
+The admin UI uses [../../crates/admin-ui/web/src/server/gateway-client.server.ts](../../crates/admin-ui/web/src/server/gateway-client.server.ts) as the same-origin fetch adapter and `openapi-fetch` as the typed client surface.
 
 Why:
 
@@ -79,7 +79,7 @@ Why:
 
 ### 5. Split live and preview-backed data explicitly
 
-Preview-only content moved to [crates/admin-ui/web/src/server/admin-preview-data.server.ts](../../crates/admin-ui/web/src/server/admin-preview-data.server.ts) and [crates/admin-ui/web/src/types/preview-api.ts](../../crates/admin-ui/web/src/types/preview-api.ts), while the live admin data layer now lives in [crates/admin-ui/web/src/server/admin-data.server.ts](../../crates/admin-ui/web/src/server/admin-data.server.ts) and [crates/admin-ui/web/src/server/admin-data.functions.ts](../../crates/admin-ui/web/src/server/admin-data.functions.ts).
+Preview-only content moved to [../../crates/admin-ui/web/src/server/admin-preview-data.server.ts](../../crates/admin-ui/web/src/server/admin-preview-data.server.ts) and [../../crates/admin-ui/web/src/types/preview-api.ts](../../crates/admin-ui/web/src/types/preview-api.ts), while the live admin data layer now lives in [../../crates/admin-ui/web/src/server/admin-data.server.ts](../../crates/admin-ui/web/src/server/admin-data.server.ts) and [../../crates/admin-ui/web/src/server/admin-data.functions.ts](../../crates/admin-ui/web/src/server/admin-data.functions.ts).
 
 Why:
 
@@ -89,7 +89,7 @@ Why:
 
 ### 6. Remove compatibility shims instead of preserving them
 
-The observability route now consumes the wire contract directly in [crates/admin-ui/web/src/routes/observability/request-logs.tsx](../../crates/admin-ui/web/src/routes/observability/request-logs.tsx), and the old camelCase remap layer was removed rather than retained behind fallback wrappers.
+The observability route now consumes the wire contract directly in [../../crates/admin-ui/web/src/routes/observability/request-logs.tsx](../../crates/admin-ui/web/src/routes/observability/request-logs.tsx), and the old camelCase remap layer was removed rather than retained behind fallback wrappers.
 
 Why:
 
@@ -103,32 +103,32 @@ This ADR is intentionally about both the process and the structure.
 
 ### Gateway contract generation
 
-- [crates/gateway/src/http/admin_contract.rs](../../crates/gateway/src/http/admin_contract.rs)
+- [../../crates/gateway/src/http/admin_contract.rs](../../crates/gateway/src/http/admin_contract.rs)
   - defines reusable transport DTOs and envelopes for auth, identity, spend, and observability,
   - owns the `utoipa` OpenAPI document definition,
   - keeps live transport types close to the handlers that use them.
-- [crates/gateway/src/http/identity.rs](../../crates/gateway/src/http/identity.rs)
-- [crates/gateway/src/http/spend.rs](../../crates/gateway/src/http/spend.rs)
-- [crates/gateway/src/http/observability.rs](../../crates/gateway/src/http/observability.rs)
+- [../../crates/gateway/src/http/identity.rs](../../crates/gateway/src/http/identity.rs)
+- [../../crates/gateway/src/http/spend.rs](../../crates/gateway/src/http/spend.rs)
+- [../../crates/gateway/src/http/observability.rs](../../crates/gateway/src/http/observability.rs)
   - annotate live routes with `#[utoipa::path]` and return the shared contract types.
-- [crates/gateway/src/bin/export_admin_openapi.rs](../../crates/gateway/src/bin/export_admin_openapi.rs)
+- [../../crates/gateway/src/bin/export_admin_openapi.rs](../../crates/gateway/src/bin/export_admin_openapi.rs)
   - emits the checked-in OpenAPI artifact.
-- [crates/gateway/openapi/admin-api.json](../../crates/gateway/openapi/admin-api.json)
+- [../../crates/gateway/openapi/admin-api.json](../../crates/gateway/openapi/admin-api.json)
   - becomes the stable input for frontend type generation.
 
 This keeps the contract close to the live implementation and avoids a second contract source in shared domain code.
 
 ### Frontend generation and client wiring
 
-- [crates/admin-ui/web/src/generated/admin-api.ts](../../crates/admin-ui/web/src/generated/admin-api.ts)
+- [../../crates/admin-ui/web/src/generated/admin-api.ts](../../crates/admin-ui/web/src/generated/admin-api.ts)
   - checked-in generated TypeScript path/operation types.
-- [crates/admin-ui/web/src/types/live-api.ts](../../crates/admin-ui/web/src/types/live-api.ts)
+- [../../crates/admin-ui/web/src/types/live-api.ts](../../crates/admin-ui/web/src/types/live-api.ts)
   - live-facing aliases over the generated schema.
-- [crates/admin-ui/web/src/server/gateway-client.server.ts](../../crates/admin-ui/web/src/server/gateway-client.server.ts)
+- [../../crates/admin-ui/web/src/server/gateway-client.server.ts](../../crates/admin-ui/web/src/server/gateway-client.server.ts)
   - same-origin header forwarding and cookie passthrough for the generated client.
-- [crates/admin-ui/web/src/server/admin-data.server.ts](../../crates/admin-ui/web/src/server/admin-data.server.ts)
+- [../../crates/admin-ui/web/src/server/admin-data.server.ts](../../crates/admin-ui/web/src/server/admin-data.server.ts)
   - live admin endpoints backed by the generated client.
-- [crates/admin-ui/web/src/routes/observability/request-logs.tsx](../../crates/admin-ui/web/src/routes/observability/request-logs.tsx)
+- [../../crates/admin-ui/web/src/routes/observability/request-logs.tsx](../../crates/admin-ui/web/src/routes/observability/request-logs.tsx)
   - now consumes the generated wire shapes directly.
 
 ### Drift control
@@ -139,7 +139,7 @@ Drift prevention is intentionally simple:
 - check the generated files into the repository,
 - fail CI and local lint if regeneration changes the working tree.
 
-The tooling for that lives in [mise.toml](../../mise.toml) and the CI gate in [.github/workflows/rust-ci.yml](../../.github/workflows/rust-ci.yml).
+The tooling for that lives in [../../mise.toml](../../mise.toml) and the CI gate in [../../.github/workflows/rust-ci.yml](../../.github/workflows/rust-ci.yml).
 
 This approach keeps the source of truth inspectable and makes contract drift a normal code review problem instead of a runtime surprise.
 
@@ -147,10 +147,10 @@ This approach keeps the source of truth inspectable and makes contract drift a n
 
 Canonical docs now describe the generated live contract pipeline and the boundary between live and preview-backed surfaces:
 
-- [README.md](../../README.md)
-- [docs/admin-control-plane.md](../admin-control-plane.md)
-- [docs/observability-and-request-logs.md](../observability-and-request-logs.md)
-- [docs/e2e-contract-tests.md](../e2e-contract-tests.md)
+- [../../README.md](../../README.md)
+- [../access/admin-control-plane.md](../access/admin-control-plane.md)
+- [../operations/observability-and-request-logs.md](../operations/observability-and-request-logs.md)
+- [../reference/e2e-contract-tests.md](../reference/e2e-contract-tests.md)
 
 ## Tradeoffs
 

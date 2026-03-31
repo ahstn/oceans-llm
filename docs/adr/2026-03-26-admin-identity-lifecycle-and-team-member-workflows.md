@@ -6,13 +6,13 @@
   - [#32](https://github.com/ahstn/oceans-llm/issues/32)
   - [#33](https://github.com/ahstn/oceans-llm/issues/33)
 - Builds On:
-  - [2026-03-05-identity-foundation.md](./2026-03-05-identity-foundation.md)
-  - [2026-03-08-admin-team-management-flow.md](./2026-03-08-admin-team-management-flow.md)
+  - [2026-03-05-identity-foundation.md](2026-03-05-identity-foundation.md)
+  - [2026-03-08-admin-team-management-flow.md](2026-03-08-admin-team-management-flow.md)
 
 ## Current state
 
-- [../identity-and-access.md](../identity-and-access.md)
-- [../admin-control-plane.md](../admin-control-plane.md)
+- [../identity-and-access.md](../access/identity-and-access.md)
+- [../admin-control-plane.md](../access/admin-control-plane.md)
 
 ## Context
 
@@ -52,7 +52,7 @@ The key decisions are:
 
 ### 1. Model user status as a typed domain concept
 
-User status is no longer an unstructured string carried through the system. The canonical lifecycle states now live in [crates/gateway-core/src/domain.rs](../../crates/gateway-core/src/domain.rs) as `UserStatus`.
+User status is no longer an unstructured string carried through the system. The canonical lifecycle states now live in [../../crates/gateway-core/src/domain.rs](../../crates/gateway-core/src/domain.rs) as `UserStatus`.
 
 Why:
 
@@ -62,7 +62,7 @@ Why:
 
 ### 2. Centralize lifecycle policy in one backend module
 
-The allowed transitions and guardrails live in [crates/gateway/src/http/identity_lifecycle.rs](../../crates/gateway/src/http/identity_lifecycle.rs).
+The allowed transitions and guardrails live in [../../crates/gateway/src/http/identity_lifecycle.rs](../../crates/gateway/src/http/identity_lifecycle.rs).
 
 That module owns rules such as:
 
@@ -81,7 +81,7 @@ Why:
 
 ### 3. Use explicit action endpoints for destructive lifecycle operations
 
-We kept non-destructive edits on `PATCH /api/v1/admin/identity/users/{user_id}`, but destructive or stateful transitions use explicit action routes in [crates/gateway/src/http/mod.rs](../../crates/gateway/src/http/mod.rs) and [crates/gateway/src/http/identity.rs](../../crates/gateway/src/http/identity.rs):
+We kept non-destructive edits on `PATCH /api/v1/admin/identity/users/{user_id}`, but destructive or stateful transitions use explicit action routes in [../../crates/gateway/src/http/mod.rs](../../crates/gateway/src/http/mod.rs) and [../../crates/gateway/src/http/identity.rs](../../crates/gateway/src/http/identity.rs):
 
 - `POST /api/v1/admin/identity/users/{user_id}/deactivate`
 - `POST /api/v1/admin/identity/users/{user_id}/reactivate`
@@ -99,8 +99,8 @@ Why:
 
 Deactivation revokes active sessions and makes runtime access ineffective immediately. The relevant enforcement paths are in:
 
-- [crates/gateway/src/http/identity.rs](../../crates/gateway/src/http/identity.rs)
-- [crates/gateway-service/src/model_access.rs](../../crates/gateway-service/src/model_access.rs)
+- [../../crates/gateway/src/http/identity.rs](../../crates/gateway/src/http/identity.rs)
+- [../../crates/gateway-service/src/model_access.rs](../../crates/gateway-service/src/model_access.rs)
 
 Why:
 
@@ -134,10 +134,10 @@ This ADR is intentionally about both why and how. The implementation is spread a
 
 ### Domain and policy
 
-- [crates/gateway-core/src/domain.rs](../../crates/gateway-core/src/domain.rs)
+- [../../crates/gateway-core/src/domain.rs](../../crates/gateway-core/src/domain.rs)
   - introduces `UserStatus`
   - moves status parsing and formatting toward typed handling
-- [crates/gateway/src/http/identity_lifecycle.rs](../../crates/gateway/src/http/identity_lifecycle.rs)
+- [../../crates/gateway/src/http/identity_lifecycle.rs](../../crates/gateway/src/http/identity_lifecycle.rs)
   - centralizes lifecycle transition validation
   - defines the control-plane invariants for this slice
 
@@ -145,24 +145,24 @@ This combination turns identity lifecycle into a domain rule set instead of a ba
 
 ### Gateway HTTP layer
 
-- [crates/gateway/src/http/identity.rs](../../crates/gateway/src/http/identity.rs)
+- [../../crates/gateway/src/http/identity.rs](../../crates/gateway/src/http/identity.rs)
   - adds request types for user update and team transfer
   - implements lifecycle and team-member mutation handlers
   - reuses onboarding response shapes for reset-onboarding
   - expands team views to include real member rosters for the admin UI
-- [crates/gateway/src/http/mod.rs](../../crates/gateway/src/http/mod.rs)
+- [../../crates/gateway/src/http/mod.rs](../../crates/gateway/src/http/mod.rs)
   - wires the new admin routes into the gateway
-- [crates/gateway/src/http/admin_auth.rs](../../crates/gateway/src/http/admin_auth.rs)
+- [../../crates/gateway/src/http/admin_auth.rs](../../crates/gateway/src/http/admin_auth.rs)
   - now relies on typed `UserStatus` checks
 
 This keeps the gateway as the single backend boundary for identity mutation. The admin UI does not apply business rules on its own and the store does not expose policy-free mutation semantics directly to clients.
 
 ### Store layer and transactional behavior
 
-- [crates/gateway-store/src/store.rs](../../crates/gateway-store/src/store.rs)
+- [../../crates/gateway-store/src/store.rs](../../crates/gateway-store/src/store.rs)
   - extends the store contract with explicit lifecycle and membership mutation helpers
-- [crates/gateway-store/src/libsql_store/identity.rs](../../crates/gateway-store/src/libsql_store/identity.rs)
-- [crates/gateway-store/src/postgres_store/identity.rs](../../crates/gateway-store/src/postgres_store/identity.rs)
+- [../../crates/gateway-store/src/libsql_store/identity.rs](../../crates/gateway-store/src/libsql_store/identity.rs)
+- [../../crates/gateway-store/src/postgres_store/identity.rs](../../crates/gateway-store/src/postgres_store/identity.rs)
   - implement atomic user updates
   - implement membership removal and transfer
   - revoke sessions
@@ -175,9 +175,9 @@ We deliberately did not introduce a schema migration for this slice. The schema 
 
 ### Runtime enforcement
 
-- [crates/gateway-service/src/model_access.rs](../../crates/gateway-service/src/model_access.rs)
+- [../../crates/gateway-service/src/model_access.rs](../../crates/gateway-service/src/model_access.rs)
   - blocks disabled users from continuing to use user-owned API keys
-- [crates/gateway/src/http/identity.rs](../../crates/gateway/src/http/identity.rs)
+- [../../crates/gateway/src/http/identity.rs](../../crates/gateway/src/http/identity.rs)
   - invalidates disabled users during session resolution
   - blocks password-change flows for non-active users
 
@@ -185,33 +185,33 @@ This matters because admin lifecycle operations are only credible if they affect
 
 ### Admin UI and control-plane UX
 
-- [crates/admin-ui/web/src/routes/identity/users.tsx](../../crates/admin-ui/web/src/routes/identity/users.tsx)
+- [../../crates/admin-ui/web/src/routes/identity/users.tsx](../../crates/admin-ui/web/src/routes/identity/users.tsx)
   - adds edit and lifecycle actions for users
-- [crates/admin-ui/web/src/routes/identity/teams.tsx](../../crates/admin-ui/web/src/routes/identity/teams.tsx)
+- [../../crates/admin-ui/web/src/routes/identity/teams.tsx](../../crates/admin-ui/web/src/routes/identity/teams.tsx)
   - adds member roster, removal, and transfer flows
-- [crates/admin-ui/web/src/server/admin-data.server.ts](../../crates/admin-ui/web/src/server/admin-data.server.ts)
-- [crates/admin-ui/web/src/server/admin-data.functions.ts](../../crates/admin-ui/web/src/server/admin-data.functions.ts)
-- [crates/admin-ui/web/src/types/api.ts](../../crates/admin-ui/web/src/types/api.ts)
+- [../../crates/admin-ui/web/src/server/admin-data.server.ts](../../crates/admin-ui/web/src/server/admin-data.server.ts)
+- [../../crates/admin-ui/web/src/server/admin-data.functions.ts](../../crates/admin-ui/web/src/server/admin-data.functions.ts)
+- [../../crates/admin-ui/web/src/types/api.ts](../../crates/admin-ui/web/src/types/api.ts)
   - align the admin UI contract with the gateway endpoints and request shapes
 
 The UI remains a thin control plane over same-origin server functions and route invalidation. That preserves the project’s preferred pattern: the backend is authoritative, while the UI focuses on operator clarity and confirmation copy.
 
 ### Tests and documentation
 
-- [crates/gateway-store/src/lib.rs](../../crates/gateway-store/src/lib.rs)
+- [../../crates/gateway-store/src/lib.rs](../../crates/gateway-store/src/lib.rs)
   - adds store-level coverage for transfer, removal, owner blocking, session revocation, and admin counting
-- [crates/gateway/src/main.rs](../../crates/gateway/src/main.rs)
+- [../../crates/gateway/src/main.rs](../../crates/gateway/src/main.rs)
   - adds end-to-end gateway tests for lifecycle transitions and member workflows
-- [crates/admin-ui/web/src/server/admin-data.server.test.ts](../../crates/admin-ui/web/src/server/admin-data.server.test.ts)
-- [crates/admin-ui/web/src/test/routes/users-route.test.tsx](../../crates/admin-ui/web/src/test/routes/users-route.test.tsx)
-- [crates/admin-ui/web/src/test/routes/teams-route.test.tsx](../../crates/admin-ui/web/src/test/routes/teams-route.test.tsx)
+- [../../crates/admin-ui/web/src/server/admin-data.server.test.ts](../../crates/admin-ui/web/src/server/admin-data.server.test.ts)
+- [../../crates/admin-ui/web/src/test/routes/users-route.test.tsx](../../crates/admin-ui/web/src/test/routes/users-route.test.tsx)
+- [../../crates/admin-ui/web/src/test/routes/teams-route.test.tsx](../../crates/admin-ui/web/src/test/routes/teams-route.test.tsx)
   - cover the server contract and the new admin flows
 
 Canonical docs were updated alongside the code:
 
-- [../identity-and-access.md](../identity-and-access.md)
-- [../admin-control-plane.md](../admin-control-plane.md)
-- [../e2e-contract-tests.md](../e2e-contract-tests.md)
+- [../identity-and-access.md](../access/identity-and-access.md)
+- [../admin-control-plane.md](../access/admin-control-plane.md)
+- [../e2e-contract-tests.md](../reference/e2e-contract-tests.md)
 
 ## Consequences
 

@@ -6,15 +6,15 @@
 ## Implemented By
 
 - Canonical docs:
-  - [../identity-and-access.md](../identity-and-access.md)
-  - [../data-relationships.md](../data-relationships.md)
-  - [../admin-control-plane.md](../admin-control-plane.md)
+  - [../identity-and-access.md](../access/identity-and-access.md)
+  - [../data-relationships.md](../reference/data-relationships.md)
+  - [../admin-control-plane.md](../access/admin-control-plane.md)
 
 ## Current state
 
-- [../identity-and-access.md](../identity-and-access.md)
-- [../runtime-bootstrap-and-access.md](../runtime-bootstrap-and-access.md)
-- [../data-relationships.md](../data-relationships.md)
+- [../identity-and-access.md](../access/identity-and-access.md)
+- [../runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md)
+- [../data-relationships.md](../reference/data-relationships.md)
 
 ## Context
 

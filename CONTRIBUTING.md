@@ -1,8 +1,8 @@
 # Contributing
 
 `Owns`: contributor setup, day-to-day repo workflow, CI/workflow map, and the workspace primer for maintainers.
-`Depends on`: [README.md](README.md), [docs/README.md](docs/README.md), [mise.toml](mise.toml)
-`See also`: [.github/pull_request_template.md](.github/pull_request_template.md), [.github/ISSUE_TEMPLATE/feature_request.md](.github/ISSUE_TEMPLATE/feature_request.md), [.github/ISSUE_TEMPLATE/bug_report.md](.github/ISSUE_TEMPLATE/bug_report.md), [docs/adr/2026-03-06-release-versioning-and-ghcr-publishing.md](docs/adr/2026-03-06-release-versioning-and-ghcr-publishing.md), [docs/e2e-contract-tests.md](docs/e2e-contract-tests.md)
+`Depends on`: [README.md](README.md), [docs/index.md](docs/index.md), [mise.toml](mise.toml)
+`See also`: [.github/pull_request_template.md](.github/pull_request_template.md), [.github/ISSUE_TEMPLATE/feature_request.md](.github/ISSUE_TEMPLATE/feature_request.md), [.github/ISSUE_TEMPLATE/bug_report.md](.github/ISSUE_TEMPLATE/bug_report.md), [docs/adr/2026-03-06-release-versioning-and-ghcr-publishing.md](docs/adr/2026-03-06-release-versioning-and-ghcr-publishing.md), [docs/reference/e2e-contract-tests.md](docs/reference/e2e-contract-tests.md)
 
 This guide is the entry point for contributing to the repository. It intentionally links to source files for task definitions, workflow details, and architecture decisions instead of restating them here.
 
@@ -37,6 +37,7 @@ Use [`mise.toml`](mise.toml) as the task catalog instead of memorizing ad hoc co
 - Local runtime commands: `mise run gateway-serve`, `mise run gateway-migrate`, `mise run gateway-bootstrap-admin`, `mise run gateway-seed-config`
 - Admin UI workflows: `mise run ui-dev`, `mise run ui-check`, `mise run ui-build`
 - End-to-end suite: `mise run e2e-test`
+- Docs site workflows: `mise run docs-install`, `mise run docs-dev`, `mise run docs-build`, `mise run docs-verify`
 
 For local stack startup and runtime entry points, see [README.md](README.md). For deploy-oriented runs, see [deploy/README.md](deploy/README.md).
 
@@ -90,11 +91,11 @@ graph TD
 
 Canonical architecture docs:
 
-- [docs/identity-and-access.md](docs/identity-and-access.md)
-- [docs/model-routing-and-api-behavior.md](docs/model-routing-and-api-behavior.md)
-- [docs/budgets-and-spending.md](docs/budgets-and-spending.md)
-- [docs/observability-and-request-logs.md](docs/observability-and-request-logs.md)
-- [docs/data-relationships.md](docs/data-relationships.md)
+- [docs/access/identity-and-access.md](docs/access/identity-and-access.md)
+- [docs/configuration/model-routing-and-api-behavior.md](docs/configuration/model-routing-and-api-behavior.md)
+- [docs/operations/budgets-and-spending.md](docs/operations/budgets-and-spending.md)
+- [docs/operations/observability-and-request-logs.md](docs/operations/observability-and-request-logs.md)
+- [docs/reference/data-relationships.md](docs/reference/data-relationships.md)
 
 ## Pull Requests And Issues
 
@@ -115,13 +116,14 @@ General GitHub guidance verified against GitHub Docs:
 
 ## GitHub Actions
 
-The CI contract lives in the workflow files under [.github/workflows/](.github/workflows/).
+The CI contract lives in the workflow files under [.github/workflows](.github/workflows).
 
 | Workflow | Purpose |
 | --- | --- |
 | [.github/workflows/rust-ci.yml](.github/workflows/rust-ci.yml) | Rust linting, workspace tests, and PostgreSQL-backed checks |
 | [.github/workflows/ui-ci.yml](.github/workflows/ui-ci.yml) | admin UI lint, test, and build via `mise run ui-check` |
 | [.github/workflows/e2e-ci.yml](.github/workflows/e2e-ci.yml) | Playwright contract suite via `mise run e2e-test` |
+| [.github/workflows/docs-ci.yml](.github/workflows/docs-ci.yml) | VitePress docs graph checks and static-site build via `mise run docs-verify` |
 | [.github/workflows/pr-title.yml](.github/workflows/pr-title.yml) | PR title validation against Conventional Commit format |
 | [.github/workflows/release.yml](.github/workflows/release.yml) | tag-driven image build, GHCR publish, provenance, and GitHub release steps |
 
@@ -151,12 +153,12 @@ Optional community additions:
 
 ## Where To Add Docs
 
-Keep the docs graph intact when you document new behavior:
+Keep the docs site structure intact when you document new behavior:
 
 - update [README.md](README.md) only for top-level product and local-run entry points,
-- update [docs/README.md](docs/README.md) when adding a new canonical page,
+- update [docs/index.md](docs/index.md) and [docs/.vitepress/config.mts](docs/.vitepress/config.mts) when adding a new canonical page,
 - update the canonical doc that owns the behavior instead of copying policy into several files,
-- add or update an ADR in [docs/adr/](docs/adr/) when the change is architectural,
+- add or update an ADR in [docs/adr](docs/adr) when the change is architectural,
 - link to source files and workflow files when those are the true source of operational detail.
 
 ## Docs Maintenance
@@ -164,20 +166,20 @@ Keep the docs graph intact when you document new behavior:
 When behavior changes, update the owning page instead of adding a second explanation.
 
 - startup flow, bootstrap admin, seeded API keys:
-  - [docs/runtime-bootstrap-and-access.md](docs/runtime-bootstrap-and-access.md)
+  - [docs/setup/runtime-bootstrap-and-access.md](docs/setup/runtime-bootstrap-and-access.md)
 - topology, same-origin runtime model, local-vs-prod differences:
-  - [docs/deploy-and-operations.md](docs/deploy-and-operations.md)
+  - [docs/setup/deploy-and-operations.md](docs/setup/deploy-and-operations.md)
 - recovery and upgrade steps:
-  - [docs/operator-runbooks.md](docs/operator-runbooks.md)
+  - [docs/operations/operator-runbooks.md](docs/operations/operator-runbooks.md)
 - config syntax and defaults:
-  - [docs/configuration-reference.md](docs/configuration-reference.md)
+  - [docs/configuration/configuration-reference.md](docs/configuration/configuration-reference.md)
 - identity lifecycle and ownership rules:
-  - [docs/identity-and-access.md](docs/identity-and-access.md)
+  - [docs/access/identity-and-access.md](docs/access/identity-and-access.md)
 - OIDC and SSO boundary:
-  - [docs/oidc-and-sso-status.md](docs/oidc-and-sso-status.md)
+  - [docs/access/oidc-and-sso-status.md](docs/access/oidc-and-sso-status.md)
 - admin contract generation and drift rules:
-  - [docs/admin-api-contract-workflow.md](docs/admin-api-contract-workflow.md)
+  - [docs/reference/admin-api-contract-workflow.md](docs/reference/admin-api-contract-workflow.md)
 - request routing, pricing, spend, and logging as one path:
-  - [docs/request-lifecycle-and-failure-modes.md](docs/request-lifecycle-and-failure-modes.md)
+  - [docs/reference/request-lifecycle-and-failure-modes.md](docs/reference/request-lifecycle-and-failure-modes.md)
 
 Run `mise run docs-check` after touching Markdown in the canonical docs set.

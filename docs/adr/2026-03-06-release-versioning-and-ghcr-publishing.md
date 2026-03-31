@@ -5,15 +5,15 @@
 
 ## Current state
 
-- [../release-process.md](../release-process.md)
-- [../deploy-and-operations.md](../deploy-and-operations.md)
+- [../release-process.md](../reference/release-process.md)
+- [../deploy-and-operations.md](../setup/deploy-and-operations.md)
 
 ## Context
 
 Implemented by:
 
-- [../release-process.md](../release-process.md)
-- [../deploy-and-operations.md](../deploy-and-operations.md)
+- [../release-process.md](../reference/release-process.md)
+- [../deploy-and-operations.md](../setup/deploy-and-operations.md)
 
 The repository had a single Rust CI workflow, no release workflow, no Docker image publishing, no release tags, and no structured release-note configuration. The codebase also ships two deployable applications:
 
@@ -243,7 +243,7 @@ The live workflow is slightly narrower than the original ADR language:
 - the gateway image is currently `linux/amd64` only
 - the admin UI image is currently `linux/amd64` and `linux/arm64`
 
-Treat [../release-process.md](../release-process.md) as the canonical operational description.
+Treat [../release-process.md](../reference/release-process.md) as the canonical operational description.
 
 ## Follow-up Work
 

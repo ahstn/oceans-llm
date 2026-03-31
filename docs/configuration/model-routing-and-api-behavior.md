@@ -1,23 +1,21 @@
 # Model Routing and API Behavior
 
-`Owns`: model identity, aliases, `tag:` selectors, route-planning inputs, capability gating, and `/v1/*` behavior.
-`Depends on`: [configuration-reference.md](configuration-reference.md), [data-relationships.md](data-relationships.md), [identity-and-access.md](identity-and-access.md)
-`See also`: [request-lifecycle-and-failure-modes.md](request-lifecycle-and-failure-modes.md), [pricing-catalog-and-accounting.md](pricing-catalog-and-accounting.md), [observability-and-request-logs.md](observability-and-request-logs.md), [adr/2026-03-10-model-aliases-and-provider-route-config.md](adr/2026-03-10-model-aliases-and-provider-route-config.md), [adr/2026-03-13-capability-aware-route-gating.md](adr/2026-03-13-capability-aware-route-gating.md)
+`See also`: [Configuration Reference](configuration-reference.md), [Data Relationships](../reference/data-relationships.md), [Identity and Access](../access/identity-and-access.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Pricing Catalog and Accounting](pricing-catalog-and-accounting.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [ADR: Model Aliases and Provider-Only Route Config](../adr/2026-03-10-model-aliases-and-provider-route-config.md), [ADR: Capability-Aware Route Gating with Strict Fail-Fast Validation](../adr/2026-03-13-capability-aware-route-gating.md)
 
 This page explains how the public `/v1/*` surface resolves a request into one concrete route.
 
 ## Source of Truth
 
 - config parsing:
-  - [../crates/gateway/src/config.rs](../crates/gateway/src/config.rs)
+  - [../crates/gateway/src/config.rs](../../crates/gateway/src/config.rs)
 - model access and tag selection:
-  - [../crates/gateway-service/src/model_access.rs](../crates/gateway-service/src/model_access.rs)
+  - [../crates/gateway-service/src/model_access.rs](../../crates/gateway-service/src/model_access.rs)
 - alias resolution:
-  - [../crates/gateway-service/src/model_resolution.rs](../crates/gateway-service/src/model_resolution.rs)
+  - [../crates/gateway-service/src/model_resolution.rs](../../crates/gateway-service/src/model_resolution.rs)
 - route planning:
-  - [../crates/gateway-service/src/route_planner.rs](../crates/gateway-service/src/route_planner.rs)
+  - [../crates/gateway-service/src/route_planner.rs](../../crates/gateway-service/src/route_planner.rs)
 - HTTP handlers:
-  - [../crates/gateway/src/http/handlers.rs](../crates/gateway/src/http/handlers.rs)
+  - [../crates/gateway/src/http/handlers.rs](../../crates/gateway/src/http/handlers.rs)
 
 ## Public Endpoints
 
@@ -126,7 +124,7 @@ One plain path looks like this:
   - `resolved_model_key = openai-gpt-4o-mini`
   - `provider_key = openai-primary`
 
-Use [request-lifecycle-and-failure-modes.md](request-lifecycle-and-failure-modes.md) for the later logging, pricing, and budget effects.
+Use [request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md) for the later logging, pricing, and budget effects.
 
 ## `/v1/models`
 
@@ -186,8 +184,8 @@ The live runtime is intentionally narrow in this slice:
 - config field syntax and defaults:
   - [configuration-reference.md](configuration-reference.md)
 - full cross-cutting request path:
-  - [request-lifecycle-and-failure-modes.md](request-lifecycle-and-failure-modes.md)
+  - [request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md)
 - exact pricing coverage:
   - [pricing-catalog-and-accounting.md](pricing-catalog-and-accounting.md)
 - spend enforcement and budget windows:
-  - [budgets-and-spending.md](budgets-and-spending.md)
+  - [budgets-and-spending.md](../operations/budgets-and-spending.md)

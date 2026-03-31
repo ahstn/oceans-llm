@@ -1,22 +1,20 @@
 # Pricing Catalog and Accounting
 
-`Owns`: pricing catalog source layers, effective-dated pricing rows, exact-only coverage limits, and `unpriced` accounting behavior.
-`Depends on`: [configuration-reference.md](configuration-reference.md), [data-relationships.md](data-relationships.md)
-`See also`: [request-lifecycle-and-failure-modes.md](request-lifecycle-and-failure-modes.md), [budgets-and-spending.md](budgets-and-spending.md), [adr/2026-03-06-hybrid-pricing-catalog.md](adr/2026-03-06-hybrid-pricing-catalog.md)
+`See also`: [Configuration Reference](configuration-reference.md), [Data Relationships](../reference/data-relationships.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Budgets and Spending](../operations/budgets-and-spending.md), [ADR: Hybrid Pricing Catalog from models.dev](../adr/2026-03-06-hybrid-pricing-catalog.md)
 
 This page explains how the gateway turns provider usage into durable pricing records and why some successful requests are intentionally not charged.
 
 ## Source of Truth
 
 - pricing resolution and refresh logic:
-  - [../crates/gateway-service/src/pricing_catalog.rs](../crates/gateway-service/src/pricing_catalog.rs)
+  - [../crates/gateway-service/src/pricing_catalog.rs](../../crates/gateway-service/src/pricing_catalog.rs)
 - spend ledger writes:
-  - [../crates/gateway-service/src/service.rs](../crates/gateway-service/src/service.rs)
+  - [../crates/gateway-service/src/service.rs](../../crates/gateway-service/src/service.rs)
 - cache and pricing-row persistence:
-  - [../crates/gateway-store/src/libsql_store/pricing_catalog.rs](../crates/gateway-store/src/libsql_store/pricing_catalog.rs)
-  - [../crates/gateway-store/src/postgres_store/pricing_catalog.rs](../crates/gateway-store/src/postgres_store/pricing_catalog.rs)
+  - [../crates/gateway-store/src/libsql_store/pricing_catalog.rs](../../crates/gateway-store/src/libsql_store/pricing_catalog.rs)
+  - [../crates/gateway-store/src/postgres_store/pricing_catalog.rs](../../crates/gateway-store/src/postgres_store/pricing_catalog.rs)
 - vendored fallback snapshot:
-  - [../crates/gateway-service/data/pricing_catalog_fallback.json](../crates/gateway-service/data/pricing_catalog_fallback.json)
+  - [../crates/gateway-service/data/pricing_catalog_fallback.json](../../crates/gateway-service/data/pricing_catalog_fallback.json)
 
 ## Catalog Layers
 
@@ -100,7 +98,7 @@ Route choice affects accounting, not only provider execution.
 - the chosen upstream model decides the exact lookup key
 - route or request modifiers can make a request become `unpriced`
 
-Use [request-lifecycle-and-failure-modes.md](request-lifecycle-and-failure-modes.md) for the full cause-and-effect path.
+Use [request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md) for the full cause-and-effect path.
 
 ## Relationship to Budgets
 
@@ -109,4 +107,4 @@ Budget enforcement only uses priced totals.
 - `priced` and `legacy_estimated` rows count
 - `unpriced` and `usage_missing` rows do not count
 
-Use [budgets-and-spending.md](budgets-and-spending.md) for budget windows and spend APIs.
+Use [budgets-and-spending.md](../operations/budgets-and-spending.md) for budget windows and spend APIs.

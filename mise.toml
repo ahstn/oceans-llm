@@ -15,7 +15,32 @@ run = "mise install"
 
 [tasks.docs-check]
 description = "Validate markdown links and required docs graph headers"
-run = "./scripts/docs-check.sh"
+depends = ["docs-install"]
+run = "npm run --prefix docs docs:check"
+
+[tasks.docs-install]
+description = "Install VitePress docs dependencies"
+run = "npm ci --prefix docs"
+
+[tasks.docs-dev]
+description = "Run the VitePress docs site locally"
+depends = ["docs-install"]
+run = "npm run --prefix docs docs:dev"
+
+[tasks.docs-build]
+description = "Build the VitePress docs site"
+depends = ["docs-install"]
+run = "npm run --prefix docs docs:build"
+
+[tasks.docs-preview]
+description = "Preview the built VitePress docs site"
+depends = ["docs-build"]
+run = "npm run --prefix docs docs:preview"
+
+[tasks.docs-verify]
+description = "Run docs structure checks and build the docs site"
+depends = ["docs-check", "docs-build"]
+run = "true"
 
 [tasks.fmt]
 description = "Format Rust sources"
