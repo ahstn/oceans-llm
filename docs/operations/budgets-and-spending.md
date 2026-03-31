@@ -47,6 +47,8 @@ Hard-limit behavior:
 
 - if projected spend in the active window would exceed the configured amount and `hard_limit = true`, the request fails with `budget_exceeded`
 - the HTTP status is `429`
+- the provider is not executed on this path
+- observability records the request as a budget rejection outcome instead of a provider execution
 
 ## Two-Phase Enforcement
 
