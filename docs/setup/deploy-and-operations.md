@@ -51,6 +51,22 @@ This is a product constraint, not only a local-dev convenience.
 
 That means the compose deploy path and the production-shaped local path do not teach the same first-access story.
 
+### Public docs site
+
+- source tree:
+  - [../index.md](../index.md)
+  - [../.vitepress/config.mts](../.vitepress/config.mts)
+- build artifact:
+  - `docs/.vitepress/dist`
+- deploy target:
+  - Cloudflare Pages project `oceans-llm-docs`
+- canonical hostname:
+  - `https://oceans-llm.com`
+- release trigger:
+  - [../.github/workflows/release.yml](../../.github/workflows/release.yml)
+
+The public docs site is a separate static delivery surface. It is not served by the gateway runtime or the admin UI runtime.
+
 ## Why The Same-Origin Model Matters
 
 The same-origin model changes more than routing.
@@ -101,6 +117,12 @@ Current image support is not symmetric:
 - admin UI image:
   - `linux/amd64`
   - `linux/arm64`
+
+Docs release mechanics are separate from the application images:
+
+- the VitePress site is built from `docs/`
+- release tags deploy it to Cloudflare Pages
+- Cloudflare custom domains and the `www` to apex redirect must already be configured outside the repo
 
 Release mechanics live in [release-process.md](../reference/release-process.md). Upgrade and recovery steps live in [operator-runbooks.md](../operations/operator-runbooks.md).
 

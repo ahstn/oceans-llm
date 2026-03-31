@@ -6,6 +6,16 @@ export default defineConfig({
   lang: "en-US",
   ignoreDeadLinks: true,
   srcExclude: ["README.md", "adr/**", "internal/**"],
+  sitemap: {
+    hostname: "https://oceans-llm.com",
+  },
+  head: [
+    ["meta", { property: "og:site_name", content: "Oceans LLM Docs" }],
+    ["meta", { property: "og:type", content: "website" }],
+    ["meta", { property: "og:url", content: "https://oceans-llm.com/" }],
+    ["meta", { name: "twitter:card", content: "summary" }],
+    ["link", { rel: "alternate", hreflang: "en", href: "https://oceans-llm.com/" }],
+  ],
   themeConfig: {
     search: {
       provider: "local",
