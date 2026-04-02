@@ -1,14 +1,56 @@
 use super::*;
+use crate::seed::{prevalidate_seed_users, reconcile_seed_teams, reconcile_seed_users};
 use crate::shared::{serialize_json, serialize_optional_json};
 
 impl LibsqlStore {
+    pub async fn seed_update_identity_user_profile(
+        &self,
+        user_id: Uuid,
+        name: &str,
+        email: &str,
+        email_normalized: &str,
+        request_logging_enabled: bool,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        self.connection
+            .execute(
+                r#"
+                UPDATE users
+                SET name = ?1,
+                    email = ?2,
+                    email_normalized = ?3,
+                    request_logging_enabled = ?4,
+                    updated_at = ?5
+                WHERE user_id = ?6
+                "#,
+                libsql::params![
+                    name,
+                    email,
+                    email_normalized,
+                    if request_logging_enabled {
+                        1_i64
+                    } else {
+                        0_i64
+                    },
+                    updated_at.unix_timestamp(),
+                    user_id.to_string()
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(())
+    }
+
     pub async fn seed_from_inputs(
         &self,
         providers: &[gateway_core::SeedProvider],
         models: &[gateway_core::SeedModel],
         api_keys: &[gateway_core::SeedApiKey],
+        teams: &[gateway_core::SeedTeam],
+        users: &[gateway_core::SeedUser],
     ) -> Result<(), StoreError> {
-        let now = OffsetDateTime::now_utc().unix_timestamp();
+        let now = OffsetDateTime::now_utc();
+        let now_unix = now.unix_timestamp();
 
         self.connection
             .execute(
@@ -18,7 +60,7 @@ impl LibsqlStore {
                 ) VALUES (?1, ?2, 'System Legacy', 'active', 'all', ?3, ?3)
                 ON CONFLICT(team_id) DO NOTHING
                 "#,
-                libsql::params![SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY, now],
+                libsql::params![SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY, now_unix],
             )
             .await
             .map_err(to_query_error)?;
@@ -44,7 +86,7 @@ impl LibsqlStore {
                         provider.provider_type.as_str(),
                         config_json,
                         secrets_json,
-                        now
+                        now_unix
                     ],
                 )
                 .await
@@ -84,7 +126,7 @@ impl LibsqlStore {
                         model.description.clone(),
                         tags_json,
                         model.rank,
-                        now
+                        now_unix
                     ],
                 )
                 .await
@@ -136,7 +178,7 @@ impl LibsqlStore {
                             extra_headers_json,
                             extra_body_json,
                             capabilities_json,
-                            now
+                            now_unix
                         ],
                     )
                     .await
@@ -170,7 +212,7 @@ impl LibsqlStore {
                     "#,
                     libsql::params![
                         alias_target_model_id.map(|value| value.to_string()),
-                        now,
+                        now_unix,
                         model_id.to_string()
                     ],
                 )
@@ -201,7 +243,7 @@ impl LibsqlStore {
                         api_key.secret_hash.as_str(),
                         api_key.name.as_str(),
                         SYSTEM_LEGACY_TEAM_ID,
-                        now
+                        now_unix
                     ],
                 )
                 .await
@@ -236,6 +278,10 @@ impl LibsqlStore {
                     .map_err(to_query_error)?;
             }
         }
+
+        prevalidate_seed_users(self, users).await?;
+        let seeded_teams = reconcile_seed_teams(self, teams, now).await?;
+        reconcile_seed_users(self, &seeded_teams, users, now).await?;
 
         Ok(())
     }

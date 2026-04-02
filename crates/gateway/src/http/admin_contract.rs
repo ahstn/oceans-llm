@@ -54,6 +54,7 @@ pub struct AdminIdentityUserView {
     pub email: String,
     pub auth_mode: String,
     pub global_role: String,
+    pub request_logging_enabled: bool,
     pub team_id: Option<String>,
     pub team_name: Option<String>,
     pub team_role: Option<String>,

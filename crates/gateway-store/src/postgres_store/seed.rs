@@ -1,14 +1,54 @@
 use super::*;
+use crate::seed::{prevalidate_seed_users, reconcile_seed_teams, reconcile_seed_users};
 use crate::shared::{serialize_json, serialize_optional_json};
 
 impl PostgresStore {
+    pub async fn seed_update_identity_user_profile(
+        &self,
+        user_id: Uuid,
+        name: &str,
+        email: &str,
+        email_normalized: &str,
+        request_logging_enabled: bool,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        sqlx::query(
+            r#"
+            UPDATE users
+            SET name = $1,
+                email = $2,
+                email_normalized = $3,
+                request_logging_enabled = $4,
+                updated_at = $5
+            WHERE user_id = $6
+            "#,
+        )
+        .bind(name)
+        .bind(email)
+        .bind(email_normalized)
+        .bind(if request_logging_enabled {
+            1_i64
+        } else {
+            0_i64
+        })
+        .bind(updated_at.unix_timestamp())
+        .bind(user_id.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(to_write_error)?;
+        Ok(())
+    }
+
     pub async fn seed_from_inputs(
         &self,
         providers: &[gateway_core::SeedProvider],
         models: &[gateway_core::SeedModel],
         api_keys: &[gateway_core::SeedApiKey],
+        teams: &[gateway_core::SeedTeam],
+        users: &[gateway_core::SeedUser],
     ) -> Result<(), StoreError> {
-        let now = OffsetDateTime::now_utc().unix_timestamp();
+        let now = OffsetDateTime::now_utc();
+        let now_unix = now.unix_timestamp();
 
         sqlx::query(
             r#"
@@ -20,7 +60,7 @@ impl PostgresStore {
         )
         .bind(SYSTEM_LEGACY_TEAM_ID)
         .bind(SYSTEM_LEGACY_TEAM_KEY)
-        .bind(now)
+        .bind(now_unix)
         .execute(&self.pool)
         .await
         .map_err(to_query_error)?;
@@ -45,7 +85,7 @@ impl PostgresStore {
             .bind(provider.provider_type.as_str())
             .bind(config_json)
             .bind(secrets_json)
-            .bind(now)
+            .bind(now_unix)
             .execute(&self.pool)
             .await
             .map_err(to_query_error)?;
@@ -83,7 +123,7 @@ impl PostgresStore {
             .bind(model.description.clone())
             .bind(tags_json)
             .bind(model.rank)
-            .bind(now)
+            .bind(now_unix)
             .execute(&self.pool)
             .await
             .map_err(to_query_error)?;
@@ -131,7 +171,7 @@ impl PostgresStore {
                 .bind(extra_headers_json)
                 .bind(extra_body_json)
                 .bind(capabilities_json)
-                .bind(now)
+                .bind(now_unix)
                 .execute(&self.pool)
                 .await
                 .map_err(to_query_error)?;
@@ -163,7 +203,7 @@ impl PostgresStore {
                 "#,
             )
             .bind(alias_target_model_id.map(|value| value.to_string()))
-            .bind(now)
+            .bind(now_unix)
             .bind(model_id.to_string())
             .execute(&self.pool)
             .await
@@ -192,7 +232,7 @@ impl PostgresStore {
             .bind(api_key.secret_hash.as_str())
             .bind(api_key.name.as_str())
             .bind(SYSTEM_LEGACY_TEAM_ID)
-            .bind(now)
+            .bind(now_unix)
             .execute(&self.pool)
             .await
             .map_err(to_query_error)?;
@@ -225,6 +265,10 @@ impl PostgresStore {
                 .map_err(to_query_error)?;
             }
         }
+
+        prevalidate_seed_users(self, users).await?;
+        let seeded_teams = reconcile_seed_teams(self, teams, now).await?;
+        reconcile_seed_users(self, &seeded_teams, users, now).await?;
 
         Ok(())
     }

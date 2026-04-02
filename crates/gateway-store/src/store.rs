@@ -6,8 +6,9 @@ use gateway_core::{
     BudgetAlertRepository, BudgetRepository, GlobalRole, IdentityRepository,
     IdentityUserRecord, MembershipRole, ModelRepository, OidcProviderRecord,
     PasswordInvitationRecord, PricingCatalogRepository, ProviderRepository, RequestLogRepository,
-    SeedApiKey, SeedModel, SeedProvider, StoreError, StoreHealth, TeamMembershipRecord, TeamRecord,
-    UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
+    SeedApiKey, SeedModel, SeedProvider, SeedTeam, SeedUser, StoreError, StoreHealth,
+    TeamMembershipRecord, TeamRecord, UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord,
+    UserSessionRecord, UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -234,11 +235,22 @@ pub trait GatewayStore:
         email_normalized: &str,
         oidc_provider_id: &str,
     ) -> Result<Option<UserRecord>, StoreError>;
+    async fn seed_update_identity_user_profile(
+        &self,
+        user_id: Uuid,
+        name: &str,
+        email: &str,
+        email_normalized: &str,
+        request_logging_enabled: bool,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError>;
     async fn seed_from_inputs(
         &self,
         providers: &[SeedProvider],
         models: &[SeedModel],
         api_keys: &[SeedApiKey],
+        teams: &[SeedTeam],
+        users: &[SeedUser],
     ) -> Result<(), StoreError>;
 }
 
@@ -1080,12 +1092,36 @@ impl GatewayStore for AnyStore {
         )
     }
 
+    async fn seed_update_identity_user_profile(
+        &self,
+        user_id: Uuid,
+        name: &str,
+        email: &str,
+        email_normalized: &str,
+        request_logging_enabled: bool,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(
+            self,
+            seed_update_identity_user_profile(
+                user_id,
+                name,
+                email,
+                email_normalized,
+                request_logging_enabled,
+                updated_at
+            )
+        )
+    }
+
     async fn seed_from_inputs(
         &self,
         providers: &[SeedProvider],
         models: &[SeedModel],
         api_keys: &[SeedApiKey],
+        teams: &[SeedTeam],
+        users: &[SeedUser],
     ) -> Result<(), StoreError> {
-        dispatch_store!(self, seed_from_inputs(providers, models, api_keys))
+        dispatch_store!(self, seed_from_inputs(providers, models, api_keys, teams, users))
     }
 }

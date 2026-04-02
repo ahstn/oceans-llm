@@ -1355,6 +1355,7 @@
           "email",
           "auth_mode",
           "global_role",
+          "request_logging_enabled",
           "status"
         ],
         "properties": {
@@ -1382,6 +1383,9 @@
                 "$ref": "#/components/schemas/AdminOnboardingActionView"
               }
             ]
+          },
+          "request_logging_enabled": {
+            "type": "boolean"
           },
           "status": {
             "type": "string"

@@ -423,6 +423,7 @@ export interface components {
             id: string;
             name: string;
             onboarding?: null | components["schemas"]["AdminOnboardingActionView"];
+            request_logging_enabled: boolean;
             status: string;
             team_id?: string | null;
             team_name?: string | null;

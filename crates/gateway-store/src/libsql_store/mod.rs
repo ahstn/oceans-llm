@@ -424,13 +424,36 @@ impl GatewayStore for LibsqlStore {
         Self::find_invited_oidc_user(self, email_normalized, oidc_provider_id).await
     }
 
+    async fn seed_update_identity_user_profile(
+        &self,
+        user_id: Uuid,
+        name: &str,
+        email: &str,
+        email_normalized: &str,
+        request_logging_enabled: bool,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        Self::seed_update_identity_user_profile(
+            self,
+            user_id,
+            name,
+            email,
+            email_normalized,
+            request_logging_enabled,
+            updated_at,
+        )
+        .await
+    }
+
     async fn seed_from_inputs(
         &self,
         providers: &[gateway_core::SeedProvider],
         models: &[gateway_core::SeedModel],
         api_keys: &[gateway_core::SeedApiKey],
+        teams: &[gateway_core::SeedTeam],
+        users: &[gateway_core::SeedUser],
     ) -> Result<(), StoreError> {
-        self.seed_from_inputs(providers, models, api_keys).await
+        self.seed_from_inputs(providers, models, api_keys, teams, users).await
     }
 }
 
