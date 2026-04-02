@@ -3,8 +3,8 @@ use std::{collections::BTreeMap, env, fs, path::Path};
 use anyhow::{Context, bail};
 use gateway_core::{
     AuthMode, BudgetCadence, GlobalRole, MembershipRole, Money4, ProviderCapabilities,
-    SYSTEM_BOOTSTRAP_ADMIN_EMAIL, SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedBudget, SeedModel,
-    SeedModelRoute, SeedProvider, SeedTeam, SeedUser, SeedUserMembership, parse_gateway_api_key,
+    SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedBudget, SeedModel, SeedModelRoute, SeedProvider,
+    SeedTeam, SeedUser, SeedUserMembership, parse_gateway_api_key,
 };
 use gateway_providers::{OpenAiCompatConfig, VertexAuthConfig, VertexProviderConfig};
 use gateway_service::{hash_gateway_key_secret, is_supported_pricing_provider_id};
@@ -209,15 +209,19 @@ impl GatewayConfig {
             }
         }
 
+        let reserved_bootstrap_admin_email =
+            normalize_config_email(&self.auth.bootstrap_admin.email)
+                .context("bootstrap_admin.email must be a valid email address")?;
+
         let mut user_emails = std::collections::BTreeSet::new();
         for user in &self.users {
             if user.name.trim().is_empty() {
                 bail!("user name cannot be empty");
             }
             let email_normalized = normalize_config_email(&user.email)?;
-            if email_normalized == SYSTEM_BOOTSTRAP_ADMIN_EMAIL {
+            if email_normalized == reserved_bootstrap_admin_email {
                 bail!(
-                    "user email `{SYSTEM_BOOTSTRAP_ADMIN_EMAIL}` is reserved for bootstrap admin"
+                    "user email `{reserved_bootstrap_admin_email}` is reserved for bootstrap admin"
                 );
             }
             if !user_emails.insert(email_normalized.clone()) {
@@ -1650,6 +1654,35 @@ users:
         let error_text = format!("{error:#}");
         assert!(
             error_text.contains("cannot seed membership role `owner`"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_user_email_matching_configured_bootstrap_admin_email() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+auth:
+  bootstrap_admin:
+    enabled: true
+    email: "ops-admin@example.com"
+    password: "literal.secret"
+users:
+  - name: Ops Admin
+    email: " ops-admin@example.com "
+    auth_mode: password
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text
+                .contains("user email `ops-admin@example.com` is reserved for bootstrap admin"),
             "unexpected error: {error_text}"
         );
     }

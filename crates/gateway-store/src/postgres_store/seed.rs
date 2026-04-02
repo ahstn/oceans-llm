@@ -1,6 +1,6 @@
 use super::*;
+use crate::seed::{prevalidate_seed_users, reconcile_seed_teams, reconcile_seed_users};
 use crate::shared::{serialize_json, serialize_optional_json};
-use crate::seed::{reconcile_seed_teams, reconcile_seed_users};
 
 impl PostgresStore {
     pub async fn seed_update_identity_user_profile(
@@ -26,7 +26,11 @@ impl PostgresStore {
         .bind(name)
         .bind(email)
         .bind(email_normalized)
-        .bind(if request_logging_enabled { 1_i64 } else { 0_i64 })
+        .bind(if request_logging_enabled {
+            1_i64
+        } else {
+            0_i64
+        })
         .bind(updated_at.unix_timestamp())
         .bind(user_id.to_string())
         .execute(&self.pool)
@@ -262,6 +266,7 @@ impl PostgresStore {
             }
         }
 
+        prevalidate_seed_users(self, users).await?;
         let seeded_teams = reconcile_seed_teams(self, teams, now).await?;
         reconcile_seed_users(self, &seeded_teams, users, now).await?;
 

@@ -2348,13 +2348,19 @@ mod tests {
             .await
             .expect("reload identity user")
             .expect("identity user exists");
+        assert_eq!(refreshed_identity.team_name.as_deref(), Some("Operations"));
         assert_eq!(
-            refreshed_identity.team_name.as_deref(),
-            Some("Operations")
+            refreshed_identity.membership_role,
+            Some(MembershipRole::Member)
         );
-        assert_eq!(refreshed_identity.membership_role, Some(MembershipRole::Member));
-        assert_eq!(refreshed_identity.oidc_provider_id.as_deref(), Some(oidc_provider_id.as_str()));
-        assert_eq!(refreshed_identity.oidc_provider_key.as_deref(), Some("okta"));
+        assert_eq!(
+            refreshed_identity.oidc_provider_id.as_deref(),
+            Some(oidc_provider_id.as_str())
+        );
+        assert_eq!(
+            refreshed_identity.oidc_provider_key.as_deref(),
+            Some("okta")
+        );
         assert!(
             store
                 .find_invited_oidc_user("member@example.com", &oidc_provider_id)
@@ -2410,6 +2416,16 @@ mod tests {
             .await
             .expect("store");
 
+        let initial_teams = vec![SeedTeam {
+            team_key: "platform".to_string(),
+            team_name: "Platform".to_string(),
+            budget: Some(SeedBudget {
+                cadence: BudgetCadence::Monthly,
+                amount_usd: Money4::from_scaled(500_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            }),
+        }];
         let initial_users = vec![SeedUser {
             name: "Member".to_string(),
             email: "member@example.com".to_string(),
@@ -2423,9 +2439,15 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &initial_users)
+            .seed_from_inputs(&[], &[], &[], &initial_teams, &initial_users)
             .await
             .expect("initial seed");
+
+        let platform_team = store
+            .get_team_by_key("platform")
+            .await
+            .expect("load team")
+            .expect("team exists");
 
         let user = store
             .get_user_by_email_normalized("member@example.com")
@@ -2450,9 +2472,14 @@ mod tests {
             membership: None,
             budget: None,
         }];
+        let invalid_teams = vec![SeedTeam {
+            team_key: "platform".to_string(),
+            team_name: "Platform Renamed".to_string(),
+            budget: None,
+        }];
 
         let error = store
-            .seed_from_inputs(&[], &[], &[], &[], &invalid_users)
+            .seed_from_inputs(&[], &[], &[], &invalid_teams, &invalid_users)
             .await
             .expect_err("seed should fail");
         assert!(
@@ -2467,6 +2494,21 @@ mod tests {
         assert_eq!(refreshed_user.name, "Member");
         assert!(!refreshed_user.request_logging_enabled);
         assert_eq!(refreshed_user.auth_mode, AuthMode::Password);
+        let refreshed_team = store
+            .get_team_by_key("platform")
+            .await
+            .expect("reload team")
+            .expect("team exists");
+        assert_eq!(refreshed_team.team_name, "Platform");
+        assert_eq!(
+            store
+                .get_active_budget_for_team(platform_team.team_id)
+                .await
+                .expect("team budget")
+                .expect("team budget exists")
+                .amount_usd,
+            Money4::from_scaled(500_000)
+        );
     }
 
     #[tokio::test]
@@ -2576,9 +2618,80 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn libsql_seed_rejects_last_active_platform_admin_demotion_without_partial_profile_updates()
+     {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        let initial_users = vec![SeedUser {
+            name: "Platform Admin".to_string(),
+            email: "admin@example.com".to_string(),
+            email_normalized: "admin@example.com".to_string(),
+            global_role: GlobalRole::PlatformAdmin,
+            auth_mode: AuthMode::Password,
+            request_logging_enabled: false,
+            oidc_provider_key: None,
+            membership: None,
+            budget: None,
+        }];
+
+        store
+            .seed_from_inputs(&[], &[], &[], &[], &initial_users)
+            .await
+            .expect("initial seed");
+
+        let user = store
+            .get_user_by_email_normalized("admin@example.com")
+            .await
+            .expect("load user")
+            .expect("user exists");
+        store
+            .update_user_status(user.user_id, UserStatus::Active, OffsetDateTime::now_utc())
+            .await
+            .expect("activate user");
+
+        let invalid_users = vec![SeedUser {
+            name: "Renamed Admin".to_string(),
+            email: "admin@example.com".to_string(),
+            email_normalized: "admin@example.com".to_string(),
+            global_role: GlobalRole::User,
+            auth_mode: AuthMode::Password,
+            request_logging_enabled: true,
+            oidc_provider_key: None,
+            membership: None,
+            budget: None,
+        }];
+
+        let error = store
+            .seed_from_inputs(&[], &[], &[], &[], &invalid_users)
+            .await
+            .expect_err("seed should fail");
+        assert!(
+            matches!(error, StoreError::Conflict(message) if message == "the last active platform admin cannot be deactivated or demoted")
+        );
+
+        let refreshed_user = store
+            .get_user_by_email_normalized("admin@example.com")
+            .await
+            .expect("reload user")
+            .expect("user exists");
+        assert_eq!(refreshed_user.name, "Platform Admin");
+        assert!(!refreshed_user.request_logging_enabled);
+        assert_eq!(refreshed_user.global_role, GlobalRole::PlatformAdmin);
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn postgres_seed_reconciles_declarative_teams_users_memberships_and_budgets() {
         let Some(test_db) = create_postgres_test_database().await else {
-            eprintln!("skipping postgres declarative seed test because TEST_POSTGRES_URL is not set");
+            eprintln!(
+                "skipping postgres declarative seed test because TEST_POSTGRES_URL is not set"
+            );
             return;
         };
 
@@ -2732,13 +2845,19 @@ mod tests {
             .await
             .expect("reload identity user")
             .expect("identity user exists");
+        assert_eq!(refreshed_identity.team_name.as_deref(), Some("Operations"));
         assert_eq!(
-            refreshed_identity.team_name.as_deref(),
-            Some("Operations")
+            refreshed_identity.membership_role,
+            Some(MembershipRole::Member)
         );
-        assert_eq!(refreshed_identity.membership_role, Some(MembershipRole::Member));
-        assert_eq!(refreshed_identity.oidc_provider_id.as_deref(), Some(oidc_provider_id.as_str()));
-        assert_eq!(refreshed_identity.oidc_provider_key.as_deref(), Some("okta"));
+        assert_eq!(
+            refreshed_identity.oidc_provider_id.as_deref(),
+            Some(oidc_provider_id.as_str())
+        );
+        assert_eq!(
+            refreshed_identity.oidc_provider_key.as_deref(),
+            Some("okta")
+        );
         assert!(
             store
                 .find_invited_oidc_user("member@example.com", &oidc_provider_id)
@@ -2808,6 +2927,16 @@ mod tests {
             .await
             .expect("postgres store");
 
+        let initial_teams = vec![SeedTeam {
+            team_key: "platform".to_string(),
+            team_name: "Platform".to_string(),
+            budget: Some(SeedBudget {
+                cadence: BudgetCadence::Monthly,
+                amount_usd: Money4::from_scaled(500_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            }),
+        }];
         let initial_users = vec![SeedUser {
             name: "Member".to_string(),
             email: "member@example.com".to_string(),
@@ -2821,9 +2950,15 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &initial_users)
+            .seed_from_inputs(&[], &[], &[], &initial_teams, &initial_users)
             .await
             .expect("initial seed");
+
+        let platform_team = store
+            .get_team_by_key("platform")
+            .await
+            .expect("load team")
+            .expect("team exists");
 
         let user = store
             .get_user_by_email_normalized("member@example.com")
@@ -2848,9 +2983,14 @@ mod tests {
             membership: None,
             budget: None,
         }];
+        let invalid_teams = vec![SeedTeam {
+            team_key: "platform".to_string(),
+            team_name: "Platform Renamed".to_string(),
+            budget: None,
+        }];
 
         let error = store
-            .seed_from_inputs(&[], &[], &[], &[], &invalid_users)
+            .seed_from_inputs(&[], &[], &[], &invalid_teams, &invalid_users)
             .await
             .expect_err("seed should fail");
         assert!(
@@ -2865,6 +3005,21 @@ mod tests {
         assert_eq!(refreshed_user.name, "Member");
         assert!(!refreshed_user.request_logging_enabled);
         assert_eq!(refreshed_user.auth_mode, AuthMode::Password);
+        let refreshed_team = store
+            .get_team_by_key("platform")
+            .await
+            .expect("reload team")
+            .expect("team exists");
+        assert_eq!(refreshed_team.team_name, "Platform");
+        assert_eq!(
+            store
+                .get_active_budget_for_team(platform_team.team_id)
+                .await
+                .expect("team budget")
+                .expect("team budget exists")
+                .amount_usd,
+            Money4::from_scaled(500_000)
+        );
 
         store.pool().close().await;
         drop_postgres_test_database(&test_db).await;
@@ -2985,6 +3140,89 @@ mod tests {
                 .expect("lookup auth0 auth")
                 .is_none()
         );
+
+        store.pool().close().await;
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_seed_rejects_last_active_platform_admin_demotion_without_partial_profile_updates()
+     {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres last-platform-admin seed test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options)
+            .await
+            .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        let initial_users = vec![SeedUser {
+            name: "Platform Admin".to_string(),
+            email: "admin@example.com".to_string(),
+            email_normalized: "admin@example.com".to_string(),
+            global_role: GlobalRole::PlatformAdmin,
+            auth_mode: AuthMode::Password,
+            request_logging_enabled: false,
+            oidc_provider_key: None,
+            membership: None,
+            budget: None,
+        }];
+
+        store
+            .seed_from_inputs(&[], &[], &[], &[], &initial_users)
+            .await
+            .expect("initial seed");
+
+        let user = store
+            .get_user_by_email_normalized("admin@example.com")
+            .await
+            .expect("load user")
+            .expect("user exists");
+        store
+            .update_user_status(user.user_id, UserStatus::Active, OffsetDateTime::now_utc())
+            .await
+            .expect("activate user");
+
+        let invalid_users = vec![SeedUser {
+            name: "Renamed Admin".to_string(),
+            email: "admin@example.com".to_string(),
+            email_normalized: "admin@example.com".to_string(),
+            global_role: GlobalRole::User,
+            auth_mode: AuthMode::Password,
+            request_logging_enabled: true,
+            oidc_provider_key: None,
+            membership: None,
+            budget: None,
+        }];
+
+        let error = store
+            .seed_from_inputs(&[], &[], &[], &[], &invalid_users)
+            .await
+            .expect_err("seed should fail");
+        assert!(
+            matches!(error, StoreError::Conflict(message) if message == "the last active platform admin cannot be deactivated or demoted")
+        );
+
+        let refreshed_user = store
+            .get_user_by_email_normalized("admin@example.com")
+            .await
+            .expect("reload user")
+            .expect("user exists");
+        assert_eq!(refreshed_user.name, "Platform Admin");
+        assert!(!refreshed_user.request_logging_enabled);
+        assert_eq!(refreshed_user.global_role, GlobalRole::PlatformAdmin);
 
         store.pool().close().await;
         drop_postgres_test_database(&test_db).await;
@@ -4339,7 +4577,9 @@ mod tests {
         assert_eq!(
             metadata_json_by_request_id
                 .get("req-clean")
-                .map(|metadata_json| serde_json::from_str::<Value>(metadata_json).expect("metadata")),
+                .map(
+                    |metadata_json| serde_json::from_str::<Value>(metadata_json).expect("metadata")
+                ),
             Some(json!({
                 "operation": "chat_completions",
                 "stream": true
@@ -4348,7 +4588,9 @@ mod tests {
         assert_eq!(
             metadata_json_by_request_id
                 .get("req-legacy")
-                .map(|metadata_json| serde_json::from_str::<Value>(metadata_json).expect("metadata")),
+                .map(
+                    |metadata_json| serde_json::from_str::<Value>(metadata_json).expect("metadata")
+                ),
             Some(json!({
                 "operation": "chat_completions",
                 "stream": false

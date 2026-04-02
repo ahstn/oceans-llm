@@ -1,6 +1,6 @@
 use super::*;
+use crate::seed::{prevalidate_seed_users, reconcile_seed_teams, reconcile_seed_users};
 use crate::shared::{serialize_json, serialize_optional_json};
-use crate::seed::{reconcile_seed_teams, reconcile_seed_users};
 
 impl LibsqlStore {
     pub async fn seed_update_identity_user_profile(
@@ -27,7 +27,11 @@ impl LibsqlStore {
                     name,
                     email,
                     email_normalized,
-                    if request_logging_enabled { 1_i64 } else { 0_i64 },
+                    if request_logging_enabled {
+                        1_i64
+                    } else {
+                        0_i64
+                    },
                     updated_at.unix_timestamp(),
                     user_id.to_string()
                 ],
@@ -269,12 +273,13 @@ impl LibsqlStore {
                         ON CONFLICT(api_key_id, model_id) DO NOTHING
                         "#,
                         libsql::params![key_id.to_string(), model_id.to_string()],
-                )
-                .await
-                .map_err(to_query_error)?;
+                    )
+                    .await
+                    .map_err(to_query_error)?;
             }
         }
 
+        prevalidate_seed_users(self, users).await?;
         let seeded_teams = reconcile_seed_teams(self, teams, now).await?;
         reconcile_seed_users(self, &seeded_teams, users, now).await?;
 

@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use gateway_core::{
-    AuthMode, IdentityUserRecord, MembershipRole, OidcProviderRecord, SeedTeam, SeedUser,
-    StoreError, TeamRecord, UserStatus,
+    AuthMode, GlobalRole, IdentityUserRecord, MembershipRole, OidcProviderRecord, SeedTeam,
+    SeedUser, StoreError, TeamRecord, UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -84,6 +84,22 @@ where
     Ok(records)
 }
 
+pub(crate) async fn prevalidate_seed_users<S>(
+    store: &S,
+    users: &[SeedUser],
+) -> Result<(), StoreError>
+where
+    S: GatewayStore + ?Sized,
+{
+    let identity_users = store.list_identity_users().await?;
+
+    for user in users {
+        prevalidate_seed_user(store, &identity_users, user).await?;
+    }
+
+    Ok(())
+}
+
 pub(crate) async fn reconcile_seed_users<S>(
     store: &S,
     teams_by_key: &BTreeMap<String, TeamRecord>,
@@ -97,6 +113,29 @@ where
         reconcile_seed_user(store, teams_by_key, user, now).await?;
     }
 
+    Ok(())
+}
+
+async fn prevalidate_seed_user<S>(
+    store: &S,
+    identity_users: &[IdentityUserRecord],
+    seed_user: &SeedUser,
+) -> Result<(), StoreError>
+where
+    S: GatewayStore + ?Sized,
+{
+    let oidc_provider = resolve_seed_oidc_provider(store, seed_user).await?;
+    let Some(existing_user) = store
+        .get_user_by_email_normalized(&seed_user.email_normalized)
+        .await?
+    else {
+        return Ok(());
+    };
+
+    let identity_user = load_identity_user(store, existing_user.user_id).await?;
+    ensure_seed_auth_mutation_allowed(&identity_user, seed_user.auth_mode, oidc_provider.as_ref())?;
+    ensure_seed_role_mutation_allowed(identity_users, &identity_user, seed_user.global_role)?;
+    ensure_seed_membership_mutation_allowed(&identity_user)?;
     Ok(())
 }
 
@@ -135,19 +174,15 @@ where
     };
 
     if let Some(identity_user) = existing_identity_user.as_ref() {
-        ensure_seed_auth_mutation_allowed(identity_user, seed_user.auth_mode, oidc_provider.as_ref())?;
+        ensure_seed_auth_mutation_allowed(
+            identity_user,
+            seed_user.auth_mode,
+            oidc_provider.as_ref(),
+        )?;
+        let identity_users = store.list_identity_users().await?;
+        ensure_seed_role_mutation_allowed(&identity_users, identity_user, seed_user.global_role)?;
+        ensure_seed_membership_mutation_allowed(identity_user)?;
     }
-
-    store
-        .seed_update_identity_user_profile(
-            existing_user.user_id,
-            &seed_user.name,
-            &seed_user.email,
-            &seed_user.email_normalized,
-            seed_user.request_logging_enabled,
-            now,
-        )
-        .await?;
 
     if existing_user.global_role != seed_user.global_role
         || existing_user.auth_mode != seed_user.auth_mode
@@ -161,6 +196,17 @@ where
             )
             .await?;
     }
+
+    store
+        .seed_update_identity_user_profile(
+            existing_user.user_id,
+            &seed_user.name,
+            &seed_user.email,
+            &seed_user.email_normalized,
+            seed_user.request_logging_enabled,
+            now,
+        )
+        .await?;
 
     let mut identity_user = load_identity_user(store, existing_user.user_id).await?;
     sync_seed_user_auth_mode(
@@ -233,6 +279,44 @@ fn ensure_seed_auth_mutation_allowed(
     Ok(())
 }
 
+fn ensure_seed_role_mutation_allowed(
+    identity_users: &[IdentityUserRecord],
+    user: &IdentityUserRecord,
+    next_global_role: GlobalRole,
+) -> Result<(), StoreError> {
+    if user.user.global_role == GlobalRole::PlatformAdmin
+        && user.user.status == UserStatus::Active
+        && next_global_role != GlobalRole::PlatformAdmin
+    {
+        let remaining_active_admins = identity_users
+            .iter()
+            .filter(|candidate| {
+                candidate.user.user_id != user.user.user_id
+                    && candidate.user.global_role == GlobalRole::PlatformAdmin
+                    && candidate.user.status == UserStatus::Active
+            })
+            .count();
+        if remaining_active_admins == 0 {
+            return Err(StoreError::Conflict(
+                "the last active platform admin cannot be deactivated or demoted".to_string(),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn ensure_seed_membership_mutation_allowed(user: &IdentityUserRecord) -> Result<(), StoreError> {
+    if user.membership_role == Some(MembershipRole::Owner) {
+        return Err(StoreError::Conflict(
+            "owner memberships cannot be created, removed, or transferred in this workflow"
+                .to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
 async fn resolve_seed_oidc_provider<S>(
     store: &S,
     seed_user: &SeedUser,
@@ -243,9 +327,7 @@ where
     match seed_user.auth_mode {
         AuthMode::Oidc => {
             let provider_key = seed_user.oidc_provider_key.as_deref().ok_or_else(|| {
-                StoreError::Conflict(
-                    "oidc_provider_key is required for oidc users".to_string(),
-                )
+                StoreError::Conflict("oidc_provider_key is required for oidc users".to_string())
             })?;
             Ok(Some(
                 store
@@ -342,7 +424,9 @@ where
                 .await
         }
         (Some(team_id), None) => {
-            store.remove_team_membership(team_id, user.user.user_id).await?;
+            store
+                .remove_team_membership(team_id, user.user.user_id)
+                .await?;
             Ok(())
         }
         (Some(current_team_id), Some((next_team_id, next_role)))
