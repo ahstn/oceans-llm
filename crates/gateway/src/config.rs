@@ -194,20 +194,18 @@ impl GatewayConfig {
 
         let mut team_keys = std::collections::BTreeSet::new();
         for team in &self.teams {
-            if team.key.trim().is_empty() {
-                bail!("team key cannot be empty");
-            }
+            let team_key = normalize_config_team_key(&team.key)?;
             if team.name.trim().is_empty() {
-                bail!("team `{}` name cannot be empty", team.key);
+                bail!("team `{team_key}` name cannot be empty");
             }
-            if team.key == SYSTEM_LEGACY_TEAM_KEY {
+            if team_key == SYSTEM_LEGACY_TEAM_KEY {
                 bail!("team key `{SYSTEM_LEGACY_TEAM_KEY}` is reserved");
             }
-            if !team_keys.insert(team.key.as_str()) {
-                bail!("duplicate team key `{}`", team.key);
+            if !team_keys.insert(team_key.clone()) {
+                bail!("duplicate team key `{team_key}`");
             }
             if let Some(budget) = &team.budget {
-                budget.validate(&format!("team `{}` budget", team.key))?;
+                budget.validate(&format!("team `{team_key}` budget"))?;
             }
         }
 
@@ -218,7 +216,9 @@ impl GatewayConfig {
             }
             let email_normalized = normalize_config_email(&user.email)?;
             if email_normalized == SYSTEM_BOOTSTRAP_ADMIN_EMAIL {
-                bail!("user email `{SYSTEM_BOOTSTRAP_ADMIN_EMAIL}` is reserved for bootstrap admin");
+                bail!(
+                    "user email `{SYSTEM_BOOTSTRAP_ADMIN_EMAIL}` is reserved for bootstrap admin"
+                );
             }
             if !user_emails.insert(email_normalized.clone()) {
                 bail!("duplicate user email `{email_normalized}`");
@@ -234,12 +234,8 @@ impl GatewayConfig {
                             user.email
                         );
                     };
-                    if provider_key.trim().is_empty() {
-                        bail!(
-                            "user `{}` oidc_provider_key cannot be empty",
-                            user.email
-                        );
-                    }
+                    normalize_config_oidc_provider_key(provider_key)
+                        .with_context(|| format!("user `{}` oidc_provider_key", user.email))?;
                 }
                 AuthMode::Password => {
                     if user.oidc_provider_key.is_some() {
@@ -252,21 +248,17 @@ impl GatewayConfig {
                 AuthMode::Oauth => unreachable!(),
             }
             if let Some(membership) = &user.membership {
-                if membership.team.trim().is_empty() {
-                    bail!("user `{}` membership team cannot be empty", user.email);
-                }
-                if !team_keys.contains(membership.team.as_str()) {
+                let membership_team = normalize_config_team_key(&membership.team)
+                    .with_context(|| format!("user `{}` membership team", user.email))?;
+                if !team_keys.contains(&membership_team) {
                     bail!(
                         "user `{}` references unknown team `{}`",
                         user.email,
-                        membership.team
+                        membership_team
                     );
                 }
                 if membership.role == MembershipRole::Owner {
-                    bail!(
-                        "user `{}` cannot seed membership role `owner`",
-                        user.email
-                    );
+                    bail!("user `{}` cannot seed membership role `owner`", user.email);
                 }
             }
             if let Some(budget) = &user.budget {
@@ -416,9 +408,13 @@ impl GatewayConfig {
             .iter()
             .map(|team| {
                 Ok(SeedTeam {
-                    team_key: team.key.trim().to_string(),
+                    team_key: normalize_config_team_key(&team.key)?,
                     team_name: team.name.trim().to_string(),
-                    budget: team.budget.as_ref().map(BudgetConfig::seed_budget).transpose()?,
+                    budget: team
+                        .budget
+                        .as_ref()
+                        .map(BudgetConfig::seed_budget)
+                        .transpose()?,
                 })
             })
             .collect()
@@ -435,12 +431,23 @@ impl GatewayConfig {
                     global_role: user.global_role,
                     auth_mode: user.auth_mode,
                     request_logging_enabled: user.request_logging_enabled,
-                    oidc_provider_key: user.oidc_provider_key.clone(),
-                    membership: user.membership.as_ref().map(|membership| SeedUserMembership {
-                        team_key: membership.team.trim().to_string(),
-                        role: membership.role,
-                    }),
-                    budget: user.budget.as_ref().map(BudgetConfig::seed_budget).transpose()?,
+                    oidc_provider_key: user
+                        .oidc_provider_key
+                        .as_deref()
+                        .map(normalize_config_oidc_provider_key)
+                        .transpose()?,
+                    membership: match user.membership.as_ref() {
+                        Some(membership) => Some(SeedUserMembership {
+                            team_key: normalize_config_team_key(&membership.team)?,
+                            role: membership.role,
+                        }),
+                        None => None,
+                    },
+                    budget: user
+                        .budget
+                        .as_ref()
+                        .map(BudgetConfig::seed_budget)
+                        .transpose()?,
                 })
             })
             .collect()
@@ -791,8 +798,9 @@ impl BudgetConfig {
     }
 
     fn seed_budget(&self) -> anyhow::Result<SeedBudget> {
-        let amount_usd = Money4::from_decimal_str(&self.amount_usd)
-            .map_err(|error| anyhow::anyhow!("invalid amount_usd `{}`: {error}", self.amount_usd))?;
+        let amount_usd = Money4::from_decimal_str(&self.amount_usd).map_err(|error| {
+            anyhow::anyhow!("invalid amount_usd `{}`: {error}", self.amount_usd)
+        })?;
         Ok(SeedBudget {
             cadence: self.cadence,
             amount_usd,
@@ -1003,6 +1011,22 @@ fn normalize_config_email(email: &str) -> anyhow::Result<String> {
     let normalized = email.trim().to_ascii_lowercase();
     if normalized.is_empty() || !normalized.contains('@') {
         bail!("email must be a valid email address");
+    }
+    Ok(normalized)
+}
+
+fn normalize_config_team_key(team_key: &str) -> anyhow::Result<String> {
+    let normalized = team_key.trim().to_string();
+    if normalized.is_empty() {
+        bail!("team key cannot be empty");
+    }
+    Ok(normalized)
+}
+
+fn normalize_config_oidc_provider_key(provider_key: &str) -> anyhow::Result<String> {
+    let normalized = provider_key.trim().to_string();
+    if normalized.is_empty() {
+        bail!("cannot be empty");
     }
     Ok(normalized)
 }
@@ -1501,7 +1525,7 @@ models:
             &config_path,
             r#"
 teams:
-  - key: platform
+  - key: " platform "
     name: Platform
     budget:
       cadence: monthly
@@ -1510,13 +1534,13 @@ teams:
       timezone: UTC
 users:
   - name: Member
-    email: Member@Example.com
+    email: " Member@Example.com "
     auth_mode: oidc
     global_role: platform_admin
     request_logging_enabled: false
-    oidc_provider_key: okta
+    oidc_provider_key: " okta "
     membership:
-      team: platform
+      team: " platform "
       role: admin
     budget:
       cadence: weekly
@@ -1564,7 +1588,7 @@ users:
             &config_path,
             r#"
 teams:
-  - key: system-legacy
+  - key: " system-legacy "
     name: Reserved
 "#,
         );
@@ -1573,6 +1597,30 @@ teams:
         let error_text = format!("{error:#}");
         assert!(
             error_text.contains("team key `system-legacy` is reserved"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_declarative_team_keys_after_normalization() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+teams:
+  - key: platform
+    name: Platform
+  - key: " platform "
+    name: Duplicate
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("duplicate team key `platform`"),
             "unexpected error: {error_text}"
         );
     }
