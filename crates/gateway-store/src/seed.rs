@@ -111,12 +111,15 @@ where
 {
     let oidc_provider = resolve_seed_oidc_provider(store, seed_user).await?;
 
-    let existing_user = match store
+    let (existing_user, existing_identity_user) = match store
         .get_user_by_email_normalized(&seed_user.email_normalized)
         .await?
     {
-        Some(existing) => existing,
-        None => {
+        Some(existing) => {
+            let user_id = existing.user_id;
+            (existing, Some(load_identity_user(store, user_id).await?))
+        }
+        None => (
             store
                 .create_identity_user(
                     &seed_user.name,
@@ -126,9 +129,14 @@ where
                     seed_user.auth_mode,
                     UserStatus::Invited,
                 )
-                .await?
-        }
+                .await?,
+            None,
+        ),
     };
+
+    if let Some(identity_user) = existing_identity_user.as_ref() {
+        ensure_seed_auth_mutation_allowed(identity_user, seed_user.auth_mode, oidc_provider.as_ref())?;
+    }
 
     store
         .seed_update_identity_user_profile(
@@ -140,13 +148,6 @@ where
             now,
         )
         .await?;
-
-    if existing_user.auth_mode != seed_user.auth_mode && existing_user.status != UserStatus::Invited
-    {
-        return Err(StoreError::Conflict(
-            "auth mode can only change while the user is invited".to_string(),
-        ));
-    }
 
     if existing_user.global_role != seed_user.global_role
         || existing_user.auth_mode != seed_user.auth_mode
@@ -205,6 +206,31 @@ where
         .get_identity_user(user_id)
         .await?
         .ok_or_else(|| StoreError::NotFound(format!("identity user `{user_id}` not found")))
+}
+
+fn ensure_seed_auth_mutation_allowed(
+    user: &IdentityUserRecord,
+    next_auth_mode: AuthMode,
+    oidc_provider: Option<&OidcProviderRecord>,
+) -> Result<(), StoreError> {
+    if user.user.auth_mode != next_auth_mode && user.user.status != UserStatus::Invited {
+        return Err(StoreError::Conflict(
+            "auth mode can only change while the user is invited".to_string(),
+        ));
+    }
+
+    let current_provider_id = user.oidc_provider_id.as_deref();
+    let next_provider_id = oidc_provider.map(|provider| provider.oidc_provider_id.as_str());
+    if next_auth_mode == AuthMode::Oidc
+        && current_provider_id != next_provider_id
+        && user.user.status != UserStatus::Invited
+    {
+        return Err(StoreError::Conflict(
+            "oidc provider can only change while the user is invited".to_string(),
+        ));
+    }
+
+    Ok(())
 }
 
 async fn resolve_seed_oidc_provider<S>(

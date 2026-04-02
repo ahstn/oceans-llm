@@ -2401,6 +2401,181 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn libsql_seed_rejects_illegal_auth_mode_change_without_partial_profile_updates() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        let initial_users = vec![SeedUser {
+            name: "Member".to_string(),
+            email: "member@example.com".to_string(),
+            email_normalized: "member@example.com".to_string(),
+            global_role: GlobalRole::User,
+            auth_mode: AuthMode::Password,
+            request_logging_enabled: false,
+            oidc_provider_key: None,
+            membership: None,
+            budget: None,
+        }];
+
+        store
+            .seed_from_inputs(&[], &[], &[], &[], &initial_users)
+            .await
+            .expect("initial seed");
+
+        let user = store
+            .get_user_by_email_normalized("member@example.com")
+            .await
+            .expect("load user")
+            .expect("user exists");
+        store
+            .update_user_status(user.user_id, UserStatus::Active, OffsetDateTime::now_utc())
+            .await
+            .expect("activate user");
+
+        insert_libsql_oidc_provider(&store, "okta").await;
+
+        let invalid_users = vec![SeedUser {
+            name: "Updated Member".to_string(),
+            email: "member@example.com".to_string(),
+            email_normalized: "member@example.com".to_string(),
+            global_role: GlobalRole::User,
+            auth_mode: AuthMode::Oidc,
+            request_logging_enabled: true,
+            oidc_provider_key: Some("okta".to_string()),
+            membership: None,
+            budget: None,
+        }];
+
+        let error = store
+            .seed_from_inputs(&[], &[], &[], &[], &invalid_users)
+            .await
+            .expect_err("seed should fail");
+        assert!(
+            matches!(error, StoreError::Conflict(message) if message == "auth mode can only change while the user is invited")
+        );
+
+        let refreshed_user = store
+            .get_user_by_email_normalized("member@example.com")
+            .await
+            .expect("reload user")
+            .expect("user exists");
+        assert_eq!(refreshed_user.name, "Member");
+        assert!(!refreshed_user.request_logging_enabled);
+        assert_eq!(refreshed_user.auth_mode, AuthMode::Password);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_seed_rejects_non_invited_oidc_provider_swap_without_partial_profile_updates() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        let okta_provider_id = insert_libsql_oidc_provider(&store, "okta").await;
+        let auth0_provider_id = insert_libsql_oidc_provider(&store, "auth0").await;
+
+        let initial_users = vec![SeedUser {
+            name: "Member".to_string(),
+            email: "member@example.com".to_string(),
+            email_normalized: "member@example.com".to_string(),
+            global_role: GlobalRole::User,
+            auth_mode: AuthMode::Oidc,
+            request_logging_enabled: false,
+            oidc_provider_key: Some("okta".to_string()),
+            membership: None,
+            budget: None,
+        }];
+
+        store
+            .seed_from_inputs(&[], &[], &[], &[], &initial_users)
+            .await
+            .expect("initial seed");
+
+        let user = store
+            .get_user_by_email_normalized("member@example.com")
+            .await
+            .expect("load user")
+            .expect("user exists");
+        store
+            .create_user_oidc_auth(
+                user.user_id,
+                &okta_provider_id,
+                "mock:okta:member@example.com",
+                Some("member@example.com"),
+                OffsetDateTime::now_utc(),
+            )
+            .await
+            .expect("create oidc auth");
+        store
+            .update_user_status(user.user_id, UserStatus::Active, OffsetDateTime::now_utc())
+            .await
+            .expect("activate user");
+
+        let invalid_users = vec![SeedUser {
+            name: "Updated Member".to_string(),
+            email: "member@example.com".to_string(),
+            email_normalized: "member@example.com".to_string(),
+            global_role: GlobalRole::User,
+            auth_mode: AuthMode::Oidc,
+            request_logging_enabled: true,
+            oidc_provider_key: Some("auth0".to_string()),
+            membership: None,
+            budget: None,
+        }];
+
+        let error = store
+            .seed_from_inputs(&[], &[], &[], &[], &invalid_users)
+            .await
+            .expect_err("seed should fail");
+        assert!(
+            matches!(error, StoreError::Conflict(message) if message == "oidc provider can only change while the user is invited")
+        );
+
+        let refreshed_user = store
+            .get_user_by_email_normalized("member@example.com")
+            .await
+            .expect("reload user")
+            .expect("user exists");
+        assert_eq!(refreshed_user.name, "Member");
+        assert!(!refreshed_user.request_logging_enabled);
+        assert_eq!(refreshed_user.auth_mode, AuthMode::Oidc);
+
+        let refreshed_identity = store
+            .get_identity_user(user.user_id)
+            .await
+            .expect("reload identity user")
+            .expect("identity user exists");
+        assert_eq!(
+            refreshed_identity.oidc_provider_id.as_deref(),
+            Some(okta_provider_id.as_str())
+        );
+        assert!(
+            store
+                .get_user_oidc_auth_by_user(user.user_id, &okta_provider_id)
+                .await
+                .expect("lookup okta auth")
+                .is_some()
+        );
+        assert!(
+            store
+                .get_user_oidc_auth_by_user(user.user_id, &auth0_provider_id)
+                .await
+                .expect("lookup auth0 auth")
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn postgres_seed_reconciles_declarative_teams_users_memberships_and_budgets() {
         let Some(test_db) = create_postgres_test_database().await else {
             eprintln!("skipping postgres declarative seed test because TEST_POSTGRES_URL is not set");
@@ -2604,6 +2779,210 @@ mod tests {
                 .get_active_budget_for_user(user.user_id)
                 .await
                 .expect("user budget after reseed")
+                .is_none()
+        );
+
+        store.pool().close().await;
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_seed_rejects_illegal_auth_mode_change_without_partial_profile_updates() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres auth-mode mutability seed test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options)
+            .await
+            .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        let initial_users = vec![SeedUser {
+            name: "Member".to_string(),
+            email: "member@example.com".to_string(),
+            email_normalized: "member@example.com".to_string(),
+            global_role: GlobalRole::User,
+            auth_mode: AuthMode::Password,
+            request_logging_enabled: false,
+            oidc_provider_key: None,
+            membership: None,
+            budget: None,
+        }];
+
+        store
+            .seed_from_inputs(&[], &[], &[], &[], &initial_users)
+            .await
+            .expect("initial seed");
+
+        let user = store
+            .get_user_by_email_normalized("member@example.com")
+            .await
+            .expect("load user")
+            .expect("user exists");
+        store
+            .update_user_status(user.user_id, UserStatus::Active, OffsetDateTime::now_utc())
+            .await
+            .expect("activate user");
+
+        insert_postgres_oidc_provider(&store, "okta").await;
+
+        let invalid_users = vec![SeedUser {
+            name: "Updated Member".to_string(),
+            email: "member@example.com".to_string(),
+            email_normalized: "member@example.com".to_string(),
+            global_role: GlobalRole::User,
+            auth_mode: AuthMode::Oidc,
+            request_logging_enabled: true,
+            oidc_provider_key: Some("okta".to_string()),
+            membership: None,
+            budget: None,
+        }];
+
+        let error = store
+            .seed_from_inputs(&[], &[], &[], &[], &invalid_users)
+            .await
+            .expect_err("seed should fail");
+        assert!(
+            matches!(error, StoreError::Conflict(message) if message == "auth mode can only change while the user is invited")
+        );
+
+        let refreshed_user = store
+            .get_user_by_email_normalized("member@example.com")
+            .await
+            .expect("reload user")
+            .expect("user exists");
+        assert_eq!(refreshed_user.name, "Member");
+        assert!(!refreshed_user.request_logging_enabled);
+        assert_eq!(refreshed_user.auth_mode, AuthMode::Password);
+
+        store.pool().close().await;
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_seed_rejects_non_invited_oidc_provider_swap_without_partial_profile_updates()
+    {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres oidc-provider mutability seed test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options)
+            .await
+            .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        let okta_provider_id = insert_postgres_oidc_provider(&store, "okta").await;
+        let auth0_provider_id = insert_postgres_oidc_provider(&store, "auth0").await;
+
+        let initial_users = vec![SeedUser {
+            name: "Member".to_string(),
+            email: "member@example.com".to_string(),
+            email_normalized: "member@example.com".to_string(),
+            global_role: GlobalRole::User,
+            auth_mode: AuthMode::Oidc,
+            request_logging_enabled: false,
+            oidc_provider_key: Some("okta".to_string()),
+            membership: None,
+            budget: None,
+        }];
+
+        store
+            .seed_from_inputs(&[], &[], &[], &[], &initial_users)
+            .await
+            .expect("initial seed");
+
+        let user = store
+            .get_user_by_email_normalized("member@example.com")
+            .await
+            .expect("load user")
+            .expect("user exists");
+        store
+            .create_user_oidc_auth(
+                user.user_id,
+                &okta_provider_id,
+                "mock:okta:member@example.com",
+                Some("member@example.com"),
+                OffsetDateTime::now_utc(),
+            )
+            .await
+            .expect("create oidc auth");
+        store
+            .update_user_status(user.user_id, UserStatus::Active, OffsetDateTime::now_utc())
+            .await
+            .expect("activate user");
+
+        let invalid_users = vec![SeedUser {
+            name: "Updated Member".to_string(),
+            email: "member@example.com".to_string(),
+            email_normalized: "member@example.com".to_string(),
+            global_role: GlobalRole::User,
+            auth_mode: AuthMode::Oidc,
+            request_logging_enabled: true,
+            oidc_provider_key: Some("auth0".to_string()),
+            membership: None,
+            budget: None,
+        }];
+
+        let error = store
+            .seed_from_inputs(&[], &[], &[], &[], &invalid_users)
+            .await
+            .expect_err("seed should fail");
+        assert!(
+            matches!(error, StoreError::Conflict(message) if message == "oidc provider can only change while the user is invited")
+        );
+
+        let refreshed_user = store
+            .get_user_by_email_normalized("member@example.com")
+            .await
+            .expect("reload user")
+            .expect("user exists");
+        assert_eq!(refreshed_user.name, "Member");
+        assert!(!refreshed_user.request_logging_enabled);
+        assert_eq!(refreshed_user.auth_mode, AuthMode::Oidc);
+
+        let refreshed_identity = store
+            .get_identity_user(user.user_id)
+            .await
+            .expect("reload identity user")
+            .expect("identity user exists");
+        assert_eq!(
+            refreshed_identity.oidc_provider_id.as_deref(),
+            Some(okta_provider_id.as_str())
+        );
+        assert!(
+            store
+                .get_user_oidc_auth_by_user(user.user_id, &okta_provider_id)
+                .await
+                .expect("lookup okta auth")
+                .is_some()
+        );
+        assert!(
+            store
+                .get_user_oidc_auth_by_user(user.user_id, &auth0_provider_id)
+                .await
+                .expect("lookup auth0 auth")
                 .is_none()
         );
 
