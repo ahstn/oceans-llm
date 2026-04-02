@@ -84,17 +84,22 @@ where
     Ok(records)
 }
 
-pub(crate) async fn prevalidate_seed_users<S>(
+pub(crate) async fn prevalidate_seed_inputs<S>(
     store: &S,
+    teams: &[SeedTeam],
     users: &[SeedUser],
 ) -> Result<(), StoreError>
 where
     S: GatewayStore + ?Sized,
 {
+    let team_keys = teams
+        .iter()
+        .map(|team| team.team_key.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
     let identity_users = store.list_identity_users().await?;
 
     for user in users {
-        prevalidate_seed_user(store, &identity_users, user).await?;
+        prevalidate_seed_user(store, &team_keys, &identity_users, user).await?;
     }
 
     Ok(())
@@ -118,6 +123,7 @@ where
 
 async fn prevalidate_seed_user<S>(
     store: &S,
+    team_keys: &std::collections::BTreeSet<&str>,
     identity_users: &[IdentityUserRecord],
     seed_user: &SeedUser,
 ) -> Result<(), StoreError>
@@ -125,10 +131,23 @@ where
     S: GatewayStore + ?Sized,
 {
     let oidc_provider = resolve_seed_oidc_provider(store, seed_user).await?;
+    if let Some(membership) = seed_user.membership.as_ref()
+        && !team_keys.contains(membership.team_key.as_str())
+    {
+        return Err(StoreError::NotFound(format!(
+            "seed user `{}` references unknown team `{}`",
+            seed_user.email, membership.team_key
+        )));
+    }
     let Some(existing_user) = store
         .get_user_by_email_normalized(&seed_user.email_normalized)
         .await?
     else {
+        if seed_user.global_role == GlobalRole::PlatformAdmin {
+            return Err(StoreError::Conflict(
+                "declarative users cannot create platform admins".to_string(),
+            ));
+        }
         return Ok(());
     };
 

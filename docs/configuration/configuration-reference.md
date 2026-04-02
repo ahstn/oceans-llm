@@ -108,10 +108,10 @@ teams:
       timezone: UTC
 
 users:
-  - name: Platform Admin
+  - name: Platform Team Admin
     email: ops@example.com
     auth_mode: password
-    global_role: platform_admin
+    global_role: user
     membership:
       team: platform
       role: admin
@@ -209,6 +209,7 @@ Validation rules that matter:
 - `system-legacy` is reserved and cannot be configured
 - user emails are normalized and must be unique
 - `admin@local` is reserved for the bootstrap admin
+- `users[*].global_role` cannot be `platform_admin`; use `auth.bootstrap_admin` instead
 - `users[*].auth_mode` supports `password` and `oidc`
 - `oidc_provider_key` is required for `oidc` users and rejected for `password` users
 - membership roles can be `admin` or `member`

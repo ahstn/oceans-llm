@@ -1,5 +1,5 @@
 use super::*;
-use crate::seed::{prevalidate_seed_users, reconcile_seed_teams, reconcile_seed_users};
+use crate::seed::{prevalidate_seed_inputs, reconcile_seed_teams, reconcile_seed_users};
 use crate::shared::{serialize_json, serialize_optional_json};
 
 impl PostgresStore {
@@ -49,6 +49,8 @@ impl PostgresStore {
     ) -> Result<(), StoreError> {
         let now = OffsetDateTime::now_utc();
         let now_unix = now.unix_timestamp();
+
+        prevalidate_seed_inputs(self, teams, users).await?;
 
         sqlx::query(
             r#"
@@ -266,7 +268,6 @@ impl PostgresStore {
             }
         }
 
-        prevalidate_seed_users(self, users).await?;
         let seeded_teams = reconcile_seed_teams(self, teams, now).await?;
         reconcile_seed_users(self, &seeded_teams, users, now).await?;
 

@@ -268,6 +268,11 @@ impl GatewayConfig {
             if let Some(budget) = &user.budget {
                 budget.validate(&format!("user `{}` budget", user.email))?;
             }
+            if user.global_role == GlobalRole::PlatformAdmin {
+                bail!(
+                    "users config cannot declare platform_admin; use bootstrap_admin for admin access"
+                );
+            }
         }
 
         Ok(())
@@ -1540,7 +1545,7 @@ users:
   - name: Member
     email: " Member@Example.com "
     auth_mode: oidc
-    global_role: platform_admin
+    global_role: user
     request_logging_enabled: false
     oidc_provider_key: " okta "
     membership:
@@ -1570,7 +1575,7 @@ users:
         assert_eq!(users.len(), 1);
         assert_eq!(users[0].email_normalized, "member@example.com");
         assert_eq!(users[0].auth_mode, AuthMode::Oidc);
-        assert_eq!(users[0].global_role, GlobalRole::PlatformAdmin);
+        assert_eq!(users[0].global_role, GlobalRole::User);
         assert!(!users[0].request_logging_enabled);
         assert_eq!(users[0].oidc_provider_key.as_deref(), Some("okta"));
         let membership = users[0].membership.as_ref().expect("membership");
@@ -1683,6 +1688,32 @@ users:
         assert!(
             error_text
                 .contains("user email `ops-admin@example.com` is reserved for bootstrap admin"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_declarative_platform_admin_users() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+users:
+  - name: Platform Admin
+    email: admin@example.com
+    auth_mode: password
+    global_role: platform_admin
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains(
+                "users config cannot declare platform_admin; use bootstrap_admin for admin access"
+            ),
             "unexpected error: {error_text}"
         );
     }

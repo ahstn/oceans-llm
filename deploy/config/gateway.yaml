@@ -26,10 +26,10 @@ teams:
       timezone: UTC
 
 users:
-  - name: Platform Admin
+  - name: Platform Team Admin
     email: ops@example.com
     auth_mode: password
-    global_role: platform_admin
+    global_role: user
     request_logging_enabled: true
     membership:
       team: platform

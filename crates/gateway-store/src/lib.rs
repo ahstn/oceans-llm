@@ -2628,32 +2628,17 @@ mod tests {
             .await
             .expect("store");
 
-        let initial_users = vec![SeedUser {
-            name: "Platform Admin".to_string(),
-            email: "admin@example.com".to_string(),
-            email_normalized: "admin@example.com".to_string(),
-            global_role: GlobalRole::PlatformAdmin,
-            auth_mode: AuthMode::Password,
-            request_logging_enabled: false,
-            oidc_provider_key: None,
-            membership: None,
-            budget: None,
-        }];
-
         store
-            .seed_from_inputs(&[], &[], &[], &[], &initial_users)
+            .create_identity_user(
+                "Platform Admin",
+                "admin@example.com",
+                "admin@example.com",
+                GlobalRole::PlatformAdmin,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
             .await
-            .expect("initial seed");
-
-        let user = store
-            .get_user_by_email_normalized("admin@example.com")
-            .await
-            .expect("load user")
-            .expect("user exists");
-        store
-            .update_user_status(user.user_id, UserStatus::Active, OffsetDateTime::now_utc())
-            .await
-            .expect("activate user");
+            .expect("create platform admin");
 
         let invalid_users = vec![SeedUser {
             name: "Renamed Admin".to_string(),
@@ -2683,6 +2668,60 @@ mod tests {
         assert_eq!(refreshed_user.name, "Platform Admin");
         assert!(!refreshed_user.request_logging_enabled);
         assert_eq!(refreshed_user.global_role, GlobalRole::PlatformAdmin);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_seed_rejects_declarative_platform_admin_creation_without_partial_updates() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        let teams = vec![SeedTeam {
+            team_key: "platform".to_string(),
+            team_name: "Platform".to_string(),
+            budget: None,
+        }];
+        let users = vec![SeedUser {
+            name: "Platform Admin".to_string(),
+            email: "admin@example.com".to_string(),
+            email_normalized: "admin@example.com".to_string(),
+            global_role: GlobalRole::PlatformAdmin,
+            auth_mode: AuthMode::Password,
+            request_logging_enabled: true,
+            oidc_provider_key: None,
+            membership: Some(SeedUserMembership {
+                team_key: "platform".to_string(),
+                role: MembershipRole::Admin,
+            }),
+            budget: None,
+        }];
+
+        let error = store
+            .seed_from_inputs(&[], &[], &[], &teams, &users)
+            .await
+            .expect_err("seed should fail");
+        assert!(
+            matches!(error, StoreError::Conflict(message) if message == "declarative users cannot create platform admins")
+        );
+        assert!(
+            store
+                .get_team_by_key("platform")
+                .await
+                .expect("lookup team")
+                .is_none()
+        );
+        assert!(
+            store
+                .get_user_by_email_normalized("admin@example.com")
+                .await
+                .expect("lookup user")
+                .is_none()
+        );
     }
 
     #[tokio::test]
@@ -3168,32 +3207,17 @@ mod tests {
             .await
             .expect("postgres store");
 
-        let initial_users = vec![SeedUser {
-            name: "Platform Admin".to_string(),
-            email: "admin@example.com".to_string(),
-            email_normalized: "admin@example.com".to_string(),
-            global_role: GlobalRole::PlatformAdmin,
-            auth_mode: AuthMode::Password,
-            request_logging_enabled: false,
-            oidc_provider_key: None,
-            membership: None,
-            budget: None,
-        }];
-
         store
-            .seed_from_inputs(&[], &[], &[], &[], &initial_users)
+            .create_identity_user(
+                "Platform Admin",
+                "admin@example.com",
+                "admin@example.com",
+                GlobalRole::PlatformAdmin,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
             .await
-            .expect("initial seed");
-
-        let user = store
-            .get_user_by_email_normalized("admin@example.com")
-            .await
-            .expect("load user")
-            .expect("user exists");
-        store
-            .update_user_status(user.user_id, UserStatus::Active, OffsetDateTime::now_utc())
-            .await
-            .expect("activate user");
+            .expect("create platform admin");
 
         let invalid_users = vec![SeedUser {
             name: "Renamed Admin".to_string(),
@@ -3223,6 +3247,74 @@ mod tests {
         assert_eq!(refreshed_user.name, "Platform Admin");
         assert!(!refreshed_user.request_logging_enabled);
         assert_eq!(refreshed_user.global_role, GlobalRole::PlatformAdmin);
+
+        store.pool().close().await;
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_seed_rejects_declarative_platform_admin_creation_without_partial_updates() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres declarative platform-admin seed test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options)
+            .await
+            .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        let teams = vec![SeedTeam {
+            team_key: "platform".to_string(),
+            team_name: "Platform".to_string(),
+            budget: None,
+        }];
+        let users = vec![SeedUser {
+            name: "Platform Admin".to_string(),
+            email: "admin@example.com".to_string(),
+            email_normalized: "admin@example.com".to_string(),
+            global_role: GlobalRole::PlatformAdmin,
+            auth_mode: AuthMode::Password,
+            request_logging_enabled: true,
+            oidc_provider_key: None,
+            membership: Some(SeedUserMembership {
+                team_key: "platform".to_string(),
+                role: MembershipRole::Admin,
+            }),
+            budget: None,
+        }];
+
+        let error = store
+            .seed_from_inputs(&[], &[], &[], &teams, &users)
+            .await
+            .expect_err("seed should fail");
+        assert!(
+            matches!(error, StoreError::Conflict(message) if message == "declarative users cannot create platform admins")
+        );
+        assert!(
+            store
+                .get_team_by_key("platform")
+                .await
+                .expect("lookup team")
+                .is_none()
+        );
+        assert!(
+            store
+                .get_user_by_email_normalized("admin@example.com")
+                .await
+                .expect("lookup user")
+                .is_none()
+        );
 
         store.pool().close().await;
         drop_postgres_test_database(&test_db).await;
