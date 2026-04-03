@@ -35,12 +35,19 @@ The runtime emits bounded request-level signals for:
 
 - chat request totals
 - request latency
+- request outcomes
 - token totals
 - operational cost totals
 - usage-record totals by pricing status
 - caller request tags for filtering and attribution
 
 Request correlation is anchored on `x-request-id`.
+
+Request outcomes are emitted once per request with bounded labels. Important examples in this slice are:
+
+- `budget_error` for pre-provider hard-limit rejection
+- `invalid_request` for capability mismatch
+- `upstream_error` for upstream execution or stream failure
 
 ## Request Tagging Contract
 
@@ -85,6 +92,13 @@ The summary row stores:
 
 Streaming requests persist a bounded transcript payload rather than raw transport bytes.
 
+The stream payload contract is incremental rather than chunk-local:
+
+- UTF-8 is reassembled across transport chunk boundaries
+- SSE `data:` frames are reassembled across chunk boundaries
+- both `data:` and `data: ` forms are accepted
+- the latest coherent `usage` object is retained for request-log and ledger work
+
 ## Redaction and Truncation Boundaries
 
 Current redaction is key-driven and header-driven.
@@ -113,13 +127,12 @@ Recent cleanup changed the contract in a few important ways.
 - fallback-era request metadata is gone
 - missing request-log detail rows return strict `404 not_found`
 - stream payload parsing is more boundary-safe than the earlier chunk-by-chunk behavior
+- budget-rejected chat requests record a `budget_error` request outcome without executing the provider
 
 Operators and maintainers should stop expecting:
 
 - fallback metadata columns to appear in new request rows
 - nullable detail lookups for missing rows
-
-The remaining stream and ledger mismatch still lives in a smaller rough edge, not in the old fallback-era contract.
 
 ## Admin Observability APIs
 

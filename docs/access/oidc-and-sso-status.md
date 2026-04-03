@@ -12,6 +12,7 @@ What exists today:
 
 - OIDC providers can be configured
 - admins can pre-provision invited OIDC users
+- config can pre-provision invited OIDC users by provider key
 - first successful callback activates the invited user
 - durable user and provider-link records are stored
 
@@ -19,7 +20,7 @@ What does not exist yet:
 
 - a hardened standards-complete login flow
 - a finished self-hosted local test-IdP story
-- declarative config-as-code support for SSO-backed users and team assignment
+- hardened declarative SSO-backed identity matching and claims policy
 
 ## Development-Style Boundary
 

@@ -20,13 +20,13 @@ use gateway_core::{
     IdentityUserRecord, MembershipRole, ModelAccessMode, ModelPricingRecord, ModelRepository,
     ModelRoute, Money4, NewApiKeyRecord, OidcProviderRecord, PasswordInvitationRecord,
     PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
-    PricingProvenance, ProviderConnection, ProviderRepository, RequestLogDetail,
-    RequestLogPage, RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord,
-    RequestLogRepository, SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SYSTEM_LEGACY_TEAM_ID,
-    SYSTEM_LEGACY_TEAM_KEY, SpendDailyAggregateRecord, SpendModelAggregateRecord,
-    SpendOwnerAggregateRecord, StoreError, StoreHealth, TeamBudgetRecord,
-    TeamMembershipRecord, TeamRecord, UsageLedgerRecord, UsagePricingStatus, UserBudgetRecord,
-    UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
+    PricingProvenance, ProviderConnection, ProviderRepository, RequestLogDetail, RequestLogPage,
+    RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository,
+    SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY,
+    SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord, StoreError,
+    StoreHealth, TeamBudgetRecord, TeamMembershipRecord, TeamRecord, UsageLedgerRecord,
+    UsagePricingStatus, UserBudgetRecord, UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord,
+    UserSessionRecord, UserStatus,
 };
 use sqlx::{
     PgPool, Row,
@@ -419,13 +419,37 @@ impl GatewayStore for PostgresStore {
         Self::find_invited_oidc_user(self, email_normalized, oidc_provider_id).await
     }
 
+    async fn seed_update_identity_user_profile(
+        &self,
+        user_id: Uuid,
+        name: &str,
+        email: &str,
+        email_normalized: &str,
+        request_logging_enabled: bool,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        Self::seed_update_identity_user_profile(
+            self,
+            user_id,
+            name,
+            email,
+            email_normalized,
+            request_logging_enabled,
+            updated_at,
+        )
+        .await
+    }
+
     async fn seed_from_inputs(
         &self,
         providers: &[gateway_core::SeedProvider],
         models: &[gateway_core::SeedModel],
         api_keys: &[gateway_core::SeedApiKey],
+        teams: &[gateway_core::SeedTeam],
+        users: &[gateway_core::SeedUser],
     ) -> Result<(), StoreError> {
-        self.seed_from_inputs(providers, models, api_keys).await
+        self.seed_from_inputs(providers, models, api_keys, teams, users)
+            .await
     }
 }
 

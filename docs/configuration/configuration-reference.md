@@ -20,8 +20,11 @@ This page owns config syntax and parse-time rules. It does not own the full runt
 - `server`
 - `database`
 - `auth`
+- `budget_alerts`
 - `providers`
 - `models`
+- `teams`
+- `users`
 
 ## Value Sources
 
@@ -48,7 +51,7 @@ database:
 auth:
   bootstrap_admin:
     email: "admin@local"
-    password: "admin"
+    password: "literal.admin"
     require_password_change: false
 
 providers:
@@ -80,11 +83,11 @@ database:
 auth:
   bootstrap_admin:
     email: "admin@local"
-    password: "admin"
+    password: env.GATEWAY_BOOTSTRAP_ADMIN_PASSWORD
     require_password_change: true
   seed_api_keys:
     - name: "gateway"
-      key: env.GATEWAY_API_KEY
+      value: env.GATEWAY_API_KEY
 
 providers:
   - id: vertex
@@ -93,7 +96,30 @@ providers:
     location: global
     auth:
       mode: service_account
-      service_account_json: env.GCP_SERVICE_ACCOUNT_JSON
+      credentials_path: env.GCP_SERVICE_ACCOUNT_JSON
+
+teams:
+  - key: platform
+    name: Platform
+    budget:
+      cadence: monthly
+      amount_usd: "500.0000"
+      hard_limit: true
+      timezone: UTC
+
+users:
+  - name: Platform Admin
+    email: ops@example.com
+    auth_mode: password
+    global_role: platform_admin
+    membership:
+      team: platform
+      role: admin
+    budget:
+      cadence: monthly
+      amount_usd: "100.0000"
+      hard_limit: true
+      timezone: UTC
 
 models:
   - id: gemini-2.0-flash
@@ -151,8 +177,54 @@ Important distinctions:
 - `seed_api_keys` creates data-plane access
 - `bootstrap_admin` creates control-plane access
 - `bootstrap_admin.require_password_change` changes first-login behavior
+- `bootstrap_admin.password` must be `literal.*` or `env.*`
 
 For startup behavior and first access after boot, use [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md).
+
+## Declarative Teams And Users
+
+`teams` and `users` extend the same startup seed path used for providers, models, and API keys.
+
+Important `teams` fields:
+
+- `key`
+- `name`
+- `budget`
+
+Important `users` fields:
+
+- `name`
+- `email`
+- `auth_mode`
+- `global_role`
+- `request_logging_enabled`
+- `oidc_provider_key`
+- `membership.team`
+- `membership.role`
+- `budget`
+
+Validation rules that matter:
+
+- team keys must be unique
+- `system-legacy` is reserved and cannot be configured
+- user emails are normalized and must be unique
+- `admin@local` is reserved for the bootstrap admin
+- `users[*].auth_mode` supports `password` and `oidc`
+- `oidc_provider_key` is required for `oidc` users and rejected for `password` users
+- membership roles can be `admin` or `member`
+- membership role `owner` is rejected
+- budget amounts must be non-negative
+
+Seed semantics that matter:
+
+- listed teams are upserted by `teams[*].key`
+- listed users are upserted by normalized email
+- new config-seeded users are created as `invited`
+- listed membership and active-budget state is reconciled for listed users and teams
+- omitting a `budget` block for a listed user or team deactivates that owner's active budget
+- unlisted teams and users are left untouched
+
+OIDC provider existence is validated at seed time against enabled runtime OIDC providers, not YAML parse time.
 
 ## Provider Types
 
@@ -167,7 +239,7 @@ Supported provider types in the checked-in configs:
 | --- | --- | --- |
 | `openai_compat` | `auth.token` | bearer-style token |
 | `gcp_vertex` | `auth.mode: adc` | ADC available in the runtime environment |
-| `gcp_vertex` | `auth.mode: service_account` | service-account JSON or equivalent secret source |
+| `gcp_vertex` | `auth.mode: service_account` | `credentials_path` pointing at service-account JSON or an equivalent mounted secret path |
 
 ### `openai_compat`
 

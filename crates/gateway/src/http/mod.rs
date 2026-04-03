@@ -1,6 +1,6 @@
+pub mod admin_auth;
 pub mod admin_contract;
 pub mod api_keys;
-pub mod admin_auth;
 pub mod error;
 pub mod handlers;
 pub mod identity;

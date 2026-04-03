@@ -35,14 +35,13 @@ pub(crate) async fn build_admin_identity_user_view(
                 can_resend: true,
             })
         }
-        AuthMode::Oidc => user
-            .oidc_provider_key
-            .as_deref()
-            .map(|provider_key| AdminOnboardingActionView::OidcSignIn {
+        AuthMode::Oidc => user.oidc_provider_key.as_deref().map(|provider_key| {
+            AdminOnboardingActionView::OidcSignIn {
                 sign_in_url: oidc_sign_in_url(origin, provider_key, &user.user.email),
                 provider_key: provider_key.to_string(),
                 provider_label: provider_key.to_string(),
-            }),
+            }
+        }),
         _ => None,
     };
 
@@ -52,6 +51,7 @@ pub(crate) async fn build_admin_identity_user_view(
         email: user.user.email,
         auth_mode: user.user.auth_mode.as_str().to_string(),
         global_role: user.user.global_role.as_str().to_string(),
+        request_logging_enabled: user.user.request_logging_enabled,
         team_id: user.team_id.map(|value| value.to_string()),
         team_name: user.team_name,
         team_role: user.membership_role.map(|value| value.as_str().to_string()),

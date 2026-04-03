@@ -648,6 +648,14 @@ export function UsersPage() {
                         </dt>
                         <dd className="text-[var(--color-text-muted)]">{user.team_role ?? '—'}</dd>
                       </div>
+                      <div>
+                        <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                          Logs
+                        </dt>
+                        <dd className="text-[var(--color-text-muted)]">
+                          {user.request_logging_enabled ? 'Enabled' : 'Disabled'}
+                        </dd>
+                      </div>
                     </dl>
 
                     <div className="mt-4 flex flex-wrap gap-2">
@@ -673,6 +681,7 @@ export function UsersPage() {
                       <th className="px-3 py-2 font-semibold">Email</th>
                       <th className="px-3 py-2 font-semibold">Auth</th>
                       <th className="px-3 py-2 font-semibold">Global role</th>
+                      <th className="px-3 py-2 font-semibold">Logs</th>
                       <th className="px-3 py-2 font-semibold">Team</th>
                       <th className="px-3 py-2 font-semibold">Team role</th>
                       <th className="px-3 py-2 font-semibold">Status</th>
@@ -693,6 +702,9 @@ export function UsersPage() {
                         </td>
                         <td className="px-3 py-3 text-[var(--color-text-muted)]">
                           {user.global_role}
+                        </td>
+                        <td className="px-3 py-3 text-[var(--color-text-muted)]">
+                          {user.request_logging_enabled ? 'Enabled' : 'Disabled'}
                         </td>
                         <td className="px-3 py-3 text-[var(--color-text-muted)]">
                           {user.team_name ?? '—'}
@@ -758,6 +770,9 @@ export function UsersPage() {
               <div className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4">
                 <p className="font-semibold text-[var(--color-text)]">{selectedUser.name}</p>
                 <p className="text-sm text-[var(--color-text-muted)]">{selectedUser.email}</p>
+                <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                  Request logging: {selectedUser.request_logging_enabled ? 'enabled' : 'disabled'}
+                </p>
                 <p className="mt-2 text-xs text-[var(--color-text-soft)]">
                   {selectedUser.status === 'invited'
                     ? 'Auth mode can only be changed while the user is still invited.'

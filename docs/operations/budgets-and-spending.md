@@ -47,6 +47,8 @@ Hard-limit behavior:
 
 - if projected spend in the active window would exceed the configured amount and `hard_limit = true`, the request fails with `budget_exceeded`
 - the HTTP status is `429`
+- the provider is not executed on this path
+- observability records the request as a budget rejection outcome instead of a provider execution
 
 ## Two-Phase Enforcement
 
@@ -90,6 +92,15 @@ Budget fields:
 - `timezone`
 
 `timezone` is stored now, but enforcement windows still use UTC.
+
+## Declarative Budget Seed
+
+Active user and team budgets can also come from config-backed seed inputs.
+
+- `teams[*].budget` reconciles the listed team's active budget
+- `users[*].budget` reconciles the listed user's active budget
+- removing a listed owner's `budget` block deactivates that active budget
+- historical budget rows remain historical; config only owns the active row
 
 ## Budget Threshold Alerts
 
@@ -146,8 +157,7 @@ These routes require an authenticated platform-admin session.
 - provider breakdown is not part of spend reporting v1
 - acting-user attribution for team-owned keys remains `actor:none`
 - timezone-aware budget windows are still deferred
-- declarative config-driven budgets are not supported yet
-  - [issue #64](https://github.com/ahstn/oceans-llm/issues/64)
+- hardened declarative SSO-backed identity matching remains deferred
   - [issue #65](https://github.com/ahstn/oceans-llm/issues/65)
 
 ## What This Page Does Not Own
