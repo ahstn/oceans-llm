@@ -192,7 +192,8 @@ pub async fn list_spend_budgets(
         } else {
             Money4::ZERO
         };
-        let team_recipients = active_team_budget_recipients(state.store.as_ref(), team.team_id).await?;
+        let team_recipients =
+            active_team_budget_recipients(state.store.as_ref(), team.team_id).await?;
 
         team_views.push(SpendBudgetTeamView {
             team_id: team.team_id.to_string(),
@@ -482,7 +483,10 @@ async fn active_team_budget_recipients(
     let mut recipients = Vec::new();
 
     for membership in memberships {
-        if !matches!(membership.role, MembershipRole::Owner | MembershipRole::Admin) {
+        if !matches!(
+            membership.role,
+            MembershipRole::Owner | MembershipRole::Admin
+        ) {
             continue;
         }
         let Some(user) = store.get_user_by_id(membership.user_id).await? else {
@@ -550,13 +554,11 @@ fn parse_budget_cadence(value: &str) -> Result<BudgetCadence, AppError> {
 fn parse_budget_alert_channel(value: Option<&str>) -> Result<Option<BudgetAlertChannel>, AppError> {
     match value {
         None | Some("all") => Ok(None),
-        Some(raw) => BudgetAlertChannel::from_db(raw)
-            .map(Some)
-            .ok_or_else(|| {
-                AppError(GatewayError::InvalidRequest(format!(
-                    "invalid budget alert channel `{raw}`"
-                )))
-            }),
+        Some(raw) => BudgetAlertChannel::from_db(raw).map(Some).ok_or_else(|| {
+            AppError(GatewayError::InvalidRequest(format!(
+                "invalid budget alert channel `{raw}`"
+            )))
+        }),
     }
 }
 

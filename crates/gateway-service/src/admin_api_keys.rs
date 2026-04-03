@@ -99,7 +99,12 @@ where
         let mut items = Vec::with_capacity(api_keys.len());
         for api_key in api_keys {
             let granted_models = self.repo.list_models_for_api_key(api_key.id).await?;
-            items.push(build_api_key_summary(&api_key, &users, &teams, &granted_models)?);
+            items.push(build_api_key_summary(
+                &api_key,
+                &users,
+                &teams,
+                &granted_models,
+            )?);
         }
 
         Ok(AdminApiKeysPayload {
@@ -157,14 +162,10 @@ where
         let granted_models = select_granted_models(&request.model_keys, &models)?;
 
         let public_id = Uuid::new_v4().simple().to_string();
-        let secret = format!(
-            "{}{}",
-            Uuid::new_v4().simple(),
-            Uuid::new_v4().simple()
-        );
+        let secret = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
         let raw_key = format!("gwk_{public_id}.{secret}");
-        let secret_hash =
-            hash_gateway_key_secret(&secret).map_err(|error| GatewayError::Internal(error.to_string()))?;
+        let secret_hash = hash_gateway_key_secret(&secret)
+            .map_err(|error| GatewayError::Internal(error.to_string()))?;
         let now = OffsetDateTime::now_utc();
 
         let api_key = self
@@ -179,7 +180,10 @@ where
                 created_at: now,
             })
             .await?;
-        let model_ids = granted_models.iter().map(|model| model.id).collect::<Vec<_>>();
+        let model_ids = granted_models
+            .iter()
+            .map(|model| model.id)
+            .collect::<Vec<_>>();
         self.repo
             .replace_api_key_model_grants(api_key.id, &model_ids)
             .await?;
@@ -190,7 +194,10 @@ where
         Ok(CreateAdminApiKeyResult { api_key, raw_key })
     }
 
-    pub async fn revoke_api_key(&self, api_key_id: Uuid) -> Result<AdminApiKeySummary, GatewayError> {
+    pub async fn revoke_api_key(
+        &self,
+        api_key_id: Uuid,
+    ) -> Result<AdminApiKeySummary, GatewayError> {
         self.repo
             .get_api_key_by_id(api_key_id)
             .await?
@@ -207,9 +214,7 @@ where
             .get_api_key_by_id(api_key_id)
             .await?
             .ok_or_else(|| {
-                GatewayError::Internal(format!(
-                    "api key `{api_key_id}` missing after revoke"
-                ))
+                GatewayError::Internal(format!("api key `{api_key_id}` missing after revoke"))
             })?;
         let granted_models = self.repo.list_models_for_api_key(api_key.id).await?;
 
@@ -368,9 +373,9 @@ fn select_granted_models(
             continue;
         }
 
-        let model = model_map
-            .get(model_key)
-            .ok_or_else(|| GatewayError::InvalidRequest(format!("unknown model_key `{model_key}`")))?;
+        let model = model_map.get(model_key).ok_or_else(|| {
+            GatewayError::InvalidRequest(format!("unknown model_key `{model_key}`"))
+        })?;
         selected.push((*model).clone());
     }
 
@@ -412,14 +417,31 @@ mod tests {
     #[async_trait]
     impl AdminApiKeyRepository for InMemoryRepo {
         async fn list_api_keys(&self) -> Result<Vec<ApiKeyRecord>, StoreError> {
-            Ok(self.api_keys.lock().expect("api keys lock").values().cloned().collect())
+            Ok(self
+                .api_keys
+                .lock()
+                .expect("api keys lock")
+                .values()
+                .cloned()
+                .collect())
         }
 
-        async fn get_api_key_by_id(&self, api_key_id: Uuid) -> Result<Option<ApiKeyRecord>, StoreError> {
-            Ok(self.api_keys.lock().expect("api keys lock").get(&api_key_id).cloned())
+        async fn get_api_key_by_id(
+            &self,
+            api_key_id: Uuid,
+        ) -> Result<Option<ApiKeyRecord>, StoreError> {
+            Ok(self
+                .api_keys
+                .lock()
+                .expect("api keys lock")
+                .get(&api_key_id)
+                .cloned())
         }
 
-        async fn create_api_key(&self, api_key: &NewApiKeyRecord) -> Result<ApiKeyRecord, StoreError> {
+        async fn create_api_key(
+            &self,
+            api_key: &NewApiKeyRecord,
+        ) -> Result<ApiKeyRecord, StoreError> {
             let record = ApiKeyRecord {
                 id: Uuid::new_v4(),
                 public_id: api_key.public_id.clone(),
@@ -496,7 +518,10 @@ mod tests {
             Ok(self.models.values().cloned().collect())
         }
 
-        async fn get_model_by_key(&self, model_key: &str) -> Result<Option<GatewayModel>, StoreError> {
+        async fn get_model_by_key(
+            &self,
+            model_key: &str,
+        ) -> Result<Option<GatewayModel>, StoreError> {
             Ok(self.models.get(model_key).cloned())
         }
 
@@ -510,11 +535,19 @@ mod tests {
             };
             Ok(model_ids
                 .iter()
-                .filter_map(|model_id| self.models.values().find(|model| &model.id == model_id).cloned())
+                .filter_map(|model_id| {
+                    self.models
+                        .values()
+                        .find(|model| &model.id == model_id)
+                        .cloned()
+                })
                 .collect())
         }
 
-        async fn list_routes_for_model(&self, _model_id: Uuid) -> Result<Vec<ModelRoute>, StoreError> {
+        async fn list_routes_for_model(
+            &self,
+            _model_id: Uuid,
+        ) -> Result<Vec<ModelRoute>, StoreError> {
             Ok(Vec::new())
         }
     }

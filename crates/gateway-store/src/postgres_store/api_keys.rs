@@ -19,7 +19,10 @@ impl AdminApiKeyRepository for PostgresStore {
         rows.iter().map(decode_api_key).collect()
     }
 
-    async fn get_api_key_by_id(&self, api_key_id: Uuid) -> Result<Option<ApiKeyRecord>, StoreError> {
+    async fn get_api_key_by_id(
+        &self,
+        api_key_id: Uuid,
+    ) -> Result<Option<ApiKeyRecord>, StoreError> {
         let row = sqlx::query(
             r#"
             SELECT id, public_id, secret_hash, name, status,
@@ -38,10 +41,7 @@ impl AdminApiKeyRepository for PostgresStore {
         row.as_ref().map(decode_api_key).transpose()
     }
 
-    async fn create_api_key(
-        &self,
-        api_key: &NewApiKeyRecord,
-    ) -> Result<ApiKeyRecord, StoreError> {
+    async fn create_api_key(&self, api_key: &NewApiKeyRecord) -> Result<ApiKeyRecord, StoreError> {
         let api_key_id = api_key_uuid(&api_key.public_id);
         sqlx::query(
             r#"
@@ -66,7 +66,9 @@ impl AdminApiKeyRepository for PostgresStore {
 
         AdminApiKeyRepository::get_api_key_by_id(self, api_key_id)
             .await?
-            .ok_or_else(|| StoreError::NotFound(format!("api key `{api_key_id}` missing after create")))
+            .ok_or_else(|| {
+                StoreError::NotFound(format!("api key `{api_key_id}` missing after create"))
+            })
     }
 
     async fn replace_api_key_model_grants(
@@ -114,7 +116,6 @@ impl AdminApiKeyRepository for PostgresStore {
 
         Ok(result.rows_affected() > 0)
     }
-
 }
 
 #[async_trait]

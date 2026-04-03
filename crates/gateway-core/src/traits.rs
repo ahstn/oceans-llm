@@ -9,14 +9,13 @@ use uuid::Uuid;
 
 use crate::{
     domain::{
-        ApiKeyRecord, BudgetAlertDeliveryRecord, BudgetAlertDispatchTask,
-        BudgetAlertHistoryPage, BudgetAlertHistoryQuery, BudgetAlertRecord, GatewayModel,
-        ModelPricingRecord, ModelRoute, Money4, NewApiKeyRecord, PricingCatalogCacheRecord,
-        ProviderCapabilities, ProviderConnection, ProviderRequestContext, RequestLogDetail,
-        RequestLogPage, RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord,
-        SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord,
-        TeamBudgetRecord, TeamMembershipRecord, TeamRecord, UsageLedgerRecord,
-        UserBudgetRecord, UserRecord,
+        ApiKeyRecord, BudgetAlertDeliveryRecord, BudgetAlertDispatchTask, BudgetAlertHistoryPage,
+        BudgetAlertHistoryQuery, BudgetAlertRecord, GatewayModel, ModelPricingRecord, ModelRoute,
+        Money4, NewApiKeyRecord, PricingCatalogCacheRecord, ProviderCapabilities,
+        ProviderConnection, ProviderRequestContext, RequestLogDetail, RequestLogPage,
+        RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, SpendDailyAggregateRecord,
+        SpendModelAggregateRecord, SpendOwnerAggregateRecord, TeamBudgetRecord,
+        TeamMembershipRecord, TeamRecord, UsageLedgerRecord, UserBudgetRecord, UserRecord,
     },
     error::{ProviderError, RouteError, StoreError},
     protocol::core::{ChatRequest, EmbeddingsRequest},
@@ -36,7 +35,8 @@ pub trait ApiKeyRepository: Send + Sync {
 pub trait AdminApiKeyRepository: Send + Sync {
     async fn list_api_keys(&self) -> Result<Vec<ApiKeyRecord>, StoreError>;
 
-    async fn get_api_key_by_id(&self, api_key_id: Uuid) -> Result<Option<ApiKeyRecord>, StoreError>;
+    async fn get_api_key_by_id(&self, api_key_id: Uuid)
+    -> Result<Option<ApiKeyRecord>, StoreError>;
 
     async fn create_api_key(&self, api_key: &NewApiKeyRecord) -> Result<ApiKeyRecord, StoreError>;
 
@@ -290,8 +290,7 @@ pub trait BudgetAlertRepository: Send + Sync {
     ) -> Result<(), StoreError> {
         let _ = (delivery_id, failure_reason, failed_at);
         Err(StoreError::Unexpected(
-            "mark_budget_alert_delivery_failed is not implemented for this repository"
-                .to_string(),
+            "mark_budget_alert_delivery_failed is not implemented for this repository".to_string(),
         ))
     }
 }

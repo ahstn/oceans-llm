@@ -24,7 +24,7 @@ These concerns are related: safer migration execution is only useful if the team
 
 We keep one explicit transaction per migration version and enforce that:
 
-- migration SQL (when present) and `refinery_schema_history` writes happen in the same transaction,
+- migration SQL and `refinery_schema_history` writes happen in the same transaction,
 - any failure in apply/history stages rolls back both schema/data and history state,
 - migration execution emits structured step-level logs (`begin`, `apply`, `history_insert`, `commit`, `rollback`) with backend + migration metadata.
 

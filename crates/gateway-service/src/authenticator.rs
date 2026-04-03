@@ -5,8 +5,8 @@ use argon2::{
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
 };
 use gateway_core::{
-    ApiKeyOwnerKind, ApiKeyRepository, ApiKeyStatus, AuthError, AuthenticatedApiKey,
-    GatewayError, extract_bearer_token, parse_gateway_api_key,
+    ApiKeyOwnerKind, ApiKeyRepository, ApiKeyStatus, AuthError, AuthenticatedApiKey, GatewayError,
+    extract_bearer_token, parse_gateway_api_key,
 };
 
 #[derive(Clone)]

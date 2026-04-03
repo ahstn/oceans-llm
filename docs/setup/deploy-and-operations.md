@@ -90,7 +90,9 @@ Operationally important context:
 
 - the gateway can run migrations on startup
 - startup can also seed config and bootstrap auth state
-- pre-v1 migration flattening is still tracked as follow-up work
+- fresh databases apply a single `V17` baseline per backend
+- `status`, `check`, and `apply` validate `refinery_schema_history` against the active registry before proceeding
+- databases carrying pre-baseline `V1` through `V16` history must be recreated instead of upgraded in place
 
 ## Image and Release Caveats
 

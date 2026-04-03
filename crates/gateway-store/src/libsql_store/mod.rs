@@ -22,13 +22,13 @@ use gateway_core::{
     IdentityUserRecord, MembershipRole, ModelAccessMode, ModelPricingRecord, ModelRepository,
     ModelRoute, Money4, NewApiKeyRecord, OidcProviderRecord, PasswordInvitationRecord,
     PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
-    PricingProvenance, ProviderConnection, ProviderRepository, RequestLogDetail,
-    RequestLogPage, RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord,
-    RequestLogRepository, SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SYSTEM_LEGACY_TEAM_ID,
-    SYSTEM_LEGACY_TEAM_KEY, SpendDailyAggregateRecord, SpendModelAggregateRecord,
-    SpendOwnerAggregateRecord, StoreError, StoreHealth, TeamBudgetRecord,
-    TeamMembershipRecord, TeamRecord, UsageLedgerRecord, UsagePricingStatus, UserBudgetRecord,
-    UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
+    PricingProvenance, ProviderConnection, ProviderRepository, RequestLogDetail, RequestLogPage,
+    RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository,
+    SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY,
+    SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord, StoreError,
+    StoreHealth, TeamBudgetRecord, TeamMembershipRecord, TeamRecord, UsageLedgerRecord,
+    UsagePricingStatus, UserBudgetRecord, UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord,
+    UserSessionRecord, UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -453,7 +453,8 @@ impl GatewayStore for LibsqlStore {
         teams: &[gateway_core::SeedTeam],
         users: &[gateway_core::SeedUser],
     ) -> Result<(), StoreError> {
-        self.seed_from_inputs(providers, models, api_keys, teams, users).await
+        self.seed_from_inputs(providers, models, api_keys, teams, users)
+            .await
     }
 }
 
