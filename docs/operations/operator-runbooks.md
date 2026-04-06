@@ -49,9 +49,9 @@ mise run gateway-migrate
 - confirm the database URL points at the intended backend
 - confirm the process did not start with migrations disabled
 
-Pre-v1 migration flattening is still pending. That follow-up is tracked in [issue #44](https://github.com/ahstn/oceans-llm/issues/44).
+If the migration error says `database reset required`, the running database carries pre-baseline history that this release no longer accepts. Recreate the libsql/Postgres database, then rerun migrations and seeding/bootstrap steps against the fresh `V17` baseline.
 
-If the environment is disposable pre-v1 state, recreation can be safer than manual repair. If the environment is not disposable, stop and inspect the migration error before retrying.
+If the error is not a reset-required failure, stop and inspect it before retrying. Do not assume manual repair is safer than recreation.
 
 ## Broken Admin Login
 

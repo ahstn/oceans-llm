@@ -3,12 +3,11 @@ use std::path::PathBuf;
 use async_trait::async_trait;
 use gateway_core::{
     AdminApiKeyRepository, AdminIdentityRepository, ApiKeyRepository, AuthMode,
-    BudgetAlertRepository, BudgetRepository, GlobalRole, IdentityRepository,
-    IdentityUserRecord, MembershipRole, ModelRepository, OidcProviderRecord,
-    PasswordInvitationRecord, PricingCatalogRepository, ProviderRepository, RequestLogRepository,
-    SeedApiKey, SeedModel, SeedProvider, SeedTeam, SeedUser, StoreError, StoreHealth,
-    TeamMembershipRecord, TeamRecord, UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord,
-    UserSessionRecord, UserStatus,
+    BudgetAlertRepository, BudgetRepository, GlobalRole, IdentityRepository, IdentityUserRecord,
+    MembershipRole, ModelRepository, OidcProviderRecord, PasswordInvitationRecord,
+    PricingCatalogRepository, ProviderRepository, RequestLogRepository, SeedApiKey, SeedModel,
+    SeedProvider, SeedTeam, SeedUser, StoreError, StoreHealth, TeamMembershipRecord, TeamRecord,
+    UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -1122,6 +1121,9 @@ impl GatewayStore for AnyStore {
         teams: &[SeedTeam],
         users: &[SeedUser],
     ) -> Result<(), StoreError> {
-        dispatch_store!(self, seed_from_inputs(providers, models, api_keys, teams, users))
+        dispatch_store!(
+            self,
+            seed_from_inputs(providers, models, api_keys, teams, users)
+        )
     }
 }

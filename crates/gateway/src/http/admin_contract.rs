@@ -556,12 +556,20 @@ pub fn write_admin_openapi(path: &Path) -> anyhow::Result<()> {
     document.push('\n');
 
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("failed creating OpenAPI output directory `{}`", parent.display()))?;
+        fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "failed creating OpenAPI output directory `{}`",
+                parent.display()
+            )
+        })?;
     }
 
-    fs::write(path, document)
-        .with_context(|| format!("failed writing admin OpenAPI document to `{}`", path.display()))?;
+    fs::write(path, document).with_context(|| {
+        format!(
+            "failed writing admin OpenAPI document to `{}`",
+            path.display()
+        )
+    })?;
     Ok(())
 }
 
@@ -575,7 +583,8 @@ pub fn envelope<T>(data: T) -> Envelope<T> {
 }
 
 pub fn format_timestamp(value: OffsetDateTime) -> String {
-    value.format(&Rfc3339)
+    value
+        .format(&Rfc3339)
         .unwrap_or_else(|_| value.unix_timestamp().to_string())
 }
 
@@ -594,8 +603,16 @@ mod tests {
         assert!(paths.contains_key("/api/v1/admin/observability/request-logs/{request_log_id}"));
         assert!(paths.contains_key("/api/v1/auth/session"));
 
-        assert!(components.schemas.contains_key("Envelope_AdminIdentityPayload"));
+        assert!(
+            components
+                .schemas
+                .contains_key("Envelope_AdminIdentityPayload")
+        );
         assert!(components.schemas.contains_key("Envelope_SpendReportView"));
-        assert!(components.schemas.contains_key("Envelope_RequestLogDetailView"));
+        assert!(
+            components
+                .schemas
+                .contains_key("Envelope_RequestLogDetailView")
+        );
     }
 }

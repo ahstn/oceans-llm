@@ -1,23 +1,17 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BackendMigrationStep {
-    Sql(&'static str),
-    Compatibility { reason: &'static str },
-}
-
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct MigrationManifest {
     pub version: u32,
     pub name: &'static str,
     pub checksum: &'static str,
-    pub libsql: BackendMigrationStep,
-    pub postgres: BackendMigrationStep,
+    pub libsql_sql: &'static str,
+    pub postgres_sql: &'static str,
 }
 
 impl MigrationManifest {
-    pub(crate) fn step_for(&self, backend: MigrationBackend) -> BackendMigrationStep {
+    pub(crate) fn sql_for(&self, backend: MigrationBackend) -> &'static str {
         match backend {
-            MigrationBackend::Libsql => self.libsql,
-            MigrationBackend::Postgres => self.postgres,
+            MigrationBackend::Libsql => self.libsql_sql,
+            MigrationBackend::Postgres => self.postgres_sql,
         }
     }
 }
@@ -28,172 +22,13 @@ pub(crate) enum MigrationBackend {
     Postgres,
 }
 
-pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
-    MigrationManifest {
-        version: 1,
-        name: "init",
-        checksum: "V1__init.sql",
-        libsql: BackendMigrationStep::Sql(include_str!("../migrations/V1__init.sql")),
-        postgres: BackendMigrationStep::Sql(include_str!("../migrations/postgres/V1__init.sql")),
-    },
-    MigrationManifest {
-        version: 2,
-        name: "audit_baseline",
-        checksum: "V2__audit_baseline.sql",
-        libsql: BackendMigrationStep::Sql(include_str!("../migrations/V2__audit_baseline.sql")),
-        postgres: BackendMigrationStep::Compatibility {
-            reason: "PostgreSQL V1 already includes the audit baseline schema.",
-        },
-    },
-    MigrationManifest {
-        version: 3,
-        name: "identity_foundation",
-        checksum: "V3__identity_foundation.sql",
-        libsql: BackendMigrationStep::Sql(include_str!(
-            "../migrations/V3__identity_foundation.sql"
-        )),
-        postgres: BackendMigrationStep::Compatibility {
-            reason: "PostgreSQL V1 already includes the identity foundation schema.",
-        },
-    },
-    MigrationManifest {
-        version: 4,
-        name: "money_fixed_point",
-        checksum: "V4__money_fixed_point.sql",
-        libsql: BackendMigrationStep::Sql(include_str!("../migrations/V4__money_fixed_point.sql")),
-        postgres: BackendMigrationStep::Compatibility {
-            reason: "PostgreSQL V1 starts on the fixed-point money schema.",
-        },
-    },
-    MigrationManifest {
-        version: 5,
-        name: "pricing_catalog_cache",
-        checksum: "V5__pricing_catalog_cache.sql",
-        libsql: BackendMigrationStep::Sql(include_str!(
-            "../migrations/V5__pricing_catalog_cache.sql"
-        )),
-        postgres: BackendMigrationStep::Compatibility {
-            reason: "PostgreSQL V1 already includes pricing catalog cache support.",
-        },
-    },
-    MigrationManifest {
-        version: 6,
-        name: "identity_onboarding",
-        checksum: "V6__identity_onboarding.sql",
-        libsql: BackendMigrationStep::Sql(include_str!(
-            "../migrations/V6__identity_onboarding.sql"
-        )),
-        postgres: BackendMigrationStep::Compatibility {
-            reason: "PostgreSQL V1 already includes identity onboarding tables.",
-        },
-    },
-    MigrationManifest {
-        version: 7,
-        name: "user_password_rotation",
-        checksum: "V7__user_password_rotation.sql",
-        libsql: BackendMigrationStep::Sql(include_str!(
-            "../migrations/V7__user_password_rotation.sql"
-        )),
-        postgres: BackendMigrationStep::Compatibility {
-            reason: "PostgreSQL V1 already includes user password rotation fields.",
-        },
-    },
-    MigrationManifest {
-        version: 8,
-        name: "usage_ledger_and_model_pricing",
-        checksum: "V8__usage_ledger_and_model_pricing.sql",
-        libsql: BackendMigrationStep::Sql(include_str!(
-            "../migrations/V8__usage_ledger_and_model_pricing.sql"
-        )),
-        postgres: BackendMigrationStep::Sql(include_str!(
-            "../migrations/postgres/V8__usage_ledger_and_model_pricing.sql"
-        )),
-    },
-    MigrationManifest {
-        version: 9,
-        name: "model_route_capabilities",
-        checksum: "V9__model_route_capabilities.sql",
-        libsql: BackendMigrationStep::Sql(include_str!(
-            "../migrations/V9__model_route_capabilities.sql"
-        )),
-        postgres: BackendMigrationStep::Sql(include_str!(
-            "../migrations/postgres/V9__model_route_capabilities.sql"
-        )),
-    },
-    MigrationManifest {
-        version: 10,
-        name: "model_aliases",
-        checksum: "V10__model_aliases.sql",
-        libsql: BackendMigrationStep::Sql(include_str!("../migrations/V10__model_aliases.sql")),
-        postgres: BackendMigrationStep::Sql(include_str!(
-            "../migrations/postgres/V10__model_aliases.sql"
-        )),
-    },
-    MigrationManifest {
-        version: 11,
-        name: "request_log_resolved_model",
-        checksum: "V11__request_log_resolved_model.sql",
-        libsql: BackendMigrationStep::Sql(include_str!(
-            "../migrations/V11__request_log_resolved_model.sql"
-        )),
-        postgres: BackendMigrationStep::Sql(include_str!(
-            "../migrations/postgres/V11__request_log_resolved_model.sql"
-        )),
-    },
-    MigrationManifest {
-        version: 12,
-        name: "team_budgets_and_spend_reporting",
-        checksum: "V12__team_budgets_and_spend_reporting.sql",
-        libsql: BackendMigrationStep::Sql(include_str!(
-            "../migrations/V12__team_budgets_and_spend_reporting.sql"
-        )),
-        postgres: BackendMigrationStep::Sql(include_str!(
-            "../migrations/postgres/V12__team_budgets_and_spend_reporting.sql"
-        )),
-    },
-    MigrationManifest {
-        version: 13,
-        name: "request_log_payloads_and_indexes",
-        checksum: "V13__request_log_payloads_and_indexes.sql",
-        libsql: BackendMigrationStep::Sql(include_str!(
-            "../migrations/V13__request_log_payloads_and_indexes.sql"
-        )),
-        postgres: BackendMigrationStep::Sql(include_str!(
-            "../migrations/postgres/V13__request_log_payloads_and_indexes.sql"
-        )),
-    },
-    MigrationManifest {
-        version: 14,
-        name: "budget_alerts_and_monthly_cadence",
-        checksum: "V14__budget_alerts_and_monthly_cadence.sql",
-        libsql: BackendMigrationStep::Sql(include_str!(
-            "../migrations/V14__budget_alerts_and_monthly_cadence.sql"
-        )),
-        postgres: BackendMigrationStep::Sql(include_str!(
-            "../migrations/postgres/V14__budget_alerts_and_monthly_cadence.sql"
-        )),
-    },
-    MigrationManifest {
-        version: 15,
-        name: "request_log_tags",
-        checksum: "V15__request_log_tags.sql",
-        libsql: BackendMigrationStep::Sql(include_str!("../migrations/V15__request_log_tags.sql")),
-        postgres: BackendMigrationStep::Sql(include_str!(
-            "../migrations/postgres/V15__request_log_tags.sql"
-        )),
-    },
-    MigrationManifest {
-        version: 16,
-        name: "request_log_metadata_cleanup",
-        checksum: "V16__request_log_metadata_cleanup.sql",
-        libsql: BackendMigrationStep::Sql(include_str!(
-            "../migrations/V16__request_log_metadata_cleanup.sql"
-        )),
-        postgres: BackendMigrationStep::Sql(include_str!(
-            "../migrations/postgres/V16__request_log_metadata_cleanup.sql"
-        )),
-    },
-];
+pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[MigrationManifest {
+    version: 17,
+    name: "baseline",
+    checksum: "V17__baseline.sql",
+    libsql_sql: include_str!("../migrations/V17__baseline.sql"),
+    postgres_sql: include_str!("../migrations/postgres/V17__baseline.sql"),
+}];
 
 #[cfg(test)]
 mod tests {

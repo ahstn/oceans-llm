@@ -28,11 +28,11 @@ mod tests {
         MembershipRole, ModelPricingRecord, ModelRepository, Money4, PricingCatalogCacheRecord,
         PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
         ProviderCapabilities, RequestLogRecord, RequestLogRepository, RequestTags,
-        SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedBudget, SeedModel,
-        SeedModelRoute, SeedProvider, SeedTeam, SeedUser, SeedUserMembership, StoreError,
-        StoreHealth, UsageLedgerRecord, UsagePricingStatus, UserStatus,
+        SYSTEM_LEGACY_TEAM_ID, SeedApiKey, SeedBudget, SeedModel, SeedModelRoute, SeedProvider,
+        SeedTeam, SeedUser, SeedUserMembership, StoreError, StoreHealth, UsageLedgerRecord,
+        UsagePricingStatus, UserStatus,
     };
-    use serde_json::{Map, Value, json};
+    use serde_json::{Map, json};
     use serial_test::serial;
     use sqlx::Row;
     use tempfile::tempdir;
@@ -42,9 +42,8 @@ mod tests {
 
     use crate::{
         GatewayStore, LibsqlStore, MigrationTestHook, PostgresStore, StoreConnectionOptions,
-        check_migrations_with_options,
-        migration_registry::{BackendMigrationStep, MIGRATION_REGISTRY, MigrationBackend},
-        run_migrations, run_migrations_with_options, run_migrations_with_options_for_test,
+        check_migrations_with_options, migration_registry::MIGRATION_REGISTRY, run_migrations,
+        run_migrations_with_options, run_migrations_with_options_for_test,
         status_migrations_with_options,
     };
 
@@ -428,16 +427,99 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn libsql_migration_commands_reject_legacy_history() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        let options = StoreConnectionOptions::Libsql {
+            path: db_path.clone(),
+        };
+
+        insert_libsql_history_entry(&db_path, 1, "init", "V1__init.sql")
+            .await
+            .expect("legacy history row");
+
+        assert_database_reset_required(
+            status_migrations_with_options(&options)
+                .await
+                .expect_err("status should reject legacy history"),
+        );
+        assert_database_reset_required(
+            check_migrations_with_options(&options)
+                .await
+                .expect_err("check should reject legacy history"),
+        );
+        assert_database_reset_required(
+            run_migrations_with_options(&options)
+                .await
+                .expect_err("apply should reject legacy history"),
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_migration_commands_reject_empty_history_when_app_tables_exist() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        let options = StoreConnectionOptions::Libsql {
+            path: db_path.clone(),
+        };
+
+        insert_libsql_application_table_without_history(&db_path)
+            .await
+            .expect("application table");
+
+        assert_database_reset_required(
+            status_migrations_with_options(&options)
+                .await
+                .expect_err("status should reject empty history with app tables"),
+        );
+        assert_database_reset_required(
+            check_migrations_with_options(&options)
+                .await
+                .expect_err("check should reject empty history with app tables"),
+        );
+        assert_database_reset_required(
+            run_migrations_with_options(&options)
+                .await
+                .expect_err("apply should reject empty history with app tables"),
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_migration_status_rejects_manifest_identity_mismatch() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+
+        insert_libsql_history_entry(
+            &db_path,
+            i64::from(MIGRATION_REGISTRY[0].version),
+            MIGRATION_REGISTRY[0].name,
+            "unexpected-checksum.sql",
+        )
+        .await
+        .expect("mismatched history row");
+
+        let error =
+            status_migrations_with_options(&StoreConnectionOptions::Libsql { path: db_path })
+                .await
+                .expect_err("status should reject manifest mismatch");
+        assert_database_reset_required(error);
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn migrations_rollback_when_history_write_fails() {
         let tmp = tempdir().expect("tempdir");
         let db_path = tmp.path().join("gateway.db");
+        let baseline_version = MIGRATION_REGISTRY[0].version;
 
         run_migrations_with_options_for_test(
             &StoreConnectionOptions::Libsql {
                 path: db_path.clone(),
             },
             MigrationTestHook {
-                fail_after_apply_version: Some(1),
+                fail_after_apply_version: Some(baseline_version),
                 ..MigrationTestHook::default()
             },
         )
@@ -483,13 +565,14 @@ mod tests {
     async fn migrations_rollback_when_schema_history_insert_fails() {
         let tmp = tempdir().expect("tempdir");
         let db_path = tmp.path().join("gateway.db");
+        let baseline_version = MIGRATION_REGISTRY[0].version;
 
         run_migrations_with_options_for_test(
             &StoreConnectionOptions::Libsql {
                 path: db_path.clone(),
             },
             MigrationTestHook {
-                fail_history_insert_version: Some(1),
+                fail_history_insert_version: Some(baseline_version),
                 ..MigrationTestHook::default()
             },
         )
@@ -538,6 +621,7 @@ mod tests {
         let options = StoreConnectionOptions::Libsql {
             path: db_path.clone(),
         };
+        let baseline_version = MIGRATION_REGISTRY[0].version;
 
         let initial_status = status_migrations_with_options(&options)
             .await
@@ -549,7 +633,7 @@ mod tests {
         run_migrations_with_options_for_test(
             &options,
             MigrationTestHook {
-                fail_history_insert_version: Some(1),
+                fail_history_insert_version: Some(baseline_version),
                 ..MigrationTestHook::default()
             },
         )
@@ -763,198 +847,6 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn libsql_request_log_migration_backfills_resolved_model_key() {
-        let tmp = tempdir().expect("tempdir");
-        let db_path = tmp.path().join("gateway.db");
-
-        apply_libsql_migrations_through(&db_path, 10)
-            .await
-            .expect("migrations through v10");
-
-        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
-            .build()
-            .await
-            .expect("db");
-        let conn = db.connect().expect("connection");
-
-        conn.execute(
-            r#"
-            INSERT INTO api_keys (
-                id, public_id, secret_hash, name, status,
-                owner_kind, owner_user_id, owner_team_id, created_at
-            ) VALUES (?1, 'legacy', 'hash', 'Legacy', 'active', 'team', NULL, ?2, unixepoch())
-            "#,
-            libsql::params!["api-key-legacy", SYSTEM_LEGACY_TEAM_ID],
-        )
-        .await
-        .expect("insert api key");
-
-        conn.execute(
-            r#"
-            INSERT INTO request_logs (
-                request_log_id, request_id, api_key_id, user_id, team_id, model_key,
-                provider_key, status_code, latency_ms, prompt_tokens, completion_tokens,
-                total_tokens, error_code, metadata_json, occurred_at
-            ) VALUES (?1, ?2, ?3, NULL, NULL, ?4, ?5, 200, 42, 10, 20, 30, NULL, '{}', unixepoch())
-            "#,
-            libsql::params![
-                Uuid::new_v4().to_string(),
-                "req-legacy",
-                "api-key-legacy",
-                "fast",
-                "openai-prod"
-            ],
-        )
-        .await
-        .expect("insert legacy row");
-
-        run_migrations_with_options(&StoreConnectionOptions::Libsql {
-            path: db_path.clone(),
-        })
-        .await
-        .expect("apply v11");
-
-        let mut rows = conn
-            .query(
-                "SELECT model_key, resolved_model_key FROM request_logs WHERE request_id = 'req-legacy'",
-                (),
-            )
-            .await
-            .expect("query request logs");
-        let row = rows
-            .next()
-            .await
-            .expect("row fetch")
-            .expect("row should exist");
-        let model_key: String = row.get(0).expect("model key");
-        let resolved_model_key: Option<String> = row.get(1).expect("resolved model key");
-        assert_eq!(model_key, "fast");
-        assert_eq!(resolved_model_key.as_deref(), Some("fast"));
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn libsql_request_log_migration_scrubs_fallback_metadata() {
-        let tmp = tempdir().expect("tempdir");
-        let db_path = tmp.path().join("gateway.db");
-
-        apply_libsql_migrations_through(&db_path, 15)
-            .await
-            .expect("migrations through v15");
-
-        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
-            .build()
-            .await
-            .expect("db");
-        let conn = db.connect().expect("connection");
-
-        conn.execute(
-            r#"
-            INSERT INTO api_keys (
-                id, public_id, secret_hash, name, status,
-                owner_kind, owner_user_id, owner_team_id, created_at
-            ) VALUES (?1, 'legacy', 'hash', 'Legacy', 'active', 'team', NULL, ?2, unixepoch())
-            "#,
-            libsql::params!["api-key-legacy", SYSTEM_LEGACY_TEAM_ID],
-        )
-        .await
-        .expect("insert api key");
-
-        conn.execute(
-            r#"
-            INSERT INTO request_logs (
-                request_log_id, request_id, api_key_id, user_id, team_id, model_key,
-                resolved_model_key, provider_key, status_code, latency_ms, prompt_tokens,
-                completion_tokens, total_tokens, has_payload, request_payload_truncated,
-                response_payload_truncated, caller_service, caller_component, caller_env,
-                error_code, metadata_json, occurred_at
-            ) VALUES (?1, ?2, ?3, NULL, NULL, ?4, ?5, ?6, 200, 42, 10, 20, 30, 0, 0, 0, NULL, NULL, NULL, NULL, ?7, unixepoch())
-            "#,
-            libsql::params![
-                Uuid::new_v4().to_string(),
-                "req-legacy",
-                "api-key-legacy",
-                "fast",
-                "fast",
-                "openai-prod",
-                json!({
-                    "operation": "chat_completions",
-                    "stream": false,
-                    "fallback_used": true,
-                    "attempt_count": 2
-                })
-                .to_string()
-            ],
-        )
-        .await
-        .expect("insert legacy row");
-
-        conn.execute(
-            r#"
-            INSERT INTO request_logs (
-                request_log_id, request_id, api_key_id, user_id, team_id, model_key,
-                resolved_model_key, provider_key, status_code, latency_ms, prompt_tokens,
-                completion_tokens, total_tokens, has_payload, request_payload_truncated,
-                response_payload_truncated, caller_service, caller_component, caller_env,
-                error_code, metadata_json, occurred_at
-            ) VALUES (?1, ?2, ?3, NULL, NULL, ?4, ?5, ?6, 200, 42, 10, 20, 30, 0, 0, 0, NULL, NULL, NULL, NULL, ?7, unixepoch())
-            "#,
-            libsql::params![
-                Uuid::new_v4().to_string(),
-                "req-clean",
-                "api-key-legacy",
-                "fast",
-                "fast",
-                "openai-prod",
-                json!({
-                    "operation": "chat_completions",
-                    "stream": true
-                })
-                .to_string()
-            ],
-        )
-        .await
-        .expect("insert clean row");
-
-        run_migrations_with_options(&StoreConnectionOptions::Libsql {
-            path: db_path.clone(),
-        })
-        .await
-        .expect("apply v16");
-
-        let mut rows = conn
-            .query(
-                "SELECT request_id, metadata_json FROM request_logs ORDER BY request_id ASC",
-                (),
-            )
-            .await
-            .expect("query request logs");
-        let mut metadata_by_request_id = std::collections::BTreeMap::new();
-        while let Some(row) = rows.next().await.expect("row fetch") {
-            let request_id: String = row.get(0).expect("request id");
-            let metadata_json: String = row.get(1).expect("metadata json");
-            let metadata: Value = serde_json::from_str(&metadata_json).expect("metadata json");
-            metadata_by_request_id.insert(request_id, metadata);
-        }
-
-        assert_eq!(
-            metadata_by_request_id.get("req-clean"),
-            Some(&json!({
-                "operation": "chat_completions",
-                "stream": true
-            }))
-        );
-        assert_eq!(
-            metadata_by_request_id.get("req-legacy"),
-            Some(&json!({
-                "operation": "chat_completions",
-                "stream": false
-            }))
-        );
-    }
-
-    #[tokio::test]
-    #[serial]
     async fn libsql_request_log_detail_missing_returns_not_found() {
         let tmp = tempdir().expect("tempdir");
         let db_path = tmp.path().join("gateway.db");
@@ -969,76 +861,6 @@ mod tests {
             .await
             .expect_err("missing request log should fail");
         assert!(matches!(error, StoreError::NotFound(_)));
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn migration_backfills_legacy_api_keys_with_reserved_team_owner() {
-        let tmp = tempdir().expect("tempdir");
-        let db_path = tmp.path().join("gateway.db");
-        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
-            .build()
-            .await
-            .expect("db");
-        let conn = db.connect().expect("connection");
-
-        conn.execute(
-            r#"
-            CREATE TABLE refinery_schema_history (
-                version INTEGER PRIMARY KEY,
-                name TEXT NOT NULL,
-                applied_on INTEGER NOT NULL,
-                checksum TEXT NOT NULL
-            )
-            "#,
-            (),
-        )
-        .await
-        .expect("schema history");
-        conn.execute_batch(include_str!("../migrations/V1__init.sql"))
-            .await
-            .expect("v1 schema");
-        conn.execute_batch(include_str!("../migrations/V2__audit_baseline.sql"))
-            .await
-            .expect("v2 schema");
-        conn.execute(
-            "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) VALUES (1, 'init', unixepoch(), 'v1')",
-            (),
-        )
-        .await
-        .expect("history v1");
-        conn.execute(
-            "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) VALUES (2, 'audit_baseline', unixepoch(), 'v2')",
-            (),
-        )
-        .await
-        .expect("history v2");
-        conn.execute(
-            r#"
-            INSERT INTO api_keys (id, public_id, secret_hash, name, status, created_at)
-            VALUES (?1, 'legacy', 'hash', 'legacy key', 'active', unixepoch())
-            "#,
-            [Uuid::new_v4().to_string()],
-        )
-        .await
-        .expect("legacy api key");
-
-        run_migrations(&db_path).await.expect("migrate to v3");
-
-        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
-            .await
-            .expect("store");
-        let key = store
-            .get_api_key_by_public_id("legacy")
-            .await
-            .expect("query")
-            .expect("legacy key should exist");
-        assert_eq!(key.owner_kind, ApiKeyOwnerKind::Team);
-        assert_eq!(
-            key.owner_team_id,
-            Some(Uuid::parse_str(SYSTEM_LEGACY_TEAM_ID).expect("legacy team uuid"))
-        );
-        assert_eq!(key.owner_user_id, None);
     }
 
     #[tokio::test]
@@ -1654,506 +1476,6 @@ mod tests {
             .expect("store");
 
         exercise_budget_alert_repository(&store).await;
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn v4_migration_converts_money_columns_to_scaled_integers() {
-        let tmp = tempdir().expect("tempdir");
-        let db_path = tmp.path().join("gateway.db");
-        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
-            .build()
-            .await
-            .expect("db");
-        let conn = db.connect().expect("connection");
-        let now = time::OffsetDateTime::now_utc().unix_timestamp();
-        let user_id = Uuid::new_v4();
-        let api_key_id = Uuid::new_v4();
-        let budget_id = Uuid::new_v4();
-        let usage_event_id = Uuid::new_v4();
-
-        conn.execute(
-            r#"
-            CREATE TABLE refinery_schema_history (
-                version INTEGER PRIMARY KEY,
-                name TEXT NOT NULL,
-                applied_on INTEGER NOT NULL,
-                checksum TEXT NOT NULL
-            )
-            "#,
-            (),
-        )
-        .await
-        .expect("schema history");
-        conn.execute_batch(include_str!("../migrations/V1__init.sql"))
-            .await
-            .expect("v1 schema");
-        conn.execute_batch(include_str!("../migrations/V2__audit_baseline.sql"))
-            .await
-            .expect("v2 schema");
-        conn.execute_batch(include_str!("../migrations/V3__identity_foundation.sql"))
-            .await
-            .expect("v3 schema");
-        conn.execute(
-            "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) VALUES (1, 'init', unixepoch(), 'v1')",
-            (),
-        )
-        .await
-        .expect("history v1");
-        conn.execute(
-            "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) VALUES (2, 'audit_baseline', unixepoch(), 'v2')",
-            (),
-        )
-        .await
-        .expect("history v2");
-        conn.execute(
-            "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) VALUES (3, 'identity_foundation', unixepoch(), 'v3')",
-            (),
-        )
-        .await
-        .expect("history v3");
-
-        conn.execute(
-            r#"
-            INSERT INTO users (
-              user_id, name, email, email_normalized, global_role, auth_mode, status,
-              request_logging_enabled, model_access_mode, created_at, updated_at
-            ) VALUES (?1, 'Money User', 'money@example.com', 'money@example.com', 'user', 'password', 'active', 1, 'all', ?2, ?2)
-            "#,
-            libsql::params![user_id.to_string(), now],
-        )
-        .await
-        .expect("user");
-        conn.execute(
-            r#"
-            INSERT INTO api_keys (
-                id, public_id, secret_hash, name, status, owner_kind, owner_user_id, owner_team_id, created_at
-            ) VALUES (?1, 'money_key', 'hash', 'money key', 'active', 'user', ?2, NULL, ?3)
-            "#,
-            libsql::params![api_key_id.to_string(), user_id.to_string(), now],
-        )
-        .await
-        .expect("api key");
-        conn.execute(
-            r#"
-            INSERT INTO user_budgets (
-                user_budget_id, user_id, cadence, amount_usd, hard_limit, timezone, is_active, created_at, updated_at
-            ) VALUES (?1, ?2, 'weekly', 12.3456, 1, 'UTC', 1, ?3, ?3)
-            "#,
-            libsql::params![budget_id.to_string(), user_id.to_string(), now],
-        )
-        .await
-        .expect("budget");
-        conn.execute(
-            r#"
-            INSERT INTO usage_cost_events (
-                usage_event_id, request_id, api_key_id, user_id, team_id, model_id, estimated_cost_usd, occurred_at
-            ) VALUES (?1, 'req_money', ?2, ?3, NULL, NULL, 0.6789, ?4)
-            "#,
-            libsql::params![
-                usage_event_id.to_string(),
-                api_key_id.to_string(),
-                user_id.to_string(),
-                now
-            ],
-        )
-        .await
-        .expect("usage event");
-
-        run_migrations(&db_path).await.expect("migrate to v4");
-
-        let mut budget_rows = conn
-            .query(
-                "SELECT amount_10000 FROM user_budgets WHERE user_budget_id = ?1",
-                [budget_id.to_string()],
-            )
-            .await
-            .expect("query budget amount");
-        let budget_row = budget_rows
-            .next()
-            .await
-            .expect("fetch budget row")
-            .expect("budget row");
-        let amount_10000: i64 = budget_row.get(0).expect("decode budget amount");
-        assert_eq!(amount_10000, 123_456);
-
-        let mut usage_rows = conn
-            .query(
-                "SELECT computed_cost_10000, pricing_status, ownership_scope_key, provider_key, upstream_model FROM usage_cost_events WHERE usage_event_id = ?1",
-                [usage_event_id.to_string()],
-            )
-            .await
-            .expect("query usage amount");
-        let usage_row = usage_rows
-            .next()
-            .await
-            .expect("fetch usage row")
-            .expect("usage row");
-        let computed_cost_10000: i64 = usage_row.get(0).expect("decode usage amount");
-        let pricing_status: String = usage_row.get(1).expect("decode pricing status");
-        let ownership_scope_key: String = usage_row.get(2).expect("decode scope key");
-        let provider_key: String = usage_row.get(3).expect("decode provider key");
-        let upstream_model: String = usage_row.get(4).expect("decode upstream model");
-        assert_eq!(computed_cost_10000, 6_789);
-        assert_eq!(pricing_status, "legacy_estimated");
-        assert_eq!(ownership_scope_key, format!("user:{user_id}"));
-        assert_eq!(provider_key, "legacy");
-        assert_eq!(upstream_model, "legacy");
-
-        let mut budget_columns = conn
-            .query("PRAGMA table_info(user_budgets)", ())
-            .await
-            .expect("budget table info");
-        while let Some(column) = budget_columns.next().await.expect("column row") {
-            let column_name: String = column.get(1).expect("column name");
-            assert_ne!(column_name, "amount_usd");
-        }
-
-        let mut usage_columns = conn
-            .query("PRAGMA table_info(usage_cost_events)", ())
-            .await
-            .expect("usage table info");
-        while let Some(column) = usage_columns.next().await.expect("column row") {
-            let column_name: String = column.get(1).expect("column name");
-            assert_ne!(column_name, "estimated_cost_usd");
-        }
-
-        let mut pricing_columns = conn
-            .query("PRAGMA table_info(model_pricing)", ())
-            .await
-            .expect("pricing table info");
-        let mut saw_effective_start_at = false;
-        while let Some(column) = pricing_columns.next().await.expect("column row") {
-            let column_name: String = column.get(1).expect("column name");
-            if column_name == "effective_start_at" {
-                saw_effective_start_at = true;
-            }
-        }
-        assert!(
-            saw_effective_start_at,
-            "model_pricing should be created by v8"
-        );
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn v8_migration_deduplicates_legacy_usage_rows_into_archive() {
-        let tmp = tempdir().expect("tempdir");
-        let db_path = tmp.path().join("gateway.db");
-        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
-            .build()
-            .await
-            .expect("db");
-        let conn = db.connect().expect("connection");
-        let now = time::OffsetDateTime::now_utc().unix_timestamp();
-        let user_id = Uuid::new_v4();
-        let api_key_id = Uuid::new_v4();
-        let first_usage_event_id = Uuid::new_v4();
-        let second_usage_event_id = Uuid::new_v4();
-
-        conn.execute(
-            r#"
-            CREATE TABLE refinery_schema_history (
-                version INTEGER PRIMARY KEY,
-                name TEXT NOT NULL,
-                applied_on INTEGER NOT NULL,
-                checksum TEXT NOT NULL
-            )
-            "#,
-            (),
-        )
-        .await
-        .expect("schema history");
-        conn.execute_batch(include_str!("../migrations/V1__init.sql"))
-            .await
-            .expect("v1 schema");
-        conn.execute_batch(include_str!("../migrations/V2__audit_baseline.sql"))
-            .await
-            .expect("v2 schema");
-        conn.execute_batch(include_str!("../migrations/V3__identity_foundation.sql"))
-            .await
-            .expect("v3 schema");
-        conn.execute_batch(include_str!("../migrations/V4__money_fixed_point.sql"))
-            .await
-            .expect("v4 schema");
-        for (version, name, checksum) in [
-            (1_i64, "init", "v1"),
-            (2_i64, "audit_baseline", "v2"),
-            (3_i64, "identity_foundation", "v3"),
-            (4_i64, "money_fixed_point", "v4"),
-        ] {
-            conn.execute(
-                "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) VALUES (?1, ?2, unixepoch(), ?3)",
-                libsql::params![version, name, checksum],
-            )
-            .await
-            .expect("history row");
-        }
-
-        conn.execute(
-            r#"
-            INSERT INTO users (
-              user_id, name, email, email_normalized, global_role, auth_mode, status,
-              request_logging_enabled, model_access_mode, created_at, updated_at
-            ) VALUES (?1, 'Money User', 'money@example.com', 'money@example.com', 'user', 'password', 'active', 1, 'all', ?2, ?2)
-            "#,
-            libsql::params![user_id.to_string(), now],
-        )
-        .await
-        .expect("user");
-        conn.execute(
-            r#"
-            INSERT INTO api_keys (
-                id, public_id, secret_hash, name, status, owner_kind, owner_user_id, owner_team_id, created_at
-            ) VALUES (?1, 'money_key', 'hash', 'money key', 'active', 'user', ?2, NULL, ?3)
-            "#,
-            libsql::params![api_key_id.to_string(), user_id.to_string(), now],
-        )
-        .await
-        .expect("api key");
-        for usage_event_id in [first_usage_event_id, second_usage_event_id] {
-            conn.execute(
-                r#"
-                INSERT INTO usage_cost_events (
-                    usage_event_id, request_id, api_key_id, user_id, team_id, model_id,
-                    estimated_cost_10000, occurred_at
-                ) VALUES (?1, 'req_dupe', ?2, ?3, NULL, NULL, 6789, ?4)
-                "#,
-                libsql::params![
-                    usage_event_id.to_string(),
-                    api_key_id.to_string(),
-                    user_id.to_string(),
-                    now
-                ],
-            )
-            .await
-            .expect("usage event");
-        }
-
-        run_migrations(&db_path).await.expect("migrate to v8");
-
-        let mut deduped_rows = conn
-            .query(
-                "SELECT request_id, ownership_scope_key, pricing_status FROM usage_cost_events",
-                (),
-            )
-            .await
-            .expect("deduped rows");
-        let deduped = deduped_rows
-            .next()
-            .await
-            .expect("fetch deduped")
-            .expect("deduped row");
-        let request_id: String = deduped.get(0).expect("request id");
-        let ownership_scope_key: String = deduped.get(1).expect("scope key");
-        let pricing_status: String = deduped.get(2).expect("pricing status");
-        assert_eq!(request_id, "req_dupe");
-        assert_eq!(ownership_scope_key, format!("user:{user_id}"));
-        assert_eq!(pricing_status, "legacy_estimated");
-        assert!(
-            deduped_rows
-                .next()
-                .await
-                .expect("second deduped row")
-                .is_none()
-        );
-
-        let mut archived_rows = conn
-            .query(
-                "SELECT original_usage_event_id, request_id, ownership_scope_key FROM usage_cost_event_duplicates_archive",
-                (),
-            )
-            .await
-            .expect("archive rows");
-        let archived = archived_rows
-            .next()
-            .await
-            .expect("fetch archive")
-            .expect("archive row");
-        let archived_request_id: String = archived.get(1).expect("archived request id");
-        let archived_scope_key: String = archived.get(2).expect("archived scope key");
-        assert_eq!(archived_request_id, "req_dupe");
-        assert_eq!(archived_scope_key, format!("user:{user_id}"));
-        assert!(
-            archived_rows
-                .next()
-                .await
-                .expect("second archive row")
-                .is_none()
-        );
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn postgres_v8_migration_deduplicates_legacy_usage_rows_into_archive() {
-        let Some(test_db) = create_postgres_test_database().await else {
-            eprintln!("skipping postgres v8 migration test because TEST_POSTGRES_URL is not set");
-            return;
-        };
-
-        let pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(1)
-            .connect(&test_db.database_url)
-            .await
-            .expect("postgres pool");
-        let now = OffsetDateTime::now_utc().unix_timestamp();
-        let user_id = Uuid::new_v4();
-        let api_key_id = Uuid::new_v4();
-        let first_usage_event_id = Uuid::new_v4();
-        let second_usage_event_id = Uuid::new_v4();
-
-        sqlx::raw_sql(include_str!("../migrations/postgres/V1__init.sql"))
-            .execute(&pool)
-            .await
-            .expect("v1 schema");
-        sqlx::query(
-            r#"
-            CREATE TABLE refinery_schema_history (
-                version BIGINT PRIMARY KEY,
-                name TEXT NOT NULL,
-                applied_on BIGINT NOT NULL,
-                checksum TEXT NOT NULL
-            )
-            "#,
-        )
-        .execute(&pool)
-        .await
-        .expect("schema history");
-        for (version, name, checksum) in [
-            (1_i64, "init", "V1__init.sql"),
-            (2_i64, "audit_baseline", "V2__audit_baseline.sql"),
-            (3_i64, "identity_foundation", "V3__identity_foundation.sql"),
-            (4_i64, "money_fixed_point", "V4__money_fixed_point.sql"),
-            (
-                5_i64,
-                "pricing_catalog_cache",
-                "V5__pricing_catalog_cache.sql",
-            ),
-            (6_i64, "identity_onboarding", "V6__identity_onboarding.sql"),
-            (
-                7_i64,
-                "user_password_rotation",
-                "V7__user_password_rotation.sql",
-            ),
-        ] {
-            sqlx::query(
-                "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) VALUES ($1, $2, $3, $4)",
-            )
-            .bind(version)
-            .bind(name)
-            .bind(now)
-            .bind(checksum)
-            .execute(&pool)
-            .await
-            .expect("history row");
-        }
-        sqlx::query(
-            r#"
-            INSERT INTO users (
-                user_id, name, email, email_normalized, global_role, auth_mode, status,
-                must_change_password, request_logging_enabled, model_access_mode, created_at, updated_at
-            ) VALUES ($1, 'Money User', 'money@example.com', 'money@example.com', 'user', 'password', 'active', 0, 1, 'all', $2, $2)
-            "#,
-        )
-        .bind(user_id.to_string())
-        .bind(now)
-        .execute(&pool)
-        .await
-        .expect("user");
-        sqlx::query(
-            r#"
-            INSERT INTO api_keys (
-                id, public_id, secret_hash, name, status, owner_kind, owner_user_id, owner_team_id, created_at
-            ) VALUES ($1, 'money_key', 'hash', 'money key', 'active', 'user', $2, NULL, $3)
-            "#,
-        )
-        .bind(api_key_id.to_string())
-        .bind(user_id.to_string())
-        .bind(now)
-        .execute(&pool)
-        .await
-        .expect("api key");
-        for usage_event_id in [first_usage_event_id, second_usage_event_id] {
-            sqlx::query(
-                r#"
-                INSERT INTO usage_cost_events (
-                    usage_event_id, request_id, api_key_id, user_id, team_id, model_id,
-                    estimated_cost_10000, occurred_at
-                ) VALUES ($1, 'req_dupe', $2, $3, NULL, NULL, 6789, $4)
-                "#,
-            )
-            .bind(usage_event_id.to_string())
-            .bind(api_key_id.to_string())
-            .bind(user_id.to_string())
-            .bind(now)
-            .execute(&pool)
-            .await
-            .expect("usage row");
-        }
-        pool.close().await;
-
-        let options = StoreConnectionOptions::Postgres {
-            url: test_db.database_url.clone(),
-            max_connections: 2,
-        };
-        run_migrations_with_options(&options)
-            .await
-            .expect("migrate to v8");
-
-        let pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(1)
-            .connect(&test_db.database_url)
-            .await
-            .expect("postgres pool");
-        let deduped = sqlx::query(
-            "SELECT request_id, ownership_scope_key, pricing_status FROM usage_cost_events",
-        )
-        .fetch_all(&pool)
-        .await
-        .expect("deduped rows");
-        assert_eq!(deduped.len(), 1);
-        assert_eq!(
-            deduped[0].try_get::<String, _>(0).expect("request id"),
-            "req_dupe"
-        );
-        assert_eq!(
-            deduped[0]
-                .try_get::<String, _>(1)
-                .expect("ownership scope key"),
-            format!("user:{user_id}")
-        );
-        assert_eq!(
-            deduped[0].try_get::<String, _>(2).expect("pricing status"),
-            "legacy_estimated"
-        );
-
-        let archived = sqlx::query(
-            "SELECT request_id, ownership_scope_key FROM usage_cost_event_duplicates_archive",
-        )
-        .fetch_all(&pool)
-        .await
-        .expect("archived rows");
-        assert_eq!(archived.len(), 1);
-        assert_eq!(
-            archived[0].try_get::<String, _>(0).expect("request id"),
-            "req_dupe"
-        );
-        assert_eq!(
-            archived[0]
-                .try_get::<String, _>(1)
-                .expect("ownership scope key"),
-            format!("user:{user_id}")
-        );
-        let model_pricing_exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'model_pricing')",
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("model_pricing exists");
-        assert!(model_pricing_exists);
-
-        pool.close().await;
-        drop_postgres_test_database(&test_db).await;
     }
 
     #[tokio::test]
@@ -4338,275 +3660,6 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn postgres_request_log_migration_backfills_resolved_model_key() {
-        let Some(test_db) = create_postgres_test_database().await else {
-            eprintln!(
-                "skipping postgres request log backfill test because TEST_POSTGRES_URL is not set"
-            );
-            return;
-        };
-
-        apply_postgres_migrations_through(&test_db.database_url, 10)
-            .await
-            .expect("migrations through v10");
-
-        let pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(1)
-            .connect(&test_db.database_url)
-            .await
-            .expect("postgres pool");
-
-        sqlx::query(
-            r#"
-            INSERT INTO teams (
-                team_id, team_key, team_name, status, model_access_mode, created_at, updated_at
-            ) VALUES ($1, $2, $3, 'active', 'all', extract(epoch from now())::bigint, extract(epoch from now())::bigint)
-            "#,
-        )
-        .bind(SYSTEM_LEGACY_TEAM_ID)
-        .bind(SYSTEM_LEGACY_TEAM_KEY)
-        .bind("System Legacy")
-        .execute(&pool)
-        .await
-        .expect("insert team");
-
-        sqlx::query(
-            r#"
-            INSERT INTO api_keys (
-                id, public_id, secret_hash, name, status,
-                owner_kind, owner_user_id, owner_team_id, created_at
-            ) VALUES ($1, 'legacy', 'hash', 'Legacy', 'active', 'team', NULL, $2, extract(epoch from now())::bigint)
-            "#,
-        )
-        .bind("api-key-legacy")
-        .bind(SYSTEM_LEGACY_TEAM_ID)
-        .execute(&pool)
-        .await
-        .expect("insert api key");
-
-        sqlx::query(
-            r#"
-            INSERT INTO request_logs (
-                request_log_id, request_id, api_key_id, user_id, team_id, model_key,
-                provider_key, status_code, latency_ms, prompt_tokens, completion_tokens,
-                total_tokens, error_code, metadata_json, occurred_at
-            ) VALUES ($1, $2, $3, NULL, NULL, $4, $5, 200, 42, 10, 20, 30, NULL, '{}', extract(epoch from now())::bigint)
-            "#,
-        )
-        .bind(Uuid::new_v4().to_string())
-        .bind("req-legacy")
-        .bind("api-key-legacy")
-        .bind("fast")
-        .bind("openai-prod")
-        .execute(&pool)
-        .await
-        .expect("insert legacy row");
-
-        run_migrations_with_options(&StoreConnectionOptions::Postgres {
-            url: test_db.database_url.clone(),
-            max_connections: 2,
-        })
-        .await
-        .expect("apply v11");
-
-        let row = sqlx::query(
-            "SELECT model_key, resolved_model_key FROM request_logs WHERE request_id = $1",
-        )
-        .bind("req-legacy")
-        .fetch_one(&pool)
-        .await
-        .expect("load request log");
-        let model_key: String = row.try_get(0).expect("model key");
-        let resolved_model_key: Option<String> = row.try_get(1).expect("resolved model key");
-        assert_eq!(model_key, "fast");
-        assert_eq!(resolved_model_key.as_deref(), Some("fast"));
-
-        pool.close().await;
-        drop_postgres_test_database(&test_db).await;
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn postgres_request_log_migration_scrubs_fallback_metadata() {
-        let Some(test_db) = create_postgres_test_database().await else {
-            eprintln!(
-                "skipping postgres request log metadata cleanup test because TEST_POSTGRES_URL is not set"
-            );
-            return;
-        };
-
-        apply_postgres_migrations_through(&test_db.database_url, 15)
-            .await
-            .expect("migrations through v15");
-
-        let pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(1)
-            .connect(&test_db.database_url)
-            .await
-            .expect("postgres pool");
-
-        sqlx::query(
-            r#"
-            INSERT INTO teams (
-                team_id, team_key, team_name, status, model_access_mode, created_at, updated_at
-            ) VALUES ($1, $2, $3, 'active', 'all', extract(epoch from now())::bigint, extract(epoch from now())::bigint)
-            "#,
-        )
-        .bind(SYSTEM_LEGACY_TEAM_ID)
-        .bind(SYSTEM_LEGACY_TEAM_KEY)
-        .bind("System Legacy")
-        .execute(&pool)
-        .await
-        .expect("insert team");
-
-        sqlx::query(
-            r#"
-            INSERT INTO api_keys (
-                id, public_id, secret_hash, name, status,
-                owner_kind, owner_user_id, owner_team_id, created_at
-            ) VALUES ($1, 'legacy', 'hash', 'Legacy', 'active', 'team', NULL, $2, extract(epoch from now())::bigint)
-            "#,
-        )
-        .bind("api-key-legacy")
-        .bind(SYSTEM_LEGACY_TEAM_ID)
-        .execute(&pool)
-        .await
-        .expect("insert api key");
-
-        sqlx::query(
-            r#"
-            INSERT INTO request_logs (
-                request_log_id, request_id, api_key_id, user_id, team_id, model_key,
-                resolved_model_key, provider_key, status_code, latency_ms, prompt_tokens,
-                completion_tokens, total_tokens, has_payload, request_payload_truncated,
-                response_payload_truncated, caller_service, caller_component, caller_env,
-                error_code, metadata_json, occurred_at
-            ) VALUES ($1, $2, $3, NULL, NULL, $4, $5, $6, 200, 42, 10, 20, 30, 0, 0, 0, NULL, NULL, NULL, NULL, $7, extract(epoch from now())::bigint)
-            "#,
-        )
-        .bind(Uuid::new_v4().to_string())
-        .bind("req-legacy")
-        .bind("api-key-legacy")
-        .bind("fast")
-        .bind("fast")
-        .bind("openai-prod")
-        .bind(
-            json!({
-                "operation": "chat_completions",
-                "stream": false,
-                "fallback_used": true,
-                "attempt_count": 2
-            })
-            .to_string(),
-        )
-        .execute(&pool)
-        .await
-        .expect("insert legacy row");
-
-        sqlx::query(
-            r#"
-            INSERT INTO request_logs (
-                request_log_id, request_id, api_key_id, user_id, team_id, model_key,
-                resolved_model_key, provider_key, status_code, latency_ms, prompt_tokens,
-                completion_tokens, total_tokens, has_payload, request_payload_truncated,
-                response_payload_truncated, caller_service, caller_component, caller_env,
-                error_code, metadata_json, occurred_at
-            ) VALUES ($1, $2, $3, NULL, NULL, $4, $5, $6, 200, 42, 10, 20, 30, 0, 0, 0, NULL, NULL, NULL, NULL, $7, extract(epoch from now())::bigint)
-            "#,
-        )
-        .bind(Uuid::new_v4().to_string())
-        .bind("req-clean")
-        .bind("api-key-legacy")
-        .bind("fast")
-        .bind("fast")
-        .bind("openai-prod")
-        .bind(
-            json!({
-                "operation": "chat_completions",
-                "stream": true
-            })
-            .to_string(),
-        )
-        .execute(&pool)
-        .await
-        .expect("insert clean row");
-
-        sqlx::query(
-            r#"
-            INSERT INTO request_logs (
-                request_log_id, request_id, api_key_id, user_id, team_id, model_key,
-                resolved_model_key, provider_key, status_code, latency_ms, prompt_tokens,
-                completion_tokens, total_tokens, has_payload, request_payload_truncated,
-                response_payload_truncated, caller_service, caller_component, caller_env,
-                error_code, metadata_json, occurred_at
-            ) VALUES ($1, $2, $3, NULL, NULL, $4, $5, $6, 200, 42, 10, 20, 30, 0, 0, 0, NULL, NULL, NULL, NULL, $7, extract(epoch from now())::bigint)
-            "#,
-        )
-        .bind(Uuid::new_v4().to_string())
-        .bind("req-invalid")
-        .bind("api-key-legacy")
-        .bind("fast")
-        .bind("fast")
-        .bind("openai-prod")
-        .bind("{\"operation\": ".to_string())
-        .execute(&pool)
-        .await
-        .expect("insert invalid row");
-
-        run_migrations_with_options(&StoreConnectionOptions::Postgres {
-            url: test_db.database_url.clone(),
-            max_connections: 2,
-        })
-        .await
-        .expect("apply postgres migrations");
-
-        let rows = sqlx::query(
-            "SELECT request_id, metadata_json FROM request_logs ORDER BY request_id ASC",
-        )
-        .fetch_all(&pool)
-        .await
-        .expect("load request logs");
-        let metadata_json_by_request_id = rows
-            .into_iter()
-            .map(|row| {
-                let request_id = row.try_get::<String, _>(0).expect("request id");
-                let metadata_json = row.try_get::<String, _>(1).expect("metadata json");
-                (request_id, metadata_json)
-            })
-            .collect::<std::collections::BTreeMap<_, _>>();
-        assert_eq!(
-            metadata_json_by_request_id
-                .get("req-clean")
-                .map(
-                    |metadata_json| serde_json::from_str::<Value>(metadata_json).expect("metadata")
-                ),
-            Some(json!({
-                "operation": "chat_completions",
-                "stream": true
-            }))
-        );
-        assert_eq!(
-            metadata_json_by_request_id
-                .get("req-legacy")
-                .map(
-                    |metadata_json| serde_json::from_str::<Value>(metadata_json).expect("metadata")
-                ),
-            Some(json!({
-                "operation": "chat_completions",
-                "stream": false
-            }))
-        );
-        assert_eq!(
-            metadata_json_by_request_id.get("req-invalid"),
-            Some(&"{\"operation\": ".to_string())
-        );
-
-        pool.close().await;
-        drop_postgres_test_database(&test_db).await;
-    }
-
-    #[tokio::test]
-    #[serial]
     async fn postgres_request_log_detail_missing_returns_not_found() {
         let Some(test_db) = create_postgres_test_database().await else {
             eprintln!(
@@ -4674,6 +3727,82 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn postgres_migration_commands_reject_legacy_history() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres legacy migration history test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 2,
+        };
+
+        insert_postgres_history_entry(&test_db.database_url, 1, "init", "V1__init.sql")
+            .await
+            .expect("legacy history row");
+
+        assert_database_reset_required(
+            status_migrations_with_options(&options)
+                .await
+                .expect_err("status should reject legacy history"),
+        );
+        assert_database_reset_required(
+            check_migrations_with_options(&options)
+                .await
+                .expect_err("check should reject legacy history"),
+        );
+        assert_database_reset_required(
+            run_migrations_with_options(&options)
+                .await
+                .expect_err("apply should reject legacy history"),
+        );
+
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_migration_commands_reject_empty_history_when_app_tables_exist() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres empty-history migration test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 2,
+        };
+
+        insert_postgres_application_table_without_history(&test_db.database_url)
+            .await
+            .expect("application table");
+
+        assert_database_reset_required(
+            status_migrations_with_options(&options)
+                .await
+                .expect_err("status should reject empty history with app tables"),
+        );
+        assert_database_reset_required(
+            check_migrations_with_options(&options)
+                .await
+                .expect_err("check should reject empty history with app tables"),
+        );
+        assert_database_reset_required(
+            run_migrations_with_options(&options)
+                .await
+                .expect_err("apply should reject empty history with app tables"),
+        );
+
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn postgres_migrations_rollback_when_history_write_fails() {
         let Some(test_db) = create_postgres_test_database().await else {
             eprintln!(
@@ -4686,10 +3815,11 @@ mod tests {
             url: test_db.database_url.clone(),
             max_connections: 2,
         };
+        let baseline_version = MIGRATION_REGISTRY[0].version;
         run_migrations_with_options_for_test(
             &options,
             MigrationTestHook {
-                fail_after_apply_version: Some(1),
+                fail_after_apply_version: Some(baseline_version),
                 ..MigrationTestHook::default()
             },
         )
@@ -4733,10 +3863,11 @@ mod tests {
             url: test_db.database_url.clone(),
             max_connections: 2,
         };
+        let baseline_version = MIGRATION_REGISTRY[0].version;
         run_migrations_with_options_for_test(
             &options,
             MigrationTestHook {
-                fail_history_insert_version: Some(1),
+                fail_history_insert_version: Some(baseline_version),
                 ..MigrationTestHook::default()
             },
         )
@@ -4780,6 +3911,7 @@ mod tests {
             url: test_db.database_url.clone(),
             max_connections: 2,
         };
+        let baseline_version = MIGRATION_REGISTRY[0].version;
 
         let initial_status = status_migrations_with_options(&options)
             .await
@@ -4790,7 +3922,7 @@ mod tests {
         run_migrations_with_options_for_test(
             &options,
             MigrationTestHook {
-                fail_history_insert_version: Some(1),
+                fail_history_insert_version: Some(baseline_version),
                 ..MigrationTestHook::default()
             },
         )
@@ -4816,9 +3948,11 @@ mod tests {
         drop_postgres_test_database(&test_db).await;
     }
 
-    async fn apply_libsql_migrations_through(
+    async fn insert_libsql_history_entry(
         db_path: &std::path::Path,
-        target_version: u32,
+        version: i64,
+        name: &str,
+        checksum: &str,
     ) -> anyhow::Result<()> {
         let db = libsql::Builder::new_local(db_path)
             .build()
@@ -4838,33 +3972,24 @@ mod tests {
         )
         .await
         .expect("schema history");
-
-        for migration in MIGRATION_REGISTRY
-            .iter()
-            .filter(|migration| migration.version <= target_version)
-        {
-            let tx = conn.transaction().await.expect("migration tx");
-            if let BackendMigrationStep::Sql(sql) = migration.step_for(MigrationBackend::Libsql) {
-                tx.execute_batch(sql).await.expect("apply migration");
-            }
-            tx.execute(
-                r#"
-                INSERT INTO refinery_schema_history (version, name, applied_on, checksum)
-                VALUES (?1, ?2, unixepoch(), ?3)
-                "#,
-                libsql::params![migration.version as i64, migration.name, migration.checksum],
-            )
-            .await
-            .expect("history row");
-            tx.commit().await.expect("commit");
-        }
+        conn.execute(
+            r#"
+            INSERT INTO refinery_schema_history (version, name, applied_on, checksum)
+            VALUES (?1, ?2, unixepoch(), ?3)
+            "#,
+            libsql::params![version, name, checksum],
+        )
+        .await
+        .expect("history row");
 
         Ok(())
     }
 
-    async fn apply_postgres_migrations_through(
+    async fn insert_postgres_history_entry(
         database_url: &str,
-        target_version: u32,
+        version: i64,
+        name: &str,
+        checksum: &str,
     ) -> anyhow::Result<()> {
         let pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(1)
@@ -4884,35 +4009,76 @@ mod tests {
         .execute(&pool)
         .await
         .expect("schema history");
-
-        for migration in MIGRATION_REGISTRY
-            .iter()
-            .filter(|migration| migration.version <= target_version)
-        {
-            let mut tx = pool.begin().await.expect("migration tx");
-            if let BackendMigrationStep::Sql(sql) = migration.step_for(MigrationBackend::Postgres) {
-                sqlx::raw_sql(sql)
-                    .execute(&mut *tx)
-                    .await
-                    .expect("apply migration");
-            }
-            sqlx::query(
-                r#"
-                INSERT INTO refinery_schema_history (version, name, applied_on, checksum)
-                VALUES ($1, $2, extract(epoch from now())::bigint, $3)
-                "#,
-            )
-            .bind(i64::from(migration.version))
-            .bind(migration.name)
-            .bind(migration.checksum)
-            .execute(&mut *tx)
-            .await
-            .expect("history row");
-            tx.commit().await.expect("commit");
-        }
+        sqlx::query(
+            r#"
+            INSERT INTO refinery_schema_history (version, name, applied_on, checksum)
+            VALUES ($1, $2, extract(epoch from now())::bigint, $3)
+            "#,
+        )
+        .bind(version)
+        .bind(name)
+        .bind(checksum)
+        .execute(&pool)
+        .await
+        .expect("history row");
 
         pool.close().await;
         Ok(())
+    }
+
+    async fn insert_libsql_application_table_without_history(
+        db_path: &std::path::Path,
+    ) -> anyhow::Result<()> {
+        let db = libsql::Builder::new_local(db_path)
+            .build()
+            .await
+            .expect("libsql db");
+        let conn = db.connect().expect("libsql connection");
+        conn.execute(
+            r#"
+            CREATE TABLE providers (
+                provider_key TEXT PRIMARY KEY
+            )
+            "#,
+            (),
+        )
+        .await
+        .expect("providers table");
+        Ok(())
+    }
+
+    async fn insert_postgres_application_table_without_history(
+        database_url: &str,
+    ) -> anyhow::Result<()> {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(database_url)
+            .await
+            .expect("postgres pool");
+        sqlx::query(
+            r#"
+            CREATE TABLE providers (
+                provider_key TEXT PRIMARY KEY
+            )
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .expect("providers table");
+        pool.close().await;
+        Ok(())
+    }
+
+    fn assert_database_reset_required(error: anyhow::Error) {
+        let message = error.to_string();
+        assert!(
+            message.contains("database reset required"),
+            "expected reset-required error, got: {message}"
+        );
+        assert!(
+            message.contains("recreate the database"),
+            "expected recreation guidance, got: {message}"
+        );
     }
 
     struct PostgresTestDatabase {

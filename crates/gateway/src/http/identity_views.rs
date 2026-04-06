@@ -35,14 +35,13 @@ pub(crate) async fn build_admin_identity_user_view(
                 can_resend: true,
             })
         }
-        AuthMode::Oidc => user
-            .oidc_provider_key
-            .as_deref()
-            .map(|provider_key| AdminOnboardingActionView::OidcSignIn {
+        AuthMode::Oidc => user.oidc_provider_key.as_deref().map(|provider_key| {
+            AdminOnboardingActionView::OidcSignIn {
                 sign_in_url: oidc_sign_in_url(origin, provider_key, &user.user.email),
                 provider_key: provider_key.to_string(),
                 provider_label: provider_key.to_string(),
-            }),
+            }
+        }),
         _ => None,
     };
 

@@ -81,7 +81,7 @@ This document is schema-oriented. It describes the persistent relationships that
 - `api_keys`
   - Key columns: `id`, `public_id`, `secret_hash`, `owner_kind`, `owner_user_id`, `owner_team_id`
   - Constraint: exactly one owner column must be set consistently with `owner_kind`
-  - Backfill rule: legacy keys are assigned to the reserved `system-legacy` team
+  - Reserved ownership: seeded system-owned keys use the reserved `system-legacy` team
 - `user_budgets`
   - Key columns: `user_budget_id`, `user_id`, `cadence`, `amount_10000`, `hard_limit`, `timezone`, `is_active`
   - Constraint: one active user budget per user
