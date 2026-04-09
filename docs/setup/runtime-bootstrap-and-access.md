@@ -7,7 +7,6 @@ This page explains what the gateway does when it starts and what access exists r
 ## Source of Truth
 
 - CLI entry points: [../crates/gateway/src/main.rs](../../crates/gateway/src/main.rs)
-- Startup scripts: [../scripts/start-dev-stack.sh](../../scripts/start-dev-stack.sh), [../scripts/start-prod.sh](../../scripts/start-prod.sh)
 - Runtime commands: [../mise.toml](../../mise.toml)
 - Checked-in configs: [../gateway.yaml](../../gateway.yaml), [../gateway.prod.yaml](../../gateway.prod.yaml), [../deploy/config/gateway.yaml](../../deploy/config/gateway.yaml)
 
@@ -39,7 +38,7 @@ The same behavior is also exposed through explicit commands:
 
 - config: [../gateway.yaml](../../gateway.yaml)
 - database: libsql or SQLite
-- usual entry point: [../scripts/start-dev-stack.sh](../../scripts/start-dev-stack.sh)
+- usual entry point: `mise run dev-stack`
 - bootstrap admin: enabled
 - forced password change: off
 - seeded API keys, teams, users, and budgets: driven by config
@@ -54,7 +53,7 @@ What exists after boot:
 
 - config: [../gateway.prod.yaml](../../gateway.prod.yaml)
 - database: PostgreSQL
-- usual entry point: [../scripts/start-prod.sh](../../scripts/start-prod.sh)
+- usual entry point: `mise run prod-stack`
 - bootstrap admin: enabled
 - forced password change: on
 - seed API keys: driven by config

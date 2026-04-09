@@ -34,7 +34,8 @@ Use [`mise.toml`](mise.toml) as the task catalog instead of memorizing ad hoc co
 - Discover tasks: `mise run`
 - Full local validation: `mise run lint` and `mise run test`
 - Rust/Postgres-focused validation: `mise run check-rust-postgres`, `mise run test-rust-postgres`, `mise run test-gateway-postgres-smoke`
-- Local runtime commands: `mise run gateway-serve`, `mise run gateway-migrate`, `mise run gateway-bootstrap-admin`, `mise run gateway-seed-config`
+- Local runtime commands: `mise run dev-stack`, `mise run gateway-serve`, `mise run gateway-migrate`, `mise run gateway-bootstrap-admin`, `mise run gateway-seed-config`
+- Production-shaped local runtime commands: `mise run prod-stack`, `mise run gateway-migrate-prod`, `mise run gateway-bootstrap-admin-prod`, `mise run gateway-seed-config-prod`
 - Admin UI workflows: `mise run ui-dev`, `mise run ui-check`, `mise run ui-build`
 - End-to-end suite: `mise run e2e-test`
 - Docs site workflows: `mise run docs-install`, `mise run docs-dev`, `mise run docs-build`, `mise run docs-verify`

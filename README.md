@@ -36,7 +36,7 @@ mise run ui-install
 Run the local development stack:
 
 ```bash
-./scripts/start-dev-stack.sh
+mise run dev-stack
 ```
 
 Default local endpoints:
@@ -48,14 +48,24 @@ Default local endpoints:
 
 ## Core Commands
 
+- local dev stack:
+  - `mise run dev-stack`
 - local gateway:
   - `mise run gateway-serve`
-- explicit migration:
+- local explicit migration:
   - `mise run gateway-migrate`
-- explicit bootstrap admin:
+- local explicit bootstrap admin:
   - `mise run gateway-bootstrap-admin`
-- explicit config seed:
+- local explicit config seed:
   - `mise run gateway-seed-config`
+- production-shaped local stack:
+  - `mise run prod-stack`
+- production-shaped explicit migration:
+  - `mise run gateway-migrate-prod`
+- production-shaped explicit bootstrap admin:
+  - `mise run gateway-bootstrap-admin-prod`
+- production-shaped explicit config seed:
+  - `mise run gateway-seed-config-prod`
 - admin contract generation:
   - `mise run admin-contract-generate`
 - admin contract drift check:

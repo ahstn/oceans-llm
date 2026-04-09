@@ -160,20 +160,93 @@ curl --fail --silent --show-error "http://127.0.0.1:${gateway_port}/readyz" >/de
 """
 
 [tasks.gateway-serve]
-description = "Run `gateway serve`"
+description = "Run local `gateway serve` against `gateway.yaml`"
 run = "cargo run -p gateway --bin gateway -- serve"
 
 [tasks.gateway-migrate]
-description = "Run `gateway migrate --apply` against `${GATEWAY_CONFIG:-gateway.prod.yaml}`"
-run = "cargo run -p gateway --bin gateway -- --config ${GATEWAY_CONFIG:-gateway.prod.yaml} migrate --apply"
+description = "Run local `gateway migrate --apply` against `gateway.yaml`"
+run = "cargo run -p gateway --bin gateway -- migrate --apply"
 
 [tasks.gateway-bootstrap-admin]
-description = "Run `gateway bootstrap-admin` against `${GATEWAY_CONFIG:-gateway.prod.yaml}`"
-run = "cargo run -p gateway --bin gateway -- --config ${GATEWAY_CONFIG:-gateway.prod.yaml} bootstrap-admin"
+description = "Run local `gateway bootstrap-admin` against `gateway.yaml`"
+run = "cargo run -p gateway --bin gateway -- bootstrap-admin"
 
 [tasks.gateway-seed-config]
-description = "Run `gateway seed-config` against `${GATEWAY_CONFIG:-gateway.prod.yaml}`"
-run = "cargo run -p gateway --bin gateway -- --config ${GATEWAY_CONFIG:-gateway.prod.yaml} seed-config"
+description = "Run local `gateway seed-config` against `gateway.yaml`"
+run = "cargo run -p gateway --bin gateway -- seed-config"
+
+[tasks.gateway-serve-prod]
+description = "Run production-shaped local `gateway serve` against `gateway.prod.yaml`"
+env = { POSTGRES_URL = { required = true } }
+run = "cargo run -p gateway --bin gateway -- --config gateway.prod.yaml serve"
+
+[tasks.gateway-migrate-prod]
+description = "Run `gateway migrate --apply` against `gateway.prod.yaml`"
+env = { POSTGRES_URL = { required = true } }
+run = "cargo run -p gateway --bin gateway -- --config gateway.prod.yaml migrate --apply"
+
+[tasks.gateway-bootstrap-admin-prod]
+description = "Run `gateway bootstrap-admin` against `gateway.prod.yaml`"
+env = { POSTGRES_URL = { required = true } }
+run = "cargo run -p gateway --bin gateway -- --config gateway.prod.yaml bootstrap-admin"
+
+[tasks.gateway-seed-config-prod]
+description = "Run `gateway seed-config` against `gateway.prod.yaml`"
+env = { POSTGRES_URL = { required = true } }
+run = "cargo run -p gateway --bin gateway -- --config gateway.prod.yaml seed-config"
+
+[tasks.dev-stack]
+description = "Run the local dev stack via mise (gateway + admin UI dev server)"
+depends = ["ui-install"]
+run = """
+set -euo pipefail
+
+ROOT_DIR="$PWD"
+WEB_DIR="$ROOT_DIR/crates/admin-ui/web"
+GATEWAY_PORT="${PORT:-8080}"
+ADMIN_UI_INTERNAL_PORT="${ADMIN_UI_INTERNAL_PORT:-3001}"
+ADMIN_UI_UPSTREAM="${ADMIN_UI_UPSTREAM:-http://localhost:${ADMIN_UI_INTERNAL_PORT}}"
+
+cleanup() {
+  if [[ -n "${UI_PID:-}" ]]; then
+    kill "$UI_PID" >/dev/null 2>&1 || true
+  fi
+}
+
+trap cleanup EXIT INT TERM
+
+bun run --cwd "$WEB_DIR" dev -- --port "$ADMIN_UI_INTERNAL_PORT" &
+UI_PID=$!
+
+ADMIN_UI_UPSTREAM="$ADMIN_UI_UPSTREAM" PORT="$GATEWAY_PORT" cargo run -p gateway --bin gateway -- serve
+"""
+
+[tasks.prod-stack]
+description = "Run the production-shaped local stack via mise (gateway + admin UI SSR server)"
+depends = ["ui-install"]
+env = { POSTGRES_URL = { required = true } }
+run = """
+set -euo pipefail
+
+ROOT_DIR="$PWD"
+WEB_DIR="$ROOT_DIR/crates/admin-ui/web"
+GATEWAY_PORT="${PORT:-8080}"
+ADMIN_UI_INTERNAL_PORT="${ADMIN_UI_INTERNAL_PORT:-3001}"
+ADMIN_UI_UPSTREAM="${ADMIN_UI_UPSTREAM:-http://localhost:${ADMIN_UI_INTERNAL_PORT}}"
+
+cleanup() {
+  if [[ -n "${UI_PID:-}" ]]; then
+    kill "$UI_PID" >/dev/null 2>&1 || true
+  fi
+}
+
+trap cleanup EXIT INT TERM
+
+PORT="$ADMIN_UI_INTERNAL_PORT" bun run --cwd "$WEB_DIR" start &
+UI_PID=$!
+
+ADMIN_UI_UPSTREAM="$ADMIN_UI_UPSTREAM" PORT="$GATEWAY_PORT" cargo run -p gateway --bin gateway -- --config gateway.prod.yaml serve
+"""
 
 [tasks.sync-pricing-catalog]
 description = "Refresh the vendored pricing catalog fallback snapshot"

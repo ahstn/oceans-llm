@@ -23,7 +23,7 @@ This is a product constraint, not only a local-dev convenience.
 - database:
   - libsql or SQLite
 - entry point:
-  - [../scripts/start-dev-stack.sh](../../scripts/start-dev-stack.sh)
+  - `mise run dev-stack`
 - bootstrap admin:
   - enabled, no forced password change
 
@@ -34,7 +34,7 @@ This is a product constraint, not only a local-dev convenience.
 - database:
   - PostgreSQL
 - entry point:
-  - [../scripts/start-prod.sh](../../scripts/start-prod.sh)
+  - `mise run prod-stack`
 - bootstrap admin:
   - enabled, forced password rotation
 
