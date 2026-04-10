@@ -14,6 +14,7 @@ import {
 import { Toaster } from 'sonner'
 
 import { AppShell } from '@/components/layout/app-shell'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { getAuthSession } from '@/server/admin-data.functions'
 import globalsCss from '@/styles/globals.css?url'
 
@@ -86,11 +87,11 @@ function RootComponent() {
     <RootDocument>
       {isPublicRoute ? (
         <Outlet />
-      ) : (
-        <AppShell>
+      ) : session ? (
+        <AppShell session={session}>
           <Outlet />
         </AppShell>
-      )}
+      ) : null}
     </RootDocument>
   )
 }
@@ -124,20 +125,20 @@ function buildRedirectTarget(pathname: string, search: Record<string, unknown>) 
 
 function RootDocument({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className="dark">
       <head>
         <HeadContent />
       </head>
       <body>
-        {children}
+        <TooltipProvider>{children}</TooltipProvider>
         <Toaster
           position="top-right"
           theme="dark"
           toastOptions={{
             style: {
-              background: 'var(--color-card)',
-              border: '1px solid var(--color-border)',
-              color: 'var(--color-text)',
+              background: 'var(--card)',
+              border: '1px solid var(--border)',
+              color: 'var(--foreground)',
             },
           }}
         />

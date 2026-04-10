@@ -51,9 +51,7 @@ export async function createApiKey(
   })
 }
 
-export async function revokeApiKey(
-  apiKeyId: string,
-): Promise<ApiEnvelope<RevokeApiKeyResult>> {
+export async function revokeApiKey(apiKeyId: string): Promise<ApiEnvelope<RevokeApiKeyResult>> {
   return fetchGatewayJson<ApiEnvelope<RevokeApiKeyResult>>(
     `/api/v1/admin/api-keys/${apiKeyId}/revoke`,
     {
@@ -283,9 +281,7 @@ export async function updateUser(
   )
 }
 
-export async function deactivateUser(
-  userId: string,
-): Promise<ApiEnvelope<IdentityActionResult>> {
+export async function deactivateUser(userId: string): Promise<ApiEnvelope<IdentityActionResult>> {
   const client = createGatewayApiClient()
   return unwrapGatewayResponse(
     await client.POST('/api/v1/admin/identity/users/{user_id}/deactivate', {
@@ -294,9 +290,7 @@ export async function deactivateUser(
   )
 }
 
-export async function reactivateUser(
-  userId: string,
-): Promise<ApiEnvelope<IdentityActionResult>> {
+export async function reactivateUser(userId: string): Promise<ApiEnvelope<IdentityActionResult>> {
   const client = createGatewayApiClient()
   return unwrapGatewayResponse(
     await client.POST('/api/v1/admin/identity/users/{user_id}/reactivate', {
@@ -305,9 +299,7 @@ export async function reactivateUser(
   )
 }
 
-export async function resetUserOnboarding(
-  userId: string,
-): Promise<ApiEnvelope<CreateUserResult>> {
+export async function resetUserOnboarding(userId: string): Promise<ApiEnvelope<CreateUserResult>> {
   const client = createGatewayApiClient()
   return unwrapGatewayResponse(
     await client.POST('/api/v1/admin/identity/users/{user_id}/reset-onboarding', {
@@ -327,9 +319,7 @@ export async function resendPasswordInvite(
   )
 }
 
-export async function getInvitation(
-  token: string,
-): Promise<ApiEnvelope<InvitationStateView>> {
+export async function getInvitation(token: string): Promise<ApiEnvelope<InvitationStateView>> {
   const client = createGatewayApiClient()
   return unwrapGatewayResponse(
     await client.GET('/api/v1/auth/invitations/{token}', {

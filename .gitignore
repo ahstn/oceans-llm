@@ -13,3 +13,5 @@ crates/admin-ui/web/test-results/
 docs/node_modules/
 docs/.vitepress/cache/
 docs/.vitepress/dist/
+
+.agents/skills/

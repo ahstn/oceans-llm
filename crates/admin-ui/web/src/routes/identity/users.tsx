@@ -140,7 +140,8 @@ export function UsersPage() {
       team_id: user.team_id,
       team_role: user.team_role === 'owner' ? null : user.team_role,
       auth_mode: user.auth_mode,
-      oidc_provider_key: user.onboarding?.kind === 'oidc_sign_in' ? user.onboarding.provider_key : null,
+      oidc_provider_key:
+        user.onboarding?.kind === 'oidc_sign_in' ? user.onboarding.provider_key : null,
     })
     setOnboardingResult(null)
   }
@@ -317,7 +318,8 @@ export function UsersPage() {
           <div className="flex flex-col gap-1">
             <CardTitle>Users</CardTitle>
             <CardDescription>
-              Create password or SSO users, then hand off the generated onboarding URL. A valid email address is also required for budget alert emails.
+              Create password or SSO users, then hand off the generated onboarding URL. A valid
+              email address is also required for budget alert emails.
             </CardDescription>
           </div>
 
@@ -425,7 +427,8 @@ export function UsersPage() {
                         required
                       />
                       <FieldDescription>
-                        Budget threshold alerts use this email in the initial rollout, so it must be valid and monitored.
+                        Budget threshold alerts use this email in the initial rollout, so it must be
+                        valid and monitored.
                       </FieldDescription>
                     </Field>
 
@@ -726,7 +729,9 @@ export function UsersPage() {
                           </Badge>
                         </td>
                         <td className="px-3 py-3">
-                          <div className="flex flex-wrap gap-2">{renderOnboardingActions(user)}</div>
+                          <div className="flex flex-wrap gap-2">
+                            {renderOnboardingActions(user)}
+                          </div>
                         </td>
                         <td className="px-3 py-3">
                           <Button
@@ -782,8 +787,8 @@ export function UsersPage() {
                   <Alert className="mt-3">
                     <AlertTitle>Owner membership is locked</AlertTitle>
                     <AlertDescription>
-                      This user is an owner on their current team. In this slice, owner
-                      memberships cannot be moved or changed through the admin UI.
+                      This user is an owner on their current team. In this slice, owner memberships
+                      cannot be moved or changed through the admin UI.
                     </AlertDescription>
                   </Alert>
                 ) : null}
@@ -1077,12 +1082,13 @@ function sanitizeUpdateForm(
 
   if (user.status === 'invited') {
     update.auth_mode = form.auth_mode
-    update.oidc_provider_key =
-      form.auth_mode === 'oidc' ? (form.oidc_provider_key ?? null) : null
+    update.oidc_provider_key = form.auth_mode === 'oidc' ? (form.oidc_provider_key ?? null) : null
   }
 
   if (user.status === 'invited' && update.auth_mode === 'oidc') {
-    const validProvider = oidcProviders.find((provider) => provider.key === update.oidc_provider_key)
+    const validProvider = oidcProviders.find(
+      (provider) => provider.key === update.oidc_provider_key,
+    )
     update.oidc_provider_key = validProvider ? update.oidc_provider_key : null
   }
 

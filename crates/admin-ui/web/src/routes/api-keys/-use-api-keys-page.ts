@@ -2,10 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
-import {
-  createGatewayApiKey,
-  revokeGatewayApiKey,
-} from '@/server/admin-data.functions'
+import { createGatewayApiKey, revokeGatewayApiKey } from '@/server/admin-data.functions'
 import type { ApiKeysPayload, CreateApiKeyInput, CreateApiKeyResult } from '@/types/api'
 
 const initialForm: CreateApiKeyInput = {

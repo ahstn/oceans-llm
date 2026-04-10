@@ -45,7 +45,9 @@ export const Route = createFileRoute('/spend-controls')({
   loader: async () => {
     const [budgets, alerts] = await Promise.all([
       getSpendBudgets(),
-      getBudgetAlertHistory({ data: { page: 1, page_size: 10, owner_kind: 'all', status: 'all', channel: 'all' } }),
+      getBudgetAlertHistory({
+        data: { page: 1, page_size: 10, owner_kind: 'all', status: 'all', channel: 'all' },
+      }),
     ])
     return { budgets, alerts }
   },
@@ -195,7 +197,8 @@ export function SpendControlsPage() {
         <CardHeader>
           <CardTitle>Spend Controls</CardTitle>
           <CardDescription>
-            Configure hard-limit budgets, review who will receive email alerts, and audit threshold notifications.
+            Configure hard-limit budgets, review who will receive email alerts, and audit threshold
+            notifications.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -204,7 +207,8 @@ export function SpendControlsPage() {
         <CardHeader>
           <CardTitle>User Budgets</CardTitle>
           <CardDescription>
-            Per-user budget configuration and current window spend. Budget alerts are delivered to the user email on file.
+            Per-user budget configuration and current window spend. Budget alerts are delivered to
+            the user email on file.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -222,12 +226,16 @@ export function SpendControlsPage() {
                 className="grid grid-cols-[minmax(0,1fr)_170px_170px_220px_180px] border-t border-[color:var(--color-border)]"
               >
                 <div className="min-w-0 px-3 py-3">
-                  <p className="truncate text-sm font-semibold text-[var(--color-text)]">{user.name}</p>
+                  <p className="truncate text-sm font-semibold text-[var(--color-text)]">
+                    {user.name}
+                  </p>
                   <p className="truncate text-xs text-[var(--color-text-soft)]">{user.email}</p>
                 </div>
                 <div className="px-3 py-3">
                   {user.budget ? (
-                    <Badge>{CURRENCY_FORMATTER.format(user.budget.amount_usd_10000 / 10_000)}</Badge>
+                    <Badge>
+                      {CURRENCY_FORMATTER.format(user.budget.amount_usd_10000 / 10_000)}
+                    </Badge>
                   ) : (
                     <span className="text-sm text-[var(--color-text-soft)]">Not set</span>
                   )}
@@ -236,10 +244,17 @@ export function SpendControlsPage() {
                   {CURRENCY_FORMATTER.format(user.current_window_spend_usd_10000 / 10_000)}
                 </span>
                 <div className="px-3 py-3">
-                  <p className="truncate text-sm text-[var(--color-text)]">{user.alert_recipient_summary}</p>
+                  <p className="truncate text-sm text-[var(--color-text)]">
+                    {user.alert_recipient_summary}
+                  </p>
                 </div>
                 <div className="flex items-center gap-2 px-3 py-3">
-                  <Button type="button" size="sm" variant="secondary" onClick={() => openUserDialog(user)}>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => openUserDialog(user)}
+                  >
                     Configure
                   </Button>
                   {user.budget ? (
@@ -264,7 +279,8 @@ export function SpendControlsPage() {
         <CardHeader>
           <CardTitle>Team Budgets</CardTitle>
           <CardDescription>
-            Team hard limits for team-owned API key spend. Alerts go to active team owners and admins only.
+            Team hard limits for team-owned API key spend. Alerts go to active team owners and
+            admins only.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -282,12 +298,16 @@ export function SpendControlsPage() {
                 className="grid grid-cols-[minmax(0,1fr)_170px_170px_220px_180px] border-t border-[color:var(--color-border)]"
               >
                 <div className="min-w-0 px-3 py-3">
-                  <p className="truncate text-sm font-semibold text-[var(--color-text)]">{team.team_name}</p>
+                  <p className="truncate text-sm font-semibold text-[var(--color-text)]">
+                    {team.team_name}
+                  </p>
                   <p className="truncate text-xs text-[var(--color-text-soft)]">{team.team_key}</p>
                 </div>
                 <div className="px-3 py-3">
                   {team.budget ? (
-                    <Badge>{CURRENCY_FORMATTER.format(team.budget.amount_usd_10000 / 10_000)}</Badge>
+                    <Badge>
+                      {CURRENCY_FORMATTER.format(team.budget.amount_usd_10000 / 10_000)}
+                    </Badge>
                   ) : (
                     <span className="text-sm text-[var(--color-text-soft)]">Not set</span>
                   )}
@@ -307,7 +327,12 @@ export function SpendControlsPage() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2 px-3 py-3">
-                  <Button type="button" size="sm" variant="secondary" onClick={() => openTeamDialog(team)}>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => openTeamDialog(team)}
+                  >
                     Configure
                   </Button>
                   {team.budget ? (
@@ -374,9 +399,7 @@ export function SpendControlsPage() {
                     </p>
                   </div>
                   <div className="px-3 py-3">
-                    <Badge variant={badgeVariantForAlert(alert)}>
-                      {alert.delivery_status}
-                    </Badge>
+                    <Badge variant={badgeVariantForAlert(alert)}>{alert.delivery_status}</Badge>
                     {alert.failure_reason ? (
                       <p className="mt-1 line-clamp-2 text-xs text-[var(--color-danger)]">
                         {alert.failure_reason}
@@ -390,17 +413,24 @@ export function SpendControlsPage() {
         </CardContent>
       </Card>
 
-      <Dialog open={dialogState.mode !== 'closed'} onOpenChange={(open) => (!open ? closeDialog() : null)}>
+      <Dialog
+        open={dialogState.mode !== 'closed'}
+        onOpenChange={(open) => (!open ? closeDialog() : null)}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Configure Budget</DialogTitle>
             <DialogDescription>
-              Update cadence, limit amount, and hard-limit behavior for {openLabel ?? 'selected owner'}.
+              Update cadence, limit amount, and hard-limit behavior for{' '}
+              {openLabel ?? 'selected owner'}.
             </DialogDescription>
           </DialogHeader>
           <form className="flex flex-col gap-3" onSubmit={handleSave}>
             <div className="grid gap-1">
-              <label className="text-xs font-semibold text-[var(--color-text-soft)]" htmlFor="budget-cadence">
+              <label
+                className="text-xs font-semibold text-[var(--color-text-soft)]"
+                htmlFor="budget-cadence"
+              >
                 Cadence
               </label>
               <Select
@@ -426,7 +456,10 @@ export function SpendControlsPage() {
             </div>
 
             <div className="grid gap-1">
-              <label className="text-xs font-semibold text-[var(--color-text-soft)]" htmlFor="budget-amount">
+              <label
+                className="text-xs font-semibold text-[var(--color-text-soft)]"
+                htmlFor="budget-amount"
+              >
                 Amount (USD)
               </label>
               <Input
@@ -444,7 +477,10 @@ export function SpendControlsPage() {
             </div>
 
             <div className="grid gap-1">
-              <label className="text-xs font-semibold text-[var(--color-text-soft)]" htmlFor="budget-timezone">
+              <label
+                className="text-xs font-semibold text-[var(--color-text-soft)]"
+                htmlFor="budget-timezone"
+              >
                 Timezone
               </label>
               <Input
@@ -497,7 +533,9 @@ function getErrorMessage(error: unknown) {
   return 'Request failed'
 }
 
-function badgeVariantForAlert(alert: BudgetAlertHistoryItemView): 'default' | 'success' | 'warning' {
+function badgeVariantForAlert(
+  alert: BudgetAlertHistoryItemView,
+): 'default' | 'success' | 'warning' {
   if (alert.delivery_status === 'sent') {
     return 'success'
   }

@@ -140,9 +140,11 @@ export function createGatewayApiClient() {
   })
 }
 
-export function unwrapGatewayResponse<TData>(
-  result: { data?: TData; error?: unknown; response: Response },
-): TData {
+export function unwrapGatewayResponse<TData>(result: {
+  data?: TData
+  error?: unknown
+  response: Response
+}): TData {
   if (result.data !== undefined) {
     return result.data
   }
