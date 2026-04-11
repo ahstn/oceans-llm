@@ -250,6 +250,15 @@ Important fields:
 - `pricing_provider_id`
 - `auth.kind`
 - `auth.token`
+- optional `display.label`
+- optional `display.icon_key`
+
+`display.icon_key` currently accepts the checked-in provider icon codes used by the admin UI:
+
+- `openai`
+- `openrouter`
+- `anthropic`
+- `vertexai`
 
 Validation rules that matter:
 
@@ -265,6 +274,8 @@ Important fields:
 - `location`
 - `api_host`
 - `auth.mode`
+- optional `display.label`
+- optional `display.icon_key`
 
 Routing and pricing caveats:
 

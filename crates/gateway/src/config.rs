@@ -7,7 +7,7 @@ use gateway_core::{
     SeedTeam, SeedUser, SeedUserMembership, parse_gateway_api_key,
 };
 use gateway_providers::{OpenAiCompatConfig, VertexAuthConfig, VertexProviderConfig};
-use gateway_service::{hash_gateway_key_secret, is_supported_pricing_provider_id};
+use gateway_service::{ProviderIconKey, hash_gateway_key_secret, is_supported_pricing_provider_id};
 use gateway_store::StoreConnectionOptions;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -90,6 +90,10 @@ impl GatewayConfig {
                             provider.pricing_provider_id
                         );
                     }
+                    validate_provider_display_config(
+                        provider.id.as_str(),
+                        provider.display.as_ref(),
+                    )?;
                 }
                 ProviderConfig::GcpVertex(provider) => {
                     if provider.id.trim().is_empty() {
@@ -133,6 +137,11 @@ impl GatewayConfig {
                             }
                         }
                     }
+
+                    validate_provider_display_config(
+                        provider.id.as_str(),
+                        provider.display.as_ref(),
+                    )?;
                 }
             }
         }
@@ -290,6 +299,7 @@ impl GatewayConfig {
                         "pricing_provider_id": provider.pricing_provider_id,
                         "default_headers": provider.default_headers,
                         "timeouts": provider.timeouts,
+                        "display": provider.display,
                     });
 
                     let secrets = provider.auth.as_ref().map(|auth| {
@@ -321,6 +331,7 @@ impl GatewayConfig {
                         "api_host": provider.api_host,
                         "default_headers": provider.default_headers,
                         "timeouts": provider.timeouts,
+                        "display": provider.display,
                     });
 
                     let secrets = Some(match &provider.auth {
@@ -844,6 +855,8 @@ pub struct OpenAiCompatProviderConfig {
     pub default_headers: BTreeMap<String, String>,
     #[serde(default)]
     pub timeouts: Option<ProviderTimeouts>,
+    #[serde(default)]
+    pub display: Option<ProviderDisplayConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -851,6 +864,14 @@ pub struct OpenAiCompatAuthConfig {
     pub kind: String,
     #[serde(default)]
     pub token: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ProviderDisplayConfig {
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub icon_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -866,6 +887,8 @@ pub struct GcpVertexProviderConfig {
     pub default_headers: BTreeMap<String, String>,
     #[serde(default)]
     pub timeouts: Option<ProviderTimeouts>,
+    #[serde(default)]
+    pub display: Option<ProviderDisplayConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1033,6 +1056,29 @@ fn normalize_config_oidc_provider_key(provider_key: &str) -> anyhow::Result<Stri
         bail!("cannot be empty");
     }
     Ok(normalized)
+}
+
+fn validate_provider_display_config(
+    provider_id: &str,
+    display: Option<&ProviderDisplayConfig>,
+) -> anyhow::Result<()> {
+    let Some(display) = display else {
+        return Ok(());
+    };
+
+    if let Some(label) = display.label.as_deref()
+        && label.trim().is_empty()
+    {
+        bail!("provider `{provider_id}` display.label cannot be empty");
+    }
+
+    if let Some(icon_key) = display.icon_key.as_deref()
+        && ProviderIconKey::parse(icon_key).is_none()
+    {
+        bail!("provider `{provider_id}` display.icon_key `{icon_key}` is not supported");
+    }
+
+    Ok(())
 }
 
 fn default_bind() -> String {

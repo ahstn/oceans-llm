@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { listModels } from '@/server/admin-preview-data.server'
 import {
   createApiKey,
   deactivateUser,
   getRequestLogDetail,
   getSpendReport,
   listApiKeys,
+  listModels,
   listBudgetAlertHistory,
   listRequestLogs,
   listSpendBudgets,
@@ -119,6 +119,27 @@ describe('server-side admin data wrappers', () => {
             },
             raw_key: 'gwk_prod_2.secret-value',
           },
+          meta: { generated_at: '2026-03-10T11:32:00Z' },
+        }
+      }
+
+      if (path === '/api/v1/admin/models') {
+        return {
+          data: [
+            {
+              id: 'claude-sonnet',
+              resolved_model_key: 'claude-sonnet',
+              alias_of: null,
+              description: 'Claude on Vertex',
+              tags: ['reasoning'],
+              status: 'healthy',
+              provider_key: 'vertex-claude',
+              provider_label: 'Google Vertex AI',
+              provider_icon_key: 'vertexai',
+              upstream_model: 'anthropic/claude-sonnet-4-6',
+              model_icon_key: 'claude',
+            },
+          ],
           meta: { generated_at: '2026-03-10T11:32:00Z' },
         }
       }

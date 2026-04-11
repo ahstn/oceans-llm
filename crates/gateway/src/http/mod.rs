@@ -6,6 +6,7 @@ pub mod handlers;
 pub mod identity;
 pub mod identity_lifecycle;
 pub mod identity_views;
+pub mod models;
 pub mod observability;
 pub mod request_tags;
 pub mod spend;
@@ -22,7 +23,9 @@ use tower_http::{
     trace::TraceLayer,
 };
 
-use self::{api_keys::*, handlers::*, identity::*, observability::*, spend::*, state::AppState};
+use self::{
+    api_keys::*, handlers::*, identity::*, models::*, observability::*, spend::*, state::AppState,
+};
 
 pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
     let request_id_header = HeaderName::from_static("x-request-id");
@@ -39,6 +42,7 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
             "/api/v1/admin/api-keys/{api_key_id}/revoke",
             post(revoke_api_key),
         )
+        .route("/api/v1/admin/models", get(list_models))
         .route(
             "/api/v1/admin/identity/users",
             get(list_identity_users).post(create_identity_user),

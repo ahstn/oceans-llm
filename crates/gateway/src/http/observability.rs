@@ -7,6 +7,10 @@ use gateway_core::{
     GatewayError, RequestLogDetail, RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord,
     RequestTag, RequestTags,
 };
+use gateway_service::{
+    model_icon_key_from_metadata, provider_icon_key_from_metadata, resolve_model_icon_key,
+    resolve_provider_display,
+};
 use uuid::Uuid;
 
 use crate::http::{
@@ -95,6 +99,22 @@ pub async fn get_request_log_detail(
 }
 
 fn summary_view(log: &RequestLogRecord) -> RequestLogSummaryView {
+    let provider_icon_key = provider_icon_key_from_metadata(&log.metadata)
+        .map(|value| value.as_str().to_string())
+        .or_else(|| {
+            Some(
+                resolve_provider_display(log.provider_key.as_str(), None)
+                    .icon_key
+                    .as_str()
+                    .to_string(),
+            )
+        });
+    let model_icon_key = model_icon_key_from_metadata(&log.metadata)
+        .or_else(|| {
+            resolve_model_icon_key([log.resolved_model_key.as_str(), log.model_key.as_str()])
+        })
+        .map(|value| value.as_str().to_string());
+
     RequestLogSummaryView {
         request_log_id: log.request_log_id.to_string(),
         request_id: log.request_id.clone(),
@@ -103,7 +123,9 @@ fn summary_view(log: &RequestLogRecord) -> RequestLogSummaryView {
         team_id: log.team_id.map(|value| value.to_string()),
         model_key: log.model_key.clone(),
         resolved_model_key: log.resolved_model_key.clone(),
+        model_icon_key,
         provider_key: log.provider_key.clone(),
+        provider_icon_key,
         status_code: log.status_code,
         latency_ms: log.latency_ms,
         prompt_tokens: log.prompt_tokens,

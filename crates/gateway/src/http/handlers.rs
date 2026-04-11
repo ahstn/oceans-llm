@@ -14,9 +14,10 @@ use futures_util::{StreamExt, stream};
 use gateway_core::{
     AuthenticatedApiKey, ChatCompletionsRequest, CoreRequestRequirements, EmbeddingsRequest,
     GatewayError, ModelsListResponse, ProviderCapabilities, ProviderClient, ProviderError,
-    ProviderRequestContext, RequestLogRecord, RequestTags, openai_chat_request_to_core,
-    openai_embeddings_request_to_core, protocol::openai::ModelCard,
+    ProviderRepository, ProviderRequestContext, RequestLogRecord, RequestTags,
+    openai_chat_request_to_core, openai_embeddings_request_to_core, protocol::openai::ModelCard,
 };
+use gateway_service::{RequestLogIconMetadata, resolve_model_icon_key, resolve_provider_display};
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
 use tracing::{Instrument, Span, field};
@@ -131,6 +132,13 @@ pub async fn v1_chat_completions(
             return Err(AppError(error));
         }
     };
+    let provider_connection = state.store.get_provider_by_key(&route.provider_key).await?;
+    let icon_metadata = request_log_icon_metadata(
+        &route,
+        provider_connection.as_ref(),
+        &resolved.selection.execution_model.model_key,
+        &resolved.selection.requested_model.model_key,
+    );
     let labels = ChatMetricLabels {
         requested_model: &resolved.selection.requested_model.model_key,
         resolved_model: &resolved.selection.execution_model.model_key,
@@ -191,6 +199,7 @@ pub async fn v1_chat_completions(
                     &request_log_context,
                     gateway_service::StreamLogResultInput {
                         provider_key: route.provider_key.clone(),
+                        icon_metadata: icon_metadata.clone(),
                         latency_ms: latency_ms_since(request_started_at),
                         collector: state.service.new_stream_response_collector(),
                         failure: Some(gateway_service::StreamFailureSummary {
@@ -220,6 +229,7 @@ pub async fn v1_chat_completions(
             execution_model: resolved.selection.execution_model.clone(),
             route: route.clone(),
             provider_key: route.provider_key.clone(),
+            icon_metadata: icon_metadata.clone(),
             started_at: request_started_at,
             finished: false,
             collector: state.service.new_stream_response_collector(),
@@ -267,6 +277,7 @@ pub async fn v1_chat_completions(
                 &auth,
                 &request_log_context,
                 &route.provider_key,
+                icon_metadata.clone(),
                 latency_ms_since(request_started_at),
                 &error,
             )
@@ -298,6 +309,7 @@ pub async fn v1_chat_completions(
         &auth,
         &request_log_context,
         &route.provider_key,
+        icon_metadata,
         latency_ms_since(request_started_at),
         &value,
     )
@@ -354,6 +366,13 @@ pub async fn v1_embeddings(
             return Err(AppError(no_compatible_route_error(requirements)));
         }
     };
+    let provider_connection = state.store.get_provider_by_key(&route.provider_key).await?;
+    let icon_metadata = request_log_icon_metadata(
+        &route,
+        provider_connection.as_ref(),
+        &resolved.selection.execution_model.model_key,
+        &resolved.selection.requested_model.model_key,
+    );
     let labels = ChatMetricLabels {
         requested_model: &resolved.selection.requested_model.model_key,
         resolved_model: &resolved.selection.execution_model.model_key,
@@ -390,6 +409,7 @@ pub async fn v1_embeddings(
                 RequestLogSummary::failure(
                     RequestOperation::Embeddings,
                     route.provider_key.clone(),
+                    icon_metadata.clone(),
                     false,
                     latency_ms_since(request_started_at),
                     error.http_status_code().into(),
@@ -424,6 +444,7 @@ pub async fn v1_embeddings(
         RequestLogSummary::success(
             RequestOperation::Embeddings,
             route.provider_key.clone(),
+            icon_metadata,
             false,
             latency_ms_since(request_started_at),
             usage_from_response(&value),
@@ -540,6 +561,7 @@ impl RequestOperation {
 struct RequestLogSummary {
     operation: RequestOperation,
     provider_key: String,
+    icon_metadata: RequestLogIconMetadata,
     stream: bool,
     status_code: i64,
     error_code: Option<String>,
@@ -553,6 +575,7 @@ impl RequestLogSummary {
     fn success(
         operation: RequestOperation,
         provider_key: String,
+        icon_metadata: RequestLogIconMetadata,
         stream: bool,
         latency_ms: i64,
         usage: UsageSummary,
@@ -560,6 +583,7 @@ impl RequestLogSummary {
         Self {
             operation,
             provider_key,
+            icon_metadata,
             stream,
             status_code: 200,
             error_code: None,
@@ -573,6 +597,7 @@ impl RequestLogSummary {
     fn failure(
         operation: RequestOperation,
         provider_key: String,
+        icon_metadata: RequestLogIconMetadata,
         stream: bool,
         latency_ms: i64,
         status_code: i64,
@@ -581,6 +606,7 @@ impl RequestLogSummary {
         Self {
             operation,
             provider_key,
+            icon_metadata,
             stream,
             status_code,
             error_code: Some(error_code),
@@ -603,6 +629,7 @@ struct LoggingBodyStreamState {
     execution_model: gateway_core::GatewayModel,
     route: gateway_core::ModelRoute,
     provider_key: String,
+    icon_metadata: RequestLogIconMetadata,
     started_at: Instant,
     finished: bool,
     collector: gateway_service::StreamResponseCollector,
@@ -646,6 +673,7 @@ fn wrap_stream_with_request_logging(
                     &state.request_log_context,
                     gateway_service::StreamLogResultInput {
                         provider_key: state.provider_key.clone(),
+                        icon_metadata: state.icon_metadata.clone(),
                         latency_ms: latency_ms_since(state.started_at),
                         collector: state.collector.clone(),
                         failure: Some(gateway_service::StreamFailureSummary {
@@ -706,6 +734,7 @@ fn wrap_stream_with_request_logging(
                     &state.request_log_context,
                     gateway_service::StreamLogResultInput {
                         provider_key: state.provider_key.clone(),
+                        icon_metadata: state.icon_metadata.clone(),
                         latency_ms: latency_ms_since(state.started_at),
                         collector: state.collector,
                         failure: failure.clone(),
@@ -738,11 +767,19 @@ async fn best_effort_log_non_stream_success(
     auth: &AuthenticatedApiKey,
     context: &gateway_service::ChatRequestLogContext,
     provider_key: &str,
+    icon_metadata: RequestLogIconMetadata,
     latency_ms: i64,
     response_body: &Value,
 ) {
     if let Err(error) = service
-        .log_non_stream_success(auth, context, provider_key, latency_ms, response_body)
+        .log_non_stream_success(
+            auth,
+            context,
+            provider_key,
+            icon_metadata,
+            latency_ms,
+            response_body,
+        )
         .await
     {
         tracing::warn!(
@@ -759,11 +796,19 @@ async fn best_effort_log_non_stream_failure(
     auth: &AuthenticatedApiKey,
     context: &gateway_service::ChatRequestLogContext,
     provider_key: &str,
+    icon_metadata: RequestLogIconMetadata,
     latency_ms: i64,
     gateway_error: &GatewayError,
 ) {
     if let Err(error) = service
-        .log_non_stream_failure(auth, context, provider_key, latency_ms, gateway_error)
+        .log_non_stream_failure(
+            auth,
+            context,
+            provider_key,
+            icon_metadata,
+            latency_ms,
+            gateway_error,
+        )
         .await
     {
         tracing::warn!(
@@ -803,7 +848,7 @@ async fn best_effort_log_request(
     request_tags: &RequestTags,
     summary: RequestLogSummary,
 ) {
-    let metadata = request_log_metadata(summary.stream, summary.operation);
+    let metadata = request_log_metadata(summary.stream, summary.operation, &summary.icon_metadata);
     let log = RequestLogRecord {
         request_log_id: Uuid::new_v4(),
         request_id: request_id.to_string(),
@@ -837,14 +882,47 @@ async fn best_effort_log_request(
     }
 }
 
-fn request_log_metadata(stream: bool, operation: RequestOperation) -> Map<String, Value> {
+fn request_log_metadata(
+    stream: bool,
+    operation: RequestOperation,
+    icon_metadata: &RequestLogIconMetadata,
+) -> Map<String, Value> {
     let mut metadata = Map::new();
     metadata.insert(
         "operation".to_string(),
         Value::String(operation.as_str().to_string()),
     );
     metadata.insert("stream".to_string(), Value::Bool(stream));
+    metadata.insert(
+        gateway_service::REQUEST_LOG_PROVIDER_ICON_KEY.to_string(),
+        Value::String(icon_metadata.provider_icon_key.as_str().to_string()),
+    );
+    if let Some(model_icon_key) = icon_metadata.model_icon_key {
+        metadata.insert(
+            gateway_service::REQUEST_LOG_MODEL_ICON_KEY.to_string(),
+            Value::String(model_icon_key.as_str().to_string()),
+        );
+    }
     metadata
+}
+
+fn request_log_icon_metadata(
+    route: &gateway_core::ModelRoute,
+    provider: Option<&gateway_core::ProviderConnection>,
+    resolved_model_key: &str,
+    requested_model_key: &str,
+) -> RequestLogIconMetadata {
+    let provider_display = resolve_provider_display(route.provider_key.as_str(), provider);
+    let model_icon_key = resolve_model_icon_key([
+        route.upstream_model.as_str(),
+        resolved_model_key,
+        requested_model_key,
+    ]);
+
+    RequestLogIconMetadata {
+        provider_icon_key: provider_display.icon_key,
+        model_icon_key,
+    }
 }
 
 fn normalize_response_model(mut value: Value, model_key: &str) -> Value {

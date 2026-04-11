@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { HomeIcon } from '@hugeicons/core-free-icons'
 
+import { BrandIcon } from '@/components/icons/brand-icon'
 import { AppIcon } from '@/components/icons/app-icon'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -57,9 +58,23 @@ function ModelsPage() {
                 <Card key={model.id}>
                   <CardHeader className="gap-4">
                     <div className="flex items-start justify-between gap-3">
-                      <div className="flex flex-col gap-1">
-                        <CardTitle>{model.id}</CardTitle>
-                        <CardDescription>{model.provider}</CardDescription>
+                      <div className="flex min-w-0 items-start gap-3">
+                        <BrandIcon iconKey={model.model_icon_key} size={20} className="mt-0.5" />
+                        <div className="flex min-w-0 flex-col gap-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <CardTitle>{model.id}</CardTitle>
+                            {model.alias_of ? <Badge>{`alias → ${model.alias_of}`}</Badge> : null}
+                          </div>
+                          <CardDescription className="flex flex-wrap items-center gap-2">
+                            <BrandIcon iconKey={model.provider_icon_key} size={14} />
+                            <span>{model.provider_label ?? model.provider_key ?? 'Unresolved'}</span>
+                            {model.provider_key && model.provider_label !== model.provider_key ? (
+                              <span className="font-mono text-xs text-[var(--color-text-soft)]">
+                                {model.provider_key}
+                              </span>
+                            ) : null}
+                          </CardDescription>
+                        </div>
                       </div>
                       <Badge variant={model.status === 'healthy' ? 'success' : 'warning'}>
                         {model.status}
@@ -67,10 +82,16 @@ function ModelsPage() {
                     </div>
                   </CardHeader>
                   <CardContent className="flex flex-col gap-3 text-sm text-[var(--color-text-muted)]">
-                    <p>
-                      <span className="font-semibold text-[var(--color-text)]">Upstream:</span>{' '}
-                      {model.upstreamModel}
+                    <p className="flex items-center gap-2">
+                      <span className="font-semibold text-[var(--color-text)]">Resolved:</span>
+                      <span>{model.resolved_model_key}</span>
                     </p>
+                    <p className="flex items-center gap-2">
+                      <span className="font-semibold text-[var(--color-text)]">Upstream:</span>
+                      <BrandIcon iconKey={model.model_icon_key} size={14} />
+                      <span>{model.upstream_model ?? 'Not currently routed'}</span>
+                    </p>
+                    {model.description ? <p>{model.description}</p> : null}
                     <div className="flex flex-wrap gap-2 pt-1">
                       {model.tags.map((tag) => (
                         <Badge key={tag}>{tag}</Badge>

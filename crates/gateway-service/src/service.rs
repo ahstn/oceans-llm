@@ -15,8 +15,8 @@ use uuid::Uuid;
 
 use crate::{
     Authenticator, ChatRequestLogContext, LoggedRequest, ModelAccess, ModelResolver,
-    PricingCatalog, RequestLogging, ResolvedGatewayRequest, StreamLogResultInput,
-    StreamResponseCollector,
+    PricingCatalog, RequestLogIconMetadata, RequestLogging, ResolvedGatewayRequest,
+    StreamLogResultInput, StreamResponseCollector,
     budget_alerts::{BudgetAlertSender, BudgetAlertService, SinkBudgetAlertSender},
     budget_guard::{BudgetGuard, BudgetGuardDisposition},
 };
@@ -200,11 +200,19 @@ where
         auth: &AuthenticatedApiKey,
         context: &ChatRequestLogContext,
         provider_key: &str,
+        icon_metadata: RequestLogIconMetadata,
         latency_ms: i64,
         response_body: &Value,
     ) -> Result<LoggedRequest, GatewayError> {
         self.request_logging
-            .log_non_stream_success(auth, context, provider_key, latency_ms, response_body)
+            .log_non_stream_success(
+                auth,
+                context,
+                provider_key,
+                icon_metadata,
+                latency_ms,
+                response_body,
+            )
             .await
     }
 
@@ -213,11 +221,19 @@ where
         auth: &AuthenticatedApiKey,
         context: &ChatRequestLogContext,
         provider_key: &str,
+        icon_metadata: RequestLogIconMetadata,
         latency_ms: i64,
         gateway_error: &GatewayError,
     ) -> Result<LoggedRequest, GatewayError> {
         self.request_logging
-            .log_non_stream_failure(auth, context, provider_key, latency_ms, gateway_error)
+            .log_non_stream_failure(
+                auth,
+                context,
+                provider_key,
+                icon_metadata,
+                latency_ms,
+                gateway_error,
+            )
             .await
     }
 

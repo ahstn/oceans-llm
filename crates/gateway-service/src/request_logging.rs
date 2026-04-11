@@ -6,6 +6,8 @@ use gateway_core::{
     RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestTags,
     SseEventParser,
 };
+
+use crate::{REQUEST_LOG_MODEL_ICON_KEY, REQUEST_LOG_PROVIDER_ICON_KEY, RequestLogIconMetadata};
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -35,6 +37,7 @@ pub struct StreamFailureSummary {
 #[derive(Debug, Clone)]
 pub struct StreamLogResultInput {
     pub provider_key: String,
+    pub icon_metadata: RequestLogIconMetadata,
     pub latency_ms: i64,
     pub collector: StreamResponseCollector,
     pub failure: Option<StreamFailureSummary>,
@@ -66,6 +69,7 @@ pub struct UsageSummary {
 #[derive(Debug, Clone)]
 struct ChatCompletionLogSummary {
     provider_key: String,
+    icon_metadata: RequestLogIconMetadata,
     stream: bool,
     status_code: i64,
     error_code: Option<String>,
@@ -74,9 +78,16 @@ struct ChatCompletionLogSummary {
 }
 
 impl ChatCompletionLogSummary {
-    fn success(provider_key: String, stream: bool, latency_ms: i64, usage: UsageSummary) -> Self {
+    fn success(
+        provider_key: String,
+        icon_metadata: RequestLogIconMetadata,
+        stream: bool,
+        latency_ms: i64,
+        usage: UsageSummary,
+    ) -> Self {
         Self {
             provider_key,
+            icon_metadata,
             stream,
             status_code: 200,
             error_code: None,
@@ -87,6 +98,7 @@ impl ChatCompletionLogSummary {
 
     fn failure(
         provider_key: String,
+        icon_metadata: RequestLogIconMetadata,
         stream: bool,
         latency_ms: i64,
         status_code: i64,
@@ -94,6 +106,7 @@ impl ChatCompletionLogSummary {
     ) -> Self {
         Self {
             provider_key,
+            icon_metadata,
             stream,
             status_code,
             error_code: Some(error_code),
@@ -299,6 +312,7 @@ where
         api_key: &AuthenticatedApiKey,
         context: &ChatRequestLogContext,
         provider_key: &str,
+        icon_metadata: RequestLogIconMetadata,
         latency_ms: i64,
         response_body: &Value,
     ) -> Result<LoggedRequest, GatewayError> {
@@ -309,7 +323,13 @@ where
         self.persist_chat_log(
             api_key,
             context,
-            ChatCompletionLogSummary::success(provider_key.to_string(), false, latency_ms, usage),
+            ChatCompletionLogSummary::success(
+                provider_key.to_string(),
+                icon_metadata,
+                false,
+                latency_ms,
+                usage,
+            ),
             response_json,
             response_payload_truncated,
         )
@@ -321,6 +341,7 @@ where
         api_key: &AuthenticatedApiKey,
         context: &ChatRequestLogContext,
         provider_key: &str,
+        icon_metadata: RequestLogIconMetadata,
         latency_ms: i64,
         gateway_error: &GatewayError,
     ) -> Result<LoggedRequest, GatewayError> {
@@ -336,6 +357,7 @@ where
             context,
             ChatCompletionLogSummary::failure(
                 provider_key.to_string(),
+                icon_metadata,
                 false,
                 latency_ms,
                 gateway_error.http_status_code().into(),
@@ -355,6 +377,7 @@ where
     ) -> Result<LoggedRequest, GatewayError> {
         let StreamLogResultInput {
             provider_key,
+            icon_metadata,
             latency_ms,
             mut collector,
             failure,
@@ -366,12 +389,19 @@ where
         let summary = match failure {
             Some(failure) => ChatCompletionLogSummary::failure(
                 provider_key,
+                icon_metadata.clone(),
                 true,
                 latency_ms,
                 failure.status_code,
                 failure.error_code,
             ),
-            None => ChatCompletionLogSummary::success(provider_key, true, latency_ms, usage),
+            None => ChatCompletionLogSummary::success(
+                provider_key,
+                icon_metadata,
+                true,
+                latency_ms,
+                usage,
+            ),
         };
         self.persist_chat_log(
             api_key,
@@ -415,7 +445,7 @@ where
             });
         }
 
-        let metadata = request_log_metadata(summary.stream);
+        let metadata = request_log_metadata(summary.stream, &summary.icon_metadata);
         let log = RequestLogRecord {
             request_log_id: context.request_log_id,
             request_id: context.request_id.clone(),
@@ -476,13 +506,26 @@ pub fn usage_summary_from_value(value: Option<&Value>) -> UsageSummary {
     }
 }
 
-fn request_log_metadata(stream: bool) -> Map<String, Value> {
+fn request_log_metadata(
+    stream: bool,
+    icon_metadata: &RequestLogIconMetadata,
+) -> Map<String, Value> {
     let mut metadata = Map::new();
     metadata.insert(
         "operation".to_string(),
         Value::String("chat_completions".to_string()),
     );
     metadata.insert("stream".to_string(), Value::Bool(stream));
+    metadata.insert(
+        REQUEST_LOG_PROVIDER_ICON_KEY.to_string(),
+        Value::String(icon_metadata.provider_icon_key.as_str().to_string()),
+    );
+    if let Some(model_icon_key) = icon_metadata.model_icon_key {
+        metadata.insert(
+            REQUEST_LOG_MODEL_ICON_KEY.to_string(),
+            Value::String(model_icon_key.as_str().to_string()),
+        );
+    }
     metadata
 }
 
@@ -525,6 +568,8 @@ mod tests {
     use serde_json::{Value, json};
     use time::OffsetDateTime;
     use uuid::Uuid;
+
+    use crate::RequestLogIconMetadata;
 
     use super::{
         RequestLogging, StreamFailureSummary, StreamLogResultInput, StreamResponseCollector,
@@ -686,6 +731,10 @@ mod tests {
                 &auth,
                 &context,
                 "openai-prod",
+                RequestLogIconMetadata {
+                    provider_icon_key: crate::ProviderIconKey::OpenAI,
+                    model_icon_key: Some(crate::ModelIconKey::OpenAI),
+                },
                 120,
                 &json!({"usage": {"prompt_tokens": 1, "completion_tokens": 2}}),
             )
@@ -738,6 +787,10 @@ mod tests {
                 &auth,
                 &context,
                 "openai-prod",
+                RequestLogIconMetadata {
+                    provider_icon_key: crate::ProviderIconKey::OpenAI,
+                    model_icon_key: Some(crate::ModelIconKey::OpenAI),
+                },
                 120,
                 &json!({"usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30}}),
             )
@@ -805,6 +858,10 @@ mod tests {
                 &context,
                 StreamLogResultInput {
                     provider_key: "openai-prod".to_string(),
+                    icon_metadata: RequestLogIconMetadata {
+                        provider_icon_key: crate::ProviderIconKey::OpenAI,
+                        model_icon_key: Some(crate::ModelIconKey::OpenAI),
+                    },
                     latency_ms: 120,
                     collector,
                     failure: Some(StreamFailureSummary {
