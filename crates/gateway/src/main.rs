@@ -10,7 +10,12 @@ use gateway::{
     http::{build_router, state::AppState},
     observability,
 };
-use gateway_core::ProviderRegistry;
+use gateway_core::{
+    AdminApiKeyRepository, ApiKeyOwnerKind, ApiKeyRepository, ApiKeyStatus, BudgetRepository,
+    IdentityRepository, ModelRepository, Money4, NewApiKeyRecord, ProviderRegistry,
+    RequestLogPayloadRecord, RequestLogRecord, RequestLogRepository, RequestTag, RequestTags,
+    UsageLedgerRecord, UsagePricingStatus, UserStatus,
+};
 use gateway_providers::{OpenAiCompatProvider, VertexProvider};
 use gateway_service::{
     DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, GatewayService, WeightedRoutePlanner,
@@ -20,7 +25,10 @@ use gateway_store::{
     AnyStore, GatewayStore, MigrationStatus, check_migrations_with_options,
     run_migrations_with_options, status_migrations_with_options,
 };
+use serde_json::{Map, Value, json};
+use time::OffsetDateTime;
 use tokio::net::TcpListener;
+use uuid::Uuid;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -34,6 +42,7 @@ async fn main() -> anyhow::Result<()> {
         Command::Migrate(args) => run_migrate(&config, args.action()?).await,
         Command::BootstrapAdmin => run_bootstrap_admin_command(&config).await,
         Command::SeedConfig => run_seed_config_command(&config).await,
+        Command::SeedLocalDemo => run_seed_local_demo_command(&config).await,
     };
     observability.shutdown()?;
     result
@@ -210,6 +219,801 @@ async fn run_seed_config_command(config: &GatewayConfig) -> anyhow::Result<()> {
             .context("failed to initialize gateway store")?,
     );
     seed_config(store.as_ref(), config).await
+}
+
+async fn run_seed_local_demo_command(config: &GatewayConfig) -> anyhow::Result<()> {
+    let database_options = database_options(config)?;
+    maybe_run_migrations(&database_options, true).await?;
+    let store = Arc::new(
+        AnyStore::connect(&database_options)
+            .await
+            .context("failed to initialize gateway store")?,
+    );
+    ensure_bootstrap_admin(&store, &config.auth.bootstrap_admin).await?;
+    seed_config(store.as_ref(), config).await?;
+    let raw_keys = seed_local_demo_data(store.as_ref()).await?;
+
+    println!("seeded local demo dataset");
+    println!("sample user password: {}", LOCAL_DEMO_USER_PASSWORD);
+    for (name, raw_key) in raw_keys {
+        println!("{name}: {raw_key}");
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy)]
+struct LocalDemoUserFixture {
+    email: &'static str,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum LocalDemoOwnerFixture {
+    User(&'static str),
+    Team(&'static str),
+}
+
+#[derive(Debug, Clone, Copy)]
+struct LocalDemoApiKeyFixture {
+    name: &'static str,
+    public_id: &'static str,
+    secret: &'static str,
+    owner: LocalDemoOwnerFixture,
+    model_keys: &'static [&'static str],
+}
+
+#[derive(Debug, Clone, Copy)]
+struct LocalDemoRequestFixture {
+    request_id: &'static str,
+    api_key_public_id: &'static str,
+    days_ago: i64,
+    hours_ago: i64,
+    model_key: &'static str,
+    resolved_model_key: &'static str,
+    provider_key: &'static str,
+    upstream_model: &'static str,
+    prompt_tokens: Option<i64>,
+    completion_tokens: Option<i64>,
+    cost_scaled: i64,
+    status_code: i64,
+    latency_ms: i64,
+    service: &'static str,
+    component: &'static str,
+    env: &'static str,
+    bespoke_key: &'static str,
+    bespoke_value: &'static str,
+    prompt: &'static str,
+    completion: &'static str,
+    error_code: Option<&'static str>,
+}
+
+const LOCAL_DEMO_USER_PASSWORD: &str = "localdemo123";
+
+const LOCAL_DEMO_USERS: &[LocalDemoUserFixture] = &[
+    LocalDemoUserFixture {
+        email: "alice@platform.local",
+    },
+    LocalDemoUserFixture {
+        email: "ben@platform.local",
+    },
+    LocalDemoUserFixture {
+        email: "cara@research.local",
+    },
+    LocalDemoUserFixture {
+        email: "diego@research.local",
+    },
+    LocalDemoUserFixture {
+        email: "erin@research.local",
+    },
+];
+
+const LOCAL_DEMO_API_KEYS: &[LocalDemoApiKeyFixture] = &[
+    LocalDemoApiKeyFixture {
+        name: "Alice Personal Key",
+        public_id: "locdemoalice1",
+        secret: "alice-demo-secret",
+        owner: LocalDemoOwnerFixture::User("alice@platform.local"),
+        model_keys: &["openai-fast", "openai-fast-v2"],
+    },
+    LocalDemoApiKeyFixture {
+        name: "Cara Research Key",
+        public_id: "locdemocara1",
+        secret: "cara-demo-secret",
+        owner: LocalDemoOwnerFixture::User("cara@research.local"),
+        model_keys: &["gemini-fast", "claude-sonnet"],
+    },
+    LocalDemoApiKeyFixture {
+        name: "Diego Daily Budget Key",
+        public_id: "locdemodiego1",
+        secret: "diego-demo-secret",
+        owner: LocalDemoOwnerFixture::User("diego@research.local"),
+        model_keys: &["openai-fast", "claude-sonnet"],
+    },
+    LocalDemoApiKeyFixture {
+        name: "Platform Team Key",
+        public_id: "locdemoplatform1",
+        secret: "platform-demo-secret",
+        owner: LocalDemoOwnerFixture::Team("platform"),
+        model_keys: &["openai-fast-v2", "gemini-fast"],
+    },
+];
+
+const LOCAL_DEMO_REQUESTS: &[LocalDemoRequestFixture] = &[
+    LocalDemoRequestFixture {
+        request_id: "demo-req-001",
+        api_key_public_id: "locdemoalice1",
+        days_ago: 0,
+        hours_ago: 2,
+        model_key: "openai-fast",
+        resolved_model_key: "openai-fast-v2",
+        provider_key: "openai-prod",
+        upstream_model: "gpt-5",
+        prompt_tokens: Some(620),
+        completion_tokens: Some(280),
+        cost_scaled: 1_245,
+        status_code: 200,
+        latency_ms: 482,
+        service: "admin-ui",
+        component: "dashboard",
+        env: "local",
+        bespoke_key: "workflow",
+        bespoke_value: "summary",
+        prompt: "Summarize this week’s API key usage.",
+        completion: "Here is a compact weekly usage summary for the platform team.",
+        error_code: None,
+    },
+    LocalDemoRequestFixture {
+        request_id: "demo-req-002",
+        api_key_public_id: "locdemoplatform1",
+        days_ago: 0,
+        hours_ago: 4,
+        model_key: "openai-fast-v2",
+        resolved_model_key: "openai-fast-v2",
+        provider_key: "openai-secondary",
+        upstream_model: "gpt-5",
+        prompt_tokens: Some(840),
+        completion_tokens: Some(410),
+        cost_scaled: 2_180,
+        status_code: 200,
+        latency_ms: 611,
+        service: "batch-jobs",
+        component: "nightly-rollup",
+        env: "local",
+        bespoke_key: "job",
+        bespoke_value: "cost-rollup",
+        prompt: "Generate a nightly rollup of usage and spend anomalies.",
+        completion: "Nightly rollup completed with two notable spend anomalies.",
+        error_code: None,
+    },
+    LocalDemoRequestFixture {
+        request_id: "demo-req-003",
+        api_key_public_id: "locdemocara1",
+        days_ago: 1,
+        hours_ago: 3,
+        model_key: "gemini-fast",
+        resolved_model_key: "gemini-fast",
+        provider_key: "vertex-adc",
+        upstream_model: "google/gemini-2.0-flash",
+        prompt_tokens: Some(510),
+        completion_tokens: Some(320),
+        cost_scaled: 1_610,
+        status_code: 200,
+        latency_ms: 729,
+        service: "research-lab",
+        component: "experiment-runner",
+        env: "local",
+        bespoke_key: "experiment",
+        bespoke_value: "safety-eval",
+        prompt: "Draft notes for the latest safety evaluation batch.",
+        completion: "The latest safety evaluation batch shows stable refusal behavior.",
+        error_code: None,
+    },
+    LocalDemoRequestFixture {
+        request_id: "demo-req-004",
+        api_key_public_id: "locdemodiego1",
+        days_ago: 0,
+        hours_ago: 1,
+        model_key: "claude-sonnet",
+        resolved_model_key: "claude-sonnet",
+        provider_key: "vertex-claude",
+        upstream_model: "anthropic/claude-sonnet-4-6",
+        prompt_tokens: Some(430),
+        completion_tokens: Some(690),
+        cost_scaled: 3_420,
+        status_code: 200,
+        latency_ms: 938,
+        service: "research-lab",
+        component: "daily-brief",
+        env: "local",
+        bespoke_key: "brief",
+        bespoke_value: "morning",
+        prompt: "Write the daily research brief for active experiments.",
+        completion: "Daily research brief prepared for the active experiment queue.",
+        error_code: None,
+    },
+    LocalDemoRequestFixture {
+        request_id: "demo-req-005",
+        api_key_public_id: "locdemoalice1",
+        days_ago: 2,
+        hours_ago: 6,
+        model_key: "openai-fast-v2",
+        resolved_model_key: "openai-fast-v2",
+        provider_key: "openai-prod",
+        upstream_model: "gpt-5",
+        prompt_tokens: Some(710),
+        completion_tokens: Some(360),
+        cost_scaled: 1_980,
+        status_code: 200,
+        latency_ms: 564,
+        service: "admin-ui",
+        component: "request-log-detail",
+        env: "local",
+        bespoke_key: "panel",
+        bespoke_value: "detail",
+        prompt: "Explain the request log payload delta between retries.",
+        completion: "The second attempt used the fallback provider and a shorter system prompt.",
+        error_code: None,
+    },
+    LocalDemoRequestFixture {
+        request_id: "demo-req-006",
+        api_key_public_id: "locdemoplatform1",
+        days_ago: 3,
+        hours_ago: 5,
+        model_key: "gemini-fast",
+        resolved_model_key: "gemini-fast",
+        provider_key: "vertex-adc",
+        upstream_model: "google/gemini-2.0-flash",
+        prompt_tokens: Some(390),
+        completion_tokens: Some(240),
+        cost_scaled: 1_140,
+        status_code: 200,
+        latency_ms: 688,
+        service: "batch-jobs",
+        component: "owner-sync",
+        env: "local",
+        bespoke_key: "job",
+        bespoke_value: "owner-sync",
+        prompt: "Normalize owner metadata for request-log exports.",
+        completion: "Owner metadata normalized for the latest export window.",
+        error_code: None,
+    },
+    LocalDemoRequestFixture {
+        request_id: "demo-req-007",
+        api_key_public_id: "locdemocara1",
+        days_ago: 4,
+        hours_ago: 2,
+        model_key: "claude-sonnet",
+        resolved_model_key: "claude-sonnet",
+        provider_key: "vertex-claude",
+        upstream_model: "anthropic/claude-sonnet-4-6",
+        prompt_tokens: Some(560),
+        completion_tokens: Some(470),
+        cost_scaled: 2_860,
+        status_code: 200,
+        latency_ms: 1_024,
+        service: "research-lab",
+        component: "retrospective",
+        env: "local",
+        bespoke_key: "artifact",
+        bespoke_value: "retrospective",
+        prompt: "Write a concise retrospective for the last experiment iteration.",
+        completion: "The retrospective highlights routing stability and lower-than-expected cost.",
+        error_code: None,
+    },
+    LocalDemoRequestFixture {
+        request_id: "demo-req-008",
+        api_key_public_id: "locdemodiego1",
+        days_ago: 1,
+        hours_ago: 7,
+        model_key: "openai-fast",
+        resolved_model_key: "openai-fast-v2",
+        provider_key: "openai-prod",
+        upstream_model: "gpt-5",
+        prompt_tokens: Some(280),
+        completion_tokens: Some(150),
+        cost_scaled: 790,
+        status_code: 200,
+        latency_ms: 431,
+        service: "research-lab",
+        component: "token-audit",
+        env: "local",
+        bespoke_key: "audit",
+        bespoke_value: "token-usage",
+        prompt: "Audit the latest token usage sample for anomalies.",
+        completion: "Token usage stayed within the expected variance band.",
+        error_code: None,
+    },
+    LocalDemoRequestFixture {
+        request_id: "demo-req-009",
+        api_key_public_id: "locdemoplatform1",
+        days_ago: 5,
+        hours_ago: 4,
+        model_key: "openai-fast-v2",
+        resolved_model_key: "openai-fast-v2",
+        provider_key: "openai-prod",
+        upstream_model: "gpt-5",
+        prompt_tokens: Some(930),
+        completion_tokens: Some(510),
+        cost_scaled: 2_640,
+        status_code: 200,
+        latency_ms: 702,
+        service: "batch-jobs",
+        component: "forecasting",
+        env: "local",
+        bespoke_key: "job",
+        bespoke_value: "forecasting",
+        prompt: "Forecast next week’s spend trend from the last 14 days.",
+        completion: "The next week trends slightly upward with stable model mix.",
+        error_code: None,
+    },
+    LocalDemoRequestFixture {
+        request_id: "demo-req-010",
+        api_key_public_id: "locdemoalice1",
+        days_ago: 6,
+        hours_ago: 3,
+        model_key: "openai-fast",
+        resolved_model_key: "openai-fast-v2",
+        provider_key: "openai-secondary",
+        upstream_model: "gpt-5",
+        prompt_tokens: Some(470),
+        completion_tokens: Some(250),
+        cost_scaled: 1_120,
+        status_code: 200,
+        latency_ms: 547,
+        service: "admin-ui",
+        component: "breadcrumbs",
+        env: "local",
+        bespoke_key: "screen",
+        bespoke_value: "overview",
+        prompt: "Summarize top navigation usage patterns from the admin UI.",
+        completion: "The overview screen remains the most active admin entry point.",
+        error_code: None,
+    },
+    LocalDemoRequestFixture {
+        request_id: "demo-req-011",
+        api_key_public_id: "locdemocara1",
+        days_ago: 2,
+        hours_ago: 8,
+        model_key: "gemini-fast",
+        resolved_model_key: "gemini-fast",
+        provider_key: "vertex-adc",
+        upstream_model: "google/gemini-2.0-flash",
+        prompt_tokens: None,
+        completion_tokens: None,
+        cost_scaled: 0,
+        status_code: 429,
+        latency_ms: 214,
+        service: "research-lab",
+        component: "burst-eval",
+        env: "local",
+        bespoke_key: "failure",
+        bespoke_value: "rate-limit",
+        prompt: "Run the burst evaluation batch.",
+        completion: "rate limit exceeded by upstream",
+        error_code: Some("rate_limited"),
+    },
+    LocalDemoRequestFixture {
+        request_id: "demo-req-012",
+        api_key_public_id: "locdemodiego1",
+        days_ago: 3,
+        hours_ago: 9,
+        model_key: "claude-sonnet",
+        resolved_model_key: "claude-sonnet",
+        provider_key: "vertex-claude",
+        upstream_model: "anthropic/claude-sonnet-4-6",
+        prompt_tokens: None,
+        completion_tokens: None,
+        cost_scaled: 0,
+        status_code: 502,
+        latency_ms: 301,
+        service: "research-lab",
+        component: "provider-fallback",
+        env: "local",
+        bespoke_key: "failure",
+        bespoke_value: "upstream-error",
+        prompt: "Generate a fallback plan for the next routing attempt.",
+        completion: "upstream gateway timeout",
+        error_code: Some("upstream_http_502"),
+    },
+];
+
+async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'static str, String)>> {
+    let password_hash = hash_gateway_key_secret(LOCAL_DEMO_USER_PASSWORD)
+        .context("failed hashing local demo user password")?;
+    let now = OffsetDateTime::now_utc();
+
+    let mut user_ids = std::collections::HashMap::new();
+    let mut user_team_ids = std::collections::HashMap::new();
+    for fixture in LOCAL_DEMO_USERS {
+        let user = store
+            .get_user_by_email_normalized(&normalize_demo_email(fixture.email))
+            .await
+            .with_context(|| format!("failed loading demo user `{}`", fixture.email))?
+            .ok_or_else(|| {
+                anyhow::anyhow!("demo user `{}` is missing from config seed", fixture.email)
+            })?;
+        store
+            .store_user_password(user.user_id, &password_hash, now)
+            .await
+            .with_context(|| format!("failed storing password for `{}`", fixture.email))?;
+        store
+            .update_user_status(user.user_id, UserStatus::Active, now)
+            .await
+            .with_context(|| format!("failed activating `{}`", fixture.email))?;
+        store
+            .update_user_must_change_password(user.user_id, false, now)
+            .await
+            .with_context(|| {
+                format!("failed clearing password rotation for `{}`", fixture.email)
+            })?;
+
+        let team_id = store
+            .get_team_membership_for_user(user.user_id)
+            .await
+            .with_context(|| format!("failed loading team membership for `{}`", fixture.email))?
+            .map(|membership| membership.team_id);
+        user_ids.insert(fixture.email, user.user_id);
+        user_team_ids.insert(fixture.email, team_id);
+    }
+
+    let mut team_ids = std::collections::HashMap::new();
+    for team_key in ["platform", "research"] {
+        let team = store
+            .get_team_by_key(team_key)
+            .await
+            .with_context(|| format!("failed loading demo team `{team_key}`"))?
+            .ok_or_else(|| anyhow::anyhow!("demo team `{team_key}` is missing from config seed"))?;
+        team_ids.insert(team_key, team.team_id);
+    }
+
+    let mut model_ids = std::collections::HashMap::new();
+    for model_key in [
+        "openai-fast",
+        "openai-fast-v2",
+        "gemini-fast",
+        "claude-sonnet",
+    ] {
+        let model = store
+            .get_model_by_key(model_key)
+            .await
+            .with_context(|| format!("failed loading demo model `{model_key}`"))?
+            .ok_or_else(|| {
+                anyhow::anyhow!("demo model `{model_key}` is missing from config seed")
+            })?;
+        model_ids.insert(model_key, model.id);
+    }
+
+    let mut api_keys = std::collections::HashMap::new();
+    let mut raw_keys = Vec::new();
+    for fixture in LOCAL_DEMO_API_KEYS {
+        let owner = match fixture.owner {
+            LocalDemoOwnerFixture::User(email) => (
+                ApiKeyOwnerKind::User,
+                Some(
+                    *user_ids
+                        .get(email)
+                        .ok_or_else(|| anyhow::anyhow!("missing demo user `{email}`"))?,
+                ),
+                None,
+            ),
+            LocalDemoOwnerFixture::Team(team_key) => (
+                ApiKeyOwnerKind::Team,
+                None,
+                Some(
+                    *team_ids
+                        .get(team_key)
+                        .ok_or_else(|| anyhow::anyhow!("missing demo team `{team_key}`"))?,
+                ),
+            ),
+        };
+        let model_grants = fixture
+            .model_keys
+            .iter()
+            .map(|model_key| {
+                model_ids
+                    .get(model_key)
+                    .copied()
+                    .ok_or_else(|| anyhow::anyhow!("missing demo model `{model_key}`"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let raw_key = format!("gwk_{}.{}", fixture.public_id, fixture.secret);
+        let api_key = match store
+            .get_api_key_by_public_id(fixture.public_id)
+            .await
+            .with_context(|| format!("failed loading demo api key `{}`", fixture.public_id))?
+        {
+            Some(existing) => {
+                if existing.status != ApiKeyStatus::Active {
+                    anyhow::bail!(
+                        "demo api key `{}` already exists but is not active; reset the local database and reseed",
+                        fixture.public_id
+                    );
+                }
+                if existing.owner_kind != owner.0
+                    || existing.owner_user_id != owner.1
+                    || existing.owner_team_id != owner.2
+                {
+                    anyhow::bail!(
+                        "demo api key `{}` already exists with a different owner; reset the local database and reseed",
+                        fixture.public_id
+                    );
+                }
+                store
+                    .replace_api_key_model_grants(existing.id, &model_grants)
+                    .await
+                    .with_context(|| {
+                        format!("failed refreshing grants for `{}`", fixture.public_id)
+                    })?;
+                existing
+            }
+            None => {
+                let secret_hash = hash_gateway_key_secret(fixture.secret)
+                    .with_context(|| format!("failed hashing api key `{}`", fixture.public_id))?;
+                let created = store
+                    .create_api_key(&NewApiKeyRecord {
+                        name: fixture.name.to_string(),
+                        public_id: fixture.public_id.to_string(),
+                        secret_hash,
+                        owner_kind: owner.0,
+                        owner_user_id: owner.1,
+                        owner_team_id: owner.2,
+                        created_at: now,
+                    })
+                    .await
+                    .with_context(|| {
+                        format!("failed creating demo api key `{}`", fixture.public_id)
+                    })?;
+                store
+                    .replace_api_key_model_grants(created.id, &model_grants)
+                    .await
+                    .with_context(|| {
+                        format!("failed storing grants for `{}`", fixture.public_id)
+                    })?;
+                created
+            }
+        };
+        api_keys.insert(fixture.public_id, api_key);
+        raw_keys.push((fixture.name, raw_key));
+    }
+
+    for fixture in LOCAL_DEMO_REQUESTS {
+        let api_key = api_keys.get(fixture.api_key_public_id).ok_or_else(|| {
+            anyhow::anyhow!("missing demo api key `{}`", fixture.api_key_public_id)
+        })?;
+        let occurred_at =
+            now - time::Duration::days(fixture.days_ago) - time::Duration::hours(fixture.hours_ago);
+        let ownership_scope_key = match api_key.owner_kind {
+            ApiKeyOwnerKind::User => format!(
+                "user:{}",
+                api_key
+                    .owner_user_id
+                    .ok_or_else(|| anyhow::anyhow!("user-owned demo key missing owner_user_id"))?
+            ),
+            ApiKeyOwnerKind::Team => format!(
+                "team:{}:actor:none",
+                api_key
+                    .owner_team_id
+                    .ok_or_else(|| anyhow::anyhow!("team-owned demo key missing owner_team_id"))?
+            ),
+        };
+        if store
+            .get_usage_ledger_by_request_and_scope(fixture.request_id, &ownership_scope_key)
+            .await
+            .with_context(|| format!("failed loading usage ledger for `{}`", fixture.request_id))?
+            .is_some()
+        {
+            continue;
+        }
+
+        let user_id = api_key.owner_user_id;
+        let team_id = match api_key.owner_kind {
+            ApiKeyOwnerKind::User => {
+                let owner_email = LOCAL_DEMO_API_KEYS
+                    .iter()
+                    .find(|candidate| candidate.public_id == fixture.api_key_public_id)
+                    .and_then(|candidate| match candidate.owner {
+                        LocalDemoOwnerFixture::User(email) => Some(email),
+                        LocalDemoOwnerFixture::Team(_) => None,
+                    })
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "demo key `{}` is missing a user owner fixture",
+                            fixture.api_key_public_id
+                        )
+                    })?;
+                user_team_ids.get(owner_email).copied().flatten()
+            }
+            ApiKeyOwnerKind::Team => api_key.owner_team_id,
+        };
+
+        let total_tokens = fixture
+            .prompt_tokens
+            .zip(fixture.completion_tokens)
+            .map(|(prompt, completion)| prompt + completion);
+        let priced = fixture.error_code.is_none();
+        let request_log_id = Uuid::new_v4();
+        let request_tags = RequestTags {
+            service: Some(fixture.service.to_string()),
+            component: Some(fixture.component.to_string()),
+            env: Some(fixture.env.to_string()),
+            bespoke: vec![RequestTag {
+                key: fixture.bespoke_key.to_string(),
+                value: fixture.bespoke_value.to_string(),
+            }],
+        };
+        let metadata = Map::from_iter([
+            (
+                "seed_source".to_string(),
+                Value::String("local_demo_seed".to_string()),
+            ),
+            (
+                "api_key_public_id".to_string(),
+                Value::String(fixture.api_key_public_id.to_string()),
+            ),
+        ]);
+        let log = RequestLogRecord {
+            request_log_id,
+            request_id: fixture.request_id.to_string(),
+            api_key_id: api_key.id,
+            user_id,
+            team_id,
+            model_key: fixture.model_key.to_string(),
+            resolved_model_key: fixture.resolved_model_key.to_string(),
+            provider_key: fixture.provider_key.to_string(),
+            status_code: Some(fixture.status_code),
+            latency_ms: Some(fixture.latency_ms),
+            prompt_tokens: fixture.prompt_tokens,
+            completion_tokens: fixture.completion_tokens,
+            total_tokens,
+            error_code: fixture.error_code.map(str::to_string),
+            has_payload: true,
+            request_payload_truncated: false,
+            response_payload_truncated: false,
+            request_tags,
+            metadata,
+            occurred_at,
+        };
+        let payload = RequestLogPayloadRecord {
+            request_log_id,
+            request_json: json!({
+                "model": fixture.model_key,
+                "messages": [
+                    {"role": "system", "content": "You are a local demo assistant."},
+                    {"role": "user", "content": fixture.prompt}
+                ],
+                "stream": false,
+                "temperature": 0.2,
+            }),
+            response_json: if priced {
+                json!({
+                    "id": format!("chatcmpl_{}", fixture.request_id),
+                    "object": "chat.completion",
+                    "model": fixture.resolved_model_key,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "finish_reason": "stop",
+                            "message": {"role": "assistant", "content": fixture.completion}
+                        }
+                    ],
+                    "usage": {
+                        "prompt_tokens": fixture.prompt_tokens,
+                        "completion_tokens": fixture.completion_tokens,
+                        "total_tokens": total_tokens,
+                    }
+                })
+            } else {
+                json!({
+                    "error": {
+                        "code": fixture.error_code,
+                        "message": fixture.completion,
+                        "type": "upstream_error",
+                    }
+                })
+            },
+        };
+        store
+            .insert_request_log(&log, Some(&payload))
+            .await
+            .with_context(|| format!("failed inserting request log `{}`", fixture.request_id))?;
+
+        let model_id = model_ids
+            .get(fixture.resolved_model_key)
+            .copied()
+            .ok_or_else(|| {
+                anyhow::anyhow!("missing demo model `{}`", fixture.resolved_model_key)
+            })?;
+        let ledger = UsageLedgerRecord {
+            usage_event_id: Uuid::new_v4(),
+            request_id: fixture.request_id.to_string(),
+            ownership_scope_key,
+            api_key_id: api_key.id,
+            user_id,
+            team_id,
+            actor_user_id: None,
+            model_id: Some(model_id),
+            provider_key: fixture.provider_key.to_string(),
+            upstream_model: fixture.upstream_model.to_string(),
+            prompt_tokens: fixture.prompt_tokens,
+            completion_tokens: fixture.completion_tokens,
+            total_tokens,
+            provider_usage: if priced {
+                json!({
+                    "prompt_tokens": fixture.prompt_tokens,
+                    "completion_tokens": fixture.completion_tokens,
+                    "total_tokens": total_tokens,
+                })
+            } else {
+                json!({"status_code": fixture.status_code, "error_code": fixture.error_code})
+            },
+            pricing_status: if priced {
+                UsagePricingStatus::Priced
+            } else {
+                UsagePricingStatus::UsageMissing
+            },
+            unpriced_reason: if priced {
+                None
+            } else {
+                Some("upstream_error".to_string())
+            },
+            pricing_row_id: None,
+            pricing_provider_id: pricing_provider_id_for_demo_provider(fixture.provider_key)
+                .map(str::to_string),
+            pricing_model_id: Some(fixture.upstream_model.to_string()),
+            pricing_source: if priced {
+                Some("local_demo_seed".to_string())
+            } else {
+                None
+            },
+            pricing_source_etag: None,
+            pricing_source_fetched_at: None,
+            pricing_last_updated: if priced {
+                Some(occurred_at.date().to_string())
+            } else {
+                None
+            },
+            input_cost_per_million_tokens: if priced {
+                Some(Money4::from_scaled(1_000))
+            } else {
+                None
+            },
+            output_cost_per_million_tokens: if priced {
+                Some(Money4::from_scaled(2_000))
+            } else {
+                None
+            },
+            computed_cost_usd: Money4::from_scaled(fixture.cost_scaled),
+            occurred_at,
+        };
+        store
+            .insert_usage_ledger_if_absent(&ledger)
+            .await
+            .with_context(|| format!("failed inserting usage ledger `{}`", fixture.request_id))?;
+        store
+            .touch_api_key_last_used(api_key.id)
+            .await
+            .with_context(|| {
+                format!(
+                    "failed updating last-used for `{}`",
+                    fixture.api_key_public_id
+                )
+            })?;
+    }
+
+    Ok(raw_keys)
+}
+
+fn normalize_demo_email(email: &str) -> String {
+    email.trim().to_ascii_lowercase()
+}
+
+fn pricing_provider_id_for_demo_provider(provider_key: &str) -> Option<&'static str> {
+    match provider_key {
+        "openai-prod" | "openai-secondary" => Some("openai"),
+        "vertex-adc" => Some("google"),
+        "vertex-claude" => Some("anthropic"),
+        _ => None,
+    }
 }
 
 fn print_migration_status(status: &MigrationStatus) {
