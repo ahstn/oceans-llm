@@ -46,6 +46,9 @@ Default local endpoints:
 - active config: `./gateway.yaml`
 - database backend: local libsql or SQLite
 
+On a first `mise run dev-stack` with no `./gateway.db`, the local demo dataset is seeded automatically.
+Use `mise run gateway-reset-local-demo` any time you want to recreate that richer sample state from scratch.
+
 ## Core Commands
 
 - local dev stack:
@@ -58,6 +61,10 @@ Default local endpoints:
   - `mise run gateway-bootstrap-admin`
 - local explicit config seed:
   - `mise run gateway-seed-config`
+- local demo dataset seed:
+  - `mise run gateway-seed-local-demo`
+- local demo dataset reset:
+  - `mise run gateway-reset-local-demo`
 - production-shaped local stack:
   - `mise run prod-stack`
 - production-shaped explicit migration:

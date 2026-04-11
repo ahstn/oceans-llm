@@ -24,6 +24,7 @@ pub enum Command {
     Migrate(MigrateArgs),
     BootstrapAdmin,
     SeedConfig,
+    SeedLocalDemo,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -134,5 +135,11 @@ mod tests {
             panic!("expected migrate command");
         };
         assert_eq!(args.action().expect("action"), MigrateAction::Status);
+    }
+
+    #[test]
+    fn parses_seed_local_demo_command() {
+        let cli = Cli::parse_from(["gateway", "seed-local-demo"]);
+        assert!(matches!(cli.command, Some(Command::SeedLocalDemo)));
     }
 }

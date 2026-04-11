@@ -48,6 +48,12 @@ What exists after boot:
 - a gateway on `http://localhost:8080`
 - an admin UI at `http://localhost:8080/admin`
 - a bootstrap admin at `admin@local` with password `admin`
+- when `./gateway.db` is absent and you start with `mise run dev-stack`, the local demo dataset is seeded automatically:
+  - 2 teams
+  - 5 users across those teams
+  - 4 owner-aware API keys, including a platform team key
+  - $1000/month budgets for each team and a $50/day user budget
+  - request-log and spend history sample rows for the admin observability pages
 
 ### Production-shaped local run
 
