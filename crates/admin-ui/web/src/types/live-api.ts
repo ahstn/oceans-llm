@@ -84,6 +84,7 @@ export type UpsertBudgetInput = components['schemas']['UpsertBudgetRequest']
 export type UpsertBudgetResultView = components['schemas']['UpsertBudgetResultView']
 export type DeactivateBudgetResultView = components['schemas']['DeactivateBudgetResultView']
 
+export type ModelView = components['schemas']['AdminModelView']
 export type RequestTagView = components['schemas']['RequestTagView']
 export type RequestLogTagsView = components['schemas']['RequestTagsView']
 export type RequestLogView = components['schemas']['RequestLogSummaryView']

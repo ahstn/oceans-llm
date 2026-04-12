@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, useTransition } from 'react'
+import { useEffect, useRef, useState, useTransition, type ReactNode } from 'react'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { useVirtualizer } from '@tanstack/react-virtual'
 
+import { BrandIcon } from '@/components/icons/brand-icon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -211,8 +212,9 @@ export function RequestLogsPage() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate font-semibold text-[var(--color-text)]">
-                        {item.model_key}
+                      <p className="flex items-center gap-2 truncate font-semibold text-[var(--color-text)]">
+                        <BrandIcon iconKey={item.model_icon_key} size={16} />
+                        <span className="truncate">{item.model_key}</span>
                       </p>
                       <p className="truncate font-mono text-xs text-[var(--color-text-soft)]">
                         {item.request_id}
@@ -228,7 +230,10 @@ export function RequestLogsPage() {
                       <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
                         Provider
                       </dt>
-                      <dd className="text-[var(--color-text-muted)]">{item.provider_key}</dd>
+                      <dd className="flex items-center gap-2 text-[var(--color-text-muted)]">
+                        <BrandIcon iconKey={item.provider_icon_key} size={14} />
+                        <span>{item.provider_key}</span>
+                      </dd>
                     </div>
                     <div>
                       <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
@@ -313,11 +318,13 @@ export function RequestLogsPage() {
                           {item.request_log_id}
                         </div>
                       </div>
-                      <span className="truncate px-3 py-3 text-[var(--color-text)]">
-                        {item.model_key}
+                      <span className="flex items-center gap-2 truncate px-3 py-3 text-[var(--color-text)]">
+                        <BrandIcon iconKey={item.model_icon_key} size={16} />
+                        <span className="truncate">{item.model_key}</span>
                       </span>
-                      <span className="truncate px-3 py-3 text-[var(--color-text-muted)]">
-                        {item.provider_key}
+                      <span className="flex items-center gap-2 truncate px-3 py-3 text-[var(--color-text-muted)]">
+                        <BrandIcon iconKey={item.provider_icon_key} size={14} />
+                        <span className="truncate">{item.provider_key}</span>
                       </span>
                       <span className="px-3 py-3">
                         <Badge variant={badgeVariant(item.status_code)}>
@@ -372,9 +379,33 @@ export function RequestLogsPage() {
               <div className="grid gap-3 rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4 md:grid-cols-2">
                 <DetailRow label="Request ID" value={selectedDetail.log.request_id} mono />
                 <DetailRow label="Request Log ID" value={selectedDetail.log.request_log_id} mono />
-                <DetailRow label="Model" value={selectedDetail.log.model_key} />
-                <DetailRow label="Resolved Model" value={selectedDetail.log.resolved_model_key} />
-                <DetailRow label="Provider" value={selectedDetail.log.provider_key} />
+                <DetailRow
+                  label="Model"
+                  value={
+                    <span className="inline-flex items-center gap-2">
+                      <BrandIcon iconKey={selectedDetail.log.model_icon_key} size={16} />
+                      <span>{selectedDetail.log.model_key}</span>
+                    </span>
+                  }
+                />
+                <DetailRow
+                  label="Resolved Model"
+                  value={
+                    <span className="inline-flex items-center gap-2">
+                      <BrandIcon iconKey={selectedDetail.log.model_icon_key} size={16} />
+                      <span>{selectedDetail.log.resolved_model_key}</span>
+                    </span>
+                  }
+                />
+                <DetailRow
+                  label="Provider"
+                  value={
+                    <span className="inline-flex items-center gap-2">
+                      <BrandIcon iconKey={selectedDetail.log.provider_icon_key} size={14} />
+                      <span>{selectedDetail.log.provider_key}</span>
+                    </span>
+                  }
+                />
                 <DetailRow label="Occurred At" value={selectedDetail.log.occurred_at} />
                 <DetailRow
                   label="Status"
@@ -438,7 +469,7 @@ function DetailRow({
   mono = false,
 }: {
   label: string
-  value: string
+  value: ReactNode
   mono?: boolean
 }) {
   return (

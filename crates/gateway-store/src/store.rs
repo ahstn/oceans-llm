@@ -374,6 +374,13 @@ impl ModelRepository for AnyStore {
     ) -> Result<Vec<gateway_core::ModelRoute>, StoreError> {
         dispatch_store!(self, list_routes_for_model(model_id))
     }
+
+    async fn list_routes_for_models(
+        &self,
+        model_ids: &[Uuid],
+    ) -> Result<std::collections::HashMap<Uuid, Vec<gateway_core::ModelRoute>>, StoreError> {
+        dispatch_store!(self, list_routes_for_models(model_ids))
+    }
 }
 
 #[async_trait]
@@ -383,6 +390,14 @@ impl ProviderRepository for AnyStore {
         provider_key: &str,
     ) -> Result<Option<gateway_core::ProviderConnection>, StoreError> {
         dispatch_store!(self, get_provider_by_key(provider_key))
+    }
+
+    async fn list_providers_by_keys(
+        &self,
+        provider_keys: &[String],
+    ) -> Result<std::collections::HashMap<String, gateway_core::ProviderConnection>, StoreError>
+    {
+        dispatch_store!(self, list_providers_by_keys(provider_keys))
     }
 }
 

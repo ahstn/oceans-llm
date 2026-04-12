@@ -1,9 +1,9 @@
 import { createServerFn } from '@tanstack/react-start'
 
-import { listModels } from '@/server/admin-preview-data.server'
 import {
   addTeamMembers,
   listApiKeys,
+  listModels,
   deactivateUser,
   changePassword,
   completeInvitation,

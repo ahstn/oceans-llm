@@ -15,6 +15,7 @@ import type {
   IdentityTeamsPayload,
   IdentityUsersPayload,
   InvitationStateView,
+  ModelView,
   PasswordInviteResult,
   PasswordLoginInput,
   RequestLogDetailView,
@@ -58,6 +59,10 @@ export async function revokeApiKey(apiKeyId: string): Promise<ApiEnvelope<Revoke
       method: 'POST',
     },
   )
+}
+
+export async function listModels(): Promise<ApiEnvelope<ModelView[]>> {
+  return fetchGatewayJson<ApiEnvelope<ModelView[]>>('/api/v1/admin/models')
 }
 
 export async function getSpendReport(params?: {

@@ -180,6 +180,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_models"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/observability/request-logs": {
         parameters: {
             query?: never;
@@ -428,6 +444,19 @@ export interface components {
             team_id?: string | null;
             team_name?: string | null;
             team_role?: string | null;
+        };
+        AdminModelView: {
+            alias_of?: string | null;
+            description?: string | null;
+            id: string;
+            model_icon_key?: string | null;
+            provider_icon_key?: string | null;
+            provider_key?: string | null;
+            provider_label?: string | null;
+            resolved_model_key: string;
+            status: string;
+            tags: string[];
+            upstream_model?: string | null;
         };
         AdminOidcProviderView: {
             id: string;
@@ -736,6 +765,22 @@ export interface components {
             };
             meta: components["schemas"]["ResponseMeta"];
         };
+        Envelope_Vec_AdminModelView: {
+            data: {
+                alias_of?: string | null;
+                description?: string | null;
+                id: string;
+                model_icon_key?: string | null;
+                provider_icon_key?: string | null;
+                provider_key?: string | null;
+                provider_label?: string | null;
+                resolved_model_key: string;
+                status: string;
+                tags: string[];
+                upstream_model?: string | null;
+            }[];
+            meta: components["schemas"]["ResponseMeta"];
+        };
         IdentityActionStatus: {
             status: string;
         };
@@ -791,10 +836,12 @@ export interface components {
             metadata: {
                 [key: string]: unknown;
             };
+            model_icon_key?: string | null;
             model_key: string;
             occurred_at: string;
             /** Format: int64 */
             prompt_tokens?: number | null;
+            provider_icon_key?: string | null;
             provider_key: string;
             request_id: string;
             request_log_id: string;
@@ -1239,6 +1286,25 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_CreateUserResponse"];
+                };
+            };
+        };
+    };
+    list_models: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_Vec_AdminModelView"];
                 };
             };
         };
