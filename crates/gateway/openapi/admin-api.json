@@ -507,6 +507,31 @@
         ]
       }
     },
+    "/api/v1/admin/models": {
+      "get": {
+        "tags": [
+          "crate::http::models"
+        ],
+        "operationId": "list_models",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_Vec_AdminModelView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/observability/request-logs": {
       "get": {
         "tags": [
@@ -1403,6 +1428,74 @@
             ]
           },
           "team_role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "AdminModelView": {
+        "type": "object",
+        "required": [
+          "id",
+          "resolved_model_key",
+          "tags",
+          "status"
+        ],
+        "properties": {
+          "alias_of": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "model_icon_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider_icon_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider_label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resolved_model_key": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "upstream_model": {
             "type": [
               "string",
               "null"
@@ -2687,6 +2780,89 @@
           }
         }
       },
+      "Envelope_Vec_AdminModelView": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "resolved_model_key",
+                "tags",
+                "status"
+              ],
+              "properties": {
+                "alias_of": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "description": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "model_icon_key": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "provider_icon_key": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "provider_key": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "provider_label": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "resolved_model_key": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "tags": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "upstream_model": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
       "IdentityActionStatus": {
         "type": "object",
         "required": [
@@ -2910,6 +3086,12 @@
             "type": "object",
             "additionalProperties": true
           },
+          "model_icon_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "model_key": {
             "type": "string"
           },
@@ -2922,6 +3104,12 @@
               "null"
             ],
             "format": "int64"
+          },
+          "provider_icon_key": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "provider_key": {
             "type": "string"

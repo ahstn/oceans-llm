@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use super::*;
 
 #[async_trait]
@@ -74,5 +76,44 @@ impl ModelRepository for PostgresStore {
         .map_err(to_query_error)?;
 
         rows.iter().map(decode_model_route).collect()
+    }
+
+    async fn list_routes_for_models(
+        &self,
+        model_ids: &[Uuid],
+    ) -> Result<HashMap<Uuid, Vec<ModelRoute>>, StoreError> {
+        if model_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let mut builder = sqlx::QueryBuilder::<sqlx::Postgres>::new(
+            "SELECT id, model_id, provider_key, upstream_model, priority, weight, enabled, \
+             extra_headers_json, extra_body_json, capabilities_json \
+             FROM model_routes WHERE model_id IN (",
+        );
+        {
+            let mut separated = builder.separated(", ");
+            for model_id in model_ids {
+                separated.push_bind(model_id.to_string());
+            }
+        }
+        builder.push(" ) ORDER BY model_id ASC, priority ASC");
+
+        let rows = builder
+            .build()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(to_query_error)?;
+
+        let mut routes_by_model = HashMap::with_capacity(model_ids.len());
+        for row in &rows {
+            let route = decode_model_route(row)?;
+            routes_by_model
+                .entry(route.model_id)
+                .or_insert_with(Vec::new)
+                .push(route);
+        }
+
+        Ok(routes_by_model)
     }
 }

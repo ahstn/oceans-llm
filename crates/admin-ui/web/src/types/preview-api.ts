@@ -4,11 +4,3 @@ export interface Paginated<T> {
   pageSize: number
   total: number
 }
-
-export interface ModelView {
-  id: string
-  provider: string
-  upstreamModel: string
-  tags: string[]
-  status: 'healthy' | 'degraded'
-}

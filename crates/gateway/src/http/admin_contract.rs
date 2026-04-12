@@ -122,6 +122,21 @@ pub struct AdminOidcProviderView {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+pub struct AdminModelView {
+    pub id: String,
+    pub resolved_model_key: String,
+    pub alias_of: Option<String>,
+    pub description: Option<String>,
+    pub tags: Vec<String>,
+    pub status: String,
+    pub provider_key: Option<String>,
+    pub provider_label: Option<String>,
+    pub provider_icon_key: Option<String>,
+    pub upstream_model: Option<String>,
+    pub model_icon_key: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
 pub struct AuthSessionUserView {
     pub id: String,
     pub name: String,
@@ -455,7 +470,9 @@ pub struct RequestLogSummaryView {
     pub team_id: Option<String>,
     pub model_key: String,
     pub resolved_model_key: String,
+    pub model_icon_key: Option<String>,
     pub provider_key: String,
+    pub provider_icon_key: Option<String>,
     pub status_code: Option<i64>,
     pub latency_ms: Option<i64>,
     pub prompt_tokens: Option<i64>,
@@ -502,6 +519,7 @@ pub struct RequestLogPayloadView {
     paths(
         crate::http::identity::list_identity_users,
         crate::http::identity::list_identity_teams,
+        crate::http::models::list_models,
         crate::http::identity::create_identity_team,
         crate::http::identity::update_identity_team,
         crate::http::identity::add_identity_team_members,
@@ -599,6 +617,7 @@ mod tests {
         let components = openapi.components.expect("components");
 
         assert!(paths.contains_key("/api/v1/admin/identity/users"));
+        assert!(paths.contains_key("/api/v1/admin/models"));
         assert!(paths.contains_key("/api/v1/admin/spend/report"));
         assert!(paths.contains_key("/api/v1/admin/observability/request-logs/{request_log_id}"));
         assert!(paths.contains_key("/api/v1/auth/session"));

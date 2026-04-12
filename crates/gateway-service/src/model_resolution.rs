@@ -1,6 +1,12 @@
-use std::{collections::BTreeSet, sync::Arc};
+use std::{
+    collections::{BTreeSet, HashMap},
+    sync::Arc,
+};
 
-use gateway_core::{AuthenticatedApiKey, GatewayError, GatewayModel, ModelRepository, RouteError};
+use gateway_core::{
+    AuthenticatedApiKey, GatewayError, GatewayModel, ModelRepository, ProviderConnection,
+    RouteError,
+};
 
 #[derive(Debug, Clone)]
 pub struct ResolvedModelSelection {
@@ -14,6 +20,7 @@ pub struct ResolvedGatewayRequest {
     pub auth: AuthenticatedApiKey,
     pub selection: ResolvedModelSelection,
     pub routes: Vec<gateway_core::ModelRoute>,
+    pub provider_connections: HashMap<String, ProviderConnection>,
 }
 
 #[derive(Clone)]
