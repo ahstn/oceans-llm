@@ -15,7 +15,7 @@ import type {
   IdentityTeamsPayload,
   IdentityUsersPayload,
   InvitationStateView,
-  ModelView,
+  ModelPageView,
   PasswordInviteResult,
   PasswordLoginInput,
   RequestLogDetailView,
@@ -61,8 +61,21 @@ export async function revokeApiKey(apiKeyId: string): Promise<ApiEnvelope<Revoke
   )
 }
 
-export async function listModels(): Promise<ApiEnvelope<ModelView[]>> {
-  return fetchGatewayJson<ApiEnvelope<ModelView[]>>('/api/v1/admin/models')
+export async function listModels(params?: {
+  page?: number
+  page_size?: number
+}): Promise<ApiEnvelope<ModelPageView>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.GET('/api/v1/admin/models', {
+      params: {
+        query: {
+          page: params?.page,
+          page_size: params?.page_size,
+        },
+      },
+    }),
+  )
 }
 
 export async function getSpendReport(params?: {

@@ -50,9 +50,11 @@ export const revokeGatewayApiKey = createServerFn({ method: 'POST' }).handler(
   },
 )
 
-export const getModels = createServerFn({ method: 'GET' }).handler(async () => {
-  return listModels()
-})
+export const getModels = createServerFn({ method: 'GET' }).handler(
+  async ({ data }: { data?: Parameters<typeof listModels>[0] }) => {
+    return listModels(data)
+  },
+)
 
 export const getUsageCosts = createServerFn({ method: 'GET' }).handler(async () => {
   return getSpendReport({ days: 7, owner_kind: 'all' })

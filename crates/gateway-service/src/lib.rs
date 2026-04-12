@@ -26,9 +26,12 @@ pub use icon_identity::{
     ModelIconKey, ProviderDisplayIdentity, ProviderIconKey, REQUEST_LOG_MODEL_ICON_KEY,
     REQUEST_LOG_PROVIDER_ICON_KEY, RequestLogIconMetadata, model_icon_key_from_metadata,
     provider_icon_key_from_metadata, resolve_model_icon_key, resolve_provider_display,
+    resolve_provider_display_from_parts,
 };
 pub use model_access::ModelAccess;
-pub use model_resolution::{ModelResolver, ResolvedGatewayRequest, ResolvedModelSelection};
+pub use model_resolution::{
+    ModelResolver, ResolvedGatewayRequest, ResolvedModelSelection, ResolvedProviderConnection,
+};
 pub use pricing_catalog::{
     DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, DEFAULT_PRICING_CATALOG_SOURCE_URL,
     PRICING_CATALOG_CACHE_KEY, PricingCatalog, PricingCatalogSnapshotFile, fetch_vendored_snapshot,

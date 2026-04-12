@@ -16,7 +16,7 @@ use uuid::Uuid;
 use crate::{
     Authenticator, ChatRequestLogContext, LoggedRequest, ModelAccess, ModelResolver,
     PricingCatalog, RequestLogIconMetadata, RequestLogging, ResolvedGatewayRequest,
-    StreamLogResultInput, StreamResponseCollector,
+    ResolvedProviderConnection, StreamLogResultInput, StreamResponseCollector,
     budget_alerts::{BudgetAlertSender, BudgetAlertService, SinkBudgetAlertSender},
     budget_guard::{BudgetGuard, BudgetGuardDisposition},
 };
@@ -144,7 +144,9 @@ where
             if let Some(provider) = self.store.get_provider_by_key(&route.provider_key).await? {
                 provider_connections
                     .entry(route.provider_key.clone())
-                    .or_insert(provider);
+                    .or_insert_with(|| {
+                        ResolvedProviderConnection::from_provider_connection(&provider)
+                    });
                 viable_routes.push(route);
             } else {
                 warn!(
@@ -912,7 +914,14 @@ mod tests {
                     "icon_key": "openrouter"
                 }
             }),
-            secrets: None,
+            secrets: Some(json!({
+                "api_key": "sk-live-raw",
+                "service_account": {
+                    "client_email": "svc@example.com",
+                    "private_key": "-----BEGIN PRIVATE KEY-----",
+                    "scopes": ["scope-a", "scope-b"]
+                }
+            })),
         }
     }
 
@@ -942,6 +951,19 @@ mod tests {
             provider.config["display"]["icon_key"],
             serde_json::Value::String("openrouter".to_string())
         );
+        let redacted = provider
+            .redacted_secrets
+            .as_ref()
+            .expect("redacted secrets should be cached");
+        assert_eq!(redacted["api_key"], "********");
+        assert_eq!(redacted["service_account"]["client_email"], "********");
+        assert_eq!(redacted["service_account"]["private_key"], "********");
+        assert_eq!(redacted["service_account"]["scopes"][0], "********");
+        assert_eq!(redacted["service_account"]["scopes"][1], "********");
+        let serialized = redacted.to_string();
+        assert!(!serialized.contains("sk-live-raw"));
+        assert!(!serialized.contains("svc@example.com"));
+        assert!(!serialized.contains("BEGIN PRIVATE KEY"));
         assert_eq!(repo.provider_lookups.load(Ordering::SeqCst), 1);
     }
 

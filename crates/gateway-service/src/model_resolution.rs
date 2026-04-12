@@ -7,6 +7,9 @@ use gateway_core::{
     AuthenticatedApiKey, GatewayError, GatewayModel, ModelRepository, ProviderConnection,
     RouteError,
 };
+use serde_json::Value;
+
+use crate::redaction::mask_secret_leaf_values;
 
 #[derive(Debug, Clone)]
 pub struct ResolvedModelSelection {
@@ -16,11 +19,31 @@ pub struct ResolvedModelSelection {
 }
 
 #[derive(Debug, Clone)]
+pub struct ResolvedProviderConnection {
+    pub provider_key: String,
+    pub provider_type: String,
+    pub config: Value,
+    pub redacted_secrets: Option<Value>,
+}
+
+impl ResolvedProviderConnection {
+    #[must_use]
+    pub fn from_provider_connection(provider: &ProviderConnection) -> Self {
+        Self {
+            provider_key: provider.provider_key.clone(),
+            provider_type: provider.provider_type.clone(),
+            config: provider.config.clone(),
+            redacted_secrets: provider.secrets.as_ref().map(mask_secret_leaf_values),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct ResolvedGatewayRequest {
     pub auth: AuthenticatedApiKey,
     pub selection: ResolvedModelSelection,
     pub routes: Vec<gateway_core::ModelRoute>,
-    pub provider_connections: HashMap<String, ProviderConnection>,
+    pub provider_connections: HashMap<String, ResolvedProviderConnection>,
 }
 
 #[derive(Clone)]

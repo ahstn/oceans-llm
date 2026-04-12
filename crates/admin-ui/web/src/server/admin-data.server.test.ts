@@ -244,6 +244,35 @@ describe('server-side admin data wrappers', () => {
         }
       }
 
+      if (path === '/api/v1/admin/models') {
+        return {
+          data: {
+            data: {
+              items: [
+                {
+                  id: 'claude-sonnet',
+                  resolved_model_key: 'claude-sonnet',
+                  alias_of: null,
+                  description: 'Claude on Vertex',
+                  tags: ['reasoning'],
+                  status: 'healthy',
+                  provider_key: 'vertex-claude',
+                  provider_label: 'Google Vertex AI',
+                  provider_icon_key: 'vertexai',
+                  upstream_model: 'anthropic/claude-sonnet-4-6',
+                  model_icon_key: 'claude',
+                },
+              ],
+              page: 1,
+              page_size: 30,
+              total: 1,
+            },
+            meta: { generated_at: '2026-03-10T11:32:00Z' },
+          },
+          response: { status: 200 },
+        }
+      }
+
       if (path === '/api/v1/admin/spend/report') {
         return {
           data: {
@@ -438,7 +467,7 @@ describe('server-side admin data wrappers', () => {
     expect(apiKeys.data.items.length).toBeGreaterThan(0)
     expect(apiKeys.data.items[0].owner_kind).toBe('team')
     expect(apiKeys.data.models.map((model) => model.key)).toContain('fast')
-    expect(models.data.length).toBeGreaterThan(0)
+    expect(models.data.items.length).toBeGreaterThan(0)
     expect(spendReport.data.window_days).toBeGreaterThan(0)
     expect(spendBudgets.data.users.length).toBe(0)
     expect(budgetAlerts.data.items.length).toBe(0)

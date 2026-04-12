@@ -1,30 +1,58 @@
-use axum::{Json, extract::State, http::HeaderMap};
+use axum::{
+    Json,
+    extract::{Query, State},
+    http::HeaderMap,
+};
 use gateway_service::{AdminModelSummary, AdminModelsService};
 
 use crate::http::{
     admin_auth::require_platform_admin,
-    admin_contract::{AdminModelView, Envelope, envelope},
+    admin_contract::{AdminModelListQuery, AdminModelPageView, AdminModelView, Envelope, envelope},
     error::AppError,
     state::AppState,
 };
 
+const DEFAULT_PAGE: u32 = 1;
+const DEFAULT_PAGE_SIZE: u32 = 30;
+const MAX_PAGE_SIZE: u32 = 100;
+
 #[utoipa::path(
     get,
     path = "/api/v1/admin/models",
-    responses((status = 200, body = Envelope<Vec<AdminModelView>>)),
+    params(AdminModelListQuery),
+    responses((status = 200, body = Envelope<AdminModelPageView>)),
     security(("session_cookie" = []))
 )]
 pub async fn list_models(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> Result<Json<Envelope<Vec<AdminModelView>>>, AppError> {
+    Query(query): Query<AdminModelListQuery>,
+) -> Result<Json<Envelope<AdminModelPageView>>, AppError> {
     require_platform_admin(&state, &headers).await?;
+
+    let page = query.page.unwrap_or(DEFAULT_PAGE).max(1);
+    let page_size = query
+        .page_size
+        .unwrap_or(DEFAULT_PAGE_SIZE)
+        .clamp(1, MAX_PAGE_SIZE);
 
     let service = AdminModelsService::new(state.store.clone());
     let models = service.list_models().await?;
-    Ok(Json(envelope(
-        models.into_iter().map(map_model_summary).collect(),
-    )))
+    let total = models.len() as u64;
+    let start = page.saturating_sub(1).saturating_mul(page_size) as usize;
+    let items = models
+        .into_iter()
+        .skip(start)
+        .take(page_size as usize)
+        .map(map_model_summary)
+        .collect();
+
+    Ok(Json(envelope(AdminModelPageView {
+        items,
+        page,
+        page_size,
+        total,
+    })))
 }
 
 fn map_model_summary(model: AdminModelSummary) -> AdminModelView {
@@ -34,13 +62,11 @@ fn map_model_summary(model: AdminModelSummary) -> AdminModelView {
         alias_of: model.alias_of,
         description: model.description,
         tags: model.tags,
-        status: model.status.as_str().to_string(),
+        status: model.status.into(),
         provider_key: model.provider_key,
         provider_label: model.provider_label,
-        provider_icon_key: model
-            .provider_icon_key
-            .map(|value| value.as_str().to_string()),
+        provider_icon_key: model.provider_icon_key.map(Into::into),
         upstream_model: model.upstream_model,
-        model_icon_key: model.model_icon_key.map(|value| value.as_str().to_string()),
+        model_icon_key: model.model_icon_key.map(Into::into),
     }
 }
