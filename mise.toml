@@ -42,6 +42,12 @@ description = "Run docs structure checks and build the docs site"
 depends = ["docs-check", "docs-build"]
 run = "true"
 
+[tasks.docs-deploy]
+description = "Build and deploy the VitePress docs site to Cloudflare Pages"
+depends = ["docs-verify"]
+env = { CLOUDFLARE_API_TOKEN = { required = true }, CLOUDFLARE_ACCOUNT_ID = { required = true } }
+run = "npm run --prefix docs docs:deploy"
+
 [tasks.fmt]
 description = "Format Rust sources"
 run = "cargo fmt --all"
