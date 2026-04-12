@@ -9,6 +9,7 @@ pub const REQUEST_LOG_MODEL_ICON_KEY: &str = "model_icon_key";
 #[serde(rename_all = "lowercase")]
 pub enum ProviderIconKey {
     Anthropic,
+    AWS,
     OpenAI,
     OpenRouter,
     VertexAI,
@@ -19,6 +20,7 @@ impl ProviderIconKey {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Anthropic => "anthropic",
+            Self::AWS => "aws",
             Self::OpenAI => "openai",
             Self::OpenRouter => "openrouter",
             Self::VertexAI => "vertexai",
@@ -29,6 +31,7 @@ impl ProviderIconKey {
     pub fn parse(value: &str) -> Option<Self> {
         match value.trim().to_ascii_lowercase().as_str() {
             "anthropic" => Some(Self::Anthropic),
+            "aws" => Some(Self::AWS),
             "openai" => Some(Self::OpenAI),
             "openrouter" => Some(Self::OpenRouter),
             "vertexai" => Some(Self::VertexAI),
@@ -40,6 +43,7 @@ impl ProviderIconKey {
     pub const fn default_label(self) -> &'static str {
         match self {
             Self::Anthropic => "Anthropic",
+            Self::AWS => "AWS",
             Self::OpenAI => "OpenAI",
             Self::OpenRouter => "OpenRouter",
             Self::VertexAI => "Google Vertex AI",
@@ -117,36 +121,11 @@ pub fn resolve_provider_display(
 pub fn resolve_model_icon_key<'a>(
     candidates: impl IntoIterator<Item = &'a str>,
 ) -> Option<ModelIconKey> {
-    let values = candidates
+    candidates
         .into_iter()
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(|value| value.to_ascii_lowercase())
-        .collect::<Vec<_>>();
-
-    if values.iter().any(|value| value.contains("claude")) {
-        return Some(ModelIconKey::Claude);
-    }
-    if values.iter().any(|value| value.contains("anthropic")) {
-        return Some(ModelIconKey::Anthropic);
-    }
-    if values.iter().any(|value| value.contains("gemini")) {
-        return Some(ModelIconKey::Gemini);
-    }
-    if values.iter().any(|value| value.contains("openrouter")) {
-        return Some(ModelIconKey::OpenRouter);
-    }
-    if values.iter().any(|value| is_openai_model_candidate(value)) {
-        return Some(ModelIconKey::OpenAI);
-    }
-    if values
-        .iter()
-        .any(|value| value.contains("vertex") || value.starts_with("veo-"))
-    {
-        return Some(ModelIconKey::VertexAI);
-    }
-
-    None
+        .find_map(infer_model_icon_key)
 }
 
 #[must_use]
@@ -163,6 +142,31 @@ pub fn model_icon_key_from_metadata(metadata: &Map<String, Value>) -> Option<Mod
         .get(REQUEST_LOG_MODEL_ICON_KEY)
         .and_then(Value::as_str)
         .and_then(ModelIconKey::parse)
+}
+
+fn infer_model_icon_key(value: &str) -> Option<ModelIconKey> {
+    let value = value.to_ascii_lowercase();
+
+    if value.contains("claude") {
+        return Some(ModelIconKey::Claude);
+    }
+    if value.contains("anthropic") {
+        return Some(ModelIconKey::Anthropic);
+    }
+    if value.contains("gemini") {
+        return Some(ModelIconKey::Gemini);
+    }
+    if is_openai_model_candidate(&value) {
+        return Some(ModelIconKey::OpenAI);
+    }
+    if value.contains("openrouter") {
+        return Some(ModelIconKey::OpenRouter);
+    }
+    if value.contains("vertex") || value.starts_with("veo-") {
+        return Some(ModelIconKey::VertexAI);
+    }
+
+    None
 }
 
 fn infer_provider_icon_key(
@@ -186,6 +190,9 @@ fn infer_provider_icon_key(
             if base_url.contains("anthropic") {
                 return ProviderIconKey::Anthropic;
             }
+            if is_aws_provider_candidate(&base_url) {
+                return ProviderIconKey::AWS;
+            }
             if base_url.contains("openai") {
                 return ProviderIconKey::OpenAI;
             }
@@ -199,6 +206,8 @@ fn infer_provider_icon_key(
         ProviderIconKey::Anthropic
     } else if provider_key.contains("vertex") {
         ProviderIconKey::VertexAI
+    } else if is_aws_provider_candidate(&provider_key) {
+        ProviderIconKey::AWS
     } else {
         ProviderIconKey::OpenAI
     }
@@ -244,6 +253,14 @@ fn is_openai_model_candidate(value: &str) -> bool {
         || value.contains("babbage")
 }
 
+fn is_aws_provider_candidate(value: &str) -> bool {
+    value.contains("bedrock")
+        || value.contains("amazonaws")
+        || value
+            .split(|ch: char| !ch.is_ascii_alphanumeric())
+            .any(|token| token == "aws")
+}
+
 #[cfg(test)]
 mod tests {
     use gateway_core::ProviderConnection;
@@ -256,6 +273,12 @@ mod tests {
         let icon = resolve_model_icon_key(["anthropic/claude-sonnet-4-6", "anthropic"])
             .expect("claude icon");
         assert_eq!(icon, ModelIconKey::Claude);
+    }
+
+    #[test]
+    fn upstream_openai_model_beats_openrouter_alias_name() {
+        let icon = resolve_model_icon_key(["gpt-5", "openrouter-fast"]).expect("openai icon");
+        assert_eq!(icon, ModelIconKey::OpenAI);
     }
 
     #[test]
@@ -276,6 +299,36 @@ mod tests {
         let display = resolve_provider_display(&provider.provider_key, Some(&provider));
         assert_eq!(display.label, "OpenRouter");
         assert_eq!(display.icon_key, ProviderIconKey::OpenRouter);
+    }
+
+    #[test]
+    fn provider_display_infers_aws_icon_for_bedrock_like_providers() {
+        let provider = ProviderConnection {
+            provider_key: "bedrock-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: json!({
+                "base_url": "https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1"
+            }),
+            secrets: None,
+        };
+
+        let display = resolve_provider_display(&provider.provider_key, Some(&provider));
+        assert_eq!(display.label, "AWS");
+        assert_eq!(display.icon_key, ProviderIconKey::AWS);
+    }
+
+    #[test]
+    fn provider_display_does_not_treat_unrelated_aws_substrings_as_aws() {
+        let provider = ProviderConnection {
+            provider_key: "claws-router".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: json!({"base_url": "https://claws.example.com/v1"}),
+            secrets: None,
+        };
+
+        let display = resolve_provider_display(&provider.provider_key, Some(&provider));
+        assert_eq!(display.label, "OpenAI");
+        assert_eq!(display.icon_key, ProviderIconKey::OpenAI);
     }
 
     #[test]

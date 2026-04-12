@@ -62,6 +62,17 @@ pub trait ModelRepository: Send + Sync {
         api_key_id: Uuid,
     ) -> Result<Vec<GatewayModel>, StoreError>;
     async fn list_routes_for_model(&self, model_id: Uuid) -> Result<Vec<ModelRoute>, StoreError>;
+
+    async fn list_routes_for_models(
+        &self,
+        model_ids: &[Uuid],
+    ) -> Result<HashMap<Uuid, Vec<ModelRoute>>, StoreError> {
+        let mut routes_by_model = HashMap::with_capacity(model_ids.len());
+        for model_id in model_ids {
+            routes_by_model.insert(*model_id, self.list_routes_for_model(*model_id).await?);
+        }
+        Ok(routes_by_model)
+    }
 }
 
 #[async_trait]
@@ -70,6 +81,19 @@ pub trait ProviderRepository: Send + Sync {
         &self,
         provider_key: &str,
     ) -> Result<Option<ProviderConnection>, StoreError>;
+
+    async fn list_providers_by_keys(
+        &self,
+        provider_keys: &[String],
+    ) -> Result<HashMap<String, ProviderConnection>, StoreError> {
+        let mut providers = HashMap::with_capacity(provider_keys.len());
+        for provider_key in provider_keys {
+            if let Some(provider) = self.get_provider_by_key(provider_key).await? {
+                providers.insert(provider_key.clone(), provider);
+            }
+        }
+        Ok(providers)
+    }
 }
 
 #[async_trait]

@@ -1465,6 +1465,39 @@ providers:
     }
 
     #[test]
+    fn accepts_supported_provider_display_icon_keys() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+    display:
+      icon_key: openai
+  - id: router-prod
+    type: openai_compat
+    base_url: https://openrouter.ai/api/v1
+    pricing_provider_id: openai
+    display:
+      icon_key: openrouter
+  - id: bedrock-prod
+    type: openai_compat
+    base_url: https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1
+    pricing_provider_id: openai
+    display:
+      icon_key: aws
+"#,
+        );
+
+        GatewayConfig::from_path(&config_path).expect("config should parse");
+    }
+
+    #[test]
     fn rejects_openai_compat_without_pricing_provider_id() {
         let tmp = tempdir().expect("tempdir");
         let config_path = tmp.path().join("gateway.yaml");

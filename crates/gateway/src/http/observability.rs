@@ -1,11 +1,13 @@
+use std::collections::{HashMap, HashSet};
+
 use axum::{
     Json,
     extract::{Path, Query, State},
     http::HeaderMap,
 };
 use gateway_core::{
-    GatewayError, RequestLogDetail, RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord,
-    RequestTag, RequestTags,
+    GatewayError, ProviderConnection, ProviderRepository, RequestLogDetail,
+    RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestTag, RequestTags,
 };
 use gateway_service::{
     model_icon_key_from_metadata, provider_icon_key_from_metadata, resolve_model_icon_key,
@@ -69,8 +71,13 @@ pub async fn list_request_logs(
     };
 
     let page = state.service.list_request_logs(&query).await?;
+    let providers = provider_connections_by_key(&state, &page.items).await?;
     Ok(Json(envelope(RequestLogPageView {
-        items: page.items.iter().map(summary_view).collect(),
+        items: page
+            .items
+            .iter()
+            .map(|log| summary_view(log, providers.get(log.provider_key.as_str())))
+            .collect(),
         page: page.page,
         page_size: page.page_size,
         total: page.total,
@@ -95,15 +102,50 @@ pub async fn get_request_log_detail(
     require_platform_admin(&state, &headers).await?;
 
     let detail = state.service.get_request_log_detail(request_log_id).await?;
-    Ok(Json(envelope(detail_view(detail))))
+    let provider = provider_connection(&state, detail.log.provider_key.as_str()).await?;
+    Ok(Json(envelope(detail_view(detail, provider.as_ref()))))
 }
 
-fn summary_view(log: &RequestLogRecord) -> RequestLogSummaryView {
+async fn provider_connections_by_key(
+    state: &AppState,
+    logs: &[RequestLogRecord],
+) -> Result<HashMap<String, ProviderConnection>, AppError> {
+    let provider_keys: HashSet<_> = logs
+        .iter()
+        .filter(|log| provider_icon_key_from_metadata(&log.metadata).is_none())
+        .map(|log| log.provider_key.clone())
+        .collect();
+
+    let mut providers = HashMap::new();
+    for provider_key in provider_keys {
+        if let Some(provider) = provider_connection(state, provider_key.as_str()).await? {
+            providers.insert(provider_key, provider);
+        }
+    }
+
+    Ok(providers)
+}
+
+async fn provider_connection(
+    state: &AppState,
+    provider_key: &str,
+) -> Result<Option<ProviderConnection>, AppError> {
+    state
+        .store
+        .get_provider_by_key(provider_key)
+        .await
+        .map_err(|error| AppError(error.into()))
+}
+
+fn summary_view(
+    log: &RequestLogRecord,
+    provider: Option<&ProviderConnection>,
+) -> RequestLogSummaryView {
     let provider_icon_key = provider_icon_key_from_metadata(&log.metadata)
         .map(|value| value.as_str().to_string())
         .or_else(|| {
             Some(
-                resolve_provider_display(log.provider_key.as_str(), None)
+                resolve_provider_display(log.provider_key.as_str(), provider)
                     .icon_key
                     .as_str()
                     .to_string(),
@@ -141,9 +183,12 @@ fn summary_view(log: &RequestLogRecord) -> RequestLogSummaryView {
     }
 }
 
-fn detail_view(detail: RequestLogDetail) -> RequestLogDetailView {
+fn detail_view(
+    detail: RequestLogDetail,
+    provider: Option<&ProviderConnection>,
+) -> RequestLogDetailView {
     RequestLogDetailView {
-        log: summary_view(&detail.log),
+        log: summary_view(&detail.log, provider),
         payload: detail.payload.map(payload_view),
     }
 }
@@ -210,4 +255,94 @@ fn parse_optional_uuid(value: Option<&str>, field_name: &str) -> Result<Option<U
             "invalid {field_name} `{value}`: {error}"
         )))
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use gateway_service::REQUEST_LOG_PROVIDER_ICON_KEY;
+    use serde_json::{Map, Value, json};
+    use time::OffsetDateTime;
+
+    use super::*;
+
+    #[test]
+    fn summary_view_uses_provider_display_config_when_metadata_is_missing() {
+        let log = request_log_record(Map::new());
+        let provider = ProviderConnection {
+            provider_key: "router".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: json!({
+                "base_url": "https://openrouter.ai/api/v1",
+                "display": {
+                    "label": "OpenRouter",
+                    "icon_key": "openrouter"
+                }
+            }),
+            secrets: None,
+        };
+
+        let summary = summary_view(&log, Some(&provider));
+
+        assert_eq!(summary.provider_icon_key.as_deref(), Some("openrouter"));
+    }
+
+    #[test]
+    fn summary_view_falls_back_to_provider_key_when_provider_config_is_unavailable() {
+        let log = request_log_record(Map::new());
+
+        let summary = summary_view(&log, None);
+
+        assert_eq!(summary.provider_icon_key.as_deref(), Some("openai"));
+    }
+
+    #[test]
+    fn summary_view_prefers_stored_metadata_over_provider_fallbacks() {
+        let mut metadata = Map::new();
+        metadata.insert(
+            REQUEST_LOG_PROVIDER_ICON_KEY.to_string(),
+            Value::String("anthropic".to_string()),
+        );
+        let log = request_log_record(metadata);
+        let provider = ProviderConnection {
+            provider_key: "router".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: json!({
+                "base_url": "https://openrouter.ai/api/v1",
+                "display": {
+                    "label": "OpenRouter",
+                    "icon_key": "openrouter"
+                }
+            }),
+            secrets: None,
+        };
+
+        let summary = summary_view(&log, Some(&provider));
+
+        assert_eq!(summary.provider_icon_key.as_deref(), Some("anthropic"));
+    }
+
+    fn request_log_record(metadata: Map<String, Value>) -> RequestLogRecord {
+        RequestLogRecord {
+            request_log_id: Uuid::new_v4(),
+            request_id: "req_123".to_string(),
+            api_key_id: Uuid::new_v4(),
+            user_id: None,
+            team_id: None,
+            model_key: "router-model".to_string(),
+            resolved_model_key: "router-model".to_string(),
+            provider_key: "router".to_string(),
+            status_code: Some(200),
+            latency_ms: Some(42),
+            prompt_tokens: Some(1),
+            completion_tokens: Some(2),
+            total_tokens: Some(3),
+            error_code: None,
+            has_payload: false,
+            request_payload_truncated: false,
+            response_payload_truncated: false,
+            request_tags: RequestTags::default(),
+            metadata,
+            occurred_at: OffsetDateTime::now_utc(),
+        }
+    }
 }

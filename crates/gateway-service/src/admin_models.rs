@@ -58,30 +58,52 @@ where
             .cloned()
             .map(|model| (model.model_key.clone(), model))
             .collect::<HashMap<_, _>>();
-        let mut provider_cache = HashMap::<String, Option<ProviderConnection>>::new();
+        let execution_models = models
+            .iter()
+            .map(|model| {
+                (
+                    model.model_key.clone(),
+                    resolve_execution_model(&by_key, model).unwrap_or_else(|| model.clone()),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+        let execution_model_ids = execution_models
+            .values()
+            .map(|model| model.id)
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let routes_by_model = self
+            .repo
+            .list_routes_for_models(&execution_model_ids)
+            .await?;
+        let provider_keys = routes_by_model
+            .values()
+            .flat_map(|routes| routes.iter().map(|route| route.provider_key.clone()))
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let providers_by_key = self.repo.list_providers_by_keys(&provider_keys).await?;
         let mut items = Vec::with_capacity(models.len());
 
         for model in models {
-            let execution_model =
-                resolve_execution_model(&by_key, &model).unwrap_or_else(|| model.clone());
-            let routes = self.repo.list_routes_for_model(execution_model.id).await?;
-
-            let mut primary_provider: Option<ProviderConnection> = None;
-            let primary_route = if let Some(route) = routes.iter().find(|route| route.enabled) {
-                primary_provider =
-                    load_provider(&self.repo, &mut provider_cache, &route.provider_key).await?;
-                Some(route)
-            } else {
-                if let Some(route) = routes.first() {
-                    primary_provider =
-                        load_provider(&self.repo, &mut provider_cache, &route.provider_key).await?;
-                }
-                routes.first()
-            };
-
-            let status = route_health(&self.repo, &mut provider_cache, &routes).await?;
+            let execution_model = execution_models
+                .get(&model.model_key)
+                .cloned()
+                .unwrap_or_else(|| model.clone());
+            let routes = routes_by_model
+                .get(&execution_model.id)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            let primary_route = routes
+                .iter()
+                .find(|route| route.enabled)
+                .or_else(|| routes.first());
+            let primary_provider =
+                primary_route.and_then(|route| providers_by_key.get(&route.provider_key));
+            let status = route_health(&providers_by_key, routes);
             let provider_display = primary_route.map(|route| {
-                resolve_provider_display(route.provider_key.as_str(), primary_provider.as_ref())
+                resolve_provider_display(route.provider_key.as_str(), primary_provider)
             });
             let model_icon_key = resolve_model_icon_key(
                 primary_route
@@ -111,44 +133,17 @@ where
     }
 }
 
-async fn route_health<R>(
-    repo: &Arc<R>,
-    provider_cache: &mut HashMap<String, Option<ProviderConnection>>,
+fn route_health(
+    providers_by_key: &HashMap<String, ProviderConnection>,
     routes: &[gateway_core::ModelRoute],
-) -> Result<AdminModelStatus, GatewayError>
-where
-    R: ProviderRepository + Send + Sync + 'static,
-{
+) -> AdminModelStatus {
     for route in routes {
-        if !route.enabled {
-            continue;
-        }
-        if load_provider(repo, provider_cache, &route.provider_key)
-            .await?
-            .is_some()
-        {
-            return Ok(AdminModelStatus::Healthy);
+        if route.enabled && providers_by_key.contains_key(&route.provider_key) {
+            return AdminModelStatus::Healthy;
         }
     }
 
-    Ok(AdminModelStatus::Degraded)
-}
-
-async fn load_provider<R>(
-    repo: &Arc<R>,
-    provider_cache: &mut HashMap<String, Option<ProviderConnection>>,
-    provider_key: &str,
-) -> Result<Option<ProviderConnection>, GatewayError>
-where
-    R: ProviderRepository + Send + Sync + 'static,
-{
-    if let Some(provider) = provider_cache.get(provider_key) {
-        return Ok(provider.clone());
-    }
-
-    let provider = repo.get_provider_by_key(provider_key).await?;
-    provider_cache.insert(provider_key.to_string(), provider.clone());
-    Ok(provider)
+    AdminModelStatus::Degraded
 }
 
 fn resolve_execution_model(
@@ -168,5 +163,230 @@ fn resolve_execution_model(
             return None;
         }
         current = next;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        collections::HashMap,
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+    };
+
+    use async_trait::async_trait;
+    use gateway_core::{
+        GatewayModel, ModelRepository, ModelRoute, ProviderConnection, ProviderRepository,
+        StoreError,
+    };
+    use serde_json::json;
+    use uuid::Uuid;
+
+    use super::{AdminModelStatus, AdminModelsService};
+
+    #[derive(Default)]
+    struct CountingRepo {
+        models: Vec<GatewayModel>,
+        routes_by_model: HashMap<Uuid, Vec<ModelRoute>>,
+        providers_by_key: HashMap<String, ProviderConnection>,
+        list_routes_for_model_calls: AtomicUsize,
+        list_routes_for_models_calls: AtomicUsize,
+        get_provider_by_key_calls: AtomicUsize,
+        list_providers_by_keys_calls: AtomicUsize,
+    }
+
+    #[async_trait]
+    impl ModelRepository for CountingRepo {
+        async fn list_models(&self) -> Result<Vec<GatewayModel>, StoreError> {
+            Ok(self.models.clone())
+        }
+
+        async fn get_model_by_key(
+            &self,
+            model_key: &str,
+        ) -> Result<Option<GatewayModel>, StoreError> {
+            Ok(self
+                .models
+                .iter()
+                .find(|model| model.model_key == model_key)
+                .cloned())
+        }
+
+        async fn list_models_for_api_key(
+            &self,
+            _api_key_id: Uuid,
+        ) -> Result<Vec<GatewayModel>, StoreError> {
+            Ok(Vec::new())
+        }
+
+        async fn list_routes_for_model(
+            &self,
+            model_id: Uuid,
+        ) -> Result<Vec<ModelRoute>, StoreError> {
+            self.list_routes_for_model_calls
+                .fetch_add(1, Ordering::SeqCst);
+            Ok(self
+                .routes_by_model
+                .get(&model_id)
+                .cloned()
+                .unwrap_or_default())
+        }
+
+        async fn list_routes_for_models(
+            &self,
+            model_ids: &[Uuid],
+        ) -> Result<HashMap<Uuid, Vec<ModelRoute>>, StoreError> {
+            self.list_routes_for_models_calls
+                .fetch_add(1, Ordering::SeqCst);
+            Ok(model_ids
+                .iter()
+                .filter_map(|model_id| {
+                    self.routes_by_model
+                        .get(model_id)
+                        .cloned()
+                        .map(|routes| (*model_id, routes))
+                })
+                .collect())
+        }
+    }
+
+    #[async_trait]
+    impl ProviderRepository for CountingRepo {
+        async fn get_provider_by_key(
+            &self,
+            provider_key: &str,
+        ) -> Result<Option<ProviderConnection>, StoreError> {
+            self.get_provider_by_key_calls
+                .fetch_add(1, Ordering::SeqCst);
+            Ok(self.providers_by_key.get(provider_key).cloned())
+        }
+
+        async fn list_providers_by_keys(
+            &self,
+            provider_keys: &[String],
+        ) -> Result<HashMap<String, ProviderConnection>, StoreError> {
+            self.list_providers_by_keys_calls
+                .fetch_add(1, Ordering::SeqCst);
+            Ok(provider_keys
+                .iter()
+                .filter_map(|provider_key| {
+                    self.providers_by_key
+                        .get(provider_key)
+                        .cloned()
+                        .map(|provider| (provider_key.clone(), provider))
+                })
+                .collect())
+        }
+    }
+
+    #[tokio::test]
+    async fn list_models_batches_route_and_provider_loading() {
+        let execution_model_id = Uuid::new_v4();
+        let alias_model_id = Uuid::new_v4();
+        let route_id = Uuid::new_v4();
+
+        let repo = Arc::new(CountingRepo {
+            models: vec![
+                GatewayModel {
+                    id: alias_model_id,
+                    model_key: "friendly-alias".to_string(),
+                    alias_target_model_key: Some("gpt-4.1".to_string()),
+                    description: Some("alias".to_string()),
+                    tags: vec!["alias".to_string()],
+                    rank: 1,
+                },
+                GatewayModel {
+                    id: execution_model_id,
+                    model_key: "gpt-4.1".to_string(),
+                    alias_target_model_key: None,
+                    description: Some("base".to_string()),
+                    tags: vec!["base".to_string()],
+                    rank: 2,
+                },
+            ],
+            routes_by_model: HashMap::from([(
+                execution_model_id,
+                vec![ModelRoute {
+                    id: route_id,
+                    model_id: execution_model_id,
+                    provider_key: "openai".to_string(),
+                    upstream_model: "gpt-4.1".to_string(),
+                    priority: 0,
+                    weight: 1.0,
+                    enabled: true,
+                    extra_headers: Default::default(),
+                    extra_body: Default::default(),
+                    capabilities: Default::default(),
+                }],
+            )]),
+            providers_by_key: HashMap::from([(
+                "openai".to_string(),
+                ProviderConnection {
+                    provider_key: "openai".to_string(),
+                    provider_type: "openai_compat".to_string(),
+                    config: json!({"display": {"label": "OpenAI"}}),
+                    secrets: None,
+                },
+            )]),
+            ..Default::default()
+        });
+
+        let service = AdminModelsService::new(repo.clone());
+        let items = service.list_models().await.expect("admin models");
+
+        assert_eq!(items.len(), 2);
+        assert_eq!(repo.list_routes_for_models_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(repo.list_routes_for_model_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(repo.list_providers_by_keys_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(repo.get_provider_by_key_calls.load(Ordering::SeqCst), 0);
+
+        let alias = items
+            .iter()
+            .find(|item| item.id == "friendly-alias")
+            .expect("alias item");
+        assert_eq!(alias.resolved_model_key, "gpt-4.1");
+        assert_eq!(alias.status, AdminModelStatus::Healthy);
+        assert_eq!(alias.provider_key.as_deref(), Some("openai"));
+        assert_eq!(alias.upstream_model.as_deref(), Some("gpt-4.1"));
+    }
+
+    #[tokio::test]
+    async fn list_models_keeps_degraded_status_when_provider_is_missing() {
+        let model_id = Uuid::new_v4();
+        let route_id = Uuid::new_v4();
+        let repo = Arc::new(CountingRepo {
+            models: vec![GatewayModel {
+                id: model_id,
+                model_key: "missing-provider-model".to_string(),
+                alias_target_model_key: None,
+                description: None,
+                tags: Vec::new(),
+                rank: 1,
+            }],
+            routes_by_model: HashMap::from([(
+                model_id,
+                vec![ModelRoute {
+                    id: route_id,
+                    model_id,
+                    provider_key: "missing".to_string(),
+                    upstream_model: "upstream".to_string(),
+                    priority: 0,
+                    weight: 1.0,
+                    enabled: true,
+                    extra_headers: Default::default(),
+                    extra_body: Default::default(),
+                    capabilities: Default::default(),
+                }],
+            )]),
+            ..Default::default()
+        });
+
+        let service = AdminModelsService::new(repo);
+        let items = service.list_models().await.expect("admin models");
+
+        assert_eq!(items[0].status, AdminModelStatus::Degraded);
+        assert_eq!(items[0].provider_key.as_deref(), Some("missing"));
     }
 }

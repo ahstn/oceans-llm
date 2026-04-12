@@ -258,6 +258,7 @@ Important fields:
 - `openai`
 - `openrouter`
 - `anthropic`
+- `aws`
 - `vertexai`
 
 Validation rules that matter:

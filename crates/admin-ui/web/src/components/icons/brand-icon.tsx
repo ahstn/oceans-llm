@@ -1,6 +1,7 @@
 import type { CSSProperties, HTMLAttributes } from 'react'
 
 import anthropicIcon from '@lobehub/icons-static-svg/icons/anthropic.svg'
+import awsIcon from '@lobehub/icons-static-svg/icons/aws-color.svg'
 import claudeIcon from '@lobehub/icons-static-svg/icons/claude-color.svg'
 import geminiIcon from '@lobehub/icons-static-svg/icons/gemini-color.svg'
 import openAiIcon from '@lobehub/icons-static-svg/icons/openai.svg'
@@ -11,6 +12,7 @@ import { cn } from '@/lib/utils'
 
 export type BrandIconKey =
   | 'anthropic'
+  | 'aws'
   | 'claude'
   | 'gemini'
   | 'openai'
@@ -24,6 +26,7 @@ interface BrandIconSource {
 
 const BRAND_ICON_SOURCES: Record<BrandIconKey, BrandIconSource> = {
   anthropic: { kind: 'mask', src: anthropicIcon },
+  aws: { kind: 'image', src: awsIcon },
   claude: { kind: 'image', src: claudeIcon },
   gemini: { kind: 'image', src: geminiIcon },
   openai: { kind: 'mask', src: openAiIcon },
@@ -37,7 +40,14 @@ export interface BrandIconProps extends Omit<HTMLAttributes<HTMLSpanElement>, 'c
   title?: string
 }
 
-export function BrandIcon({ className, iconKey, size = 16, style, title, ...props }: BrandIconProps) {
+export function BrandIcon({
+  className,
+  iconKey,
+  size = 16,
+  style,
+  title,
+  ...props
+}: BrandIconProps) {
   const source = iconKey ? BRAND_ICON_SOURCES[iconKey as BrandIconKey] : undefined
 
   if (!source) {

@@ -139,13 +139,12 @@ where
         let planned_routes = self.planner.plan_routes(&routes)?;
 
         let mut viable_routes = Vec::new();
+        let mut provider_connections = std::collections::HashMap::new();
         for route in planned_routes {
-            let exists = self
-                .store
-                .get_provider_by_key(&route.provider_key)
-                .await?
-                .is_some();
-            if exists {
+            if let Some(provider) = self.store.get_provider_by_key(&route.provider_key).await? {
+                provider_connections
+                    .entry(route.provider_key.clone())
+                    .or_insert(provider);
                 viable_routes.push(route);
             } else {
                 warn!(
@@ -167,6 +166,7 @@ where
             auth: auth.clone(),
             selection,
             routes: viable_routes,
+            provider_connections,
         })
     }
 
@@ -599,5 +599,372 @@ fn unpriced_reason_string(reason: &PricingUnpricedReason) -> String {
             format!("unsupported_billing_modifier:{value}")
         }
         PricingUnpricedReason::ModelNotFound => "model_not_found".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        collections::HashMap,
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+    };
+
+    use async_trait::async_trait;
+    use gateway_core::{
+        ApiKeyOwnerKind, ApiKeyRepository, AuthenticatedApiKey, BudgetRepository, GatewayModel,
+        ModelRepository, ModelRoute, Money4, PricingCatalogRepository, ProviderCapabilities,
+        ProviderConnection, ProviderRepository, RequestLogDetail, RequestLogPage,
+        RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository,
+        RoutePlanner, StoreError, StoreHealth,
+    };
+    use serde_json::{Map, json};
+    use time::OffsetDateTime;
+    use uuid::Uuid;
+
+    use super::GatewayService;
+
+    #[derive(Default)]
+    struct TestRepo {
+        model: Option<GatewayModel>,
+        routes: Vec<ModelRoute>,
+        providers: HashMap<String, ProviderConnection>,
+        provider_lookups: AtomicUsize,
+    }
+
+    #[async_trait]
+    impl ApiKeyRepository for TestRepo {
+        async fn get_api_key_by_public_id(
+            &self,
+            _public_id: &str,
+        ) -> Result<Option<gateway_core::ApiKeyRecord>, StoreError> {
+            unreachable!("not used in resolve_request test")
+        }
+
+        async fn touch_api_key_last_used(&self, _api_key_id: Uuid) -> Result<(), StoreError> {
+            unreachable!("not used in resolve_request test")
+        }
+    }
+
+    #[async_trait]
+    impl gateway_core::BudgetAlertRepository for TestRepo {}
+
+    #[async_trait]
+    impl BudgetRepository for TestRepo {
+        async fn get_active_budget_for_user(
+            &self,
+            _user_id: Uuid,
+        ) -> Result<Option<gateway_core::UserBudgetRecord>, StoreError> {
+            Ok(None)
+        }
+
+        async fn get_usage_ledger_by_request_and_scope(
+            &self,
+            _request_id: &str,
+            _ownership_scope_key: &str,
+        ) -> Result<Option<gateway_core::UsageLedgerRecord>, StoreError> {
+            Ok(None)
+        }
+
+        async fn sum_usage_cost_for_user_in_window(
+            &self,
+            _user_id: Uuid,
+            _window_start: OffsetDateTime,
+            _window_end: OffsetDateTime,
+        ) -> Result<Money4, StoreError> {
+            Ok(Money4::ZERO)
+        }
+
+        async fn insert_usage_ledger_if_absent(
+            &self,
+            _event: &gateway_core::UsageLedgerRecord,
+        ) -> Result<bool, StoreError> {
+            Ok(false)
+        }
+    }
+
+    #[async_trait]
+    impl ModelRepository for TestRepo {
+        async fn list_models(&self) -> Result<Vec<GatewayModel>, StoreError> {
+            Ok(self.model.clone().into_iter().collect())
+        }
+
+        async fn get_model_by_key(
+            &self,
+            model_key: &str,
+        ) -> Result<Option<GatewayModel>, StoreError> {
+            Ok(self
+                .model
+                .clone()
+                .filter(|model| model.model_key == model_key))
+        }
+
+        async fn list_models_for_api_key(
+            &self,
+            _api_key_id: Uuid,
+        ) -> Result<Vec<GatewayModel>, StoreError> {
+            Ok(self.model.clone().into_iter().collect())
+        }
+
+        async fn list_routes_for_model(
+            &self,
+            _model_id: Uuid,
+        ) -> Result<Vec<ModelRoute>, StoreError> {
+            Ok(self.routes.clone())
+        }
+    }
+
+    #[async_trait]
+    impl gateway_core::IdentityRepository for TestRepo {
+        async fn get_user_by_id(
+            &self,
+            _user_id: Uuid,
+        ) -> Result<Option<gateway_core::UserRecord>, StoreError> {
+            Ok(None)
+        }
+
+        async fn get_team_by_id(
+            &self,
+            _team_id: Uuid,
+        ) -> Result<Option<gateway_core::TeamRecord>, StoreError> {
+            Ok(None)
+        }
+
+        async fn get_team_membership_for_user(
+            &self,
+            _user_id: Uuid,
+        ) -> Result<Option<gateway_core::TeamMembershipRecord>, StoreError> {
+            Ok(None)
+        }
+
+        async fn list_allowed_model_keys_for_user(
+            &self,
+            _user_id: Uuid,
+        ) -> Result<Vec<String>, StoreError> {
+            Ok(Vec::new())
+        }
+
+        async fn list_allowed_model_keys_for_team(
+            &self,
+            _team_id: Uuid,
+        ) -> Result<Vec<String>, StoreError> {
+            Ok(Vec::new())
+        }
+    }
+
+    #[async_trait]
+    impl PricingCatalogRepository for TestRepo {
+        async fn get_pricing_catalog_cache(
+            &self,
+            _catalog_key: &str,
+        ) -> Result<Option<gateway_core::PricingCatalogCacheRecord>, StoreError> {
+            Ok(None)
+        }
+
+        async fn upsert_pricing_catalog_cache(
+            &self,
+            _cache: &gateway_core::PricingCatalogCacheRecord,
+        ) -> Result<(), StoreError> {
+            Ok(())
+        }
+
+        async fn touch_pricing_catalog_cache_fetched_at(
+            &self,
+            _catalog_key: &str,
+            _fetched_at: OffsetDateTime,
+        ) -> Result<(), StoreError> {
+            Ok(())
+        }
+
+        async fn list_active_model_pricing(
+            &self,
+        ) -> Result<Vec<gateway_core::ModelPricingRecord>, StoreError> {
+            Ok(Vec::new())
+        }
+
+        async fn insert_model_pricing(
+            &self,
+            _record: &gateway_core::ModelPricingRecord,
+        ) -> Result<(), StoreError> {
+            Ok(())
+        }
+
+        async fn close_model_pricing(
+            &self,
+            _model_pricing_id: Uuid,
+            _effective_end_at: OffsetDateTime,
+            _updated_at: OffsetDateTime,
+        ) -> Result<(), StoreError> {
+            Ok(())
+        }
+
+        async fn resolve_model_pricing_at(
+            &self,
+            _pricing_provider_id: &str,
+            _pricing_model_id: &str,
+            _occurred_at: OffsetDateTime,
+        ) -> Result<Option<gateway_core::ModelPricingRecord>, StoreError> {
+            Ok(None)
+        }
+    }
+
+    #[async_trait]
+    impl RequestLogRepository for TestRepo {
+        async fn insert_request_log(
+            &self,
+            _log: &RequestLogRecord,
+            _payload: Option<&RequestLogPayloadRecord>,
+        ) -> Result<(), StoreError> {
+            Ok(())
+        }
+
+        async fn list_request_logs(
+            &self,
+            _query: &RequestLogQuery,
+        ) -> Result<RequestLogPage, StoreError> {
+            unreachable!("not used in resolve_request test")
+        }
+
+        async fn get_request_log_detail(
+            &self,
+            _request_log_id: Uuid,
+        ) -> Result<RequestLogDetail, StoreError> {
+            unreachable!("not used in resolve_request test")
+        }
+    }
+
+    #[async_trait]
+    impl ProviderRepository for TestRepo {
+        async fn get_provider_by_key(
+            &self,
+            provider_key: &str,
+        ) -> Result<Option<ProviderConnection>, StoreError> {
+            self.provider_lookups.fetch_add(1, Ordering::SeqCst);
+            Ok(self.providers.get(provider_key).cloned())
+        }
+    }
+
+    #[async_trait]
+    impl StoreHealth for TestRepo {
+        async fn ping(&self) -> Result<(), StoreError> {
+            Ok(())
+        }
+    }
+
+    struct PassthroughPlanner;
+
+    impl RoutePlanner for PassthroughPlanner {
+        fn plan_routes(
+            &self,
+            routes: &[ModelRoute],
+        ) -> Result<Vec<ModelRoute>, gateway_core::RouteError> {
+            Ok(routes.to_vec())
+        }
+    }
+
+    fn auth() -> AuthenticatedApiKey {
+        AuthenticatedApiKey {
+            id: Uuid::new_v4(),
+            public_id: "pk_test".to_string(),
+            name: "test".to_string(),
+            owner_kind: ApiKeyOwnerKind::User,
+            owner_user_id: None,
+            owner_team_id: None,
+        }
+    }
+
+    fn model() -> GatewayModel {
+        GatewayModel {
+            id: Uuid::new_v4(),
+            model_key: "fast".to_string(),
+            alias_target_model_key: None,
+            description: None,
+            tags: Vec::new(),
+            rank: 10,
+        }
+    }
+
+    fn route(model_id: Uuid, provider_key: &str) -> ModelRoute {
+        ModelRoute {
+            id: Uuid::new_v4(),
+            model_id,
+            provider_key: provider_key.to_string(),
+            upstream_model: "gpt-5-mini".to_string(),
+            priority: 10,
+            weight: 1.0,
+            enabled: true,
+            extra_headers: Map::new(),
+            extra_body: Map::new(),
+            capabilities: ProviderCapabilities::all_enabled(),
+        }
+    }
+
+    fn provider(provider_key: &str) -> ProviderConnection {
+        ProviderConnection {
+            provider_key: provider_key.to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: json!({
+                "base_url": "https://openrouter.ai/api/v1",
+                "display": {
+                    "label": "OpenRouter",
+                    "icon_key": "openrouter"
+                }
+            }),
+            secrets: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn resolve_request_caches_provider_connections_for_viable_routes() {
+        let model = model();
+        let repo = Arc::new(TestRepo {
+            model: Some(model.clone()),
+            routes: vec![route(model.id, "router")],
+            providers: HashMap::from([("router".to_string(), provider("router"))]),
+            provider_lookups: AtomicUsize::new(0),
+        });
+        let service = GatewayService::new(repo.clone(), Arc::new(PassthroughPlanner));
+
+        let resolved = service
+            .resolve_request(&auth(), "fast")
+            .await
+            .expect("request should resolve");
+
+        assert_eq!(resolved.routes.len(), 1);
+        let provider = resolved
+            .provider_connections
+            .get("router")
+            .expect("provider should be cached");
+        assert_eq!(provider.provider_key, "router");
+        assert_eq!(
+            provider.config["display"]["icon_key"],
+            serde_json::Value::String("openrouter".to_string())
+        );
+        assert_eq!(repo.provider_lookups.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn resolve_request_excludes_missing_provider_from_cache_and_routes() {
+        let model = model();
+        let repo = Arc::new(TestRepo {
+            model: Some(model.clone()),
+            routes: vec![route(model.id, "missing")],
+            providers: HashMap::new(),
+            provider_lookups: AtomicUsize::new(0),
+        });
+        let service = GatewayService::new(repo.clone(), Arc::new(PassthroughPlanner));
+
+        let error = service
+            .resolve_request(&auth(), "fast")
+            .await
+            .expect_err("missing provider should leave no viable routes");
+
+        assert!(matches!(
+            error,
+            gateway_core::GatewayError::Route(gateway_core::RouteError::NoRoutesAvailable(_))
+        ));
+        assert_eq!(repo.provider_lookups.load(Ordering::SeqCst), 1);
     }
 }

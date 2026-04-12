@@ -14,8 +14,8 @@ use futures_util::{StreamExt, stream};
 use gateway_core::{
     AuthenticatedApiKey, ChatCompletionsRequest, CoreRequestRequirements, EmbeddingsRequest,
     GatewayError, ModelsListResponse, ProviderCapabilities, ProviderClient, ProviderError,
-    ProviderRepository, ProviderRequestContext, RequestLogRecord, RequestTags,
-    openai_chat_request_to_core, openai_embeddings_request_to_core, protocol::openai::ModelCard,
+    ProviderRequestContext, RequestLogRecord, RequestTags, openai_chat_request_to_core,
+    openai_embeddings_request_to_core, protocol::openai::ModelCard,
 };
 use gateway_service::{RequestLogIconMetadata, resolve_model_icon_key, resolve_provider_display};
 use serde_json::{Map, Value, json};
@@ -132,10 +132,9 @@ pub async fn v1_chat_completions(
             return Err(AppError(error));
         }
     };
-    let provider_connection = state.store.get_provider_by_key(&route.provider_key).await?;
     let icon_metadata = request_log_icon_metadata(
         &route,
-        provider_connection.as_ref(),
+        resolved.provider_connections.get(&route.provider_key),
         &resolved.selection.execution_model.model_key,
         &resolved.selection.requested_model.model_key,
     );
@@ -366,10 +365,9 @@ pub async fn v1_embeddings(
             return Err(AppError(no_compatible_route_error(requirements)));
         }
     };
-    let provider_connection = state.store.get_provider_by_key(&route.provider_key).await?;
     let icon_metadata = request_log_icon_metadata(
         &route,
-        provider_connection.as_ref(),
+        resolved.provider_connections.get(&route.provider_key),
         &resolved.selection.execution_model.model_key,
         &resolved.selection.requested_model.model_key,
     );
