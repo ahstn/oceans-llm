@@ -513,13 +513,41 @@
           "crate::http::models"
         ],
         "operationId": "list_models",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope_Vec_AdminModelView"
+                  "$ref": "#/components/schemas/Envelope_AdminModelPageView"
                 }
               }
             }
@@ -1435,6 +1463,45 @@
           }
         }
       },
+      "AdminModelPageView": {
+        "type": "object",
+        "required": [
+          "items",
+          "page",
+          "page_size",
+          "total"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminModelView"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "page_size": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "AdminModelStatusView": {
+        "type": "string",
+        "enum": [
+          "healthy",
+          "degraded"
+        ]
+      },
       "AdminModelView": {
         "type": "object",
         "required": [
@@ -1460,15 +1527,23 @@
             "type": "string"
           },
           "model_icon_key": {
-            "type": [
-              "string",
-              "null"
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ModelIconKeyView"
+              }
             ]
           },
           "provider_icon_key": {
-            "type": [
-              "string",
-              "null"
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ProviderIconKeyView"
+              }
             ]
           },
           "provider_key": {
@@ -1487,7 +1562,7 @@
             "type": "string"
           },
           "status": {
-            "type": "string"
+            "$ref": "#/components/schemas/AdminModelStatusView"
           },
           "tags": {
             "type": "array",
@@ -2156,6 +2231,50 @@
           }
         }
       },
+      "Envelope_AdminModelPageView": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "items",
+              "page",
+              "page_size",
+              "total"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AdminModelView"
+                }
+              },
+              "page": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "page_size": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "total": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
       "Envelope_AdminTeamManagementView": {
         "type": "object",
         "required": [
@@ -2780,89 +2899,6 @@
           }
         }
       },
-      "Envelope_Vec_AdminModelView": {
-        "type": "object",
-        "required": [
-          "data",
-          "meta"
-        ],
-        "properties": {
-          "data": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": [
-                "id",
-                "resolved_model_key",
-                "tags",
-                "status"
-              ],
-              "properties": {
-                "alias_of": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "description": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "id": {
-                  "type": "string"
-                },
-                "model_icon_key": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "provider_icon_key": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "provider_key": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "provider_label": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "resolved_model_key": {
-                  "type": "string"
-                },
-                "status": {
-                  "type": "string"
-                },
-                "tags": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                "upstream_model": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                }
-              }
-            }
-          },
-          "meta": {
-            "$ref": "#/components/schemas/ResponseMeta"
-          }
-        }
-      },
       "IdentityActionStatus": {
         "type": "object",
         "required": [
@@ -2902,6 +2938,17 @@
             "type": "string"
           }
         }
+      },
+      "ModelIconKeyView": {
+        "type": "string",
+        "enum": [
+          "anthropic",
+          "claude",
+          "gemini",
+          "openai",
+          "openrouter",
+          "vertexai"
+        ]
       },
       "OpenAiErrorBodyView": {
         "type": "object",
@@ -2974,6 +3021,16 @@
             "type": "string"
           }
         }
+      },
+      "ProviderIconKeyView": {
+        "type": "string",
+        "enum": [
+          "anthropic",
+          "aws",
+          "openai",
+          "openrouter",
+          "vertexai"
+        ]
       },
       "RequestLogDetailView": {
         "type": "object",
@@ -3087,9 +3144,13 @@
             "additionalProperties": true
           },
           "model_icon_key": {
-            "type": [
-              "string",
-              "null"
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ModelIconKeyView"
+              }
             ]
           },
           "model_key": {
@@ -3106,9 +3167,13 @@
             "format": "int64"
           },
           "provider_icon_key": {
-            "type": [
-              "string",
-              "null"
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ProviderIconKeyView"
+              }
             ]
           },
           "provider_key": {

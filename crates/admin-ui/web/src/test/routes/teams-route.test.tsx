@@ -102,7 +102,8 @@ describe('TeamsPage', () => {
 
     expect(screen.getAllByText('Jane Admin').length).toBeGreaterThan(0)
     expect(
-      screen.getAllByText('Owner memberships cannot be removed or transferred in this slice.').length,
+      screen.getAllByText('Owner memberships cannot be removed or transferred in this slice.')
+        .length,
     ).toBeGreaterThan(0)
     expect(screen.getAllByRole('button', { name: 'Transfer' })[0]).toBeDisabled()
     expect(screen.getAllByRole('button', { name: 'Remove' })[0]).toBeDisabled()

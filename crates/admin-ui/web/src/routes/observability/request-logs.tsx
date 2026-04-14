@@ -455,9 +455,7 @@ export function RequestLogsPage() {
               </div>
             </div>
           ) : (
-            <div className="text-sm text-[var(--color-text-soft)]">
-              Loading request log detail…
-            </div>
+            <div className="text-sm text-[var(--color-text-soft)]">Loading request log detail…</div>
           )}
         </DialogContent>
       </Dialog>

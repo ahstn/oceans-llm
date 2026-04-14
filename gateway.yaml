@@ -31,10 +31,9 @@ teams:
       timezone: UTC
 
 users:
-  - name: Alice Platform Admin
+  - name: Alice Platform Lead
     email: alice@platform.local
     auth_mode: password
-    global_role: platform_admin
     request_logging_enabled: true
     membership:
       team: platform

@@ -61,9 +61,9 @@ Use `mise run gateway-reset-local-demo` any time you want to recreate that riche
   - `mise run gateway-bootstrap-admin`
 - local explicit config seed:
   - `mise run gateway-seed-config`
-- local demo dataset seed:
+- local-only demo dataset seed:
   - `mise run gateway-seed-local-demo`
-- local demo dataset reset:
+- local-only demo dataset reset:
   - `mise run gateway-reset-local-demo`
 - production-shaped local stack:
   - `mise run prod-stack`

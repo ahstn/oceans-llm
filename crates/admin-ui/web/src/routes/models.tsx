@@ -1,9 +1,10 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { HomeIcon } from '@hugeicons/core-free-icons'
 
 import { BrandIcon } from '@/components/icons/brand-icon'
 import { AppIcon } from '@/components/icons/app-icon'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Empty,
@@ -16,14 +17,33 @@ import {
 import { requireAdminSession } from '@/routes/-admin-guard'
 import { getModels } from '@/server/admin-data.functions'
 
+const DEFAULT_PAGE = 1
+const DEFAULT_PAGE_SIZE = 30
+
 export const Route = createFileRoute('/models')({
   beforeLoad: ({ location }) => requireAdminSession(location),
-  loader: () => getModels(),
+  validateSearch: (search: Record<string, unknown>) => normalizeModelsSearch(search),
+  loaderDeps: ({ search }) => search,
+  loader: ({ deps }) => getModels({ data: deps }),
   component: ModelsPage,
 })
 
 function ModelsPage() {
-  const { data } = Route.useLoaderData()
+  const { data: modelPage } = Route.useLoaderData()
+  const search = Route.useSearch()
+  const router = useRouter()
+  const totalPages = Math.max(1, Math.ceil(modelPage.total / modelPage.page_size))
+
+  function navigateToPage(page: number) {
+    void router.navigate({
+      to: '/models',
+      search: normalizeModelsSearch({
+        ...search,
+        page,
+        page_size: search.page_size,
+      }),
+    })
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -34,9 +54,18 @@ function ModelsPage() {
             Review routed models, upstream targets, and current health status.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--color-text-muted)]">
+            <span>
+              Showing {modelPage.items.length} of {modelPage.total} models
+            </span>
+            <span>
+              Page {modelPage.page} of {totalPages}
+            </span>
+          </div>
+
           <div className="grid gap-4 lg:grid-cols-2">
-            {data.length === 0 ? (
+            {modelPage.items.length === 0 ? (
               <Card className="lg:col-span-2">
                 <CardContent className="pt-5">
                   <Empty>
@@ -54,7 +83,7 @@ function ModelsPage() {
                 </CardContent>
               </Card>
             ) : (
-              data.map((model) => (
+              modelPage.items.map((model) => (
                 <Card key={model.id}>
                   <CardHeader className="gap-4">
                     <div className="flex items-start justify-between gap-3">
@@ -67,7 +96,9 @@ function ModelsPage() {
                           </div>
                           <CardDescription className="flex flex-wrap items-center gap-2">
                             <BrandIcon iconKey={model.provider_icon_key} size={14} />
-                            <span>{model.provider_label ?? model.provider_key ?? 'Unresolved'}</span>
+                            <span>
+                              {model.provider_label ?? model.provider_key ?? 'Unresolved'}
+                            </span>
                             {model.provider_key && model.provider_label !== model.provider_key ? (
                               <span className="font-mono text-xs text-[var(--color-text-soft)]">
                                 {model.provider_key}
@@ -102,8 +133,38 @@ function ModelsPage() {
               ))
             )}
           </div>
+
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => navigateToPage(modelPage.page - 1)}
+              disabled={modelPage.page <= 1}
+            >
+              Previous
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => navigateToPage(modelPage.page + 1)}
+              disabled={modelPage.page >= totalPages}
+            >
+              Next
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>
   )
+}
+
+function normalizeModelsSearch(search: Record<string, unknown>) {
+  const page = Number(search.page)
+  const pageSize = Number(search.page_size)
+
+  return {
+    page: Number.isFinite(page) && page >= 1 ? Math.floor(page) : DEFAULT_PAGE,
+    page_size:
+      Number.isFinite(pageSize) && pageSize >= 1 ? Math.floor(pageSize) : DEFAULT_PAGE_SIZE,
+  }
 }

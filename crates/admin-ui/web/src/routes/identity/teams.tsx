@@ -463,7 +463,9 @@ export function TeamsPage() {
                                     {member.email}
                                   </p>
                                 </div>
-                                <Badge variant={member.team_role === 'owner' ? 'warning' : 'default'}>
+                                <Badge
+                                  variant={member.team_role === 'owner' ? 'warning' : 'default'}
+                                >
                                   {member.team_role ?? 'member'}
                                 </Badge>
                               </div>
@@ -496,7 +498,9 @@ export function TeamsPage() {
                           ))}
                         </div>
                       ) : (
-                        <p className="text-sm text-[var(--color-text-soft)]">No members assigned yet.</p>
+                        <p className="text-sm text-[var(--color-text-soft)]">
+                          No members assigned yet.
+                        </p>
                       )}
                     </div>
 
@@ -576,7 +580,9 @@ export function TeamsPage() {
                                         {member.email}
                                       </p>
                                     </div>
-                                    <Badge variant={member.team_role === 'owner' ? 'warning' : 'default'}>
+                                    <Badge
+                                      variant={member.team_role === 'owner' ? 'warning' : 'default'}
+                                    >
                                       {member.team_role ?? 'member'}
                                     </Badge>
                                     <Button
@@ -991,10 +997,13 @@ export function TeamsPage() {
           </DialogHeader>
 
           {memberDialogUser && memberDialogTeam ? (
-            <form className="flex flex-col gap-5" onSubmit={(event) => {
-              event.preventDefault()
-              handleTransferMember()
-            }}>
+            <form
+              className="flex flex-col gap-5"
+              onSubmit={(event) => {
+                event.preventDefault()
+                handleTransferMember()
+              }}
+            >
               {memberDialogUser.team_role === 'owner' ? (
                 <Alert>
                   <AlertTitle>Owner memberships are locked</AlertTitle>

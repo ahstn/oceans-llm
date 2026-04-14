@@ -62,12 +62,11 @@ const ObservabilityUsageCostsRoute = ObservabilityUsageCostsRouteImport.update({
   path: '/observability/usage-costs',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ObservabilityRequestLogsRoute =
-  ObservabilityRequestLogsRouteImport.update({
-    id: '/observability/request-logs',
-    path: '/observability/request-logs',
-    getParentRoute: () => rootRouteImport,
-  } as any)
+const ObservabilityRequestLogsRoute = ObservabilityRequestLogsRouteImport.update({
+  id: '/observability/request-logs',
+  path: '/observability/request-logs',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const InviteTokenRoute = InviteTokenRouteImport.update({
   id: '/invite/$token',
   path: '/invite/$token',

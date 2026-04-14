@@ -59,13 +59,13 @@ export function CreatedApiKeyAlert({
       <AlertTitle>Copy the new key now</AlertTitle>
       <div className="mt-1 flex flex-col gap-3 text-sm text-[var(--color-text-muted)]">
         <p>
-          The raw secret is shown once. It is not stored in the control plane and cannot be
-          revealed again later.
+          The raw secret is shown once. It is not stored in the control plane and cannot be revealed
+          again later.
         </p>
         <div className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-3">
           <p
             data-testid="new-api-key-raw-key"
-            className="break-all font-mono text-xs text-[var(--color-text)]"
+            className="font-mono text-xs break-all text-[var(--color-text)]"
           >
             {result.raw_key}
           </p>
@@ -156,7 +156,9 @@ export function ApiKeyList({
                 <p className="font-semibold text-[var(--color-text)]">{item.name}</p>
                 <p className="font-mono text-xs text-[var(--color-text-soft)]">{item.prefix}</p>
               </div>
-              <Badge variant={item.status === 'active' ? 'success' : 'warning'}>{item.status}</Badge>
+              <Badge variant={item.status === 'active' ? 'success' : 'warning'}>
+                {item.status}
+              </Badge>
             </div>
             <dl className="mt-3 grid gap-2 text-sm">
               <div>
@@ -319,7 +321,9 @@ export function CreateApiKeyDialog({
                 placeholder="Production web"
                 autoComplete="off"
               />
-              <FieldDescription>Use a name that makes rotation and revocation obvious later.</FieldDescription>
+              <FieldDescription>
+                Use a name that makes rotation and revocation obvious later.
+              </FieldDescription>
             </Field>
 
             <Field>
@@ -347,7 +351,9 @@ export function CreateApiKeyDialog({
                 }
                 onValueChange={onOwnerSelectionChange}
               >
-                <SelectTrigger aria-label={form.owner_kind === 'user' ? 'Owner user' : 'Owner team'}>
+                <SelectTrigger
+                  aria-label={form.owner_kind === 'user' ? 'Owner user' : 'Owner team'}
+                >
                   <SelectValue placeholder={ownerLabel} />
                 </SelectTrigger>
                 <SelectContent>

@@ -1,170 +1,74 @@
-import { type ReactNode, useMemo } from 'react'
-import { HomeIcon, Notification03Icon, SearchIcon, UserIcon } from '@hugeicons/core-free-icons'
+import type { ReactNode } from 'react'
 import { Link, useRouterState } from '@tanstack/react-router'
 
-import { AppIcon } from '@/components/icons/app-icon'
-import { cn } from '@/lib/utils'
+import { AppSidebar } from '@/components/app-sidebar'
+import {
+  getActiveNavItem,
+  getActiveNavSection,
+  normalizeAdminPath,
+} from '@/components/layout/admin-nav'
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb'
+import { Separator } from '@/components/ui/separator'
+import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
+import type { AuthSessionView } from '@/types/api'
 
 interface AppShellProps {
   children: ReactNode
+  session: AuthSessionView
 }
 
-interface NavItem {
-  label: string
-  to: string
-  icon: unknown
-}
-
-const topItems: NavItem[] = [
-  { label: 'API Keys', to: '/api-keys', icon: SearchIcon },
-  { label: 'Models', to: '/models', icon: HomeIcon },
-  { label: 'Spend Controls', to: '/spend-controls', icon: Notification03Icon },
-]
-
-const observabilityItems: NavItem[] = [
-  { label: 'Usage Costs', to: '/observability/usage-costs', icon: Notification03Icon },
-  { label: 'Request Logs', to: '/observability/request-logs', icon: SearchIcon },
-]
-
-const identityItems: NavItem[] = [
-  { label: 'Teams', to: '/identity/teams', icon: UserIcon },
-  { label: 'Users', to: '/identity/users', icon: UserIcon },
-]
-
-export function AppShell({ children }: AppShellProps) {
+export function AppShell({ children, session }: AppShellProps) {
   const pathname = useRouterState({ select: (state) => state.location.pathname })
-  const currentPath = useMemo(() => pathname.replace(/^\/admin/, '') || '/', [pathname])
+  const currentPath = normalizeAdminPath(pathname)
+  const activeSection = getActiveNavSection(currentPath)
+  const activeItem = getActiveNavItem(currentPath)
 
   return (
-    <div className="min-h-screen px-3 py-3 text-[var(--color-text)] sm:px-6 sm:py-6">
-      <div className="mx-auto flex h-[calc(100vh-24px)] max-w-[1500px] overflow-hidden rounded-[1.3rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] sm:h-[calc(100vh-48px)]">
-        <aside className="hidden w-[292px] shrink-0 border-r border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4 sm:flex sm:flex-col">
-          <div className="flex items-center gap-3 px-2 py-1">
-            <span className="inline-flex size-9 items-center justify-center rounded-md bg-[var(--color-primary)] text-[11px] font-bold tracking-[0.08em] text-[var(--color-primary-foreground)] uppercase">
-              OC
-            </span>
-            <div className="flex min-w-0 flex-col gap-0.5">
-              <p className="text-sm font-semibold text-[var(--color-text)]">Oceans Gateway</p>
-              <p className="text-xs text-[var(--color-text-soft)]">Control Plane</p>
-            </div>
+    <SidebarProvider>
+      <AppSidebar currentPath={currentPath} session={session} />
+
+      <SidebarInset>
+        <header className="border-border/70 bg-background/80 sticky top-0 z-20 flex h-16 shrink-0 items-center gap-3 border-b px-4 backdrop-blur-xl sm:px-6">
+          <SidebarTrigger className="-ml-1" />
+          <Separator orientation="vertical" className="data-[orientation=vertical]:h-4" />
+
+          <Breadcrumb>
+            <BreadcrumbList>
+              {activeSection ? (
+                <>
+                  <BreadcrumbItem className="hidden md:block">
+                    <BreadcrumbLink asChild>
+                      <Link to={activeSection.items[0].to}>{activeSection.label}</Link>
+                    </BreadcrumbLink>
+                  </BreadcrumbItem>
+                  <BreadcrumbSeparator className="hidden md:block" />
+                </>
+              ) : null}
+              <BreadcrumbItem>
+                <BreadcrumbPage>{activeItem?.label ?? 'Operations Console'}</BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+
+          <div className="border-border/70 bg-card/70 text-muted-foreground ml-auto hidden items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium sm:flex">
+            <span className="bg-primary inline-flex size-2 rounded-full" />
+            Server-first · same-origin
           </div>
+        </header>
 
-          <nav className="mt-6 flex flex-col gap-1.5">
-            {topItems.map((item) => (
-              <NavLink key={item.to} item={item} currentPath={currentPath} />
-            ))}
-          </nav>
-
-          <NavGroup label="Observability" items={observabilityItems} currentPath={currentPath} />
-          <NavGroup label="Identity Management" items={identityItems} currentPath={currentPath} />
-
-          <div className="mt-auto border-t border-[color:var(--color-border)] pt-4">
-            <p className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
-              Local-only preview mode
-            </p>
-            <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-              API keys, identity, spend, and observability are gateway-backed. Model inventory is
-              still preview-only in this environment.
-            </p>
+        <main className="min-h-0 flex-1 overflow-auto">
+          <div className="mx-auto flex min-h-full w-full max-w-[1600px] flex-col gap-6 p-4 sm:p-6">
+            {children}
           </div>
-        </aside>
-
-        <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex h-16 items-center justify-between border-b border-[color:var(--color-border)] px-4 sm:px-6">
-            <div className="flex flex-col gap-1">
-              <p className="text-xs font-semibold tracking-[0.14em] text-[var(--color-text-soft)] uppercase">
-                Gateway Admin
-              </p>
-              <p className="text-lg font-semibold text-[var(--color-text)]">Operations Console</p>
-            </div>
-            <div className="hidden items-center gap-2 rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] px-3 py-1.5 sm:flex">
-              <AppIcon
-                icon={SearchIcon}
-                size={16}
-                stroke={1.2}
-                className="text-[var(--color-primary)]"
-              />
-              <span className="text-xs font-medium text-[var(--color-text-muted)]">
-                Server-first, same-origin
-              </span>
-            </div>
-          </header>
-
-          <nav className="flex gap-2 overflow-x-auto border-b border-[color:var(--color-border)] px-4 py-3 sm:hidden">
-            {[...topItems, ...observabilityItems, ...identityItems].map((item) => (
-              <Link
-                key={item.to}
-                to={item.to}
-                className={cn(
-                  'shrink-0 rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-muted)]',
-                  currentPath === item.to &&
-                    'border-[color:var(--color-border-strong)] bg-[var(--color-primary-soft)] text-[var(--color-text)]',
-                )}
-              >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
-
-          <main className="min-h-0 flex-1 overflow-auto p-4 sm:p-6">{children}</main>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function NavGroup({
-  label,
-  items,
-  currentPath,
-}: {
-  label: string
-  items: NavItem[]
-  currentPath: string
-}) {
-  return (
-    <div className="mt-5">
-      <p className="px-2 text-[11px] font-semibold tracking-[0.14em] text-[var(--color-text-soft)] uppercase">
-        {label}
-      </p>
-      <div className="mt-2 flex flex-col gap-1.5">
-        {items.map((item) => (
-          <NavLink key={item.to} item={item} currentPath={currentPath} nested />
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function NavLink({
-  item,
-  currentPath,
-  nested = false,
-}: {
-  item: NavItem
-  currentPath: string
-  nested?: boolean
-}) {
-  const active = currentPath === item.to
-
-  return (
-    <Link
-      to={item.to}
-      className={cn(
-        'group flex items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 text-sm font-medium text-[var(--color-text-muted)] transition-colors',
-        nested && 'ml-2',
-        active
-          ? 'border-[color:var(--color-border-strong)] bg-[var(--color-primary-soft)] text-[var(--color-text)]'
-          : 'hover:border-[color:var(--color-border)] hover:bg-[color:var(--color-surface)] hover:text-[var(--color-text)]',
-      )}
-    >
-      <AppIcon
-        icon={item.icon}
-        size={16}
-        stroke={1.2}
-        className={cn(active ? 'text-[var(--color-primary)]' : 'text-[var(--color-text-soft)]')}
-      />
-      <span>{item.label}</span>
-    </Link>
+        </main>
+      </SidebarInset>
+    </SidebarProvider>
   )
 }

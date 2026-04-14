@@ -69,7 +69,10 @@ export function UsageCostsPage() {
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
-            <Select value={String(windowDays)} onValueChange={(value) => setWindowDays(Number(value) as 7 | 30)}>
+            <Select
+              value={String(windowDays)}
+              onValueChange={(value) => setWindowDays(Number(value) as 7 | 30)}
+            >
               <SelectTrigger className="w-[130px]">
                 <SelectValue placeholder="Window" />
               </SelectTrigger>
@@ -80,7 +83,10 @@ export function UsageCostsPage() {
                 </SelectGroup>
               </SelectContent>
             </Select>
-            <Select value={ownerKind} onValueChange={(value) => setOwnerKind(value as SpendOwnerKind)}>
+            <Select
+              value={ownerKind}
+              onValueChange={(value) => setOwnerKind(value as SpendOwnerKind)}
+            >
               <SelectTrigger className="w-[130px]">
                 <SelectValue placeholder="Owner" />
               </SelectTrigger>
@@ -103,8 +109,14 @@ export function UsageCostsPage() {
               label="Priced spend"
               value={CURRENCY_FORMATTER.format(report.totals.priced_cost_usd_10000 / 10_000)}
             />
-            <MetricCard label="Priced requests" value={String(report.totals.priced_request_count)} />
-            <MetricCard label="Unpriced requests" value={String(report.totals.unpriced_request_count)} />
+            <MetricCard
+              label="Priced requests"
+              value={String(report.totals.priced_request_count)}
+            />
+            <MetricCard
+              label="Unpriced requests"
+              value={String(report.totals.unpriced_request_count)}
+            />
             <MetricCard
               label="Usage-missing requests"
               value={String(report.totals.usage_missing_request_count)}
@@ -157,7 +169,9 @@ export function UsageCostsPage() {
               <span className="px-3 py-2 font-semibold">Usage missing</span>
             </div>
             {report.owners.length === 0 ? (
-              <div className="px-3 py-8 text-sm text-[var(--color-text-soft)]">No owner spend in this window.</div>
+              <div className="px-3 py-8 text-sm text-[var(--color-text-soft)]">
+                No owner spend in this window.
+              </div>
             ) : (
               report.owners.map((owner) => (
                 <div
@@ -200,7 +214,9 @@ export function UsageCostsPage() {
               <span className="px-3 py-2 font-semibold">Usage missing</span>
             </div>
             {report.models.length === 0 ? (
-              <div className="px-3 py-8 text-sm text-[var(--color-text-soft)]">No model spend in this window.</div>
+              <div className="px-3 py-8 text-sm text-[var(--color-text-soft)]">
+                No model spend in this window.
+              </div>
             ) : (
               report.models.map((model) => (
                 <div

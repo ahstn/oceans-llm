@@ -106,12 +106,25 @@ pub fn resolve_provider_display(
     provider_key: &str,
     provider: Option<&ProviderConnection>,
 ) -> ProviderDisplayIdentity {
-    let configured_icon_key = provider.and_then(provider_display_icon_key);
-    let icon_key =
-        configured_icon_key.unwrap_or_else(|| infer_provider_icon_key(provider_key, provider));
+    resolve_provider_display_from_parts(
+        provider_key,
+        provider.map(|value| value.provider_type.as_str()),
+        provider.map(|value| &value.config),
+    )
+}
 
-    let label = provider
-        .and_then(provider_display_label)
+#[must_use]
+pub fn resolve_provider_display_from_parts(
+    provider_key: &str,
+    provider_type: Option<&str>,
+    provider_config: Option<&Value>,
+) -> ProviderDisplayIdentity {
+    let configured_icon_key = provider_config.and_then(provider_display_icon_key_from_config);
+    let icon_key = configured_icon_key
+        .unwrap_or_else(|| infer_provider_icon_key(provider_key, provider_type, provider_config));
+
+    let label = provider_config
+        .and_then(provider_display_label_from_config)
         .unwrap_or_else(|| icon_key.default_label().to_string());
 
     ProviderDisplayIdentity { label, icon_key }
@@ -171,31 +184,29 @@ fn infer_model_icon_key(value: &str) -> Option<ModelIconKey> {
 
 fn infer_provider_icon_key(
     provider_key: &str,
-    provider: Option<&ProviderConnection>,
+    provider_type: Option<&str>,
+    provider_config: Option<&Value>,
 ) -> ProviderIconKey {
-    if let Some(provider) = provider {
-        if provider.provider_type == "gcp_vertex" {
-            return ProviderIconKey::VertexAI;
-        }
+    if provider_type == Some("gcp_vertex") {
+        return ProviderIconKey::VertexAI;
+    }
 
-        if let Some(base_url) = provider
-            .config
-            .get("base_url")
-            .and_then(Value::as_str)
-            .map(|value| value.to_ascii_lowercase())
-        {
-            if base_url.contains("openrouter") {
-                return ProviderIconKey::OpenRouter;
-            }
-            if base_url.contains("anthropic") {
-                return ProviderIconKey::Anthropic;
-            }
-            if is_aws_provider_candidate(&base_url) {
-                return ProviderIconKey::AWS;
-            }
-            if base_url.contains("openai") {
-                return ProviderIconKey::OpenAI;
-            }
+    if let Some(base_url) = provider_config
+        .and_then(|config| config.get("base_url"))
+        .and_then(Value::as_str)
+        .map(|value| value.to_ascii_lowercase())
+    {
+        if base_url.contains("openrouter") {
+            return ProviderIconKey::OpenRouter;
+        }
+        if base_url.contains("anthropic") {
+            return ProviderIconKey::Anthropic;
+        }
+        if is_aws_provider_candidate(&base_url) {
+            return ProviderIconKey::AWS;
+        }
+        if base_url.contains("openai") {
+            return ProviderIconKey::OpenAI;
         }
     }
 
@@ -213,9 +224,8 @@ fn infer_provider_icon_key(
     }
 }
 
-fn provider_display_label(provider: &ProviderConnection) -> Option<String> {
-    provider
-        .config
+fn provider_display_label_from_config(config: &Value) -> Option<String> {
+    config
         .get("display")
         .and_then(Value::as_object)
         .and_then(|display| display.get("label"))
@@ -225,9 +235,8 @@ fn provider_display_label(provider: &ProviderConnection) -> Option<String> {
         .map(ToString::to_string)
 }
 
-fn provider_display_icon_key(provider: &ProviderConnection) -> Option<ProviderIconKey> {
-    provider
-        .config
+fn provider_display_icon_key_from_config(config: &Value) -> Option<ProviderIconKey> {
+    config
         .get("display")
         .and_then(Value::as_object)
         .and_then(|display| display.get("icon_key"))
@@ -266,7 +275,10 @@ mod tests {
     use gateway_core::ProviderConnection;
     use serde_json::json;
 
-    use super::{ModelIconKey, ProviderIconKey, resolve_model_icon_key, resolve_provider_display};
+    use super::{
+        ModelIconKey, ProviderIconKey, resolve_model_icon_key, resolve_provider_display,
+        resolve_provider_display_from_parts,
+    };
 
     #[test]
     fn claude_wins_over_anthropic_for_model_icons() {
@@ -297,6 +309,22 @@ mod tests {
         };
 
         let display = resolve_provider_display(&provider.provider_key, Some(&provider));
+        assert_eq!(display.label, "OpenRouter");
+        assert_eq!(display.icon_key, ProviderIconKey::OpenRouter);
+    }
+
+    #[test]
+    fn provider_display_from_parts_keeps_icon_and_label_behavior() {
+        let config = json!({
+            "base_url": "https://openrouter.ai/api/v1",
+            "display": {
+                "label": "OpenRouter",
+                "icon_key": "openrouter"
+            }
+        });
+
+        let display =
+            resolve_provider_display_from_parts("router", Some("openai_compat"), Some(&config));
         assert_eq!(display.label, "OpenRouter");
         assert_eq!(display.icon_key, ProviderIconKey::OpenRouter);
     }

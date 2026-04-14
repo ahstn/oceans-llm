@@ -1,6 +1,10 @@
 use std::{fs, path::Path};
 
 use anyhow::Context;
+use gateway_service::{
+    AdminModelStatus as ServiceAdminModelStatus, ModelIconKey as ServiceModelIconKey,
+    ProviderIconKey as ServiceProviderIconKey,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
@@ -121,6 +125,68 @@ pub struct AdminOidcProviderView {
     pub label: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum AdminModelStatusView {
+    Healthy,
+    Degraded,
+}
+
+impl From<ServiceAdminModelStatus> for AdminModelStatusView {
+    fn from(value: ServiceAdminModelStatus) -> Self {
+        match value {
+            ServiceAdminModelStatus::Healthy => Self::Healthy,
+            ServiceAdminModelStatus::Degraded => Self::Degraded,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ProviderIconKeyView {
+    Anthropic,
+    AWS,
+    OpenAI,
+    OpenRouter,
+    VertexAI,
+}
+
+impl From<ServiceProviderIconKey> for ProviderIconKeyView {
+    fn from(value: ServiceProviderIconKey) -> Self {
+        match value {
+            ServiceProviderIconKey::Anthropic => Self::Anthropic,
+            ServiceProviderIconKey::AWS => Self::AWS,
+            ServiceProviderIconKey::OpenAI => Self::OpenAI,
+            ServiceProviderIconKey::OpenRouter => Self::OpenRouter,
+            ServiceProviderIconKey::VertexAI => Self::VertexAI,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ModelIconKeyView {
+    Anthropic,
+    Claude,
+    Gemini,
+    OpenAI,
+    OpenRouter,
+    VertexAI,
+}
+
+impl From<ServiceModelIconKey> for ModelIconKeyView {
+    fn from(value: ServiceModelIconKey) -> Self {
+        match value {
+            ServiceModelIconKey::Anthropic => Self::Anthropic,
+            ServiceModelIconKey::Claude => Self::Claude,
+            ServiceModelIconKey::Gemini => Self::Gemini,
+            ServiceModelIconKey::OpenAI => Self::OpenAI,
+            ServiceModelIconKey::OpenRouter => Self::OpenRouter,
+            ServiceModelIconKey::VertexAI => Self::VertexAI,
+        }
+    }
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AdminModelView {
     pub id: String,
@@ -128,12 +194,26 @@ pub struct AdminModelView {
     pub alias_of: Option<String>,
     pub description: Option<String>,
     pub tags: Vec<String>,
-    pub status: String,
+    pub status: AdminModelStatusView,
     pub provider_key: Option<String>,
     pub provider_label: Option<String>,
-    pub provider_icon_key: Option<String>,
+    pub provider_icon_key: Option<ProviderIconKeyView>,
     pub upstream_model: Option<String>,
-    pub model_icon_key: Option<String>,
+    pub model_icon_key: Option<ModelIconKeyView>,
+}
+
+#[derive(Debug, Deserialize, Default, IntoParams)]
+pub struct AdminModelListQuery {
+    pub page: Option<u32>,
+    pub page_size: Option<u32>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AdminModelPageView {
+    pub items: Vec<AdminModelView>,
+    pub page: u32,
+    pub page_size: u32,
+    pub total: u64,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -470,9 +550,9 @@ pub struct RequestLogSummaryView {
     pub team_id: Option<String>,
     pub model_key: String,
     pub resolved_model_key: String,
-    pub model_icon_key: Option<String>,
+    pub model_icon_key: Option<ModelIconKeyView>,
     pub provider_key: String,
-    pub provider_icon_key: Option<String>,
+    pub provider_icon_key: Option<ProviderIconKeyView>,
     pub status_code: Option<i64>,
     pub latency_ms: Option<i64>,
     pub prompt_tokens: Option<i64>,
