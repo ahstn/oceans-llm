@@ -48,6 +48,7 @@ What exists after boot:
 - a gateway on `http://localhost:8080`
 - an admin UI at `http://localhost:8080/admin`
 - a bootstrap admin at `admin@local` with password `admin`
+- config-seeded local users are invited team members, not checked-in control-plane admins
 - when `./gateway.db` is absent and you start with `mise run dev-stack`, the local demo dataset is seeded automatically:
   - 2 teams
   - 5 users across those teams

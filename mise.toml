@@ -176,11 +176,11 @@ description = "Run local `gateway seed-config` against `gateway.yaml`"
 run = "cargo run -p gateway --bin gateway -- seed-config"
 
 [tasks.gateway-seed-local-demo]
-description = "Seed the local demo dataset (teams, users, budgets, api keys, request history) against `gateway.yaml`"
+description = "Seed the local-only demo dataset (teams, users, budgets, api keys, request history) against `gateway.yaml`"
 run = "cargo run -p gateway --bin gateway -- seed-local-demo"
 
 [tasks.gateway-reset-local-demo]
-description = "Recreate `gateway.db` with the local demo dataset"
+description = "Recreate local `gateway.db` with the local-only demo dataset"
 run = "rm -f gateway.db && cargo run -p gateway --bin gateway -- seed-local-demo"
 
 [tasks.gateway-serve-prod]

@@ -61,6 +61,42 @@ fn database_options(
         .context("failed resolving database configuration")
 }
 
+fn ensure_seed_local_demo_targets_local_database(
+    database_options: &gateway_store::StoreConnectionOptions,
+) -> anyhow::Result<()> {
+    match database_options {
+        gateway_store::StoreConnectionOptions::Libsql { .. } => Ok(()),
+        gateway_store::StoreConnectionOptions::Postgres { url, .. } => {
+            let parsed = url::Url::parse(url)
+                .context("failed parsing postgres url for `seed-local-demo`")?;
+            let host = parsed.host().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "`seed-local-demo` requires a postgres url with an explicit local host"
+                )
+            })?;
+            let is_local = match host {
+                url::Host::Domain(domain) => {
+                    domain.eq_ignore_ascii_case("localhost")
+                        || domain
+                            .parse::<std::net::IpAddr>()
+                            .map(|address| address.is_loopback())
+                            .unwrap_or(false)
+                }
+                url::Host::Ipv4(address) => address.is_loopback(),
+                url::Host::Ipv6(address) => address.is_loopback(),
+            };
+
+            if is_local {
+                Ok(())
+            } else {
+                anyhow::bail!(
+                    "`seed-local-demo` only supports local databases; postgres host `{host}` is not local"
+                )
+            }
+        }
+    }
+}
+
 async fn maybe_run_migrations(
     database_options: &gateway_store::StoreConnectionOptions,
     enabled: bool,
@@ -223,6 +259,7 @@ async fn run_seed_config_command(config: &GatewayConfig) -> anyhow::Result<()> {
 
 async fn run_seed_local_demo_command(config: &GatewayConfig) -> anyhow::Result<()> {
     let database_options = database_options(config)?;
+    ensure_seed_local_demo_targets_local_database(&database_options)?;
     maybe_run_migrations(&database_options, true).await?;
     let store = Arc::new(
         AnyStore::connect(&database_options)
@@ -1188,9 +1225,9 @@ mod tests {
     use url::Url;
     use uuid::Uuid;
 
-    use crate::ensure_bootstrap_admin;
+    use crate::{ensure_bootstrap_admin, ensure_seed_local_demo_targets_local_database};
     use gateway::{
-        config::BootstrapAdminConfig,
+        config::{BootstrapAdminConfig, GatewayConfig},
         http::{build_router, state::AppState},
     };
 
@@ -5585,6 +5622,65 @@ mod tests {
             .await
             .expect("lookup bootstrap admin");
         assert!(bootstrap_admin.is_none());
+    }
+
+    #[test]
+    fn seed_local_demo_accepts_libsql_and_loopback_postgres_only() {
+        assert!(
+            ensure_seed_local_demo_targets_local_database(&StoreConnectionOptions::Libsql {
+                path: PathBuf::from("./gateway.db"),
+            })
+            .is_ok()
+        );
+
+        assert!(
+            ensure_seed_local_demo_targets_local_database(&StoreConnectionOptions::Postgres {
+                url: "postgres://postgres:postgres@localhost/gateway".to_string(),
+                max_connections: 4,
+            })
+            .is_ok()
+        );
+
+        assert!(
+            ensure_seed_local_demo_targets_local_database(&StoreConnectionOptions::Postgres {
+                url: "postgres://postgres:postgres@127.0.0.1/gateway".to_string(),
+                max_connections: 4,
+            })
+            .is_ok()
+        );
+
+        assert!(
+            ensure_seed_local_demo_targets_local_database(&StoreConnectionOptions::Postgres {
+                url: "postgres://postgres:postgres@[::1]/gateway".to_string(),
+                max_connections: 4,
+            })
+            .is_ok()
+        );
+
+        let error =
+            ensure_seed_local_demo_targets_local_database(&StoreConnectionOptions::Postgres {
+                url: "postgres://postgres:postgres@db.internal/gateway".to_string(),
+                max_connections: 4,
+            })
+            .expect_err("non-local postgres should be rejected");
+        assert!(
+            error
+                .to_string()
+                .contains("`seed-local-demo` only supports local databases")
+        );
+    }
+
+    #[test]
+    fn local_gateway_config_does_not_seed_platform_admin_users() {
+        let config_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../gateway.yaml");
+        let config = GatewayConfig::from_path(&config_path).expect("gateway.yaml should parse");
+        let seeded_users = config.seed_users().expect("seed users");
+
+        assert!(
+            seeded_users
+                .iter()
+                .all(|user| user.global_role != GlobalRole::PlatformAdmin)
+        );
     }
 
     #[tokio::test]
