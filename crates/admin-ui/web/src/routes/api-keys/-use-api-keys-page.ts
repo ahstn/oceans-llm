@@ -2,8 +2,17 @@ import { useState, type FormEvent } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
-import { createGatewayApiKey, revokeGatewayApiKey } from '@/server/admin-data.functions'
-import type { ApiKeysPayload, CreateApiKeyInput, CreateApiKeyResult } from '@/types/api'
+import {
+  createGatewayApiKey,
+  revokeGatewayApiKey,
+  updateGatewayApiKey,
+} from '@/server/admin-data.functions'
+import type {
+  ApiKeysPayload,
+  CreateApiKeyInput,
+  CreateApiKeyResult,
+  UpdateApiKeyInput,
+} from '@/types/api'
 
 const initialForm: CreateApiKeyInput = {
   name: '',
@@ -13,7 +22,11 @@ const initialForm: CreateApiKeyInput = {
   model_keys: [],
 }
 
-export type RevokeDialogState = { mode: 'closed' } | { mode: 'open'; apiKeyId: string }
+const initialManageForm: UpdateApiKeyInput = {
+  model_keys: [],
+}
+
+export type ManageDialogState = { mode: 'closed' } | { mode: 'open'; apiKeyId: string }
 
 export function useApiKeysPageState({
   items,
@@ -23,8 +36,9 @@ export function useApiKeysPageState({
   const router = useRouter()
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [form, setForm] = useState<CreateApiKeyInput>(initialForm)
+  const [manageForm, setManageForm] = useState<UpdateApiKeyInput>(initialManageForm)
   const [createdResult, setCreatedResult] = useState<CreateApiKeyResult | null>(null)
-  const [revokeDialog, setRevokeDialog] = useState<RevokeDialogState>({ mode: 'closed' })
+  const [manageDialog, setManageDialog] = useState<ManageDialogState>({ mode: 'closed' })
   const [isMutating, setIsMutating] = useState(false)
 
   const selectedOwnerLabel =
@@ -32,9 +46,9 @@ export function useApiKeysPageState({
       ? (users.find((user) => user.id === form.owner_user_id)?.name ?? 'Select a user')
       : (teams.find((team) => team.id === form.owner_team_id)?.name ?? 'Select a team')
 
-  const revokeTarget =
-    revokeDialog.mode === 'open'
-      ? (items.find((item) => item.id === revokeDialog.apiKeyId) ?? null)
+  const manageTarget =
+    manageDialog.mode === 'open'
+      ? (items.find((item) => item.id === manageDialog.apiKeyId) ?? null)
       : null
 
   const isCreateDisabled =
@@ -42,6 +56,13 @@ export function useApiKeysPageState({
     form.name.trim().length === 0 ||
     form.model_keys.length === 0 ||
     (form.owner_kind === 'user' ? !form.owner_user_id : !form.owner_team_id)
+
+  const isManageDisabled =
+    isMutating ||
+    !manageTarget ||
+    manageTarget.status !== 'active' ||
+    manageForm.model_keys.length === 0 ||
+    sameModelSelection(manageTarget.model_keys, manageForm.model_keys)
 
   async function refreshApiKeys() {
     await router.invalidate()
@@ -57,12 +78,17 @@ export function useApiKeysPageState({
     setIsCreateOpen(false)
   }
 
-  function openRevokeDialog(apiKeyId: string) {
-    setRevokeDialog({ mode: 'open', apiKeyId })
+  function openManageDialog(apiKeyId: string) {
+    const target = items.find((item) => item.id === apiKeyId)
+    setManageForm({
+      model_keys: target?.model_keys ?? [],
+    })
+    setManageDialog({ mode: 'open', apiKeyId })
   }
 
-  function closeRevokeDialog() {
-    setRevokeDialog({ mode: 'closed' })
+  function closeManageDialog() {
+    setManageForm(initialManageForm)
+    setManageDialog({ mode: 'closed' })
   }
 
   function updateOwnerKind(ownerKind: CreateApiKeyInput['owner_kind']) {
@@ -98,6 +124,15 @@ export function useApiKeysPageState({
     }))
   }
 
+  function toggleManageModelKey(modelKey: string, checked: boolean) {
+    setManageForm((current) => ({
+      ...current,
+      model_keys: checked
+        ? [...current.model_keys, modelKey]
+        : current.model_keys.filter((existing) => existing !== modelKey),
+    }))
+  }
+
   async function handleCreateApiKey(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
@@ -120,19 +155,45 @@ export function useApiKeysPageState({
     }
   }
 
+  async function handleUpdateApiKey(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (manageDialog.mode !== 'open' || !manageTarget || manageTarget.status !== 'active') {
+      return
+    }
+
+    setIsMutating(true)
+    try {
+      await updateGatewayApiKey({
+        data: {
+          apiKeyId: manageDialog.apiKeyId,
+          input: {
+            model_keys: manageForm.model_keys,
+          },
+        },
+      })
+      toast.success('API key updated')
+      await refreshApiKeys()
+      closeManageDialog()
+    } catch (error) {
+      toast.error(getErrorMessage(error))
+    } finally {
+      setIsMutating(false)
+    }
+  }
+
   async function handleRevokeApiKey() {
-    if (revokeDialog.mode !== 'open') {
+    if (manageDialog.mode !== 'open') {
       return
     }
 
     setIsMutating(true)
     try {
       await revokeGatewayApiKey({
-        data: { apiKeyId: revokeDialog.apiKeyId },
+        data: { apiKeyId: manageDialog.apiKeyId },
       })
       toast.success('API key revoked')
       await refreshApiKeys()
-      closeRevokeDialog()
+      closeManageDialog()
     } catch (error) {
       toast.error(getErrorMessage(error))
     } finally {
@@ -154,19 +215,23 @@ export function useApiKeysPageState({
     form,
     isCreateDisabled,
     isCreateOpen,
+    isManageDisabled,
     isPending: isMutating,
-    revokeDialog,
-    revokeTarget,
+    manageDialog,
+    manageForm,
+    manageTarget,
     selectedOwnerLabel,
     actions: {
       closeCreateDialog,
-      closeRevokeDialog,
+      closeManageDialog,
       handleCopy,
       handleCreateApiKey,
       handleRevokeApiKey,
+      handleUpdateApiKey,
       openCreateDialog,
-      openRevokeDialog,
+      openManageDialog,
       setCreatedResult,
+      toggleManageModelKey,
       toggleModelKey,
       updateName,
       updateOwnerKind,
@@ -180,4 +245,14 @@ export function getErrorMessage(error: unknown) {
     return error.message
   }
   return 'Request failed'
+}
+
+function sameModelSelection(current: string[], next: string[]) {
+  if (current.length !== next.length) {
+    return false
+  }
+
+  const left = [...current].sort()
+  const right = [...next].sort()
+  return left.every((value, index) => value === right[index])
 }

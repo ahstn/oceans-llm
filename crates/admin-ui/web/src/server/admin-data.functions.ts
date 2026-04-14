@@ -30,6 +30,7 @@ import {
   transferTeamMember,
   upsertTeamBudget,
   upsertUserBudget,
+  updateApiKey,
   updateTeam,
   updateUser,
 } from '@/server/admin-data.server'
@@ -47,6 +48,19 @@ export const createGatewayApiKey = createServerFn({ method: 'POST' }).handler(
 export const revokeGatewayApiKey = createServerFn({ method: 'POST' }).handler(
   async ({ data }: { data: { apiKeyId: string } }) => {
     return revokeApiKey(data.apiKeyId)
+  },
+)
+
+export const updateGatewayApiKey = createServerFn({ method: 'POST' }).handler(
+  async ({
+    data,
+  }: {
+    data: {
+      apiKeyId: string
+      input: Parameters<typeof updateApiKey>[1]
+    }
+  }) => {
+    return updateApiKey(data.apiKeyId, data.input)
   },
 )
 

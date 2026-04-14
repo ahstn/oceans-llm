@@ -80,6 +80,11 @@ pub struct CreateAdminApiKeyResult {
     pub raw_key: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct UpdateAdminApiKeyInput {
+    pub model_keys: Vec<String>,
+}
+
 impl<R> AdminApiKeyService<R>
 where
     R: AdminApiKeyRepository + AdminIdentityRepository + ModelRepository + Send + Sync + 'static,
@@ -218,6 +223,39 @@ where
             })?;
         let granted_models = self.repo.list_models_for_api_key(api_key.id).await?;
 
+        build_api_key_summary(&api_key, &users, &teams, &granted_models)
+    }
+
+    pub async fn update_api_key(
+        &self,
+        api_key_id: Uuid,
+        request: UpdateAdminApiKeyInput,
+    ) -> Result<AdminApiKeySummary, GatewayError> {
+        let users = self.repo.list_identity_users().await?;
+        let teams = self.repo.list_teams().await?;
+        let models = self.repo.list_models().await?;
+        let api_key = self
+            .repo
+            .get_api_key_by_id(api_key_id)
+            .await?
+            .ok_or_else(|| StoreError::NotFound(format!("api key `{api_key_id}`")))?;
+
+        if api_key.status != ApiKeyStatus::Active {
+            return Err(GatewayError::InvalidRequest(
+                "revoked api keys cannot be updated".to_string(),
+            ));
+        }
+
+        let granted_models = select_granted_models(&request.model_keys, &models)?;
+        let model_ids = granted_models
+            .iter()
+            .map(|model| model.id)
+            .collect::<Vec<_>>();
+        self.repo
+            .replace_api_key_model_grants(api_key.id, &model_ids)
+            .await?;
+
+        let granted_models = self.repo.list_models_for_api_key(api_key.id).await?;
         build_api_key_summary(&api_key, &users, &teams, &granted_models)
     }
 }
@@ -821,6 +859,73 @@ mod tests {
 
         assert_eq!(revoked.status, ApiKeyStatus::Revoked);
         assert!(revoked.revoked_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn updates_model_grants_for_active_keys() {
+        let repo = repo_with_defaults();
+        let user_id = repo.users[0].user.user_id;
+        let service = AdminApiKeyService::new(Arc::new(repo.clone()));
+        let created = service
+            .create_api_key(CreateAdminApiKeyInput {
+                name: "Manage Me".to_string(),
+                owner_kind: "user".to_string(),
+                owner_user_id: Some(user_id.to_string()),
+                owner_team_id: None,
+                model_keys: vec!["fast".to_string()],
+            })
+            .await
+            .expect("create api key");
+
+        let updated = service
+            .update_api_key(
+                created.api_key.id,
+                UpdateAdminApiKeyInput {
+                    model_keys: vec!["reasoning".to_string(), "fast".to_string()],
+                },
+            )
+            .await
+            .expect("update api key");
+
+        assert_eq!(
+            updated.model_keys,
+            vec!["reasoning".to_string(), "fast".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_updates_for_revoked_keys() {
+        let repo = repo_with_defaults();
+        let user_id = repo.users[0].user.user_id;
+        let service = AdminApiKeyService::new(Arc::new(repo.clone()));
+        let created = service
+            .create_api_key(CreateAdminApiKeyInput {
+                name: "Revoked Key".to_string(),
+                owner_kind: "user".to_string(),
+                owner_user_id: Some(user_id.to_string()),
+                owner_team_id: None,
+                model_keys: vec!["fast".to_string()],
+            })
+            .await
+            .expect("create api key");
+
+        service
+            .revoke_api_key(created.api_key.id)
+            .await
+            .expect("revoke api key");
+
+        let error = service
+            .update_api_key(
+                created.api_key.id,
+                UpdateAdminApiKeyInput {
+                    model_keys: vec!["reasoning".to_string()],
+                },
+            )
+            .await
+            .expect_err("revoked api key update should fail");
+
+        assert_eq!(error.error_code(), "invalid_request");
+        assert!(error.to_string().contains("cannot be updated"));
     }
 
     #[tokio::test]

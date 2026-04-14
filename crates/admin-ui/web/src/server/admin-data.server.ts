@@ -7,6 +7,8 @@ import type {
   ChangePasswordInput,
   CreateApiKeyInput,
   CreateApiKeyResult,
+  UpdateApiKeyInput,
+  UpdateApiKeyResult,
   CreateTeamInput,
   CreateUserInput,
   CreateUserResult,
@@ -58,6 +60,19 @@ export async function revokeApiKey(apiKeyId: string): Promise<ApiEnvelope<Revoke
     {
       method: 'POST',
     },
+  )
+}
+
+export async function updateApiKey(
+  apiKeyId: string,
+  input: UpdateApiKeyInput,
+): Promise<ApiEnvelope<UpdateApiKeyResult>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.PATCH('/api/v1/admin/api-keys/{api_key_id}', {
+      params: { path: { api_key_id: apiKeyId } },
+      body: input,
+    }),
   )
 }
 

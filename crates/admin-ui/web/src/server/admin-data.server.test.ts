@@ -17,6 +17,7 @@ import {
   revokeApiKey,
   resetUserOnboarding,
   transferTeamMember,
+  updateApiKey,
   updateUser,
 } from '@/server/admin-data.server'
 
@@ -409,9 +410,37 @@ describe('server-side admin data wrappers', () => {
       throw new Error(`Unexpected GET path: ${path}`)
     })
 
-    PATCH.mockResolvedValue({
-      data: { data: { status: 'ok' }, meta: { generated_at: '2026-03-10T11:32:00Z' } },
-      response: { status: 200 },
+    PATCH.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/admin/api-keys/{api_key_id}') {
+        return {
+          data: {
+            data: {
+              api_key: {
+                id: 'api_key_1',
+                name: 'Production Gateway',
+                prefix: 'gwk_prod',
+                status: 'active',
+                owner_kind: 'team',
+                owner_id: 'team_1',
+                owner_name: 'Core Platform',
+                owner_email: null,
+                owner_team_key: 'core-platform',
+                model_keys: ['reasoning'],
+                created_at: '2026-03-14T12:00:00Z',
+                last_used_at: '2026-03-18T09:15:00Z',
+                revoked_at: null,
+              },
+            },
+            meta: { generated_at: '2026-03-10T11:32:00Z' },
+          },
+          response: { status: 200 },
+        }
+      }
+
+      return {
+        data: { data: { status: 'ok' }, meta: { generated_at: '2026-03-10T11:32:00Z' } },
+        response: { status: 200 },
+      }
     })
     POST.mockImplementation(async (path: string) => {
       if (path === '/api/v1/admin/identity/users/{user_id}/reset-onboarding') {
@@ -497,6 +526,15 @@ describe('server-side admin data wrappers', () => {
       },
     })
 
+    await expect(updateApiKey('api_key_1', { model_keys: ['reasoning'] })).resolves.toMatchObject({
+      data: {
+        api_key: {
+          id: 'api_key_1',
+          model_keys: ['reasoning'],
+        },
+      },
+    })
+
     await expect(revokeApiKey('api_key_1')).resolves.toMatchObject({
       data: {
         api_key: {
@@ -504,6 +542,11 @@ describe('server-side admin data wrappers', () => {
           status: 'revoked',
         },
       },
+    })
+
+    expect(PATCH).toHaveBeenCalledWith('/api/v1/admin/api-keys/{api_key_id}', {
+      params: { path: { api_key_id: 'api_key_1' } },
+      body: { model_keys: ['reasoning'] },
     })
   })
 

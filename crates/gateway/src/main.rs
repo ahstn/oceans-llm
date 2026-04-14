@@ -3894,7 +3894,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn admin_api_key_routes_create_list_and_revoke_live_gateway_keys() {
+    async fn admin_api_key_routes_create_update_list_and_revoke_live_gateway_keys() {
         let (app, store, _) =
             build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;
         let session_cookie = bootstrap_admin_session_cookie(&app, &store).await;
@@ -3908,23 +3908,42 @@ mod tests {
             }),
             secrets: None,
         }];
-        let models = vec![SeedModel {
-            model_key: "fast".to_string(),
-            alias_target_model_key: None,
-            description: Some("Fast tier".to_string()),
-            tags: vec!["fast".to_string()],
-            rank: 10,
-            routes: vec![SeedModelRoute {
-                provider_key: "openai-prod".to_string(),
-                upstream_model: "gpt-5".to_string(),
-                priority: 10,
-                weight: 1.0,
-                enabled: true,
-                extra_headers: Map::<String, Value>::new(),
-                extra_body: Map::<String, Value>::new(),
-                capabilities: ProviderCapabilities::all_enabled(),
-            }],
-        }];
+        let models = vec![
+            SeedModel {
+                model_key: "fast".to_string(),
+                alias_target_model_key: None,
+                description: Some("Fast tier".to_string()),
+                tags: vec!["fast".to_string()],
+                rank: 10,
+                routes: vec![SeedModelRoute {
+                    provider_key: "openai-prod".to_string(),
+                    upstream_model: "gpt-5".to_string(),
+                    priority: 10,
+                    weight: 1.0,
+                    enabled: true,
+                    extra_headers: Map::<String, Value>::new(),
+                    extra_body: Map::<String, Value>::new(),
+                    capabilities: ProviderCapabilities::all_enabled(),
+                }],
+            },
+            SeedModel {
+                model_key: "reasoning".to_string(),
+                alias_target_model_key: None,
+                description: Some("Reasoning tier".to_string()),
+                tags: vec!["reasoning".to_string()],
+                rank: 20,
+                routes: vec![SeedModelRoute {
+                    provider_key: "openai-prod".to_string(),
+                    upstream_model: "gpt-5".to_string(),
+                    priority: 10,
+                    weight: 1.0,
+                    enabled: true,
+                    extra_headers: Map::<String, Value>::new(),
+                    extra_body: Map::<String, Value>::new(),
+                    capabilities: ProviderCapabilities::all_enabled(),
+                }],
+            },
+        ];
         store
             .seed_from_inputs(&providers, &models, &[], &[], &[])
             .await
@@ -4027,6 +4046,51 @@ mod tests {
             Value::String("fast".to_string())
         );
 
+        let update_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PATCH")
+                    .uri(format!("/api/v1/admin/api-keys/{api_key_id}"))
+                    .header("cookie", &session_cookie)
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "model_keys": ["reasoning"]
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(update_response.status(), StatusCode::OK);
+        let update_body = read_json(update_response).await;
+        assert_eq!(
+            update_body["data"]["api_key"]["model_keys"],
+            json!(["reasoning"])
+        );
+
+        let updated_models_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/models")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(updated_models_response.status(), StatusCode::OK);
+        let updated_models_body = read_json(updated_models_response).await;
+        let updated_models = updated_models_body["data"]
+            .as_array()
+            .expect("updated models");
+        assert_eq!(updated_models.len(), 1);
+        assert_eq!(updated_models[0]["id"], Value::String("reasoning".to_string()));
+
         let revoke_response = app
             .clone()
             .oneshot(
@@ -4043,6 +4107,30 @@ mod tests {
         let revoke_body = read_json(revoke_response).await;
         assert_eq!(revoke_body["data"]["api_key"]["status"], "revoked");
         assert!(revoke_body["data"]["api_key"]["revoked_at"].is_string());
+
+        let revoked_update = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PATCH")
+                    .uri(format!("/api/v1/admin/api-keys/{api_key_id}"))
+                    .header("cookie", &session_cookie)
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "model_keys": ["fast"]
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(revoked_update.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            read_json(revoked_update).await["error"]["code"],
+            "invalid_request"
+        );
 
         let rejected_response = app
             .oneshot(
@@ -4220,6 +4308,7 @@ mod tests {
         assert_eq!(read_json(missing_owner).await["error"]["code"], "not_found");
 
         let missing_key = app
+            .clone()
             .oneshot(
                 Request::builder()
                     .method("POST")
@@ -4232,6 +4321,29 @@ mod tests {
             .expect("response");
         assert_eq!(missing_key.status(), StatusCode::NOT_FOUND);
         assert_eq!(read_json(missing_key).await["error"]["code"], "not_found");
+
+        let missing_update_key = app
+            .oneshot(
+                Request::builder()
+                    .method("PATCH")
+                    .uri(format!("/api/v1/admin/api-keys/{}", Uuid::new_v4()))
+                    .header("cookie", &session_cookie)
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "model_keys": ["fast"]
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(missing_update_key.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            read_json(missing_update_key).await["error"]["code"],
+            "not_found"
+        );
     }
 
     #[tokio::test]

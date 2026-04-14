@@ -38,6 +38,7 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
             "/api/v1/admin/api-keys",
             get(list_api_keys).post(create_api_key),
         )
+        .route("/api/v1/admin/api-keys/{api_key_id}", patch(update_api_key))
         .route(
             "/api/v1/admin/api-keys/{api_key_id}/revoke",
             post(revoke_api_key),

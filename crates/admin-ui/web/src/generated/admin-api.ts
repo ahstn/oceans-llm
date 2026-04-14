@@ -4,6 +4,54 @@
  */
 
 export interface paths {
+    "/api/v1/admin/api-keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_api_keys"];
+        put?: never;
+        post: operations["create_api_key"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/api-keys/{api_key_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["update_api_key"];
+        trace?: never;
+    };
+    "/api/v1/admin/api-keys/{api_key_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["revoke_api_key"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/identity/teams": {
         parameters: {
             query?: never;
@@ -427,6 +475,43 @@ export interface components {
         AddTeamMembersRequest: {
             user_ids: string[];
         };
+        AdminApiKeyModelView: {
+            description?: string | null;
+            id: string;
+            key: string;
+            tags: string[];
+        };
+        AdminApiKeyTeamOwnerView: {
+            id: string;
+            key: string;
+            name: string;
+        };
+        AdminApiKeyUserOwnerView: {
+            email: string;
+            id: string;
+            name: string;
+        };
+        AdminApiKeyView: {
+            created_at: string;
+            id: string;
+            last_used_at?: string | null;
+            model_keys: string[];
+            name: string;
+            owner_email?: string | null;
+            owner_id: string;
+            owner_kind: string;
+            owner_name: string;
+            owner_team_key?: string | null;
+            prefix: string;
+            revoked_at?: string | null;
+            status: string;
+        };
+        AdminApiKeysPayload: {
+            items: components["schemas"]["AdminApiKeyView"][];
+            models: components["schemas"]["AdminApiKeyModelView"][];
+            teams: components["schemas"]["AdminApiKeyTeamOwnerView"][];
+            users: components["schemas"]["AdminApiKeyUserOwnerView"][];
+        };
         AdminIdentityPayload: {
             oidc_providers: components["schemas"]["AdminOidcProviderView"][];
             teams: components["schemas"]["AdminTeamView"][];
@@ -588,6 +673,17 @@ export interface components {
         CompleteInvitationResponse: {
             status: string;
         };
+        CreateApiKeyRequest: {
+            model_keys: string[];
+            name: string;
+            owner_kind: string;
+            owner_team_id?: string | null;
+            owner_user_id?: string | null;
+        };
+        CreateApiKeyResponse: {
+            api_key: components["schemas"]["AdminApiKeyView"];
+            raw_key: string;
+        };
         CreateTeamRequest: {
             admin_user_ids: string[];
             name: string;
@@ -618,6 +714,15 @@ export interface components {
             deactivated: boolean;
             owner_id: string;
             owner_kind: string;
+        };
+        Envelope_AdminApiKeysPayload: {
+            data: {
+                items: components["schemas"]["AdminApiKeyView"][];
+                models: components["schemas"]["AdminApiKeyModelView"][];
+                teams: components["schemas"]["AdminApiKeyTeamOwnerView"][];
+                users: components["schemas"]["AdminApiKeyUserOwnerView"][];
+            };
+            meta: components["schemas"]["ResponseMeta"];
         };
         Envelope_AdminIdentityPayload: {
             data: {
@@ -681,6 +786,13 @@ export interface components {
         Envelope_CompleteInvitationResponse: {
             data: {
                 status: string;
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_CreateApiKeyResponse: {
+            data: {
+                api_key: components["schemas"]["AdminApiKeyView"];
+                raw_key: string;
             };
             meta: components["schemas"]["ResponseMeta"];
         };
@@ -757,6 +869,12 @@ export interface components {
             };
             meta: components["schemas"]["ResponseMeta"];
         };
+        Envelope_RevokeApiKeyResponse: {
+            data: {
+                api_key: components["schemas"]["AdminApiKeyView"];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
         Envelope_SpendBudgetsView: {
             data: {
                 teams: components["schemas"]["SpendBudgetTeamView"][];
@@ -775,6 +893,12 @@ export interface components {
                 window_days: number;
                 window_end: string;
                 window_start: string;
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_UpdateApiKeyResponse: {
+            data: {
+                api_key: components["schemas"]["AdminApiKeyView"];
             };
             meta: components["schemas"]["ResponseMeta"];
         };
@@ -880,6 +1004,9 @@ export interface components {
         ResponseMeta: {
             generated_at: string;
         };
+        RevokeApiKeyResponse: {
+            api_key: components["schemas"]["AdminApiKeyView"];
+        };
         SpendBudgetTeamView: {
             alert_email_ready: boolean;
             alert_recipient_summary: string;
@@ -966,6 +1093,12 @@ export interface components {
             destination_role: string;
             destination_team_id: string;
         };
+        UpdateApiKeyRequest: {
+            model_keys: string[];
+        };
+        UpdateApiKeyResponse: {
+            api_key: components["schemas"]["AdminApiKeyView"];
+        };
         UpdateTeamRequest: {
             admin_user_ids: string[];
             name: string;
@@ -999,6 +1132,96 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_api_keys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_AdminApiKeysPayload"];
+                };
+            };
+        };
+    };
+    create_api_key: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateApiKeyRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_CreateApiKeyResponse"];
+                };
+            };
+        };
+    };
+    update_api_key: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description API key identifier */
+                api_key_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateApiKeyRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_UpdateApiKeyResponse"];
+                };
+            };
+        };
+    };
+    revoke_api_key: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description API key identifier */
+                api_key_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_RevokeApiKeyResponse"];
+                };
+            };
+        };
+    };
     list_identity_teams: {
         parameters: {
             query?: never;

@@ -86,6 +86,11 @@ models:
     routes:
       - provider: openai-e2e
         upstream_model: gpt-4o-mini
+  - id: reasoning
+    description: E2E reasoning route
+    routes:
+      - provider: openai-e2e
+        upstream_model: gpt-4.1
 EOF
 
 (
@@ -93,6 +98,11 @@ EOF
   "$MISE_BIN" exec -- node scripts/mock-openai-upstream.mjs
 ) >"$MOCK_LOG" 2>&1 &
 MOCK_PID=$!
+
+(
+  cd "$WEB_DIR"
+  "$MISE_BIN" exec -- bun run build
+)
 
 (
   cd "$WEB_DIR"

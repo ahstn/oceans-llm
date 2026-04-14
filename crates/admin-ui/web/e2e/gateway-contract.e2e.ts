@@ -322,7 +322,7 @@ test('identity users endpoints support live create-and-list flows', async ({
   ).toBe(true)
 })
 
-test('admin ui can create and revoke an api key that gates live gateway access', async ({
+test('admin ui can create, manage, and revoke an api key that gates live gateway access', async ({
   request,
   page,
   baseURL,
@@ -339,11 +339,17 @@ test('admin ui can create and revoke an api key that gates live gateway access',
   await page.getByRole('option', { name: 'Team' }).click()
   await page.getByRole('combobox', { name: 'Owner team' }).click()
   await page.getByRole('option', { name: /System Legacy/ }).click()
-  await page.getByRole('checkbox', { name: 'fast E2E test route' }).check()
+  await page.getByRole('button', { name: /Select models/ }).click()
+  await page.locator('[data-slot="command-item"]').filter({ hasText: /fast/ }).click()
+  await page.keyboard.press('Escape')
   await page.getByRole('button', { name: 'Create API key' }).last().click()
 
   const rawKey = (await page.getByTestId('new-api-key-raw-key').textContent())?.trim()
   expect(rawKey).toBeTruthy()
+  if (!rawKey) {
+    throw new Error('expected the create flow to reveal the raw API key once')
+  }
+  const maskedPrefix = `${rawKey.split('.')[0].slice(0, 12)}****`
 
   const modelsResponse = await request.get(`${root}/v1/models`, {
     headers: {
@@ -354,13 +360,45 @@ test('admin ui can create and revoke an api key that gates live gateway access',
   const modelsBody = (await modelsResponse.json()) as {
     data: Array<{ id: string }>
   }
-  expect(modelsBody.data.some((model) => model.id === 'fast')).toBe(true)
+  expect(modelsBody.data.map((model) => model.id)).toEqual(['fast'])
 
   const row = page.locator('tr', { hasText: keyName }).first()
   await expect(row).toBeVisible()
-  await row.getByRole('button', { name: 'Revoke' }).click()
+  await expect(row).toContainText(maskedPrefix ?? '')
+  await expect(row).toContainText('System Legacy')
+  await expect(row).not.toContainText('system-legacy')
+  await expect(row).toContainText(/\d{4}-\d{2}-\d{2}/)
+
+  await row.getByRole('button', { name: 'Manage' }).click()
+
+  const dialog = page.getByRole('dialog', { name: 'Manage API key' })
+  await expect(dialog.getByText(maskedPrefix ?? '')).toBeVisible()
+  await expect(dialog.getByText('System Legacy')).toBeVisible()
+  await expect(dialog).not.toContainText('system-legacy')
+  await expect(dialog).toContainText('Never')
+
+  await dialog.getByRole('button', { name: /fast/i }).click()
+  await page.locator('[data-slot="command-item"]').filter({ hasText: /reasoning/ }).click()
+  await page.locator('[data-slot="command-item"]').filter({ hasText: /fast/ }).click()
+  await page.keyboard.press('Escape')
+  await dialog.getByRole('button', { name: 'Save access' }).click()
+
+  await expect(dialog).not.toBeVisible()
+
+  const updatedModelsResponse = await request.get(`${root}/v1/models`, {
+    headers: {
+      authorization: `Bearer ${rawKey}`,
+    },
+  })
+  expect(updatedModelsResponse.status()).toBe(200)
+  const updatedModelsBody = (await updatedModelsResponse.json()) as {
+    data: Array<{ id: string }>
+  }
+  expect(updatedModelsBody.data.map((model) => model.id)).toEqual(['reasoning'])
+
+  await row.getByRole('button', { name: 'Manage' }).click()
   await page.getByRole('button', { name: 'Revoke key' }).click()
-  await expect(row.getByText('revoked')).toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'Manage API key' })).not.toBeVisible()
 
   const revokedResponse = await request.get(`${root}/v1/models`, {
     headers: {

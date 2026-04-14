@@ -9,6 +9,146 @@
     "version": "0.5.0"
   },
   "paths": {
+    "/api/v1/admin/api-keys": {
+      "get": {
+        "tags": [
+          "crate::http::api_keys"
+        ],
+        "operationId": "list_api_keys",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_AdminApiKeysPayload"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "crate::http::api_keys"
+        ],
+        "operationId": "create_api_key",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateApiKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_CreateApiKeyResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/api-keys/{api_key_id}": {
+      "patch": {
+        "tags": [
+          "crate::http::api_keys"
+        ],
+        "operationId": "update_api_key",
+        "parameters": [
+          {
+            "name": "api_key_id",
+            "in": "path",
+            "description": "API key identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateApiKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_UpdateApiKeyResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/api-keys/{api_key_id}/revoke": {
+      "post": {
+        "tags": [
+          "crate::http::api_keys"
+        ],
+        "operationId": "revoke_api_key",
+        "parameters": [
+          {
+            "name": "api_key_id",
+            "in": "path",
+            "description": "API key identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_RevokeApiKeyResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/identity/teams": {
       "get": {
         "tags": [
@@ -1372,6 +1512,177 @@
           }
         }
       },
+      "AdminApiKeyModelView": {
+        "type": "object",
+        "required": [
+          "id",
+          "key",
+          "tags"
+        ],
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "AdminApiKeyTeamOwnerView": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "key"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "AdminApiKeyUserOwnerView": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "email"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "AdminApiKeyView": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "prefix",
+          "status",
+          "owner_kind",
+          "owner_id",
+          "owner_name",
+          "model_keys",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "last_used_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model_keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner_email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "owner_id": {
+            "type": "string"
+          },
+          "owner_kind": {
+            "type": "string"
+          },
+          "owner_name": {
+            "type": "string"
+          },
+          "owner_team_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prefix": {
+            "type": "string"
+          },
+          "revoked_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "AdminApiKeysPayload": {
+        "type": "object",
+        "required": [
+          "items",
+          "users",
+          "teams",
+          "models"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminApiKeyView"
+            }
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminApiKeyModelView"
+            }
+          },
+          "teams": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminApiKeyTeamOwnerView"
+            }
+          },
+          "users": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminApiKeyUserOwnerView"
+            }
+          }
+        }
+      },
       "AdminIdentityPayload": {
         "type": "object",
         "required": [
@@ -2057,6 +2368,55 @@
           }
         }
       },
+      "CreateApiKeyRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "owner_kind",
+          "model_keys"
+        ],
+        "properties": {
+          "model_keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner_kind": {
+            "type": "string"
+          },
+          "owner_team_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "owner_user_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "CreateApiKeyResponse": {
+        "type": "object",
+        "required": [
+          "api_key",
+          "raw_key"
+        ],
+        "properties": {
+          "api_key": {
+            "$ref": "#/components/schemas/AdminApiKeyView"
+          },
+          "raw_key": {
+            "type": "string"
+          }
+        }
+      },
       "CreateTeamRequest": {
         "type": "object",
         "required": [
@@ -2188,6 +2548,53 @@
           },
           "owner_kind": {
             "type": "string"
+          }
+        }
+      },
+      "Envelope_AdminApiKeysPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "items",
+              "users",
+              "teams",
+              "models"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AdminApiKeyView"
+                }
+              },
+              "models": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AdminApiKeyModelView"
+                }
+              },
+              "teams": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AdminApiKeyTeamOwnerView"
+                }
+              },
+              "users": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AdminApiKeyUserOwnerView"
+                }
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
           }
         }
       },
@@ -2454,6 +2861,33 @@
             ],
             "properties": {
               "status": {
+                "type": "string"
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_CreateApiKeyResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "api_key",
+              "raw_key"
+            ],
+            "properties": {
+              "api_key": {
+                "$ref": "#/components/schemas/AdminApiKeyView"
+              },
+              "raw_key": {
                 "type": "string"
               }
             }
@@ -2768,6 +3202,29 @@
           }
         }
       },
+      "Envelope_RevokeApiKeyResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "api_key"
+            ],
+            "properties": {
+              "api_key": {
+                "$ref": "#/components/schemas/AdminApiKeyView"
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
       "Envelope_SpendBudgetsView": {
         "type": "object",
         "required": [
@@ -2855,6 +3312,29 @@
               },
               "window_start": {
                 "type": "string"
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_UpdateApiKeyResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "api_key"
+            ],
+            "properties": {
+              "api_key": {
+                "$ref": "#/components/schemas/AdminApiKeyView"
               }
             }
           },
@@ -3283,6 +3763,17 @@
           }
         }
       },
+      "RevokeApiKeyResponse": {
+        "type": "object",
+        "required": [
+          "api_key"
+        ],
+        "properties": {
+          "api_key": {
+            "$ref": "#/components/schemas/AdminApiKeyView"
+          }
+        }
+      },
       "SpendBudgetTeamView": {
         "type": "object",
         "required": [
@@ -3590,6 +4081,31 @@
           },
           "destination_team_id": {
             "type": "string"
+          }
+        }
+      },
+      "UpdateApiKeyRequest": {
+        "type": "object",
+        "required": [
+          "model_keys"
+        ],
+        "properties": {
+          "model_keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "UpdateApiKeyResponse": {
+        "type": "object",
+        "required": [
+          "api_key"
+        ],
+        "properties": {
+          "api_key": {
+            "$ref": "#/components/schemas/AdminApiKeyView"
           }
         }
       },

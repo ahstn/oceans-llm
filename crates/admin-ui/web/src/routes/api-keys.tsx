@@ -4,7 +4,7 @@ import {
   ApiKeysCard,
   CreateApiKeyDialog,
   CreatedApiKeyAlert,
-  RevokeApiKeyDialog,
+  ManageApiKeyDialog,
 } from '@/routes/api-keys/-components'
 import { requireAdminSession } from '@/routes/-admin-guard'
 import { getApiKeys } from '@/server/admin-data.functions'
@@ -35,8 +35,7 @@ export function ApiKeysPage() {
       <ApiKeysCard
         items={items}
         onCreate={state.actions.openCreateDialog}
-        onCopyPrefix={state.actions.handleCopy}
-        onRevoke={state.actions.openRevokeDialog}
+        onManage={state.actions.openManageDialog}
       />
 
       <CreateApiKeyDialog
@@ -56,12 +55,17 @@ export function ApiKeysPage() {
         onSubmit={state.actions.handleCreateApiKey}
       />
 
-      <RevokeApiKeyDialog
+      <ManageApiKeyDialog
+        form={state.manageForm}
         isPending={state.isPending}
-        open={state.revokeDialog.mode === 'open'}
-        target={state.revokeTarget}
-        onConfirm={state.actions.handleRevokeApiKey}
-        onOpenChange={(open) => (!open ? state.actions.closeRevokeDialog() : undefined)}
+        modelOptions={models}
+        open={state.manageDialog.mode === 'open'}
+        submitDisabled={state.isManageDisabled}
+        target={state.manageTarget}
+        onModelToggle={state.actions.toggleManageModelKey}
+        onOpenChange={(open) => (!open ? state.actions.closeManageDialog() : undefined)}
+        onRevoke={state.actions.handleRevokeApiKey}
+        onSubmit={state.actions.handleUpdateApiKey}
       />
     </div>
   )

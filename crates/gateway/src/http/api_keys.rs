@@ -7,9 +7,10 @@ use gateway_core::GatewayError;
 use gateway_service::{
     AdminApiKeyModelOption, AdminApiKeyService, AdminApiKeySummary, AdminApiKeyTeamOwner,
     AdminApiKeyUserOwner, AdminApiKeysPayload as ServiceAdminApiKeysPayload,
-    CreateAdminApiKeyInput, CreateAdminApiKeyResult,
+    CreateAdminApiKeyInput, CreateAdminApiKeyResult, UpdateAdminApiKeyInput,
 };
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::http::{
@@ -19,7 +20,7 @@ use crate::http::{
     state::AppState,
 };
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct AdminApiKeysPayload {
     items: Vec<AdminApiKeyView>,
     users: Vec<AdminApiKeyUserOwnerView>,
@@ -27,7 +28,7 @@ pub struct AdminApiKeysPayload {
     models: Vec<AdminApiKeyModelView>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct AdminApiKeyView {
     id: String,
     name: String,
@@ -44,21 +45,21 @@ pub struct AdminApiKeyView {
     revoked_at: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct AdminApiKeyUserOwnerView {
     id: String,
     name: String,
     email: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct AdminApiKeyTeamOwnerView {
     id: String,
     name: String,
     key: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct AdminApiKeyModelView {
     id: String,
     key: String,
@@ -66,7 +67,7 @@ pub struct AdminApiKeyModelView {
     tags: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateApiKeyRequest {
     name: String,
     owner_kind: String,
@@ -75,17 +76,33 @@ pub struct CreateApiKeyRequest {
     model_keys: Vec<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct CreateApiKeyResponse {
     api_key: AdminApiKeyView,
     raw_key: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct UpdateApiKeyRequest {
+    model_keys: Vec<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct UpdateApiKeyResponse {
+    api_key: AdminApiKeyView,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
 pub struct RevokeApiKeyResponse {
     api_key: AdminApiKeyView,
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/api-keys",
+    responses((status = 200, body = Envelope<AdminApiKeysPayload>)),
+    security(("session_cookie" = []))
+)]
 pub async fn list_api_keys(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -97,6 +114,13 @@ pub async fn list_api_keys(
     Ok(Json(envelope(map_payload(payload))))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/admin/api-keys",
+    request_body = CreateApiKeyRequest,
+    responses((status = 200, body = Envelope<CreateApiKeyResponse>)),
+    security(("session_cookie" = []))
+)]
 pub async fn create_api_key(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -118,6 +142,44 @@ pub async fn create_api_key(
     Ok(Json(envelope(map_create_result(result))))
 }
 
+#[utoipa::path(
+    patch,
+    path = "/api/v1/admin/api-keys/{api_key_id}",
+    request_body = UpdateApiKeyRequest,
+    params(("api_key_id" = String, Path, description = "API key identifier")),
+    responses((status = 200, body = Envelope<UpdateApiKeyResponse>)),
+    security(("session_cookie" = []))
+)]
+pub async fn update_api_key(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(api_key_id): Path<String>,
+    Json(request): Json<UpdateApiKeyRequest>,
+) -> Result<Json<Envelope<UpdateApiKeyResponse>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+
+    let service = AdminApiKeyService::new(state.store.clone());
+    let api_key = service
+        .update_api_key(
+            parse_uuid(&api_key_id, "api_key_id")?,
+            UpdateAdminApiKeyInput {
+                model_keys: request.model_keys,
+            },
+        )
+        .await?;
+
+    Ok(Json(envelope(UpdateApiKeyResponse {
+        api_key: map_api_key_summary(api_key),
+    })))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/admin/api-keys/{api_key_id}/revoke",
+    params(("api_key_id" = String, Path, description = "API key identifier")),
+    responses((status = 200, body = Envelope<RevokeApiKeyResponse>)),
+    security(("session_cookie" = []))
+)]
 pub async fn revoke_api_key(
     State(state): State<AppState>,
     headers: HeaderMap,
