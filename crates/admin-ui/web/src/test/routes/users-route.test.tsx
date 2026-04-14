@@ -140,7 +140,11 @@ describe('UsersPage', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Manage' })[0])
 
     expect(screen.getByText('Owner membership is locked')).toBeInTheDocument()
-    expect(screen.getByText('Auth mode is locked after activation; use reset onboarding to reissue credentials.')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Auth mode is locked after activation; use reset onboarding to reissue credentials.',
+      ),
+    ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Reset onboarding' })).toBeDisabled()
     expect(screen.getAllByLabelText('Auth method')[1]).toBeDisabled()
   })

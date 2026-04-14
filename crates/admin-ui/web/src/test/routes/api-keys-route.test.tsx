@@ -219,7 +219,9 @@ describe('ApiKeysPage', () => {
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Revoke' })[0])
 
-    expect(screen.getByText(/Existing callers will stop authenticating immediately/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/Existing callers will stop authenticating immediately/),
+    ).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Revoke key' }))
 

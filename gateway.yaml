@@ -13,6 +13,69 @@ auth:
     password: literal.admin
     require_password_change: false
 
+teams:
+  - key: platform
+    name: Platform
+    budget:
+      cadence: monthly
+      amount_usd: "1000.0000"
+      hard_limit: true
+      timezone: UTC
+
+  - key: research
+    name: Research
+    budget:
+      cadence: monthly
+      amount_usd: "1000.0000"
+      hard_limit: true
+      timezone: UTC
+
+users:
+  - name: Alice Platform Lead
+    email: alice@platform.local
+    auth_mode: password
+    request_logging_enabled: true
+    membership:
+      team: platform
+      role: admin
+
+  - name: Ben Platform Analyst
+    email: ben@platform.local
+    auth_mode: password
+    request_logging_enabled: true
+    membership:
+      team: platform
+      role: member
+
+  - name: Cara Research Lead
+    email: cara@research.local
+    auth_mode: password
+    request_logging_enabled: true
+    membership:
+      team: research
+      role: admin
+
+  - name: Diego Research Operator
+    email: diego@research.local
+    auth_mode: password
+    request_logging_enabled: true
+    membership:
+      team: research
+      role: member
+    budget:
+      cadence: daily
+      amount_usd: "50.0000"
+      hard_limit: true
+      timezone: UTC
+
+  - name: Erin Research Analyst
+    email: erin@research.local
+    auth_mode: password
+    request_logging_enabled: true
+    membership:
+      team: research
+      role: member
+
 providers:
   - id: openai-prod
     type: openai_compat

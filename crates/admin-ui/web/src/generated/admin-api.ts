@@ -445,16 +445,27 @@ export interface components {
             team_name?: string | null;
             team_role?: string | null;
         };
+        AdminModelPageView: {
+            items: components["schemas"]["AdminModelView"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int64 */
+            total: number;
+        };
+        /** @enum {string} */
+        AdminModelStatusView: "healthy" | "degraded";
         AdminModelView: {
             alias_of?: string | null;
             description?: string | null;
             id: string;
-            model_icon_key?: string | null;
-            provider_icon_key?: string | null;
+            model_icon_key?: null | components["schemas"]["ModelIconKeyView"];
+            provider_icon_key?: null | components["schemas"]["ProviderIconKeyView"];
             provider_key?: string | null;
             provider_label?: string | null;
             resolved_model_key: string;
-            status: string;
+            status: components["schemas"]["AdminModelStatusView"];
             tags: string[];
             upstream_model?: string | null;
         };
@@ -616,6 +627,18 @@ export interface components {
             };
             meta: components["schemas"]["ResponseMeta"];
         };
+        Envelope_AdminModelPageView: {
+            data: {
+                items: components["schemas"]["AdminModelView"][];
+                /** Format: int32 */
+                page: number;
+                /** Format: int32 */
+                page_size: number;
+                /** Format: int64 */
+                total: number;
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
         Envelope_AdminTeamManagementView: {
             data: {
                 admins: components["schemas"]["AdminTeamAdminView"][];
@@ -765,22 +788,6 @@ export interface components {
             };
             meta: components["schemas"]["ResponseMeta"];
         };
-        Envelope_Vec_AdminModelView: {
-            data: {
-                alias_of?: string | null;
-                description?: string | null;
-                id: string;
-                model_icon_key?: string | null;
-                provider_icon_key?: string | null;
-                provider_key?: string | null;
-                provider_label?: string | null;
-                resolved_model_key: string;
-                status: string;
-                tags: string[];
-                upstream_model?: string | null;
-            }[];
-            meta: components["schemas"]["ResponseMeta"];
-        };
         IdentityActionStatus: {
             status: string;
         };
@@ -790,6 +797,8 @@ export interface components {
             name?: string | null;
             state: string;
         };
+        /** @enum {string} */
+        ModelIconKeyView: "anthropic" | "claude" | "gemini" | "openai" | "openrouter" | "vertexai";
         OpenAiErrorBodyView: {
             code?: string | null;
             message: string;
@@ -808,6 +817,8 @@ export interface components {
             email: string;
             password: string;
         };
+        /** @enum {string} */
+        ProviderIconKeyView: "anthropic" | "aws" | "openai" | "openrouter" | "vertexai";
         RequestLogDetailView: {
             log: components["schemas"]["RequestLogSummaryView"];
             payload?: null | components["schemas"]["RequestLogPayloadView"];
@@ -836,12 +847,12 @@ export interface components {
             metadata: {
                 [key: string]: unknown;
             };
-            model_icon_key?: string | null;
+            model_icon_key?: null | components["schemas"]["ModelIconKeyView"];
             model_key: string;
             occurred_at: string;
             /** Format: int64 */
             prompt_tokens?: number | null;
-            provider_icon_key?: string | null;
+            provider_icon_key?: null | components["schemas"]["ProviderIconKeyView"];
             provider_key: string;
             request_id: string;
             request_log_id: string;
@@ -1292,7 +1303,10 @@ export interface operations {
     };
     list_models: {
         parameters: {
-            query?: never;
+            query?: {
+                page?: number | null;
+                page_size?: number | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1304,7 +1318,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Envelope_Vec_AdminModelView"];
+                    "application/json": components["schemas"]["Envelope_AdminModelPageView"];
                 };
             };
         };

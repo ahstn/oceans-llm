@@ -15,7 +15,7 @@ import type {
   IdentityTeamsPayload,
   IdentityUsersPayload,
   InvitationStateView,
-  ModelView,
+  ModelPageView,
   PasswordInviteResult,
   PasswordLoginInput,
   RequestLogDetailView,
@@ -52,9 +52,7 @@ export async function createApiKey(
   })
 }
 
-export async function revokeApiKey(
-  apiKeyId: string,
-): Promise<ApiEnvelope<RevokeApiKeyResult>> {
+export async function revokeApiKey(apiKeyId: string): Promise<ApiEnvelope<RevokeApiKeyResult>> {
   return fetchGatewayJson<ApiEnvelope<RevokeApiKeyResult>>(
     `/api/v1/admin/api-keys/${apiKeyId}/revoke`,
     {
@@ -63,8 +61,21 @@ export async function revokeApiKey(
   )
 }
 
-export async function listModels(): Promise<ApiEnvelope<ModelView[]>> {
-  return fetchGatewayJson<ApiEnvelope<ModelView[]>>('/api/v1/admin/models')
+export async function listModels(params?: {
+  page?: number
+  page_size?: number
+}): Promise<ApiEnvelope<ModelPageView>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.GET('/api/v1/admin/models', {
+      params: {
+        query: {
+          page: params?.page,
+          page_size: params?.page_size,
+        },
+      },
+    }),
+  )
 }
 
 export async function getSpendReport(params?: {
@@ -288,9 +299,7 @@ export async function updateUser(
   )
 }
 
-export async function deactivateUser(
-  userId: string,
-): Promise<ApiEnvelope<IdentityActionResult>> {
+export async function deactivateUser(userId: string): Promise<ApiEnvelope<IdentityActionResult>> {
   const client = createGatewayApiClient()
   return unwrapGatewayResponse(
     await client.POST('/api/v1/admin/identity/users/{user_id}/deactivate', {
@@ -299,9 +308,7 @@ export async function deactivateUser(
   )
 }
 
-export async function reactivateUser(
-  userId: string,
-): Promise<ApiEnvelope<IdentityActionResult>> {
+export async function reactivateUser(userId: string): Promise<ApiEnvelope<IdentityActionResult>> {
   const client = createGatewayApiClient()
   return unwrapGatewayResponse(
     await client.POST('/api/v1/admin/identity/users/{user_id}/reactivate', {
@@ -310,9 +317,7 @@ export async function reactivateUser(
   )
 }
 
-export async function resetUserOnboarding(
-  userId: string,
-): Promise<ApiEnvelope<CreateUserResult>> {
+export async function resetUserOnboarding(userId: string): Promise<ApiEnvelope<CreateUserResult>> {
   const client = createGatewayApiClient()
   return unwrapGatewayResponse(
     await client.POST('/api/v1/admin/identity/users/{user_id}/reset-onboarding', {
@@ -332,9 +337,7 @@ export async function resendPasswordInvite(
   )
 }
 
-export async function getInvitation(
-  token: string,
-): Promise<ApiEnvelope<InvitationStateView>> {
+export async function getInvitation(token: string): Promise<ApiEnvelope<InvitationStateView>> {
   const client = createGatewayApiClient()
   return unwrapGatewayResponse(
     await client.GET('/api/v1/auth/invitations/{token}', {

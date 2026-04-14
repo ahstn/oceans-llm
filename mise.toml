@@ -175,6 +175,14 @@ run = "cargo run -p gateway --bin gateway -- bootstrap-admin"
 description = "Run local `gateway seed-config` against `gateway.yaml`"
 run = "cargo run -p gateway --bin gateway -- seed-config"
 
+[tasks.gateway-seed-local-demo]
+description = "Seed the local-only demo dataset (teams, users, budgets, api keys, request history) against `gateway.yaml`"
+run = "cargo run -p gateway --bin gateway -- seed-local-demo"
+
+[tasks.gateway-reset-local-demo]
+description = "Recreate local `gateway.db` with the local-only demo dataset"
+run = "rm -f gateway.db && cargo run -p gateway --bin gateway -- seed-local-demo"
+
 [tasks.gateway-serve-prod]
 description = "Run production-shaped local `gateway serve` against `gateway.prod.yaml`"
 env = { POSTGRES_URL = { required = true } }
@@ -206,6 +214,10 @@ WEB_DIR="$ROOT_DIR/crates/admin-ui/web"
 GATEWAY_PORT="${PORT:-8080}"
 ADMIN_UI_INTERNAL_PORT="${ADMIN_UI_INTERNAL_PORT:-3001}"
 ADMIN_UI_UPSTREAM="${ADMIN_UI_UPSTREAM:-http://localhost:${ADMIN_UI_INTERNAL_PORT}}"
+
+if [[ ! -f "$ROOT_DIR/gateway.db" ]]; then
+  cargo run -p gateway --bin gateway -- seed-local-demo
+fi
 
 cleanup() {
   if [[ -n "${UI_PID:-}" ]]; then

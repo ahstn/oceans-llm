@@ -95,10 +95,7 @@ where
                 .get(&execution_model.id)
                 .map(Vec::as_slice)
                 .unwrap_or(&[]);
-            let primary_route = routes
-                .iter()
-                .find(|route| route.enabled)
-                .or_else(|| routes.first());
+            let primary_route = select_display_route(&providers_by_key, routes);
             let primary_provider =
                 primary_route.and_then(|route| providers_by_key.get(&route.provider_key));
             let status = route_health(&providers_by_key, routes);
@@ -144,6 +141,22 @@ fn route_health(
     }
 
     AdminModelStatus::Degraded
+}
+
+fn select_display_route<'a>(
+    providers_by_key: &HashMap<String, ProviderConnection>,
+    routes: &'a [gateway_core::ModelRoute],
+) -> Option<&'a gateway_core::ModelRoute> {
+    routes
+        .iter()
+        .find(|route| route.enabled && providers_by_key.contains_key(&route.provider_key))
+        .or_else(|| {
+            routes
+                .iter()
+                .find(|route| providers_by_key.contains_key(&route.provider_key))
+        })
+        .or_else(|| routes.iter().find(|route| route.enabled))
+        .or_else(|| routes.first())
 }
 
 fn resolve_execution_model(
@@ -388,5 +401,69 @@ mod tests {
 
         assert_eq!(items[0].status, AdminModelStatus::Degraded);
         assert_eq!(items[0].provider_key.as_deref(), Some("missing"));
+    }
+
+    #[tokio::test]
+    async fn list_models_prefers_viable_enabled_route_for_display_when_healthy() {
+        let model_id = Uuid::new_v4();
+        let missing_route_id = Uuid::new_v4();
+        let healthy_route_id = Uuid::new_v4();
+        let repo = Arc::new(CountingRepo {
+            models: vec![GatewayModel {
+                id: model_id,
+                model_key: "fallback-model".to_string(),
+                alias_target_model_key: None,
+                description: None,
+                tags: Vec::new(),
+                rank: 1,
+            }],
+            routes_by_model: HashMap::from([(
+                model_id,
+                vec![
+                    ModelRoute {
+                        id: missing_route_id,
+                        model_id,
+                        provider_key: "missing".to_string(),
+                        upstream_model: "broken-upstream".to_string(),
+                        priority: 0,
+                        weight: 1.0,
+                        enabled: true,
+                        extra_headers: Default::default(),
+                        extra_body: Default::default(),
+                        capabilities: Default::default(),
+                    },
+                    ModelRoute {
+                        id: healthy_route_id,
+                        model_id,
+                        provider_key: "openai".to_string(),
+                        upstream_model: "healthy-upstream".to_string(),
+                        priority: 1,
+                        weight: 1.0,
+                        enabled: true,
+                        extra_headers: Default::default(),
+                        extra_body: Default::default(),
+                        capabilities: Default::default(),
+                    },
+                ],
+            )]),
+            providers_by_key: HashMap::from([(
+                "openai".to_string(),
+                ProviderConnection {
+                    provider_key: "openai".to_string(),
+                    provider_type: "openai_compat".to_string(),
+                    config: json!({"display": {"label": "OpenAI", "icon_key": "openai"}}),
+                    secrets: None,
+                },
+            )]),
+            ..Default::default()
+        });
+
+        let service = AdminModelsService::new(repo);
+        let items = service.list_models().await.expect("admin models");
+
+        assert_eq!(items[0].status, AdminModelStatus::Healthy);
+        assert_eq!(items[0].provider_key.as_deref(), Some("openai"));
+        assert_eq!(items[0].provider_label.as_deref(), Some("OpenAI"));
+        assert_eq!(items[0].upstream_model.as_deref(), Some("healthy-upstream"));
     }
 }

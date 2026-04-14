@@ -17,7 +17,10 @@ use gateway_core::{
     ProviderRequestContext, RequestLogRecord, RequestTags, openai_chat_request_to_core,
     openai_embeddings_request_to_core, protocol::openai::ModelCard,
 };
-use gateway_service::{RequestLogIconMetadata, resolve_model_icon_key, resolve_provider_display};
+use gateway_service::{
+    RequestLogIconMetadata, ResolvedProviderConnection, resolve_model_icon_key,
+    resolve_provider_display_from_parts,
+};
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
 use tracing::{Instrument, Span, field};
@@ -906,11 +909,15 @@ fn request_log_metadata(
 
 fn request_log_icon_metadata(
     route: &gateway_core::ModelRoute,
-    provider: Option<&gateway_core::ProviderConnection>,
+    provider: Option<&ResolvedProviderConnection>,
     resolved_model_key: &str,
     requested_model_key: &str,
 ) -> RequestLogIconMetadata {
-    let provider_display = resolve_provider_display(route.provider_key.as_str(), provider);
+    let provider_display = resolve_provider_display_from_parts(
+        route.provider_key.as_str(),
+        provider.map(|value| value.provider_type.as_str()),
+        provider.map(|value| &value.config),
+    );
     let model_icon_key = resolve_model_icon_key([
         route.upstream_model.as_str(),
         resolved_model_key,
