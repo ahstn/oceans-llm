@@ -6,6 +6,8 @@ This file stays in the repo as a maintainer note for the VitePress source tree.
   - [Documentation Home](index.md)
 - Site config:
   - [.vitepress/config.mts](.vitepress/config.mts)
+- Cloudflare deploy script:
+  - [package.json](package.json)
 - ADRs:
   - [adr/](adr)
 - Internal notes:
@@ -14,6 +16,7 @@ This file stays in the repo as a maintainer note for the VitePress source tree.
 What lives where:
 
 - `index.md` and the section folders drive the published docs site.
+- `package.json` owns the checked-in Cloudflare Pages deploy command for the public site.
 - `adr/` explains why decisions were made.
 - `internal/` holds research and rough notes that should not be treated as live contract.
 - `scripts/docs-check.ts` keeps link, ownership, and nav checks close to the docs package.
