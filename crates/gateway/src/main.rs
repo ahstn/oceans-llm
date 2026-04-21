@@ -4089,7 +4089,10 @@ mod tests {
             .as_array()
             .expect("updated models");
         assert_eq!(updated_models.len(), 1);
-        assert_eq!(updated_models[0]["id"], Value::String("reasoning".to_string()));
+        assert_eq!(
+            updated_models[0]["id"],
+            Value::String("reasoning".to_string())
+        );
 
         let revoke_response = app
             .clone()
@@ -4892,6 +4895,19 @@ mod tests {
             .expect("response");
         assert_eq!(team_upsert.status(), StatusCode::UNAUTHORIZED);
 
+        let leaderboard = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/v1/admin/observability/leaderboard")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(leaderboard.status(), StatusCode::UNAUTHORIZED);
+
         let team_deactivate = app
             .oneshot(
                 Request::builder()
@@ -5155,6 +5171,286 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(invalid_owner_kind.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn admin_usage_leaderboard_returns_ranked_users_and_bucketed_series() {
+        let (app, store, _) =
+            build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;
+        let session_cookie = bootstrap_admin_session_cookie(&app, &store).await;
+
+        let providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: serde_json::json!({
+                "base_url": "https://api.openai.com/v1",
+                "pricing_provider_id": "openai"
+            }),
+            secrets: None,
+        }];
+        let models = vec![
+            SeedModel {
+                model_key: "fast".to_string(),
+                alias_target_model_key: None,
+                description: Some("Fast tier".to_string()),
+                tags: vec!["fast".to_string()],
+                rank: 10,
+                routes: vec![SeedModelRoute {
+                    provider_key: "openai-prod".to_string(),
+                    upstream_model: "gpt-5-mini".to_string(),
+                    priority: 10,
+                    weight: 1.0,
+                    enabled: true,
+                    extra_headers: Map::<String, Value>::new(),
+                    extra_body: Map::<String, Value>::new(),
+                    capabilities: ProviderCapabilities::all_enabled(),
+                }],
+            },
+            SeedModel {
+                model_key: "reasoning".to_string(),
+                alias_target_model_key: None,
+                description: Some("Reasoning tier".to_string()),
+                tags: vec!["reasoning".to_string()],
+                rank: 20,
+                routes: vec![SeedModelRoute {
+                    provider_key: "openai-prod".to_string(),
+                    upstream_model: "gpt-5".to_string(),
+                    priority: 10,
+                    weight: 1.0,
+                    enabled: true,
+                    extra_headers: Map::<String, Value>::new(),
+                    extra_body: Map::<String, Value>::new(),
+                    capabilities: ProviderCapabilities::all_enabled(),
+                }],
+            },
+        ];
+        let api_keys = vec![SeedApiKey {
+            name: "dev".to_string(),
+            public_id: "dev123".to_string(),
+            secret_hash: "hash".to_string(),
+            allowed_models: vec!["fast".to_string(), "reasoning".to_string()],
+        }];
+        store
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[])
+            .await
+            .expect("seed");
+        let api_key = store
+            .get_api_key_by_public_id("dev123")
+            .await
+            .expect("load api key")
+            .expect("api key");
+        let fast_model = store
+            .get_model_by_key("fast")
+            .await
+            .expect("load model")
+            .expect("fast model");
+        let reasoning_model = store
+            .get_model_by_key("reasoning")
+            .await
+            .expect("load model")
+            .expect("reasoning model");
+
+        let users = [
+            store
+                .create_identity_user(
+                    "Ada",
+                    "ada@example.com",
+                    "ada@example.com",
+                    GlobalRole::User,
+                    AuthMode::Password,
+                    gateway_core::UserStatus::Active,
+                )
+                .await
+                .expect("create ada"),
+            store
+                .create_identity_user(
+                    "Ben",
+                    "ben@example.com",
+                    "ben@example.com",
+                    GlobalRole::User,
+                    AuthMode::Password,
+                    gateway_core::UserStatus::Active,
+                )
+                .await
+                .expect("create ben"),
+            store
+                .create_identity_user(
+                    "Cleo",
+                    "cleo@example.com",
+                    "cleo@example.com",
+                    GlobalRole::User,
+                    AuthMode::Password,
+                    gateway_core::UserStatus::Active,
+                )
+                .await
+                .expect("create cleo"),
+            store
+                .create_identity_user(
+                    "Dina",
+                    "dina@example.com",
+                    "dina@example.com",
+                    GlobalRole::User,
+                    AuthMode::Password,
+                    gateway_core::UserStatus::Active,
+                )
+                .await
+                .expect("create dina"),
+            store
+                .create_identity_user(
+                    "Eli",
+                    "eli@example.com",
+                    "eli@example.com",
+                    GlobalRole::User,
+                    AuthMode::Password,
+                    gateway_core::UserStatus::Active,
+                )
+                .await
+                .expect("create eli"),
+            store
+                .create_identity_user(
+                    "Fay",
+                    "fay@example.com",
+                    "fay@example.com",
+                    GlobalRole::User,
+                    AuthMode::Password,
+                    gateway_core::UserStatus::Active,
+                )
+                .await
+                .expect("create fay"),
+        ];
+
+        let now = time::OffsetDateTime::now_utc();
+        let user_costs = [70_000, 61_000, 52_000, 43_000, 34_000, 25_000];
+        for (index, user) in users.iter().enumerate() {
+            assert!(
+                store
+                    .insert_usage_ledger_if_absent(&usage_ledger_record(
+                        &format!("leaderboard-fast-{index}"),
+                        format!("user:{}", user.user_id),
+                        api_key.id,
+                        Some(user.user_id),
+                        None,
+                        Some(fast_model.id),
+                        "gpt-5-mini",
+                        UsagePricingStatus::Priced,
+                        user_costs[index],
+                        now - time::Duration::hours((index as i64 + 1) * 6),
+                    ))
+                    .await
+                    .expect("insert fast ledger")
+            );
+            assert!(
+                store
+                    .insert_usage_ledger_if_absent(&usage_ledger_record(
+                        &format!("leaderboard-reasoning-{index}"),
+                        format!("user:{}", user.user_id),
+                        api_key.id,
+                        Some(user.user_id),
+                        None,
+                        Some(reasoning_model.id),
+                        "gpt-5",
+                        UsagePricingStatus::Priced,
+                        1_000,
+                        now - time::Duration::hours((index as i64 + 1) * 6 + 1),
+                    ))
+                    .await
+                    .expect("insert reasoning ledger")
+            );
+            assert!(
+                store
+                    .insert_usage_ledger_if_absent(&usage_ledger_record(
+                        &format!("leaderboard-unpriced-{index}"),
+                        format!("user:{}", user.user_id),
+                        api_key.id,
+                        Some(user.user_id),
+                        None,
+                        Some(fast_model.id),
+                        "gpt-5-mini",
+                        UsagePricingStatus::Unpriced,
+                        0,
+                        now - time::Duration::hours((index as i64 + 1) * 6 + 2),
+                    ))
+                    .await
+                    .expect("insert unpriced ledger")
+            );
+        }
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/v1/admin/observability/leaderboard?range=7d")
+                    .header("cookie", &session_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = read_json(response).await;
+        assert_eq!(body["data"]["range"], "7d");
+        assert_eq!(body["data"]["bucket_hours"], 12);
+        assert_eq!(
+            body["data"]["chart_users"]
+                .as_array()
+                .expect("chart users")
+                .len(),
+            5
+        );
+        assert_eq!(body["data"]["series"].as_array().expect("series").len(), 14);
+        assert_eq!(
+            body["data"]["leaders"].as_array().expect("leaders").len(),
+            6
+        );
+        assert_eq!(body["data"]["leaders"][0]["user_name"], "Ada");
+        assert_eq!(body["data"]["leaders"][0]["total_spend_usd_10000"], 71_000);
+        assert_eq!(body["data"]["leaders"][0]["most_used_model"], "fast");
+        assert_eq!(body["data"]["leaders"][0]["total_requests"], 3);
+        assert_eq!(body["data"]["leaders"][5]["user_name"], "Fay");
+        assert_eq!(
+            body["data"]["series"][0]["values"]
+                .as_array()
+                .expect("series values")
+                .len(),
+            5
+        );
+
+        let longer_range = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/v1/admin/observability/leaderboard?range=31d")
+                    .header("cookie", &session_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(longer_range.status(), StatusCode::OK);
+        let longer_body = read_json(longer_range).await;
+        assert_eq!(
+            longer_body["data"]["series"]
+                .as_array()
+                .expect("series")
+                .len(),
+            62
+        );
+
+        let invalid_range = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/v1/admin/observability/leaderboard?range=14d")
+                    .header("cookie", &session_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(invalid_range.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]

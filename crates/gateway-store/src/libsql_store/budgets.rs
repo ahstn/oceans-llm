@@ -631,6 +631,157 @@ impl BudgetRepository for LibsqlStore {
         Ok(output)
     }
 
+    async fn list_usage_user_leaderboard(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        limit: u32,
+    ) -> Result<Vec<UsageLeaderboardUserRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                WITH user_totals AS (
+                    SELECT
+                        u.user_id AS user_id,
+                        users.name AS user_name,
+                        COALESCE(SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated')
+                            THEN u.computed_cost_10000 ELSE 0 END), 0) AS priced_cost_10000,
+                        SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated') THEN 1 ELSE 0 END)
+                            AS priced_request_count,
+                        SUM(CASE WHEN u.pricing_status = 'unpriced' THEN 1 ELSE 0 END)
+                            AS unpriced_request_count,
+                        SUM(CASE WHEN u.pricing_status = 'usage_missing' THEN 1 ELSE 0 END)
+                            AS usage_missing_request_count
+                    FROM usage_cost_events u
+                    INNER JOIN users ON users.user_id = u.user_id
+                    WHERE u.occurred_at >= ?1
+                      AND u.occurred_at < ?2
+                      AND u.user_id IS NOT NULL
+                    GROUP BY u.user_id, users.name
+                ),
+                model_totals AS (
+                    SELECT
+                        u.user_id AS user_id,
+                        COALESCE(g.model_key, u.upstream_model) AS model_key,
+                        COUNT(*) AS request_count,
+                        COALESCE(SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated')
+                            THEN u.computed_cost_10000 ELSE 0 END), 0) AS priced_cost_10000
+                    FROM usage_cost_events u
+                    LEFT JOIN gateway_models g ON g.id = u.model_id
+                    WHERE u.occurred_at >= ?1
+                      AND u.occurred_at < ?2
+                      AND u.user_id IS NOT NULL
+                    GROUP BY u.user_id, COALESCE(g.model_key, u.upstream_model)
+                ),
+                ranked_models AS (
+                    SELECT
+                        user_id,
+                        model_key,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY user_id
+                            ORDER BY request_count DESC, priced_cost_10000 DESC, model_key ASC
+                        ) AS model_rank
+                    FROM model_totals
+                )
+                SELECT
+                    user_totals.user_id,
+                    user_totals.user_name,
+                    user_totals.priced_cost_10000,
+                    (
+                        user_totals.priced_request_count
+                        + user_totals.unpriced_request_count
+                        + user_totals.usage_missing_request_count
+                    ) AS total_request_count,
+                    ranked_models.model_key
+                FROM user_totals
+                LEFT JOIN ranked_models
+                    ON ranked_models.user_id = user_totals.user_id
+                   AND ranked_models.model_rank = 1
+                ORDER BY
+                    user_totals.priced_cost_10000 DESC,
+                    total_request_count DESC,
+                    user_totals.user_name ASC,
+                    user_totals.user_id ASC
+                LIMIT ?3
+                "#,
+                libsql::params![
+                    window_start.unix_timestamp(),
+                    window_end.unix_timestamp(),
+                    i64::from(limit)
+                ],
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let mut output = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            output.push(UsageLeaderboardUserRecord {
+                user_id: parse_uuid(&row.get::<String>(0).map_err(to_query_error)?)?,
+                user_name: row.get(1).map_err(to_query_error)?,
+                priced_cost_usd: Money4::from_scaled(row.get::<i64>(2).map_err(to_query_error)?),
+                total_request_count: row.get(3).map_err(to_query_error)?,
+                top_model_key: row.get(4).map_err(to_query_error)?,
+            });
+        }
+
+        Ok(output)
+    }
+
+    async fn list_usage_user_bucket_aggregates(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        bucket_hours: u8,
+        user_ids: &[Uuid],
+    ) -> Result<Vec<UsageLeaderboardBucketRecord>, StoreError> {
+        if user_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let bucket_seconds = i64::from(bucket_hours) * 60 * 60;
+        let user_ids_json =
+            serde_json::to_string(&user_ids.iter().map(Uuid::to_string).collect::<Vec<_>>())
+                .map_err(|error| StoreError::Serialization(error.to_string()))?;
+
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT
+                    user_id,
+                    (occurred_at / ?3) * ?3 AS bucket_start,
+                    COALESCE(SUM(CASE WHEN pricing_status IN ('priced', 'legacy_estimated')
+                        THEN computed_cost_10000 ELSE 0 END), 0) AS priced_cost_10000
+                FROM usage_cost_events
+                WHERE occurred_at >= ?1
+                  AND occurred_at < ?2
+                  AND user_id IN (SELECT value FROM json_each(?4))
+                GROUP BY user_id, bucket_start
+                ORDER BY bucket_start ASC, user_id ASC
+                "#,
+                libsql::params![
+                    window_start.unix_timestamp(),
+                    window_end.unix_timestamp(),
+                    bucket_seconds,
+                    user_ids_json
+                ],
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let mut output = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            output.push(UsageLeaderboardBucketRecord {
+                user_id: parse_uuid(&row.get::<String>(0).map_err(to_query_error)?)?,
+                bucket_start: unix_to_datetime(row.get::<i64>(1).map_err(to_query_error)?)?,
+                priced_cost_usd: Money4::from_scaled(row.get::<i64>(2).map_err(to_query_error)?),
+            });
+        }
+
+        Ok(output)
+    }
+
     async fn insert_usage_ledger_if_absent(
         &self,
         event: &UsageLedgerRecord,

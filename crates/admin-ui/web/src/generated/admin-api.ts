@@ -4,1930 +4,2024 @@
  */
 
 export interface paths {
-    "/api/v1/admin/api-keys": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_api_keys"];
-        put?: never;
-        post: operations["create_api_key"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/api-keys/{api_key_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch: operations["update_api_key"];
-        trace?: never;
-    };
-    "/api/v1/admin/api-keys/{api_key_id}/revoke": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["revoke_api_key"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/identity/teams": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_identity_teams"];
-        put?: never;
-        post: operations["create_identity_team"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/identity/teams/{team_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch: operations["update_identity_team"];
-        trace?: never;
-    };
-    "/api/v1/admin/identity/teams/{team_id}/members": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["add_identity_team_members"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/identity/teams/{team_id}/members/{user_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["remove_identity_team_member"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/identity/teams/{team_id}/members/{user_id}/transfer": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["transfer_identity_team_member"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/identity/users": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_identity_users"];
-        put?: never;
-        post: operations["create_identity_user"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/identity/users/{user_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch: operations["update_identity_user"];
-        trace?: never;
-    };
-    "/api/v1/admin/identity/users/{user_id}/deactivate": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["deactivate_identity_user"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/identity/users/{user_id}/password-invite": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["regenerate_password_invite"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/identity/users/{user_id}/reactivate": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["reactivate_identity_user"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/identity/users/{user_id}/reset-onboarding": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["reset_identity_user_onboarding"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/models": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_models"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/observability/request-logs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_request_logs"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/observability/request-logs/{request_log_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_request_log_detail"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/spend/budget-alerts": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_budget_alert_history"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/spend/budgets": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_spend_budgets"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/spend/budgets/teams/{team_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put: operations["upsert_team_budget"];
-        post?: never;
-        delete: operations["deactivate_team_budget"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/spend/budgets/users/{user_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put: operations["upsert_user_budget"];
-        post?: never;
-        delete: operations["deactivate_user_budget"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/spend/report": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_spend_report"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/invitations/{token}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["validate_password_invitation"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/invitations/{token}/password": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["complete_password_invitation"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/login/password": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["login_with_password"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/oidc/callback": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["oidc_callback"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/oidc/start": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["oidc_start"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/password/change": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["change_password"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/session": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_auth_session"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
+  '/api/v1/admin/api-keys': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_api_keys']
+    put?: never
+    post: operations['create_api_key']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/admin/api-keys/{api_key_id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch: operations['update_api_key']
+    trace?: never
+  }
+  '/api/v1/admin/api-keys/{api_key_id}/revoke': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['revoke_api_key']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/admin/identity/teams': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_identity_teams']
+    put?: never
+    post: operations['create_identity_team']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/admin/identity/teams/{team_id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch: operations['update_identity_team']
+    trace?: never
+  }
+  '/api/v1/admin/identity/teams/{team_id}/members': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['add_identity_team_members']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/admin/identity/teams/{team_id}/members/{user_id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete: operations['remove_identity_team_member']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/admin/identity/teams/{team_id}/members/{user_id}/transfer': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['transfer_identity_team_member']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/admin/identity/users': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_identity_users']
+    put?: never
+    post: operations['create_identity_user']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/admin/identity/users/{user_id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch: operations['update_identity_user']
+    trace?: never
+  }
+  '/api/v1/admin/identity/users/{user_id}/deactivate': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['deactivate_identity_user']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/admin/identity/users/{user_id}/password-invite': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['regenerate_password_invite']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/admin/identity/users/{user_id}/reactivate': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['reactivate_identity_user']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/admin/identity/users/{user_id}/reset-onboarding': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['reset_identity_user_onboarding']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/admin/models': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_models']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/admin/observability/leaderboard': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_usage_leaderboard']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/admin/observability/request-logs': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_request_logs']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/admin/observability/request-logs/{request_log_id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_request_log_detail']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/admin/spend/budget-alerts': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_budget_alert_history']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/admin/spend/budgets': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_spend_budgets']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/admin/spend/budgets/teams/{team_id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put: operations['upsert_team_budget']
+    post?: never
+    delete: operations['deactivate_team_budget']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/admin/spend/budgets/users/{user_id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put: operations['upsert_user_budget']
+    post?: never
+    delete: operations['deactivate_user_budget']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/admin/spend/report': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_spend_report']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/auth/invitations/{token}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['validate_password_invitation']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/auth/invitations/{token}/password': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['complete_password_invitation']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/auth/login/password': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['login_with_password']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/auth/oidc/callback': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['oidc_callback']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/auth/oidc/start': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['oidc_start']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/auth/password/change': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['change_password']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/auth/session': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_auth_session']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
 }
-export type webhooks = Record<string, never>;
+export type webhooks = Record<string, never>
 export interface components {
-    schemas: {
-        AddTeamMembersRequest: {
-            user_ids: string[];
-        };
-        AdminApiKeyModelView: {
-            description?: string | null;
-            id: string;
-            key: string;
-            tags: string[];
-        };
-        AdminApiKeyTeamOwnerView: {
-            id: string;
-            key: string;
-            name: string;
-        };
-        AdminApiKeyUserOwnerView: {
-            email: string;
-            id: string;
-            name: string;
-        };
-        AdminApiKeyView: {
-            created_at: string;
-            id: string;
-            last_used_at?: string | null;
-            model_keys: string[];
-            name: string;
-            owner_email?: string | null;
-            owner_id: string;
-            owner_kind: string;
-            owner_name: string;
-            owner_team_key?: string | null;
-            prefix: string;
-            revoked_at?: string | null;
-            status: string;
-        };
-        AdminApiKeysPayload: {
-            items: components["schemas"]["AdminApiKeyView"][];
-            models: components["schemas"]["AdminApiKeyModelView"][];
-            teams: components["schemas"]["AdminApiKeyTeamOwnerView"][];
-            users: components["schemas"]["AdminApiKeyUserOwnerView"][];
-        };
-        AdminIdentityPayload: {
-            oidc_providers: components["schemas"]["AdminOidcProviderView"][];
-            teams: components["schemas"]["AdminTeamView"][];
-            users: components["schemas"]["AdminIdentityUserView"][];
-        };
-        AdminIdentityUserView: {
-            auth_mode: string;
-            email: string;
-            global_role: string;
-            id: string;
-            name: string;
-            onboarding?: null | components["schemas"]["AdminOnboardingActionView"];
-            request_logging_enabled: boolean;
-            status: string;
-            team_id?: string | null;
-            team_name?: string | null;
-            team_role?: string | null;
-        };
-        AdminModelPageView: {
-            items: components["schemas"]["AdminModelView"][];
-            /** Format: int32 */
-            page: number;
-            /** Format: int32 */
-            page_size: number;
-            /** Format: int64 */
-            total: number;
-        };
-        /** @enum {string} */
-        AdminModelStatusView: "healthy" | "degraded";
-        AdminModelView: {
-            alias_of?: string | null;
-            description?: string | null;
-            id: string;
-            model_icon_key?: null | components["schemas"]["ModelIconKeyView"];
-            provider_icon_key?: null | components["schemas"]["ProviderIconKeyView"];
-            provider_key?: string | null;
-            provider_label?: string | null;
-            resolved_model_key: string;
-            status: components["schemas"]["AdminModelStatusView"];
-            tags: string[];
-            upstream_model?: string | null;
-        };
-        AdminOidcProviderView: {
-            id: string;
-            key: string;
-            label: string;
-        };
-        AdminOnboardingActionView: {
-            can_resend: boolean;
-            expires_at?: string | null;
-            invite_url?: string | null;
+  schemas: {
+    AddTeamMembersRequest: {
+      user_ids: string[]
+    }
+    AdminApiKeyModelView: {
+      description?: string | null
+      id: string
+      key: string
+      tags: string[]
+    }
+    AdminApiKeyTeamOwnerView: {
+      id: string
+      key: string
+      name: string
+    }
+    AdminApiKeyUserOwnerView: {
+      email: string
+      id: string
+      name: string
+    }
+    AdminApiKeyView: {
+      created_at: string
+      id: string
+      last_used_at?: string | null
+      model_keys: string[]
+      name: string
+      owner_email?: string | null
+      owner_id: string
+      owner_kind: string
+      owner_name: string
+      owner_team_key?: string | null
+      prefix: string
+      revoked_at?: string | null
+      status: string
+    }
+    AdminApiKeysPayload: {
+      items: components['schemas']['AdminApiKeyView'][]
+      models: components['schemas']['AdminApiKeyModelView'][]
+      teams: components['schemas']['AdminApiKeyTeamOwnerView'][]
+      users: components['schemas']['AdminApiKeyUserOwnerView'][]
+    }
+    AdminIdentityPayload: {
+      oidc_providers: components['schemas']['AdminOidcProviderView'][]
+      teams: components['schemas']['AdminTeamView'][]
+      users: components['schemas']['AdminIdentityUserView'][]
+    }
+    AdminIdentityUserView: {
+      auth_mode: string
+      email: string
+      global_role: string
+      id: string
+      name: string
+      onboarding?: null | components['schemas']['AdminOnboardingActionView']
+      request_logging_enabled: boolean
+      status: string
+      team_id?: string | null
+      team_name?: string | null
+      team_role?: string | null
+    }
+    AdminModelPageView: {
+      items: components['schemas']['AdminModelView'][]
+      /** Format: int32 */
+      page: number
+      /** Format: int32 */
+      page_size: number
+      /** Format: int64 */
+      total: number
+    }
+    /** @enum {string} */
+    AdminModelStatusView: 'healthy' | 'degraded'
+    AdminModelView: {
+      alias_of?: string | null
+      description?: string | null
+      id: string
+      model_icon_key?: null | components['schemas']['ModelIconKeyView']
+      provider_icon_key?: null | components['schemas']['ProviderIconKeyView']
+      provider_key?: string | null
+      provider_label?: string | null
+      resolved_model_key: string
+      status: components['schemas']['AdminModelStatusView']
+      tags: string[]
+      upstream_model?: string | null
+    }
+    AdminOidcProviderView: {
+      id: string
+      key: string
+      label: string
+    }
+    AdminOnboardingActionView:
+      | {
+          can_resend: boolean
+          expires_at?: string | null
+          invite_url?: string | null
+          /** @enum {string} */
+          kind: 'password_invite'
+        }
+      | {
+          /** @enum {string} */
+          kind: 'oidc_sign_in'
+          provider_key: string
+          provider_label: string
+          sign_in_url: string
+        }
+    AdminTeamAdminView: {
+      email: string
+      id: string
+      name: string
+      status: string
+    }
+    AdminTeamAssignableUserView: {
+      email: string
+      id: string
+      name: string
+      status: string
+      team_id?: string | null
+      team_name?: string | null
+      team_role?: string | null
+    }
+    AdminTeamManagementView: {
+      admins: components['schemas']['AdminTeamAdminView'][]
+      id: string
+      key: string
+      member_count: number
+      members: components['schemas']['AdminTeamMemberView'][]
+      name: string
+      status: string
+    }
+    AdminTeamMemberView: {
+      email: string
+      id: string
+      name: string
+      role: string
+      status: string
+    }
+    AdminTeamView: {
+      id: string
+      name: string
+    }
+    AdminTeamsPayload: {
+      oidc_providers: components['schemas']['AdminOidcProviderView'][]
+      teams: components['schemas']['AdminTeamManagementView'][]
+      users: components['schemas']['AdminTeamAssignableUserView'][]
+    }
+    AuthSessionUserView: {
+      email: string
+      global_role: string
+      id: string
+      name: string
+    }
+    AuthSessionView: {
+      must_change_password: boolean
+      user: components['schemas']['AuthSessionUserView']
+    }
+    BudgetAlertHistoryItemView: {
+      budget_alert_id: string
+      cadence: string
+      channel: string
+      created_at: string
+      delivery_status: string
+      failure_reason?: string | null
+      last_attempted_at?: string | null
+      owner_id: string
+      owner_kind: string
+      owner_name: string
+      recipient_summary: string
+      /** Format: int64 */
+      remaining_budget_usd_10000: number
+      sent_at?: string | null
+      /** Format: int64 */
+      spend_after_usd_10000: number
+      /** Format: int64 */
+      spend_before_usd_10000: number
+      /** Format: int32 */
+      threshold_bps: number
+      window_end: string
+      window_start: string
+    }
+    BudgetAlertHistoryView: {
+      items: components['schemas']['BudgetAlertHistoryItemView'][]
+      /** Format: int32 */
+      page: number
+      /** Format: int32 */
+      page_size: number
+      /** Format: int64 */
+      total: number
+    }
+    BudgetSettingsView: {
+      amount_usd: string
+      /** Format: int64 */
+      amount_usd_10000: number
+      cadence: string
+      hard_limit: boolean
+      timezone: string
+    }
+    ChangePasswordRequest: {
+      current_password: string
+      new_password: string
+    }
+    CompleteInvitationRequest: {
+      password: string
+    }
+    CompleteInvitationResponse: {
+      status: string
+    }
+    CreateApiKeyRequest: {
+      model_keys: string[]
+      name: string
+      owner_kind: string
+      owner_team_id?: string | null
+      owner_user_id?: string | null
+    }
+    CreateApiKeyResponse: {
+      api_key: components['schemas']['AdminApiKeyView']
+      raw_key: string
+    }
+    CreateTeamRequest: {
+      admin_user_ids: string[]
+      name: string
+    }
+    CreateUserRequest: {
+      auth_mode: string
+      email: string
+      global_role: string
+      name: string
+      oidc_provider_key?: string | null
+      team_id?: string | null
+      team_role?: string | null
+    }
+    CreateUserResponse:
+      | {
+          expires_at: string
+          invite_url: string
+          /** @enum {string} */
+          kind: 'password_invite'
+          user: components['schemas']['AdminIdentityUserView']
+        }
+      | {
+          /** @enum {string} */
+          kind: 'oidc_sign_in'
+          provider_label: string
+          sign_in_url: string
+          user: components['schemas']['AdminIdentityUserView']
+        }
+    DeactivateBudgetResultView: {
+      deactivated: boolean
+      owner_id: string
+      owner_kind: string
+    }
+    Envelope_AdminApiKeysPayload: {
+      data: {
+        items: components['schemas']['AdminApiKeyView'][]
+        models: components['schemas']['AdminApiKeyModelView'][]
+        teams: components['schemas']['AdminApiKeyTeamOwnerView'][]
+        users: components['schemas']['AdminApiKeyUserOwnerView'][]
+      }
+      meta: components['schemas']['ResponseMeta']
+    }
+    Envelope_AdminIdentityPayload: {
+      data: {
+        oidc_providers: components['schemas']['AdminOidcProviderView'][]
+        teams: components['schemas']['AdminTeamView'][]
+        users: components['schemas']['AdminIdentityUserView'][]
+      }
+      meta: components['schemas']['ResponseMeta']
+    }
+    Envelope_AdminModelPageView: {
+      data: {
+        items: components['schemas']['AdminModelView'][]
+        /** Format: int32 */
+        page: number
+        /** Format: int32 */
+        page_size: number
+        /** Format: int64 */
+        total: number
+      }
+      meta: components['schemas']['ResponseMeta']
+    }
+    Envelope_AdminTeamManagementView: {
+      data: {
+        admins: components['schemas']['AdminTeamAdminView'][]
+        id: string
+        key: string
+        member_count: number
+        members: components['schemas']['AdminTeamMemberView'][]
+        name: string
+        status: string
+      }
+      meta: components['schemas']['ResponseMeta']
+    }
+    Envelope_AdminTeamsPayload: {
+      data: {
+        oidc_providers: components['schemas']['AdminOidcProviderView'][]
+        teams: components['schemas']['AdminTeamManagementView'][]
+        users: components['schemas']['AdminTeamAssignableUserView'][]
+      }
+      meta: components['schemas']['ResponseMeta']
+    }
+    Envelope_AuthSessionView: {
+      data: {
+        must_change_password: boolean
+        user: components['schemas']['AuthSessionUserView']
+      }
+      meta: components['schemas']['ResponseMeta']
+    }
+    Envelope_BudgetAlertHistoryView: {
+      data: {
+        items: components['schemas']['BudgetAlertHistoryItemView'][]
+        /** Format: int32 */
+        page: number
+        /** Format: int32 */
+        page_size: number
+        /** Format: int64 */
+        total: number
+      }
+      meta: components['schemas']['ResponseMeta']
+    }
+    Envelope_CompleteInvitationResponse: {
+      data: {
+        status: string
+      }
+      meta: components['schemas']['ResponseMeta']
+    }
+    Envelope_CreateApiKeyResponse: {
+      data: {
+        api_key: components['schemas']['AdminApiKeyView']
+        raw_key: string
+      }
+      meta: components['schemas']['ResponseMeta']
+    }
+    Envelope_CreateUserResponse: {
+      data:
+        | {
+            expires_at: string
+            invite_url: string
             /** @enum {string} */
-            kind: "password_invite";
-        } | {
+            kind: 'password_invite'
+            user: components['schemas']['AdminIdentityUserView']
+          }
+        | {
             /** @enum {string} */
-            kind: "oidc_sign_in";
-            provider_key: string;
-            provider_label: string;
-            sign_in_url: string;
-        };
-        AdminTeamAdminView: {
-            email: string;
-            id: string;
-            name: string;
-            status: string;
-        };
-        AdminTeamAssignableUserView: {
-            email: string;
-            id: string;
-            name: string;
-            status: string;
-            team_id?: string | null;
-            team_name?: string | null;
-            team_role?: string | null;
-        };
-        AdminTeamManagementView: {
-            admins: components["schemas"]["AdminTeamAdminView"][];
-            id: string;
-            key: string;
-            member_count: number;
-            members: components["schemas"]["AdminTeamMemberView"][];
-            name: string;
-            status: string;
-        };
-        AdminTeamMemberView: {
-            email: string;
-            id: string;
-            name: string;
-            role: string;
-            status: string;
-        };
-        AdminTeamView: {
-            id: string;
-            name: string;
-        };
-        AdminTeamsPayload: {
-            oidc_providers: components["schemas"]["AdminOidcProviderView"][];
-            teams: components["schemas"]["AdminTeamManagementView"][];
-            users: components["schemas"]["AdminTeamAssignableUserView"][];
-        };
-        AuthSessionUserView: {
-            email: string;
-            global_role: string;
-            id: string;
-            name: string;
-        };
-        AuthSessionView: {
-            must_change_password: boolean;
-            user: components["schemas"]["AuthSessionUserView"];
-        };
-        BudgetAlertHistoryItemView: {
-            budget_alert_id: string;
-            cadence: string;
-            channel: string;
-            created_at: string;
-            delivery_status: string;
-            failure_reason?: string | null;
-            last_attempted_at?: string | null;
-            owner_id: string;
-            owner_kind: string;
-            owner_name: string;
-            recipient_summary: string;
-            /** Format: int64 */
-            remaining_budget_usd_10000: number;
-            sent_at?: string | null;
-            /** Format: int64 */
-            spend_after_usd_10000: number;
-            /** Format: int64 */
-            spend_before_usd_10000: number;
-            /** Format: int32 */
-            threshold_bps: number;
-            window_end: string;
-            window_start: string;
-        };
-        BudgetAlertHistoryView: {
-            items: components["schemas"]["BudgetAlertHistoryItemView"][];
-            /** Format: int32 */
-            page: number;
-            /** Format: int32 */
-            page_size: number;
-            /** Format: int64 */
-            total: number;
-        };
-        BudgetSettingsView: {
-            amount_usd: string;
-            /** Format: int64 */
-            amount_usd_10000: number;
-            cadence: string;
-            hard_limit: boolean;
-            timezone: string;
-        };
-        ChangePasswordRequest: {
-            current_password: string;
-            new_password: string;
-        };
-        CompleteInvitationRequest: {
-            password: string;
-        };
-        CompleteInvitationResponse: {
-            status: string;
-        };
-        CreateApiKeyRequest: {
-            model_keys: string[];
-            name: string;
-            owner_kind: string;
-            owner_team_id?: string | null;
-            owner_user_id?: string | null;
-        };
-        CreateApiKeyResponse: {
-            api_key: components["schemas"]["AdminApiKeyView"];
-            raw_key: string;
-        };
-        CreateTeamRequest: {
-            admin_user_ids: string[];
-            name: string;
-        };
-        CreateUserRequest: {
-            auth_mode: string;
-            email: string;
-            global_role: string;
-            name: string;
-            oidc_provider_key?: string | null;
-            team_id?: string | null;
-            team_role?: string | null;
-        };
-        CreateUserResponse: {
-            expires_at: string;
-            invite_url: string;
-            /** @enum {string} */
-            kind: "password_invite";
-            user: components["schemas"]["AdminIdentityUserView"];
-        } | {
-            /** @enum {string} */
-            kind: "oidc_sign_in";
-            provider_label: string;
-            sign_in_url: string;
-            user: components["schemas"]["AdminIdentityUserView"];
-        };
-        DeactivateBudgetResultView: {
-            deactivated: boolean;
-            owner_id: string;
-            owner_kind: string;
-        };
-        Envelope_AdminApiKeysPayload: {
-            data: {
-                items: components["schemas"]["AdminApiKeyView"][];
-                models: components["schemas"]["AdminApiKeyModelView"][];
-                teams: components["schemas"]["AdminApiKeyTeamOwnerView"][];
-                users: components["schemas"]["AdminApiKeyUserOwnerView"][];
-            };
-            meta: components["schemas"]["ResponseMeta"];
-        };
-        Envelope_AdminIdentityPayload: {
-            data: {
-                oidc_providers: components["schemas"]["AdminOidcProviderView"][];
-                teams: components["schemas"]["AdminTeamView"][];
-                users: components["schemas"]["AdminIdentityUserView"][];
-            };
-            meta: components["schemas"]["ResponseMeta"];
-        };
-        Envelope_AdminModelPageView: {
-            data: {
-                items: components["schemas"]["AdminModelView"][];
-                /** Format: int32 */
-                page: number;
-                /** Format: int32 */
-                page_size: number;
-                /** Format: int64 */
-                total: number;
-            };
-            meta: components["schemas"]["ResponseMeta"];
-        };
-        Envelope_AdminTeamManagementView: {
-            data: {
-                admins: components["schemas"]["AdminTeamAdminView"][];
-                id: string;
-                key: string;
-                member_count: number;
-                members: components["schemas"]["AdminTeamMemberView"][];
-                name: string;
-                status: string;
-            };
-            meta: components["schemas"]["ResponseMeta"];
-        };
-        Envelope_AdminTeamsPayload: {
-            data: {
-                oidc_providers: components["schemas"]["AdminOidcProviderView"][];
-                teams: components["schemas"]["AdminTeamManagementView"][];
-                users: components["schemas"]["AdminTeamAssignableUserView"][];
-            };
-            meta: components["schemas"]["ResponseMeta"];
-        };
-        Envelope_AuthSessionView: {
-            data: {
-                must_change_password: boolean;
-                user: components["schemas"]["AuthSessionUserView"];
-            };
-            meta: components["schemas"]["ResponseMeta"];
-        };
-        Envelope_BudgetAlertHistoryView: {
-            data: {
-                items: components["schemas"]["BudgetAlertHistoryItemView"][];
-                /** Format: int32 */
-                page: number;
-                /** Format: int32 */
-                page_size: number;
-                /** Format: int64 */
-                total: number;
-            };
-            meta: components["schemas"]["ResponseMeta"];
-        };
-        Envelope_CompleteInvitationResponse: {
-            data: {
-                status: string;
-            };
-            meta: components["schemas"]["ResponseMeta"];
-        };
-        Envelope_CreateApiKeyResponse: {
-            data: {
-                api_key: components["schemas"]["AdminApiKeyView"];
-                raw_key: string;
-            };
-            meta: components["schemas"]["ResponseMeta"];
-        };
-        Envelope_CreateUserResponse: {
-            data: {
-                expires_at: string;
-                invite_url: string;
-                /** @enum {string} */
-                kind: "password_invite";
-                user: components["schemas"]["AdminIdentityUserView"];
-            } | {
-                /** @enum {string} */
-                kind: "oidc_sign_in";
-                provider_label: string;
-                sign_in_url: string;
-                user: components["schemas"]["AdminIdentityUserView"];
-            };
-            meta: components["schemas"]["ResponseMeta"];
-        };
-        Envelope_DeactivateBudgetResultView: {
-            data: {
-                deactivated: boolean;
-                owner_id: string;
-                owner_kind: string;
-            };
-            meta: components["schemas"]["ResponseMeta"];
-        };
-        Envelope_IdentityActionStatus: {
-            data: {
-                status: string;
-            };
-            meta: components["schemas"]["ResponseMeta"];
-        };
-        Envelope_InvitationView: {
-            data: {
-                email?: string | null;
-                expires_at?: string | null;
-                name?: string | null;
-                state: string;
-            };
-            meta: components["schemas"]["ResponseMeta"];
-        };
-        Envelope_Option_AuthSessionView: {
-            data: null | {
-                must_change_password: boolean;
-                user: components["schemas"]["AuthSessionUserView"];
-            };
-            meta: components["schemas"]["ResponseMeta"];
-        };
-        Envelope_PasswordInviteResponse: {
-            data: {
-                expires_at: string;
-                invite_url: string;
-                user_id: string;
-            };
-            meta: components["schemas"]["ResponseMeta"];
-        };
-        Envelope_RequestLogDetailView: {
-            data: {
-                log: components["schemas"]["RequestLogSummaryView"];
-                payload?: null | components["schemas"]["RequestLogPayloadView"];
-            };
-            meta: components["schemas"]["ResponseMeta"];
-        };
-        Envelope_RequestLogPageView: {
-            data: {
-                items: components["schemas"]["RequestLogSummaryView"][];
-                /** Format: int32 */
-                page: number;
-                /** Format: int32 */
-                page_size: number;
-                /** Format: int64 */
-                total: number;
-            };
-            meta: components["schemas"]["ResponseMeta"];
-        };
-        Envelope_RevokeApiKeyResponse: {
-            data: {
-                api_key: components["schemas"]["AdminApiKeyView"];
-            };
-            meta: components["schemas"]["ResponseMeta"];
-        };
-        Envelope_SpendBudgetsView: {
-            data: {
-                teams: components["schemas"]["SpendBudgetTeamView"][];
-                users: components["schemas"]["SpendBudgetUserView"][];
-            };
-            meta: components["schemas"]["ResponseMeta"];
-        };
-        Envelope_SpendReportView: {
-            data: {
-                daily: components["schemas"]["SpendDailyPointView"][];
-                models: components["schemas"]["SpendModelBreakdownView"][];
-                owner_kind: string;
-                owners: components["schemas"]["SpendOwnerBreakdownView"][];
-                totals: components["schemas"]["SpendTotalsView"];
-                /** Format: int32 */
-                window_days: number;
-                window_end: string;
-                window_start: string;
-            };
-            meta: components["schemas"]["ResponseMeta"];
-        };
-        Envelope_UpdateApiKeyResponse: {
-            data: {
-                api_key: components["schemas"]["AdminApiKeyView"];
-            };
-            meta: components["schemas"]["ResponseMeta"];
-        };
-        Envelope_UpsertBudgetResultView: {
-            data: {
-                budget: components["schemas"]["BudgetSettingsView"];
-                /** Format: int64 */
-                current_window_spend_usd_10000: number;
-                owner_id: string;
-                owner_kind: string;
-            };
-            meta: components["schemas"]["ResponseMeta"];
-        };
-        IdentityActionStatus: {
-            status: string;
-        };
-        InvitationView: {
-            email?: string | null;
-            expires_at?: string | null;
-            name?: string | null;
-            state: string;
-        };
-        /** @enum {string} */
-        ModelIconKeyView: "anthropic" | "claude" | "gemini" | "openai" | "openrouter" | "vertexai";
-        OpenAiErrorBodyView: {
-            code?: string | null;
-            message: string;
-            param?: string | null;
-            type: string;
-        };
-        OpenAiErrorEnvelopeView: {
-            error: components["schemas"]["OpenAiErrorBodyView"];
-        };
-        PasswordInviteResponse: {
-            expires_at: string;
-            invite_url: string;
-            user_id: string;
-        };
-        PasswordLoginRequest: {
-            email: string;
-            password: string;
-        };
-        /** @enum {string} */
-        ProviderIconKeyView: "anthropic" | "aws" | "openai" | "openrouter" | "vertexai";
-        RequestLogDetailView: {
-            log: components["schemas"]["RequestLogSummaryView"];
-            payload?: null | components["schemas"]["RequestLogPayloadView"];
-        };
-        RequestLogPageView: {
-            items: components["schemas"]["RequestLogSummaryView"][];
-            /** Format: int32 */
-            page: number;
-            /** Format: int32 */
-            page_size: number;
-            /** Format: int64 */
-            total: number;
-        };
-        RequestLogPayloadView: {
-            request_json: unknown;
-            response_json: unknown;
-        };
-        RequestLogSummaryView: {
-            api_key_id: string;
-            /** Format: int64 */
-            completion_tokens?: number | null;
-            error_code?: string | null;
-            has_payload: boolean;
-            /** Format: int64 */
-            latency_ms?: number | null;
-            metadata: {
-                [key: string]: unknown;
-            };
-            model_icon_key?: null | components["schemas"]["ModelIconKeyView"];
-            model_key: string;
-            occurred_at: string;
-            /** Format: int64 */
-            prompt_tokens?: number | null;
-            provider_icon_key?: null | components["schemas"]["ProviderIconKeyView"];
-            provider_key: string;
-            request_id: string;
-            request_log_id: string;
-            request_payload_truncated: boolean;
-            request_tags: components["schemas"]["RequestTagsView"];
-            resolved_model_key: string;
-            response_payload_truncated: boolean;
-            /** Format: int64 */
-            status_code?: number | null;
-            team_id?: string | null;
-            /** Format: int64 */
-            total_tokens?: number | null;
-            user_id?: string | null;
-        };
-        RequestTagView: {
-            key: string;
-            value: string;
-        };
-        RequestTagsView: {
-            bespoke: components["schemas"]["RequestTagView"][];
-            component?: string | null;
-            env?: string | null;
-            service?: string | null;
-        };
-        ResponseMeta: {
-            generated_at: string;
-        };
-        RevokeApiKeyResponse: {
-            api_key: components["schemas"]["AdminApiKeyView"];
-        };
-        SpendBudgetTeamView: {
-            alert_email_ready: boolean;
-            alert_recipient_summary: string;
-            budget?: null | components["schemas"]["BudgetSettingsView"];
-            /** Format: int64 */
-            current_window_spend_usd_10000: number;
-            team_id: string;
-            team_key: string;
-            team_name: string;
-        };
-        SpendBudgetUserView: {
-            alert_email_ready: boolean;
-            alert_recipient_summary: string;
-            budget?: null | components["schemas"]["BudgetSettingsView"];
-            /** Format: int64 */
-            current_window_spend_usd_10000: number;
-            email: string;
-            name: string;
-            team_id?: string | null;
-            team_name?: string | null;
-            user_id: string;
-        };
-        SpendBudgetsView: {
-            teams: components["schemas"]["SpendBudgetTeamView"][];
-            users: components["schemas"]["SpendBudgetUserView"][];
-        };
-        SpendDailyPointView: {
-            day_start: string;
-            /** Format: int64 */
-            priced_cost_usd_10000: number;
-            /** Format: int64 */
-            priced_request_count: number;
-            /** Format: int64 */
-            unpriced_request_count: number;
-            /** Format: int64 */
-            usage_missing_request_count: number;
-        };
-        SpendModelBreakdownView: {
-            model_key: string;
-            /** Format: int64 */
-            priced_cost_usd_10000: number;
-            /** Format: int64 */
-            priced_request_count: number;
-            /** Format: int64 */
-            unpriced_request_count: number;
-            /** Format: int64 */
-            usage_missing_request_count: number;
-        };
-        SpendOwnerBreakdownView: {
-            owner_id: string;
-            owner_kind: string;
-            owner_name: string;
-            /** Format: int64 */
-            priced_cost_usd_10000: number;
-            /** Format: int64 */
-            priced_request_count: number;
-            /** Format: int64 */
-            unpriced_request_count: number;
-            /** Format: int64 */
-            usage_missing_request_count: number;
-        };
-        SpendReportView: {
-            daily: components["schemas"]["SpendDailyPointView"][];
-            models: components["schemas"]["SpendModelBreakdownView"][];
-            owner_kind: string;
-            owners: components["schemas"]["SpendOwnerBreakdownView"][];
-            totals: components["schemas"]["SpendTotalsView"];
-            /** Format: int32 */
-            window_days: number;
-            window_end: string;
-            window_start: string;
-        };
-        SpendTotalsView: {
-            /** Format: int64 */
-            priced_cost_usd_10000: number;
-            /** Format: int64 */
-            priced_request_count: number;
-            /** Format: int64 */
-            unpriced_request_count: number;
-            /** Format: int64 */
-            usage_missing_request_count: number;
-        };
-        TransferTeamMemberRequest: {
-            destination_role: string;
-            destination_team_id: string;
-        };
-        UpdateApiKeyRequest: {
-            model_keys: string[];
-        };
-        UpdateApiKeyResponse: {
-            api_key: components["schemas"]["AdminApiKeyView"];
-        };
-        UpdateTeamRequest: {
-            admin_user_ids: string[];
-            name: string;
-        };
-        UpdateUserRequest: {
-            auth_mode?: string | null;
-            global_role: string;
-            oidc_provider_key?: string | null;
-            team_id?: string | null;
-            team_role?: string | null;
-        };
-        UpsertBudgetRequest: {
-            amount_usd: string;
-            cadence: string;
-            hard_limit: boolean;
-            timezone?: string | null;
-        };
-        UpsertBudgetResultView: {
-            budget: components["schemas"]["BudgetSettingsView"];
-            /** Format: int64 */
-            current_window_spend_usd_10000: number;
-            owner_id: string;
-            owner_kind: string;
-        };
-    };
-    responses: never;
-    parameters: never;
-    requestBodies: never;
-    headers: never;
-    pathItems: never;
+            kind: 'oidc_sign_in'
+            provider_label: string
+            sign_in_url: string
+            user: components['schemas']['AdminIdentityUserView']
+          }
+      meta: components['schemas']['ResponseMeta']
+    }
+    Envelope_DeactivateBudgetResultView: {
+      data: {
+        deactivated: boolean
+        owner_id: string
+        owner_kind: string
+      }
+      meta: components['schemas']['ResponseMeta']
+    }
+    Envelope_IdentityActionStatus: {
+      data: {
+        status: string
+      }
+      meta: components['schemas']['ResponseMeta']
+    }
+    Envelope_InvitationView: {
+      data: {
+        email?: string | null
+        expires_at?: string | null
+        name?: string | null
+        state: string
+      }
+      meta: components['schemas']['ResponseMeta']
+    }
+    Envelope_LeaderboardView: {
+      data: {
+        /** Format: int32 */
+        bucket_hours: number
+        chart_users: components['schemas']['LeaderboardChartUserView'][]
+        leaders: components['schemas']['LeaderboardLeaderView'][]
+        range: string
+        series: components['schemas']['LeaderboardSeriesPointView'][]
+        window_end: string
+        window_start: string
+      }
+      meta: components['schemas']['ResponseMeta']
+    }
+    Envelope_Option_AuthSessionView: {
+      data: null | {
+        must_change_password: boolean
+        user: components['schemas']['AuthSessionUserView']
+      }
+      meta: components['schemas']['ResponseMeta']
+    }
+    Envelope_PasswordInviteResponse: {
+      data: {
+        expires_at: string
+        invite_url: string
+        user_id: string
+      }
+      meta: components['schemas']['ResponseMeta']
+    }
+    Envelope_RequestLogDetailView: {
+      data: {
+        log: components['schemas']['RequestLogSummaryView']
+        payload?: null | components['schemas']['RequestLogPayloadView']
+      }
+      meta: components['schemas']['ResponseMeta']
+    }
+    Envelope_RequestLogPageView: {
+      data: {
+        items: components['schemas']['RequestLogSummaryView'][]
+        /** Format: int32 */
+        page: number
+        /** Format: int32 */
+        page_size: number
+        /** Format: int64 */
+        total: number
+      }
+      meta: components['schemas']['ResponseMeta']
+    }
+    Envelope_RevokeApiKeyResponse: {
+      data: {
+        api_key: components['schemas']['AdminApiKeyView']
+      }
+      meta: components['schemas']['ResponseMeta']
+    }
+    Envelope_SpendBudgetsView: {
+      data: {
+        teams: components['schemas']['SpendBudgetTeamView'][]
+        users: components['schemas']['SpendBudgetUserView'][]
+      }
+      meta: components['schemas']['ResponseMeta']
+    }
+    Envelope_SpendReportView: {
+      data: {
+        daily: components['schemas']['SpendDailyPointView'][]
+        models: components['schemas']['SpendModelBreakdownView'][]
+        owner_kind: string
+        owners: components['schemas']['SpendOwnerBreakdownView'][]
+        totals: components['schemas']['SpendTotalsView']
+        /** Format: int32 */
+        window_days: number
+        window_end: string
+        window_start: string
+      }
+      meta: components['schemas']['ResponseMeta']
+    }
+    Envelope_UpdateApiKeyResponse: {
+      data: {
+        api_key: components['schemas']['AdminApiKeyView']
+      }
+      meta: components['schemas']['ResponseMeta']
+    }
+    Envelope_UpsertBudgetResultView: {
+      data: {
+        budget: components['schemas']['BudgetSettingsView']
+        /** Format: int64 */
+        current_window_spend_usd_10000: number
+        owner_id: string
+        owner_kind: string
+      }
+      meta: components['schemas']['ResponseMeta']
+    }
+    IdentityActionStatus: {
+      status: string
+    }
+    InvitationView: {
+      email?: string | null
+      expires_at?: string | null
+      name?: string | null
+      state: string
+    }
+    LeaderboardChartUserView: {
+      /** Format: int32 */
+      rank: number
+      /** Format: int64 */
+      total_spend_usd_10000: number
+      user_id: string
+      user_name: string
+    }
+    LeaderboardLeaderView: {
+      most_used_model?: string | null
+      /** Format: int32 */
+      rank: number
+      /** Format: int64 */
+      total_requests: number
+      /** Format: int64 */
+      total_spend_usd_10000: number
+      user_id: string
+      user_name: string
+    }
+    LeaderboardSeriesPointView: {
+      bucket_start: string
+      values: components['schemas']['LeaderboardSeriesValueView'][]
+    }
+    LeaderboardSeriesValueView: {
+      /** Format: int64 */
+      spend_usd_10000: number
+      user_id: string
+    }
+    LeaderboardView: {
+      /** Format: int32 */
+      bucket_hours: number
+      chart_users: components['schemas']['LeaderboardChartUserView'][]
+      leaders: components['schemas']['LeaderboardLeaderView'][]
+      range: string
+      series: components['schemas']['LeaderboardSeriesPointView'][]
+      window_end: string
+      window_start: string
+    }
+    /** @enum {string} */
+    ModelIconKeyView: 'anthropic' | 'claude' | 'gemini' | 'openai' | 'openrouter' | 'vertexai'
+    OpenAiErrorBodyView: {
+      code?: string | null
+      message: string
+      param?: string | null
+      type: string
+    }
+    OpenAiErrorEnvelopeView: {
+      error: components['schemas']['OpenAiErrorBodyView']
+    }
+    PasswordInviteResponse: {
+      expires_at: string
+      invite_url: string
+      user_id: string
+    }
+    PasswordLoginRequest: {
+      email: string
+      password: string
+    }
+    /** @enum {string} */
+    ProviderIconKeyView: 'anthropic' | 'aws' | 'openai' | 'openrouter' | 'vertexai'
+    RequestLogDetailView: {
+      log: components['schemas']['RequestLogSummaryView']
+      payload?: null | components['schemas']['RequestLogPayloadView']
+    }
+    RequestLogPageView: {
+      items: components['schemas']['RequestLogSummaryView'][]
+      /** Format: int32 */
+      page: number
+      /** Format: int32 */
+      page_size: number
+      /** Format: int64 */
+      total: number
+    }
+    RequestLogPayloadView: {
+      request_json: unknown
+      response_json: unknown
+    }
+    RequestLogSummaryView: {
+      api_key_id: string
+      /** Format: int64 */
+      completion_tokens?: number | null
+      error_code?: string | null
+      has_payload: boolean
+      /** Format: int64 */
+      latency_ms?: number | null
+      metadata: {
+        [key: string]: unknown
+      }
+      model_icon_key?: null | components['schemas']['ModelIconKeyView']
+      model_key: string
+      occurred_at: string
+      /** Format: int64 */
+      prompt_tokens?: number | null
+      provider_icon_key?: null | components['schemas']['ProviderIconKeyView']
+      provider_key: string
+      request_id: string
+      request_log_id: string
+      request_payload_truncated: boolean
+      request_tags: components['schemas']['RequestTagsView']
+      resolved_model_key: string
+      response_payload_truncated: boolean
+      /** Format: int64 */
+      status_code?: number | null
+      team_id?: string | null
+      /** Format: int64 */
+      total_tokens?: number | null
+      user_id?: string | null
+    }
+    RequestTagView: {
+      key: string
+      value: string
+    }
+    RequestTagsView: {
+      bespoke: components['schemas']['RequestTagView'][]
+      component?: string | null
+      env?: string | null
+      service?: string | null
+    }
+    ResponseMeta: {
+      generated_at: string
+    }
+    RevokeApiKeyResponse: {
+      api_key: components['schemas']['AdminApiKeyView']
+    }
+    SpendBudgetTeamView: {
+      alert_email_ready: boolean
+      alert_recipient_summary: string
+      budget?: null | components['schemas']['BudgetSettingsView']
+      /** Format: int64 */
+      current_window_spend_usd_10000: number
+      team_id: string
+      team_key: string
+      team_name: string
+    }
+    SpendBudgetUserView: {
+      alert_email_ready: boolean
+      alert_recipient_summary: string
+      budget?: null | components['schemas']['BudgetSettingsView']
+      /** Format: int64 */
+      current_window_spend_usd_10000: number
+      email: string
+      name: string
+      team_id?: string | null
+      team_name?: string | null
+      user_id: string
+    }
+    SpendBudgetsView: {
+      teams: components['schemas']['SpendBudgetTeamView'][]
+      users: components['schemas']['SpendBudgetUserView'][]
+    }
+    SpendDailyPointView: {
+      day_start: string
+      /** Format: int64 */
+      priced_cost_usd_10000: number
+      /** Format: int64 */
+      priced_request_count: number
+      /** Format: int64 */
+      unpriced_request_count: number
+      /** Format: int64 */
+      usage_missing_request_count: number
+    }
+    SpendModelBreakdownView: {
+      model_key: string
+      /** Format: int64 */
+      priced_cost_usd_10000: number
+      /** Format: int64 */
+      priced_request_count: number
+      /** Format: int64 */
+      unpriced_request_count: number
+      /** Format: int64 */
+      usage_missing_request_count: number
+    }
+    SpendOwnerBreakdownView: {
+      owner_id: string
+      owner_kind: string
+      owner_name: string
+      /** Format: int64 */
+      priced_cost_usd_10000: number
+      /** Format: int64 */
+      priced_request_count: number
+      /** Format: int64 */
+      unpriced_request_count: number
+      /** Format: int64 */
+      usage_missing_request_count: number
+    }
+    SpendReportView: {
+      daily: components['schemas']['SpendDailyPointView'][]
+      models: components['schemas']['SpendModelBreakdownView'][]
+      owner_kind: string
+      owners: components['schemas']['SpendOwnerBreakdownView'][]
+      totals: components['schemas']['SpendTotalsView']
+      /** Format: int32 */
+      window_days: number
+      window_end: string
+      window_start: string
+    }
+    SpendTotalsView: {
+      /** Format: int64 */
+      priced_cost_usd_10000: number
+      /** Format: int64 */
+      priced_request_count: number
+      /** Format: int64 */
+      unpriced_request_count: number
+      /** Format: int64 */
+      usage_missing_request_count: number
+    }
+    TransferTeamMemberRequest: {
+      destination_role: string
+      destination_team_id: string
+    }
+    UpdateApiKeyRequest: {
+      model_keys: string[]
+    }
+    UpdateApiKeyResponse: {
+      api_key: components['schemas']['AdminApiKeyView']
+    }
+    UpdateTeamRequest: {
+      admin_user_ids: string[]
+      name: string
+    }
+    UpdateUserRequest: {
+      auth_mode?: string | null
+      global_role: string
+      oidc_provider_key?: string | null
+      team_id?: string | null
+      team_role?: string | null
+    }
+    UpsertBudgetRequest: {
+      amount_usd: string
+      cadence: string
+      hard_limit: boolean
+      timezone?: string | null
+    }
+    UpsertBudgetResultView: {
+      budget: components['schemas']['BudgetSettingsView']
+      /** Format: int64 */
+      current_window_spend_usd_10000: number
+      owner_id: string
+      owner_kind: string
+    }
+  }
+  responses: never
+  parameters: never
+  requestBodies: never
+  headers: never
+  pathItems: never
 }
-export type $defs = Record<string, never>;
+export type $defs = Record<string, never>
 export interface operations {
-    list_api_keys: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_AdminApiKeysPayload"];
-                };
-            };
-        };
-    };
-    create_api_key: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateApiKeyRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_CreateApiKeyResponse"];
-                };
-            };
-        };
-    };
-    update_api_key: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description API key identifier */
-                api_key_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateApiKeyRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_UpdateApiKeyResponse"];
-                };
-            };
-        };
-    };
-    revoke_api_key: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description API key identifier */
-                api_key_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_RevokeApiKeyResponse"];
-                };
-            };
-        };
-    };
-    list_identity_teams: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_AdminTeamsPayload"];
-                };
-            };
-        };
-    };
-    create_identity_team: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateTeamRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_AdminTeamManagementView"];
-                };
-            };
-        };
-    };
-    update_identity_team: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Team identifier */
-                team_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateTeamRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_AdminTeamManagementView"];
-                };
-            };
-        };
-    };
-    add_identity_team_members: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Team identifier */
-                team_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AddTeamMembersRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_AdminTeamManagementView"];
-                };
-            };
-        };
-    };
-    remove_identity_team_member: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Team identifier */
-                team_id: string;
-                /** @description User identifier */
-                user_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_IdentityActionStatus"];
-                };
-            };
-        };
-    };
-    transfer_identity_team_member: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Source team identifier */
-                team_id: string;
-                /** @description User identifier */
-                user_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TransferTeamMemberRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_IdentityActionStatus"];
-                };
-            };
-        };
-    };
-    list_identity_users: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_AdminIdentityPayload"];
-                };
-            };
-        };
-    };
-    create_identity_user: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateUserRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_CreateUserResponse"];
-                };
-            };
-        };
-    };
-    update_identity_user: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description User identifier */
-                user_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateUserRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_IdentityActionStatus"];
-                };
-            };
-        };
-    };
-    deactivate_identity_user: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description User identifier */
-                user_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_IdentityActionStatus"];
-                };
-            };
-        };
-    };
-    regenerate_password_invite: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description User identifier */
-                user_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_PasswordInviteResponse"];
-                };
-            };
-        };
-    };
-    reactivate_identity_user: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description User identifier */
-                user_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_IdentityActionStatus"];
-                };
-            };
-        };
-    };
-    reset_identity_user_onboarding: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description User identifier */
-                user_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_CreateUserResponse"];
-                };
-            };
-        };
-    };
-    list_models: {
-        parameters: {
-            query?: {
-                page?: number | null;
-                page_size?: number | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_AdminModelPageView"];
-                };
-            };
-        };
-    };
-    list_request_logs: {
-        parameters: {
-            query?: {
-                page?: number | null;
-                page_size?: number | null;
-                request_id?: string | null;
-                model_key?: string | null;
-                provider_key?: string | null;
-                status_code?: number | null;
-                user_id?: string | null;
-                team_id?: string | null;
-                service?: string | null;
-                component?: string | null;
-                env?: string | null;
-                tag_key?: string | null;
-                tag_value?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_RequestLogPageView"];
-                };
-            };
-        };
-    };
-    get_request_log_detail: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Request log identifier */
-                request_log_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_RequestLogDetailView"];
-                };
-            };
-            /** @description Request log not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
-                };
-            };
-        };
-    };
-    list_budget_alert_history: {
-        parameters: {
-            query?: {
-                page?: number | null;
-                page_size?: number | null;
-                owner_kind?: string | null;
-                channel?: string | null;
-                status?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_BudgetAlertHistoryView"];
-                };
-            };
-        };
-    };
-    list_spend_budgets: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_SpendBudgetsView"];
-                };
-            };
-        };
-    };
-    upsert_team_budget: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Team identifier */
-                team_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpsertBudgetRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_UpsertBudgetResultView"];
-                };
-            };
-        };
-    };
-    deactivate_team_budget: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Team identifier */
-                team_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_DeactivateBudgetResultView"];
-                };
-            };
-        };
-    };
-    upsert_user_budget: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description User identifier */
-                user_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpsertBudgetRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_UpsertBudgetResultView"];
-                };
-            };
-        };
-    };
-    deactivate_user_budget: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description User identifier */
-                user_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_DeactivateBudgetResultView"];
-                };
-            };
-        };
-    };
-    get_spend_report: {
-        parameters: {
-            query?: {
-                days?: number | null;
-                owner_kind?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_SpendReportView"];
-                };
-            };
-        };
-    };
-    validate_password_invitation: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Password invitation token */
-                token: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_InvitationView"];
-                };
-            };
-        };
-    };
-    complete_password_invitation: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Password invitation token */
-                token: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CompleteInvitationRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_CompleteInvitationResponse"];
-                };
-            };
-        };
-    };
-    login_with_password: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PasswordLoginRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_AuthSessionView"];
-                };
-            };
-        };
-    };
-    oidc_callback: {
-        parameters: {
-            query: {
-                provider_key: string;
-                email: string;
-                subject?: string | null;
-                redirect_to?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Redirect back into the admin UI after OIDC sign-in */
-            302: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    oidc_start: {
-        parameters: {
-            query: {
-                provider_key: string;
-                login_hint: string;
-                redirect_to?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Redirect to the same-origin OIDC callback */
-            302: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    change_password: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ChangePasswordRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_AuthSessionView"];
-                };
-            };
-        };
-    };
-    get_auth_session: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_Option_AuthSessionView"];
-                };
-            };
-        };
-    };
+  list_api_keys: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_AdminApiKeysPayload']
+        }
+      }
+    }
+  }
+  create_api_key: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateApiKeyRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_CreateApiKeyResponse']
+        }
+      }
+    }
+  }
+  update_api_key: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description API key identifier */
+        api_key_id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateApiKeyRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_UpdateApiKeyResponse']
+        }
+      }
+    }
+  }
+  revoke_api_key: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description API key identifier */
+        api_key_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_RevokeApiKeyResponse']
+        }
+      }
+    }
+  }
+  list_identity_teams: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_AdminTeamsPayload']
+        }
+      }
+    }
+  }
+  create_identity_team: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateTeamRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_AdminTeamManagementView']
+        }
+      }
+    }
+  }
+  update_identity_team: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Team identifier */
+        team_id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateTeamRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_AdminTeamManagementView']
+        }
+      }
+    }
+  }
+  add_identity_team_members: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Team identifier */
+        team_id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AddTeamMembersRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_AdminTeamManagementView']
+        }
+      }
+    }
+  }
+  remove_identity_team_member: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Team identifier */
+        team_id: string
+        /** @description User identifier */
+        user_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_IdentityActionStatus']
+        }
+      }
+    }
+  }
+  transfer_identity_team_member: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Source team identifier */
+        team_id: string
+        /** @description User identifier */
+        user_id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['TransferTeamMemberRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_IdentityActionStatus']
+        }
+      }
+    }
+  }
+  list_identity_users: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_AdminIdentityPayload']
+        }
+      }
+    }
+  }
+  create_identity_user: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateUserRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_CreateUserResponse']
+        }
+      }
+    }
+  }
+  update_identity_user: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description User identifier */
+        user_id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateUserRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_IdentityActionStatus']
+        }
+      }
+    }
+  }
+  deactivate_identity_user: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description User identifier */
+        user_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_IdentityActionStatus']
+        }
+      }
+    }
+  }
+  regenerate_password_invite: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description User identifier */
+        user_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_PasswordInviteResponse']
+        }
+      }
+    }
+  }
+  reactivate_identity_user: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description User identifier */
+        user_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_IdentityActionStatus']
+        }
+      }
+    }
+  }
+  reset_identity_user_onboarding: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description User identifier */
+        user_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_CreateUserResponse']
+        }
+      }
+    }
+  }
+  list_models: {
+    parameters: {
+      query?: {
+        page?: number | null
+        page_size?: number | null
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_AdminModelPageView']
+        }
+      }
+    }
+  }
+  get_usage_leaderboard: {
+    parameters: {
+      query?: {
+        range?: string | null
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_LeaderboardView']
+        }
+      }
+    }
+  }
+  list_request_logs: {
+    parameters: {
+      query?: {
+        page?: number | null
+        page_size?: number | null
+        request_id?: string | null
+        model_key?: string | null
+        provider_key?: string | null
+        status_code?: number | null
+        user_id?: string | null
+        team_id?: string | null
+        service?: string | null
+        component?: string | null
+        env?: string | null
+        tag_key?: string | null
+        tag_value?: string | null
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_RequestLogPageView']
+        }
+      }
+    }
+  }
+  get_request_log_detail: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Request log identifier */
+        request_log_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_RequestLogDetailView']
+        }
+      }
+      /** @description Request log not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['OpenAiErrorEnvelopeView']
+        }
+      }
+    }
+  }
+  list_budget_alert_history: {
+    parameters: {
+      query?: {
+        page?: number | null
+        page_size?: number | null
+        owner_kind?: string | null
+        channel?: string | null
+        status?: string | null
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_BudgetAlertHistoryView']
+        }
+      }
+    }
+  }
+  list_spend_budgets: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_SpendBudgetsView']
+        }
+      }
+    }
+  }
+  upsert_team_budget: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Team identifier */
+        team_id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpsertBudgetRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_UpsertBudgetResultView']
+        }
+      }
+    }
+  }
+  deactivate_team_budget: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Team identifier */
+        team_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_DeactivateBudgetResultView']
+        }
+      }
+    }
+  }
+  upsert_user_budget: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description User identifier */
+        user_id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpsertBudgetRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_UpsertBudgetResultView']
+        }
+      }
+    }
+  }
+  deactivate_user_budget: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description User identifier */
+        user_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_DeactivateBudgetResultView']
+        }
+      }
+    }
+  }
+  get_spend_report: {
+    parameters: {
+      query?: {
+        days?: number | null
+        owner_kind?: string | null
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_SpendReportView']
+        }
+      }
+    }
+  }
+  validate_password_invitation: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Password invitation token */
+        token: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_InvitationView']
+        }
+      }
+    }
+  }
+  complete_password_invitation: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Password invitation token */
+        token: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CompleteInvitationRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_CompleteInvitationResponse']
+        }
+      }
+    }
+  }
+  login_with_password: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PasswordLoginRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_AuthSessionView']
+        }
+      }
+    }
+  }
+  oidc_callback: {
+    parameters: {
+      query: {
+        provider_key: string
+        email: string
+        subject?: string | null
+        redirect_to?: string | null
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Redirect back into the admin UI after OIDC sign-in */
+      302: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  oidc_start: {
+    parameters: {
+      query: {
+        provider_key: string
+        login_hint: string
+        redirect_to?: string | null
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Redirect to the same-origin OIDC callback */
+      302: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  change_password: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ChangePasswordRequest']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_AuthSessionView']
+        }
+      }
+    }
+  }
+  get_auth_session: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['Envelope_Option_AuthSessionView']
+        }
+      }
+    }
+  }
 }

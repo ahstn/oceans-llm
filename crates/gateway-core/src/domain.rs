@@ -728,6 +728,22 @@ pub struct SpendModelAggregateRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UsageLeaderboardUserRecord {
+    pub user_id: Uuid,
+    pub user_name: String,
+    pub priced_cost_usd: Money4,
+    pub total_request_count: i64,
+    pub top_model_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UsageLeaderboardBucketRecord {
+    pub user_id: Uuid,
+    pub bucket_start: OffsetDateTime,
+    pub priced_cost_usd: Money4,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsageLedgerRecord {
     pub usage_event_id: Uuid,
     pub request_id: String,

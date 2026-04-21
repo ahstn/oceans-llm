@@ -27,6 +27,11 @@ export const adminNavSections: AdminNavSection[] = [
     icon: Notification03Icon,
     items: [
       {
+        label: 'Leaderboard',
+        to: '/observability/leaderboard',
+        icon: Notification03Icon,
+      },
+      {
         label: 'Usage Costs',
         to: '/observability/usage-costs',
         icon: Notification03Icon,
