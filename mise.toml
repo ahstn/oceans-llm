@@ -219,6 +219,7 @@ if [[ ! -f "$ROOT_DIR/gateway.db" ]]; then
   cargo run -p gateway --bin gateway -- seed-local-demo
 fi
 
+
 cleanup() {
   if [[ -n "${UI_PID:-}" ]]; then
     kill "$UI_PID" >/dev/null 2>&1 || true

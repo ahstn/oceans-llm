@@ -68,5 +68,15 @@ fn map_model_summary(model: AdminModelSummary) -> AdminModelView {
         provider_icon_key: model.provider_icon_key.map(Into::into),
         upstream_model: model.upstream_model,
         model_icon_key: model.model_icon_key.map(Into::into),
+        input_cost_per_million_tokens_usd_10000: model.input_cost_per_million_tokens_usd_10000,
+        output_cost_per_million_tokens_usd_10000: model.output_cost_per_million_tokens_usd_10000,
+        context_window_tokens: model.context_window_tokens,
+        input_window_tokens: model.input_window_tokens,
+        output_window_tokens: model.output_window_tokens,
+        supports_streaming: model.supports_streaming,
+        supports_vision: model.supports_vision,
+        supports_tool_calling: model.supports_tool_calling,
+        supports_structured_output: model.supports_structured_output,
+        supports_attachments: model.supports_attachments,
     }
 }

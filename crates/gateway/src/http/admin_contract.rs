@@ -200,6 +200,16 @@ pub struct AdminModelView {
     pub provider_icon_key: Option<ProviderIconKeyView>,
     pub upstream_model: Option<String>,
     pub model_icon_key: Option<ModelIconKeyView>,
+    pub input_cost_per_million_tokens_usd_10000: Option<i64>,
+    pub output_cost_per_million_tokens_usd_10000: Option<i64>,
+    pub context_window_tokens: Option<i64>,
+    pub input_window_tokens: Option<i64>,
+    pub output_window_tokens: Option<i64>,
+    pub supports_streaming: Option<bool>,
+    pub supports_vision: Option<bool>,
+    pub supports_tool_calling: Option<bool>,
+    pub supports_structured_output: Option<bool>,
+    pub supports_attachments: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Default, IntoParams)]

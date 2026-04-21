@@ -559,14 +559,29 @@ export interface components {
         AdminModelStatusView: "healthy" | "degraded";
         AdminModelView: {
             alias_of?: string | null;
+            /** Format: int64 */
+            context_window_tokens?: number | null;
             description?: string | null;
             id: string;
+            /** Format: int64 */
+            input_cost_per_million_tokens_usd_10000?: number | null;
+            /** Format: int64 */
+            input_window_tokens?: number | null;
             model_icon_key?: null | components["schemas"]["ModelIconKeyView"];
+            /** Format: int64 */
+            output_cost_per_million_tokens_usd_10000?: number | null;
+            /** Format: int64 */
+            output_window_tokens?: number | null;
             provider_icon_key?: null | components["schemas"]["ProviderIconKeyView"];
             provider_key?: string | null;
             provider_label?: string | null;
             resolved_model_key: string;
             status: components["schemas"]["AdminModelStatusView"];
+            supports_attachments?: boolean | null;
+            supports_streaming?: boolean | null;
+            supports_structured_output?: boolean | null;
+            supports_tool_calling?: boolean | null;
+            supports_vision?: boolean | null;
             tags: string[];
             upstream_model?: string | null;
         };

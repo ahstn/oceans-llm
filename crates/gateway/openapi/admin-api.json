@@ -1866,6 +1866,13 @@
               "null"
             ]
           },
+          "context_window_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
           "description": {
             "type": [
               "string",
@@ -1874,6 +1881,20 @@
           },
           "id": {
             "type": "string"
+          },
+          "input_cost_per_million_tokens_usd_10000": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "input_window_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
           },
           "model_icon_key": {
             "oneOf": [
@@ -1884,6 +1905,20 @@
                 "$ref": "#/components/schemas/ModelIconKeyView"
               }
             ]
+          },
+          "output_cost_per_million_tokens_usd_10000": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "output_window_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
           },
           "provider_icon_key": {
             "oneOf": [
@@ -1912,6 +1947,36 @@
           },
           "status": {
             "$ref": "#/components/schemas/AdminModelStatusView"
+          },
+          "supports_attachments": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "supports_streaming": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "supports_structured_output": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "supports_tool_calling": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "supports_vision": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "tags": {
             "type": "array",
