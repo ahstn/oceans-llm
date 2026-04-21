@@ -16,6 +16,7 @@ import {
   reactivateUser,
   getRequestLogDetail,
   getSession,
+  getUsageLeaderboard,
   getSpendReport,
   getInvitation,
   listRequestLogs,
@@ -73,6 +74,18 @@ export const getModels = createServerFn({ method: 'GET' }).handler(
 export const getUsageCosts = createServerFn({ method: 'GET' }).handler(async () => {
   return getSpendReport({ days: 7, owner_kind: 'all' })
 })
+
+export const getObservabilityLeaderboard = createServerFn({ method: 'GET' }).handler(
+  async ({ data }: { data?: { range?: '7d' | '31d' } }) => {
+    return getUsageLeaderboard(data)
+  },
+)
+
+export const refreshObservabilityLeaderboard = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: { range: '7d' | '31d' } }) => {
+    return getUsageLeaderboard(data)
+  },
+)
 
 export const getSpendUsageReport = createServerFn({ method: 'POST' }).handler(
   async ({

@@ -103,6 +103,10 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
             axum::routing::put(upsert_team_budget).delete(deactivate_team_budget),
         )
         .route(
+            "/api/v1/admin/observability/leaderboard",
+            get(get_usage_leaderboard),
+        )
+        .route(
             "/api/v1/admin/observability/request-logs",
             get(list_request_logs),
         )

@@ -5,6 +5,7 @@ import {
   deactivateUser,
   getRequestLogDetail,
   getSpendReport,
+  getUsageLeaderboard,
   listApiKeys,
   listModels,
   listBudgetAlertHistory,
@@ -298,6 +299,48 @@ describe('server-side admin data wrappers', () => {
         }
       }
 
+      if (path === '/api/v1/admin/observability/leaderboard') {
+        return {
+          data: {
+            data: {
+              range: '7d',
+              window_start: '2026-03-01T00:00:00Z',
+              window_end: '2026-03-08T00:00:00Z',
+              bucket_hours: 12,
+              chart_users: [
+                {
+                  user_id: 'user_1',
+                  user_name: 'Jane Admin',
+                  total_spend_usd_10000: 123_450,
+                },
+              ],
+              series: [
+                {
+                  bucket_start: '2026-03-01T00:00:00Z',
+                  values: [
+                    {
+                      user_id: 'user_1',
+                      spend_usd_10000: 123_450,
+                    },
+                  ],
+                },
+              ],
+              leaders: [
+                {
+                  user_id: 'user_1',
+                  user_name: 'Jane Admin',
+                  total_spend_usd_10000: 123_450,
+                  most_used_model: 'fast',
+                  total_requests: 42,
+                },
+              ],
+            },
+            meta: { generated_at: '2026-03-10T11:32:00Z' },
+          },
+          response: { status: 200 },
+        }
+      }
+
       if (path === '/api/v1/admin/spend/budgets') {
         return {
           data: {
@@ -481,23 +524,35 @@ describe('server-side admin data wrappers', () => {
   })
 
   it('returns stable preview and live envelopes', async () => {
-    const [apiKeys, models, spendReport, spendBudgets, budgetAlerts, logs, teams, users] =
-      await Promise.all([
-        listApiKeys(),
-        listModels(),
-        getSpendReport(),
-        listSpendBudgets(),
-        listBudgetAlertHistory(),
-        listRequestLogs(),
-        listTeams(),
-        listUsers(),
-      ])
+    const [
+      apiKeys,
+      models,
+      spendReport,
+      leaderboard,
+      spendBudgets,
+      budgetAlerts,
+      logs,
+      teams,
+      users,
+    ] = await Promise.all([
+      listApiKeys(),
+      listModels(),
+      getSpendReport(),
+      getUsageLeaderboard({ range: '7d' }),
+      listSpendBudgets(),
+      listBudgetAlertHistory(),
+      listRequestLogs(),
+      listTeams(),
+      listUsers(),
+    ])
 
     expect(apiKeys.data.items.length).toBeGreaterThan(0)
     expect(apiKeys.data.items[0].owner_kind).toBe('team')
     expect(apiKeys.data.models.map((model) => model.key)).toContain('fast')
     expect(models.data.items.length).toBeGreaterThan(0)
     expect(spendReport.data.window_days).toBeGreaterThan(0)
+    expect(leaderboard.data.chart_users.length).toBe(1)
+    expect(leaderboard.data.leaders[0].most_used_model).toBe('fast')
     expect(spendBudgets.data.users.length).toBe(0)
     expect(budgetAlerts.data.items.length).toBe(0)
     expect(logs.data.items.length).toBeGreaterThan(0)
@@ -554,6 +609,19 @@ describe('server-side admin data wrappers', () => {
     const detail = await getRequestLogDetail('reqlog_1')
     expect(detail.data.log.request_log_id).toBe('reqlog_1')
     expect(detail.data.payload?.response_json).toEqual({ body: { output: 'pong' } })
+  })
+
+  it('wires leaderboard fetches to the documented gateway path and query params', async () => {
+    const leaderboard = await getUsageLeaderboard({ range: '31d' })
+
+    expect(leaderboard.data.range).toBe('7d')
+    expect(GET).toHaveBeenCalledWith('/api/v1/admin/observability/leaderboard', {
+      params: {
+        query: {
+          range: '31d',
+        },
+      },
+    })
   })
 
   it('wires identity mutations to documented gateway paths', async () => {

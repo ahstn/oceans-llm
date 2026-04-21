@@ -17,6 +17,8 @@ import type {
   IdentityTeamsPayload,
   IdentityUsersPayload,
   InvitationStateView,
+  LeaderboardRange,
+  LeaderboardView,
   ModelPageView,
   PasswordInviteResult,
   PasswordLoginInput,
@@ -104,6 +106,21 @@ export async function getSpendReport(params?: {
         query: {
           days: params?.days,
           owner_kind: params?.owner_kind,
+        },
+      },
+    }),
+  )
+}
+
+export async function getUsageLeaderboard(params?: {
+  range?: LeaderboardRange
+}): Promise<ApiEnvelope<LeaderboardView>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.GET('/api/v1/admin/observability/leaderboard', {
+      params: {
+        query: {
+          range: params?.range,
         },
       },
     }),

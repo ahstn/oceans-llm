@@ -244,6 +244,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/observability/leaderboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_usage_leaderboard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/observability/request-logs": {
         parameters: {
             query?: never;
@@ -835,6 +851,19 @@ export interface components {
             };
             meta: components["schemas"]["ResponseMeta"];
         };
+        Envelope_LeaderboardView: {
+            data: {
+                /** Format: int32 */
+                bucket_hours: number;
+                chart_users: components["schemas"]["LeaderboardChartUserView"][];
+                leaders: components["schemas"]["LeaderboardLeaderView"][];
+                range: string;
+                series: components["schemas"]["LeaderboardSeriesPointView"][];
+                window_end: string;
+                window_start: string;
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
         Envelope_Option_AuthSessionView: {
             data: null | {
                 must_change_password: boolean;
@@ -920,6 +949,44 @@ export interface components {
             expires_at?: string | null;
             name?: string | null;
             state: string;
+        };
+        LeaderboardChartUserView: {
+            /** Format: int32 */
+            rank: number;
+            /** Format: int64 */
+            total_spend_usd_10000: number;
+            user_id: string;
+            user_name: string;
+        };
+        LeaderboardLeaderView: {
+            most_used_model?: string | null;
+            /** Format: int32 */
+            rank: number;
+            /** Format: int64 */
+            total_requests: number;
+            /** Format: int64 */
+            total_spend_usd_10000: number;
+            user_id: string;
+            user_name: string;
+        };
+        LeaderboardSeriesPointView: {
+            bucket_start: string;
+            values: components["schemas"]["LeaderboardSeriesValueView"][];
+        };
+        LeaderboardSeriesValueView: {
+            /** Format: int64 */
+            spend_usd_10000: number;
+            user_id: string;
+        };
+        LeaderboardView: {
+            /** Format: int32 */
+            bucket_hours: number;
+            chart_users: components["schemas"]["LeaderboardChartUserView"][];
+            leaders: components["schemas"]["LeaderboardLeaderView"][];
+            range: string;
+            series: components["schemas"]["LeaderboardSeriesPointView"][];
+            window_end: string;
+            window_start: string;
         };
         /** @enum {string} */
         ModelIconKeyView: "anthropic" | "claude" | "gemini" | "openai" | "openrouter" | "vertexai";
@@ -1542,6 +1609,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_AdminModelPageView"];
+                };
+            };
+        };
+    };
+    get_usage_leaderboard: {
+        parameters: {
+            query?: {
+                range?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_LeaderboardView"];
                 };
             };
         };
