@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react'
 import type { QueryClient } from '@tanstack/react-query'
+import { createIsomorphicFn } from '@tanstack/react-start'
 import {
   HeadContent,
   Navigate,
@@ -18,11 +19,18 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { getAuthSession } from '@/server/admin-data.functions'
 import globalsCss from '@/styles/globals.css?url'
 
+const loadAuthSession = createIsomorphicFn()
+  .server(async () => {
+    const { getSession } = await import('@/server/admin-data.server')
+    return getSession()
+  })
+  .client(() => getAuthSession())
+
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   beforeLoad: async ({ location }) => {
     const currentPath = normalizeAdminPath(location.pathname)
     const isPublicRoute = isPublicAdminRoute(currentPath)
-    const { data: session } = await getAuthSession()
+    const { data: session } = await loadAuthSession()
 
     if (isPublicRoute) {
       if (currentPath === '/login' && session) {

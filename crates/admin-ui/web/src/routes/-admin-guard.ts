@@ -1,6 +1,14 @@
+import { createIsomorphicFn } from '@tanstack/react-start'
 import { redirect } from '@tanstack/react-router'
 
 import { getAuthSession } from '@/server/admin-data.functions'
+
+const loadAuthSession = createIsomorphicFn()
+  .server(async () => {
+    const { getSession } = await import('@/server/admin-data.server')
+    return getSession()
+  })
+  .client(() => getAuthSession())
 
 function normalizeAdminPath(pathname: string) {
   return pathname.replace(/^\/admin(?=\/|$)/, '') || '/'
@@ -24,7 +32,7 @@ export async function requireAdminSession(location: {
   pathname: string
   search: Record<string, unknown>
 }) {
-  const { data: session } = await getAuthSession()
+  const { data: session } = await loadAuthSession()
 
   if (!session) {
     throw redirect({

@@ -10,6 +10,27 @@ function trimOrigin(value: string) {
   return value.replace(/\/$/, '')
 }
 
+function isLoopbackHostname(hostname: string) {
+  return hostname === 'localhost' || hostname === '::1' || hostname.startsWith('127.')
+}
+
+function parseRequestTarget(request: Request) {
+  const requestUrl = new URL(request.url)
+  const protocol =
+    request.headers.get('x-forwarded-proto') ?? requestUrl.protocol.replace(/:$/, '')
+  const forwardedHost = request.headers.get('x-forwarded-host') ?? request.headers.get('host')
+
+  if (forwardedHost) {
+    try {
+      return new URL(`${protocol}://${forwardedHost}`)
+    } catch {
+      // Fall back to the request URL when the forwarded host is malformed.
+    }
+  }
+
+  return requestUrl
+}
+
 export function resolveGatewayOriginFromRequest(request: Request, explicitOrigin?: string) {
   const explicit = explicitOrigin?.trim()
   if (explicit) {
@@ -21,19 +42,17 @@ export function resolveGatewayOriginFromRequest(request: Request, explicitOrigin
     return trimOrigin(forwardedOrigin)
   }
 
-  const requestUrl = new URL(request.url)
-  if (requestUrl.port === DEFAULT_DEV_UI_PORT) {
-    requestUrl.port = DEFAULT_GATEWAY_PORT
-    return trimOrigin(requestUrl.origin)
+  const requestTarget = parseRequestTarget(request)
+  if (requestTarget.port === DEFAULT_DEV_UI_PORT) {
+    const gatewayOrigin = new URL(requestTarget.origin)
+    if (isLoopbackHostname(gatewayOrigin.hostname)) {
+      gatewayOrigin.hostname = '127.0.0.1'
+    }
+    gatewayOrigin.port = DEFAULT_GATEWAY_PORT
+    return trimOrigin(gatewayOrigin.origin)
   }
 
-  const forwardedProto = request.headers.get('x-forwarded-proto') ?? 'http'
-  const forwardedHost = request.headers.get('x-forwarded-host') ?? request.headers.get('host')
-  if (forwardedHost) {
-    return trimOrigin(`${forwardedProto}://${forwardedHost}`)
-  }
-
-  return trimOrigin(requestUrl.origin)
+  return trimOrigin(requestTarget.origin)
 }
 
 function resolveGatewayOrigin() {
@@ -43,12 +62,11 @@ function resolveGatewayOrigin() {
 
 export function forwardRequestHeadersFromRequest(request: Request, initHeaders?: HeadersInit) {
   const headers = new Headers(initHeaders)
-  const requestUrl = new URL(request.url)
+  const requestTarget = parseRequestTarget(request)
   const requestProto =
-    request.headers.get('x-forwarded-proto') ?? requestUrl.protocol.replace(/:$/, '')
-  const requestHost =
-    request.headers.get('x-forwarded-host') ?? request.headers.get('host') ?? requestUrl.host
-  const requestOrigin = request.headers.get('x-forwarded-origin') ?? requestUrl.origin
+    request.headers.get('x-forwarded-proto') ?? requestTarget.protocol.replace(/:$/, '')
+  const requestHost = request.headers.get('x-forwarded-host') ?? requestTarget.host
+  const requestOrigin = request.headers.get('x-forwarded-origin') ?? requestTarget.origin
 
   const cookie = request.headers.get('cookie')
   if (cookie && !headers.has('cookie')) {
