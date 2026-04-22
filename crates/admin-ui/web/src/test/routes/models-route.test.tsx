@@ -1,6 +1,7 @@
 import { render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { TooltipProvider } from '@/components/ui/tooltip'
 import type { ModelPageView } from '@/types/api'
 
 const navigateMock = vi.fn()
@@ -15,10 +16,12 @@ vi.mock('@tanstack/react-router', () => ({
   useRouter: () => ({
     navigate: navigateMock,
   }),
+  redirect: vi.fn(),
 }))
 
 vi.mock('@/server/admin-data.functions', () => ({
   getModels: vi.fn(),
+  getAuthSession: vi.fn(),
 }))
 
 const modelPage: ModelPageView = {
@@ -33,6 +36,16 @@ const modelPage: ModelPageView = {
       provider_icon_key: 'openrouter',
       upstream_model: 'google/gemini-2.0-flash',
       model_icon_key: 'gemini',
+      input_cost_per_million_tokens_usd_10000: 3_000,
+      output_cost_per_million_tokens_usd_10000: 25_000,
+      context_window_tokens: 1_048_576,
+      input_window_tokens: null,
+      output_window_tokens: 65_536,
+      supports_streaming: true,
+      supports_vision: true,
+      supports_tool_calling: true,
+      supports_structured_output: true,
+      supports_attachments: true,
       tags: ['fast', 'cheap'],
       status: 'healthy',
     },
@@ -46,6 +59,16 @@ const modelPage: ModelPageView = {
       provider_icon_key: 'vertexai',
       upstream_model: 'google/gemini-2.0-flash',
       model_icon_key: 'gemini',
+      input_cost_per_million_tokens_usd_10000: 3_000,
+      output_cost_per_million_tokens_usd_10000: 25_000,
+      context_window_tokens: 1_048_576,
+      input_window_tokens: null,
+      output_window_tokens: 65_536,
+      supports_streaming: true,
+      supports_vision: true,
+      supports_tool_calling: false,
+      supports_structured_output: true,
+      supports_attachments: true,
       tags: ['fast', 'fallback'],
       status: 'degraded',
     },
@@ -68,7 +91,11 @@ describe('ModelsPage', () => {
 
     const { ModelsPage } = await import('@/routes/models')
 
-    render(<ModelsPage />)
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
 
     expect(screen.getByTestId('models-mobile-list')).toBeInTheDocument()
     expect(screen.getByTestId('models-desktop-table')).toBeInTheDocument()
@@ -77,21 +104,66 @@ describe('ModelsPage', () => {
     ).toBeInTheDocument()
   })
 
-  it('removes the resolved column and keeps status inside the model identity cell', async () => {
+  it('renders the desktop table with the expected column order and stacked routing cells', async () => {
     routeMock.useLoaderData.mockReturnValue({ data: modelPage })
 
     const { ModelsPage } = await import('@/routes/models')
 
-    render(<ModelsPage />)
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
 
     const table = screen.getAllByTestId('models-desktop-table')[0]
+    const headers = within(table)
+      .getAllByRole('columnheader')
+      .map((header) => header.textContent?.trim())
 
     expect(within(table).queryByText('Resolved')).not.toBeInTheDocument()
-    expect(within(table).getByText('Model ID')).toBeInTheDocument()
+    expect(headers).toEqual([
+      'Model ID',
+      'Upstream Model',
+      'Provider',
+      'Cost / 1M Tokens',
+      'Context Window',
+      'Capabilities',
+    ])
 
     const identityCell = screen.getAllByTestId('models-desktop-cell-backup-fast')[0]
     expect(within(identityCell).getByText('backup-fast')).toBeInTheDocument()
-    expect(within(identityCell).getByText('degraded')).toBeInTheDocument()
+    expect(within(identityCell).getByLabelText('degraded')).toBeInTheDocument()
     expect(within(identityCell).getByText('alias → fast')).toBeInTheDocument()
+
+    const backupRow = within(table).getByText('backup-fast').closest('tr')
+    expect(backupRow).not.toBeNull()
+    const backupCells = within(backupRow as HTMLElement).getAllByRole('cell')
+
+    expect(within(backupCells[1] as HTMLElement).getByText('google/gemini-2.0-flash')).toBeInTheDocument()
+    expect(within(backupCells[2] as HTMLElement).getByText('Google Vertex AI')).toBeInTheDocument()
+    expect(within(backupCells[2] as HTMLElement).getByText('vertex-gemini')).toBeInTheDocument()
+    expect(within(backupCells[3] as HTMLElement).getByText('Input')).toBeInTheDocument()
+    expect(within(backupCells[3] as HTMLElement).getByText('Output')).toBeInTheDocument()
+    expect(within(backupCells[4] as HTMLElement).getByText('Input')).toBeInTheDocument()
+    expect(within(backupCells[4] as HTMLElement).getByText('Output')).toBeInTheDocument()
+    expect(within(backupCells[5] as HTMLElement).getByText('Streaming')).toBeInTheDocument()
+    expect(within(backupCells[5] as HTMLElement).getByText('Vision')).toBeInTheDocument()
+  })
+
+  it('does not render the notes column in the desktop table', async () => {
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+
+    const { ModelsPage } = await import('@/routes/models')
+
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+
+    const table = screen.getAllByTestId('models-desktop-table')[0]
+
+    expect(within(table).queryByText('Notes')).not.toBeInTheDocument()
+    expect(within(table).queryByText('Gemini fallback on Vertex')).not.toBeInTheDocument()
   })
 })
