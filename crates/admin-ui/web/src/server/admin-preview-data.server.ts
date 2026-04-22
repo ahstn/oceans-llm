@@ -61,7 +61,7 @@ export async function listModels(): Promise<ApiEnvelope<ModelPageView>> {
       {
         id: 'backup-fast',
         resolved_model_key: 'backup-fast',
-        alias_of: null,
+        alias_of: 'fast',
         description: 'Gemini fallback on Vertex',
         provider_key: 'vertex-gemini',
         provider_label: 'Google Vertex AI',

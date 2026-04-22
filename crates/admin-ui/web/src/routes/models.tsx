@@ -1,13 +1,13 @@
 import type { ReactNode } from 'react'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import {
+  AttachmentIcon,
   CodeIcon,
   Copy01Icon,
   HomeIcon,
   LiveStreaming03Icon,
   ToolsIcon,
   VisionIcon,
-  AttachmentIcon,
 } from '@hugeicons/core-free-icons'
 import { toast } from 'sonner'
 
@@ -24,6 +24,15 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { requireAdminSession } from '@/routes/-admin-guard'
 import { getModels } from '@/server/admin-data.functions'
 import type { ModelView } from '@/types/api'
@@ -77,15 +86,15 @@ export function ModelsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <Card>
+    <div className="flex min-w-0 flex-col gap-4">
+      <Card className="min-w-0">
         <CardHeader>
           <CardTitle>Models</CardTitle>
           <CardDescription>
             Review routed models, upstream targets, and current health status.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4">
+        <CardContent className="flex min-w-0 flex-col gap-4 overflow-x-hidden">
           <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--color-text-muted)]">
             <span>
               Showing {modelPage.items.length} of {modelPage.total} models
@@ -120,108 +129,110 @@ export function ModelsPage() {
                 ))}
               </div>
 
-              <div
-                className="hidden overflow-hidden rounded-md border border-[color:var(--color-border)] md:block"
-                data-testid="models-desktop-table"
-              >
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
-                    <tr>
-                      <th className="px-3 py-2 font-semibold">Model ID</th>
-                      <th className="px-3 py-2 font-semibold">Resolved</th>
-                      <th className="px-3 py-2 font-semibold">Provider Type</th>
-                      <th className="px-3 py-2 font-semibold">Provider ID</th>
-                      <th className="px-3 py-2 font-semibold">Upstream Model</th>
-                      <th className="px-3 py-2 font-semibold">Cost / 1M Tokens</th>
-                      <th className="px-3 py-2 font-semibold">Context Window</th>
-                      <th className="px-3 py-2 font-semibold">Capabilities</th>
-                      <th className="px-3 py-2 font-semibold">Status</th>
-                      <th className="px-3 py-2 font-semibold">Notes</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+              <div className="hidden min-w-0 md:block" data-testid="models-desktop-table">
+                <Table className="min-w-[82rem] table-fixed">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="bg-card sticky left-0 z-20 w-[16rem] min-w-[16rem] px-4">
+                        Model ID
+                      </TableHead>
+                      <TableHead className="w-[16rem] px-4">Upstream Model</TableHead>
+                      <TableHead className="w-[16rem] px-4">Provider</TableHead>
+                      <TableHead className="w-[12rem] px-4">Cost / 1M Tokens</TableHead>
+                      <TableHead className="w-[12rem] px-4">Context Window</TableHead>
+                      <TableHead className="w-[18rem] px-4">Capabilities</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {modelPage.items.map((model) => (
-                      <tr
-                        key={model.id}
-                        className="border-t border-[color:var(--color-border)] align-top"
-                      >
-                        <td className="px-3 py-3">
-                          <div className="flex min-w-[220px] flex-col gap-2">
-                            <div className="flex items-start gap-2">
+                      <TableRow key={model.id} className="align-top">
+                        <TableCell
+                          className="bg-card sticky left-0 z-10 px-4 shadow-[8px_0_12px_-12px_rgba(0,0,0,0.8)]"
+                          data-testid={`models-desktop-cell-${model.id}`}
+                        >
+                          <div className="flex min-w-0 flex-col gap-2 py-1">
+                            <div className="flex min-w-0 items-start gap-3">
                               <BrandIcon
                                 iconKey={model.model_icon_key}
-                                size={16}
-                                className="mt-0.5"
+                                size={18}
+                                className="mt-0.5 shrink-0"
                               />
-                              <div className="flex min-w-0 flex-col gap-1">
-                                <span className="font-semibold text-[var(--color-text)]">
-                                  {model.id}
-                                </span>
-                                <div className="flex flex-wrap items-center gap-2">
+                              <div className="flex min-w-0 flex-col gap-2">
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <span className="truncate font-semibold text-[var(--color-text)]">
+                                    {model.id}
+                                  </span>
+                                  <ModelStatusIndicator status={model.status} />
                                   <Button
                                     type="button"
                                     size="icon-xs"
                                     variant="ghost"
+                                    className="shrink-0"
                                     aria-label={`Copy model ID ${model.id}`}
                                     onClick={() => handleCopy(model.id)}
                                   >
                                     <AppIcon icon={Copy01Icon} size={14} stroke={1.5} />
                                   </Button>
-                                  {model.alias_of ? <Badge>{`alias → ${model.alias_of}`}</Badge> : null}
                                 </div>
+                                {model.alias_of ? (
+                                  <div>
+                                    <Badge variant="secondary">{`alias → ${model.alias_of}`}</Badge>
+                                  </div>
+                                ) : null}
                               </div>
                             </div>
                           </div>
-                        </td>
-                        <td className="px-3 py-3 text-[var(--color-text-muted)]">
-                          {model.resolved_model_key}
-                        </td>
-                        <td className="px-3 py-3">
-                          <div className="flex min-w-[160px] items-center gap-2 text-[var(--color-text)]">
-                            <BrandIcon iconKey={model.provider_icon_key} size={14} />
-                            <span>{providerTypeLabel(model)}</span>
+                        </TableCell>
+                        <TableCell className="px-4">
+                          <div className="flex min-w-0 flex-col gap-2 py-1">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <BrandIcon iconKey={model.model_icon_key} size={14} />
+                              <span className="truncate text-[var(--color-text)]">
+                                {model.upstream_model ?? 'Not currently routed'}
+                              </span>
+                            </div>
                           </div>
-                        </td>
-                        <td className="px-3 py-3 font-mono text-xs text-[var(--color-text-soft)]">
-                          {model.provider_key ?? '—'}
-                        </td>
-                        <td className="px-3 py-3">
-                          <div className="flex min-w-[180px] items-center gap-2 text-[var(--color-text-muted)]">
-                            <BrandIcon iconKey={model.model_icon_key} size={14} />
-                            <span>{model.upstream_model ?? 'Not currently routed'}</span>
+                        </TableCell>
+                        <TableCell className="px-4">
+                          <div className="flex min-w-0 flex-col gap-2 py-1">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <BrandIcon iconKey={model.provider_icon_key} size={14} />
+                              <span className="truncate text-[var(--color-text)]">
+                                {providerTypeLabel(model)}
+                              </span>
+                            </div>
+                            {model.provider_key && model.provider_label !== model.provider_key ? (
+                              <span className="truncate font-mono text-xs text-[var(--color-text-soft)]">
+                                {model.provider_key}
+                              </span>
+                            ) : null}
                           </div>
-                        </td>
-                        <td className="px-3 py-3">
+                        </TableCell>
+                        <TableCell className="px-4 whitespace-normal">
                           <StackedMetric
                             topLabel="Input"
                             topValue={formatCost(model.input_cost_per_million_tokens_usd_10000)}
                             bottomLabel="Output"
                             bottomValue={formatCost(model.output_cost_per_million_tokens_usd_10000)}
                           />
-                        </td>
-                        <td className="px-3 py-3">
+                        </TableCell>
+                        <TableCell className="px-4 whitespace-normal">
                           <StackedMetric
                             topLabel="Input"
-                            topValue={formatWindow(model.input_window_tokens ?? model.context_window_tokens)}
+                            topValue={formatWindow(
+                              model.input_window_tokens ?? model.context_window_tokens,
+                            )}
                             bottomLabel="Output"
                             bottomValue={formatWindow(model.output_window_tokens)}
                           />
-                        </td>
-                        <td className="px-3 py-3">
+                        </TableCell>
+                        <TableCell className="px-4 whitespace-normal">
                           <CapabilityBadges model={model} />
-                        </td>
-                        <td className="px-3 py-3">
-                          <Badge variant={model.status === 'healthy' ? 'success' : 'warning'}>
-                            {model.status}
-                          </Badge>
-                        </td>
-                        <td className="px-3 py-3">
-                          <ModelNotes model={model} />
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             </>
           )}
@@ -260,6 +271,7 @@ function ModelCard({ model, onCopy }: { model: ModelView; onCopy: (modelId: stri
             <div className="flex min-w-0 flex-col gap-2">
               <div className="flex flex-wrap items-center gap-2">
                 <CardTitle>{model.id}</CardTitle>
+                <ModelStatusIndicator status={model.status} />
                 <Button
                   type="button"
                   size="icon-xs"
@@ -277,7 +289,6 @@ function ModelCard({ model, onCopy }: { model: ModelView; onCopy: (modelId: stri
               </CardDescription>
             </div>
           </div>
-          <Badge variant={model.status === 'healthy' ? 'success' : 'warning'}>{model.status}</Badge>
         </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 text-sm">
@@ -288,37 +299,26 @@ function ModelCard({ model, onCopy }: { model: ModelView; onCopy: (modelId: stri
           <MetricDetail
             label="Cost / 1M"
             value={
-              <>
-                <StackedMetric
-                  topLabel="Input"
-                  topValue={formatCost(model.input_cost_per_million_tokens_usd_10000)}
-                  bottomLabel="Output"
-                  bottomValue={formatCost(model.output_cost_per_million_tokens_usd_10000)}
-                />
-              </>
+              <StackedMetric
+                topLabel="Input"
+                topValue={formatCost(model.input_cost_per_million_tokens_usd_10000)}
+                bottomLabel="Output"
+                bottomValue={formatCost(model.output_cost_per_million_tokens_usd_10000)}
+              />
             }
           />
           <MetricDetail
             label="Context Window"
             value={
-              <>
-                <StackedMetric
-                  topLabel="Input"
-                  topValue={formatWindow(model.input_window_tokens ?? model.context_window_tokens)}
-                  bottomLabel="Output"
-                  bottomValue={formatWindow(model.output_window_tokens)}
-                />
-              </>
+              <StackedMetric
+                topLabel="Input"
+                topValue={formatWindow(model.input_window_tokens ?? model.context_window_tokens)}
+                bottomLabel="Output"
+                bottomValue={formatWindow(model.output_window_tokens)}
+              />
             }
           />
-          <MetricDetail
-            label="Capabilities"
-            value={
-              <>
-                <CapabilityBadges model={model} />
-              </>
-            }
-          />
+          <MetricDetail label="Capabilities" value={<CapabilityBadges model={model} />} />
         </dl>
         <ModelNotes model={model} />
       </CardContent>
@@ -341,11 +341,32 @@ function MetricDetail({
         {label}
       </dt>
       <dd
-        className={mono ? 'font-mono text-xs text-[var(--color-text-muted)]' : 'text-[var(--color-text-muted)]'}
+        className={
+          mono
+            ? 'font-mono text-xs text-[var(--color-text-muted)]'
+            : 'text-[var(--color-text-muted)]'
+        }
       >
         {value}
       </dd>
     </div>
+  )
+}
+
+function ModelStatusIndicator({ status }: { status: string }) {
+  const tone =
+    status === 'healthy' ? 'bg-emerald-500 shadow-emerald-500/30' : 'bg-amber-400 shadow-amber-400/30'
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          aria-label={status}
+          className={`inline-flex size-2.5 shrink-0 rounded-full shadow-[0_0_0_3px] ${tone}`}
+        />
+      </TooltipTrigger>
+      <TooltipContent sideOffset={6}>{status}</TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -355,8 +376,12 @@ function ModelNotes({ model }: { model: ModelView }) {
   }
 
   return (
-    <div className="flex min-w-[180px] flex-col gap-2">
-      {model.description ? <p className="text-[var(--color-text-muted)]">{model.description}</p> : null}
+    <div className="flex min-w-0 flex-col gap-2 py-1">
+      {model.description ? (
+        <p className="line-clamp-2 whitespace-normal text-[var(--color-text-muted)]">
+          {model.description}
+        </p>
+      ) : null}
       {model.tags.length > 0 ? (
         <div className="flex flex-wrap gap-2">
           {model.tags.map((tag) => (
@@ -382,7 +407,7 @@ function StackedMetric({
   bottomValue: string
 }) {
   return (
-    <div className="flex min-w-[120px] flex-col gap-1">
+    <div className="flex min-w-[10rem] flex-col gap-1 py-1">
       <div className="flex items-center justify-between gap-3">
         <span className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
           {topLabel}
@@ -401,36 +426,11 @@ function StackedMetric({
 
 function CapabilityBadges({ model }: { model: ModelView }) {
   const capabilities = [
-    model.supports_streaming
-      ? {
-          label: 'Streaming',
-          icon: LiveStreaming03Icon,
-        }
-      : null,
-    model.supports_vision
-      ? {
-          label: 'Vision',
-          icon: VisionIcon,
-        }
-      : null,
-    model.supports_tool_calling
-      ? {
-          label: 'Tool Calling',
-          icon: ToolsIcon,
-        }
-      : null,
-    model.supports_structured_output
-      ? {
-          label: 'Structured Output',
-          icon: CodeIcon,
-        }
-      : null,
-    model.supports_attachments
-      ? {
-          label: 'Attachments',
-          icon: AttachmentIcon,
-        }
-      : null,
+    model.supports_streaming ? { label: 'Streaming', icon: LiveStreaming03Icon } : null,
+    model.supports_vision ? { label: 'Vision', icon: VisionIcon } : null,
+    model.supports_tool_calling ? { label: 'Tool Calling', icon: ToolsIcon } : null,
+    model.supports_structured_output ? { label: 'Structured Output', icon: CodeIcon } : null,
+    model.supports_attachments ? { label: 'Attachments', icon: AttachmentIcon } : null,
   ].filter(
     (
       value,
@@ -445,7 +445,7 @@ function CapabilityBadges({ model }: { model: ModelView }) {
   }
 
   return (
-    <div className="flex min-w-[170px] flex-wrap gap-2">
+    <div className="flex min-w-0 flex-wrap gap-2 py-1">
       {capabilities.map((capability) => (
         <Badge key={capability.label} variant="outline" className="gap-1.5">
           <AppIcon icon={capability.icon} size={12} stroke={1.5} />
