@@ -100,6 +100,302 @@ mod tests {
         }
     }
 
+    async fn exercise_usage_leaderboard_reporting<S>(store: &S)
+    where
+        S: ApiKeyRepository
+            + BudgetRepository
+            + GatewayStore
+            + IdentityRepository
+            + ModelRepository
+            + Sync,
+    {
+        let providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: json!({
+                "base_url": "https://api.openai.com/v1",
+                "timeout_ms": 120_000
+            }),
+            secrets: Some(json!({"token": "env.OPENAI_API_KEY"})),
+        }];
+        let models = vec![
+            SeedModel {
+                model_key: "fast".to_string(),
+                alias_target_model_key: None,
+                description: Some("fast tier".to_string()),
+                tags: vec!["fast".to_string()],
+                rank: 10,
+                routes: vec![SeedModelRoute {
+                    provider_key: "openai-prod".to_string(),
+                    upstream_model: "gpt-4o-mini".to_string(),
+                    priority: 10,
+                    weight: 1.0,
+                    enabled: true,
+                    extra_headers: Map::new(),
+                    extra_body: Map::new(),
+                    capabilities: ProviderCapabilities::all_enabled(),
+                }],
+            },
+            SeedModel {
+                model_key: "reasoning".to_string(),
+                alias_target_model_key: None,
+                description: Some("reasoning tier".to_string()),
+                tags: vec!["reasoning".to_string()],
+                rank: 20,
+                routes: vec![SeedModelRoute {
+                    provider_key: "openai-prod".to_string(),
+                    upstream_model: "gpt-5".to_string(),
+                    priority: 10,
+                    weight: 1.0,
+                    enabled: true,
+                    extra_headers: Map::new(),
+                    extra_body: Map::new(),
+                    capabilities: ProviderCapabilities::all_enabled(),
+                }],
+            },
+        ];
+        let api_keys = vec![SeedApiKey {
+            name: "dev".to_string(),
+            public_id: "dev123".to_string(),
+            secret_hash: "hash".to_string(),
+            allowed_models: vec!["fast".to_string(), "reasoning".to_string()],
+        }];
+        store
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[])
+            .await
+            .expect("seed");
+
+        let api_key = store
+            .get_api_key_by_public_id("dev123")
+            .await
+            .expect("load api key")
+            .expect("api key");
+        let fast_model = store
+            .get_model_by_key("fast")
+            .await
+            .expect("load fast model")
+            .expect("fast model");
+        let reasoning_model = store
+            .get_model_by_key("reasoning")
+            .await
+            .expect("load reasoning model")
+            .expect("reasoning model");
+
+        let ada = store
+            .create_identity_user(
+                "Ada",
+                "ada@example.com",
+                "ada@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
+            .await
+            .expect("create ada");
+        let ben = store
+            .create_identity_user(
+                "Ben",
+                "ben@example.com",
+                "ben@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
+            .await
+            .expect("create ben");
+        let cleo = store
+            .create_identity_user(
+                "Cleo",
+                "cleo@example.com",
+                "cleo@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
+            .await
+            .expect("create cleo");
+
+        let ada_bucket_one = OffsetDateTime::parse(
+            "2026-03-02T03:00:00Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .expect("ada bucket one");
+        let ada_bucket_two = OffsetDateTime::parse(
+            "2026-03-02T16:00:00Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .expect("ada bucket two");
+        let ben_bucket = OffsetDateTime::parse(
+            "2026-03-04T05:00:00Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .expect("ben bucket");
+        let ben_bucket_same = OffsetDateTime::parse(
+            "2026-03-04T06:00:00Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .expect("ben bucket same");
+        let cleo_bucket = OffsetDateTime::parse(
+            "2026-03-05T02:00:00Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .expect("cleo bucket");
+        let window_start = OffsetDateTime::parse(
+            "2026-03-01T00:00:00Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .expect("window start");
+        let window_end = OffsetDateTime::parse(
+            "2026-03-08T00:00:00Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .expect("window end");
+
+        for event in [
+            build_usage_ledger_record(
+                "leaderboard-ada-fast",
+                format!("user:{}", ada.user_id),
+                api_key.id,
+                Some(ada.user_id),
+                None,
+                Some(fast_model.id),
+                "gpt-4o-mini",
+                UsagePricingStatus::Priced,
+                20_000,
+                ada_bucket_one,
+            ),
+            build_usage_ledger_record(
+                "leaderboard-ada-reasoning",
+                format!("user:{}", ada.user_id),
+                api_key.id,
+                Some(ada.user_id),
+                None,
+                Some(reasoning_model.id),
+                "gpt-5",
+                UsagePricingStatus::Priced,
+                10_000,
+                ada_bucket_two,
+            ),
+            build_usage_ledger_record(
+                "leaderboard-ada-unpriced",
+                format!("user:{}", ada.user_id),
+                api_key.id,
+                Some(ada.user_id),
+                None,
+                Some(fast_model.id),
+                "gpt-4o-mini",
+                UsagePricingStatus::Unpriced,
+                0,
+                ada_bucket_two + Duration::hours(1),
+            ),
+            build_usage_ledger_record(
+                "leaderboard-ben-fast",
+                format!("user:{}", ben.user_id),
+                api_key.id,
+                Some(ben.user_id),
+                None,
+                Some(fast_model.id),
+                "gpt-4o-mini",
+                UsagePricingStatus::Priced,
+                29_000,
+                ben_bucket,
+            ),
+            build_usage_ledger_record(
+                "leaderboard-ben-reasoning",
+                format!("user:{}", ben.user_id),
+                api_key.id,
+                Some(ben.user_id),
+                None,
+                Some(reasoning_model.id),
+                "gpt-5",
+                UsagePricingStatus::Priced,
+                1_000,
+                ben_bucket_same,
+            ),
+            build_usage_ledger_record(
+                "leaderboard-cleo-fast",
+                format!("user:{}", cleo.user_id),
+                api_key.id,
+                Some(cleo.user_id),
+                None,
+                Some(fast_model.id),
+                "gpt-4o-mini",
+                UsagePricingStatus::Priced,
+                15_000,
+                cleo_bucket,
+            ),
+        ] {
+            assert!(
+                store
+                    .insert_usage_ledger_if_absent(&event)
+                    .await
+                    .expect("insert leaderboard event")
+            );
+        }
+
+        let leaders = store
+            .list_usage_user_leaderboard(window_start, window_end, 30)
+            .await
+            .expect("list usage leaderboard");
+        assert_eq!(leaders.len(), 3);
+        assert_eq!(leaders[0].user_name, "Ada");
+        assert_eq!(leaders[0].priced_cost_usd.as_scaled_i64(), 30_000);
+        assert_eq!(leaders[0].total_request_count, 3);
+        assert_eq!(leaders[0].top_model_key.as_deref(), Some("fast"));
+        assert_eq!(leaders[1].user_name, "Ben");
+        assert_eq!(leaders[1].priced_cost_usd.as_scaled_i64(), 30_000);
+        assert_eq!(leaders[1].total_request_count, 2);
+        assert_eq!(leaders[1].top_model_key.as_deref(), Some("fast"));
+        assert_eq!(leaders[2].user_name, "Cleo");
+
+        let bucket_rows = store
+            .list_usage_user_bucket_aggregates(
+                window_start,
+                window_end,
+                12,
+                &[ada.user_id, ben.user_id],
+            )
+            .await
+            .expect("list usage bucket aggregates");
+        assert_eq!(bucket_rows.len(), 3);
+        assert_eq!(bucket_rows[0].user_id, ada.user_id);
+        assert_eq!(
+            bucket_rows[0].bucket_start,
+            ada_bucket_one
+                .replace_hour(0)
+                .expect("bucket hour")
+                .replace_minute(0)
+                .expect("bucket minute")
+                .replace_second(0)
+                .expect("bucket second")
+        );
+        assert_eq!(bucket_rows[0].priced_cost_usd.as_scaled_i64(), 20_000);
+        assert_eq!(bucket_rows[1].user_id, ada.user_id);
+        assert_eq!(
+            bucket_rows[1].bucket_start,
+            ada_bucket_two
+                .replace_hour(12)
+                .expect("bucket hour")
+                .replace_minute(0)
+                .expect("bucket minute")
+                .replace_second(0)
+                .expect("bucket second")
+        );
+        assert_eq!(bucket_rows[1].priced_cost_usd.as_scaled_i64(), 10_000);
+        assert_eq!(bucket_rows[2].user_id, ben.user_id);
+        assert_eq!(
+            bucket_rows[2].bucket_start,
+            ben_bucket
+                .replace_hour(0)
+                .expect("bucket hour")
+                .replace_minute(0)
+                .expect("bucket minute")
+                .replace_second(0)
+                .expect("bucket second")
+        );
+        assert_eq!(bucket_rows[2].priced_cost_usd.as_scaled_i64(), 30_000);
+    }
+
     async fn insert_libsql_oidc_provider(store: &LibsqlStore, provider_key: &str) -> String {
         let provider_id = format!("oidc-{provider_key}");
         let now = OffsetDateTime::now_utc().unix_timestamp();
@@ -2792,6 +3088,20 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn libsql_usage_leaderboard_ranks_users_and_aggregates_half_day_buckets() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        exercise_usage_leaderboard_reporting(&store).await;
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn postgres_store_supports_migrations_and_core_operations() {
         let Some(test_db) = create_postgres_test_database().await else {
             eprintln!("skipping postgres store test because TEST_POSTGRES_URL is not set");
@@ -3543,6 +3853,34 @@ mod tests {
         assert_eq!(upstream_model.priced_request_count, 1);
         assert_eq!(upstream_model.unpriced_request_count, 1);
         assert_eq!(upstream_model.usage_missing_request_count, 1);
+
+        drop(store);
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_usage_leaderboard_ranks_users_and_aggregates_half_day_buckets() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres leaderboard parity test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options)
+            .await
+            .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        exercise_usage_leaderboard_reporting(&store).await;
 
         drop(store);
         drop_postgres_test_database(&test_db).await;

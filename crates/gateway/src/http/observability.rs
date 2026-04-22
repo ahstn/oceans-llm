@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use axum::{
     Json,
@@ -6,21 +6,24 @@ use axum::{
     http::HeaderMap,
 };
 use gateway_core::{
-    GatewayError, ProviderConnection, ProviderRepository, RequestLogDetail,
+    BudgetRepository, GatewayError, ProviderConnection, ProviderRepository, RequestLogDetail,
     RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestTag, RequestTags,
 };
 use gateway_service::{
     model_icon_key_from_metadata, provider_icon_key_from_metadata, resolve_model_icon_key,
     resolve_provider_display,
 };
+use time::{Duration, OffsetDateTime, UtcOffset};
 use uuid::Uuid;
 
 use crate::http::{
     admin_auth::require_platform_admin,
     admin_contract::{
-        Envelope, OpenAiErrorEnvelopeView, RequestLogDetailView, RequestLogListQuery,
-        RequestLogPageView, RequestLogPayloadView, RequestLogSummaryView, RequestTagView,
-        RequestTagsView, envelope, format_timestamp,
+        Envelope, LeaderboardChartUserView, LeaderboardLeaderView, LeaderboardQuery,
+        LeaderboardSeriesPointView, LeaderboardSeriesValueView, LeaderboardView,
+        OpenAiErrorEnvelopeView, RequestLogDetailView, RequestLogListQuery, RequestLogPageView,
+        RequestLogPayloadView, RequestLogSummaryView, RequestTagView, RequestTagsView, envelope,
+        format_timestamp,
     },
     error::AppError,
     request_tags::build_bespoke_tag_filter,
@@ -30,6 +33,109 @@ use crate::http::{
 const DEFAULT_PAGE: u32 = 1;
 const DEFAULT_PAGE_SIZE: u32 = 100;
 const MAX_PAGE_SIZE: u32 = 500;
+const LEADERBOARD_BUCKET_HOURS: u8 = 12;
+const LEADERBOARD_CHART_USERS: usize = 5;
+const LEADERBOARD_LIMIT: u32 = 30;
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/observability/leaderboard",
+    params(LeaderboardQuery),
+    responses((status = 200, body = Envelope<LeaderboardView>)),
+    security(("session_cookie" = []))
+)]
+pub async fn get_usage_leaderboard(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<LeaderboardQuery>,
+) -> Result<Json<Envelope<LeaderboardView>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+
+    let range = parse_leaderboard_range(query.range.as_deref())?;
+    let (window_start, window_end) = leaderboard_window_bounds_utc(range.days())?;
+    let leaders = state
+        .store
+        .list_usage_user_leaderboard(window_start, window_end, LEADERBOARD_LIMIT)
+        .await?;
+    let chart_users = leaders
+        .iter()
+        .take(LEADERBOARD_CHART_USERS)
+        .enumerate()
+        .map(|(index, leader)| LeaderboardChartUserView {
+            rank: (index + 1) as u32,
+            user_id: leader.user_id.to_string(),
+            user_name: leader.user_name.clone(),
+            total_spend_usd_10000: leader.priced_cost_usd.as_scaled_i64(),
+        })
+        .collect::<Vec<_>>();
+    let chart_user_ids = leaders
+        .iter()
+        .take(LEADERBOARD_CHART_USERS)
+        .map(|leader| leader.user_id)
+        .collect::<Vec<_>>();
+    let bucket_rows = state
+        .store
+        .list_usage_user_bucket_aggregates(
+            window_start,
+            window_end,
+            LEADERBOARD_BUCKET_HOURS,
+            &chart_user_ids,
+        )
+        .await?;
+
+    let mut bucket_map = BTreeMap::<i64, HashMap<Uuid, i64>>::new();
+    for row in bucket_rows {
+        bucket_map
+            .entry(row.bucket_start.unix_timestamp())
+            .or_default()
+            .insert(row.user_id, row.priced_cost_usd.as_scaled_i64());
+    }
+
+    let bucket_width = Duration::hours(i64::from(LEADERBOARD_BUCKET_HOURS));
+    let bucket_count = (range.days() as usize * 24) / usize::from(LEADERBOARD_BUCKET_HOURS);
+    let mut series = Vec::with_capacity(bucket_count);
+    for bucket_index in 0..bucket_count {
+        let bucket_start = window_start + (bucket_width * (bucket_index as i32));
+        let values = chart_user_ids
+            .iter()
+            .map(|user_id| LeaderboardSeriesValueView {
+                user_id: user_id.to_string(),
+                spend_usd_10000: bucket_map
+                    .get(&bucket_start.unix_timestamp())
+                    .and_then(|values| values.get(user_id))
+                    .copied()
+                    .unwrap_or(0),
+            })
+            .collect();
+        series.push(LeaderboardSeriesPointView {
+            bucket_start: format_timestamp(bucket_start),
+            values,
+        });
+    }
+
+    let leaders = leaders
+        .into_iter()
+        .enumerate()
+        .map(|(index, leader)| LeaderboardLeaderView {
+            rank: (index + 1) as u32,
+            user_id: leader.user_id.to_string(),
+            user_name: leader.user_name,
+            total_spend_usd_10000: leader.priced_cost_usd.as_scaled_i64(),
+            most_used_model: leader.top_model_key,
+            total_requests: leader.total_request_count,
+        })
+        .collect();
+
+    Ok(Json(envelope(LeaderboardView {
+        range: range.as_str().to_string(),
+        bucket_hours: LEADERBOARD_BUCKET_HOURS,
+        window_start: format_timestamp(window_start),
+        window_end: format_timestamp(window_end),
+        chart_users,
+        series,
+        leaders,
+    })))
+}
 
 #[utoipa::path(
     get,
@@ -250,6 +356,54 @@ fn parse_optional_uuid(value: Option<&str>, field_name: &str) -> Result<Option<U
     })
 }
 
+#[derive(Clone, Copy)]
+enum LeaderboardRange {
+    SevenDays,
+    ThirtyOneDays,
+}
+
+impl LeaderboardRange {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::SevenDays => "7d",
+            Self::ThirtyOneDays => "31d",
+        }
+    }
+
+    fn days(self) -> u16 {
+        match self {
+            Self::SevenDays => 7,
+            Self::ThirtyOneDays => 31,
+        }
+    }
+}
+
+fn parse_leaderboard_range(value: Option<&str>) -> Result<LeaderboardRange, AppError> {
+    match value.unwrap_or("7d") {
+        "7d" => Ok(LeaderboardRange::SevenDays),
+        "31d" => Ok(LeaderboardRange::ThirtyOneDays),
+        other => Err(AppError(GatewayError::InvalidRequest(format!(
+            "range must be either `7d` or `31d`, got `{other}`"
+        )))),
+    }
+}
+
+fn leaderboard_window_bounds_utc(
+    window_days: u16,
+) -> Result<(OffsetDateTime, OffsetDateTime), AppError> {
+    let now_utc = OffsetDateTime::now_utc().to_offset(UtcOffset::UTC);
+    let bucket_seconds = i64::from(LEADERBOARD_BUCKET_HOURS) * 60 * 60;
+    let now_seconds = now_utc.unix_timestamp();
+    let window_end_seconds = ((now_seconds / bucket_seconds) + 1) * bucket_seconds;
+    let window_end = OffsetDateTime::from_unix_timestamp(window_end_seconds).map_err(|error| {
+        AppError(GatewayError::Internal(format!(
+            "invalid leaderboard window end: {error}"
+        )))
+    })?;
+    let window_start = window_end - Duration::days(i64::from(window_days));
+    Ok((window_start, window_end))
+}
+
 #[cfg(test)]
 mod tests {
     use gateway_service::REQUEST_LOG_PROVIDER_ICON_KEY;
@@ -321,6 +475,41 @@ mod tests {
             summary.provider_icon_key,
             Some(crate::http::admin_contract::ProviderIconKeyView::Anthropic)
         ));
+    }
+
+    #[test]
+    fn parse_leaderboard_range_defaults_to_seven_days() {
+        let range = parse_leaderboard_range(None);
+        assert!(matches!(range, Ok(LeaderboardRange::SevenDays)));
+    }
+
+    #[test]
+    fn parse_leaderboard_range_rejects_unknown_values() {
+        let error = parse_leaderboard_range(Some("14d"));
+        match error {
+            Err(error) => assert!(
+                error
+                    .0
+                    .to_string()
+                    .contains("range must be either `7d` or `31d`")
+            ),
+            Ok(_) => panic!("expected invalid range to fail"),
+        }
+    }
+
+    #[test]
+    fn leaderboard_window_bounds_align_to_half_day_utc() {
+        let result = leaderboard_window_bounds_utc(7);
+        assert!(result.is_ok(), "leaderboard window bounds should be valid");
+        let (window_start, window_end) = result.unwrap_or_else(|_| unreachable!());
+        let bucket_seconds = i64::from(LEADERBOARD_BUCKET_HOURS) * 60 * 60;
+
+        assert_eq!(window_end.unix_timestamp() % bucket_seconds, 0);
+        assert_eq!(
+            window_end - window_start,
+            Duration::days(7),
+            "expected exactly seven days of data"
+        );
     }
 
     fn request_log_record(metadata: Map<String, Value>) -> RequestLogRecord {

@@ -18,6 +18,7 @@ import { Route as AccountReadyRouteImport } from './routes/account-ready'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ObservabilityUsageCostsRouteImport } from './routes/observability/usage-costs'
 import { Route as ObservabilityRequestLogsRouteImport } from './routes/observability/request-logs'
+import { Route as ObservabilityLeaderboardRouteImport } from './routes/observability/leaderboard'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as IdentityUsersRouteImport } from './routes/identity/users'
 import { Route as IdentityTeamsRouteImport } from './routes/identity/teams'
@@ -68,6 +69,12 @@ const ObservabilityRequestLogsRoute =
     path: '/observability/request-logs',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ObservabilityLeaderboardRoute =
+  ObservabilityLeaderboardRouteImport.update({
+    id: '/observability/leaderboard',
+    path: '/observability/leaderboard',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const InviteTokenRoute = InviteTokenRouteImport.update({
   id: '/invite/$token',
   path: '/invite/$token',
@@ -95,6 +102,7 @@ export interface FileRoutesByFullPath {
   '/identity/teams': typeof IdentityTeamsRoute
   '/identity/users': typeof IdentityUsersRoute
   '/invite/$token': typeof InviteTokenRoute
+  '/observability/leaderboard': typeof ObservabilityLeaderboardRoute
   '/observability/request-logs': typeof ObservabilityRequestLogsRoute
   '/observability/usage-costs': typeof ObservabilityUsageCostsRoute
 }
@@ -109,6 +117,7 @@ export interface FileRoutesByTo {
   '/identity/teams': typeof IdentityTeamsRoute
   '/identity/users': typeof IdentityUsersRoute
   '/invite/$token': typeof InviteTokenRoute
+  '/observability/leaderboard': typeof ObservabilityLeaderboardRoute
   '/observability/request-logs': typeof ObservabilityRequestLogsRoute
   '/observability/usage-costs': typeof ObservabilityUsageCostsRoute
 }
@@ -124,52 +133,56 @@ export interface FileRoutesById {
   '/identity/teams': typeof IdentityTeamsRoute
   '/identity/users': typeof IdentityUsersRoute
   '/invite/$token': typeof InviteTokenRoute
+  '/observability/leaderboard': typeof ObservabilityLeaderboardRoute
   '/observability/request-logs': typeof ObservabilityRequestLogsRoute
   '/observability/usage-costs': typeof ObservabilityUsageCostsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    | '/'
-    | '/account-ready'
-    | '/api-keys'
-    | '/change-password'
-    | '/login'
-    | '/models'
-    | '/spend-controls'
-    | '/identity/teams'
-    | '/identity/users'
-    | '/invite/$token'
-    | '/observability/request-logs'
-    | '/observability/usage-costs'
+  | '/'
+  | '/account-ready'
+  | '/api-keys'
+  | '/change-password'
+  | '/login'
+  | '/models'
+  | '/spend-controls'
+  | '/identity/teams'
+  | '/identity/users'
+  | '/invite/$token'
+  | '/observability/leaderboard'
+  | '/observability/request-logs'
+  | '/observability/usage-costs'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/'
-    | '/account-ready'
-    | '/api-keys'
-    | '/change-password'
-    | '/login'
-    | '/models'
-    | '/spend-controls'
-    | '/identity/teams'
-    | '/identity/users'
-    | '/invite/$token'
-    | '/observability/request-logs'
-    | '/observability/usage-costs'
+  | '/'
+  | '/account-ready'
+  | '/api-keys'
+  | '/change-password'
+  | '/login'
+  | '/models'
+  | '/spend-controls'
+  | '/identity/teams'
+  | '/identity/users'
+  | '/invite/$token'
+  | '/observability/leaderboard'
+  | '/observability/request-logs'
+  | '/observability/usage-costs'
   id:
-    | '__root__'
-    | '/'
-    | '/account-ready'
-    | '/api-keys'
-    | '/change-password'
-    | '/login'
-    | '/models'
-    | '/spend-controls'
-    | '/identity/teams'
-    | '/identity/users'
-    | '/invite/$token'
-    | '/observability/request-logs'
-    | '/observability/usage-costs'
+  | '__root__'
+  | '/'
+  | '/account-ready'
+  | '/api-keys'
+  | '/change-password'
+  | '/login'
+  | '/models'
+  | '/spend-controls'
+  | '/identity/teams'
+  | '/identity/users'
+  | '/invite/$token'
+  | '/observability/leaderboard'
+  | '/observability/request-logs'
+  | '/observability/usage-costs'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -183,6 +196,7 @@ export interface RootRouteChildren {
   IdentityTeamsRoute: typeof IdentityTeamsRoute
   IdentityUsersRoute: typeof IdentityUsersRoute
   InviteTokenRoute: typeof InviteTokenRoute
+  ObservabilityLeaderboardRoute: typeof ObservabilityLeaderboardRoute
   ObservabilityRequestLogsRoute: typeof ObservabilityRequestLogsRoute
   ObservabilityUsageCostsRoute: typeof ObservabilityUsageCostsRoute
 }
@@ -252,6 +266,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ObservabilityRequestLogsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/observability/leaderboard': {
+      id: '/observability/leaderboard'
+      path: '/observability/leaderboard'
+      fullPath: '/observability/leaderboard'
+      preLoaderRoute: typeof ObservabilityLeaderboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/invite/$token': {
       id: '/invite/$token'
       path: '/invite/$token'
@@ -287,6 +308,7 @@ const rootRouteChildren: RootRouteChildren = {
   IdentityTeamsRoute: IdentityTeamsRoute,
   IdentityUsersRoute: IdentityUsersRoute,
   InviteTokenRoute: InviteTokenRoute,
+  ObservabilityLeaderboardRoute: ObservabilityLeaderboardRoute,
   ObservabilityRequestLogsRoute: ObservabilityRequestLogsRoute,
   ObservabilityUsageCostsRoute: ObservabilityUsageCostsRoute,
 }

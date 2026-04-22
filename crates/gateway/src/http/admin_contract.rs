@@ -200,6 +200,16 @@ pub struct AdminModelView {
     pub provider_icon_key: Option<ProviderIconKeyView>,
     pub upstream_model: Option<String>,
     pub model_icon_key: Option<ModelIconKeyView>,
+    pub input_cost_per_million_tokens_usd_10000: Option<i64>,
+    pub output_cost_per_million_tokens_usd_10000: Option<i64>,
+    pub context_window_tokens: Option<i64>,
+    pub input_window_tokens: Option<i64>,
+    pub output_window_tokens: Option<i64>,
+    pub supports_streaming: Option<bool>,
+    pub supports_vision: Option<bool>,
+    pub supports_tool_calling: Option<bool>,
+    pub supports_structured_output: Option<bool>,
+    pub supports_attachments: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Default, IntoParams)]
@@ -367,6 +377,11 @@ pub struct SpendReportQuery {
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
+pub struct LeaderboardQuery {
+    pub range: Option<String>,
+}
+
+#[derive(Debug, Deserialize, IntoParams)]
 pub struct BudgetAlertHistoryRequestQuery {
     pub page: Option<u32>,
     pub page_size: Option<u32>,
@@ -422,6 +437,47 @@ pub struct SpendReportView {
     pub daily: Vec<SpendDailyPointView>,
     pub owners: Vec<SpendOwnerBreakdownView>,
     pub models: Vec<SpendModelBreakdownView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct LeaderboardChartUserView {
+    pub rank: u32,
+    pub user_id: String,
+    pub user_name: String,
+    pub total_spend_usd_10000: i64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct LeaderboardSeriesValueView {
+    pub user_id: String,
+    pub spend_usd_10000: i64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct LeaderboardSeriesPointView {
+    pub bucket_start: String,
+    pub values: Vec<LeaderboardSeriesValueView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct LeaderboardLeaderView {
+    pub rank: u32,
+    pub user_id: String,
+    pub user_name: String,
+    pub total_spend_usd_10000: i64,
+    pub most_used_model: Option<String>,
+    pub total_requests: i64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct LeaderboardView {
+    pub range: String,
+    pub bucket_hours: u8,
+    pub window_start: String,
+    pub window_end: String,
+    pub chart_users: Vec<LeaderboardChartUserView>,
+    pub series: Vec<LeaderboardSeriesPointView>,
+    pub leaders: Vec<LeaderboardLeaderView>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -629,6 +685,7 @@ pub struct RequestLogPayloadView {
         crate::http::spend::deactivate_user_budget,
         crate::http::spend::upsert_team_budget,
         crate::http::spend::deactivate_team_budget,
+        crate::http::observability::get_usage_leaderboard,
         crate::http::observability::list_request_logs,
         crate::http::observability::get_request_log_detail
     ),
@@ -703,6 +760,7 @@ mod tests {
         assert!(paths.contains_key("/api/v1/admin/identity/users"));
         assert!(paths.contains_key("/api/v1/admin/models"));
         assert!(paths.contains_key("/api/v1/admin/spend/report"));
+        assert!(paths.contains_key("/api/v1/admin/observability/leaderboard"));
         assert!(paths.contains_key("/api/v1/admin/observability/request-logs/{request_log_id}"));
         assert!(paths.contains_key("/api/v1/auth/session"));
 
@@ -712,6 +770,7 @@ mod tests {
                 .contains_key("Envelope_AdminIdentityPayload")
         );
         assert!(components.schemas.contains_key("Envelope_SpendReportView"));
+        assert!(components.schemas.contains_key("Envelope_LeaderboardView"));
         assert!(
             components
                 .schemas

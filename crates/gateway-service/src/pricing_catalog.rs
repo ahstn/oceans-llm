@@ -412,6 +412,19 @@ fn pricing_target_for_route(provider: &ProviderConnection, route: &ModelRoute) -
     }
 }
 
+pub(crate) fn exact_pricing_target_for_route(
+    provider: &ProviderConnection,
+    route: &ModelRoute,
+) -> Option<(String, String)> {
+    match pricing_target_for_route(provider, route) {
+        PricingTarget::Exact {
+            pricing_provider_id,
+            model_id,
+        } => Some((pricing_provider_id, model_id)),
+        PricingTarget::Unpriced(_) => None,
+    }
+}
+
 fn unsupported_billing_modifier(route: &ModelRoute) -> Option<PricingUnpricedReason> {
     if route.extra_body.contains_key("service_tier") {
         return Some(PricingUnpricedReason::UnsupportedBillingModifier(

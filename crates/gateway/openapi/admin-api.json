@@ -700,6 +700,44 @@
         ]
       }
     },
+    "/api/v1/admin/observability/leaderboard": {
+      "get": {
+        "tags": [
+          "crate::http::observability"
+        ],
+        "operationId": "get_usage_leaderboard",
+        "parameters": [
+          {
+            "name": "range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_LeaderboardView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/observability/request-logs": {
       "get": {
         "tags": [
@@ -1828,6 +1866,13 @@
               "null"
             ]
           },
+          "context_window_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
           "description": {
             "type": [
               "string",
@@ -1836,6 +1881,20 @@
           },
           "id": {
             "type": "string"
+          },
+          "input_cost_per_million_tokens_usd_10000": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "input_window_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
           },
           "model_icon_key": {
             "oneOf": [
@@ -1846,6 +1905,20 @@
                 "$ref": "#/components/schemas/ModelIconKeyView"
               }
             ]
+          },
+          "output_cost_per_million_tokens_usd_10000": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "output_window_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
           },
           "provider_icon_key": {
             "oneOf": [
@@ -1874,6 +1947,36 @@
           },
           "status": {
             "$ref": "#/components/schemas/AdminModelStatusView"
+          },
+          "supports_attachments": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "supports_streaming": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "supports_structured_output": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "supports_tool_calling": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "supports_vision": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "tags": {
             "type": "array",
@@ -3060,6 +3163,64 @@
           }
         }
       },
+      "Envelope_LeaderboardView": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "range",
+              "bucket_hours",
+              "window_start",
+              "window_end",
+              "chart_users",
+              "series",
+              "leaders"
+            ],
+            "properties": {
+              "bucket_hours": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "chart_users": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/LeaderboardChartUserView"
+                }
+              },
+              "leaders": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/LeaderboardLeaderView"
+                }
+              },
+              "range": {
+                "type": "string"
+              },
+              "series": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/LeaderboardSeriesPointView"
+                }
+              },
+              "window_end": {
+                "type": "string"
+              },
+              "window_start": {
+                "type": "string"
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
       "Envelope_Option_AuthSessionView": {
         "type": "object",
         "required": [
@@ -3415,6 +3576,149 @@
             ]
           },
           "state": {
+            "type": "string"
+          }
+        }
+      },
+      "LeaderboardChartUserView": {
+        "type": "object",
+        "required": [
+          "rank",
+          "user_id",
+          "user_name",
+          "total_spend_usd_10000"
+        ],
+        "properties": {
+          "rank": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "total_spend_usd_10000": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "user_id": {
+            "type": "string"
+          },
+          "user_name": {
+            "type": "string"
+          }
+        }
+      },
+      "LeaderboardLeaderView": {
+        "type": "object",
+        "required": [
+          "rank",
+          "user_id",
+          "user_name",
+          "total_spend_usd_10000",
+          "total_requests"
+        ],
+        "properties": {
+          "most_used_model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rank": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "total_requests": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total_spend_usd_10000": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "user_id": {
+            "type": "string"
+          },
+          "user_name": {
+            "type": "string"
+          }
+        }
+      },
+      "LeaderboardSeriesPointView": {
+        "type": "object",
+        "required": [
+          "bucket_start",
+          "values"
+        ],
+        "properties": {
+          "bucket_start": {
+            "type": "string"
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LeaderboardSeriesValueView"
+            }
+          }
+        }
+      },
+      "LeaderboardSeriesValueView": {
+        "type": "object",
+        "required": [
+          "user_id",
+          "spend_usd_10000"
+        ],
+        "properties": {
+          "spend_usd_10000": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "user_id": {
+            "type": "string"
+          }
+        }
+      },
+      "LeaderboardView": {
+        "type": "object",
+        "required": [
+          "range",
+          "bucket_hours",
+          "window_start",
+          "window_end",
+          "chart_users",
+          "series",
+          "leaders"
+        ],
+        "properties": {
+          "bucket_hours": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "chart_users": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LeaderboardChartUserView"
+            }
+          },
+          "leaders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LeaderboardLeaderView"
+            }
+          },
+          "range": {
+            "type": "string"
+          },
+          "series": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LeaderboardSeriesPointView"
+            }
+          },
+          "window_end": {
+            "type": "string"
+          },
+          "window_start": {
             "type": "string"
           }
         }

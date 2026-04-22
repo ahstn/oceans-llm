@@ -24,9 +24,9 @@ use gateway_core::{
     RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository,
     SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY,
     SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord, StoreError,
-    StoreHealth, TeamBudgetRecord, TeamMembershipRecord, TeamRecord, UsageLedgerRecord,
-    UsagePricingStatus, UserBudgetRecord, UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord,
-    UserSessionRecord, UserStatus,
+    StoreHealth, TeamBudgetRecord, TeamMembershipRecord, TeamRecord, UsageLeaderboardBucketRecord,
+    UsageLeaderboardUserRecord, UsageLedgerRecord, UsagePricingStatus, UserBudgetRecord,
+    UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
 };
 use sqlx::{
     PgPool, Row,

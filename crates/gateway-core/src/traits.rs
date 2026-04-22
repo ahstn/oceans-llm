@@ -15,7 +15,8 @@ use crate::{
         ProviderConnection, ProviderRequestContext, RequestLogDetail, RequestLogPage,
         RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, SpendDailyAggregateRecord,
         SpendModelAggregateRecord, SpendOwnerAggregateRecord, TeamBudgetRecord,
-        TeamMembershipRecord, TeamRecord, UsageLedgerRecord, UserBudgetRecord, UserRecord,
+        TeamMembershipRecord, TeamRecord, UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord,
+        UsageLedgerRecord, UserBudgetRecord, UserRecord,
     },
     error::{ProviderError, RouteError, StoreError},
     protocol::core::{ChatRequest, EmbeddingsRequest},
@@ -250,6 +251,29 @@ pub trait BudgetRepository: Send + Sync {
         let _ = (window_start, window_end, owner_kind);
         Err(StoreError::Unexpected(
             "list_usage_model_aggregates is not implemented for this repository".to_string(),
+        ))
+    }
+    async fn list_usage_user_leaderboard(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        limit: u32,
+    ) -> Result<Vec<UsageLeaderboardUserRecord>, StoreError> {
+        let _ = (window_start, window_end, limit);
+        Err(StoreError::Unexpected(
+            "list_usage_user_leaderboard is not implemented for this repository".to_string(),
+        ))
+    }
+    async fn list_usage_user_bucket_aggregates(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        bucket_hours: u8,
+        user_ids: &[Uuid],
+    ) -> Result<Vec<UsageLeaderboardBucketRecord>, StoreError> {
+        let _ = (window_start, window_end, bucket_hours, user_ids);
+        Err(StoreError::Unexpected(
+            "list_usage_user_bucket_aggregates is not implemented for this repository".to_string(),
         ))
     }
     async fn insert_usage_ledger_if_absent(

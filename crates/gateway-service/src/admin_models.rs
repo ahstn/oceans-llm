@@ -1,9 +1,12 @@
 use std::{collections::HashMap, sync::Arc};
 
 use gateway_core::{
-    GatewayError, GatewayModel, ModelRepository, ProviderConnection, ProviderRepository,
+    GatewayError, GatewayModel, ModelPricingRecord, ModelRepository, ModelRoute,
+    PricingCatalogRepository, PricingModalities, ProviderConnection, ProviderRepository,
 };
+use time::OffsetDateTime;
 
+use crate::pricing_catalog::exact_pricing_target_for_route;
 use crate::{ModelIconKey, ProviderIconKey, resolve_model_icon_key, resolve_provider_display};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,6 +38,16 @@ pub struct AdminModelSummary {
     pub provider_icon_key: Option<ProviderIconKey>,
     pub upstream_model: Option<String>,
     pub model_icon_key: Option<ModelIconKey>,
+    pub input_cost_per_million_tokens_usd_10000: Option<i64>,
+    pub output_cost_per_million_tokens_usd_10000: Option<i64>,
+    pub context_window_tokens: Option<i64>,
+    pub input_window_tokens: Option<i64>,
+    pub output_window_tokens: Option<i64>,
+    pub supports_streaming: Option<bool>,
+    pub supports_vision: Option<bool>,
+    pub supports_tool_calling: Option<bool>,
+    pub supports_structured_output: Option<bool>,
+    pub supports_attachments: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -44,7 +57,7 @@ pub struct AdminModelsService<R> {
 
 impl<R> AdminModelsService<R>
 where
-    R: ModelRepository + ProviderRepository + Send + Sync + 'static,
+    R: ModelRepository + ProviderRepository + PricingCatalogRepository + Send + Sync + 'static,
 {
     #[must_use]
     pub fn new(repo: Arc<R>) -> Self {
@@ -52,6 +65,7 @@ where
     }
 
     pub async fn list_models(&self) -> Result<Vec<AdminModelSummary>, GatewayError> {
+        let pricing_time = OffsetDateTime::now_utc();
         let models = self.repo.list_models().await?;
         let by_key = models
             .iter()
@@ -102,6 +116,13 @@ where
             let provider_display = primary_route.map(|route| {
                 resolve_provider_display(route.provider_key.as_str(), primary_provider)
             });
+            let route_capabilities = primary_route.map(|route| route.capabilities);
+            let pricing_record = match (primary_route, primary_provider) {
+                (Some(route), Some(provider)) => {
+                    resolve_display_pricing(self.repo.as_ref(), provider, route, pricing_time).await?
+                }
+                _ => None,
+            };
             let model_icon_key = resolve_model_icon_key(
                 primary_route
                     .map(|route| route.upstream_model.as_str())
@@ -123,11 +144,56 @@ where
                 provider_icon_key: provider_display.map(|display| display.icon_key),
                 upstream_model: primary_route.map(|route| route.upstream_model.clone()),
                 model_icon_key,
+                input_cost_per_million_tokens_usd_10000: pricing_record
+                    .as_ref()
+                    .and_then(|record| record.input_cost_per_million_tokens.map(|value| value.as_scaled_i64())),
+                output_cost_per_million_tokens_usd_10000: pricing_record
+                    .as_ref()
+                    .and_then(|record| record.output_cost_per_million_tokens.map(|value| value.as_scaled_i64())),
+                context_window_tokens: pricing_record.as_ref().and_then(|record| record.limits.context),
+                input_window_tokens: pricing_record.as_ref().and_then(|record| record.limits.input),
+                output_window_tokens: pricing_record.as_ref().and_then(|record| record.limits.output),
+                supports_streaming: route_capabilities.map(|caps| caps.stream),
+                supports_vision: route_capabilities.map(|caps| caps.vision),
+                supports_tool_calling: route_capabilities.map(|caps| caps.tools),
+                supports_structured_output: route_capabilities.map(|caps| caps.json_schema),
+                supports_attachments: pricing_record
+                    .as_ref()
+                    .map(|record| supports_attachments(&record.modalities)),
             });
         }
 
         Ok(items)
     }
+}
+
+async fn resolve_display_pricing<R>(
+    repo: &R,
+    provider: &ProviderConnection,
+    route: &ModelRoute,
+    pricing_time: OffsetDateTime,
+) -> Result<Option<ModelPricingRecord>, GatewayError>
+where
+    R: PricingCatalogRepository + Send + Sync + 'static,
+{
+    let Some((pricing_provider_id, pricing_model_id)) =
+        exact_pricing_target_for_route(provider, route)
+    else {
+        return Ok(None);
+    };
+
+    Ok(repo
+        .resolve_model_pricing_at(&pricing_provider_id, &pricing_model_id, pricing_time)
+        .await?)
+}
+
+fn supports_attachments(modalities: &PricingModalities) -> bool {
+    modalities.input.iter().any(|value| {
+        matches!(
+            value.as_str(),
+            "audio" | "file" | "image" | "pdf" | "video"
+        )
+    })
 }
 
 fn route_health(
@@ -191,10 +257,12 @@ mod tests {
 
     use async_trait::async_trait;
     use gateway_core::{
-        GatewayModel, ModelRepository, ModelRoute, ProviderConnection, ProviderRepository,
-        StoreError,
+        GatewayModel, ModelPricingRecord, ModelRepository, ModelRoute, Money4,
+        PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
+        PricingProvenance, ProviderCapabilities, ProviderConnection, ProviderRepository, StoreError,
     };
     use serde_json::json;
+    use time::OffsetDateTime;
     use uuid::Uuid;
 
     use super::{AdminModelStatus, AdminModelsService};
@@ -204,6 +272,7 @@ mod tests {
         models: Vec<GatewayModel>,
         routes_by_model: HashMap<Uuid, Vec<ModelRoute>>,
         providers_by_key: HashMap<String, ProviderConnection>,
+        pricing_by_key: HashMap<(String, String), ModelPricingRecord>,
         list_routes_for_model_calls: AtomicUsize,
         list_routes_for_models_calls: AtomicUsize,
         get_provider_by_key_calls: AtomicUsize,
@@ -294,6 +363,108 @@ mod tests {
         }
     }
 
+    #[async_trait]
+    impl PricingCatalogRepository for CountingRepo {
+        async fn get_pricing_catalog_cache(
+            &self,
+            _catalog_key: &str,
+        ) -> Result<Option<PricingCatalogCacheRecord>, StoreError> {
+            Ok(None)
+        }
+
+        async fn upsert_pricing_catalog_cache(
+            &self,
+            _cache: &PricingCatalogCacheRecord,
+        ) -> Result<(), StoreError> {
+            Ok(())
+        }
+
+        async fn touch_pricing_catalog_cache_fetched_at(
+            &self,
+            _catalog_key: &str,
+            _fetched_at: OffsetDateTime,
+        ) -> Result<(), StoreError> {
+            Ok(())
+        }
+
+        async fn list_active_model_pricing(&self) -> Result<Vec<ModelPricingRecord>, StoreError> {
+            Ok(self.pricing_by_key.values().cloned().collect())
+        }
+
+        async fn insert_model_pricing(&self, _record: &ModelPricingRecord) -> Result<(), StoreError> {
+            Ok(())
+        }
+
+        async fn close_model_pricing(
+            &self,
+            _model_pricing_id: Uuid,
+            _effective_end_at: OffsetDateTime,
+            _updated_at: OffsetDateTime,
+        ) -> Result<(), StoreError> {
+            Ok(())
+        }
+
+        async fn resolve_model_pricing_at(
+            &self,
+            pricing_provider_id: &str,
+            pricing_model_id: &str,
+            _occurred_at: OffsetDateTime,
+        ) -> Result<Option<ModelPricingRecord>, StoreError> {
+            Ok(self
+                .pricing_by_key
+                .get(&(pricing_provider_id.to_string(), pricing_model_id.to_string()))
+                .cloned())
+        }
+    }
+
+    fn pricing_record(
+        pricing_provider_id: &str,
+        pricing_model_id: &str,
+        input_cost: &str,
+        output_cost: &str,
+        limits: (Option<i64>, Option<i64>, Option<i64>),
+        input_modalities: &[&str],
+    ) -> ModelPricingRecord {
+        let now = OffsetDateTime::now_utc();
+
+        ModelPricingRecord {
+            model_pricing_id: Uuid::new_v4(),
+            pricing_provider_id: pricing_provider_id.to_string(),
+            pricing_model_id: pricing_model_id.to_string(),
+            display_name: pricing_model_id.to_string(),
+            input_cost_per_million_tokens: Some(
+                Money4::from_decimal_str(input_cost).expect("input cost"),
+            ),
+            output_cost_per_million_tokens: Some(
+                Money4::from_decimal_str(output_cost).expect("output cost"),
+            ),
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: None,
+            input_audio_cost_per_million_tokens: None,
+            output_audio_cost_per_million_tokens: None,
+            release_date: "2025-01-01".to_string(),
+            last_updated: "2025-01-01".to_string(),
+            effective_start_at: now,
+            effective_end_at: None,
+            limits: PricingLimits {
+                context: limits.0,
+                input: limits.1,
+                output: limits.2,
+            },
+            modalities: PricingModalities {
+                input: input_modalities.iter().map(|value| (*value).to_string()).collect(),
+                output: vec!["text".to_string()],
+            },
+            provenance: PricingProvenance {
+                source: "test".to_string(),
+                etag: Some("etag-1".to_string()),
+                fetched_at: now,
+            },
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
     #[tokio::test]
     async fn list_models_batches_route_and_provider_loading() {
         let execution_model_id = Uuid::new_v4();
@@ -339,9 +510,23 @@ mod tests {
                 ProviderConnection {
                     provider_key: "openai".to_string(),
                     provider_type: "openai_compat".to_string(),
-                    config: json!({"display": {"label": "OpenAI"}}),
+                    config: json!({
+                        "display": {"label": "OpenAI"},
+                        "pricing_provider_id": "openai"
+                    }),
                     secrets: None,
                 },
+            )]),
+            pricing_by_key: HashMap::from([(
+                ("openai".to_string(), "gpt-4.1".to_string()),
+                pricing_record(
+                    "openai",
+                    "gpt-4.1",
+                    "1.2500",
+                    "10.0000",
+                    (Some(400_000), Some(272_000), Some(128_000)),
+                    &["text", "image"],
+                ),
             )]),
             ..Default::default()
         });
@@ -363,6 +548,16 @@ mod tests {
         assert_eq!(alias.status, AdminModelStatus::Healthy);
         assert_eq!(alias.provider_key.as_deref(), Some("openai"));
         assert_eq!(alias.upstream_model.as_deref(), Some("gpt-4.1"));
+        assert_eq!(alias.input_cost_per_million_tokens_usd_10000, Some(12_500));
+        assert_eq!(alias.output_cost_per_million_tokens_usd_10000, Some(100_000));
+        assert_eq!(alias.context_window_tokens, Some(400_000));
+        assert_eq!(alias.input_window_tokens, Some(272_000));
+        assert_eq!(alias.output_window_tokens, Some(128_000));
+        assert_eq!(alias.supports_streaming, Some(true));
+        assert_eq!(alias.supports_vision, Some(true));
+        assert_eq!(alias.supports_tool_calling, Some(true));
+        assert_eq!(alias.supports_structured_output, Some(true));
+        assert_eq!(alias.supports_attachments, Some(true));
     }
 
     #[tokio::test]
@@ -401,6 +596,9 @@ mod tests {
 
         assert_eq!(items[0].status, AdminModelStatus::Degraded);
         assert_eq!(items[0].provider_key.as_deref(), Some("missing"));
+        assert_eq!(items[0].input_cost_per_million_tokens_usd_10000, None);
+        assert_eq!(items[0].supports_streaming, Some(true));
+        assert_eq!(items[0].supports_attachments, None);
     }
 
     #[tokio::test]
@@ -442,7 +640,9 @@ mod tests {
                         enabled: true,
                         extra_headers: Default::default(),
                         extra_body: Default::default(),
-                        capabilities: Default::default(),
+                        capabilities: ProviderCapabilities::with_dimensions(
+                            true, true, false, false, false, true, true,
+                        ),
                     },
                 ],
             )]),
@@ -451,9 +651,23 @@ mod tests {
                 ProviderConnection {
                     provider_key: "openai".to_string(),
                     provider_type: "openai_compat".to_string(),
-                    config: json!({"display": {"label": "OpenAI", "icon_key": "openai"}}),
+                    config: json!({
+                        "display": {"label": "OpenAI", "icon_key": "openai"},
+                        "pricing_provider_id": "openai"
+                    }),
                     secrets: None,
                 },
+            )]),
+            pricing_by_key: HashMap::from([(
+                ("openai".to_string(), "healthy-upstream".to_string()),
+                pricing_record(
+                    "openai",
+                    "healthy-upstream",
+                    "2.0000",
+                    "12.0000",
+                    (Some(200_000), None, Some(64_000)),
+                    &["text"],
+                ),
             )]),
             ..Default::default()
         });
@@ -465,5 +679,73 @@ mod tests {
         assert_eq!(items[0].provider_key.as_deref(), Some("openai"));
         assert_eq!(items[0].provider_label.as_deref(), Some("OpenAI"));
         assert_eq!(items[0].upstream_model.as_deref(), Some("healthy-upstream"));
+        assert_eq!(items[0].input_cost_per_million_tokens_usd_10000, Some(20_000));
+        assert_eq!(items[0].context_window_tokens, Some(200_000));
+        assert_eq!(items[0].input_window_tokens, None);
+        assert_eq!(items[0].output_window_tokens, Some(64_000));
+        assert_eq!(items[0].supports_tool_calling, Some(false));
+        assert_eq!(items[0].supports_vision, Some(false));
+        assert_eq!(items[0].supports_structured_output, Some(true));
+        assert_eq!(items[0].supports_attachments, Some(false));
+    }
+
+    #[tokio::test]
+    async fn list_models_leaves_pricing_empty_for_unsupported_pricing_paths() {
+        let model_id = Uuid::new_v4();
+        let route_id = Uuid::new_v4();
+        let repo = Arc::new(CountingRepo {
+            models: vec![GatewayModel {
+                id: model_id,
+                model_key: "unpriced-model".to_string(),
+                alias_target_model_key: None,
+                description: None,
+                tags: Vec::new(),
+                rank: 1,
+            }],
+            routes_by_model: HashMap::from([(
+                model_id,
+                vec![ModelRoute {
+                    id: route_id,
+                    model_id,
+                    provider_key: "openai".to_string(),
+                    upstream_model: "gpt-5".to_string(),
+                    priority: 0,
+                    weight: 1.0,
+                    enabled: true,
+                    extra_headers: Default::default(),
+                    extra_body: json!({"service_tier": "priority"})
+                        .as_object()
+                        .cloned()
+                        .expect("object"),
+                    capabilities: ProviderCapabilities::with_dimensions(
+                        true, false, false, true, false, true, true,
+                    ),
+                }],
+            )]),
+            providers_by_key: HashMap::from([(
+                "openai".to_string(),
+                ProviderConnection {
+                    provider_key: "openai".to_string(),
+                    provider_type: "openai_compat".to_string(),
+                    config: json!({
+                        "display": {"label": "OpenAI"},
+                        "pricing_provider_id": "openai"
+                    }),
+                    secrets: None,
+                },
+            )]),
+            ..Default::default()
+        });
+
+        let service = AdminModelsService::new(repo);
+        let items = service.list_models().await.expect("admin models");
+
+        assert_eq!(items[0].status, AdminModelStatus::Healthy);
+        assert_eq!(items[0].input_cost_per_million_tokens_usd_10000, None);
+        assert_eq!(items[0].context_window_tokens, None);
+        assert_eq!(items[0].supports_streaming, Some(false));
+        assert_eq!(items[0].supports_tool_calling, Some(true));
+        assert_eq!(items[0].supports_structured_output, Some(true));
+        assert_eq!(items[0].supports_attachments, None);
     }
 }

@@ -592,6 +592,31 @@ impl BudgetRepository for AnyStore {
         )
     }
 
+    async fn list_usage_user_leaderboard(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        limit: u32,
+    ) -> Result<Vec<gateway_core::UsageLeaderboardUserRecord>, StoreError> {
+        dispatch_store!(
+            self,
+            list_usage_user_leaderboard(window_start, window_end, limit)
+        )
+    }
+
+    async fn list_usage_user_bucket_aggregates(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        bucket_hours: u8,
+        user_ids: &[Uuid],
+    ) -> Result<Vec<gateway_core::UsageLeaderboardBucketRecord>, StoreError> {
+        dispatch_store!(
+            self,
+            list_usage_user_bucket_aggregates(window_start, window_end, bucket_hours, user_ids)
+        )
+    }
+
     async fn insert_usage_ledger_if_absent(
         &self,
         event: &gateway_core::UsageLedgerRecord,
