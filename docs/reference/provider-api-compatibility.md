@@ -1,6 +1,6 @@
 # Provider API Compatibility
 
-`See also`: [Configuration Reference](../configuration/configuration-reference.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Request Lifecycle and Failure Modes](request-lifecycle-and-failure-modes.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md)
+`See also`: [Configuration Reference](../configuration/configuration-reference.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Request Lifecycle and Failure Modes](request-lifecycle-and-failure-modes.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md), [OpenAI Responses API Family Boundary](../adr/2026-04-23-openai-responses-api-family-boundary.md)
 
 This page describes the live compatibility contract between the gateway's public OpenAI-shaped API and provider-specific upstream APIs.
 
@@ -10,17 +10,18 @@ The gateway currently exposes:
 
 - `GET /v1/models`
 - `POST /v1/chat/completions`
+- `POST /v1/responses`
 - `POST /v1/embeddings`
 
-The first compatibility slice does not add `/v1/responses`, `/v1/messages`, or direct Google Generative AI endpoints.
+The Responses API is a first-class API family. It is not translated through Chat Completions.
 
 ## API-Family Matrix
 
 | API family | Current gateway status | Adapter path | Compatibility policy |
 | --- | --- | --- | --- |
 | OpenAI Chat Completions | Supported for `openai_compat` providers | `crates/gateway-providers/src/openai_compat.rs` | Route-level `openai_compat` profile can declare request-shape quirks and streaming usage support. |
+| OpenAI Responses API | Supported for `openai_compat` providers | `crates/gateway-providers/src/openai_compat.rs` | Uses a distinct typed request/core/provider boundary and preserves Responses event-stream semantics. |
 | OpenAI Embeddings | Supported for `openai_compat` providers | `crates/gateway-providers/src/openai_compat.rs` | Uses the same route/provider resolution path; no compatibility transforms are applied in this slice. |
-| OpenAI Responses API | Not implemented | Follow-up issue | Requires a distinct request/response/event model instead of forcing Responses semantics through Chat Completions. |
 | Anthropic Messages | Not implemented as a native public API | Follow-up issue | Vertex Anthropic transport exists, but native Messages semantics need explicit mapping and tests. |
 | Google Generative AI | Not implemented as a direct API-key provider path | Follow-up issue | Vertex Google transport exists; direct Google native API needs separate auth, request, and stream mapping. |
 | Cross-provider multimodal files/images | Partial, provider-dependent | Follow-up issue | Needs explicit request body and accounting semantics across OpenAI-compatible, Vertex Google, Anthropic, and Google native APIs. |
@@ -54,6 +55,8 @@ models:
 
 ## OpenAI-Compatible Profile Fields
 
+These profile transforms apply to Chat Completions request-shape quirks unless explicitly stated. Responses requests use the same route/provider selection path, but they are not patched with Chat Completions compatibility shims such as `stream_options.include_usage`.
+
 `openai_compat.supports_store`
 
 - default: `true`
@@ -82,7 +85,7 @@ models:
 
 ## Stream Normalization
 
-The OpenAI-compatible stream adapter keeps the SSE transcript OpenAI-shaped while normalizing common provider variants:
+The Chat Completions stream adapter keeps the SSE transcript OpenAI-shaped while normalizing common provider variants:
 
 - appends one final `data: [DONE]` when the upstream omits it after valid payload events
 - promotes `choices[*].usage` to top-level `usage` when top-level usage is absent
@@ -91,6 +94,8 @@ The OpenAI-compatible stream adapter keeps the SSE transcript OpenAI-shaped whil
 - emits structured SSE error chunks for malformed or incomplete streams instead of pretending the stream completed normally
 
 This is intentionally narrower than full tool-call streaming normalization. Tool-call streaming needs a richer gateway event model and is tracked separately.
+
+The Responses stream adapter is separate. It parses SSE frames for transport safety, preserves `event: response.*` names and JSON payloads, surfaces malformed or incomplete streams as structured SSE error chunks, and appends one final `data: [DONE]` only after a successful upstream stream that omitted it.
 
 ## Accounting Boundary
 
@@ -101,6 +106,8 @@ Current durable accounting only relies on:
 - `prompt_tokens`
 - `completion_tokens`
 - `total_tokens`
+
+Responses usage is normalized from `usage.input_tokens`, `usage.output_tokens`, and `usage.total_tokens` into the gateway's prompt/completion/total accounting columns. Streaming Responses usage is read from completed response events with `response.usage`.
 
 Provider-specific cache, reasoning, image, audio, and modality counters remain follow-up work. Until those semantics are explicit, successful requests may still become `usage_missing` or `unpriced`.
 
@@ -116,7 +123,6 @@ The route-profile design follows the same broad lesson visible in mature adapter
 
 These items are intentionally outside this first slice:
 
-- OpenAI Responses API request, response, and stream events
 - native Anthropic Messages public/API-family mapping
 - direct Google Generative AI provider/API-key path
 - cross-provider tool-call streaming normalization fixtures

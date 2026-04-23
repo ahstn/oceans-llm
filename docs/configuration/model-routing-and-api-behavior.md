@@ -23,6 +23,7 @@ The live public endpoints are:
 
 - `GET /v1/models`
 - `POST /v1/chat/completions`
+- `POST /v1/responses`
 - `POST /v1/embeddings`
 
 All are authenticated.
@@ -92,6 +93,7 @@ Routes are filtered before provider execution based on request requirements and 
 Current capability dimensions:
 
 - `chat_completions`
+- `responses`
 - `stream`
 - `embeddings`
 - `tools`
@@ -110,7 +112,7 @@ Capabilities and compatibility have different jobs:
 - `capabilities` gates whether the route can execute a request at all
 - `compatibility` rewrites the outbound provider request shape after a route is selected
 
-OpenAI-compatible route profiles currently cover deterministic transforms such as `store` removal, token field renaming, `developer` role rewriting, `reasoning_effort` handling, and stream usage requests.
+OpenAI-compatible route profiles currently cover deterministic Chat Completions transforms such as `store` removal, token field renaming, `developer` role rewriting, `reasoning_effort` handling, and stream usage requests. Responses uses a separate typed request/provider path; Chat Completions transforms must not be used as Responses shims.
 
 See [provider-api-compatibility.md](../reference/provider-api-compatibility.md) for the compatibility matrix and field-level contract.
 
@@ -159,6 +161,17 @@ Current behavior highlights:
 - budget checks run before provider execution
 - successful requests write usage when usage can be normalized
 - request logs store both requested and resolved model identity
+
+## `/v1/responses`
+
+`POST /v1/responses` follows the same authentication, model resolution, route planning, budget guard, logging, and ledger flow as Chat Completions.
+
+Important differences:
+
+- route capability filtering requires `responses`
+- provider execution calls the provider's Responses methods, not Chat Completions methods
+- streaming preserves Responses `response.*` event names and payloads instead of rewriting them into Chat Completions chunks
+- usage is normalized from `input_tokens`, `output_tokens`, and `total_tokens`
 
 ## `/v1/embeddings`
 

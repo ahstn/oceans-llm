@@ -100,7 +100,9 @@ Routes can opt into that request shape with `compatibility.openai_compat.support
 - provider-specific usage counters may not fit the gateway accounting model
 - successful requests can still become `usage_missing` or `unpriced`
 
-The accounting model remains limited to `prompt_tokens`, `completion_tokens`, and `total_tokens` in this slice.
+This compatibility option is Chat Completions-specific. Responses streams use the Responses event model and read usage from completed response events with `response.usage`.
+
+The accounting model remains limited to prompt/input tokens, completion/output tokens, and total tokens in this slice.
 
 ## Relationship to Request Flow
 

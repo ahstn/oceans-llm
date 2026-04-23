@@ -948,6 +948,8 @@ pub struct RouteCapabilitiesConfig {
     #[serde(default = "default_enabled")]
     pub chat_completions: bool,
     #[serde(default = "default_enabled")]
+    pub responses: bool,
+    #[serde(default = "default_enabled")]
     pub stream: bool,
     #[serde(default = "default_enabled")]
     pub embeddings: bool,
@@ -963,15 +965,16 @@ pub struct RouteCapabilitiesConfig {
 
 impl RouteCapabilitiesConfig {
     fn into_capabilities(self) -> ProviderCapabilities {
-        ProviderCapabilities::with_dimensions(
-            self.chat_completions,
-            self.stream,
-            self.embeddings,
-            self.tools,
-            self.vision,
-            self.json_schema,
-            self.developer_role,
-        )
+        ProviderCapabilities {
+            chat_completions: self.chat_completions,
+            responses: self.responses,
+            stream: self.stream,
+            embeddings: self.embeddings,
+            tools: self.tools,
+            vision: self.vision,
+            json_schema: self.json_schema,
+            developer_role: self.developer_role,
+        }
     }
 }
 
@@ -979,6 +982,7 @@ impl Default for RouteCapabilitiesConfig {
     fn default() -> Self {
         Self {
             chat_completions: true,
+            responses: true,
             stream: true,
             embeddings: true,
             tools: true,

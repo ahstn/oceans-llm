@@ -36,6 +36,7 @@ Only `priced` and `legacy_estimated` rows count toward spend totals and budget w
 Pre-provider hard-limit checks run on the live request path for:
 
 - `POST /v1/chat/completions`
+- `POST /v1/responses`
 - `POST /v1/embeddings`
 
 Budgets are enforced by owner scope:

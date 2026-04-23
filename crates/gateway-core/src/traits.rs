@@ -19,7 +19,7 @@ use crate::{
         UsageLedgerRecord, UserBudgetRecord, UserRecord,
     },
     error::{ProviderError, RouteError, StoreError},
-    protocol::core::{ChatRequest, EmbeddingsRequest},
+    protocol::core::{ChatRequest, EmbeddingsRequest, ResponsesRequest},
 };
 
 #[async_trait]
@@ -427,6 +427,18 @@ pub trait ProviderClient: Send + Sync {
         request: &EmbeddingsRequest,
         context: &ProviderRequestContext,
     ) -> Result<Value, ProviderError>;
+
+    async fn responses(
+        &self,
+        request: &ResponsesRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<Value, ProviderError>;
+
+    async fn responses_stream(
+        &self,
+        request: &ResponsesRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<ProviderStream, ProviderError>;
 }
 
 #[derive(Default, Clone)]

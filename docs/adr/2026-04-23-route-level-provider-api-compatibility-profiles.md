@@ -53,7 +53,7 @@ Trade-offs:
 
 ## Follow-Up
 
-- Add OpenAI Responses API support with a first-class request, response, and stream model.
+- Continue expanding OpenAI Responses API coverage on its first-class request, response, and stream boundary.
 - Add native Anthropic Messages API-family mapping.
 - Add direct Google Generative AI provider support beyond Vertex.
 - Add cross-provider tool-call streaming fixtures and normalization.

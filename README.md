@@ -11,7 +11,7 @@ Rust-first LLM gateway workspace with an embedded TanStack Start admin control p
 - `crates/gateway`
   - Rust HTTP runtime for `/healthz`, `/readyz`, `/v1/*`, and `/api/v1/admin/*`
 - `crates/gateway-core`
-  - shared domain types, traits, OpenAI-compatible DTOs, and errors
+  - shared domain types, traits, OpenAI-compatible Chat/Responses/Embeddings DTOs, and errors
 - `crates/gateway-store`
   - libsql or SQLite and PostgreSQL stores, migrations, and seed behavior
 - `crates/gateway-service`
