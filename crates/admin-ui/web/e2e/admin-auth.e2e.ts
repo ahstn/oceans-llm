@@ -31,11 +31,8 @@ test('bootstrap admin must rotate the password before accessing the control plan
   ])
 
   await expect(page.getByText('Oceans Gateway')).toBeVisible()
-  await expect(
-    page.getByText(
-      'API keys, identity, spend, and observability are gateway-backed. Model inventory is still preview-only in this environment.',
-    ),
-  ).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'API Keys' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Create API key' })).toBeVisible()
 
   const sessionPayload = await page.evaluate(async () => {
     const response = await fetch('/api/v1/auth/session')
