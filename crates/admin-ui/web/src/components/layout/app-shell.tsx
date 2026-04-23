@@ -63,8 +63,8 @@ export function AppShell({ children, session }: AppShellProps) {
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-auto">
-          <div className="mx-auto flex min-h-full w-full max-w-[1600px] flex-col gap-6 p-4 sm:p-6">
+        <main className="min-h-0 min-w-0 flex-1 overflow-auto">
+          <div className="mx-auto flex min-h-full w-full min-w-0 max-w-[1600px] flex-col gap-6 p-4 sm:p-6">
             {children}
           </div>
         </main>

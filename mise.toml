@@ -1,13 +1,14 @@
 [tools]
 rust = "stable"
 node = "lts"
-bun = "1.3.10"
+bun = "1.3.13"
 postgres = { version = "17", os = ["macos"] } # skip for ci
 gh = "latest"
 opentofu = "latest"
 git-cliff = "latest"
 cocogitto = "latest"
 prek = "latest"
+"npm:agent-browser" = "latest"
 
 [tasks.install]
 description = "Install or update tool versions from mise.toml"

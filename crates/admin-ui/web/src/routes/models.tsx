@@ -94,7 +94,7 @@ export function ModelsPage() {
             Review routed models, upstream targets, and current health status.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex min-w-0 flex-col gap-4 overflow-x-hidden">
+        <CardContent className="flex min-w-0 flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--color-text-muted)]">
             <span>
               Showing {modelPage.items.length} of {modelPage.total} models
