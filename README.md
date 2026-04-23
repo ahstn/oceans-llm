@@ -106,6 +106,8 @@ Use the docs site instead of treating this file as the full operator manual.
   - [Identity and Access](docs/access/identity-and-access.md)
 - routing:
   - [Model Routing and API Behavior](docs/configuration/model-routing-and-api-behavior.md)
+- provider API compatibility:
+  - [Provider API Compatibility](docs/reference/provider-api-compatibility.md)
 - cross-cutting request flow:
   - [Request Lifecycle and Failure Modes](docs/reference/request-lifecycle-and-failure-modes.md)
 - pricing and spend:

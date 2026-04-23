@@ -1,0 +1,124 @@
+# Provider API Compatibility
+
+`See also`: [Configuration Reference](../configuration/configuration-reference.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Request Lifecycle and Failure Modes](request-lifecycle-and-failure-modes.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md)
+
+This page describes the live compatibility contract between the gateway's public OpenAI-shaped API and provider-specific upstream APIs.
+
+## Current Public Surface
+
+The gateway currently exposes:
+
+- `GET /v1/models`
+- `POST /v1/chat/completions`
+- `POST /v1/embeddings`
+
+The first compatibility slice does not add `/v1/responses`, `/v1/messages`, or direct Google Generative AI endpoints.
+
+## API-Family Matrix
+
+| API family | Current gateway status | Adapter path | Compatibility policy |
+| --- | --- | --- | --- |
+| OpenAI Chat Completions | Supported for `openai_compat` providers | `crates/gateway-providers/src/openai_compat.rs` | Route-level `openai_compat` profile can declare request-shape quirks and streaming usage support. |
+| OpenAI Embeddings | Supported for `openai_compat` providers | `crates/gateway-providers/src/openai_compat.rs` | Uses the same route/provider resolution path; no compatibility transforms are applied in this slice. |
+| OpenAI Responses API | Not implemented | Follow-up issue | Requires a distinct request/response/event model instead of forcing Responses semantics through Chat Completions. |
+| Anthropic Messages | Not implemented as a native public API | Follow-up issue | Vertex Anthropic transport exists, but native Messages semantics need explicit mapping and tests. |
+| Google Generative AI | Not implemented as a direct API-key provider path | Follow-up issue | Vertex Google transport exists; direct Google native API needs separate auth, request, and stream mapping. |
+| Cross-provider multimodal files/images | Partial, provider-dependent | Follow-up issue | Needs explicit request body and accounting semantics across OpenAI-compatible, Vertex Google, Anthropic, and Google native APIs. |
+
+## Route Compatibility Metadata
+
+Provider compatibility is route metadata, not provider metadata.
+
+Rationale:
+
+- one provider endpoint can front several upstream model families
+- two routes to the same provider can need different transforms
+- compatibility transforms must travel with the selected route and be visible in config, storage, and tests
+
+Route compatibility is persisted in `model_routes.compatibility_json` and seeded from config under:
+
+```yaml
+models:
+  - id: fast
+    routes:
+      - provider: openrouter
+        upstream_model: openai/gpt-4o-mini
+        compatibility:
+          openai_compat:
+            supports_store: false
+            max_tokens_field: max_tokens
+            developer_role: system
+            reasoning_effort: omit
+            supports_stream_usage: true
+```
+
+## OpenAI-Compatible Profile Fields
+
+`openai_compat.supports_store`
+
+- default: `true`
+- when `false`, outbound Chat Completions requests remove `store`
+
+`openai_compat.max_tokens_field`
+
+- default: `max_completion_tokens`
+- `max_tokens` rewrites `max_completion_tokens` to `max_tokens`
+
+`openai_compat.developer_role`
+
+- default: `developer`
+- `system` rewrites outbound `developer` messages to `system`
+
+`openai_compat.reasoning_effort`
+
+- default: `passthrough`
+- `omit` removes `reasoning_effort`
+- `reasoning_object` rewrites `reasoning_effort: "high"` to `reasoning: { "effort": "high" }`
+
+`openai_compat.supports_stream_usage`
+
+- default: `false`
+- when `true`, streaming Chat Completions requests include `stream_options.include_usage = true`
+
+## Stream Normalization
+
+The OpenAI-compatible stream adapter keeps the SSE transcript OpenAI-shaped while normalizing common provider variants:
+
+- appends one final `data: [DONE]` when the upstream omits it after valid payload events
+- promotes `choices[*].usage` to top-level `usage` when top-level usage is absent
+- preserves final usage-only chunks
+- maps `delta.reasoning_content` and `delta.reasoning_text` into `delta.reasoning` when no canonical reasoning field exists
+- emits structured SSE error chunks for malformed or incomplete streams instead of pretending the stream completed normally
+
+This is intentionally narrower than full tool-call streaming normalization. Tool-call streaming needs a richer gateway event model and is tracked separately.
+
+## Accounting Boundary
+
+Compatibility profiles can make usage more likely to appear in a standard place, but they do not change accounting semantics.
+
+Current durable accounting only relies on:
+
+- `prompt_tokens`
+- `completion_tokens`
+- `total_tokens`
+
+Provider-specific cache, reasoning, image, audio, and modality counters remain follow-up work. Until those semantics are explicit, successful requests may still become `usage_missing` or `unpriced`.
+
+## Research References
+
+The route-profile design follows the same broad lesson visible in mature adapter stacks: API-family differences are real interfaces, not provider-name strings.
+
+- Vercel AI SDK keeps distinct provider packages for OpenAI, OpenAI-compatible, Anthropic, Google Generative AI, and Google Vertex under [`packages/`](https://github.com/vercel/ai/tree/main/packages).
+- The OpenAI-compatible package exposes streaming usage as an explicit provider option rather than assuming every compatible server behaves the same.
+- Mario Zechner's provider notes and `pi-mono` OpenAI completions adapter are useful examples of agent-facing compatibility pressure: [post](https://mariozechner.at/posts/2025-11-30-pi-coding-agent/) and [source](https://github.com/badlogic/pi-mono/blob/main/packages/ai/src/providers/openai-completions.ts).
+
+## Follow-Up Scope
+
+These items are intentionally outside this first slice:
+
+- OpenAI Responses API request, response, and stream events
+- native Anthropic Messages public/API-family mapping
+- direct Google Generative AI provider/API-key path
+- cross-provider tool-call streaming normalization fixtures
+- cache/reasoning/modality token accounting
+- multimodal image/file compatibility across provider families

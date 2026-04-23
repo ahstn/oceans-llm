@@ -922,6 +922,7 @@ mod tests {
             extra_headers: serde_json::Map::new(),
             extra_body: serde_json::Map::new(),
             capabilities: ProviderCapabilities::all_enabled(),
+            compatibility: Default::default(),
         }
     }
 

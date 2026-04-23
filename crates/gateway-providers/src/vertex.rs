@@ -1303,6 +1303,7 @@ mod tests {
             extra_headers: Map::new(),
             extra_body: Map::new(),
             request_headers: std::collections::BTreeMap::new(),
+            compatibility: Default::default(),
         }
     }
 

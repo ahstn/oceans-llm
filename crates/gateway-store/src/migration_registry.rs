@@ -22,13 +22,22 @@ pub(crate) enum MigrationBackend {
     Postgres,
 }
 
-pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[MigrationManifest {
-    version: 17,
-    name: "baseline",
-    checksum: "V17__baseline.sql",
-    libsql_sql: include_str!("../migrations/V17__baseline.sql"),
-    postgres_sql: include_str!("../migrations/postgres/V17__baseline.sql"),
-}];
+pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
+    MigrationManifest {
+        version: 17,
+        name: "baseline",
+        checksum: "V17__baseline.sql",
+        libsql_sql: include_str!("../migrations/V17__baseline.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V17__baseline.sql"),
+    },
+    MigrationManifest {
+        version: 18,
+        name: "route_compatibility_profiles",
+        checksum: "V18__route_compatibility_profiles.sql",
+        libsql_sql: include_str!("../migrations/V18__route_compatibility_profiles.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V18__route_compatibility_profiles.sql"),
+    },
+];
 
 #[cfg(test)]
 mod tests {

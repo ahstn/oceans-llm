@@ -1,6 +1,6 @@
 # Request Lifecycle and Failure Modes
 
-`See also`: [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Configuration Reference](../configuration/configuration-reference.md), [Identity and Access](../access/identity-and-access.md), [Data Relationships](data-relationships.md), [ADR: V1 Runtime Simplification for Routing and Streaming](../adr/2026-03-15-v1-runtime-simplification.md)
+`See also`: [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](provider-api-compatibility.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Configuration Reference](../configuration/configuration-reference.md), [Identity and Access](../access/identity-and-access.md), [Data Relationships](data-relationships.md), [ADR: V1 Runtime Simplification for Routing and Streaming](../adr/2026-03-15-v1-runtime-simplification.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md)
 
 This page is the cross-cutting view. Neighboring docs own their own policy slices. This page explains how those slices connect during one request.
 
@@ -33,12 +33,16 @@ The live request path is single-route in this slice.
 6. The budget guard runs before provider execution.
    - hard-limit rejection returns `429 budget_exceeded`
    - no provider call occurs on this path
-7. The first eligible route executes.
-8. Request logs are written for the user-visible outcome.
-9. Usage is normalized when possible.
-10. Pricing is resolved exactly or the request is marked `unpriced`.
-11. A ledger row is written when the request has usable usage data.
-12. Post-provider budget math runs before the priced ledger row is committed.
+7. Route compatibility metadata is passed into the provider adapter.
+8. The provider adapter applies any declared compatibility transforms to the outbound provider request.
+9. The first eligible route executes.
+10. Request logs are written for the user-visible outcome.
+11. Usage is normalized when possible.
+12. Pricing is resolved exactly or the request is marked `unpriced`.
+13. A ledger row is written when the request has usable usage data.
+14. Post-provider budget math runs before the priced ledger row is committed.
+
+Compatibility transforms affect the provider request body and stream options. They do not change the public request model identity, alias resolution, API-key grants, or request-log attribution.
 
 ## Worked Example
 

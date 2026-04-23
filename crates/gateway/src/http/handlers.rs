@@ -535,6 +535,7 @@ fn build_provider_context(
         extra_headers: route.extra_headers.clone(),
         extra_body: route.extra_body.clone(),
         request_headers,
+        compatibility: route.compatibility.clone(),
     }
 }
 

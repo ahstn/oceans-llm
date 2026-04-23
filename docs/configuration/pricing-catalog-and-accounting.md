@@ -1,6 +1,6 @@
 # Pricing Catalog and Accounting
 
-`See also`: [Configuration Reference](configuration-reference.md), [Data Relationships](../reference/data-relationships.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Budgets and Spending](../operations/budgets-and-spending.md), [ADR: Hybrid Pricing Catalog from models.dev](../adr/2026-03-06-hybrid-pricing-catalog.md)
+`See also`: [Configuration Reference](configuration-reference.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Data Relationships](../reference/data-relationships.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Budgets and Spending](../operations/budgets-and-spending.md), [ADR: Hybrid Pricing Catalog from models.dev](../adr/2026-03-06-hybrid-pricing-catalog.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md)
 
 This page explains how the gateway turns provider usage into durable pricing records and why some successful requests are intentionally not charged.
 
@@ -89,6 +89,18 @@ This is fail-closed accounting behavior. Approximate billing is intentionally av
   - usage exists, but exact pricing could not be resolved safely
 
 Both states stay visible in reporting, but neither counts toward spend totals or hard-limit windows.
+
+## Streaming Usage and Compatibility
+
+Some OpenAI-compatible providers only emit streaming usage when the request includes `stream_options.include_usage = true`.
+
+Routes can opt into that request shape with `compatibility.openai_compat.supports_stream_usage`. This improves usage capture for providers that support it, but it is not a billing guarantee:
+
+- providers may omit final usage despite the option
+- provider-specific usage counters may not fit the gateway accounting model
+- successful requests can still become `usage_missing` or `unpriced`
+
+The accounting model remains limited to `prompt_tokens`, `completion_tokens`, and `total_tokens` in this slice.
 
 ## Relationship to Request Flow
 

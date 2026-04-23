@@ -1783,6 +1783,7 @@ mod tests {
                 extra_headers: Map::<String, Value>::new(),
                 extra_body: Map::<String, Value>::new(),
                 capabilities: ProviderCapabilities::all_enabled(),
+                compatibility: Default::default(),
             }],
         }];
 
@@ -1821,6 +1822,7 @@ mod tests {
                 extra_headers: Map::<String, Value>::new(),
                 extra_body: Map::<String, Value>::new(),
                 capabilities: ProviderCapabilities::all_enabled(),
+                compatibility: Default::default(),
             }],
         }];
 
@@ -1899,6 +1901,7 @@ mod tests {
                 extra_headers: Map::<String, Value>::new(),
                 extra_body: Map::<String, Value>::new(),
                 capabilities: ProviderCapabilities::all_enabled(),
+                compatibility: Default::default(),
             }],
         }];
 
@@ -2814,6 +2817,7 @@ mod tests {
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
                     capabilities: ProviderCapabilities::all_enabled(),
+                    compatibility: Default::default(),
                 }],
             },
             SeedModel {
@@ -2923,6 +2927,7 @@ mod tests {
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
                     capabilities: ProviderCapabilities::all_enabled(),
+                    compatibility: Default::default(),
                 },
                 SeedModelRoute {
                     provider_key: "fallback".to_string(),
@@ -2933,6 +2938,7 @@ mod tests {
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
                     capabilities: ProviderCapabilities::all_enabled(),
+                    compatibility: Default::default(),
                 },
             ],
         }];
@@ -3036,6 +3042,7 @@ mod tests {
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
                     capabilities: ProviderCapabilities::all_enabled(),
+                    compatibility: Default::default(),
                 },
                 SeedModelRoute {
                     provider_key: "fallback".to_string(),
@@ -3046,6 +3053,7 @@ mod tests {
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
                     capabilities: ProviderCapabilities::all_enabled(),
+                    compatibility: Default::default(),
                 },
             ],
         }];
@@ -3132,6 +3140,7 @@ mod tests {
                 capabilities: ProviderCapabilities::with_dimensions(
                     true, true, true, true, false, true, true,
                 ),
+                compatibility: Default::default(),
             }],
         }];
 
@@ -3237,6 +3246,7 @@ mod tests {
                     capabilities: ProviderCapabilities::with_dimensions(
                         true, true, true, false, true, true, true,
                     ),
+                    compatibility: Default::default(),
                 },
                 SeedModelRoute {
                     provider_key: "tools".to_string(),
@@ -3247,6 +3257,7 @@ mod tests {
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
                     capabilities: ProviderCapabilities::all_enabled(),
+                    compatibility: Default::default(),
                 },
             ],
         }];
@@ -3532,6 +3543,7 @@ mod tests {
                 capabilities: ProviderCapabilities::with_dimensions(
                     true, true, false, true, true, true, true,
                 ),
+                compatibility: Default::default(),
             }],
         }];
         let (app, raw_key, _) = build_test_app(seed_providers, models, registry).await;
@@ -3683,6 +3695,7 @@ mod tests {
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
                     capabilities: ProviderCapabilities::all_enabled(),
+                    compatibility: Default::default(),
                 }],
             },
             SeedModel {
@@ -3700,6 +3713,7 @@ mod tests {
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
                     capabilities: ProviderCapabilities::all_enabled(),
+                    compatibility: Default::default(),
                 }],
             },
         ];
@@ -3924,6 +3938,7 @@ mod tests {
                     extra_headers: Map::<String, Value>::new(),
                     extra_body: Map::<String, Value>::new(),
                     capabilities: ProviderCapabilities::all_enabled(),
+                    compatibility: Default::default(),
                 }],
             },
             SeedModel {
@@ -3941,6 +3956,7 @@ mod tests {
                     extra_headers: Map::<String, Value>::new(),
                     extra_body: Map::<String, Value>::new(),
                     capabilities: ProviderCapabilities::all_enabled(),
+                    compatibility: Default::default(),
                 }],
             },
         ];
@@ -4184,6 +4200,7 @@ mod tests {
                 extra_headers: Map::<String, Value>::new(),
                 extra_body: Map::<String, Value>::new(),
                 capabilities: ProviderCapabilities::all_enabled(),
+                compatibility: Default::default(),
             }],
         }];
         store
@@ -4278,6 +4295,7 @@ mod tests {
                 extra_headers: Map::<String, Value>::new(),
                 extra_body: Map::<String, Value>::new(),
                 capabilities: ProviderCapabilities::all_enabled(),
+                compatibility: Default::default(),
             }],
         }];
         store
@@ -4979,6 +4997,7 @@ mod tests {
                 extra_headers: Map::<String, Value>::new(),
                 extra_body: Map::<String, Value>::new(),
                 capabilities: ProviderCapabilities::all_enabled(),
+                compatibility: Default::default(),
             }],
         }];
         let api_keys = vec![SeedApiKey {
@@ -5205,6 +5224,7 @@ mod tests {
                     extra_headers: Map::<String, Value>::new(),
                     extra_body: Map::<String, Value>::new(),
                     capabilities: ProviderCapabilities::all_enabled(),
+                    compatibility: Default::default(),
                 }],
             },
             SeedModel {
@@ -5222,6 +5242,7 @@ mod tests {
                     extra_headers: Map::<String, Value>::new(),
                     extra_body: Map::<String, Value>::new(),
                     capabilities: ProviderCapabilities::all_enabled(),
+                    compatibility: Default::default(),
                 }],
             },
         ];
