@@ -119,7 +119,8 @@ where
             let route_capabilities = primary_route.map(|route| route.capabilities);
             let pricing_record = match (primary_route, primary_provider) {
                 (Some(route), Some(provider)) => {
-                    resolve_display_pricing(self.repo.as_ref(), provider, route, pricing_time).await?
+                    resolve_display_pricing(self.repo.as_ref(), provider, route, pricing_time)
+                        .await?
                 }
                 _ => None,
             };
@@ -144,15 +145,29 @@ where
                 provider_icon_key: provider_display.map(|display| display.icon_key),
                 upstream_model: primary_route.map(|route| route.upstream_model.clone()),
                 model_icon_key,
-                input_cost_per_million_tokens_usd_10000: pricing_record
+                input_cost_per_million_tokens_usd_10000: pricing_record.as_ref().and_then(
+                    |record| {
+                        record
+                            .input_cost_per_million_tokens
+                            .map(|value| value.as_scaled_i64())
+                    },
+                ),
+                output_cost_per_million_tokens_usd_10000: pricing_record.as_ref().and_then(
+                    |record| {
+                        record
+                            .output_cost_per_million_tokens
+                            .map(|value| value.as_scaled_i64())
+                    },
+                ),
+                context_window_tokens: pricing_record
                     .as_ref()
-                    .and_then(|record| record.input_cost_per_million_tokens.map(|value| value.as_scaled_i64())),
-                output_cost_per_million_tokens_usd_10000: pricing_record
+                    .and_then(|record| record.limits.context),
+                input_window_tokens: pricing_record
                     .as_ref()
-                    .and_then(|record| record.output_cost_per_million_tokens.map(|value| value.as_scaled_i64())),
-                context_window_tokens: pricing_record.as_ref().and_then(|record| record.limits.context),
-                input_window_tokens: pricing_record.as_ref().and_then(|record| record.limits.input),
-                output_window_tokens: pricing_record.as_ref().and_then(|record| record.limits.output),
+                    .and_then(|record| record.limits.input),
+                output_window_tokens: pricing_record
+                    .as_ref()
+                    .and_then(|record| record.limits.output),
                 supports_streaming: route_capabilities.map(|caps| caps.stream),
                 supports_vision: route_capabilities.map(|caps| caps.vision),
                 supports_tool_calling: route_capabilities.map(|caps| caps.tools),
@@ -188,12 +203,10 @@ where
 }
 
 fn supports_attachments(modalities: &PricingModalities) -> bool {
-    modalities.input.iter().any(|value| {
-        matches!(
-            value.as_str(),
-            "audio" | "file" | "image" | "pdf" | "video"
-        )
-    })
+    modalities
+        .input
+        .iter()
+        .any(|value| matches!(value.as_str(), "audio" | "file" | "image" | "pdf" | "video"))
 }
 
 fn route_health(
@@ -259,7 +272,8 @@ mod tests {
     use gateway_core::{
         GatewayModel, ModelPricingRecord, ModelRepository, ModelRoute, Money4,
         PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
-        PricingProvenance, ProviderCapabilities, ProviderConnection, ProviderRepository, StoreError,
+        PricingProvenance, ProviderCapabilities, ProviderConnection, ProviderRepository,
+        StoreError,
     };
     use serde_json::json;
     use time::OffsetDateTime;
@@ -391,7 +405,10 @@ mod tests {
             Ok(self.pricing_by_key.values().cloned().collect())
         }
 
-        async fn insert_model_pricing(&self, _record: &ModelPricingRecord) -> Result<(), StoreError> {
+        async fn insert_model_pricing(
+            &self,
+            _record: &ModelPricingRecord,
+        ) -> Result<(), StoreError> {
             Ok(())
         }
 
@@ -412,7 +429,10 @@ mod tests {
         ) -> Result<Option<ModelPricingRecord>, StoreError> {
             Ok(self
                 .pricing_by_key
-                .get(&(pricing_provider_id.to_string(), pricing_model_id.to_string()))
+                .get(&(
+                    pricing_provider_id.to_string(),
+                    pricing_model_id.to_string(),
+                ))
                 .cloned())
         }
     }
@@ -452,7 +472,10 @@ mod tests {
                 output: limits.2,
             },
             modalities: PricingModalities {
-                input: input_modalities.iter().map(|value| (*value).to_string()).collect(),
+                input: input_modalities
+                    .iter()
+                    .map(|value| (*value).to_string())
+                    .collect(),
                 output: vec!["text".to_string()],
             },
             provenance: PricingProvenance {
@@ -503,6 +526,7 @@ mod tests {
                     extra_headers: Default::default(),
                     extra_body: Default::default(),
                     capabilities: Default::default(),
+                    compatibility: Default::default(),
                 }],
             )]),
             providers_by_key: HashMap::from([(
@@ -549,7 +573,10 @@ mod tests {
         assert_eq!(alias.provider_key.as_deref(), Some("openai"));
         assert_eq!(alias.upstream_model.as_deref(), Some("gpt-4.1"));
         assert_eq!(alias.input_cost_per_million_tokens_usd_10000, Some(12_500));
-        assert_eq!(alias.output_cost_per_million_tokens_usd_10000, Some(100_000));
+        assert_eq!(
+            alias.output_cost_per_million_tokens_usd_10000,
+            Some(100_000)
+        );
         assert_eq!(alias.context_window_tokens, Some(400_000));
         assert_eq!(alias.input_window_tokens, Some(272_000));
         assert_eq!(alias.output_window_tokens, Some(128_000));
@@ -586,6 +613,7 @@ mod tests {
                     extra_headers: Default::default(),
                     extra_body: Default::default(),
                     capabilities: Default::default(),
+                    compatibility: Default::default(),
                 }],
             )]),
             ..Default::default()
@@ -629,6 +657,7 @@ mod tests {
                         extra_headers: Default::default(),
                         extra_body: Default::default(),
                         capabilities: Default::default(),
+                        compatibility: Default::default(),
                     },
                     ModelRoute {
                         id: healthy_route_id,
@@ -643,6 +672,7 @@ mod tests {
                         capabilities: ProviderCapabilities::with_dimensions(
                             true, true, false, false, false, true, true,
                         ),
+                        compatibility: Default::default(),
                     },
                 ],
             )]),
@@ -679,7 +709,10 @@ mod tests {
         assert_eq!(items[0].provider_key.as_deref(), Some("openai"));
         assert_eq!(items[0].provider_label.as_deref(), Some("OpenAI"));
         assert_eq!(items[0].upstream_model.as_deref(), Some("healthy-upstream"));
-        assert_eq!(items[0].input_cost_per_million_tokens_usd_10000, Some(20_000));
+        assert_eq!(
+            items[0].input_cost_per_million_tokens_usd_10000,
+            Some(20_000)
+        );
         assert_eq!(items[0].context_window_tokens, Some(200_000));
         assert_eq!(items[0].input_window_tokens, None);
         assert_eq!(items[0].output_window_tokens, Some(64_000));
@@ -720,6 +753,7 @@ mod tests {
                     capabilities: ProviderCapabilities::with_dimensions(
                         true, false, false, true, false, true, true,
                     ),
+                    compatibility: Default::default(),
                 }],
             )]),
             providers_by_key: HashMap::from([(

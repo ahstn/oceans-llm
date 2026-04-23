@@ -2,9 +2,11 @@ use std::{collections::BTreeMap, env, fs, path::Path};
 
 use anyhow::{Context, bail};
 use gateway_core::{
-    AuthMode, BudgetCadence, GlobalRole, MembershipRole, Money4, ProviderCapabilities,
-    SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedBudget, SeedModel, SeedModelRoute, SeedProvider,
-    SeedTeam, SeedUser, SeedUserMembership, parse_gateway_api_key,
+    AuthMode, BudgetCadence, GlobalRole, MembershipRole, Money4, OpenAiCompatDeveloperRole,
+    OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
+    ProviderCapabilities, RouteCompatibility, SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedBudget,
+    SeedModel, SeedModelRoute, SeedProvider, SeedTeam, SeedUser, SeedUserMembership,
+    parse_gateway_api_key,
 };
 use gateway_providers::{OpenAiCompatConfig, VertexAuthConfig, VertexProviderConfig};
 use gateway_service::{ProviderIconKey, hash_gateway_key_secret, is_supported_pricing_provider_id};
@@ -383,6 +385,7 @@ impl GatewayConfig {
                             .collect::<Map<String, Value>>(),
                         extra_body: route.extra_body.clone(),
                         capabilities: route.capabilities.clone().into_capabilities(),
+                        compatibility: route.compatibility.clone().into_compatibility(),
                     })
                     .collect(),
             })
@@ -936,6 +939,8 @@ pub struct ModelRouteConfig {
     pub extra_body: Map<String, Value>,
     #[serde(default)]
     pub capabilities: RouteCapabilitiesConfig,
+    #[serde(default)]
+    pub compatibility: RouteCompatibilityConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -980,6 +985,48 @@ impl Default for RouteCapabilitiesConfig {
             vision: true,
             json_schema: true,
             developer_role: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct RouteCompatibilityConfig {
+    #[serde(default)]
+    pub openai_compat: Option<OpenAiCompatRouteCompatibilityConfig>,
+}
+
+impl RouteCompatibilityConfig {
+    fn into_compatibility(self) -> RouteCompatibility {
+        RouteCompatibility {
+            openai_compat: self
+                .openai_compat
+                .map(OpenAiCompatRouteCompatibilityConfig::into_compatibility),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct OpenAiCompatRouteCompatibilityConfig {
+    #[serde(default = "default_enabled")]
+    pub supports_store: bool,
+    #[serde(default)]
+    pub max_tokens_field: OpenAiCompatMaxTokensField,
+    #[serde(default)]
+    pub developer_role: OpenAiCompatDeveloperRole,
+    #[serde(default)]
+    pub reasoning_effort: OpenAiCompatReasoningEffort,
+    #[serde(default)]
+    pub supports_stream_usage: bool,
+}
+
+impl OpenAiCompatRouteCompatibilityConfig {
+    fn into_compatibility(self) -> OpenAiCompatRouteCompatibility {
+        OpenAiCompatRouteCompatibility {
+            supports_store: self.supports_store,
+            max_tokens_field: self.max_tokens_field,
+            developer_role: self.developer_role,
+            reasoning_effort: self.reasoning_effort,
+            supports_stream_usage: self.supports_stream_usage,
         }
     }
 }
@@ -1185,7 +1232,10 @@ fn default_vertex_api_host() -> String {
 mod tests {
     use std::{env, path::Path};
 
-    use gateway_core::{AuthMode, BudgetCadence, GlobalRole, MembershipRole, Money4};
+    use gateway_core::{
+        AuthMode, BudgetCadence, GlobalRole, MembershipRole, Money4, OpenAiCompatDeveloperRole,
+        OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
+    };
     use tempfile::tempdir;
 
     use super::GatewayConfig;
@@ -1255,6 +1305,55 @@ models:
         );
 
         GatewayConfig::from_path(&config_path).expect("config should parse");
+    }
+
+    #[test]
+    fn parses_route_openai_compatibility_config_into_seed_models() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+models:
+  - id: fast
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-4o-mini
+        compatibility:
+          openai_compat:
+            supports_store: false
+            max_tokens_field: max_tokens
+            developer_role: system
+            reasoning_effort: reasoning_object
+            supports_stream_usage: true
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let models = config.seed_models().expect("seed models");
+        let profile = models[0].routes[0]
+            .compatibility
+            .openai_compat
+            .as_ref()
+            .expect("openai compat profile");
+
+        assert!(!profile.supports_store);
+        assert_eq!(
+            profile.max_tokens_field,
+            OpenAiCompatMaxTokensField::MaxTokens
+        );
+        assert_eq!(profile.developer_role, OpenAiCompatDeveloperRole::System);
+        assert_eq!(
+            profile.reasoning_effort,
+            OpenAiCompatReasoningEffort::ReasoningObject
+        );
+        assert!(profile.supports_stream_usage);
     }
 
     #[test]

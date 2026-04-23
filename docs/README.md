@@ -6,6 +6,8 @@ This file stays in the repo as a maintainer note for the VitePress source tree.
   - [Documentation Home](index.md)
 - Site config:
   - [.vitepress/config.mts](.vitepress/config.mts)
+- Canonical provider compatibility reference:
+  - [reference/provider-api-compatibility.md](reference/provider-api-compatibility.md)
 - ADRs:
   - [adr/](adr)
 - Internal notes:

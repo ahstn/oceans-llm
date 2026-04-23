@@ -1015,6 +1015,8 @@ pub struct ModelRoute {
     pub extra_body: Map<String, Value>,
     #[serde(default = "ProviderCapabilities::all_enabled")]
     pub capabilities: ProviderCapabilities,
+    #[serde(default)]
+    pub compatibility: RouteCompatibility,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1037,6 +1039,8 @@ pub struct ProviderRequestContext {
     pub extra_body: Map<String, Value>,
     #[serde(default)]
     pub request_headers: BTreeMap<String, String>,
+    #[serde(default)]
+    pub compatibility: RouteCompatibility,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -1131,6 +1135,63 @@ const fn default_true() -> bool {
     true
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct RouteCompatibility {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub openai_compat: Option<OpenAiCompatRouteCompatibility>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct OpenAiCompatRouteCompatibility {
+    #[serde(default = "default_true")]
+    pub supports_store: bool,
+    #[serde(default)]
+    pub max_tokens_field: OpenAiCompatMaxTokensField,
+    #[serde(default)]
+    pub developer_role: OpenAiCompatDeveloperRole,
+    #[serde(default)]
+    pub reasoning_effort: OpenAiCompatReasoningEffort,
+    #[serde(default)]
+    pub supports_stream_usage: bool,
+}
+
+impl Default for OpenAiCompatRouteCompatibility {
+    fn default() -> Self {
+        Self {
+            supports_store: true,
+            max_tokens_field: OpenAiCompatMaxTokensField::default(),
+            developer_role: OpenAiCompatDeveloperRole::default(),
+            reasoning_effort: OpenAiCompatReasoningEffort::default(),
+            supports_stream_usage: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum OpenAiCompatMaxTokensField {
+    #[default]
+    MaxCompletionTokens,
+    MaxTokens,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum OpenAiCompatDeveloperRole {
+    #[default]
+    Developer,
+    System,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum OpenAiCompatReasoningEffort {
+    #[default]
+    Passthrough,
+    Omit,
+    ReasoningObject,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SeedProvider {
     pub provider_key: String,
@@ -1152,6 +1213,8 @@ pub struct SeedModelRoute {
     pub extra_body: Map<String, Value>,
     #[serde(default = "ProviderCapabilities::all_enabled")]
     pub capabilities: ProviderCapabilities,
+    #[serde(default)]
+    pub compatibility: RouteCompatibility,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

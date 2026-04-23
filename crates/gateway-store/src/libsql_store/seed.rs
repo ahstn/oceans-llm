@@ -151,20 +151,23 @@ impl LibsqlStore {
                 let extra_headers_json = serialize_json(&route.extra_headers)?;
                 let extra_body_json = serialize_json(&route.extra_body)?;
                 let capabilities_json = serialize_json(&route.capabilities)?;
+                let compatibility_json = serialize_json(&route.compatibility)?;
 
                 self.connection
                     .execute(
                         r#"
                         INSERT INTO model_routes (
                             id, model_id, provider_key, upstream_model, priority, weight, enabled,
-                            extra_headers_json, extra_body_json, capabilities_json, created_at, updated_at
-                        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)
+                            extra_headers_json, extra_body_json, capabilities_json, compatibility_json,
+                            created_at, updated_at
+                        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12)
                         ON CONFLICT(id) DO UPDATE SET
                             weight = excluded.weight,
                             enabled = excluded.enabled,
                             extra_headers_json = excluded.extra_headers_json,
                             extra_body_json = excluded.extra_body_json,
                             capabilities_json = excluded.capabilities_json,
+                            compatibility_json = excluded.compatibility_json,
                             updated_at = excluded.updated_at
                         "#,
                         libsql::params![
@@ -178,6 +181,7 @@ impl LibsqlStore {
                             extra_headers_json,
                             extra_body_json,
                             capabilities_json,
+                            compatibility_json,
                             now_unix
                         ],
                     )

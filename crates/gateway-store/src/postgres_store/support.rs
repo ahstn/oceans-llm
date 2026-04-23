@@ -65,7 +65,10 @@ pub(super) fn decode_model_route(row: &PgRow) -> Result<ModelRoute, StoreError> 
     let extra_headers_json: String = row.try_get(7).map_err(to_query_error)?;
     let extra_body_json: String = row.try_get(8).map_err(to_query_error)?;
     let capabilities_json: String = row.try_get(9).map_err(to_query_error)?;
+    let compatibility_json: String = row.try_get(10).map_err(to_query_error)?;
     let capabilities = serde_json::from_str(&capabilities_json)
+        .map_err(|error| StoreError::Serialization(error.to_string()))?;
+    let compatibility = serde_json::from_str(&compatibility_json)
         .map_err(|error| StoreError::Serialization(error.to_string()))?;
 
     Ok(ModelRoute {
@@ -79,6 +82,7 @@ pub(super) fn decode_model_route(row: &PgRow) -> Result<ModelRoute, StoreError> 
         extra_headers: json_object_from_str(&extra_headers_json)?,
         extra_body: json_object_from_str(&extra_body_json)?,
         capabilities,
+        compatibility,
     })
 }
 

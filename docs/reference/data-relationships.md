@@ -1,6 +1,6 @@
 # Data Relationships
 
-`See also`: [Identity and Access](../access/identity-and-access.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [ADR: Identity Foundation for Users, Teams, and API Key Ownership](../adr/2026-03-05-identity-foundation.md)
+`See also`: [Identity and Access](../access/identity-and-access.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](provider-api-compatibility.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [ADR: Identity Foundation for Users, Teams, and API Key Ownership](../adr/2026-03-05-identity-foundation.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md)
 
 This document is schema-oriented. It describes the persistent relationships that are hard to infer from a single file, but it does not try to restate every runtime rule owned by neighboring docs.
 
@@ -44,6 +44,13 @@ This document is schema-oriented. It describes the persistent relationships that
 - `model_routes`: execution targets for provider-backed models only
 - `api_key_model_grants`: model grants attached to an API key
 - `audit_logs`: control-plane audit baseline
+
+`model_routes` stores two distinct route execution metadata documents:
+
+- `capabilities_json` controls whether the route may execute a request
+- `compatibility_json` controls declared provider API compatibility transforms after route selection
+
+Compatibility metadata is not a provider config fallback and is not an `extra_body` convention.
 
 ### Identity and Access Tables
 

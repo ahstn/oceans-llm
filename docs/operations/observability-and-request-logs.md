@@ -1,6 +1,6 @@
 # Observability and Request Logs
 
-`See also`: [Data Relationships](../reference/data-relationships.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Admin Control Plane](../access/admin-control-plane.md), [Deploy and Operations](../setup/deploy-and-operations.md), [ADR: OTLP-First Observability and Payload-Backed Request Logs](../adr/2026-03-15-otlp-observability-and-request-log-payloads.md)
+`See also`: [Data Relationships](../reference/data-relationships.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Admin Control Plane](../access/admin-control-plane.md), [Deploy and Operations](../setup/deploy-and-operations.md), [ADR: OTLP-First Observability and Payload-Backed Request Logs](../adr/2026-03-15-otlp-observability-and-request-log-payloads.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md)
 
 This document describes the live observability contract for the gateway.
 
@@ -98,6 +98,10 @@ The stream payload contract is incremental rather than chunk-local:
 - SSE `data:` frames are reassembled across chunk boundaries
 - both `data:` and `data: ` forms are accepted
 - the latest coherent `usage` object is retained for request-log and ledger work
+
+Request-log payloads are user-visible artifacts. They do not persist the transformed outbound provider request body produced by route compatibility profiles.
+
+Provider stream transcripts can include normalized compatibility output, such as promoted usage or canonical reasoning deltas, because that normalized stream is what the gateway returns to callers.
 
 ## Redaction and Truncation Boundaries
 
