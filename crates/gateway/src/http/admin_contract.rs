@@ -667,6 +667,7 @@ pub struct RequestLogPayloadView {
         crate::http::identity::transfer_identity_team_member,
         crate::http::identity::get_auth_session,
         crate::http::identity::login_with_password,
+        crate::http::identity::logout_current_session,
         crate::http::identity::change_password,
         crate::http::identity::create_identity_user,
         crate::http::identity::update_identity_user,
@@ -763,6 +764,7 @@ mod tests {
         assert!(paths.contains_key("/api/v1/admin/observability/leaderboard"));
         assert!(paths.contains_key("/api/v1/admin/observability/request-logs/{request_log_id}"));
         assert!(paths.contains_key("/api/v1/auth/session"));
+        assert!(paths.contains_key("/api/v1/auth/logout"));
 
         assert!(
             components

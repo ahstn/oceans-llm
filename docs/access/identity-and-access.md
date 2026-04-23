@@ -40,6 +40,15 @@ Important rules:
 - the last active platform admin cannot be deactivated or demoted
 - the bootstrap admin stays out of normal user-management views
 
+## Admin Session Lifecycle
+
+Admin sessions are durable server-side records referenced by the `ogw_session` browser cookie.
+
+- normal sign-out revokes only the current cookie-backed session
+- logout is idempotent and clears the browser cookie even when the session is already gone
+- user lifecycle actions such as deactivation can revoke every active session for that user
+- expired, revoked, missing, or disabled-user sessions resolve as unauthenticated and return the operator to sign-in
+
 ## Bootstrap Admin
 
 Bootstrap admin is the first control-plane access path, not a normal user-management path.

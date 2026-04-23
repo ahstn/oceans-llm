@@ -19,6 +19,7 @@ import type {
   InvitationStateView,
   LeaderboardRange,
   LeaderboardView,
+  LogoutResult,
   ModelPageView,
   PasswordInviteResult,
   PasswordLoginInput,
@@ -306,6 +307,11 @@ export async function changePassword(
 ): Promise<ApiEnvelope<AuthSessionView>> {
   const client = createGatewayApiClient()
   return unwrapGatewayResponse(await client.POST('/api/v1/auth/password/change', { body: input }))
+}
+
+export async function logoutCurrentSession(): Promise<ApiEnvelope<LogoutResult>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(await client.POST('/api/v1/auth/logout'))
 }
 
 export async function listUsers(): Promise<ApiEnvelope<IdentityUsersPayload>> {

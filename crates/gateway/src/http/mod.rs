@@ -116,6 +116,7 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
         )
         .route("/api/v1/auth/session", get(get_auth_session))
         .route("/api/v1/auth/login/password", post(login_with_password))
+        .route("/api/v1/auth/logout", post(logout_current_session))
         .route("/api/v1/auth/password/change", post(change_password))
         .route(
             "/api/v1/auth/invitations/{token}",

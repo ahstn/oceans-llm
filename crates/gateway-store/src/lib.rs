@@ -1494,13 +1494,45 @@ mod tests {
             )
             .await
             .expect("create session");
+        let other_session = store
+            .create_user_session(
+                Uuid::new_v4(),
+                member.user_id,
+                "other-token-hash",
+                now + Duration::days(1),
+                now,
+            )
+            .await
+            .expect("create second session");
+        store
+            .revoke_user_session(session.session_id, now)
+            .await
+            .expect("revoke one session");
+        assert!(
+            store
+                .get_user_session(session.session_id)
+                .await
+                .expect("load revoked session")
+                .expect("session exists")
+                .revoked_at
+                .is_some()
+        );
+        assert!(
+            store
+                .get_user_session(other_session.session_id)
+                .await
+                .expect("load other session")
+                .expect("other session exists")
+                .revoked_at
+                .is_none()
+        );
         store
             .revoke_user_sessions(member.user_id, now)
             .await
             .expect("revoke sessions");
         assert!(
             store
-                .get_user_session(session.session_id)
+                .get_user_session(other_session.session_id)
                 .await
                 .expect("load session")
                 .expect("session exists")

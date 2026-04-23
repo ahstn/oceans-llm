@@ -5824,6 +5824,140 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn logout_revokes_only_current_session_and_clears_cookie() {
+        let (app, store, _) =
+            build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;
+        ensure_bootstrap_admin(
+            &store,
+            &BootstrapAdminConfig {
+                enabled: true,
+                email: "admin@local".to_string(),
+                password: "literal.admin".to_string(),
+                require_password_change: false,
+            },
+        )
+        .await
+        .expect("bootstrap admin");
+
+        let login = |app: Router| async move {
+            app.oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/auth/login/password")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "email": "admin@local",
+                            "password": "admin"
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("login response")
+        };
+
+        let first_login = login(app.clone()).await;
+        assert_eq!(first_login.status(), StatusCode::OK);
+        let first_cookie = set_cookie_header(&first_login);
+        let second_login = login(app.clone()).await;
+        assert_eq!(second_login.status(), StatusCode::OK);
+        let second_cookie = set_cookie_header(&second_login);
+
+        let logout = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/auth/logout")
+                    .header("cookie", &first_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("logout response");
+        assert_eq!(logout.status(), StatusCode::OK);
+        let clear_cookie = set_cookie_header(&logout);
+        assert!(clear_cookie.starts_with("ogw_session=;"));
+        assert!(clear_cookie.contains("Max-Age=0"));
+        assert_eq!(read_json(logout).await["data"]["status"], "ok");
+
+        let stale_session = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/v1/auth/session")
+                    .header("cookie", &first_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("stale session response");
+        assert_eq!(stale_session.status(), StatusCode::OK);
+        assert_eq!(read_json(stale_session).await["data"], Value::Null);
+
+        let protected_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/v1/admin/api-keys")
+                    .header("cookie", &first_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("protected response");
+        assert_eq!(protected_response.status(), StatusCode::UNAUTHORIZED);
+
+        let active_session = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/v1/auth/session")
+                    .header("cookie", &second_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("active session response");
+        assert_eq!(active_session.status(), StatusCode::OK);
+        assert_eq!(
+            read_json(active_session).await["data"]["user"]["email"],
+            "admin@local"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn logout_is_idempotent_for_missing_and_invalid_session_cookies() {
+        let (app, _store, _) =
+            build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;
+
+        for cookie in [None, Some("ogw_session=not-a-signed-token")] {
+            let mut request = Request::builder().method("POST").uri("/api/v1/auth/logout");
+            if let Some(cookie) = cookie {
+                request = request.header("cookie", cookie);
+            }
+            let response = app
+                .clone()
+                .oneshot(request.body(Body::empty()).expect("request"))
+                .await
+                .expect("response");
+
+            assert_eq!(response.status(), StatusCode::OK);
+            let clear_cookie = set_cookie_header(&response);
+            assert!(clear_cookie.starts_with("ogw_session=;"));
+            assert!(clear_cookie.contains("Max-Age=0"));
+            assert_eq!(read_json(response).await["data"]["status"], "ok");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn forced_password_change_can_be_completed_and_old_password_stops_working() {
         let (app, store, _) =
             build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;

@@ -18,6 +18,13 @@ import { AppShell } from '@/components/layout/app-shell'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { getAuthSession } from '@/server/admin-data.functions'
 import globalsCss from '@/styles/globals.css?url'
+import {
+  DEFAULT_SIGNED_IN_PATH,
+  buildRedirectTarget,
+  isPlatformAdminSession,
+  isPublicAdminRoute,
+  normalizeAdminPath,
+} from '@/routes/-auth-routing'
 
 const loadAuthSession = createIsomorphicFn()
   .server(async () => {
@@ -31,36 +38,37 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     const currentPath = normalizeAdminPath(location.pathname)
     const isPublicRoute = isPublicAdminRoute(currentPath)
     const { data: session } = await loadAuthSession()
+    const adminSession = isPlatformAdminSession(session) ? session : null
 
     if (isPublicRoute) {
-      if (currentPath === '/login' && session) {
+      if (currentPath === '/login' && adminSession) {
         throw redirect({
-          to: session.must_change_password ? '/change-password' : '/api-keys',
+          to: adminSession.must_change_password ? '/change-password' : DEFAULT_SIGNED_IN_PATH,
         })
       }
 
-      if (currentPath === '/change-password' && !session) {
+      if (currentPath === '/change-password' && !adminSession) {
         throw redirect({
           to: '/login',
           search: { redirect: '/change-password' },
         })
       }
 
-      return { session }
+      return { session: adminSession }
     }
 
-    if (!session) {
+    if (!adminSession) {
       throw redirect({
         to: '/login',
         search: { redirect: buildRedirectTarget(location.pathname, location.search) },
       })
     }
 
-    if (session.must_change_password && currentPath !== '/change-password') {
+    if (adminSession.must_change_password && currentPath !== '/change-password') {
       throw redirect({ to: '/change-password' })
     }
 
-    return { session }
+    return { session: adminSession }
   },
   head: () => ({
     meta: [
@@ -102,33 +110,6 @@ function RootComponent() {
       ) : null}
     </RootDocument>
   )
-}
-
-function normalizeAdminPath(pathname: string) {
-  return pathname.replace(/^\/admin(?=\/|$)/, '') || '/'
-}
-
-function isPublicAdminRoute(currentPath: string) {
-  return (
-    currentPath.startsWith('/invite/') ||
-    currentPath.startsWith('/account-ready') ||
-    currentPath === '/login' ||
-    currentPath === '/change-password'
-  )
-}
-
-function buildRedirectTarget(pathname: string, search: Record<string, unknown>) {
-  const currentPath = normalizeAdminPath(pathname)
-  const query = new URLSearchParams()
-
-  for (const [key, value] of Object.entries(search)) {
-    if (typeof value === 'string') {
-      query.set(key, value)
-    }
-  }
-
-  const searchString = query.toString()
-  return searchString ? `${currentPath}?${searchString}` : currentPath
 }
 
 function RootDocument({ children }: { children: ReactNode }) {

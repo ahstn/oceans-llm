@@ -198,6 +198,11 @@ pub trait GatewayStore:
         user_id: Uuid,
         revoked_at: OffsetDateTime,
     ) -> Result<(), StoreError>;
+    async fn revoke_user_session(
+        &self,
+        session_id: Uuid,
+        revoked_at: OffsetDateTime,
+    ) -> Result<(), StoreError>;
     async fn get_user_oidc_auth(
         &self,
         oidc_provider_id: &str,
@@ -1060,6 +1065,14 @@ impl GatewayStore for AnyStore {
         revoked_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
         dispatch_store!(self, revoke_user_sessions(user_id, revoked_at))
+    }
+
+    async fn revoke_user_session(
+        &self,
+        session_id: Uuid,
+        revoked_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(self, revoke_user_session(session_id, revoked_at))
     }
 
     async fn get_user_oidc_auth(
