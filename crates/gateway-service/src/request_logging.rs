@@ -4,7 +4,7 @@ use gateway_core::{
     ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, ChatCompletionsRequest, GatewayError,
     IdentityRepository, OpenAiErrorEnvelope, RequestLogDetail, RequestLogPage,
     RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestTags,
-    SseEventParser,
+    ResponsesRequest, SseEventParser,
 };
 
 use crate::{REQUEST_LOG_MODEL_ICON_KEY, REQUEST_LOG_PROVIDER_ICON_KEY, RequestLogIconMetadata};
@@ -23,6 +23,7 @@ pub struct ChatRequestLogContext {
     pub request_id: String,
     pub requested_model_key: String,
     pub resolved_model_key: String,
+    pub operation: &'static str,
     pub request_tags: RequestTags,
     request_json: Option<Value>,
     request_payload_truncated: bool,
@@ -68,7 +69,7 @@ pub struct UsageSummary {
 }
 
 #[derive(Debug, Clone)]
-struct ChatCompletionLogSummary {
+struct RequestLogSummary {
     provider_key: String,
     icon_metadata: RequestLogIconMetadata,
     stream: bool,
@@ -78,7 +79,7 @@ struct ChatCompletionLogSummary {
     usage: UsageSummary,
 }
 
-impl ChatCompletionLogSummary {
+impl RequestLogSummary {
     fn success(
         provider_key: String,
         icon_metadata: RequestLogIconMetadata,
@@ -117,6 +118,16 @@ impl ChatCompletionLogSummary {
     }
 }
 
+struct OperationRequestLogInput<'a, T> {
+    operation: &'static str,
+    request_id: &'a str,
+    requested_model_key: &'a str,
+    resolved_model_key: &'a str,
+    request: &'a T,
+    request_headers: &'a BTreeMap<String, String>,
+    request_tags: RequestTags,
+}
+
 impl UsageSummary {
     #[must_use]
     pub fn has_usage(self) -> bool {
@@ -153,7 +164,7 @@ impl StreamResponseCollector {
             let parsed = serde_json::from_str::<Value>(payload).ok();
             if let Some(usage) = parsed
                 .as_ref()
-                .and_then(|value| value.get("usage"))
+                .and_then(usage_value_from_stream_event)
                 .filter(|usage| !usage.is_null())
             {
                 self.usage = Some(usage.clone());
@@ -232,6 +243,14 @@ fn stream_failure_from_value(value: &Value) -> Option<StreamFailureSummary> {
     })
 }
 
+fn usage_value_from_stream_event(value: &Value) -> Option<&Value> {
+    value.get("usage").or_else(|| {
+        value
+            .get("response")
+            .and_then(|response| response.get("usage"))
+    })
+}
+
 trait PayloadResultExt {
     fn map_truncated(self, additional_truncated: bool) -> (Value, bool);
 }
@@ -275,15 +294,55 @@ where
         request_headers: &BTreeMap<String, String>,
         request_tags: RequestTags,
     ) -> ChatRequestLogContext {
+        self.begin_operation_request(OperationRequestLogInput {
+            operation: "chat_completions",
+            request_id,
+            requested_model_key,
+            resolved_model_key,
+            request,
+            request_headers,
+            request_tags,
+        })
+    }
+
+    #[must_use]
+    pub fn begin_responses_request(
+        &self,
+        request_id: &str,
+        requested_model_key: &str,
+        resolved_model_key: &str,
+        request: &ResponsesRequest,
+        request_headers: &BTreeMap<String, String>,
+        request_tags: RequestTags,
+    ) -> ChatRequestLogContext {
+        self.begin_operation_request(OperationRequestLogInput {
+            operation: "responses",
+            request_id,
+            requested_model_key,
+            resolved_model_key,
+            request,
+            request_headers,
+            request_tags,
+        })
+    }
+
+    fn begin_operation_request<T>(
+        &self,
+        input: OperationRequestLogInput<'_, T>,
+    ) -> ChatRequestLogContext
+    where
+        T: serde::Serialize,
+    {
         let (request_json, request_payload_truncated) = if self
             .payload_policy
             .should_capture_payloads()
         {
-            let sanitized_headers = request_headers
+            let sanitized_headers = input
+                .request_headers
                 .iter()
                 .map(|(key, value)| (key.clone(), Value::String(redact_header_value(key, value))))
                 .collect::<Map<_, _>>();
-            let request_body = serde_json::to_value(request).unwrap_or_else(|_| json!({}));
+            let request_body = serde_json::to_value(input.request).unwrap_or_else(|_| json!({}));
             let redacted = redact_json_value_with_policy(
                 &json!({
                     "headers": sanitized_headers,
@@ -301,10 +360,11 @@ where
 
         ChatRequestLogContext {
             request_log_id: Uuid::new_v4(),
-            request_id: request_id.to_string(),
-            requested_model_key: requested_model_key.to_string(),
-            resolved_model_key: resolved_model_key.to_string(),
-            request_tags,
+            request_id: input.request_id.to_string(),
+            requested_model_key: input.requested_model_key.to_string(),
+            resolved_model_key: input.resolved_model_key.to_string(),
+            operation: input.operation,
+            request_tags: input.request_tags,
             request_json,
             request_payload_truncated,
         }
@@ -362,7 +422,7 @@ where
         self.persist_chat_log(
             api_key,
             context,
-            ChatCompletionLogSummary::success(
+            RequestLogSummary::success(
                 provider_key.to_string(),
                 icon_metadata,
                 false,
@@ -404,7 +464,7 @@ where
         self.persist_chat_log(
             api_key,
             context,
-            ChatCompletionLogSummary::failure(
+            RequestLogSummary::failure(
                 provider_key.to_string(),
                 icon_metadata,
                 false,
@@ -443,7 +503,7 @@ where
                 (None, false)
             };
         let summary = match failure {
-            Some(failure) => ChatCompletionLogSummary::failure(
+            Some(failure) => RequestLogSummary::failure(
                 provider_key,
                 icon_metadata.clone(),
                 true,
@@ -451,13 +511,9 @@ where
                 failure.status_code,
                 failure.error_code,
             ),
-            None => ChatCompletionLogSummary::success(
-                provider_key,
-                icon_metadata,
-                true,
-                latency_ms,
-                usage,
-            ),
+            None => {
+                RequestLogSummary::success(provider_key, icon_metadata, true, latency_ms, usage)
+            }
         };
         self.persist_chat_log(
             api_key,
@@ -490,7 +546,7 @@ where
         &self,
         api_key: &AuthenticatedApiKey,
         context: &ChatRequestLogContext,
-        summary: ChatCompletionLogSummary,
+        summary: RequestLogSummary,
         response_json: Option<Value>,
         response_payload_truncated: bool,
     ) -> Result<LoggedRequest, GatewayError> {
@@ -503,8 +559,12 @@ where
             });
         }
 
-        let metadata =
-            request_log_metadata(summary.stream, &summary.icon_metadata, &self.payload_policy);
+        let metadata = request_log_metadata(
+            context.operation,
+            summary.stream,
+            &summary.icon_metadata,
+            &self.payload_policy,
+        );
         let has_payload = self.payload_policy.should_capture_payloads()
             && context.request_json.is_some()
             && response_json.is_some();
@@ -554,8 +614,14 @@ pub fn usage_summary_from_value(value: Option<&Value>) -> UsageSummary {
         return UsageSummary::default();
     };
 
-    let prompt_tokens = usage.get("prompt_tokens").and_then(Value::as_i64);
-    let completion_tokens = usage.get("completion_tokens").and_then(Value::as_i64);
+    let prompt_tokens = usage
+        .get("prompt_tokens")
+        .or_else(|| usage.get("input_tokens"))
+        .and_then(Value::as_i64);
+    let completion_tokens = usage
+        .get("completion_tokens")
+        .or_else(|| usage.get("output_tokens"))
+        .and_then(Value::as_i64);
     let total_tokens = match usage.get("total_tokens").and_then(Value::as_i64) {
         some @ Some(_) => some,
         None => match (prompt_tokens, completion_tokens) {
@@ -572,6 +638,7 @@ pub fn usage_summary_from_value(value: Option<&Value>) -> UsageSummary {
 }
 
 fn request_log_metadata(
+    operation: &'static str,
     stream: bool,
     icon_metadata: &RequestLogIconMetadata,
     payload_policy: &RequestLogPayloadPolicy,
@@ -579,7 +646,7 @@ fn request_log_metadata(
     let mut metadata = Map::new();
     metadata.insert(
         "operation".to_string(),
-        Value::String("chat_completions".to_string()),
+        Value::String(operation.to_string()),
     );
     metadata.insert("stream".to_string(), Value::Bool(stream));
     metadata.insert(

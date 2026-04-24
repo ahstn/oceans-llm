@@ -5,8 +5,9 @@ use gateway_core::{
     ChatCompletionsRequest, GatewayError, GatewayModel, IdentityRepository, ModelRepository,
     ModelRoute, Money4, PricingCatalogRepository, PricingResolution, PricingUnpricedReason,
     ProviderRepository, RequestLogDetail, RequestLogPage, RequestLogQuery, RequestLogRecord,
-    RequestLogRepository, RequestTags, ResolvedModelPricing, RouteError, RoutePlanner, StoreHealth,
-    TeamBudgetRecord, UsageLedgerRecord, UsagePricingStatus, UserBudgetRecord,
+    RequestLogRepository, RequestTags, ResolvedModelPricing, ResponsesRequest, RouteError,
+    RoutePlanner, StoreHealth, TeamBudgetRecord, UsageLedgerRecord, UsagePricingStatus,
+    UserBudgetRecord,
 };
 use serde_json::{Value, json};
 use time::OffsetDateTime;
@@ -200,6 +201,26 @@ where
         request_tags: RequestTags,
     ) -> ChatRequestLogContext {
         self.request_logging.begin_chat_request(
+            request_id,
+            requested_model_key,
+            resolved_model_key,
+            request,
+            request_headers,
+            request_tags,
+        )
+    }
+
+    #[must_use]
+    pub fn begin_responses_request_log(
+        &self,
+        request_id: &str,
+        requested_model_key: &str,
+        resolved_model_key: &str,
+        request: &ResponsesRequest,
+        request_headers: &std::collections::BTreeMap<String, String>,
+        request_tags: RequestTags,
+    ) -> ChatRequestLogContext {
+        self.request_logging.begin_responses_request(
             request_id,
             requested_model_key,
             resolved_model_key,
@@ -475,8 +496,14 @@ fn usage_summary_from_value(value: Option<&Value>) -> Result<UsageSummary, Gatew
         return Ok(UsageSummary::default());
     };
 
-    let prompt_tokens = usage.get("prompt_tokens").and_then(Value::as_i64);
-    let completion_tokens = usage.get("completion_tokens").and_then(Value::as_i64);
+    let prompt_tokens = usage
+        .get("prompt_tokens")
+        .or_else(|| usage.get("input_tokens"))
+        .and_then(Value::as_i64);
+    let completion_tokens = usage
+        .get("completion_tokens")
+        .or_else(|| usage.get("output_tokens"))
+        .and_then(Value::as_i64);
     let total_tokens = match usage.get("total_tokens").and_then(Value::as_i64) {
         some @ Some(_) => some,
         None => match (prompt_tokens, completion_tokens) {
@@ -917,6 +944,7 @@ mod tests {
             extra_headers: Map::new(),
             extra_body: Map::new(),
             capabilities: ProviderCapabilities::all_enabled(),
+            compatibility: Default::default(),
         }
     }
 

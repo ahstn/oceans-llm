@@ -946,6 +946,27 @@ impl PostgresStore {
         Ok(())
     }
 
+    pub async fn revoke_user_session(
+        &self,
+        session_id: Uuid,
+        revoked_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        sqlx::query(
+            r#"
+            UPDATE user_sessions
+            SET revoked_at = $1
+            WHERE session_id = $2
+              AND revoked_at IS NULL
+            "#,
+        )
+        .bind(revoked_at.unix_timestamp())
+        .bind(session_id.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(to_write_error)?;
+        Ok(())
+    }
+
     pub async fn get_user_oidc_auth(
         &self,
         oidc_provider_id: &str,

@@ -19,7 +19,7 @@ For the generated contract and artifact workflow, use [admin-api-contract-workfl
 
 These areas are backed by real gateway APIs today:
 
-- sign-in, session lookup, and password rotation
+- sign-in, session lookup, current-session logout, and password rotation
 - API key inventory, creation, and revocation
 - identity users and lifecycle management
 - identity teams and member transfer or removal workflows
@@ -80,26 +80,26 @@ Operators can:
 - pre-provision OIDC users against enabled providers
 - remove team members
 - transfer team members between teams with an explicit destination role
+- sign out of the current browser session
 
 Current limits:
 
-- no admin logout flow yet
 - owner memberships stay blocked from removal or transfer in this slice
 - auth-mode switching is limited to invited users
 - OIDC is still development-style
 
 ## Admin Auth and Session Behavior
 
-Current session behavior is mostly implicit:
+Current session behavior is cookie-backed and operator-visible:
 
 - browser cookie state carries the admin session
 - `/api/v1/auth/session` is the machine-readable session lookup
+- `/api/v1/auth/logout` revokes the current cookie-backed session and clears the browser cookie
 - expired or missing session state sends the operator back through the auth flow
 - bootstrap admin and regular admin accounts share the same session mechanics after sign-in
 
 What is still missing:
 
-- a dedicated logout shell
 - broader session-management UI
 
 ## Spend and Observability Workflows Available Today
@@ -124,8 +124,6 @@ Current limits:
 
 ## Current Gaps
 
-- no logout or richer session management yet:
-  - [issue #34](https://github.com/ahstn/oceans-llm/issues/34)
 - OIDC still development-style:
   - [oidc-and-sso-status.md](oidc-and-sso-status.md)
 - Models page still preview-backed:

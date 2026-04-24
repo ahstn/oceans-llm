@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { loginAdminWithPassword } from '@/server/admin-data.functions'
+import { postLoginAdminHref } from '@/routes/-auth-routing'
 
 export const Route = createFileRoute('/login')({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -29,13 +30,7 @@ function LoginPage() {
       try {
         const response = await loginAdminWithPassword({ data: { email, password } })
         toast.success('Signed in')
-        const target = response.data.must_change_password
-          ? search.redirect
-            ? `/admin/change-password?redirect=${encodeURIComponent(search.redirect)}`
-            : '/admin/change-password'
-          : `/admin${search.redirect ?? '/api-keys'}`
-
-        window.location.assign(target)
+        window.location.assign(postLoginAdminHref(response.data, search.redirect))
       } catch (error) {
         toast.error(error instanceof Error ? error.message : 'Unable to sign in')
       }

@@ -13,6 +13,7 @@ import {
   listSpendBudgets,
   listTeams,
   listUsers,
+  logoutCurrentSession,
   reactivateUser,
   removeTeamMember,
   revokeApiKey,
@@ -520,6 +521,13 @@ describe('server-side admin data wrappers', () => {
       }
     })
     POST.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/auth/logout') {
+        return {
+          data: { data: { status: 'ok' }, meta: { generated_at: '2026-03-10T11:32:00Z' } },
+          response: { status: 200 },
+        }
+      }
+
       if (path === '/api/v1/admin/identity/users/{user_id}/reset-onboarding') {
         return {
           data: {
@@ -682,5 +690,11 @@ describe('server-side admin data wrappers', () => {
       params: { path: { user_id: 'user_1' } },
       body: { global_role: 'platform_admin' },
     })
+  })
+
+  it('wires logout to the documented gateway path', async () => {
+    await expect(logoutCurrentSession()).resolves.toMatchObject({ data: { status: 'ok' } })
+
+    expect(POST).toHaveBeenCalledWith('/api/v1/auth/logout')
   })
 })

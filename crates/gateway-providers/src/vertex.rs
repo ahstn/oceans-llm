@@ -5,8 +5,9 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use futures_util::StreamExt;
 use gateway_core::{
-    CoreChatRequest, CoreEmbeddingsRequest, ProviderCapabilities, ProviderClient, ProviderError,
-    ProviderRequestContext, ProviderStream, SseEventParser, Utf8ChunkDecoder,
+    CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest, ProviderCapabilities,
+    ProviderClient, ProviderError, ProviderRequestContext, ProviderStream, SseEventParser,
+    Utf8ChunkDecoder,
 };
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
@@ -264,6 +265,26 @@ impl ProviderClient for VertexProvider {
     ) -> Result<Value, ProviderError> {
         Err(ProviderError::InvalidRequest(
             "vertex embeddings are not supported in this v1 runtime".to_string(),
+        ))
+    }
+
+    async fn responses(
+        &self,
+        _request: &CoreResponsesRequest,
+        _context: &ProviderRequestContext,
+    ) -> Result<Value, ProviderError> {
+        Err(ProviderError::InvalidRequest(
+            "vertex responses are not supported in this v1 runtime".to_string(),
+        ))
+    }
+
+    async fn responses_stream(
+        &self,
+        _request: &CoreResponsesRequest,
+        _context: &ProviderRequestContext,
+    ) -> Result<ProviderStream, ProviderError> {
+        Err(ProviderError::InvalidRequest(
+            "vertex responses streaming is not supported in this v1 runtime".to_string(),
         ))
     }
 }
@@ -1303,6 +1324,7 @@ mod tests {
             extra_headers: Map::new(),
             extra_body: Map::new(),
             request_headers: std::collections::BTreeMap::new(),
+            compatibility: Default::default(),
         }
     }
 

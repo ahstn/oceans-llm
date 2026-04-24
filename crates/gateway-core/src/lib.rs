@@ -14,13 +14,14 @@ pub use domain::{
     BudgetAlertHistoryPage, BudgetAlertHistoryQuery, BudgetAlertHistoryRecord, BudgetAlertRecord,
     BudgetCadence, BudgetWindow, GatewayModel, GlobalRole, IdentityUserRecord, MembershipRole,
     ModelAccessMode, ModelPricingRecord, ModelRoute, Money4, NewApiKeyRecord, OidcProviderRecord,
-    PasswordInvitationRecord, PricingCatalogCacheRecord, PricingLimits, PricingModalities,
-    PricingProvenance, PricingResolution, PricingUnpricedReason, ProviderCapabilities,
-    ProviderConnection, ProviderRequestContext, RequestLogDetail, RequestLogPage,
-    RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestTag, RequestTags,
-    ResolvedModelPricing, SYSTEM_BOOTSTRAP_ADMIN_EMAIL, SYSTEM_BOOTSTRAP_ADMIN_USER_ID,
-    SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedBudget, SeedModel,
-    SeedModelRoute, SeedProvider, SeedTeam, SeedUser, SeedUserMembership,
+    OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
+    OpenAiCompatRouteCompatibility, PasswordInvitationRecord, PricingCatalogCacheRecord,
+    PricingLimits, PricingModalities, PricingProvenance, PricingResolution, PricingUnpricedReason,
+    ProviderCapabilities, ProviderConnection, ProviderRequestContext, RequestLogDetail,
+    RequestLogPage, RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestTag,
+    RequestTags, ResolvedModelPricing, RouteCompatibility, SYSTEM_BOOTSTRAP_ADMIN_EMAIL,
+    SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY, SeedApiKey,
+    SeedBudget, SeedModel, SeedModelRoute, SeedProvider, SeedTeam, SeedUser, SeedUserMembership,
     SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord,
     TeamBudgetRecord, TeamMembershipRecord, TeamRecord, UsageLeaderboardBucketRecord,
     UsageLeaderboardUserRecord, UsageLedgerRecord, UsagePricingStatus, UserBudgetRecord,
@@ -31,14 +32,17 @@ pub use error::{AuthError, GatewayError, ProviderError, RouteError, StoreError};
 pub use protocol::core::{
     ChatMessage as CoreChatMessage, ChatRequest as CoreChatRequest,
     EmbeddingsRequest as CoreEmbeddingsRequest, RequestRequirements as CoreRequestRequirements,
+    ResponsesRequest as CoreResponsesRequest,
 };
 pub use protocol::openai::{
     ChatCompletionsRequest, EmbeddingsRequest, ModelsListResponse, OpenAiErrorBody,
-    OpenAiErrorEnvelope,
+    OpenAiErrorEnvelope, ResponseOutputItem, ResponseUsage, ResponsesRequest, ResponsesResponse,
+    ResponsesStreamEvent,
 };
 pub use protocol::translate::{
-    core_chat_request_to_openai, core_embeddings_request_to_openai, openai_chat_request_to_core,
-    openai_embeddings_request_to_core,
+    core_chat_request_to_openai, core_embeddings_request_to_openai,
+    core_responses_request_to_openai, openai_chat_request_to_core,
+    openai_embeddings_request_to_core, openai_responses_request_to_core,
 };
 pub use streaming::{ParsedSseEvent, SseEventParser, Utf8ChunkDecoder};
 pub use traits::{

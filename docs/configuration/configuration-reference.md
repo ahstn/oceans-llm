@@ -351,10 +351,46 @@ Important fields:
 - `weight`
 - `enabled`
 - `capabilities`
+- `compatibility`
 - `extra_headers`
 - `extra_body`
 
 Capability flags default permissively. A route can constrain provider capability. It cannot expand provider truth.
+
+Compatibility metadata is separate from capabilities. Capabilities decide whether a route may execute; compatibility describes explicit request and stream-shape transforms for the selected provider route.
+
+Capability flags include API-family gates such as `chat_completions`, `responses`, and `embeddings`, plus feature gates such as `stream`, `tools`, `vision`, `json_schema`, and `developer_role`.
+
+OpenAI-compatible route profile:
+
+```yaml
+models:
+  - id: fast
+    routes:
+      - provider: openrouter
+        upstream_model: openai/gpt-4o-mini
+        compatibility:
+          openai_compat:
+            supports_store: false
+            max_tokens_field: max_tokens
+            developer_role: system
+            reasoning_effort: omit
+            supports_stream_usage: true
+```
+
+OpenAI-compatible profile defaults:
+
+| Field | Default | Supported values |
+| --- | --- | --- |
+| `supports_store` | `true` | `true`, `false` |
+| `max_tokens_field` | `max_completion_tokens` | `max_completion_tokens`, `max_tokens` |
+| `developer_role` | `developer` | `developer`, `system` |
+| `reasoning_effort` | `passthrough` | `passthrough`, `omit`, `reasoning_object` |
+| `supports_stream_usage` | `false` | `true`, `false` |
+
+The current `openai_compat` profile fields are Chat Completions transforms. `/v1/responses` is a separate supported API family and is not adapted by reusing Chat Completions compatibility shims.
+
+Do not use `extra_body` for compatibility transforms. `extra_body` remains for additive provider-specific overrides, and the typed compatibility profile remains authoritative when a declared transform conflicts with an additive override.
 
 ## Validation and Failure Boundaries
 

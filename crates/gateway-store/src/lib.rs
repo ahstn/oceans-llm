@@ -25,12 +25,13 @@ mod tests {
         ApiKeyOwnerKind, ApiKeyRepository, AuthMode, BudgetAlertChannel, BudgetAlertDeliveryRecord,
         BudgetAlertDeliveryStatus, BudgetAlertHistoryQuery, BudgetAlertRecord,
         BudgetAlertRepository, BudgetCadence, BudgetRepository, GlobalRole, IdentityRepository,
-        MembershipRole, ModelPricingRecord, ModelRepository, Money4, PricingCatalogCacheRecord,
-        PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
-        ProviderCapabilities, RequestLogRecord, RequestLogRepository, RequestTags,
-        SYSTEM_LEGACY_TEAM_ID, SeedApiKey, SeedBudget, SeedModel, SeedModelRoute, SeedProvider,
-        SeedTeam, SeedUser, SeedUserMembership, StoreError, StoreHealth, UsageLedgerRecord,
-        UsagePricingStatus, UserStatus,
+        MembershipRole, ModelPricingRecord, ModelRepository, Money4, OpenAiCompatDeveloperRole,
+        OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
+        PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
+        PricingProvenance, ProviderCapabilities, RequestLogRecord, RequestLogRepository,
+        RequestTags, RouteCompatibility, SYSTEM_LEGACY_TEAM_ID, SeedApiKey, SeedBudget, SeedModel,
+        SeedModelRoute, SeedProvider, SeedTeam, SeedUser, SeedUserMembership, StoreError,
+        StoreHealth, UsageLedgerRecord, UsagePricingStatus, UserStatus,
     };
     use serde_json::{Map, json};
     use serial_test::serial;
@@ -134,6 +135,7 @@ mod tests {
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
                     capabilities: ProviderCapabilities::all_enabled(),
+                    compatibility: Default::default(),
                 }],
             },
             SeedModel {
@@ -151,6 +153,7 @@ mod tests {
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
                     capabilities: ProviderCapabilities::all_enabled(),
+                    compatibility: Default::default(),
                 }],
             },
         ];
@@ -991,6 +994,15 @@ mod tests {
                 capabilities: ProviderCapabilities::with_dimensions(
                     true, false, true, false, false, true, true,
                 ),
+                compatibility: RouteCompatibility {
+                    openai_compat: Some(OpenAiCompatRouteCompatibility {
+                        supports_store: false,
+                        max_tokens_field: OpenAiCompatMaxTokensField::MaxTokens,
+                        developer_role: OpenAiCompatDeveloperRole::System,
+                        reasoning_effort: OpenAiCompatReasoningEffort::ReasoningObject,
+                        supports_stream_usage: true,
+                    }),
+                },
             }],
         }];
 
@@ -1039,6 +1051,22 @@ mod tests {
         assert!(!routes[0].capabilities.stream);
         assert!(!routes[0].capabilities.tools);
         assert!(!routes[0].capabilities.vision);
+        let profile = routes[0]
+            .compatibility
+            .openai_compat
+            .as_ref()
+            .expect("openai compatibility profile");
+        assert!(!profile.supports_store);
+        assert_eq!(
+            profile.max_tokens_field,
+            OpenAiCompatMaxTokensField::MaxTokens
+        );
+        assert_eq!(profile.developer_role, OpenAiCompatDeveloperRole::System);
+        assert_eq!(
+            profile.reasoning_effort,
+            OpenAiCompatReasoningEffort::ReasoningObject
+        );
+        assert!(profile.supports_stream_usage);
     }
 
     #[tokio::test]
@@ -1086,6 +1114,7 @@ mod tests {
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
                     capabilities: ProviderCapabilities::all_enabled(),
+                    compatibility: Default::default(),
                 }],
             },
         ];
@@ -1494,13 +1523,45 @@ mod tests {
             )
             .await
             .expect("create session");
+        let other_session = store
+            .create_user_session(
+                Uuid::new_v4(),
+                member.user_id,
+                "other-token-hash",
+                now + Duration::days(1),
+                now,
+            )
+            .await
+            .expect("create second session");
+        store
+            .revoke_user_session(session.session_id, now)
+            .await
+            .expect("revoke one session");
+        assert!(
+            store
+                .get_user_session(session.session_id)
+                .await
+                .expect("load revoked session")
+                .expect("session exists")
+                .revoked_at
+                .is_some()
+        );
+        assert!(
+            store
+                .get_user_session(other_session.session_id)
+                .await
+                .expect("load other session")
+                .expect("other session exists")
+                .revoked_at
+                .is_none()
+        );
         store
             .revoke_user_sessions(member.user_id, now)
             .await
             .expect("revoke sessions");
         assert!(
             store
-                .get_user_session(session.session_id)
+                .get_user_session(other_session.session_id)
                 .await
                 .expect("load session")
                 .expect("session exists")
@@ -2881,6 +2942,7 @@ mod tests {
                 extra_headers: Map::new(),
                 extra_body: Map::new(),
                 capabilities: ProviderCapabilities::all_enabled(),
+                compatibility: Default::default(),
             }],
         }];
         let api_keys = vec![SeedApiKey {
@@ -3147,6 +3209,7 @@ mod tests {
                 capabilities: ProviderCapabilities::with_dimensions(
                     true, false, true, true, false, true, true,
                 ),
+                compatibility: Default::default(),
             }],
         }];
         let api_keys = vec![SeedApiKey {
@@ -3650,6 +3713,7 @@ mod tests {
                 extra_headers: Map::new(),
                 extra_body: Map::new(),
                 capabilities: ProviderCapabilities::all_enabled(),
+                compatibility: Default::default(),
             }],
         }];
         let api_keys = vec![SeedApiKey {
@@ -3939,6 +4003,7 @@ mod tests {
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
                     capabilities: ProviderCapabilities::all_enabled(),
+                    compatibility: Default::default(),
                 }],
             },
         ];

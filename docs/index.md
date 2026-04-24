@@ -25,6 +25,8 @@ This site is the operator and maintainer map for the gateway.
   - [Operator Runbooks](operations/operator-runbooks.md)
 - Cross-cutting request path across routing, logging, pricing, and spend:
   - [Request Lifecycle and Failure Modes](reference/request-lifecycle-and-failure-modes.md)
+- Provider API family support, OpenAI-compatible route quirks, and compatibility follow-up work:
+  - [Provider API Compatibility](reference/provider-api-compatibility.md)
 - Admin UI capability map and live versus preview-backed surface split:
   - [Admin Control Plane](access/admin-control-plane.md)
 - Generated admin contract, checked-in artifacts, and drift rules:
@@ -61,6 +63,7 @@ This site is the operator and maintainer map for the gateway.
 ### Reference
 
 - [Request Lifecycle and Failure Modes](reference/request-lifecycle-and-failure-modes.md)
+- [Provider API Compatibility](reference/provider-api-compatibility.md)
 - [Data Relationships](reference/data-relationships.md)
 - [Admin API Contract Workflow](reference/admin-api-contract-workflow.md)
 - [End-to-End Contract Tests](reference/e2e-contract-tests.md)

@@ -28,13 +28,14 @@ We introduced a protocol-neutral core request model and moved the provider trait
 
 - `ChatRequest`
 - `ChatMessage`
+- `ResponsesRequest`
 - `EmbeddingsRequest`
 
 These are the canonical execution model used by provider adapters.
 
 ### 2. Keep OpenAI wire DTOs as the external API layer
 
-`gateway-core::protocol::openai` remains the wire contract for HTTP handlers. This preserves `/v1/chat/completions` and `/v1/embeddings` compatibility while internal execution can evolve independently.
+`gateway-core::protocol::openai` remains the wire contract for HTTP handlers. This preserves `/v1/chat/completions`, `/v1/responses`, and `/v1/embeddings` compatibility while internal execution can evolve independently.
 
 ### 3. Add explicit translators between wire and core models
 

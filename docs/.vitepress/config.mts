@@ -62,6 +62,7 @@ export default defineConfig({
           text: "Reference",
           items: [
             { text: "Request Lifecycle and Failure Modes", link: "/reference/request-lifecycle-and-failure-modes" },
+            { text: "Provider API Compatibility", link: "/reference/provider-api-compatibility" },
             { text: "Data Relationships", link: "/reference/data-relationships" },
             { text: "Admin API Contract Workflow", link: "/reference/admin-api-contract-workflow" },
             { text: "End-to-End Contract Tests", link: "/reference/e2e-contract-tests" },

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { changeCurrentPassword } from '@/server/admin-data.functions'
+import { signedInAdminHref } from '@/routes/-auth-routing'
 
 export const Route = createFileRoute('/change-password')({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -40,7 +41,7 @@ function ChangePasswordPage() {
           },
         })
         toast.success('Password updated')
-        window.location.assign(`/admin${search.redirect ?? '/api-keys'}`)
+        window.location.assign(signedInAdminHref(search.redirect))
       } catch (error) {
         toast.error(error instanceof Error ? error.message : 'Unable to change password')
       }

@@ -60,6 +60,40 @@ pub fn core_embeddings_request_to_openai(
     }
 }
 
+#[must_use]
+pub fn openai_responses_request_to_core(
+    request: &openai::ResponsesRequest,
+) -> core::ResponsesRequest {
+    core::ResponsesRequest {
+        model: request.model.clone(),
+        input: request.input.clone(),
+        stream: request.stream,
+        instructions: request.instructions.clone(),
+        tools: request.tools.clone(),
+        tool_choice: request.tool_choice.clone(),
+        reasoning: request.reasoning.clone(),
+        text: request.text.clone(),
+        extra: request.extra.clone(),
+    }
+}
+
+#[must_use]
+pub fn core_responses_request_to_openai(
+    request: &core::ResponsesRequest,
+) -> openai::ResponsesRequest {
+    openai::ResponsesRequest {
+        model: request.model.clone(),
+        input: request.input.clone(),
+        stream: request.stream,
+        instructions: request.instructions.clone(),
+        tools: request.tools.clone(),
+        tool_choice: request.tool_choice.clone(),
+        reasoning: request.reasoning.clone(),
+        text: request.text.clone(),
+        extra: request.extra.clone(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -67,10 +101,11 @@ mod tests {
     use serde_json::{Value, json};
 
     use crate::protocol::{
-        openai::{ChatCompletionsRequest, ChatMessage, EmbeddingsRequest},
+        openai::{ChatCompletionsRequest, ChatMessage, EmbeddingsRequest, ResponsesRequest},
         translate::{
             core_chat_request_to_openai, core_embeddings_request_to_openai,
-            openai_chat_request_to_core, openai_embeddings_request_to_core,
+            core_responses_request_to_openai, openai_chat_request_to_core,
+            openai_embeddings_request_to_core, openai_responses_request_to_core,
         },
     };
 
@@ -135,5 +170,35 @@ mod tests {
         assert_eq!(translated_back.model, openai_request.model);
         assert_eq!(translated_back.input, openai_request.input);
         assert_eq!(translated_back.extra, openai_request.extra);
+    }
+
+    #[test]
+    fn responses_request_round_trips_between_openai_and_core() {
+        let mut request_extra = BTreeMap::new();
+        request_extra.insert("metadata".to_string(), json!({"tenant":"acme"}));
+
+        let openai_request = ResponsesRequest {
+            model: "reasoning".to_string(),
+            input: json!([
+                {"type":"message","role":"user","content":"hello"},
+                {"type":"function_call_output","call_id":"call_1","output":"ok"}
+            ]),
+            stream: true,
+            instructions: Some(json!("Answer with citations.")),
+            tools: Some(json!([{"type":"function","name":"lookup"}])),
+            tool_choice: Some(json!("auto")),
+            reasoning: Some(json!({"effort":"medium"})),
+            text: Some(json!({"format":{"type":"text"}})),
+            extra: request_extra,
+        };
+
+        let core_request = openai_responses_request_to_core(&openai_request);
+        assert_eq!(core_request.model, "reasoning");
+        assert_eq!(core_request.input, openai_request.input);
+        assert_eq!(core_request.tools, openai_request.tools);
+        assert_eq!(core_request.reasoning, openai_request.reasoning);
+
+        let translated_back = core_responses_request_to_openai(&core_request);
+        assert_eq!(translated_back, openai_request);
     }
 }

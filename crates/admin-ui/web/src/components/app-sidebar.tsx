@@ -10,6 +10,14 @@ import {
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
@@ -27,9 +35,11 @@ import type { AuthSessionView } from '@/types/api'
 interface AppSidebarProps {
   currentPath: string
   session: AuthSessionView
+  signOutPending: boolean
+  onSignOut: () => void
 }
 
-export function AppSidebar({ currentPath, session }: AppSidebarProps) {
+export function AppSidebar({ currentPath, session, signOutPending, onSignOut }: AppSidebarProps) {
   const activeSection = getActiveNavSection(currentPath)
 
   return (
@@ -112,33 +122,56 @@ export function AppSidebar({ currentPath, session }: AppSidebarProps) {
       </SidebarContent>
 
       <SidebarFooter className="border-sidebar-border/70 gap-3 border-t p-3">
-        <div className="border-sidebar-border/70 bg-sidebar-accent/35 text-sidebar-foreground/75 rounded-xl border p-3 text-xs group-data-[collapsible=icon]:hidden">
-          <p className="text-sidebar-foreground font-medium">Local preview mode</p>
-          <p className="mt-1 leading-relaxed">
-            Gateway-backed admin flows are live here. Model inventory remains preview-only.
-          </p>
-        </div>
-
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton asChild size="lg" className="h-auto rounded-xl px-3 py-3">
-              <Link to="/change-password">
-                <Avatar className="size-8 rounded-lg">
-                  <AvatarFallback className="bg-sidebar-primary/15 text-sidebar-primary rounded-lg">
-                    {getInitials(session.user.name)}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-medium">{session.user.name}</span>
-                  <span className="text-sidebar-foreground/70 truncate text-xs">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <SidebarMenuButton size="lg" className="h-auto rounded-xl px-3 py-3">
+                  <Avatar className="size-8 rounded-lg">
+                    <AvatarFallback className="bg-sidebar-primary/15 text-sidebar-primary rounded-lg">
+                      {getInitials(session.user.name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
+                    <span className="truncate font-medium">{session.user.name}</span>
+                    <span className="text-sidebar-foreground/70 truncate text-xs">
+                      {session.user.email}
+                    </span>
+                  </div>
+                  <AppIcon
+                    icon={ArrowRight01Icon}
+                    size={16}
+                    stroke={1.5}
+                    className="ml-auto rotate-[-90deg] group-data-[collapsible=icon]:hidden"
+                  />
+                </SidebarMenuButton>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side="top" align="start" className="w-64">
+                <DropdownMenuLabel className="grid gap-1">
+                  <span className="truncate text-sm font-medium">{session.user.name}</span>
+                  <span className="text-muted-foreground truncate text-xs font-normal">
                     {session.user.email}
                   </span>
-                </div>
-                <span className="border-sidebar-border/70 text-sidebar-foreground/70 hidden rounded-full border px-2 py-0.5 text-[10px] font-medium tracking-[0.14em] uppercase group-data-[collapsible=icon]:hidden xl:inline-flex">
-                  {session.user.global_role}
-                </span>
-              </Link>
-            </SidebarMenuButton>
+                  <span className="text-muted-foreground text-xs font-normal">
+                    {formatRole(session.user.global_role)}
+                  </span>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link to="/change-password">Change password</Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  variant="destructive"
+                  disabled={signOutPending}
+                  onSelect={(event) => {
+                    event.preventDefault()
+                    onSignOut()
+                  }}
+                >
+                  {signOutPending ? 'Signing out...' : 'Sign out'}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
@@ -155,4 +188,12 @@ function getInitials(name: string) {
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? '')
     .join('')
+}
+
+function formatRole(role: string) {
+  return role
+    .split('_')
+    .filter(Boolean)
+    .map((part) => part[0]?.toUpperCase() + part.slice(1))
+    .join(' ')
 }

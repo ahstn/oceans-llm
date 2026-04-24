@@ -51,8 +51,10 @@ Current intended coverage:
 The current suite already covers:
 
 - browser auth and forced password-rotation flow
+- current-session logout and revoked-session redirect behavior
 - public `/v1/models`
 - public `/v1/chat/completions`
+- public `/v1/responses`
 - admin UI API-key create, live use, and revoke
 - live spend report API behavior
 - team hard-limit enforcement for team-owned keys

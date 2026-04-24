@@ -1211,10 +1211,11 @@ mod tests {
     use gateway_core::{
         ApiKeyRepository, AuthMode, BudgetAlertChannel, BudgetAlertDeliveryRecord,
         BudgetAlertDeliveryStatus, BudgetAlertRepository, BudgetCadence, BudgetRepository,
-        CoreChatRequest, CoreEmbeddingsRequest, GlobalRole, IdentityRepository, MembershipRole,
-        ModelRepository, Money4, ProviderCapabilities, ProviderClient, ProviderError,
-        ProviderRequestContext, ProviderStream, SeedApiKey, SeedModel, SeedModelRoute,
-        SeedProvider, UsageLedgerRecord, UsagePricingStatus, parse_gateway_api_key,
+        CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest, GlobalRole,
+        IdentityRepository, MembershipRole, ModelRepository, Money4, ProviderCapabilities,
+        ProviderClient, ProviderError, ProviderRequestContext, ProviderStream, SeedApiKey,
+        SeedModel, SeedModelRoute, SeedProvider, UsageLedgerRecord, UsagePricingStatus,
+        parse_gateway_api_key,
     };
     use gateway_providers::{OpenAiCompatConfig, OpenAiCompatProvider};
     use gateway_service::{
@@ -1326,6 +1327,32 @@ mod tests {
                 "mock embeddings unsupported for this provider".to_string(),
             ))
         }
+
+        async fn responses(
+            &self,
+            _request: &CoreResponsesRequest,
+            _context: &ProviderRequestContext,
+        ) -> Result<Value, ProviderError> {
+            self.chat_calls.fetch_add(1, Ordering::SeqCst);
+            match self.chat_result.clone() {
+                MockChatResult::Value(value) => Ok(value),
+                MockChatResult::Error(error) => Err(error.into_provider_error()),
+            }
+        }
+
+        async fn responses_stream(
+            &self,
+            _request: &CoreResponsesRequest,
+            _context: &ProviderRequestContext,
+        ) -> Result<ProviderStream, ProviderError> {
+            let stream = futures_util::stream::iter(
+                self.stream_chunks
+                    .clone()
+                    .into_iter()
+                    .map(|chunk| Ok(Bytes::from(chunk))),
+            );
+            Ok(Box::pin(stream))
+        }
     }
 
     fn make_chat_provider(
@@ -1401,6 +1428,26 @@ mod tests {
                 MockEmbeddingsResult::Value(value) => Ok(value),
                 MockEmbeddingsResult::Error(error) => Err(error.into_provider_error()),
             }
+        }
+
+        async fn responses(
+            &self,
+            _request: &CoreResponsesRequest,
+            _context: &ProviderRequestContext,
+        ) -> Result<Value, ProviderError> {
+            Err(ProviderError::InvalidRequest(
+                "mock responses unsupported for this provider".to_string(),
+            ))
+        }
+
+        async fn responses_stream(
+            &self,
+            _request: &CoreResponsesRequest,
+            _context: &ProviderRequestContext,
+        ) -> Result<ProviderStream, ProviderError> {
+            Err(ProviderError::InvalidRequest(
+                "mock responses stream unsupported for this provider".to_string(),
+            ))
         }
     }
 
@@ -1823,6 +1870,7 @@ mod tests {
                 extra_headers: Map::<String, Value>::new(),
                 extra_body: Map::<String, Value>::new(),
                 capabilities: ProviderCapabilities::all_enabled(),
+                compatibility: Default::default(),
             }],
         }];
 
@@ -1861,6 +1909,7 @@ mod tests {
                 extra_headers: Map::<String, Value>::new(),
                 extra_body: Map::<String, Value>::new(),
                 capabilities: ProviderCapabilities::all_enabled(),
+                compatibility: Default::default(),
             }],
         }];
 
@@ -1939,6 +1988,7 @@ mod tests {
                 extra_headers: Map::<String, Value>::new(),
                 extra_body: Map::<String, Value>::new(),
                 capabilities: ProviderCapabilities::all_enabled(),
+                compatibility: Default::default(),
             }],
         }];
 
@@ -2359,6 +2409,7 @@ request_logging:
                 extra_headers: Map::<String, Value>::new(),
                 extra_body: Map::<String, Value>::new(),
                 capabilities: ProviderCapabilities::all_enabled(),
+                compatibility: Default::default(),
             }],
         }];
         let (app, raw_key, db_path) = build_test_app_with_payload_policy(
@@ -2987,6 +3038,7 @@ request_logging:
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
                     capabilities: ProviderCapabilities::all_enabled(),
+                    compatibility: Default::default(),
                 }],
             },
             SeedModel {
@@ -3096,6 +3148,7 @@ request_logging:
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
                     capabilities: ProviderCapabilities::all_enabled(),
+                    compatibility: Default::default(),
                 },
                 SeedModelRoute {
                     provider_key: "fallback".to_string(),
@@ -3106,6 +3159,7 @@ request_logging:
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
                     capabilities: ProviderCapabilities::all_enabled(),
+                    compatibility: Default::default(),
                 },
             ],
         }];
@@ -3209,6 +3263,7 @@ request_logging:
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
                     capabilities: ProviderCapabilities::all_enabled(),
+                    compatibility: Default::default(),
                 },
                 SeedModelRoute {
                     provider_key: "fallback".to_string(),
@@ -3219,6 +3274,7 @@ request_logging:
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
                     capabilities: ProviderCapabilities::all_enabled(),
+                    compatibility: Default::default(),
                 },
             ],
         }];
@@ -3305,6 +3361,7 @@ request_logging:
                 capabilities: ProviderCapabilities::with_dimensions(
                     true, true, true, true, false, true, true,
                 ),
+                compatibility: Default::default(),
             }],
         }];
 
@@ -3410,6 +3467,7 @@ request_logging:
                     capabilities: ProviderCapabilities::with_dimensions(
                         true, true, true, false, true, true, true,
                     ),
+                    compatibility: Default::default(),
                 },
                 SeedModelRoute {
                     provider_key: "tools".to_string(),
@@ -3420,6 +3478,7 @@ request_logging:
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
                     capabilities: ProviderCapabilities::all_enabled(),
+                    compatibility: Default::default(),
                 },
             ],
         }];
@@ -3589,6 +3648,162 @@ request_logging:
 
     #[tokio::test]
     #[serial]
+    async fn responses_executes_resolved_provider_and_records_usage() {
+        let (calls, provider) = make_chat_provider(
+            "openai-prod",
+            MockChatResult::Value(json!({
+                "id": "resp_123",
+                "object": "response",
+                "model": "gpt-5",
+                "output": [{"id":"msg_1","type":"message","content":[{"type":"output_text","text":"pong"}]}],
+                "usage": {"input_tokens": 11, "output_tokens": 7, "total_tokens": 18}
+            })),
+            vec![],
+            ProviderCapabilities::openai_compat_baseline(),
+        );
+        let mut registry = gateway_core::ProviderRegistry::new();
+        registry.register(Arc::new(provider));
+
+        let (app, raw_key, db_path) = build_default_test_app(registry).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/responses")
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .body(Body::from(
+                        json!({
+                            "model": "fast",
+                            "input": [{"type":"message","role":"user","content":"ping"}]
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        let request_id = response
+            .headers()
+            .get("x-request-id")
+            .expect("x-request-id header")
+            .to_str()
+            .expect("request id value")
+            .to_string();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        let payload: Value = serde_json::from_slice(&body).expect("json body");
+        assert_eq!(payload["model"], "fast");
+        assert_eq!(payload["object"], "response");
+
+        let logs = load_request_logs(&db_path).await;
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].provider_key, "openai-prod");
+        assert_eq!(logs[0].status_code, Some(200));
+        assert_eq!(logs[0].prompt_tokens, Some(11));
+        assert_eq!(logs[0].completion_tokens, Some(7));
+        assert_eq!(logs[0].total_tokens, Some(18));
+        assert_eq!(logs[0].metadata["stream"], Value::Bool(false));
+        assert_eq!(logs[0].metadata["operation"], "responses");
+
+        let ledgers = load_usage_ledger(&db_path).await;
+        assert_eq!(ledgers.len(), 1);
+        assert_eq!(ledgers[0].request_id, request_id);
+        assert_eq!(ledgers[0].provider_key, "openai-prod");
+        assert_eq!(ledgers[0].prompt_tokens, Some(11));
+        assert_eq!(ledgers[0].completion_tokens, Some(7));
+        assert_eq!(ledgers[0].total_tokens, Some(18));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn responses_rejects_when_no_route_supports_responses() {
+        let (calls, provider) = make_chat_provider(
+            "openai-prod",
+            MockChatResult::Value(json!({"object":"response","output":[]})),
+            vec![],
+            ProviderCapabilities::openai_compat_baseline(),
+        );
+        let mut registry = gateway_core::ProviderRegistry::new();
+        registry.register(Arc::new(provider));
+
+        let seed_providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: serde_json::json!({"base_url": "https://api.openai.com/v1"}),
+            secrets: None,
+        }];
+        let models = vec![SeedModel {
+            model_key: "fast".to_string(),
+            alias_target_model_key: None,
+            description: Some("Fast tier".to_string()),
+            tags: vec!["fast".to_string()],
+            rank: 10,
+            routes: vec![SeedModelRoute {
+                provider_key: "openai-prod".to_string(),
+                upstream_model: "gpt-5".to_string(),
+                priority: 10,
+                weight: 1.0,
+                enabled: true,
+                extra_headers: Map::<String, Value>::new(),
+                extra_body: Map::<String, Value>::new(),
+                capabilities: ProviderCapabilities {
+                    chat_completions: true,
+                    responses: false,
+                    stream: true,
+                    embeddings: true,
+                    tools: true,
+                    vision: true,
+                    json_schema: true,
+                    developer_role: true,
+                },
+                compatibility: Default::default(),
+            }],
+        }];
+
+        let (app, raw_key, _) = build_test_app(seed_providers, models, registry).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/responses")
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .body(Body::from(
+                        json!({
+                            "model": "fast",
+                            "input": "ping"
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        let payload: Value = serde_json::from_slice(&body).expect("json body");
+        assert!(
+            payload["error"]["message"]
+                .as_str()
+                .expect("message")
+                .contains("responses")
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn embeddings_executes_and_records_usage() {
         let (calls, provider) = make_embeddings_provider(
             "openai-prod",
@@ -3705,6 +3920,7 @@ request_logging:
                 capabilities: ProviderCapabilities::with_dimensions(
                     true, true, false, true, true, true, true,
                 ),
+                compatibility: Default::default(),
             }],
         }];
         let (app, raw_key, _) = build_test_app(seed_providers, models, registry).await;
@@ -3856,6 +4072,7 @@ request_logging:
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
                     capabilities: ProviderCapabilities::all_enabled(),
+                    compatibility: Default::default(),
                 }],
             },
             SeedModel {
@@ -3873,6 +4090,7 @@ request_logging:
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
                     capabilities: ProviderCapabilities::all_enabled(),
+                    compatibility: Default::default(),
                 }],
             },
         ];
@@ -4097,6 +4315,7 @@ request_logging:
                     extra_headers: Map::<String, Value>::new(),
                     extra_body: Map::<String, Value>::new(),
                     capabilities: ProviderCapabilities::all_enabled(),
+                    compatibility: Default::default(),
                 }],
             },
             SeedModel {
@@ -4114,6 +4333,7 @@ request_logging:
                     extra_headers: Map::<String, Value>::new(),
                     extra_body: Map::<String, Value>::new(),
                     capabilities: ProviderCapabilities::all_enabled(),
+                    compatibility: Default::default(),
                 }],
             },
         ];
@@ -4357,6 +4577,7 @@ request_logging:
                 extra_headers: Map::<String, Value>::new(),
                 extra_body: Map::<String, Value>::new(),
                 capabilities: ProviderCapabilities::all_enabled(),
+                compatibility: Default::default(),
             }],
         }];
         store
@@ -4451,6 +4672,7 @@ request_logging:
                 extra_headers: Map::<String, Value>::new(),
                 extra_body: Map::<String, Value>::new(),
                 capabilities: ProviderCapabilities::all_enabled(),
+                compatibility: Default::default(),
             }],
         }];
         store
@@ -5152,6 +5374,7 @@ request_logging:
                 extra_headers: Map::<String, Value>::new(),
                 extra_body: Map::<String, Value>::new(),
                 capabilities: ProviderCapabilities::all_enabled(),
+                compatibility: Default::default(),
             }],
         }];
         let api_keys = vec![SeedApiKey {
@@ -5378,6 +5601,7 @@ request_logging:
                     extra_headers: Map::<String, Value>::new(),
                     extra_body: Map::<String, Value>::new(),
                     capabilities: ProviderCapabilities::all_enabled(),
+                    compatibility: Default::default(),
                 }],
             },
             SeedModel {
@@ -5395,6 +5619,7 @@ request_logging:
                     extra_headers: Map::<String, Value>::new(),
                     extra_body: Map::<String, Value>::new(),
                     capabilities: ProviderCapabilities::all_enabled(),
+                    compatibility: Default::default(),
                 }],
             },
         ];
@@ -5993,6 +6218,140 @@ request_logging:
             session_json["data"]["must_change_password"],
             Value::Bool(false)
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn logout_revokes_only_current_session_and_clears_cookie() {
+        let (app, store, _) =
+            build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;
+        ensure_bootstrap_admin(
+            &store,
+            &BootstrapAdminConfig {
+                enabled: true,
+                email: "admin@local".to_string(),
+                password: "literal.admin".to_string(),
+                require_password_change: false,
+            },
+        )
+        .await
+        .expect("bootstrap admin");
+
+        let login = |app: Router| async move {
+            app.oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/auth/login/password")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "email": "admin@local",
+                            "password": "admin"
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("login response")
+        };
+
+        let first_login = login(app.clone()).await;
+        assert_eq!(first_login.status(), StatusCode::OK);
+        let first_cookie = set_cookie_header(&first_login);
+        let second_login = login(app.clone()).await;
+        assert_eq!(second_login.status(), StatusCode::OK);
+        let second_cookie = set_cookie_header(&second_login);
+
+        let logout = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/auth/logout")
+                    .header("cookie", &first_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("logout response");
+        assert_eq!(logout.status(), StatusCode::OK);
+        let clear_cookie = set_cookie_header(&logout);
+        assert!(clear_cookie.starts_with("ogw_session=;"));
+        assert!(clear_cookie.contains("Max-Age=0"));
+        assert_eq!(read_json(logout).await["data"]["status"], "ok");
+
+        let stale_session = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/v1/auth/session")
+                    .header("cookie", &first_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("stale session response");
+        assert_eq!(stale_session.status(), StatusCode::OK);
+        assert_eq!(read_json(stale_session).await["data"], Value::Null);
+
+        let protected_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/v1/admin/api-keys")
+                    .header("cookie", &first_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("protected response");
+        assert_eq!(protected_response.status(), StatusCode::UNAUTHORIZED);
+
+        let active_session = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/v1/auth/session")
+                    .header("cookie", &second_cookie)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("active session response");
+        assert_eq!(active_session.status(), StatusCode::OK);
+        assert_eq!(
+            read_json(active_session).await["data"]["user"]["email"],
+            "admin@local"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn logout_is_idempotent_for_missing_and_invalid_session_cookies() {
+        let (app, _store, _) =
+            build_default_test_app_with_store(gateway_core::ProviderRegistry::new()).await;
+
+        for cookie in [None, Some("ogw_session=not-a-signed-token")] {
+            let mut request = Request::builder().method("POST").uri("/api/v1/auth/logout");
+            if let Some(cookie) = cookie {
+                request = request.header("cookie", cookie);
+            }
+            let response = app
+                .clone()
+                .oneshot(request.body(Body::empty()).expect("request"))
+                .await
+                .expect("response");
+
+            assert_eq!(response.status(), StatusCode::OK);
+            let clear_cookie = set_cookie_header(&response);
+            assert!(clear_cookie.starts_with("ogw_session=;"));
+            assert!(clear_cookie.contains("Max-Age=0"));
+            assert_eq!(read_json(response).await["data"]["status"], "ok");
+        }
     }
 
     #[tokio::test]

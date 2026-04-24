@@ -24,6 +24,7 @@ import {
   listTeams,
   listUsers,
   loginWithPassword,
+  logoutCurrentSession,
   removeTeamMember,
   revokeApiKey,
   resendPasswordInvite,
@@ -189,6 +190,10 @@ export const changeCurrentPassword = createServerFn({ method: 'POST' }).handler(
     return changePassword(data)
   },
 )
+
+export const logoutAdminSession = createServerFn({ method: 'POST' }).handler(async () => {
+  return logoutCurrentSession()
+})
 
 export const createIdentityTeam = createServerFn({ method: 'POST' }).handler(
   async ({ data }: { data: Parameters<typeof createTeam>[0] }) => {
