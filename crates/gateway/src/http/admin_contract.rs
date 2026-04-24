@@ -628,8 +628,11 @@ pub struct RequestLogSummaryView {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct RequestLogPayloadPolicyView {
     pub capture_mode: RequestLogPayloadCaptureModeView,
+    #[schema(minimum = 1)]
     pub request_max_bytes: u64,
+    #[schema(minimum = 1)]
     pub response_max_bytes: u64,
+    #[schema(minimum = 1)]
     pub stream_max_events: u64,
     pub version: String,
 }

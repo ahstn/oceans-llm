@@ -3918,17 +3918,17 @@
           "request_max_bytes": {
             "type": "integer",
             "format": "int64",
-            "minimum": 0
+            "minimum": 1
           },
           "response_max_bytes": {
             "type": "integer",
             "format": "int64",
-            "minimum": 0
+            "minimum": 1
           },
           "stream_max_events": {
             "type": "integer",
             "format": "int64",
-            "minimum": 0
+            "minimum": 1
           },
           "version": {
             "type": "string"
