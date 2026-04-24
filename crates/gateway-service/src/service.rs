@@ -15,10 +15,9 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::{
-    Authenticator, ChatRequestLogContext, LoggedRequest, ModelAccess, ModelResolver,
-    PricingCatalog, RequestLogIconMetadata, RequestLogPayloadPolicy, RequestLogging,
-    ResolvedGatewayRequest, ResolvedProviderConnection, StreamLogResultInput,
-    StreamResponseCollector,
+    Authenticator, LoggedRequest, ModelAccess, ModelResolver, PricingCatalog, RequestLogContext,
+    RequestLogIconMetadata, RequestLogPayloadPolicy, RequestLogging, ResolvedGatewayRequest,
+    ResolvedProviderConnection, StreamLogResultInput, StreamResponseCollector,
     budget_alerts::{BudgetAlertSender, BudgetAlertService, SinkBudgetAlertSender},
     budget_guard::{BudgetGuard, BudgetGuardDisposition},
 };
@@ -199,7 +198,7 @@ where
         request: &ChatCompletionsRequest,
         request_headers: &std::collections::BTreeMap<String, String>,
         request_tags: RequestTags,
-    ) -> ChatRequestLogContext {
+    ) -> RequestLogContext {
         self.request_logging.begin_chat_request(
             request_id,
             requested_model_key,
@@ -219,7 +218,7 @@ where
         request: &ResponsesRequest,
         request_headers: &std::collections::BTreeMap<String, String>,
         request_tags: RequestTags,
-    ) -> ChatRequestLogContext {
+    ) -> RequestLogContext {
         self.request_logging.begin_responses_request(
             request_id,
             requested_model_key,
@@ -239,7 +238,7 @@ where
         request: &gateway_core::EmbeddingsRequest,
         request_headers: &std::collections::BTreeMap<String, String>,
         request_tags: RequestTags,
-    ) -> ChatRequestLogContext {
+    ) -> RequestLogContext {
         self.request_logging.begin_embeddings_request(
             request_id,
             requested_model_key,
@@ -259,7 +258,7 @@ where
     pub async fn log_non_stream_success(
         &self,
         auth: &AuthenticatedApiKey,
-        context: &ChatRequestLogContext,
+        context: &RequestLogContext,
         provider_key: &str,
         icon_metadata: RequestLogIconMetadata,
         latency_ms: i64,
@@ -283,7 +282,7 @@ where
     pub async fn log_non_stream_failure(
         &self,
         auth: &AuthenticatedApiKey,
-        context: &ChatRequestLogContext,
+        context: &RequestLogContext,
         provider_key: &str,
         icon_metadata: RequestLogIconMetadata,
         latency_ms: i64,
@@ -306,7 +305,7 @@ where
     pub async fn log_stream_result(
         &self,
         auth: &AuthenticatedApiKey,
-        context: &ChatRequestLogContext,
+        context: &RequestLogContext,
         stream_result: StreamLogResultInput,
     ) -> Result<LoggedRequest, GatewayError> {
         self.request_logging

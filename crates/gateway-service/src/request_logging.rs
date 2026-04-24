@@ -19,7 +19,7 @@ use crate::redaction::{
 };
 
 #[derive(Debug, Clone)]
-pub struct ChatRequestLogContext {
+pub struct RequestLogContext {
     pub request_log_id: Uuid,
     pub request_id: String,
     pub requested_model_key: String,
@@ -295,7 +295,7 @@ where
         request: &ChatCompletionsRequest,
         request_headers: &BTreeMap<String, String>,
         request_tags: RequestTags,
-    ) -> ChatRequestLogContext {
+    ) -> RequestLogContext {
         self.begin_operation_request(OperationRequestLogInput {
             operation: "chat_completions",
             request_id,
@@ -316,7 +316,7 @@ where
         request: &ResponsesRequest,
         request_headers: &BTreeMap<String, String>,
         request_tags: RequestTags,
-    ) -> ChatRequestLogContext {
+    ) -> RequestLogContext {
         self.begin_operation_request(OperationRequestLogInput {
             operation: "responses",
             request_id,
@@ -337,7 +337,7 @@ where
         request: &EmbeddingsRequest,
         request_headers: &BTreeMap<String, String>,
         request_tags: RequestTags,
-    ) -> ChatRequestLogContext {
+    ) -> RequestLogContext {
         self.begin_operation_request(OperationRequestLogInput {
             operation: "embeddings",
             request_id,
@@ -352,7 +352,7 @@ where
     fn begin_operation_request<T>(
         &self,
         input: OperationRequestLogInput<'_, T>,
-    ) -> ChatRequestLogContext
+    ) -> RequestLogContext
     where
         T: serde::Serialize,
     {
@@ -381,7 +381,7 @@ where
             (None, false)
         };
 
-        ChatRequestLogContext {
+        RequestLogContext {
             request_log_id: Uuid::new_v4(),
             request_id: input.request_id.to_string(),
             requested_model_key: input.requested_model_key.to_string(),
@@ -423,7 +423,7 @@ where
     pub async fn log_non_stream_success(
         &self,
         api_key: &AuthenticatedApiKey,
-        context: &ChatRequestLogContext,
+        context: &RequestLogContext,
         provider_key: &str,
         icon_metadata: RequestLogIconMetadata,
         latency_ms: i64,
@@ -465,7 +465,7 @@ where
     pub async fn log_non_stream_failure(
         &self,
         api_key: &AuthenticatedApiKey,
-        context: &ChatRequestLogContext,
+        context: &RequestLogContext,
         provider_key: &str,
         icon_metadata: RequestLogIconMetadata,
         latency_ms: i64,
@@ -510,7 +510,7 @@ where
     pub async fn log_stream_result(
         &self,
         api_key: &AuthenticatedApiKey,
-        context: &ChatRequestLogContext,
+        context: &RequestLogContext,
         stream_result: StreamLogResultInput,
     ) -> Result<LoggedRequest, GatewayError> {
         let StreamLogResultInput {
@@ -576,7 +576,7 @@ where
     async fn persist_chat_log(
         &self,
         api_key: &AuthenticatedApiKey,
-        context: &ChatRequestLogContext,
+        context: &RequestLogContext,
         summary: RequestLogSummary,
         response_json: Option<Value>,
         response_payload_truncated: bool,
@@ -743,7 +743,7 @@ pub fn failed_attempt_outcome(
 
 #[must_use]
 pub fn build_request_attempt(
-    context: &ChatRequestLogContext,
+    context: &RequestLogContext,
     route: &ModelRoute,
     attempt_number: i64,
     stream: bool,
@@ -776,7 +776,12 @@ pub fn build_request_attempt(
         stream,
         started_at,
         completed_at: Some(completed_at),
-        latency_ms: Some((completed_at - started_at).whole_milliseconds().try_into().unwrap_or(i64::MAX)),
+        latency_ms: Some(
+            (completed_at - started_at)
+                .whole_milliseconds()
+                .try_into()
+                .unwrap_or(i64::MAX),
+        ),
         metadata: Map::new(),
     }
 }
@@ -787,7 +792,10 @@ pub fn offset_now() -> OffsetDateTime {
 }
 
 fn truncate_attempt_error_detail(detail: &str) -> (String, bool) {
-    let redacted = redact_json_value_with_policy(&Value::String(detail.to_string()), &RequestLogPayloadPolicy::default());
+    let redacted = redact_json_value_with_policy(
+        &Value::String(detail.to_string()),
+        &RequestLogPayloadPolicy::default(),
+    );
     let detail = redacted.as_str().unwrap_or(detail);
     if detail.len() <= MAX_ATTEMPT_ERROR_DETAIL_BYTES {
         return (detail.to_string(), false);
@@ -942,7 +950,11 @@ mod tests {
                 .iter()
                 .find(|payload| payload.request_log_id == request_log_id)
                 .cloned();
-            Ok(RequestLogDetail { log, payload, attempts: Vec::new() })
+            Ok(RequestLogDetail {
+                log,
+                payload,
+                attempts: Vec::new(),
+            })
         }
     }
 

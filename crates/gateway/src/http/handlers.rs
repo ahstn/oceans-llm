@@ -77,11 +77,12 @@ pub async fn v1_models(
 
 pub async fn v1_chat_completions(
     State(state): State<AppState>,
-    Extension(request_id): Extension<RequestId>,
+    request_id: Option<Extension<RequestId>>,
     headers: HeaderMap,
     Json(request): Json<ChatCompletionsRequest>,
 ) -> Result<Response, AppError> {
     let request_started_at = Instant::now();
+    let request_id = canonical_request_id(request_id)?;
     let auth = state
         .service
         .authenticate(extract_authorization_header(&headers))
@@ -93,7 +94,6 @@ pub async fn v1_chat_completions(
         .resolve_request(&auth, &core_request.model)
         .await?;
 
-    let request_id = canonical_request_id(&request_id)?;
     let request_headers = extract_request_headers(&headers);
     let request_tags = extract_request_tags(&headers)?;
     let request_log_context = state.service.begin_chat_request_log(
@@ -353,11 +353,12 @@ pub async fn v1_chat_completions(
 
 pub async fn v1_responses(
     State(state): State<AppState>,
-    Extension(request_id): Extension<RequestId>,
+    request_id: Option<Extension<RequestId>>,
     headers: HeaderMap,
     Json(request): Json<ResponsesRequest>,
 ) -> Result<Response, AppError> {
     let request_started_at = Instant::now();
+    let request_id = canonical_request_id(request_id)?;
     let auth = state
         .service
         .authenticate(extract_authorization_header(&headers))
@@ -369,7 +370,6 @@ pub async fn v1_responses(
         .resolve_request(&auth, &core_request.model)
         .await?;
 
-    let request_id = canonical_request_id(&request_id)?;
     let request_headers = extract_request_headers(&headers);
     let request_tags = extract_request_tags(&headers)?;
     let request_log_context = state.service.begin_responses_request_log(
@@ -629,11 +629,12 @@ pub async fn v1_responses(
 
 pub async fn v1_embeddings(
     State(state): State<AppState>,
-    Extension(request_id): Extension<RequestId>,
+    request_id: Option<Extension<RequestId>>,
     headers: HeaderMap,
     Json(request): Json<EmbeddingsRequest>,
 ) -> Result<Response, AppError> {
     let request_started_at = Instant::now();
+    let request_id = canonical_request_id(request_id)?;
     let auth = state
         .service
         .authenticate(extract_authorization_header(&headers))
@@ -644,7 +645,6 @@ pub async fn v1_embeddings(
         .service
         .resolve_request(&auth, &core_request.model)
         .await?;
-    let request_id = canonical_request_id(&request_id)?;
     let request_headers = extract_request_headers(&headers);
     let request_tags = extract_request_tags(&headers)?;
     let request_log_context = state.service.begin_embeddings_request_log(
@@ -781,7 +781,7 @@ fn select_first_eligible_route(
 }
 
 fn provider_error_attempt(
-    context: &gateway_service::ChatRequestLogContext,
+    context: &gateway_service::RequestLogContext,
     route: &gateway_core::ModelRoute,
     status: RequestAttemptStatus,
     stream: bool,
@@ -805,7 +805,7 @@ fn provider_error_attempt(
 }
 
 fn success_attempt(
-    context: &gateway_service::ChatRequestLogContext,
+    context: &gateway_service::RequestLogContext,
     route: &gateway_core::ModelRoute,
     stream: bool,
     started_at: OffsetDateTime,
@@ -822,7 +822,7 @@ fn success_attempt(
 }
 
 fn stream_failure_attempt(
-    context: &gateway_service::ChatRequestLogContext,
+    context: &gateway_service::RequestLogContext,
     route: &gateway_core::ModelRoute,
     started_at: OffsetDateTime,
     failure: &gateway_service::StreamFailureSummary,
@@ -904,7 +904,7 @@ struct LoggingBodyStreamState {
     service: std::sync::Arc<AppGatewayService>,
     metrics: std::sync::Arc<crate::observability::GatewayMetrics>,
     auth: AuthenticatedApiKey,
-    request_log_context: gateway_service::ChatRequestLogContext,
+    request_log_context: gateway_service::RequestLogContext,
     requested_model_key: String,
     resolved_model_key: String,
     execution_model: gateway_core::GatewayModel,
@@ -1079,7 +1079,7 @@ fn wrap_stream_with_request_logging(
 async fn best_effort_log_non_stream_success(
     service: &std::sync::Arc<AppGatewayService>,
     auth: &AuthenticatedApiKey,
-    context: &gateway_service::ChatRequestLogContext,
+    context: &gateway_service::RequestLogContext,
     provider_key: &str,
     icon_metadata: RequestLogIconMetadata,
     latency_ms: i64,
@@ -1111,7 +1111,7 @@ async fn best_effort_log_non_stream_success(
 async fn best_effort_log_non_stream_failure(
     service: &std::sync::Arc<AppGatewayService>,
     auth: &AuthenticatedApiKey,
-    context: &gateway_service::ChatRequestLogContext,
+    context: &gateway_service::RequestLogContext,
     provider_key: &str,
     icon_metadata: RequestLogIconMetadata,
     latency_ms: i64,
@@ -1142,7 +1142,7 @@ async fn best_effort_log_non_stream_failure(
 async fn best_effort_log_stream_result(
     service: &std::sync::Arc<AppGatewayService>,
     auth: &AuthenticatedApiKey,
-    context: &gateway_service::ChatRequestLogContext,
+    context: &gateway_service::RequestLogContext,
     stream_result: gateway_service::StreamLogResultInput,
 ) {
     if let Err(error) = service
@@ -1298,7 +1298,14 @@ fn extract_authorization_header(headers: &HeaderMap) -> Option<&str> {
         .and_then(|value| value.to_str().ok())
 }
 
-fn canonical_request_id(request_id: &RequestId) -> Result<String, AppError> {
+fn canonical_request_id(request_id: Option<Extension<RequestId>>) -> Result<String, AppError> {
+    let Some(Extension(request_id)) = request_id else {
+        tracing::error!("canonical request id extension was missing from provider handler");
+        return Err(AppError(GatewayError::Internal(
+            "canonical request id was not available to the handler".to_string(),
+        )));
+    };
+
     request_id
         .header_value()
         .to_str()
@@ -1321,4 +1328,35 @@ fn extract_request_headers(headers: &HeaderMap) -> BTreeMap<String, String> {
                 .map(|value| (name.as_str().to_ascii_lowercase(), value.to_string()))
         })
         .collect::<BTreeMap<_, _>>()
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::Extension;
+    use axum::http::HeaderValue;
+    use gateway_core::GatewayError;
+    use tower_http::request_id::RequestId;
+
+    use super::canonical_request_id;
+
+    #[test]
+    fn canonical_request_id_returns_gateway_internal_error_when_extension_is_missing() {
+        let error = canonical_request_id(None).expect_err("missing extension should fail");
+
+        assert_eq!(error.0.http_status_code(), 500);
+        assert_eq!(error.0.error_code(), "internal_error");
+        assert!(matches!(error.0, GatewayError::Internal(_)));
+    }
+
+    #[test]
+    fn canonical_request_id_reads_tower_request_id_extension() {
+        let value = match canonical_request_id(Some(Extension(RequestId::new(
+            HeaderValue::from_static("req-provided"),
+        )))) {
+            Ok(value) => value,
+            Err(_) => panic!("request id should be available"),
+        };
+
+        assert_eq!(value, "req-provided");
+    }
 }

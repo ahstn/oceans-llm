@@ -7,8 +7,8 @@ Date: 2026-04-24
 ## Issues
 
 - GitHub issue #17: unify gateway request-id generation and propagation.
-- GitHub issue #19: add first-class request-attempt observability records.
-- GitHub issue #118: follow-up for configurable retry/fallback execution policy, explicitly out of scope here.
+- GitHub issue #19A: add first-class request-attempt observability records for the current single-attempt runtime.
+- GitHub issue #118: follow-up for the remaining original #19 retry/fallback execution acceptance criteria, explicitly out of scope here.
 
 ## Goals
 
@@ -21,7 +21,7 @@ Date: 2026-04-24
 
 ## Non-goals
 
-- No retry/fallback execution behavior in this change.
+- No retry/fallback execution behavior in this change; the remaining original #19 retry/fallback flows and tests are deferred to #118.
 - No synthetic attempt rows for old logs or pre-provider failures.
 - No per-attempt payload storage.
 - No request-attempt filtering/list analytics.

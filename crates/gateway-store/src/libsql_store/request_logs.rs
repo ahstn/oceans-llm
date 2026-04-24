@@ -52,7 +52,6 @@ fn decode_request_log_row(row: &libsql::Row) -> Result<RequestLogRecord, StoreEr
     })
 }
 
-
 fn decode_request_attempt_row(row: &libsql::Row) -> Result<RequestAttemptRecord, StoreError> {
     let request_attempt_id: String = row.get(0).map_err(to_query_error)?;
     let request_log_id: String = row.get(1).map_err(to_query_error)?;
@@ -75,8 +74,9 @@ fn decode_request_attempt_row(row: &libsql::Row) -> Result<RequestAttemptRecord,
         route_id: parse_uuid(&route_id)?,
         provider_key: row.get(5).map_err(to_query_error)?,
         upstream_model: row.get(6).map_err(to_query_error)?,
-        status: RequestAttemptStatus::from_db(&status)
-            .ok_or_else(|| StoreError::Serialization(format!("invalid attempt status `{status}`")))?,
+        status: RequestAttemptStatus::from_db(&status).ok_or_else(|| {
+            StoreError::Serialization(format!("invalid attempt status `{status}`"))
+        })?,
         status_code: row.get(8).map_err(to_query_error)?,
         error_code: row.get(9).map_err(to_query_error)?,
         error_detail: row.get(10).map_err(to_query_error)?,
@@ -189,7 +189,8 @@ impl RequestLogRepository for LibsqlStore {
         log: &RequestLogRecord,
         payload: Option<&RequestLogPayloadRecord>,
     ) -> Result<(), StoreError> {
-        self.insert_request_log_with_attempts(log, payload, &[]).await
+        self.insert_request_log_with_attempts(log, payload, &[])
+            .await
     }
 
     async fn insert_request_log_with_attempts(
@@ -488,7 +489,11 @@ impl RequestLogRepository for LibsqlStore {
 
         let attempts = self.list_request_log_attempts(request_log_id).await?;
 
-        Ok(RequestLogDetail { log, payload, attempts })
+        Ok(RequestLogDetail {
+            log,
+            payload,
+            attempts,
+        })
     }
 }
 

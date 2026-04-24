@@ -699,7 +699,10 @@ impl RequestLogRepository for AnyStore {
         payload: Option<&gateway_core::RequestLogPayloadRecord>,
         attempts: &[gateway_core::RequestAttemptRecord],
     ) -> Result<(), StoreError> {
-        dispatch_store!(self, insert_request_log_with_attempts(log, payload, attempts))
+        dispatch_store!(
+            self,
+            insert_request_log_with_attempts(log, payload, attempts)
+        )
     }
 
     async fn list_request_logs(
