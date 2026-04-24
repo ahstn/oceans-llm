@@ -29,7 +29,7 @@ The live request path is single-route in this slice.
    - Lower `priority` wins first.
    - `weight` only matters inside the same priority bucket.
    - Disabled routes and non-positive weights drop out.
-5. Capability filtering removes routes that cannot satisfy the request.
+5. Capability filtering removes routes that cannot satisfy the API family and feature requirements. For example, `/v1/responses` requires `responses`, while `/v1/chat/completions` requires `chat_completions`.
 6. The budget guard runs before provider execution.
    - hard-limit rejection returns `429 budget_exceeded`
    - no provider call occurs on this path
@@ -49,7 +49,7 @@ Compatibility transforms affect the provider request body and stream options. Th
 One common request path looks like this:
 
 - Request:
-  - `POST /v1/chat/completions`
+  - `POST /v1/responses`
   - API key belongs to team `growth`
   - model is `tag:fast`
 - Access:
@@ -64,10 +64,10 @@ One common request path looks like this:
   - route B has priority `100`
   - route A wins before weight is considered
 - Capability filter:
-  - the request asks for plain chat, no tools, no vision
+  - the request asks for the Responses API family, no tools, no vision
   - route A stays eligible
 - Execution:
-  - the provider request goes to the route A provider and upstream model
+  - the provider request goes to the route A provider and upstream model through the Responses adapter
 - Logging:
   - `request_logs.model_key` stores `gpt-4o-mini`
   - `request_logs.resolved_model_key` stores `openai-gpt-4o-mini`
@@ -103,6 +103,7 @@ These failures look similar from far away, but they mean different things.
 - Capability filtering removed every remaining route.
 - Common causes:
   - embeddings against a chat-only route
+  - Responses requests against a route with `responses: false`
   - tools against a route with tools disabled
   - vision against a route that does not advertise vision
 
@@ -155,11 +156,11 @@ That separation matters in two common cases:
 - a request can be logged even when it becomes `unpriced`
 - a request can be logged even when a later accounting step hits a rough edge
 
-For streaming requests, the request-log payload path parses SSE incrementally across UTF-8 and frame boundaries and retains the latest coherent usage snapshot seen before stream completion or failure.
+For streaming requests, the request-log payload path parses SSE incrementally across UTF-8 and frame boundaries and retains the latest coherent usage snapshot seen before stream completion or failure. Chat Completions streams usually expose usage at top level. Responses streams expose usage on completed response events as `response.usage`.
 
 ## Known Rough Edges
 
-- Stream and non-stream chat paths still differ when a post-provider ledger write fails.
+- Stream and non-stream paths still differ when a post-provider ledger write fails.
 - Request-log payload policy is still bounded and heuristic, not operator-configurable.
 
 For the current observability cleanup notes, see [observability-and-request-logs.md](../operations/observability-and-request-logs.md).

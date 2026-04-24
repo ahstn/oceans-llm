@@ -50,6 +50,8 @@ This document is schema-oriented. It describes the persistent relationships that
 - `capabilities_json` controls whether the route may execute a request
 - `compatibility_json` controls declared provider API compatibility transforms after route selection
 
+`capabilities_json` includes API-family gates such as `chat_completions`, `responses`, and `embeddings`.
+
 Compatibility metadata is not a provider config fallback and is not an `extra_body` convention.
 
 ### Identity and Access Tables

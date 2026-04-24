@@ -14,8 +14,9 @@ use futures_util::{StreamExt, stream};
 use gateway_core::{
     AuthenticatedApiKey, ChatCompletionsRequest, CoreRequestRequirements, EmbeddingsRequest,
     GatewayError, ModelsListResponse, ProviderCapabilities, ProviderClient, ProviderError,
-    ProviderRequestContext, RequestLogRecord, RequestTags, openai_chat_request_to_core,
-    openai_embeddings_request_to_core, protocol::openai::ModelCard,
+    ProviderRequestContext, RequestLogRecord, RequestTags, ResponsesRequest,
+    openai_chat_request_to_core, openai_embeddings_request_to_core,
+    openai_responses_request_to_core, protocol::openai::ModelCard,
 };
 use gateway_service::{
     RequestLogIconMetadata, ResolvedProviderConnection, resolve_model_icon_key,
@@ -103,7 +104,13 @@ pub async fn v1_chat_completions(
         request_tags,
     );
     let request_span = Span::current();
-    record_request_span_fields(&request_span, &auth, &resolved, core_request.stream);
+    record_request_span_fields(
+        &request_span,
+        &auth,
+        &resolved,
+        core_request.stream,
+        "/v1/chat/completions",
+    );
     let (eligible_route_count, selected) =
         select_first_eligible_route(&state.providers, &resolved.routes, requirements);
 
@@ -331,6 +338,269 @@ pub async fn v1_chat_completions(
     Ok(response)
 }
 
+pub async fn v1_responses(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<ResponsesRequest>,
+) -> Result<Response, AppError> {
+    let request_started_at = Instant::now();
+    let auth = state
+        .service
+        .authenticate(extract_authorization_header(&headers))
+        .await?;
+    let core_request = openai_responses_request_to_core(&request);
+    let requirements = core_request.requirements();
+    let resolved = state
+        .service
+        .resolve_request(&auth, &core_request.model)
+        .await?;
+
+    let request_id = extract_request_id(&headers);
+    let request_headers = extract_request_headers(&headers);
+    let request_tags = extract_request_tags(&headers)?;
+    let request_log_context = state.service.begin_responses_request_log(
+        &request_id,
+        &resolved.selection.requested_model.model_key,
+        &resolved.selection.execution_model.model_key,
+        &request,
+        &request_headers,
+        request_tags,
+    );
+    let request_span = Span::current();
+    record_request_span_fields(
+        &request_span,
+        &auth,
+        &resolved,
+        core_request.stream,
+        "/v1/responses",
+    );
+    let (eligible_route_count, selected) =
+        select_first_eligible_route(&state.providers, &resolved.routes, requirements);
+
+    tracing::info!(
+        request_model = %core_request.model,
+        resolved_model = %resolved.selection.execution_model.model_key,
+        route_count = resolved.routes.len(),
+        eligible_route_count,
+        stream = core_request.stream,
+        required_capabilities = ?requirements.required_capability_names(),
+        "responses request resolved"
+    );
+
+    let (route, provider) = match selected {
+        Some(selection) => selection,
+        None => {
+            let error = no_compatible_route_error(requirements);
+            state.metrics.record_chat_request(&ChatRequestMetric {
+                labels: ChatMetricLabels {
+                    requested_model: &resolved.selection.requested_model.model_key,
+                    resolved_model: &resolved.selection.execution_model.model_key,
+                    provider_key: "unavailable",
+                    stream: core_request.stream,
+                },
+                status_code: i64::from(error.http_status_code()),
+                outcome: error.error_type(),
+                latency_seconds: latency_seconds_since(request_started_at),
+            });
+            return Err(AppError(error));
+        }
+    };
+    let icon_metadata = request_log_icon_metadata(
+        &route,
+        resolved.provider_connections.get(&route.provider_key),
+        &resolved.selection.execution_model.model_key,
+        &resolved.selection.requested_model.model_key,
+    );
+    let labels = ChatMetricLabels {
+        requested_model: &resolved.selection.requested_model.model_key,
+        resolved_model: &resolved.selection.execution_model.model_key,
+        provider_key: &route.provider_key,
+        stream: core_request.stream,
+    };
+    record_provider_execution_span_fields(&request_span, &route.provider_key);
+
+    if let Err(error) = state
+        .service
+        .enforce_pre_provider_budget(&auth, &request_id, OffsetDateTime::now_utc())
+        .await
+    {
+        state.metrics.record_chat_request(&ChatRequestMetric {
+            labels: labels.clone(),
+            status_code: i64::from(error.http_status_code()),
+            outcome: error.error_type(),
+            latency_seconds: latency_seconds_since(request_started_at),
+        });
+        return Err(AppError(error));
+    }
+
+    let context = build_provider_context(
+        &request_id,
+        &resolved.selection.requested_model.model_key,
+        &route,
+        request_headers,
+    );
+
+    if core_request.stream {
+        let provider_execution_span = tracing::info_span!(
+            "provider_execution",
+            request_id = %request_id,
+            requested_model = %resolved.selection.requested_model.model_key,
+            resolved_model = %resolved.selection.execution_model.model_key,
+            provider = %route.provider_key,
+            stream = true,
+            ownership_kind = %auth.owner_kind.as_str(),
+        );
+        let stream = match provider
+            .responses_stream(&core_request, &context)
+            .instrument(provider_execution_span)
+            .await
+        {
+            Ok(stream) => stream,
+            Err(error) => {
+                let gateway_error = map_operation_provider_error(error, requirements);
+                tracing::warn!(
+                    request_id = %request_id,
+                    provider_key = %route.provider_key,
+                    termination_reason = "provider_responses_stream_start_error",
+                    error_code = %gateway_error.error_code(),
+                    "responses stream start failed"
+                );
+                best_effort_log_stream_result(
+                    &state.service,
+                    &auth,
+                    &request_log_context,
+                    gateway_service::StreamLogResultInput {
+                        provider_key: route.provider_key.clone(),
+                        icon_metadata: icon_metadata.clone(),
+                        latency_ms: latency_ms_since(request_started_at),
+                        collector: state.service.new_stream_response_collector(),
+                        failure: Some(gateway_service::StreamFailureSummary {
+                            status_code: gateway_error.http_status_code().into(),
+                            error_code: gateway_error.error_code().to_string(),
+                        }),
+                    },
+                )
+                .await;
+                state.metrics.record_chat_request(&ChatRequestMetric {
+                    labels,
+                    status_code: i64::from(gateway_error.http_status_code()),
+                    outcome: gateway_error.error_type(),
+                    latency_seconds: latency_seconds_since(request_started_at),
+                });
+                return Err(AppError(gateway_error));
+            }
+        };
+        let body_stream = wrap_stream_with_request_logging(LoggingBodyStreamState {
+            upstream: stream,
+            service: state.service.clone(),
+            metrics: state.metrics.clone(),
+            auth: auth.clone(),
+            request_log_context: request_log_context.clone(),
+            requested_model_key: resolved.selection.requested_model.model_key.clone(),
+            resolved_model_key: resolved.selection.execution_model.model_key.clone(),
+            execution_model: resolved.selection.execution_model.clone(),
+            route: route.clone(),
+            provider_key: route.provider_key.clone(),
+            icon_metadata: icon_metadata.clone(),
+            started_at: request_started_at,
+            finished: false,
+            collector: state.service.new_stream_response_collector(),
+        });
+
+        let mut response = Response::builder()
+            .status(axum::http::StatusCode::OK)
+            .header(CONTENT_TYPE, "text/event-stream; charset=utf-8")
+            .header(CACHE_CONTROL, "no-cache")
+            .body(Body::from_stream(body_stream))
+            .map_err(|error| {
+                AppError(GatewayError::Internal(format!(
+                    "failed to build responses streaming response: {error}"
+                )))
+            })?;
+
+        if let Ok(request_id_header) = HeaderValue::from_str(&request_id) {
+            response
+                .headers_mut()
+                .insert("x-request-id", request_id_header);
+        }
+
+        return Ok(response);
+    }
+
+    let provider_execution_span = tracing::info_span!(
+        "provider_execution",
+        request_id = %request_id,
+        requested_model = %resolved.selection.requested_model.model_key,
+        resolved_model = %resolved.selection.execution_model.model_key,
+        provider = %route.provider_key,
+        stream = false,
+        ownership_kind = %auth.owner_kind.as_str(),
+    );
+    let value = provider
+        .responses(&core_request, &context)
+        .instrument(provider_execution_span)
+        .await
+        .map_err(|error| map_operation_provider_error(error, requirements));
+    let value = match value {
+        Ok(value) => normalize_response_model(value, &resolved.selection.requested_model.model_key),
+        Err(error) => {
+            best_effort_log_non_stream_failure(
+                &state.service,
+                &auth,
+                &request_log_context,
+                &route.provider_key,
+                icon_metadata.clone(),
+                latency_ms_since(request_started_at),
+                &error,
+            )
+            .await;
+            state.metrics.record_chat_request(&ChatRequestMetric {
+                labels,
+                status_code: i64::from(error.http_status_code()),
+                outcome: error.error_type(),
+                latency_seconds: latency_seconds_since(request_started_at),
+            });
+            return Err(AppError(error));
+        }
+    };
+    finalize_successful_usage_accounting(
+        &state,
+        UsageAccountingContext {
+            auth: &auth,
+            model: &resolved.selection.execution_model,
+            route: &route,
+            request_id: &request_id,
+            labels: labels.clone(),
+            operation: "responses",
+        },
+        usage_value_from_response(&value),
+    )
+    .await;
+    best_effort_log_non_stream_success(
+        &state.service,
+        &auth,
+        &request_log_context,
+        &route.provider_key,
+        icon_metadata,
+        latency_ms_since(request_started_at),
+        &value,
+    )
+    .await;
+    state.metrics.record_chat_request(&ChatRequestMetric {
+        labels,
+        status_code: 200,
+        outcome: "success",
+        latency_seconds: latency_seconds_since(request_started_at),
+    });
+    let mut response = Json(value).into_response();
+    if let Ok(request_id_header) = HeaderValue::from_str(&request_id) {
+        response
+            .headers_mut()
+            .insert("x-request-id", request_id_header);
+    }
+    Ok(response)
+}
+
 pub async fn v1_embeddings(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -501,6 +771,7 @@ fn supports_requirements(
     requirements: CoreRequestRequirements,
 ) -> bool {
     (!requirements.chat_completions || capabilities.chat_completions)
+        && (!requirements.responses || capabilities.responses)
         && (!requirements.stream || capabilities.stream)
         && (!requirements.embeddings || capabilities.embeddings)
         && (!requirements.tools || capabilities.tools)
@@ -718,7 +989,7 @@ fn wrap_stream_with_request_logging(
                             route: &state.route,
                             request_id: &state.request_log_context.request_id,
                             labels,
-                            operation: "chat_completions",
+                            operation: state.request_log_context.operation,
                         },
                         state.collector.usage().cloned(),
                     )
@@ -951,8 +1222,14 @@ fn usage_summary_from_value(value: Option<&Value>) -> UsageSummary {
         return UsageSummary::default();
     };
 
-    let prompt_tokens = usage.get("prompt_tokens").and_then(Value::as_i64);
-    let completion_tokens = usage.get("completion_tokens").and_then(Value::as_i64);
+    let prompt_tokens = usage
+        .get("prompt_tokens")
+        .or_else(|| usage.get("input_tokens"))
+        .and_then(Value::as_i64);
+    let completion_tokens = usage
+        .get("completion_tokens")
+        .or_else(|| usage.get("output_tokens"))
+        .and_then(Value::as_i64);
     let total_tokens = match usage.get("total_tokens").and_then(Value::as_i64) {
         some @ Some(_) => some,
         None => match (prompt_tokens, completion_tokens) {
@@ -981,8 +1258,9 @@ fn record_request_span_fields(
     auth: &AuthenticatedApiKey,
     resolved: &gateway_service::ResolvedGatewayRequest,
     stream: bool,
+    route_path: &str,
 ) {
-    span.record("http.route", field::display("/v1/chat/completions"));
+    span.record("http.route", field::display(route_path));
     span.record(
         "requested_model",
         field::display(&resolved.selection.requested_model.model_key),

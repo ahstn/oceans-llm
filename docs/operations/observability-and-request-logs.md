@@ -33,7 +33,7 @@ The intended deploy path is collector-friendly OTLP export rather than an in-pro
 
 The runtime emits bounded request-level signals for:
 
-- chat request totals
+- API request totals
 - request latency
 - request outcomes
 - token totals
@@ -90,6 +90,8 @@ The summary row stores:
 - truncation flags
 - metadata such as `operation` and `stream`
 
+`operation` is the public API family. Current values include `chat_completions`, `responses`, and `embeddings`.
+
 Streaming requests persist a bounded transcript payload rather than raw transport bytes.
 
 The stream payload contract is incremental rather than chunk-local:
@@ -98,10 +100,11 @@ The stream payload contract is incremental rather than chunk-local:
 - SSE `data:` frames are reassembled across chunk boundaries
 - both `data:` and `data: ` forms are accepted
 - the latest coherent `usage` object is retained for request-log and ledger work
+- Responses streams also retain usage from `response.usage` on completed response events
 
 Request-log payloads are user-visible artifacts. They do not persist the transformed outbound provider request body produced by route compatibility profiles.
 
-Provider stream transcripts can include normalized compatibility output, such as promoted usage or canonical reasoning deltas, because that normalized stream is what the gateway returns to callers.
+Provider stream transcripts can include normalized compatibility output, such as promoted usage or canonical reasoning deltas, because that normalized stream is what the gateway returns to callers. Responses streams preserve `response.*` event names and payloads rather than being rewritten into Chat Completions chunks.
 
 ## Redaction and Truncation Boundaries
 

@@ -1205,10 +1205,11 @@ mod tests {
     use gateway_core::{
         ApiKeyRepository, AuthMode, BudgetAlertChannel, BudgetAlertDeliveryRecord,
         BudgetAlertDeliveryStatus, BudgetAlertRepository, BudgetCadence, BudgetRepository,
-        CoreChatRequest, CoreEmbeddingsRequest, GlobalRole, IdentityRepository, MembershipRole,
-        ModelRepository, Money4, ProviderCapabilities, ProviderClient, ProviderError,
-        ProviderRequestContext, ProviderStream, SeedApiKey, SeedModel, SeedModelRoute,
-        SeedProvider, UsageLedgerRecord, UsagePricingStatus, parse_gateway_api_key,
+        CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest, GlobalRole,
+        IdentityRepository, MembershipRole, ModelRepository, Money4, ProviderCapabilities,
+        ProviderClient, ProviderError, ProviderRequestContext, ProviderStream, SeedApiKey,
+        SeedModel, SeedModelRoute, SeedProvider, UsageLedgerRecord, UsagePricingStatus,
+        parse_gateway_api_key,
     };
     use gateway_providers::{OpenAiCompatConfig, OpenAiCompatProvider};
     use gateway_service::{GatewayService, WeightedRoutePlanner, hash_gateway_key_secret};
@@ -1317,6 +1318,32 @@ mod tests {
                 "mock embeddings unsupported for this provider".to_string(),
             ))
         }
+
+        async fn responses(
+            &self,
+            _request: &CoreResponsesRequest,
+            _context: &ProviderRequestContext,
+        ) -> Result<Value, ProviderError> {
+            self.chat_calls.fetch_add(1, Ordering::SeqCst);
+            match self.chat_result.clone() {
+                MockChatResult::Value(value) => Ok(value),
+                MockChatResult::Error(error) => Err(error.into_provider_error()),
+            }
+        }
+
+        async fn responses_stream(
+            &self,
+            _request: &CoreResponsesRequest,
+            _context: &ProviderRequestContext,
+        ) -> Result<ProviderStream, ProviderError> {
+            let stream = futures_util::stream::iter(
+                self.stream_chunks
+                    .clone()
+                    .into_iter()
+                    .map(|chunk| Ok(Bytes::from(chunk))),
+            );
+            Ok(Box::pin(stream))
+        }
     }
 
     fn make_chat_provider(
@@ -1392,6 +1419,26 @@ mod tests {
                 MockEmbeddingsResult::Value(value) => Ok(value),
                 MockEmbeddingsResult::Error(error) => Err(error.into_provider_error()),
             }
+        }
+
+        async fn responses(
+            &self,
+            _request: &CoreResponsesRequest,
+            _context: &ProviderRequestContext,
+        ) -> Result<Value, ProviderError> {
+            Err(ProviderError::InvalidRequest(
+                "mock responses unsupported for this provider".to_string(),
+            ))
+        }
+
+        async fn responses_stream(
+            &self,
+            _request: &CoreResponsesRequest,
+            _context: &ProviderRequestContext,
+        ) -> Result<ProviderStream, ProviderError> {
+            Err(ProviderError::InvalidRequest(
+                "mock responses stream unsupported for this provider".to_string(),
+            ))
         }
     }
 
@@ -3423,6 +3470,162 @@ mod tests {
         assert_eq!(ledgers[0].request_id, request_id);
         assert_eq!(ledgers[0].pricing_status, "usage_missing");
         assert_eq!(ledgers[0].computed_cost_10000, 0);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn responses_executes_resolved_provider_and_records_usage() {
+        let (calls, provider) = make_chat_provider(
+            "openai-prod",
+            MockChatResult::Value(json!({
+                "id": "resp_123",
+                "object": "response",
+                "model": "gpt-5",
+                "output": [{"id":"msg_1","type":"message","content":[{"type":"output_text","text":"pong"}]}],
+                "usage": {"input_tokens": 11, "output_tokens": 7, "total_tokens": 18}
+            })),
+            vec![],
+            ProviderCapabilities::openai_compat_baseline(),
+        );
+        let mut registry = gateway_core::ProviderRegistry::new();
+        registry.register(Arc::new(provider));
+
+        let (app, raw_key, db_path) = build_default_test_app(registry).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/responses")
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .body(Body::from(
+                        json!({
+                            "model": "fast",
+                            "input": [{"type":"message","role":"user","content":"ping"}]
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        let request_id = response
+            .headers()
+            .get("x-request-id")
+            .expect("x-request-id header")
+            .to_str()
+            .expect("request id value")
+            .to_string();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        let payload: Value = serde_json::from_slice(&body).expect("json body");
+        assert_eq!(payload["model"], "fast");
+        assert_eq!(payload["object"], "response");
+
+        let logs = load_request_logs(&db_path).await;
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].provider_key, "openai-prod");
+        assert_eq!(logs[0].status_code, Some(200));
+        assert_eq!(logs[0].prompt_tokens, Some(11));
+        assert_eq!(logs[0].completion_tokens, Some(7));
+        assert_eq!(logs[0].total_tokens, Some(18));
+        assert_eq!(logs[0].metadata["stream"], Value::Bool(false));
+        assert_eq!(logs[0].metadata["operation"], "responses");
+
+        let ledgers = load_usage_ledger(&db_path).await;
+        assert_eq!(ledgers.len(), 1);
+        assert_eq!(ledgers[0].request_id, request_id);
+        assert_eq!(ledgers[0].provider_key, "openai-prod");
+        assert_eq!(ledgers[0].prompt_tokens, Some(11));
+        assert_eq!(ledgers[0].completion_tokens, Some(7));
+        assert_eq!(ledgers[0].total_tokens, Some(18));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn responses_rejects_when_no_route_supports_responses() {
+        let (calls, provider) = make_chat_provider(
+            "openai-prod",
+            MockChatResult::Value(json!({"object":"response","output":[]})),
+            vec![],
+            ProviderCapabilities::openai_compat_baseline(),
+        );
+        let mut registry = gateway_core::ProviderRegistry::new();
+        registry.register(Arc::new(provider));
+
+        let seed_providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: serde_json::json!({"base_url": "https://api.openai.com/v1"}),
+            secrets: None,
+        }];
+        let models = vec![SeedModel {
+            model_key: "fast".to_string(),
+            alias_target_model_key: None,
+            description: Some("Fast tier".to_string()),
+            tags: vec!["fast".to_string()],
+            rank: 10,
+            routes: vec![SeedModelRoute {
+                provider_key: "openai-prod".to_string(),
+                upstream_model: "gpt-5".to_string(),
+                priority: 10,
+                weight: 1.0,
+                enabled: true,
+                extra_headers: Map::<String, Value>::new(),
+                extra_body: Map::<String, Value>::new(),
+                capabilities: ProviderCapabilities {
+                    chat_completions: true,
+                    responses: false,
+                    stream: true,
+                    embeddings: true,
+                    tools: true,
+                    vision: true,
+                    json_schema: true,
+                    developer_role: true,
+                },
+                compatibility: Default::default(),
+            }],
+        }];
+
+        let (app, raw_key, _) = build_test_app(seed_providers, models, registry).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/responses")
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .body(Body::from(
+                        json!({
+                            "model": "fast",
+                            "input": "ping"
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        let payload: Value = serde_json::from_slice(&body).expect("json body");
+        assert!(
+            payload["error"]["message"]
+                .as_str()
+                .expect("message")
+                .contains("responses")
+        );
     }
 
     #[tokio::test]

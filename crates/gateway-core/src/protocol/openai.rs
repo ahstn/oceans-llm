@@ -76,6 +76,65 @@ pub struct EmbeddingsRequest {
     pub extra: BTreeMap<String, Value>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ResponsesRequest {
+    pub model: String,
+    pub input: Value,
+    #[serde(default)]
+    pub stream: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_choice: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<Value>,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ResponsesResponse {
+    pub id: String,
+    pub object: String,
+    pub model: String,
+    #[serde(default)]
+    pub output: Vec<ResponseOutputItem>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<ResponseUsage>,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ResponseOutputItem {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub item_type: String,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ResponseUsage {
+    pub input_tokens: Option<i64>,
+    pub output_tokens: Option<i64>,
+    pub total_tokens: Option<i64>,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ResponsesStreamEvent {
+    #[serde(rename = "type")]
+    pub event_type: String,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
+
 #[cfg(test)]
 mod tests {
     use crate::error::GatewayError;

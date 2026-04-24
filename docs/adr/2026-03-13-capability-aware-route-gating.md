@@ -32,6 +32,7 @@ We introduced richer per-route capability metadata and pre-execution capability 
 `ProviderCapabilities` now models:
 
 - `chat_completions`
+- `responses`
 - `stream`
 - `embeddings`
 - `tools`

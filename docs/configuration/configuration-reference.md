@@ -320,6 +320,8 @@ Capability flags default permissively. A route can constrain provider capability
 
 Compatibility metadata is separate from capabilities. Capabilities decide whether a route may execute; compatibility describes explicit request and stream-shape transforms for the selected provider route.
 
+Capability flags include API-family gates such as `chat_completions`, `responses`, and `embeddings`, plus feature gates such as `stream`, `tools`, `vision`, `json_schema`, and `developer_role`.
+
 OpenAI-compatible route profile:
 
 ```yaml
@@ -346,6 +348,8 @@ OpenAI-compatible profile defaults:
 | `developer_role` | `developer` | `developer`, `system` |
 | `reasoning_effort` | `passthrough` | `passthrough`, `omit`, `reasoning_object` |
 | `supports_stream_usage` | `false` | `true`, `false` |
+
+The current `openai_compat` profile fields are Chat Completions transforms. `/v1/responses` is a separate supported API family and is not adapted by reusing Chat Completions compatibility shims.
 
 Do not use `extra_body` for compatibility transforms. `extra_body` remains for additive provider-specific overrides, and the typed compatibility profile remains authoritative when a declared transform conflicts with an additive override.
 

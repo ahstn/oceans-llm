@@ -1048,6 +1048,8 @@ pub struct ProviderCapabilities {
     #[serde(default = "default_true")]
     pub chat_completions: bool,
     #[serde(default = "default_true")]
+    pub responses: bool,
+    #[serde(default = "default_true")]
     pub stream: bool,
     #[serde(default = "default_true")]
     pub embeddings: bool,
@@ -1087,6 +1089,7 @@ impl ProviderCapabilities {
     ) -> Self {
         Self {
             chat_completions,
+            responses: false,
             stream,
             embeddings,
             tools,
@@ -1103,25 +1106,44 @@ impl ProviderCapabilities {
 
     #[must_use]
     pub const fn openai_compat_baseline() -> Self {
-        Self::with_dimensions(true, true, true, true, true, true, true)
+        Self {
+            chat_completions: true,
+            responses: true,
+            stream: true,
+            embeddings: true,
+            tools: true,
+            vision: true,
+            json_schema: true,
+            developer_role: true,
+        }
     }
 
     #[must_use]
     pub const fn all_enabled() -> Self {
-        Self::with_dimensions(true, true, true, true, true, true, true)
+        Self {
+            chat_completions: true,
+            responses: true,
+            stream: true,
+            embeddings: true,
+            tools: true,
+            vision: true,
+            json_schema: true,
+            developer_role: true,
+        }
     }
 
     #[must_use]
     pub const fn intersect(self, other: Self) -> Self {
-        Self::with_dimensions(
-            self.chat_completions && other.chat_completions,
-            self.stream && other.stream,
-            self.embeddings && other.embeddings,
-            self.tools && other.tools,
-            self.vision && other.vision,
-            self.json_schema && other.json_schema,
-            self.developer_role && other.developer_role,
-        )
+        Self {
+            chat_completions: self.chat_completions && other.chat_completions,
+            responses: self.responses && other.responses,
+            stream: self.stream && other.stream,
+            embeddings: self.embeddings && other.embeddings,
+            tools: self.tools && other.tools,
+            vision: self.vision && other.vision,
+            json_schema: self.json_schema && other.json_schema,
+            developer_role: self.developer_role && other.developer_role,
+        }
     }
 }
 
