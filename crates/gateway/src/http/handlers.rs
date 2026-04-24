@@ -3,9 +3,9 @@ use std::{collections::BTreeMap, sync::Arc, time::Instant};
 use axum::{
     Json,
     body::Body,
-    extract::State,
+    extract::{Extension, State},
     http::{
-        HeaderMap, HeaderValue,
+        HeaderMap,
         header::{AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE},
     },
     response::{IntoResponse, Response},
@@ -14,7 +14,7 @@ use futures_util::{StreamExt, stream};
 use gateway_core::{
     AuthenticatedApiKey, ChatCompletionsRequest, CoreRequestRequirements, EmbeddingsRequest,
     GatewayError, ModelsListResponse, ProviderCapabilities, ProviderClient, ProviderError,
-    ProviderRequestContext, RequestLogRecord, RequestTags, ResponsesRequest,
+    ProviderRequestContext, RequestAttemptRecord, RequestAttemptStatus, ResponsesRequest,
     openai_chat_request_to_core, openai_embeddings_request_to_core,
     openai_responses_request_to_core, protocol::openai::ModelCard,
 };
@@ -22,10 +22,10 @@ use gateway_service::{
     RequestLogIconMetadata, ResolvedProviderConnection, resolve_model_icon_key,
     resolve_provider_display_from_parts,
 };
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 use time::OffsetDateTime;
+use tower_http::request_id::RequestId;
 use tracing::{Instrument, Span, field};
-use uuid::Uuid;
 
 use crate::http::{
     error::AppError,
@@ -77,6 +77,7 @@ pub async fn v1_models(
 
 pub async fn v1_chat_completions(
     State(state): State<AppState>,
+    Extension(request_id): Extension<RequestId>,
     headers: HeaderMap,
     Json(request): Json<ChatCompletionsRequest>,
 ) -> Result<Response, AppError> {
@@ -92,7 +93,7 @@ pub async fn v1_chat_completions(
         .resolve_request(&auth, &core_request.model)
         .await?;
 
-    let request_id = extract_request_id(&headers);
+    let request_id = canonical_request_id(&request_id)?;
     let request_headers = extract_request_headers(&headers);
     let request_tags = extract_request_tags(&headers)?;
     let request_log_context = state.service.begin_chat_request_log(
@@ -187,6 +188,7 @@ pub async fn v1_chat_completions(
             stream = true,
             ownership_kind = %auth.owner_kind.as_str(),
         );
+        let attempt_started_at = gateway_service::offset_now();
         let stream = match provider
             .chat_completions_stream(&core_request, &context)
             .instrument(provider_execution_span)
@@ -194,7 +196,15 @@ pub async fn v1_chat_completions(
         {
             Ok(stream) => stream,
             Err(error) => {
-                let gateway_error = map_operation_provider_error(error, requirements);
+                let (gateway_error, attempt) = provider_error_attempt(
+                    &request_log_context,
+                    &route,
+                    RequestAttemptStatus::StreamStartError,
+                    true,
+                    attempt_started_at,
+                    error,
+                    requirements,
+                );
                 tracing::warn!(
                     request_id = %request_id,
                     provider_key = %route.provider_key,
@@ -215,6 +225,7 @@ pub async fn v1_chat_completions(
                             status_code: gateway_error.http_status_code().into(),
                             error_code: gateway_error.error_code().to_string(),
                         }),
+                        attempts: vec![attempt],
                     },
                 )
                 .await;
@@ -240,11 +251,12 @@ pub async fn v1_chat_completions(
             provider_key: route.provider_key.clone(),
             icon_metadata: icon_metadata.clone(),
             started_at: request_started_at,
+            attempt_started_at,
             finished: false,
             collector: state.service.new_stream_response_collector(),
         });
 
-        let mut response = Response::builder()
+        let response = Response::builder()
             .status(axum::http::StatusCode::OK)
             .header(CONTENT_TYPE, "text/event-stream; charset=utf-8")
             .header(CACHE_CONTROL, "no-cache")
@@ -254,12 +266,6 @@ pub async fn v1_chat_completions(
                     "failed to build streaming response: {error}"
                 )))
             })?;
-
-        if let Ok(request_id_header) = HeaderValue::from_str(&request_id) {
-            response
-                .headers_mut()
-                .insert("x-request-id", request_id_header);
-        }
 
         return Ok(response);
     }
@@ -273,14 +279,23 @@ pub async fn v1_chat_completions(
         stream = false,
         ownership_kind = %auth.owner_kind.as_str(),
     );
-    let value = provider
+    let attempt_started_at = gateway_service::offset_now();
+    let value = match provider
         .chat_completions(&core_request, &context)
         .instrument(provider_execution_span)
         .await
-        .map_err(|error| map_operation_provider_error(error, requirements));
-    let value = match value {
+    {
         Ok(value) => normalize_response_model(value, &resolved.selection.requested_model.model_key),
         Err(error) => {
+            let (error, attempt) = provider_error_attempt(
+                &request_log_context,
+                &route,
+                RequestAttemptStatus::ProviderError,
+                false,
+                attempt_started_at,
+                error,
+                requirements,
+            );
             best_effort_log_non_stream_failure(
                 &state.service,
                 &auth,
@@ -289,6 +304,7 @@ pub async fn v1_chat_completions(
                 icon_metadata.clone(),
                 latency_ms_since(request_started_at),
                 &error,
+                vec![attempt],
             )
             .await;
             state.metrics.record_chat_request(&ChatRequestMetric {
@@ -300,6 +316,7 @@ pub async fn v1_chat_completions(
             return Err(AppError(error));
         }
     };
+    let attempt = success_attempt(&request_log_context, &route, false, attempt_started_at);
     finalize_successful_usage_accounting(
         &state,
         UsageAccountingContext {
@@ -321,6 +338,7 @@ pub async fn v1_chat_completions(
         icon_metadata,
         latency_ms_since(request_started_at),
         &value,
+        vec![attempt],
     )
     .await;
     state.metrics.record_chat_request(&ChatRequestMetric {
@@ -329,17 +347,13 @@ pub async fn v1_chat_completions(
         outcome: "success",
         latency_seconds: latency_seconds_since(request_started_at),
     });
-    let mut response = Json(value).into_response();
-    if let Ok(request_id_header) = HeaderValue::from_str(&request_id) {
-        response
-            .headers_mut()
-            .insert("x-request-id", request_id_header);
-    }
+    let response = Json(value).into_response();
     Ok(response)
 }
 
 pub async fn v1_responses(
     State(state): State<AppState>,
+    Extension(request_id): Extension<RequestId>,
     headers: HeaderMap,
     Json(request): Json<ResponsesRequest>,
 ) -> Result<Response, AppError> {
@@ -355,7 +369,7 @@ pub async fn v1_responses(
         .resolve_request(&auth, &core_request.model)
         .await?;
 
-    let request_id = extract_request_id(&headers);
+    let request_id = canonical_request_id(&request_id)?;
     let request_headers = extract_request_headers(&headers);
     let request_tags = extract_request_tags(&headers)?;
     let request_log_context = state.service.begin_responses_request_log(
@@ -450,6 +464,7 @@ pub async fn v1_responses(
             stream = true,
             ownership_kind = %auth.owner_kind.as_str(),
         );
+        let attempt_started_at = gateway_service::offset_now();
         let stream = match provider
             .responses_stream(&core_request, &context)
             .instrument(provider_execution_span)
@@ -457,7 +472,15 @@ pub async fn v1_responses(
         {
             Ok(stream) => stream,
             Err(error) => {
-                let gateway_error = map_operation_provider_error(error, requirements);
+                let (gateway_error, attempt) = provider_error_attempt(
+                    &request_log_context,
+                    &route,
+                    RequestAttemptStatus::StreamStartError,
+                    true,
+                    attempt_started_at,
+                    error,
+                    requirements,
+                );
                 tracing::warn!(
                     request_id = %request_id,
                     provider_key = %route.provider_key,
@@ -478,6 +501,7 @@ pub async fn v1_responses(
                             status_code: gateway_error.http_status_code().into(),
                             error_code: gateway_error.error_code().to_string(),
                         }),
+                        attempts: vec![attempt],
                     },
                 )
                 .await;
@@ -503,11 +527,12 @@ pub async fn v1_responses(
             provider_key: route.provider_key.clone(),
             icon_metadata: icon_metadata.clone(),
             started_at: request_started_at,
+            attempt_started_at,
             finished: false,
             collector: state.service.new_stream_response_collector(),
         });
 
-        let mut response = Response::builder()
+        let response = Response::builder()
             .status(axum::http::StatusCode::OK)
             .header(CONTENT_TYPE, "text/event-stream; charset=utf-8")
             .header(CACHE_CONTROL, "no-cache")
@@ -517,12 +542,6 @@ pub async fn v1_responses(
                     "failed to build responses streaming response: {error}"
                 )))
             })?;
-
-        if let Ok(request_id_header) = HeaderValue::from_str(&request_id) {
-            response
-                .headers_mut()
-                .insert("x-request-id", request_id_header);
-        }
 
         return Ok(response);
     }
@@ -536,14 +555,23 @@ pub async fn v1_responses(
         stream = false,
         ownership_kind = %auth.owner_kind.as_str(),
     );
-    let value = provider
+    let attempt_started_at = gateway_service::offset_now();
+    let value = match provider
         .responses(&core_request, &context)
         .instrument(provider_execution_span)
         .await
-        .map_err(|error| map_operation_provider_error(error, requirements));
-    let value = match value {
+    {
         Ok(value) => normalize_response_model(value, &resolved.selection.requested_model.model_key),
         Err(error) => {
+            let (error, attempt) = provider_error_attempt(
+                &request_log_context,
+                &route,
+                RequestAttemptStatus::ProviderError,
+                false,
+                attempt_started_at,
+                error,
+                requirements,
+            );
             best_effort_log_non_stream_failure(
                 &state.service,
                 &auth,
@@ -552,6 +580,7 @@ pub async fn v1_responses(
                 icon_metadata.clone(),
                 latency_ms_since(request_started_at),
                 &error,
+                vec![attempt],
             )
             .await;
             state.metrics.record_chat_request(&ChatRequestMetric {
@@ -563,6 +592,7 @@ pub async fn v1_responses(
             return Err(AppError(error));
         }
     };
+    let attempt = success_attempt(&request_log_context, &route, false, attempt_started_at);
     finalize_successful_usage_accounting(
         &state,
         UsageAccountingContext {
@@ -584,6 +614,7 @@ pub async fn v1_responses(
         icon_metadata,
         latency_ms_since(request_started_at),
         &value,
+        vec![attempt],
     )
     .await;
     state.metrics.record_chat_request(&ChatRequestMetric {
@@ -592,17 +623,13 @@ pub async fn v1_responses(
         outcome: "success",
         latency_seconds: latency_seconds_since(request_started_at),
     });
-    let mut response = Json(value).into_response();
-    if let Ok(request_id_header) = HeaderValue::from_str(&request_id) {
-        response
-            .headers_mut()
-            .insert("x-request-id", request_id_header);
-    }
+    let response = Json(value).into_response();
     Ok(response)
 }
 
 pub async fn v1_embeddings(
     State(state): State<AppState>,
+    Extension(request_id): Extension<RequestId>,
     headers: HeaderMap,
     Json(request): Json<EmbeddingsRequest>,
 ) -> Result<Response, AppError> {
@@ -617,9 +644,17 @@ pub async fn v1_embeddings(
         .service
         .resolve_request(&auth, &core_request.model)
         .await?;
-    let request_id = extract_request_id(&headers);
+    let request_id = canonical_request_id(&request_id)?;
     let request_headers = extract_request_headers(&headers);
     let request_tags = extract_request_tags(&headers)?;
+    let request_log_context = state.service.begin_embeddings_request_log(
+        &request_id,
+        &resolved.selection.requested_model.model_key,
+        &resolved.selection.execution_model.model_key,
+        &request,
+        &request_headers,
+        request_tags,
+    );
     let (eligible_route_count, selected) =
         select_first_eligible_route(&state.providers, &resolved.routes, requirements);
 
@@ -663,34 +698,34 @@ pub async fn v1_embeddings(
         request_headers,
     );
 
-    let value = provider
-        .embeddings(&core_request, &context)
-        .await
-        .map_err(|error| map_operation_provider_error(error, requirements));
-    let value = match value {
+    let attempt_started_at = gateway_service::offset_now();
+    let value = match provider.embeddings(&core_request, &context).await {
         Ok(value) => normalize_response_model(value, &resolved.selection.requested_model.model_key),
         Err(error) => {
-            best_effort_log_request(
+            let (error, attempt) = provider_error_attempt(
+                &request_log_context,
+                &route,
+                RequestAttemptStatus::ProviderError,
+                false,
+                attempt_started_at,
+                error,
+                requirements,
+            );
+            best_effort_log_non_stream_failure(
                 &state.service,
                 &auth,
-                &request_id,
-                &resolved.selection.requested_model.model_key,
-                &resolved.selection.execution_model.model_key,
-                &request_tags,
-                RequestLogSummary::failure(
-                    RequestOperation::Embeddings,
-                    route.provider_key.clone(),
-                    icon_metadata.clone(),
-                    false,
-                    latency_ms_since(request_started_at),
-                    error.http_status_code().into(),
-                    error.error_code().to_string(),
-                ),
+                &request_log_context,
+                &route.provider_key,
+                icon_metadata.clone(),
+                latency_ms_since(request_started_at),
+                &error,
+                vec![attempt],
             )
             .await;
             return Err(AppError(error));
         }
     };
+    let attempt = success_attempt(&request_log_context, &route, false, attempt_started_at);
 
     finalize_successful_usage_accounting(
         &state,
@@ -705,30 +740,19 @@ pub async fn v1_embeddings(
         usage_value_from_response(&value),
     )
     .await;
-    best_effort_log_request(
+    best_effort_log_non_stream_success(
         &state.service,
         &auth,
-        &request_id,
-        &resolved.selection.requested_model.model_key,
-        &resolved.selection.execution_model.model_key,
-        &request_tags,
-        RequestLogSummary::success(
-            RequestOperation::Embeddings,
-            route.provider_key.clone(),
-            icon_metadata,
-            false,
-            latency_ms_since(request_started_at),
-            usage_from_response(&value),
-        ),
+        &request_log_context,
+        &route.provider_key,
+        icon_metadata,
+        latency_ms_since(request_started_at),
+        &value,
+        vec![attempt],
     )
     .await;
 
-    let mut response = Json(value).into_response();
-    if let Ok(request_id_header) = HeaderValue::from_str(&request_id) {
-        response
-            .headers_mut()
-            .insert("x-request-id", request_id_header);
-    }
+    let response = Json(value).into_response();
     Ok(response)
 }
 
@@ -754,6 +778,71 @@ fn select_first_eligible_route(
     }
 
     (eligible_route_count, selected)
+}
+
+fn provider_error_attempt(
+    context: &gateway_service::ChatRequestLogContext,
+    route: &gateway_core::ModelRoute,
+    status: RequestAttemptStatus,
+    stream: bool,
+    started_at: OffsetDateTime,
+    error: ProviderError,
+    requirements: CoreRequestRequirements,
+) -> (GatewayError, RequestAttemptRecord) {
+    let retryable = error.is_retryable();
+    let detail = error.to_string();
+    let gateway_error = map_operation_provider_error(error, requirements);
+    let attempt = gateway_service::build_request_attempt(
+        context,
+        route,
+        1,
+        stream,
+        started_at,
+        gateway_service::offset_now(),
+        gateway_service::failed_attempt_outcome(status, &gateway_error, retryable, detail),
+    );
+    (gateway_error, attempt)
+}
+
+fn success_attempt(
+    context: &gateway_service::ChatRequestLogContext,
+    route: &gateway_core::ModelRoute,
+    stream: bool,
+    started_at: OffsetDateTime,
+) -> RequestAttemptRecord {
+    gateway_service::build_request_attempt(
+        context,
+        route,
+        1,
+        stream,
+        started_at,
+        gateway_service::offset_now(),
+        gateway_service::successful_attempt_outcome(),
+    )
+}
+
+fn stream_failure_attempt(
+    context: &gateway_service::ChatRequestLogContext,
+    route: &gateway_core::ModelRoute,
+    started_at: OffsetDateTime,
+    failure: &gateway_service::StreamFailureSummary,
+) -> RequestAttemptRecord {
+    gateway_service::build_request_attempt(
+        context,
+        route,
+        1,
+        true,
+        started_at,
+        gateway_service::offset_now(),
+        gateway_service::RequestAttemptOutcome {
+            status: RequestAttemptStatus::StreamError,
+            status_code: Some(failure.status_code),
+            error_code: Some(failure.error_code.clone()),
+            error_detail: Some(failure.error_code.clone()),
+            retryable: false,
+            produced_final_response: false,
+        },
+    )
 }
 
 fn map_operation_provider_error(
@@ -810,87 +899,6 @@ fn build_provider_context(
     }
 }
 
-#[derive(Debug, Clone, Default)]
-struct UsageSummary {
-    prompt_tokens: Option<i64>,
-    completion_tokens: Option<i64>,
-    total_tokens: Option<i64>,
-}
-
-#[derive(Debug, Clone)]
-enum RequestOperation {
-    Embeddings,
-}
-
-impl RequestOperation {
-    const fn as_str(&self) -> &'static str {
-        match self {
-            Self::Embeddings => "embeddings",
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct RequestLogSummary {
-    operation: RequestOperation,
-    provider_key: String,
-    icon_metadata: RequestLogIconMetadata,
-    stream: bool,
-    status_code: i64,
-    error_code: Option<String>,
-    latency_ms: i64,
-    prompt_tokens: Option<i64>,
-    completion_tokens: Option<i64>,
-    total_tokens: Option<i64>,
-}
-
-impl RequestLogSummary {
-    fn success(
-        operation: RequestOperation,
-        provider_key: String,
-        icon_metadata: RequestLogIconMetadata,
-        stream: bool,
-        latency_ms: i64,
-        usage: UsageSummary,
-    ) -> Self {
-        Self {
-            operation,
-            provider_key,
-            icon_metadata,
-            stream,
-            status_code: 200,
-            error_code: None,
-            latency_ms,
-            prompt_tokens: usage.prompt_tokens,
-            completion_tokens: usage.completion_tokens,
-            total_tokens: usage.total_tokens,
-        }
-    }
-
-    fn failure(
-        operation: RequestOperation,
-        provider_key: String,
-        icon_metadata: RequestLogIconMetadata,
-        stream: bool,
-        latency_ms: i64,
-        status_code: i64,
-        error_code: String,
-    ) -> Self {
-        Self {
-            operation,
-            provider_key,
-            icon_metadata,
-            stream,
-            status_code,
-            error_code: Some(error_code),
-            latency_ms,
-            prompt_tokens: None,
-            completion_tokens: None,
-            total_tokens: None,
-        }
-    }
-}
-
 struct LoggingBodyStreamState {
     upstream: gateway_core::ProviderStream,
     service: std::sync::Arc<AppGatewayService>,
@@ -904,6 +912,7 @@ struct LoggingBodyStreamState {
     provider_key: String,
     icon_metadata: RequestLogIconMetadata,
     started_at: Instant,
+    attempt_started_at: OffsetDateTime,
     finished: bool,
     collector: gateway_service::StreamResponseCollector,
 }
@@ -933,6 +942,7 @@ fn wrap_stream_with_request_logging(
             }
             Some(Err(error)) => {
                 let error_message = error.to_string();
+                let retryable = error.is_retryable();
                 let gateway_error = GatewayError::from(error);
                 tracing::warn!(
                     request_id = %state.request_log_context.request_id,
@@ -953,6 +963,22 @@ fn wrap_stream_with_request_logging(
                             status_code: gateway_error.http_status_code().into(),
                             error_code: gateway_error.error_code().to_string(),
                         }),
+                        attempts: vec![gateway_service::build_request_attempt(
+                            &state.request_log_context,
+                            &state.route,
+                            1,
+                            true,
+                            state.attempt_started_at,
+                            gateway_service::offset_now(),
+                            gateway_service::RequestAttemptOutcome {
+                                status: RequestAttemptStatus::StreamError,
+                                status_code: Some(gateway_error.http_status_code().into()),
+                                error_code: Some(gateway_error.error_code().to_string()),
+                                error_detail: Some(error_message.clone()),
+                                retryable,
+                                produced_final_response: false,
+                            },
+                        )],
                     },
                 )
                 .await;
@@ -1011,6 +1037,20 @@ fn wrap_stream_with_request_logging(
                         latency_ms: latency_ms_since(state.started_at),
                         collector: state.collector,
                         failure: failure.clone(),
+                        attempts: match failure.as_ref() {
+                            Some(failure) => vec![stream_failure_attempt(
+                                &state.request_log_context,
+                                &state.route,
+                                state.attempt_started_at,
+                                failure,
+                            )],
+                            None => vec![success_attempt(
+                                &state.request_log_context,
+                                &state.route,
+                                true,
+                                state.attempt_started_at,
+                            )],
+                        },
                     },
                 )
                 .await;
@@ -1035,6 +1075,7 @@ fn wrap_stream_with_request_logging(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn best_effort_log_non_stream_success(
     service: &std::sync::Arc<AppGatewayService>,
     auth: &AuthenticatedApiKey,
@@ -1043,6 +1084,7 @@ async fn best_effort_log_non_stream_success(
     icon_metadata: RequestLogIconMetadata,
     latency_ms: i64,
     response_body: &Value,
+    attempts: Vec<RequestAttemptRecord>,
 ) {
     if let Err(error) = service
         .log_non_stream_success(
@@ -1052,6 +1094,7 @@ async fn best_effort_log_non_stream_success(
             icon_metadata,
             latency_ms,
             response_body,
+            attempts,
         )
         .await
     {
@@ -1064,6 +1107,7 @@ async fn best_effort_log_non_stream_success(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn best_effort_log_non_stream_failure(
     service: &std::sync::Arc<AppGatewayService>,
     auth: &AuthenticatedApiKey,
@@ -1072,6 +1116,7 @@ async fn best_effort_log_non_stream_failure(
     icon_metadata: RequestLogIconMetadata,
     latency_ms: i64,
     gateway_error: &GatewayError,
+    attempts: Vec<RequestAttemptRecord>,
 ) {
     if let Err(error) = service
         .log_non_stream_failure(
@@ -1081,6 +1126,7 @@ async fn best_effort_log_non_stream_failure(
             icon_metadata,
             latency_ms,
             gateway_error,
+            attempts,
         )
         .await
     {
@@ -1110,73 +1156,6 @@ async fn best_effort_log_stream_result(
             "request logging failed"
         );
     }
-}
-
-async fn best_effort_log_request(
-    service: &std::sync::Arc<AppGatewayService>,
-    auth: &AuthenticatedApiKey,
-    request_id: &str,
-    model_key: &str,
-    resolved_model_key: &str,
-    request_tags: &RequestTags,
-    summary: RequestLogSummary,
-) {
-    let metadata = request_log_metadata(summary.stream, summary.operation, &summary.icon_metadata);
-    let log = RequestLogRecord {
-        request_log_id: Uuid::new_v4(),
-        request_id: request_id.to_string(),
-        api_key_id: auth.id,
-        user_id: None,
-        team_id: None,
-        model_key: model_key.to_string(),
-        resolved_model_key: resolved_model_key.to_string(),
-        provider_key: summary.provider_key,
-        status_code: Some(summary.status_code),
-        latency_ms: Some(summary.latency_ms),
-        prompt_tokens: summary.prompt_tokens,
-        completion_tokens: summary.completion_tokens,
-        total_tokens: summary.total_tokens,
-        has_payload: false,
-        request_payload_truncated: false,
-        response_payload_truncated: false,
-        request_tags: request_tags.clone(),
-        error_code: summary.error_code,
-        metadata,
-        occurred_at: OffsetDateTime::now_utc(),
-    };
-
-    if let Err(error) = service.log_request_if_enabled(auth, log).await {
-        tracing::warn!(
-            request_id = %request_id,
-            model_key = %model_key,
-            error = %error,
-            "request logging failed"
-        );
-    }
-}
-
-fn request_log_metadata(
-    stream: bool,
-    operation: RequestOperation,
-    icon_metadata: &RequestLogIconMetadata,
-) -> Map<String, Value> {
-    let mut metadata = Map::new();
-    metadata.insert(
-        "operation".to_string(),
-        Value::String(operation.as_str().to_string()),
-    );
-    metadata.insert("stream".to_string(), Value::Bool(stream));
-    metadata.insert(
-        gateway_service::REQUEST_LOG_PROVIDER_ICON_KEY.to_string(),
-        Value::String(icon_metadata.provider_icon_key.as_str().to_string()),
-    );
-    if let Some(model_icon_key) = icon_metadata.model_icon_key {
-        metadata.insert(
-            gateway_service::REQUEST_LOG_MODEL_ICON_KEY.to_string(),
-            Value::String(model_icon_key.as_str().to_string()),
-        );
-    }
-    metadata
 }
 
 fn request_log_icon_metadata(
@@ -1209,40 +1188,8 @@ fn normalize_response_model(mut value: Value, model_key: &str) -> Value {
     value
 }
 
-fn usage_from_response(value: &Value) -> UsageSummary {
-    usage_summary_from_value(value.get("usage"))
-}
-
 fn usage_value_from_response(value: &Value) -> Option<Value> {
     value.get("usage").cloned()
-}
-
-fn usage_summary_from_value(value: Option<&Value>) -> UsageSummary {
-    let Some(usage) = value.and_then(Value::as_object) else {
-        return UsageSummary::default();
-    };
-
-    let prompt_tokens = usage
-        .get("prompt_tokens")
-        .or_else(|| usage.get("input_tokens"))
-        .and_then(Value::as_i64);
-    let completion_tokens = usage
-        .get("completion_tokens")
-        .or_else(|| usage.get("output_tokens"))
-        .and_then(Value::as_i64);
-    let total_tokens = match usage.get("total_tokens").and_then(Value::as_i64) {
-        some @ Some(_) => some,
-        None => match (prompt_tokens, completion_tokens) {
-            (Some(prompt), Some(completion)) => prompt.checked_add(completion),
-            _ => None,
-        },
-    };
-
-    UsageSummary {
-        prompt_tokens,
-        completion_tokens,
-        total_tokens,
-    }
 }
 
 fn latency_ms_since(started_at: Instant) -> i64 {
@@ -1351,12 +1298,17 @@ fn extract_authorization_header(headers: &HeaderMap) -> Option<&str> {
         .and_then(|value| value.to_str().ok())
 }
 
-fn extract_request_id(headers: &HeaderMap) -> String {
-    headers
-        .get("x-request-id")
-        .and_then(|value| value.to_str().ok())
+fn canonical_request_id(request_id: &RequestId) -> Result<String, AppError> {
+    request_id
+        .header_value()
+        .to_str()
         .map(str::to_string)
-        .unwrap_or_else(|| Uuid::new_v4().to_string())
+        .map_err(|error| {
+            tracing::error!(error = %error, "canonical request id extension contained invalid header value");
+            AppError(GatewayError::Internal(
+                "canonical request id was not available to the handler".to_string(),
+            ))
+        })
 }
 
 fn extract_request_headers(headers: &HeaderMap) -> BTreeMap<String, String> {

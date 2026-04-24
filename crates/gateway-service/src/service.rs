@@ -231,10 +231,31 @@ where
     }
 
     #[must_use]
+    pub fn begin_embeddings_request_log(
+        &self,
+        request_id: &str,
+        requested_model_key: &str,
+        resolved_model_key: &str,
+        request: &gateway_core::EmbeddingsRequest,
+        request_headers: &std::collections::BTreeMap<String, String>,
+        request_tags: RequestTags,
+    ) -> ChatRequestLogContext {
+        self.request_logging.begin_embeddings_request(
+            request_id,
+            requested_model_key,
+            resolved_model_key,
+            request,
+            request_headers,
+            request_tags,
+        )
+    }
+
+    #[must_use]
     pub fn new_stream_response_collector(&self) -> StreamResponseCollector {
         self.request_logging.new_stream_response_collector()
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn log_non_stream_success(
         &self,
         auth: &AuthenticatedApiKey,
@@ -243,6 +264,7 @@ where
         icon_metadata: RequestLogIconMetadata,
         latency_ms: i64,
         response_body: &Value,
+        attempts: Vec<gateway_core::RequestAttemptRecord>,
     ) -> Result<LoggedRequest, GatewayError> {
         self.request_logging
             .log_non_stream_success(
@@ -252,10 +274,12 @@ where
                 icon_metadata,
                 latency_ms,
                 response_body,
+                attempts,
             )
             .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn log_non_stream_failure(
         &self,
         auth: &AuthenticatedApiKey,
@@ -264,6 +288,7 @@ where
         icon_metadata: RequestLogIconMetadata,
         latency_ms: i64,
         gateway_error: &GatewayError,
+        attempts: Vec<gateway_core::RequestAttemptRecord>,
     ) -> Result<LoggedRequest, GatewayError> {
         self.request_logging
             .log_non_stream_failure(
@@ -273,6 +298,7 @@ where
                 icon_metadata,
                 latency_ms,
                 gateway_error,
+                attempts,
             )
             .await
     }

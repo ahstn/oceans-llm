@@ -52,6 +52,92 @@ fn decode_request_log_row(row: &libsql::Row) -> Result<RequestLogRecord, StoreEr
     })
 }
 
+
+fn decode_request_attempt_row(row: &libsql::Row) -> Result<RequestAttemptRecord, StoreError> {
+    let request_attempt_id: String = row.get(0).map_err(to_query_error)?;
+    let request_log_id: String = row.get(1).map_err(to_query_error)?;
+    let route_id: String = row.get(4).map_err(to_query_error)?;
+    let status: String = row.get(7).map_err(to_query_error)?;
+    let error_detail_truncated: i64 = row.get(11).map_err(to_query_error)?;
+    let retryable: i64 = row.get(12).map_err(to_query_error)?;
+    let terminal: i64 = row.get(13).map_err(to_query_error)?;
+    let produced_final_response: i64 = row.get(14).map_err(to_query_error)?;
+    let stream: i64 = row.get(15).map_err(to_query_error)?;
+    let started_at: i64 = row.get(16).map_err(to_query_error)?;
+    let completed_at: Option<i64> = row.get(17).map_err(to_query_error)?;
+    let metadata_json: String = row.get(19).map_err(to_query_error)?;
+
+    Ok(RequestAttemptRecord {
+        request_attempt_id: parse_uuid(&request_attempt_id)?,
+        request_log_id: parse_uuid(&request_log_id)?,
+        request_id: row.get(2).map_err(to_query_error)?,
+        attempt_number: row.get(3).map_err(to_query_error)?,
+        route_id: parse_uuid(&route_id)?,
+        provider_key: row.get(5).map_err(to_query_error)?,
+        upstream_model: row.get(6).map_err(to_query_error)?,
+        status: RequestAttemptStatus::from_db(&status)
+            .ok_or_else(|| StoreError::Serialization(format!("invalid attempt status `{status}`")))?,
+        status_code: row.get(8).map_err(to_query_error)?,
+        error_code: row.get(9).map_err(to_query_error)?,
+        error_detail: row.get(10).map_err(to_query_error)?,
+        error_detail_truncated: error_detail_truncated == 1,
+        retryable: retryable == 1,
+        terminal: terminal == 1,
+        produced_final_response: produced_final_response == 1,
+        stream: stream == 1,
+        started_at: unix_to_datetime(started_at)?,
+        completed_at: completed_at.map(unix_to_datetime).transpose()?,
+        latency_ms: row.get(18).map_err(to_query_error)?,
+        metadata: serde_json::from_str(&metadata_json)
+            .map_err(|error| StoreError::Serialization(error.to_string()))?,
+    })
+}
+
+async fn insert_request_log_attempts(
+    tx: &libsql::Transaction,
+    attempts: &[RequestAttemptRecord],
+) -> Result<(), StoreError> {
+    for attempt in attempts {
+        let metadata_json = serialize_json(&attempt.metadata)?;
+        tx.execute(
+            r#"
+                INSERT INTO request_log_attempts (
+                    request_attempt_id, request_log_id, request_id, attempt_number, route_id,
+                    provider_key, upstream_model, status, status_code, error_code, error_detail,
+                    error_detail_truncated, retryable, terminal, produced_final_response, stream,
+                    started_at, completed_at, latency_ms, metadata_json
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
+                "#,
+            libsql::params![
+                attempt.request_attempt_id.to_string(),
+                attempt.request_log_id.to_string(),
+                attempt.request_id.as_str(),
+                attempt.attempt_number,
+                attempt.route_id.to_string(),
+                attempt.provider_key.as_str(),
+                attempt.upstream_model.as_str(),
+                attempt.status.as_str(),
+                attempt.status_code,
+                attempt.error_code.as_deref(),
+                attempt.error_detail.as_deref(),
+                if attempt.error_detail_truncated { 1_i64 } else { 0_i64 },
+                if attempt.retryable { 1_i64 } else { 0_i64 },
+                if attempt.terminal { 1_i64 } else { 0_i64 },
+                if attempt.produced_final_response { 1_i64 } else { 0_i64 },
+                if attempt.stream { 1_i64 } else { 0_i64 },
+                attempt.started_at.unix_timestamp(),
+                attempt.completed_at.map(|value| value.unix_timestamp()),
+                attempt.latency_ms,
+                metadata_json,
+            ],
+        )
+        .await
+        .map_err(|error| StoreError::Query(error.to_string()))?;
+    }
+
+    Ok(())
+}
+
 async fn load_bespoke_tags_for_logs(
     connection: &libsql::Connection,
     request_log_ids: &[Uuid],
@@ -102,6 +188,15 @@ impl RequestLogRepository for LibsqlStore {
         &self,
         log: &RequestLogRecord,
         payload: Option<&RequestLogPayloadRecord>,
+    ) -> Result<(), StoreError> {
+        self.insert_request_log_with_attempts(log, payload, &[]).await
+    }
+
+    async fn insert_request_log_with_attempts(
+        &self,
+        log: &RequestLogRecord,
+        payload: Option<&RequestLogPayloadRecord>,
+        attempts: &[RequestAttemptRecord],
     ) -> Result<(), StoreError> {
         let metadata_json = serialize_json(&log.metadata)?;
         let tx = self
@@ -163,6 +258,8 @@ impl RequestLogRepository for LibsqlStore {
             .await
             .map_err(|error| StoreError::Query(error.to_string()))?;
         }
+
+        insert_request_log_attempts(&tx, attempts).await?;
 
         if let Some(payload) = payload {
             let request_json = serialize_json(&payload.request_json)?;
@@ -389,6 +486,44 @@ impl RequestLogRepository for LibsqlStore {
             _ => None,
         };
 
-        Ok(RequestLogDetail { log, payload })
+        let attempts = self.list_request_log_attempts(request_log_id).await?;
+
+        Ok(RequestLogDetail { log, payload, attempts })
+    }
+}
+
+#[async_trait]
+impl RequestAttemptRepository for LibsqlStore {
+    async fn list_request_log_attempts(
+        &self,
+        request_log_id: Uuid,
+    ) -> Result<Vec<RequestAttemptRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT request_attempt_id, request_log_id, request_id, attempt_number, route_id,
+                       provider_key, upstream_model, status, status_code, error_code, error_detail,
+                       error_detail_truncated, retryable, terminal, produced_final_response, stream,
+                       started_at, completed_at, latency_ms, metadata_json
+                FROM request_log_attempts
+                WHERE request_log_id = ?1
+                ORDER BY attempt_number ASC
+                "#,
+                [request_log_id.to_string()],
+            )
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?;
+
+        let mut attempts = Vec::new();
+        while let Some(row) = rows
+            .next()
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?
+        {
+            attempts.push(decode_request_attempt_row(&row)?);
+        }
+
+        Ok(attempts)
     }
 }

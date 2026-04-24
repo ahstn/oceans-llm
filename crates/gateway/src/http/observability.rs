@@ -6,8 +6,9 @@ use axum::{
     http::HeaderMap,
 };
 use gateway_core::{
-    BudgetRepository, GatewayError, ProviderConnection, ProviderRepository, RequestLogDetail,
-    RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestTag, RequestTags,
+    BudgetRepository, GatewayError, ProviderConnection, ProviderRepository, RequestAttemptRecord,
+    RequestLogDetail, RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestTag,
+    RequestTags,
 };
 use gateway_service::{
     model_icon_key_from_metadata, provider_icon_key_from_metadata, resolve_model_icon_key,
@@ -22,9 +23,10 @@ use crate::http::{
     admin_contract::{
         Envelope, LeaderboardChartUserView, LeaderboardLeaderView, LeaderboardQuery,
         LeaderboardSeriesPointView, LeaderboardSeriesValueView, LeaderboardView,
-        OpenAiErrorEnvelopeView, RequestLogDetailView, RequestLogListQuery, RequestLogPageView,
-        RequestLogPayloadCaptureModeView, RequestLogPayloadPolicyView, RequestLogPayloadView,
-        RequestLogSummaryView, RequestTagView, RequestTagsView, envelope, format_timestamp,
+        OpenAiErrorEnvelopeView, RequestAttemptView, RequestLogDetailView, RequestLogListQuery,
+        RequestLogPageView, RequestLogPayloadCaptureModeView, RequestLogPayloadPolicyView,
+        RequestLogPayloadView, RequestLogSummaryView, RequestTagView, RequestTagsView, envelope,
+        format_timestamp,
     },
     error::AppError,
     request_tags::build_bespoke_tag_filter,
@@ -351,7 +353,33 @@ fn detail_view(
     Ok(RequestLogDetailView {
         log: summary_view(&detail.log, provider)?,
         payload: detail.payload.map(payload_view),
+        attempts: detail.attempts.into_iter().map(attempt_view).collect(),
     })
+}
+
+fn attempt_view(attempt: RequestAttemptRecord) -> RequestAttemptView {
+    RequestAttemptView {
+        request_attempt_id: attempt.request_attempt_id.to_string(),
+        request_log_id: attempt.request_log_id.to_string(),
+        request_id: attempt.request_id,
+        attempt_number: attempt.attempt_number,
+        route_id: attempt.route_id.to_string(),
+        provider_key: attempt.provider_key,
+        upstream_model: attempt.upstream_model,
+        status: attempt.status.as_str().to_string(),
+        status_code: attempt.status_code,
+        error_code: attempt.error_code,
+        error_detail: attempt.error_detail,
+        error_detail_truncated: attempt.error_detail_truncated,
+        retryable: attempt.retryable,
+        terminal: attempt.terminal,
+        produced_final_response: attempt.produced_final_response,
+        stream: attempt.stream,
+        started_at: format_timestamp(attempt.started_at),
+        completed_at: attempt.completed_at.map(format_timestamp),
+        latency_ms: attempt.latency_ms,
+        metadata: attempt.metadata,
+    }
 }
 
 fn payload_view(payload: RequestLogPayloadRecord) -> RequestLogPayloadView {

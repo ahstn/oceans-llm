@@ -912,6 +912,7 @@ export interface components {
         };
         Envelope_RequestLogDetailView: {
             data: {
+                attempts: components["schemas"]["RequestAttemptView"][];
                 log: components["schemas"]["RequestLogSummaryView"];
                 payload?: null | components["schemas"]["RequestLogPayloadView"];
             };
@@ -1041,7 +1042,35 @@ export interface components {
         };
         /** @enum {string} */
         ProviderIconKeyView: "anthropic" | "aws" | "openai" | "openrouter" | "vertexai";
+        RequestAttemptView: {
+            /** Format: int64 */
+            attempt_number: number;
+            completed_at?: string | null;
+            error_code?: string | null;
+            error_detail?: string | null;
+            error_detail_truncated: boolean;
+            /** Format: int64 */
+            latency_ms?: number | null;
+            metadata: {
+                [key: string]: unknown;
+            };
+            produced_final_response: boolean;
+            provider_key: string;
+            request_attempt_id: string;
+            request_id: string;
+            request_log_id: string;
+            retryable: boolean;
+            route_id: string;
+            started_at: string;
+            status: string;
+            /** Format: int64 */
+            status_code?: number | null;
+            stream: boolean;
+            terminal: boolean;
+            upstream_model: string;
+        };
         RequestLogDetailView: {
+            attempts: components["schemas"]["RequestAttemptView"][];
             log: components["schemas"]["RequestLogSummaryView"];
             payload?: null | components["schemas"]["RequestLogPayloadView"];
         };

@@ -12,8 +12,8 @@ use crate::{
         ApiKeyRecord, BudgetAlertDeliveryRecord, BudgetAlertDispatchTask, BudgetAlertHistoryPage,
         BudgetAlertHistoryQuery, BudgetAlertRecord, GatewayModel, ModelPricingRecord, ModelRoute,
         Money4, NewApiKeyRecord, PricingCatalogCacheRecord, ProviderCapabilities,
-        ProviderConnection, ProviderRequestContext, RequestLogDetail, RequestLogPage,
-        RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, SpendDailyAggregateRecord,
+        ProviderConnection, ProviderRequestContext, RequestAttemptRecord, RequestLogDetail,
+        RequestLogPage, RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, SpendDailyAggregateRecord,
         SpendModelAggregateRecord, SpendOwnerAggregateRecord, TeamBudgetRecord,
         TeamMembershipRecord, TeamRecord, UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord,
         UsageLedgerRecord, UserBudgetRecord, UserRecord,
@@ -350,6 +350,16 @@ pub trait RequestLogRepository: Send + Sync {
         log: &RequestLogRecord,
         payload: Option<&RequestLogPayloadRecord>,
     ) -> Result<(), StoreError>;
+
+    async fn insert_request_log_with_attempts(
+        &self,
+        log: &RequestLogRecord,
+        payload: Option<&RequestLogPayloadRecord>,
+        attempts: &[RequestAttemptRecord],
+    ) -> Result<(), StoreError> {
+        let _ = attempts;
+        self.insert_request_log(log, payload).await
+    }
     async fn list_request_logs(
         &self,
         query: &RequestLogQuery,
@@ -358,6 +368,14 @@ pub trait RequestLogRepository: Send + Sync {
         &self,
         request_log_id: Uuid,
     ) -> Result<RequestLogDetail, StoreError>;
+}
+
+#[async_trait]
+pub trait RequestAttemptRepository: Send + Sync {
+    async fn list_request_log_attempts(
+        &self,
+        request_log_id: Uuid,
+    ) -> Result<Vec<RequestAttemptRecord>, StoreError>;
 }
 
 #[async_trait]

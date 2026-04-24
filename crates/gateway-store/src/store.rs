@@ -693,6 +693,15 @@ impl RequestLogRepository for AnyStore {
         dispatch_store!(self, insert_request_log(log, payload))
     }
 
+    async fn insert_request_log_with_attempts(
+        &self,
+        log: &gateway_core::RequestLogRecord,
+        payload: Option<&gateway_core::RequestLogPayloadRecord>,
+        attempts: &[gateway_core::RequestAttemptRecord],
+    ) -> Result<(), StoreError> {
+        dispatch_store!(self, insert_request_log_with_attempts(log, payload, attempts))
+    }
+
     async fn list_request_logs(
         &self,
         query: &gateway_core::RequestLogQuery,
@@ -705,6 +714,16 @@ impl RequestLogRepository for AnyStore {
         request_log_id: Uuid,
     ) -> Result<gateway_core::RequestLogDetail, StoreError> {
         dispatch_store!(self, get_request_log_detail(request_log_id))
+    }
+}
+
+#[async_trait]
+impl gateway_core::RequestAttemptRepository for AnyStore {
+    async fn list_request_log_attempts(
+        &self,
+        request_log_id: Uuid,
+    ) -> Result<Vec<gateway_core::RequestAttemptRecord>, StoreError> {
+        dispatch_store!(self, list_request_log_attempts(request_log_id))
     }
 }
 

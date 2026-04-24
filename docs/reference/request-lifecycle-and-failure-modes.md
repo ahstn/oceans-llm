@@ -19,28 +19,30 @@ This page is the cross-cutting view. Neighboring docs own their own policy slice
 
 The live request path is single-route in this slice.
 
-1. The gateway authenticates the API key.
-2. The allowed gateway model set is reduced by API-key grants and any user or team allowlists.
-3. The requested model is resolved.
+1. The HTTP middleware assigns one canonical request id from `x-request-id` or generates one when absent.
+2. The gateway authenticates the API key.
+3. The allowed gateway model set is reduced by API-key grants and any user or team allowlists.
+4. The requested model is resolved.
    - A concrete model key stays concrete.
    - A `tag:` selector picks one allowed gateway model.
    - An alias resolves to a canonical execution model.
-4. The route planner builds an ordered route list.
+5. The route planner builds an ordered route list.
    - Lower `priority` wins first.
    - `weight` only matters inside the same priority bucket.
    - Disabled routes and non-positive weights drop out.
-5. Capability filtering removes routes that cannot satisfy the API family and feature requirements. For example, `/v1/responses` requires `responses`, while `/v1/chat/completions` requires `chat_completions`.
-6. The budget guard runs before provider execution.
+6. Capability filtering removes routes that cannot satisfy the API family and feature requirements. For example, `/v1/responses` requires `responses`, while `/v1/chat/completions` requires `chat_completions`.
+7. The budget guard runs before provider execution.
    - hard-limit rejection returns `429 budget_exceeded`
    - no provider call occurs on this path
-7. Route compatibility metadata is passed into the provider adapter.
-8. The provider adapter applies any declared compatibility transforms to the outbound provider request.
-9. The first eligible route executes.
-10. Request logs are written for the user-visible outcome.
-11. Usage is normalized when possible.
-12. Pricing is resolved exactly or the request is marked `unpriced`.
-13. A ledger row is written when the request has usable usage data.
-14. Post-provider budget math runs before the priced ledger row is committed.
+8. Route compatibility metadata is passed into the provider adapter.
+9. The provider adapter applies any declared compatibility transforms to the outbound provider request.
+10. The first eligible route executes.
+11. The provider execution attempt is recorded as request-attempt metadata when a request-log summary is written.
+12. Request logs are written for the user-visible outcome.
+13. Usage is normalized when possible.
+14. Pricing is resolved exactly or the request is marked `unpriced`.
+15. A ledger row is written when the request has usable usage data.
+16. Post-provider budget math runs before the priced ledger row is committed.
 
 Compatibility transforms affect the provider request body and stream options. They do not change the public request model identity, alias resolution, API-key grants, or request-log attribution.
 
@@ -149,6 +151,7 @@ Request logs and spend rows are related, but they are not the same object.
 
 - `request_logs` owns the user-visible request outcome.
 - `request_log_payloads` owns sanitized request and response bodies.
+- `request_log_attempts` owns ordered upstream provider execution metadata.
 - `usage_cost_events` owns spend enforcement and spend reporting.
 
 That separation matters in two common cases:

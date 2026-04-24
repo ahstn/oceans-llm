@@ -1509,6 +1509,19 @@ mod tests {
         response_json: Value,
     }
 
+    #[derive(Debug)]
+    struct RequestLogAttemptRow {
+        request_id: String,
+        attempt_number: i64,
+        provider_key: String,
+        upstream_model: String,
+        status: String,
+        retryable: bool,
+        terminal: bool,
+        produced_final_response: bool,
+        stream: bool,
+    }
+
     async fn load_request_logs(db_path: &Path) -> Vec<RequestLogRow> {
         let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
             .build()
@@ -1596,6 +1609,47 @@ mod tests {
         }
 
         ledgers
+    }
+
+    async fn load_request_log_attempts(db_path: &Path) -> Vec<RequestLogAttemptRow> {
+        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
+            .build()
+            .await
+            .expect("libsql db");
+        let connection = db.connect().expect("libsql connection");
+        let mut rows = connection
+            .query(
+                r#"
+                SELECT request_id, attempt_number, provider_key, upstream_model, status,
+                       retryable, terminal, produced_final_response, stream
+                FROM request_log_attempts
+                ORDER BY attempt_number ASC
+                "#,
+                (),
+            )
+            .await
+            .expect("request log attempts query");
+
+        let mut attempts = Vec::new();
+        while let Some(row) = rows.next().await.expect("request log attempt row") {
+            let retryable: i64 = row.get(5).expect("retryable");
+            let terminal: i64 = row.get(6).expect("terminal");
+            let produced_final_response: i64 = row.get(7).expect("produced_final_response");
+            let stream: i64 = row.get(8).expect("stream");
+            attempts.push(RequestLogAttemptRow {
+                request_id: row.get(0).expect("request_id"),
+                attempt_number: row.get(1).expect("attempt_number"),
+                provider_key: row.get(2).expect("provider_key"),
+                upstream_model: row.get(3).expect("upstream_model"),
+                status: row.get(4).expect("status"),
+                retryable: retryable == 1,
+                terminal: terminal == 1,
+                produced_final_response: produced_final_response == 1,
+                stream: stream == 1,
+            });
+        }
+
+        attempts
     }
 
     async fn load_request_log_payloads(db_path: &Path) -> Vec<RequestLogPayloadRow> {
@@ -2329,6 +2383,18 @@ mod tests {
         assert!(logs[0].metadata.get("attempt_count").is_none());
         assert_eq!(logs[0].resolved_model_key.as_deref(), Some("fast"));
 
+        let attempts = load_request_log_attempts(&db_path).await;
+        assert_eq!(attempts.len(), 1);
+        assert_eq!(attempts[0].request_id, request_id);
+        assert_eq!(attempts[0].attempt_number, 1);
+        assert_eq!(attempts[0].provider_key, "openai-prod");
+        assert!(!attempts[0].upstream_model.is_empty());
+        assert_eq!(attempts[0].status, "success");
+        assert!(!attempts[0].retryable);
+        assert!(attempts[0].terminal);
+        assert!(attempts[0].produced_final_response);
+        assert!(!attempts[0].stream);
+
         let ledgers = load_usage_ledger(&db_path).await;
         assert_eq!(ledgers.len(), 1);
         assert_eq!(ledgers[0].request_id, request_id);
@@ -2900,6 +2966,7 @@ request_logging:
         let payload: Value = read_json(response).await;
         assert_eq!(payload["error"]["code"], "budget_exceeded");
         assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert!(load_request_log_attempts(&db_path).await.is_empty());
 
         let snapshot = metrics.test_snapshot();
         assert_eq!(snapshot.requests, 1);

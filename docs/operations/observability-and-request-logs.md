@@ -12,6 +12,8 @@ This document describes the live observability contract for the gateway.
   - [../crates/gateway/src/http/handlers.rs](../../crates/gateway/src/http/handlers.rs)
 - request-log lifecycle:
   - [../crates/gateway-service/src/request_logging.rs](../../crates/gateway-service/src/request_logging.rs)
+- request-attempt persistence:
+  - [../crates/gateway-store/migrations/V19__request_log_attempts.sql](../../crates/gateway-store/migrations/V19__request_log_attempts.sql)
 - redaction policy:
   - [../crates/gateway-service/src/redaction.rs](../../crates/gateway-service/src/redaction.rs)
 - admin APIs:
@@ -41,7 +43,7 @@ The runtime emits bounded request-level signals for:
 - usage-record totals by pricing status
 - caller request tags for filtering and attribution
 
-Request correlation is anchored on `x-request-id`.
+Request correlation is anchored on `x-request-id`. The HTTP middleware boundary owns request-id generation and propagation: caller-provided values are preserved, and missing values are generated once before handlers run.
 
 Request outcomes are emitted once per request with bounded labels. Important examples in this slice are:
 
@@ -78,6 +80,8 @@ Request logs are intentionally split:
   - sanitized request and response bodies
 - `request_log_tags`
   - bounded bespoke caller tags
+- `request_log_attempts`
+  - ordered upstream provider execution attempts
 
 The summary row stores:
 
@@ -91,6 +95,8 @@ The summary row stores:
 - metadata such as `operation`, `stream`, and `payload_policy`
 
 `operation` is the public API family. Current values include `chat_completions`, `responses`, and `embeddings`.
+
+Request-attempt rows describe upstream provider execution only. Pre-provider failures such as authentication rejection, capability mismatch, route unavailability, or budget hard-limit rejection have zero attempts. In the current runtime, successful provider-backed requests record one terminal attempt. Retry and fallback execution remain disabled until the configurable policy tracked in issue #118 is implemented.
 
 Streaming requests persist a bounded transcript payload rather than raw transport bytes.
 
@@ -200,6 +206,7 @@ For streams, the gateway keeps parsing every frame for usage and provider errors
 Recent cleanup changed the contract in a few important ways.
 
 - fallback-era request metadata is gone
+- provider execution attempts now live in `request_log_attempts` instead of summary metadata
 - missing request-log detail rows return strict `404 not_found`
 - stream payload parsing is more boundary-safe than the earlier chunk-by-chunk behavior
 - budget-rejected chat requests record a `budget_error` request outcome without executing the provider
