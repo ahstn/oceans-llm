@@ -21,6 +21,7 @@ This page owns config syntax and parse-time rules. It does not own the full runt
 - `database`
 - `auth`
 - `budget_alerts`
+- `request_logging`
 - `providers`
 - `models`
 - `teams`
@@ -141,6 +142,10 @@ Important defaults from config parsing and domain deserialization:
 - route capability flags default to all enabled
 - Vertex `location` defaults to `global`
 - Vertex `api_host` defaults to `aiplatform.googleapis.com`
+- `request_logging.payloads.capture_mode` defaults to `redacted_payloads`
+- `request_logging.payloads.request_max_bytes` defaults to `65536`
+- `request_logging.payloads.response_max_bytes` defaults to `65536`
+- `request_logging.payloads.stream_max_events` defaults to `128`
 
 The startup meaning of bootstrap-admin and seeded API keys lives in [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md).
 
@@ -155,6 +160,40 @@ Important fields:
 - `otel_export_interval_secs`
 
 For collector assumptions and request-log implications, see [observability-and-request-logs.md](../operations/observability-and-request-logs.md).
+
+## `request_logging`
+
+`request_logging.payloads` controls chat-completion request-log payload persistence.
+
+```yaml
+request_logging:
+  payloads:
+    capture_mode: redacted_payloads
+    request_max_bytes: 65536
+    response_max_bytes: 65536
+    stream_max_events: 128
+    redaction_paths: []
+```
+
+Important fields:
+
+- `capture_mode`
+  - `disabled`: skip chat-completion request-log persistence
+  - `summary_only`: write summary rows with `has_payload=false` and no payload row
+  - `redacted_payloads`: write summary rows and sanitized payload rows
+- `request_max_bytes`: final persisted request payload budget
+- `response_max_bytes`: final persisted response payload budget
+- `stream_max_events`: maximum stored stream events; stream usage and error parsing still sees later frames
+- `redaction_paths`: additive operator redaction paths anchored from the wrapped payload root
+
+Validation rules:
+
+- byte limits must be greater than zero
+- `stream_max_events` must be greater than zero
+- `redaction_paths` use dot-separated object keys plus `*` as a full-segment wildcard
+- malformed paths such as `body..messages` or indexed paths such as `body.messages[0]` are rejected at config parse time
+
+The runtime redaction/truncation policy and admin display behavior are owned by [observability-and-request-logs.md](../operations/observability-and-request-logs.md).
 
 ## `database`
 

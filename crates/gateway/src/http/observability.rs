@@ -13,6 +13,7 @@ use gateway_service::{
     model_icon_key_from_metadata, provider_icon_key_from_metadata, resolve_model_icon_key,
     resolve_provider_display,
 };
+use serde_json::{Map, Value};
 use time::{Duration, OffsetDateTime, UtcOffset};
 use uuid::Uuid;
 
@@ -22,8 +23,8 @@ use crate::http::{
         Envelope, LeaderboardChartUserView, LeaderboardLeaderView, LeaderboardQuery,
         LeaderboardSeriesPointView, LeaderboardSeriesValueView, LeaderboardView,
         OpenAiErrorEnvelopeView, RequestLogDetailView, RequestLogListQuery, RequestLogPageView,
-        RequestLogPayloadView, RequestLogSummaryView, RequestTagView, RequestTagsView, envelope,
-        format_timestamp,
+        RequestLogPayloadCaptureModeView, RequestLogPayloadPolicyView, RequestLogPayloadView,
+        RequestLogSummaryView, RequestTagView, RequestTagsView, envelope, format_timestamp,
     },
     error::AppError,
     request_tags::build_bespoke_tag_filter,
@@ -178,12 +179,13 @@ pub async fn list_request_logs(
 
     let page = state.service.list_request_logs(&query).await?;
     let providers = provider_connections_by_key(&state, &page.items).await?;
+    let items = page
+        .items
+        .iter()
+        .map(|log| summary_view(log, providers.get(log.provider_key.as_str())))
+        .collect::<Result<Vec<_>, _>>()?;
     Ok(Json(envelope(RequestLogPageView {
-        items: page
-            .items
-            .iter()
-            .map(|log| summary_view(log, providers.get(log.provider_key.as_str())))
-            .collect(),
+        items,
         page: page.page,
         page_size: page.page_size,
         total: page.total,
@@ -209,7 +211,7 @@ pub async fn get_request_log_detail(
 
     let detail = state.service.get_request_log_detail(request_log_id).await?;
     let provider = provider_connection(&state, detail.log.provider_key.as_str()).await?;
-    Ok(Json(envelope(detail_view(detail, provider.as_ref()))))
+    Ok(Json(envelope(detail_view(detail, provider.as_ref())?)))
 }
 
 async fn provider_connections_by_key(
@@ -246,7 +248,7 @@ async fn provider_connection(
 fn summary_view(
     log: &RequestLogRecord,
     provider: Option<&ProviderConnection>,
-) -> RequestLogSummaryView {
+) -> Result<RequestLogSummaryView, AppError> {
     let provider_icon_key = provider_icon_key_from_metadata(&log.metadata)
         .or_else(|| Some(resolve_provider_display(log.provider_key.as_str(), provider).icon_key))
         .map(Into::into);
@@ -256,7 +258,7 @@ fn summary_view(
         })
         .map(Into::into);
 
-    RequestLogSummaryView {
+    Ok(RequestLogSummaryView {
         request_log_id: log.request_log_id.to_string(),
         request_id: log.request_id.clone(),
         api_key_id: log.api_key_id.to_string(),
@@ -276,20 +278,80 @@ fn summary_view(
         has_payload: log.has_payload,
         request_payload_truncated: log.request_payload_truncated,
         response_payload_truncated: log.response_payload_truncated,
+        payload_policy: payload_policy_view(&log.metadata)?,
         request_tags: request_tags_view(&log.request_tags),
         metadata: log.metadata.clone(),
         occurred_at: format_timestamp(log.occurred_at),
+    })
+}
+
+fn payload_policy_view(
+    metadata: &Map<String, Value>,
+) -> Result<RequestLogPayloadPolicyView, AppError> {
+    let policy = metadata
+        .get("payload_policy")
+        .and_then(Value::as_object)
+        .ok_or_else(|| payload_policy_contract_error("missing payload_policy object"))?;
+
+    Ok(RequestLogPayloadPolicyView {
+        capture_mode: match required_payload_policy_string(policy, "capture_mode")? {
+            "disabled" => RequestLogPayloadCaptureModeView::Disabled,
+            "summary_only" => RequestLogPayloadCaptureModeView::SummaryOnly,
+            "redacted_payloads" => RequestLogPayloadCaptureModeView::RedactedPayloads,
+            other => {
+                return Err(payload_policy_contract_error(format!(
+                    "unknown capture_mode `{other}`"
+                )));
+            }
+        },
+        request_max_bytes: required_positive_payload_policy_u64(policy, "request_max_bytes")?,
+        response_max_bytes: required_positive_payload_policy_u64(policy, "response_max_bytes")?,
+        stream_max_events: required_positive_payload_policy_u64(policy, "stream_max_events")?,
+        version: required_payload_policy_string(policy, "version")?.to_string(),
+    })
+}
+
+fn required_payload_policy_string<'a>(
+    policy: &'a Map<String, Value>,
+    field: &str,
+) -> Result<&'a str, AppError> {
+    policy
+        .get(field)
+        .and_then(Value::as_str)
+        .ok_or_else(|| payload_policy_contract_error(format!("missing string field `{field}`")))
+}
+
+fn required_positive_payload_policy_u64(
+    policy: &Map<String, Value>,
+    field: &str,
+) -> Result<u64, AppError> {
+    let value = policy
+        .get(field)
+        .and_then(Value::as_u64)
+        .ok_or_else(|| payload_policy_contract_error(format!("missing u64 field `{field}`")))?;
+    if value == 0 {
+        return Err(payload_policy_contract_error(format!(
+            "field `{field}` must be greater than zero"
+        )));
     }
+    Ok(value)
+}
+
+fn payload_policy_contract_error(message: impl Into<String>) -> AppError {
+    AppError(GatewayError::Internal(format!(
+        "invalid request log payload_policy metadata: {}",
+        message.into()
+    )))
 }
 
 fn detail_view(
     detail: RequestLogDetail,
     provider: Option<&ProviderConnection>,
-) -> RequestLogDetailView {
-    RequestLogDetailView {
-        log: summary_view(&detail.log, provider),
+) -> Result<RequestLogDetailView, AppError> {
+    Ok(RequestLogDetailView {
+        log: summary_view(&detail.log, provider)?,
         payload: detail.payload.map(payload_view),
-    }
+    })
 }
 
 fn payload_view(payload: RequestLogPayloadRecord) -> RequestLogPayloadView {
@@ -414,7 +476,7 @@ mod tests {
 
     #[test]
     fn summary_view_uses_provider_display_config_when_metadata_is_missing() {
-        let log = request_log_record(Map::new());
+        let log = request_log_record(payload_policy_metadata());
         let provider = ProviderConnection {
             provider_key: "router".to_string(),
             provider_type: "openai_compat".to_string(),
@@ -428,7 +490,8 @@ mod tests {
             secrets: None,
         };
 
-        let summary = summary_view(&log, Some(&provider));
+        let summary = summary_view(&log, Some(&provider))
+            .unwrap_or_else(|error| panic!("summary should succeed: {}", error.0));
 
         assert!(matches!(
             summary.provider_icon_key,
@@ -438,9 +501,10 @@ mod tests {
 
     #[test]
     fn summary_view_falls_back_to_provider_key_when_provider_config_is_unavailable() {
-        let log = request_log_record(Map::new());
+        let log = request_log_record(payload_policy_metadata());
 
-        let summary = summary_view(&log, None);
+        let summary = summary_view(&log, None)
+            .unwrap_or_else(|error| panic!("summary should succeed: {}", error.0));
 
         assert!(matches!(
             summary.provider_icon_key,
@@ -450,7 +514,7 @@ mod tests {
 
     #[test]
     fn summary_view_prefers_stored_metadata_over_provider_fallbacks() {
-        let mut metadata = Map::new();
+        let mut metadata = payload_policy_metadata();
         metadata.insert(
             REQUEST_LOG_PROVIDER_ICON_KEY.to_string(),
             Value::String("anthropic".to_string()),
@@ -469,12 +533,84 @@ mod tests {
             secrets: None,
         };
 
-        let summary = summary_view(&log, Some(&provider));
+        let summary = summary_view(&log, Some(&provider))
+            .unwrap_or_else(|error| panic!("summary should succeed: {}", error.0));
 
         assert!(matches!(
             summary.provider_icon_key,
             Some(crate::http::admin_contract::ProviderIconKeyView::Anthropic)
         ));
+    }
+
+    #[test]
+    fn summary_view_requires_payload_policy_metadata() {
+        let log = request_log_record(Map::new());
+
+        let error = summary_view(&log, None).expect_err("summary should fail");
+
+        assert!(
+            error
+                .0
+                .to_string()
+                .contains("missing payload_policy object")
+        );
+    }
+
+    #[test]
+    fn summary_view_rejects_unknown_payload_policy_capture_mode() {
+        let mut metadata = payload_policy_metadata();
+        metadata["payload_policy"]
+            .as_object_mut()
+            .expect("policy")
+            .insert("capture_mode".to_string(), json!("legacy"));
+        let log = request_log_record(metadata);
+
+        let error = summary_view(&log, None).expect_err("summary should fail");
+
+        assert!(
+            error
+                .0
+                .to_string()
+                .contains("unknown capture_mode `legacy`")
+        );
+    }
+
+    #[test]
+    fn summary_view_rejects_malformed_payload_policy_metadata() {
+        let mut metadata = payload_policy_metadata();
+        metadata["payload_policy"]
+            .as_object_mut()
+            .expect("policy")
+            .insert("request_max_bytes".to_string(), json!("65536"));
+        let log = request_log_record(metadata);
+
+        let error = summary_view(&log, None).expect_err("summary should fail");
+
+        assert!(
+            error
+                .0
+                .to_string()
+                .contains("missing u64 field `request_max_bytes`")
+        );
+    }
+
+    #[test]
+    fn summary_view_rejects_zero_payload_policy_limits() {
+        let mut metadata = payload_policy_metadata();
+        metadata["payload_policy"]
+            .as_object_mut()
+            .expect("policy")
+            .insert("stream_max_events".to_string(), json!(0));
+        let log = request_log_record(metadata);
+
+        let error = summary_view(&log, None).expect_err("summary should fail");
+
+        assert!(
+            error
+                .0
+                .to_string()
+                .contains("field `stream_max_events` must be greater than zero")
+        );
     }
 
     #[test]
@@ -535,5 +671,20 @@ mod tests {
             metadata,
             occurred_at: OffsetDateTime::now_utc(),
         }
+    }
+
+    fn payload_policy_metadata() -> Map<String, Value> {
+        let mut metadata = Map::new();
+        metadata.insert(
+            "payload_policy".to_string(),
+            json!({
+                "capture_mode": "redacted_payloads",
+                "request_max_bytes": 65536,
+                "response_max_bytes": 65536,
+                "stream_max_events": 128,
+                "version": "builtin:v1"
+            }),
+        );
+        metadata
     }
 }

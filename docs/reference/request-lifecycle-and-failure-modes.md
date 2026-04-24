@@ -156,12 +156,12 @@ That separation matters in two common cases:
 - a request can be logged even when it becomes `unpriced`
 - a request can be logged even when a later accounting step hits a rough edge
 
-For streaming requests, the request-log payload path parses SSE incrementally across UTF-8 and frame boundaries and retains the latest coherent usage snapshot seen before stream completion or failure. Chat Completions streams usually expose usage at top level. Responses streams expose usage on completed response events as `response.usage`.
+For streaming requests, the request-log payload path parses SSE incrementally across UTF-8 and frame boundaries and retains the latest coherent usage snapshot seen before stream completion or failure. Chat Completions streams usually expose usage at top level. Responses streams expose usage on completed response events as `response.usage`. Stored stream events can be capped by payload policy without weakening usage or provider-error parsing.
 
 ## Known Rough Edges
 
 - Stream and non-stream paths still differ when a post-provider ledger write fails.
-- Request-log payload policy is still bounded and heuristic, not operator-configurable.
+- Request-log payload policy details, redaction rules, and retention status are owned by [observability-and-request-logs.md](../operations/observability-and-request-logs.md).
 
 For the current observability cleanup notes, see [observability-and-request-logs.md](../operations/observability-and-request-logs.md).
 

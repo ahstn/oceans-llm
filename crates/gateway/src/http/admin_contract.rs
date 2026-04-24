@@ -618,10 +618,31 @@ pub struct RequestLogSummaryView {
     pub has_payload: bool,
     pub request_payload_truncated: bool,
     pub response_payload_truncated: bool,
+    pub payload_policy: RequestLogPayloadPolicyView,
     pub request_tags: RequestTagsView,
     #[schema(additional_properties = true)]
     pub metadata: Map<String, Value>,
     pub occurred_at: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct RequestLogPayloadPolicyView {
+    pub capture_mode: RequestLogPayloadCaptureModeView,
+    #[schema(minimum = 1)]
+    pub request_max_bytes: u64,
+    #[schema(minimum = 1)]
+    pub response_max_bytes: u64,
+    #[schema(minimum = 1)]
+    pub stream_max_events: u64,
+    pub version: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RequestLogPayloadCaptureModeView {
+    Disabled,
+    SummaryOnly,
+    RedactedPayloads,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

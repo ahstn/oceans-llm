@@ -102,10 +102,10 @@ Compatibility metadata is not a provider config fallback and is not an `extra_bo
   - Notes: this is the canonical spend ledger used for enforcement and reporting
 - `request_logs`
   - Key columns: `request_log_id`, `request_id`, `api_key_id`, `user_id`, `team_id`, `model_key`, `resolved_model_key`, `provider_key`, `caller_service`, `caller_component`, `caller_env`, `status_code`, `metadata_json`, `occurred_at`
-  - Notes: one summary row per final request outcome
+  - Notes: one summary row per final request outcome; `metadata_json.payload_policy` records the capture mode and limits used for the row when request logging is enabled
 - `request_log_payloads`
   - Key columns: `request_log_id`, `request_json`, `response_json`
-  - Notes: summary and payload are intentionally split
+  - Notes: summary and payload are intentionally split; rows exist only when the payload policy captures redacted payloads
 - `request_log_tags`
   - Key columns: `request_log_id`, `tag_key`, `tag_value`
   - Notes: bounded bespoke caller tags for request-log filtering and attribution

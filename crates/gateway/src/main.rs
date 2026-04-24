@@ -166,11 +166,17 @@ async fn run_serve_with_store(
     let planner = Arc::new(WeightedRoutePlanner::default());
     let budget_alert_sender = build_budget_alert_sender(&config.budget_alerts.email)
         .context("failed to build budget alert email sender")?;
-    let service = Arc::new(GatewayService::new_with_budget_alert_sender(
-        store,
-        planner,
-        budget_alert_sender,
-    ));
+    let payload_policy = config
+        .request_log_payload_policy()
+        .context("failed to build request log payload policy")?;
+    let service = Arc::new(
+        GatewayService::new_with_budget_alert_sender_and_payload_policy(
+            store,
+            planner,
+            budget_alert_sender,
+            payload_policy,
+        ),
+    );
     if let Err(error) = service.refresh_pricing_catalog_if_stale().await {
         tracing::warn!(error = %error, "initial pricing catalog refresh failed");
     }
@@ -1212,7 +1218,10 @@ mod tests {
         parse_gateway_api_key,
     };
     use gateway_providers::{OpenAiCompatConfig, OpenAiCompatProvider};
-    use gateway_service::{GatewayService, WeightedRoutePlanner, hash_gateway_key_secret};
+    use gateway_service::{
+        GatewayService, RequestLogPayloadPolicy, SinkBudgetAlertSender, WeightedRoutePlanner,
+        hash_gateway_key_secret,
+    };
     use gateway_store::{
         AnyStore, GatewayStore, LibsqlStore, StoreConnectionOptions, run_migrations,
         run_migrations_with_options,
@@ -1473,6 +1482,9 @@ mod tests {
         completion_tokens: Option<i64>,
         total_tokens: Option<i64>,
         error_code: Option<String>,
+        has_payload: bool,
+        request_payload_truncated: bool,
+        response_payload_truncated: bool,
         metadata: Value,
     }
 
@@ -1493,6 +1505,7 @@ mod tests {
 
     #[derive(Debug)]
     struct RequestLogPayloadRow {
+        request_json: Value,
         response_json: Value,
     }
 
@@ -1506,7 +1519,9 @@ mod tests {
             .query(
                 r#"
                 SELECT user_id, team_id, model_key, resolved_model_key, provider_key, status_code,
-                       latency_ms, prompt_tokens, completion_tokens, total_tokens, error_code, metadata_json
+                       latency_ms, prompt_tokens, completion_tokens, total_tokens, error_code,
+                       has_payload, request_payload_truncated, response_payload_truncated,
+                       metadata_json
                 FROM request_logs
                 ORDER BY occurred_at ASC, rowid ASC
                 "#,
@@ -1517,7 +1532,10 @@ mod tests {
 
         let mut logs = Vec::new();
         while let Some(row) = rows.next().await.expect("request logs row") {
-            let metadata_json: String = row.get(11).expect("metadata json");
+            let metadata_json: String = row.get(14).expect("metadata json");
+            let has_payload: i64 = row.get(11).expect("has_payload");
+            let request_payload_truncated: i64 = row.get(12).expect("request_payload_truncated");
+            let response_payload_truncated: i64 = row.get(13).expect("response_payload_truncated");
             logs.push(RequestLogRow {
                 user_id: row.get(0).expect("user_id"),
                 team_id: row.get(1).expect("team_id"),
@@ -1530,6 +1548,9 @@ mod tests {
                 completion_tokens: row.get(8).expect("completion_tokens"),
                 total_tokens: row.get(9).expect("total_tokens"),
                 error_code: row.get(10).expect("error_code"),
+                has_payload: has_payload != 0,
+                request_payload_truncated: request_payload_truncated != 0,
+                response_payload_truncated: response_payload_truncated != 0,
                 metadata: serde_json::from_str(&metadata_json).expect("metadata value"),
             });
         }
@@ -1586,7 +1607,7 @@ mod tests {
         let mut rows = connection
             .query(
                 r#"
-                SELECT response_json
+                SELECT request_json, response_json
                 FROM request_log_payloads
                 ORDER BY rowid ASC
                 "#,
@@ -1597,8 +1618,10 @@ mod tests {
 
         let mut payloads = Vec::new();
         while let Some(row) = rows.next().await.expect("request log payload row") {
-            let response_json: String = row.get(0).expect("response json");
+            let request_json: String = row.get(0).expect("request json");
+            let response_json: String = row.get(1).expect("response json");
             payloads.push(RequestLogPayloadRow {
+                request_json: serde_json::from_str(&request_json).expect("request json value"),
                 response_json: serde_json::from_str(&response_json).expect("response json value"),
             });
         }
@@ -1702,6 +1725,15 @@ mod tests {
         models: Vec<SeedModel>,
         provider_registry: gateway_core::ProviderRegistry,
     ) -> (Router, String, PathBuf) {
+        build_test_app_with_payload_policy(seed_providers, models, provider_registry, None).await
+    }
+
+    async fn build_test_app_with_payload_policy(
+        seed_providers: Vec<SeedProvider>,
+        models: Vec<SeedModel>,
+        provider_registry: gateway_core::ProviderRegistry,
+        payload_policy: Option<RequestLogPayloadPolicy>,
+    ) -> (Router, String, PathBuf) {
         let tmp = tempdir().expect("tempdir");
         let tmp_path = tmp.keep();
         let db_path = tmp_path.join("gateway.db");
@@ -1728,10 +1760,18 @@ mod tests {
             .await
             .expect("seed data");
 
-        let service = Arc::new(GatewayService::new(
-            store.clone(),
-            Arc::new(WeightedRoutePlanner::seeded(11)),
-        ));
+        let planner = Arc::new(WeightedRoutePlanner::seeded(11));
+        let service = Arc::new(match payload_policy {
+            Some(payload_policy) => {
+                GatewayService::new_with_budget_alert_sender_and_payload_policy(
+                    store.clone(),
+                    planner,
+                    Arc::new(SinkBudgetAlertSender),
+                    payload_policy,
+                )
+            }
+            None => GatewayService::new(store.clone(), planner),
+        });
 
         let app = build_router(
             AppState {
@@ -2301,6 +2341,140 @@ mod tests {
         assert_eq!(ledgers[0].pricing_provider_id.as_deref(), Some("openai"));
         assert_eq!(ledgers[0].pricing_model_id.as_deref(), Some("gpt-5"));
         assert!(ledgers[0].computed_cost_10000 >= 0);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn request_log_payload_policy_from_config_affects_persisted_chat_log() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        std::fs::write(
+            &config_path,
+            r#"
+request_logging:
+  payloads:
+    capture_mode: redacted_payloads
+    request_max_bytes: 4096
+    response_max_bytes: 96
+    stream_max_events: 2
+    redaction_paths:
+      - body.messages.*.metadata.internal
+"#,
+        )
+        .expect("write config");
+        let config = GatewayConfig::from_path(&config_path).expect("config");
+        let payload_policy = config.request_log_payload_policy().expect("payload policy");
+
+        let (_, provider) = make_chat_provider(
+            "openai-prod",
+            MockChatResult::Value(json!({
+                "id": "chatcmpl_config_policy",
+                "object": "chat.completion",
+                "choices": [{
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": "x".repeat(300)
+                    },
+                    "finish_reason": "stop"
+                }],
+                "usage": {"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18}
+            })),
+            vec![],
+            ProviderCapabilities::openai_compat_baseline(),
+        );
+        let mut registry = gateway_core::ProviderRegistry::new();
+        registry.register(Arc::new(provider));
+        let seed_providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: serde_json::json!({
+                "base_url": "https://api.openai.com/v1",
+                "pricing_provider_id": "openai"
+            }),
+            secrets: None,
+        }];
+        let models = vec![SeedModel {
+            model_key: "fast".to_string(),
+            alias_target_model_key: None,
+            description: Some("Fast tier".to_string()),
+            tags: vec!["fast".to_string()],
+            rank: 10,
+            routes: vec![SeedModelRoute {
+                provider_key: "openai-prod".to_string(),
+                upstream_model: "gpt-5".to_string(),
+                priority: 10,
+                weight: 1.0,
+                enabled: true,
+                extra_headers: Map::<String, Value>::new(),
+                extra_body: Map::<String, Value>::new(),
+                capabilities: ProviderCapabilities::all_enabled(),
+                compatibility: Default::default(),
+            }],
+        }];
+        let (app, raw_key, db_path) = build_test_app_with_payload_policy(
+            seed_providers,
+            models,
+            registry,
+            Some(payload_policy),
+        )
+        .await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .body(Body::from(
+                        json!({
+                            "model": "fast",
+                            "messages": [{
+                                "role": "user",
+                                "content": "ping",
+                                "metadata": {
+                                    "internal": "redact-me",
+                                    "public": "keep-me"
+                                }
+                            }]
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let logs = load_request_logs(&db_path).await;
+        assert_eq!(logs.len(), 1);
+        assert!(logs[0].has_payload);
+        assert!(!logs[0].request_payload_truncated);
+        assert!(logs[0].response_payload_truncated);
+        assert_eq!(
+            logs[0].metadata["payload_policy"],
+            json!({
+                "capture_mode": "redacted_payloads",
+                "request_max_bytes": 4096,
+                "response_max_bytes": 96,
+                "stream_max_events": 2,
+                "version": "builtin:v1"
+            })
+        );
+
+        let payloads = load_request_log_payloads(&db_path).await;
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(
+            payloads[0].request_json["body"]["messages"][0]["metadata"]["internal"],
+            "[REDACTED]"
+        );
+        assert_eq!(
+            payloads[0].request_json["body"]["messages"][0]["metadata"]["public"],
+            "keep-me"
+        );
+        assert_eq!(payloads[0].response_json["truncated"], true);
     }
 
     #[tokio::test]

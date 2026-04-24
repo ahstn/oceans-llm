@@ -414,6 +414,13 @@ describe('server-side admin data wrappers', () => {
                   metadata: {
                     stream: false,
                   },
+                  payload_policy: {
+                    capture_mode: 'redacted_payloads',
+                    request_max_bytes: 65536,
+                    response_max_bytes: 65536,
+                    stream_max_events: 128,
+                    version: 'builtin:v1',
+                  },
                   occurred_at: '2026-03-10T11:32:00Z',
                 },
               ],
@@ -457,6 +464,13 @@ describe('server-side admin data wrappers', () => {
                 },
                 metadata: {
                   stream: false,
+                },
+                payload_policy: {
+                  capture_mode: 'redacted_payloads',
+                  request_max_bytes: 65536,
+                  response_max_bytes: 65536,
+                  stream_max_events: 128,
+                  version: 'builtin:v1',
                 },
                 occurred_at: '2026-03-10T11:32:00Z',
               },

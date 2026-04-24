@@ -3894,6 +3894,47 @@
           }
         }
       },
+      "RequestLogPayloadCaptureModeView": {
+        "type": "string",
+        "enum": [
+          "disabled",
+          "summary_only",
+          "redacted_payloads"
+        ]
+      },
+      "RequestLogPayloadPolicyView": {
+        "type": "object",
+        "required": [
+          "capture_mode",
+          "request_max_bytes",
+          "response_max_bytes",
+          "stream_max_events",
+          "version"
+        ],
+        "properties": {
+          "capture_mode": {
+            "$ref": "#/components/schemas/RequestLogPayloadCaptureModeView"
+          },
+          "request_max_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "response_max_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "stream_max_events": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
       "RequestLogPayloadView": {
         "type": "object",
         "required": [
@@ -3917,6 +3958,7 @@
           "has_payload",
           "request_payload_truncated",
           "response_payload_truncated",
+          "payload_policy",
           "request_tags",
           "metadata",
           "occurred_at"
@@ -3967,6 +4009,9 @@
           },
           "occurred_at": {
             "type": "string"
+          },
+          "payload_policy": {
+            "$ref": "#/components/schemas/RequestLogPayloadPolicyView"
           },
           "prompt_tokens": {
             "type": [

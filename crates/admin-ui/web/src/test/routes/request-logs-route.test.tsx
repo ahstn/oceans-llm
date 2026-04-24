@@ -59,6 +59,13 @@ const items: RequestLogView[] = [
     metadata: {
       stream: false,
     },
+    payload_policy: {
+      capture_mode: 'redacted_payloads',
+      request_max_bytes: 65536,
+      response_max_bytes: 65536,
+      stream_max_events: 128,
+      version: 'builtin:v1',
+    },
     occurred_at: '2026-03-10T11:32:00Z',
   },
 ]
@@ -97,8 +104,8 @@ describe('RequestLogsPage', () => {
       data: {
         log: items[0],
         payload: {
-          requestJson: { body: { prompt: 'ping' } },
-          responseJson: { body: { output: 'pong' } },
+          request_json: { body: { prompt: 'ping' } },
+          response_json: { body: { output: 'pong' } },
         },
       },
     })
@@ -117,6 +124,42 @@ describe('RequestLogsPage', () => {
     ).toBeInTheDocument()
     expect(screen.queryByText('Attempt Count')).not.toBeInTheDocument()
     expect(screen.queryByText('Fallback')).not.toBeInTheDocument()
+    expect(screen.getByText('Payload Policy')).toBeInTheDocument()
+    expect(screen.getAllByText('redacted payloads').length).toBeGreaterThan(0)
+    expect(screen.getByText(/"prompt": "ping"/)).toBeInTheDocument()
+  })
+
+  it('renders the summary-only no-payload state in detail', async () => {
+    const summaryOnlyItem = {
+      ...items[0],
+      has_payload: false,
+      payload_policy: {
+        capture_mode: 'summary_only',
+        request_max_bytes: 65536,
+        response_max_bytes: 65536,
+        stream_max_events: 128,
+        version: 'builtin:v1',
+      },
+    }
+    routeMock.useLoaderData.mockReturnValue({ data: { items: [summaryOnlyItem], total: 1 } })
+    getObservabilityRequestLogDetailMock.mockResolvedValue({
+      data: {
+        log: summaryOnlyItem,
+        payload: null,
+      },
+    })
+
+    const { RequestLogsPage } = await import('@/routes/observability/request-logs')
+
+    render(<RequestLogsPage />)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Inspect' })[0])
+
+    await waitFor(() => {
+      expect(screen.getByText('Payload capture state')).toBeInTheDocument()
+    })
+
+    expect(screen.getAllByText('No payload stored')).toHaveLength(2)
+    expect(screen.getAllByText('summary only').length).toBeGreaterThan(0)
   })
 
   it('renders an error banner when detail lookup fails', async () => {

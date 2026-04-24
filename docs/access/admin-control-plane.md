@@ -112,6 +112,9 @@ Operators can:
 - inspect request-log summaries
 - filter request logs by caller service, component, environment, and one bespoke tag match
 - inspect sanitized request-log payload detail
+- see per-row payload capture mode, byte limits, stream event limit, policy version, and truncation state
+
+Request-log payload policy is read-only in the admin UI. Operators configure it through `gateway.yaml`; see [observability-and-request-logs.md](../operations/observability-and-request-logs.md).
 
 Current limits:
 
