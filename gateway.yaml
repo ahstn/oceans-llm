@@ -13,6 +13,14 @@ auth:
     password: literal.admin
     require_password_change: false
 
+request_logging:
+  payloads:
+    capture_mode: redacted_payloads
+    request_max_bytes: 65536
+    response_max_bytes: 65536
+    stream_max_events: 128
+    redaction_paths: []
+
 teams:
   - key: platform
     name: Platform

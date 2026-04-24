@@ -1038,6 +1038,18 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
+        /** @enum {string} */
+        RequestLogPayloadCaptureModeView: "disabled" | "summary_only" | "redacted_payloads";
+        RequestLogPayloadPolicyView: {
+            capture_mode: components["schemas"]["RequestLogPayloadCaptureModeView"];
+            /** Format: int64 */
+            request_max_bytes: number;
+            /** Format: int64 */
+            response_max_bytes: number;
+            /** Format: int64 */
+            stream_max_events: number;
+            version: string;
+        };
         RequestLogPayloadView: {
             request_json: unknown;
             response_json: unknown;
@@ -1056,6 +1068,7 @@ export interface components {
             model_icon_key?: null | components["schemas"]["ModelIconKeyView"];
             model_key: string;
             occurred_at: string;
+            payload_policy: components["schemas"]["RequestLogPayloadPolicyView"];
             /** Format: int64 */
             prompt_tokens?: number | null;
             provider_icon_key?: null | components["schemas"]["ProviderIconKeyView"];

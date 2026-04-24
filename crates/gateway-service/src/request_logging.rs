@@ -12,10 +12,10 @@ use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::redaction::{redact_header_value, redact_json_value};
-
-const MAX_PAYLOAD_BYTES: usize = 64 * 1024;
-const MAX_STREAM_EVENTS: usize = 128;
+use crate::redaction::{
+    RequestLogPayloadCaptureMode, RequestLogPayloadPolicy, redact_header_value,
+    redact_json_value_with_policy, truncate_large_payload_fields,
+};
 
 #[derive(Debug, Clone)]
 pub struct ChatRequestLogContext {
@@ -24,7 +24,7 @@ pub struct ChatRequestLogContext {
     pub requested_model_key: String,
     pub resolved_model_key: String,
     pub request_tags: RequestTags,
-    request_json: Value,
+    request_json: Option<Value>,
     request_payload_truncated: bool,
 }
 
@@ -46,6 +46,7 @@ pub struct StreamLogResultInput {
 #[derive(Debug, Clone, Default)]
 pub struct StreamResponseCollector {
     parser: SseEventParser,
+    payload_policy: RequestLogPayloadPolicy,
     events: Vec<Value>,
     usage: Option<Value>,
     failure: Option<StreamFailureSummary>,
@@ -161,17 +162,13 @@ impl StreamResponseCollector {
                 self.failure = Some(failure);
             }
 
-            let redacted = parsed
-                .as_ref()
-                .map(redact_json_value)
-                .unwrap_or_else(|| json!({ "raw": payload }));
-
-            if self.events.len() >= MAX_STREAM_EVENTS {
+            if self.events.len() >= self.payload_policy.stream_max_events {
                 self.truncated = true;
                 continue;
             }
 
-            self.events.push(redacted);
+            self.events
+                .push(parsed.unwrap_or_else(|| json!({ "raw": payload })));
         }
     }
 
@@ -201,17 +198,24 @@ impl StreamResponseCollector {
     }
 
     fn into_payload(self, failure: Option<&StreamFailureSummary>) -> (Value, bool) {
-        truncate_payload(json!({
-            "stream": true,
-            "events": self.events,
-            "usage": self.usage,
-            "error": failure.map(|failure| {
-                json!({
-                    "status_code": failure.status_code,
-                    "code": failure.error_code,
-                })
+        let payload = redact_json_value_with_policy(
+            &json!({
+                "stream": true,
+                "events": self.events,
+                "usage": self.usage,
+                "error": failure.map(|failure| {
+                    json!({
+                        "status_code": failure.status_code,
+                        "code": failure.error_code,
+                    })
+                }),
             }),
-        }))
+            &self.payload_policy,
+        );
+        truncate_payload(
+            truncate_large_payload_fields(&payload),
+            self.payload_policy.response_max_bytes,
+        )
         .map_truncated(self.truncated)
     }
 }
@@ -241,6 +245,7 @@ impl PayloadResultExt for (Value, bool) {
 #[derive(Clone)]
 pub struct RequestLogging<R> {
     repo: Arc<R>,
+    payload_policy: RequestLogPayloadPolicy,
 }
 
 impl<R> RequestLogging<R>
@@ -249,7 +254,15 @@ where
 {
     #[must_use]
     pub fn new(repo: Arc<R>) -> Self {
-        Self { repo }
+        Self::new_with_payload_policy(repo, RequestLogPayloadPolicy::default())
+    }
+
+    #[must_use]
+    pub fn new_with_payload_policy(repo: Arc<R>, payload_policy: RequestLogPayloadPolicy) -> Self {
+        Self {
+            repo,
+            payload_policy,
+        }
     }
 
     #[must_use]
@@ -262,16 +275,29 @@ where
         request_headers: &BTreeMap<String, String>,
         request_tags: RequestTags,
     ) -> ChatRequestLogContext {
-        let sanitized_headers = request_headers
-            .iter()
-            .map(|(key, value)| (key.clone(), Value::String(redact_header_value(key, value))))
-            .collect::<Map<_, _>>();
-        let request_body =
-            redact_json_value(&serde_json::to_value(request).unwrap_or_else(|_| json!({})));
-        let (request_json, request_payload_truncated) = truncate_payload(json!({
-            "headers": sanitized_headers,
-            "body": request_body,
-        }));
+        let (request_json, request_payload_truncated) = if self
+            .payload_policy
+            .should_capture_payloads()
+        {
+            let sanitized_headers = request_headers
+                .iter()
+                .map(|(key, value)| (key.clone(), Value::String(redact_header_value(key, value))))
+                .collect::<Map<_, _>>();
+            let request_body = serde_json::to_value(request).unwrap_or_else(|_| json!({}));
+            let redacted = redact_json_value_with_policy(
+                &json!({
+                    "headers": sanitized_headers,
+                    "body": request_body,
+                }),
+                &self.payload_policy,
+            );
+            let redacted = truncate_large_payload_fields(&redacted);
+            let (request_json, truncated) =
+                truncate_payload(redacted, self.payload_policy.request_max_bytes);
+            (Some(request_json), truncated)
+        } else {
+            (None, false)
+        };
 
         ChatRequestLogContext {
             request_log_id: Uuid::new_v4(),
@@ -304,7 +330,10 @@ where
 
     #[must_use]
     pub fn new_stream_response_collector(&self) -> StreamResponseCollector {
-        StreamResponseCollector::default()
+        StreamResponseCollector {
+            payload_policy: self.payload_policy.clone(),
+            ..StreamResponseCollector::default()
+        }
     }
 
     pub async fn log_non_stream_success(
@@ -316,10 +345,20 @@ where
         latency_ms: i64,
         response_body: &Value,
     ) -> Result<LoggedRequest, GatewayError> {
-        let sanitized_response = redact_json_value(response_body);
-        let usage = usage_summary_from_value(sanitized_response.get("usage"));
+        let usage = usage_summary_from_value(response_body.get("usage"));
         let (response_json, response_payload_truncated) =
-            truncate_payload(json!({ "body": sanitized_response }));
+            if self.payload_policy.should_capture_payloads() {
+                let sanitized_response = redact_json_value_with_policy(
+                    &json!({ "body": response_body }),
+                    &self.payload_policy,
+                );
+                let sanitized_response = truncate_large_payload_fields(&sanitized_response);
+                let (response_json, truncated) =
+                    truncate_payload(sanitized_response, self.payload_policy.response_max_bytes);
+                (Some(response_json), truncated)
+            } else {
+                (None, false)
+            };
         self.persist_chat_log(
             api_key,
             context,
@@ -345,13 +384,23 @@ where
         latency_ms: i64,
         gateway_error: &GatewayError,
     ) -> Result<LoggedRequest, GatewayError> {
-        let response_json = json!({
-            "body": redact_json_value(
-                &serde_json::to_value(OpenAiErrorEnvelope::from_gateway_error(gateway_error))
-                    .unwrap_or_else(|_| json!({ "error": gateway_error.to_string() })),
-            ),
-        });
-        let (response_json, response_payload_truncated) = truncate_payload(response_json);
+        let (response_json, response_payload_truncated) = if self
+            .payload_policy
+            .should_capture_payloads()
+        {
+            let response_json = redact_json_value_with_policy(
+                &json!({
+                    "body": serde_json::to_value(OpenAiErrorEnvelope::from_gateway_error(gateway_error))
+                        .unwrap_or_else(|_| json!({ "error": gateway_error.to_string() })),
+                }),
+                &self.payload_policy,
+            );
+            let (response_json, truncated) =
+                truncate_payload(response_json, self.payload_policy.response_max_bytes);
+            (Some(response_json), truncated)
+        } else {
+            (None, false)
+        };
         self.persist_chat_log(
             api_key,
             context,
@@ -385,7 +434,14 @@ where
         collector.finish();
         let failure = failure.or_else(|| collector.failure().cloned());
         let usage = usage_summary_from_value(collector.usage());
-        let (response_json, response_payload_truncated) = collector.into_payload(failure.as_ref());
+        let (response_json, response_payload_truncated) =
+            if self.payload_policy.should_capture_payloads() {
+                let (response_json, response_payload_truncated) =
+                    collector.into_payload(failure.as_ref());
+                (Some(response_json), response_payload_truncated)
+            } else {
+                (None, false)
+            };
         let summary = match failure {
             Some(failure) => ChatCompletionLogSummary::failure(
                 provider_key,
@@ -435,17 +491,23 @@ where
         api_key: &AuthenticatedApiKey,
         context: &ChatRequestLogContext,
         summary: ChatCompletionLogSummary,
-        response_json: Value,
+        response_json: Option<Value>,
         response_payload_truncated: bool,
     ) -> Result<LoggedRequest, GatewayError> {
-        if !self.should_log_request(api_key).await? {
+        if self.payload_policy.capture_mode == RequestLogPayloadCaptureMode::Disabled
+            || !self.should_log_request(api_key).await?
+        {
             return Ok(LoggedRequest {
                 request_log_id: context.request_log_id,
                 wrote: false,
             });
         }
 
-        let metadata = request_log_metadata(summary.stream, &summary.icon_metadata);
+        let metadata =
+            request_log_metadata(summary.stream, &summary.icon_metadata, &self.payload_policy);
+        let has_payload = self.payload_policy.should_capture_payloads()
+            && context.request_json.is_some()
+            && response_json.is_some();
         let log = RequestLogRecord {
             request_log_id: context.request_log_id,
             request_id: context.request_id.clone(),
@@ -461,20 +523,23 @@ where
             completion_tokens: summary.usage.completion_tokens,
             total_tokens: summary.usage.total_tokens,
             error_code: summary.error_code,
-            has_payload: true,
-            request_payload_truncated: context.request_payload_truncated,
-            response_payload_truncated,
+            has_payload,
+            request_payload_truncated: has_payload && context.request_payload_truncated,
+            response_payload_truncated: has_payload && response_payload_truncated,
             request_tags: context.request_tags.clone(),
             metadata,
             occurred_at: OffsetDateTime::now_utc(),
         };
-        let payload = RequestLogPayloadRecord {
-            request_log_id: context.request_log_id,
-            request_json: context.request_json.clone(),
-            response_json,
+        let payload = match (has_payload, context.request_json.clone(), response_json) {
+            (true, Some(request_json), Some(response_json)) => Some(RequestLogPayloadRecord {
+                request_log_id: context.request_log_id,
+                request_json,
+                response_json,
+            }),
+            _ => None,
         };
 
-        self.repo.insert_request_log(&log, Some(&payload)).await?;
+        self.repo.insert_request_log(&log, payload.as_ref()).await?;
 
         Ok(LoggedRequest {
             request_log_id: context.request_log_id,
@@ -509,6 +574,7 @@ pub fn usage_summary_from_value(value: Option<&Value>) -> UsageSummary {
 fn request_log_metadata(
     stream: bool,
     icon_metadata: &RequestLogIconMetadata,
+    payload_policy: &RequestLogPayloadPolicy,
 ) -> Map<String, Value> {
     let mut metadata = Map::new();
     metadata.insert(
@@ -516,6 +582,10 @@ fn request_log_metadata(
         Value::String("chat_completions".to_string()),
     );
     metadata.insert("stream".to_string(), Value::Bool(stream));
+    metadata.insert(
+        "payload_policy".to_string(),
+        payload_policy.metadata_value(),
+    );
     metadata.insert(
         REQUEST_LOG_PROVIDER_ICON_KEY.to_string(),
         Value::String(icon_metadata.provider_icon_key.as_str().to_string()),
@@ -529,13 +599,13 @@ fn request_log_metadata(
     metadata
 }
 
-fn truncate_payload(value: Value) -> (Value, bool) {
+fn truncate_payload(value: Value, max_bytes: usize) -> (Value, bool) {
     match serde_json::to_vec(&value) {
-        Ok(bytes) if bytes.len() > MAX_PAYLOAD_BYTES => (
+        Ok(bytes) if bytes.len() > max_bytes => (
             json!({
                 "truncated": true,
                 "size_bytes": bytes.len(),
-                "preview": String::from_utf8_lossy(&bytes[..MAX_PAYLOAD_BYTES.min(bytes.len())]).to_string(),
+                "preview": String::from_utf8_lossy(&bytes[..max_bytes.min(bytes.len())]).to_string(),
             }),
             true,
         ),
@@ -569,7 +639,10 @@ mod tests {
     use time::OffsetDateTime;
     use uuid::Uuid;
 
-    use crate::RequestLogIconMetadata;
+    use crate::{
+        RequestLogIconMetadata,
+        redaction::{RequestLogPayloadCaptureMode, RequestLogPayloadPolicy, parse_payload_path},
+    };
 
     use super::{
         RequestLogging, StreamFailureSummary, StreamLogResultInput, StreamResponseCollector,
@@ -702,6 +775,61 @@ mod tests {
         }
     }
 
+    fn sample_team_auth() -> AuthenticatedApiKey {
+        AuthenticatedApiKey {
+            id: Uuid::new_v4(),
+            public_id: "dev123".to_string(),
+            name: "dev".to_string(),
+            owner_kind: ApiKeyOwnerKind::Team,
+            owner_user_id: None,
+            owner_team_id: Some(Uuid::new_v4()),
+        }
+    }
+
+    fn sample_icon_metadata() -> RequestLogIconMetadata {
+        RequestLogIconMetadata {
+            provider_icon_key: crate::ProviderIconKey::OpenAI,
+            model_icon_key: Some(crate::ModelIconKey::OpenAI),
+        }
+    }
+
+    fn sample_request(stream: bool) -> ChatCompletionsRequest {
+        ChatCompletionsRequest {
+            model: "fast".to_string(),
+            messages: Vec::new(),
+            stream,
+            extra: BTreeMap::new(),
+        }
+    }
+
+    fn policy(
+        capture_mode: RequestLogPayloadCaptureMode,
+        request_max_bytes: usize,
+        response_max_bytes: usize,
+        stream_max_events: usize,
+    ) -> RequestLogPayloadPolicy {
+        RequestLogPayloadPolicy::new(
+            capture_mode,
+            request_max_bytes,
+            response_max_bytes,
+            stream_max_events,
+            Vec::new(),
+        )
+    }
+
+    fn policy_with_redaction_paths(paths: &[&str]) -> RequestLogPayloadPolicy {
+        RequestLogPayloadPolicy::new(
+            RequestLogPayloadCaptureMode::RedactedPayloads,
+            4096,
+            4096,
+            4,
+            paths
+                .iter()
+                .map(|path| parse_payload_path(path).expect("test path should parse"))
+                .collect(),
+        )
+    }
+
     #[tokio::test]
     async fn suppresses_logging_for_user_toggle_disabled() {
         let user_id = Uuid::new_v4();
@@ -821,6 +949,161 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn disabled_payload_policy_writes_no_request_log_rows() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let logging = RequestLogging::new_with_payload_policy(
+            repo.clone(),
+            policy(RequestLogPayloadCaptureMode::Disabled, 1024, 1024, 4),
+        );
+        let auth = sample_team_auth();
+        let context = logging.begin_chat_request(
+            "req_1",
+            "fast",
+            "fast",
+            &sample_request(false),
+            &BTreeMap::new(),
+            RequestTags::default(),
+        );
+
+        let wrote = logging
+            .log_non_stream_success(
+                &auth,
+                &context,
+                "openai-prod",
+                sample_icon_metadata(),
+                120,
+                &json!({"usage": {"prompt_tokens": 1, "completion_tokens": 2}}),
+            )
+            .await
+            .expect("request logging should evaluate");
+
+        assert!(!wrote.wrote);
+        assert!(repo.logs.lock().expect("logs lock").is_empty());
+        assert!(repo.payloads.lock().expect("payloads lock").is_empty());
+    }
+
+    #[tokio::test]
+    async fn summary_only_payload_policy_writes_summary_without_payload() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let logging = RequestLogging::new_with_payload_policy(
+            repo.clone(),
+            policy(RequestLogPayloadCaptureMode::SummaryOnly, 1024, 1024, 4),
+        );
+        let auth = sample_team_auth();
+        let context = logging.begin_chat_request(
+            "req_1",
+            "fast",
+            "fast",
+            &sample_request(false),
+            &BTreeMap::new(),
+            RequestTags::default(),
+        );
+
+        let wrote = logging
+            .log_non_stream_success(
+                &auth,
+                &context,
+                "openai-prod",
+                sample_icon_metadata(),
+                120,
+                &json!({"usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}}),
+            )
+            .await
+            .expect("summary log");
+
+        let logs = repo.logs.lock().expect("logs lock");
+        assert!(wrote.wrote);
+        assert_eq!(logs.len(), 1);
+        assert!(!logs[0].has_payload);
+        assert!(!logs[0].request_payload_truncated);
+        assert!(!logs[0].response_payload_truncated);
+        assert_eq!(
+            logs[0].metadata["payload_policy"]["capture_mode"],
+            "summary_only"
+        );
+        assert!(repo.payloads.lock().expect("payloads lock").is_empty());
+    }
+
+    #[tokio::test]
+    async fn separate_payload_limits_mark_only_affected_side_truncated() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let logging = RequestLogging::new_with_payload_policy(
+            repo.clone(),
+            policy(RequestLogPayloadCaptureMode::RedactedPayloads, 4096, 80, 4),
+        );
+        let auth = sample_team_auth();
+        let context = logging.begin_chat_request(
+            "req_1",
+            "fast",
+            "fast",
+            &sample_request(false),
+            &BTreeMap::new(),
+            RequestTags::default(),
+        );
+
+        logging
+            .log_non_stream_success(
+                &auth,
+                &context,
+                "openai-prod",
+                sample_icon_metadata(),
+                120,
+                &json!({
+                    "choices": [{"message": {"content": "x".repeat(512)}}],
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}
+                }),
+            )
+            .await
+            .expect("truncated log");
+
+        let logs = repo.logs.lock().expect("logs lock");
+        let payloads = repo.payloads.lock().expect("payloads lock");
+        assert!(logs[0].has_payload);
+        assert!(!logs[0].request_payload_truncated);
+        assert!(logs[0].response_payload_truncated);
+        assert_eq!(payloads[0].response_json["truncated"], true);
+    }
+
+    #[tokio::test]
+    async fn operator_redaction_paths_apply_to_wrapped_response_payloads() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let logging = RequestLogging::new_with_payload_policy(
+            repo.clone(),
+            policy_with_redaction_paths(&["body.choices.*.message.content"]),
+        );
+        let auth = sample_team_auth();
+        let context = logging.begin_chat_request(
+            "req_1",
+            "fast",
+            "fast",
+            &sample_request(false),
+            &BTreeMap::new(),
+            RequestTags::default(),
+        );
+
+        logging
+            .log_non_stream_success(
+                &auth,
+                &context,
+                "openai-prod",
+                sample_icon_metadata(),
+                120,
+                &json!({
+                    "choices": [{"message": {"content": "operator-secret"}}],
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}
+                }),
+            )
+            .await
+            .expect("redacted response log");
+
+        let payloads = repo.payloads.lock().expect("payloads lock");
+        assert_eq!(
+            payloads[0].response_json["body"]["choices"][0]["message"]["content"],
+            "[REDACTED]"
+        );
+    }
+
+    #[tokio::test]
     async fn records_stream_failures_with_payload() {
         let repo = Arc::new(InMemoryRepo::default());
         let logging = RequestLogging::new(repo.clone());
@@ -884,6 +1167,106 @@ mod tests {
         assert!(logs[0].metadata.get("fallback_used").is_none());
         assert!(logs[0].metadata.get("attempt_count").is_none());
         assert_eq!(payload[0].response_json["error"]["code"], "stream_error");
+    }
+
+    #[tokio::test]
+    async fn stream_event_storage_cap_does_not_stop_usage_parsing() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let logging = RequestLogging::new_with_payload_policy(
+            repo.clone(),
+            policy(
+                RequestLogPayloadCaptureMode::RedactedPayloads,
+                4096,
+                4096,
+                1,
+            ),
+        );
+        let auth = sample_team_auth();
+        let context = logging.begin_chat_request(
+            "req_1",
+            "fast",
+            "fast",
+            &sample_request(true),
+            &BTreeMap::new(),
+            RequestTags::default(),
+        );
+        let mut collector = logging.new_stream_response_collector();
+        collector.observe_chunk(
+            br#"data: {"choices":[{"delta":{"content":"hello"}}]}
+
+data: {"usage":{"prompt_tokens":4,"completion_tokens":5,"total_tokens":9}}
+
+"#,
+        );
+
+        logging
+            .log_stream_result(
+                &auth,
+                &context,
+                StreamLogResultInput {
+                    provider_key: "openai-prod".to_string(),
+                    icon_metadata: sample_icon_metadata(),
+                    latency_ms: 120,
+                    collector,
+                    failure: None,
+                },
+            )
+            .await
+            .expect("stream log");
+
+        let logs = repo.logs.lock().expect("logs lock");
+        let payload = repo.payloads.lock().expect("payloads lock");
+        assert_eq!(logs[0].total_tokens, Some(9));
+        assert!(logs[0].response_payload_truncated);
+        assert_eq!(
+            payload[0].response_json["events"].as_array().unwrap().len(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn operator_redaction_paths_apply_to_wrapped_stream_payloads() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let logging = RequestLogging::new_with_payload_policy(
+            repo.clone(),
+            policy_with_redaction_paths(&["events.*.choices.*.delta.content"]),
+        );
+        let auth = sample_team_auth();
+        let context = logging.begin_chat_request(
+            "req_1",
+            "fast",
+            "fast",
+            &sample_request(true),
+            &BTreeMap::new(),
+            RequestTags::default(),
+        );
+        let mut collector = logging.new_stream_response_collector();
+        collector.observe_chunk(
+            br#"data: {"choices":[{"delta":{"content":"operator-secret"}}]}
+
+"#,
+        );
+
+        logging
+            .log_stream_result(
+                &auth,
+                &context,
+                StreamLogResultInput {
+                    provider_key: "openai-prod".to_string(),
+                    icon_metadata: sample_icon_metadata(),
+                    latency_ms: 120,
+                    collector,
+                    failure: None,
+                },
+            )
+            .await
+            .expect("stream log");
+
+        let payloads = repo.payloads.lock().expect("payloads lock");
+        assert_eq!(
+            payloads[0].response_json["events"][0]["choices"][0]["delta"]["content"],
+            "[REDACTED]"
+        );
     }
 
     #[test]

@@ -15,8 +15,9 @@ use uuid::Uuid;
 
 use crate::{
     Authenticator, ChatRequestLogContext, LoggedRequest, ModelAccess, ModelResolver,
-    PricingCatalog, RequestLogIconMetadata, RequestLogging, ResolvedGatewayRequest,
-    ResolvedProviderConnection, StreamLogResultInput, StreamResponseCollector,
+    PricingCatalog, RequestLogIconMetadata, RequestLogPayloadPolicy, RequestLogging,
+    ResolvedGatewayRequest, ResolvedProviderConnection, StreamLogResultInput,
+    StreamResponseCollector,
     budget_alerts::{BudgetAlertSender, BudgetAlertService, SinkBudgetAlertSender},
     budget_guard::{BudgetGuard, BudgetGuardDisposition},
 };
@@ -71,13 +72,29 @@ where
         planner: Arc<P>,
         sender: Arc<dyn BudgetAlertSender>,
     ) -> Self {
+        Self::new_with_budget_alert_sender_and_payload_policy(
+            store,
+            planner,
+            sender,
+            RequestLogPayloadPolicy::default(),
+        )
+    }
+
+    #[must_use]
+    pub fn new_with_budget_alert_sender_and_payload_policy(
+        store: Arc<S>,
+        planner: Arc<P>,
+        sender: Arc<dyn BudgetAlertSender>,
+        payload_policy: RequestLogPayloadPolicy,
+    ) -> Self {
         let authenticator = Authenticator::new(store.clone());
         let budget_alerts = BudgetAlertService::new(store.clone(), sender);
         let budget_guard = BudgetGuard::new(store.clone());
         let model_access = ModelAccess::new(store.clone());
         let model_resolver = ModelResolver::new(store.clone());
         let pricing_catalog = PricingCatalog::new(store.clone());
-        let request_logging = RequestLogging::new(store.clone());
+        let request_logging =
+            RequestLogging::new_with_payload_policy(store.clone(), payload_policy);
 
         Self {
             store,

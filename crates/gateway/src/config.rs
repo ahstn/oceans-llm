@@ -7,7 +7,10 @@ use gateway_core::{
     SeedTeam, SeedUser, SeedUserMembership, parse_gateway_api_key,
 };
 use gateway_providers::{OpenAiCompatConfig, VertexAuthConfig, VertexProviderConfig};
-use gateway_service::{ProviderIconKey, hash_gateway_key_secret, is_supported_pricing_provider_id};
+use gateway_service::{
+    PayloadPath, ProviderIconKey, RequestLogPayloadCaptureMode, RequestLogPayloadPolicy,
+    hash_gateway_key_secret, is_supported_pricing_provider_id, parse_payload_path,
+};
 use gateway_store::StoreConnectionOptions;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -22,6 +25,8 @@ pub struct GatewayConfig {
     pub auth: AuthConfig,
     #[serde(default)]
     pub budget_alerts: BudgetAlertConfig,
+    #[serde(default)]
+    pub request_logging: RequestLoggingConfig,
     #[serde(default)]
     pub providers: Vec<ProviderConfig>,
     #[serde(default)]
@@ -53,6 +58,7 @@ impl GatewayConfig {
     fn validate(&self) -> anyhow::Result<()> {
         let _ = self.database.connection_options()?;
         self.budget_alerts.validate()?;
+        self.request_logging.validate()?;
 
         let provider_by_id = self
             .providers
@@ -538,6 +544,10 @@ impl GatewayConfig {
     pub fn database_options(&self) -> anyhow::Result<StoreConnectionOptions> {
         self.database.connection_options()
     }
+
+    pub fn request_log_payload_policy(&self) -> anyhow::Result<RequestLogPayloadPolicy> {
+        self.request_logging.payloads.to_policy()
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -631,6 +641,107 @@ pub struct AuthConfig {
 pub struct BudgetAlertConfig {
     #[serde(default)]
     pub email: BudgetAlertEmailConfig,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct RequestLoggingConfig {
+    #[serde(default)]
+    pub payloads: RequestLogPayloadConfig,
+}
+
+impl RequestLoggingConfig {
+    fn validate(&self) -> anyhow::Result<()> {
+        self.payloads.validate()
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RequestLogPayloadConfig {
+    #[serde(default)]
+    pub capture_mode: RequestLogPayloadCaptureModeConfig,
+    #[serde(default = "default_request_log_request_max_bytes")]
+    pub request_max_bytes: usize,
+    #[serde(default = "default_request_log_response_max_bytes")]
+    pub response_max_bytes: usize,
+    #[serde(default = "default_request_log_stream_max_events")]
+    pub stream_max_events: usize,
+    #[serde(default)]
+    pub redaction_paths: Vec<String>,
+}
+
+impl Default for RequestLogPayloadConfig {
+    fn default() -> Self {
+        Self {
+            capture_mode: RequestLogPayloadCaptureModeConfig::default(),
+            request_max_bytes: default_request_log_request_max_bytes(),
+            response_max_bytes: default_request_log_response_max_bytes(),
+            stream_max_events: default_request_log_stream_max_events(),
+            redaction_paths: Vec::new(),
+        }
+    }
+}
+
+impl RequestLogPayloadConfig {
+    fn validate(&self) -> anyhow::Result<()> {
+        if self.request_max_bytes == 0 {
+            bail!("request_logging.payloads.request_max_bytes must be > 0");
+        }
+        if self.response_max_bytes == 0 {
+            bail!("request_logging.payloads.response_max_bytes must be > 0");
+        }
+        if self.stream_max_events == 0 {
+            bail!("request_logging.payloads.stream_max_events must be > 0");
+        }
+        for path in &self.redaction_paths {
+            parse_payload_path(path).map_err(|error| {
+                anyhow::anyhow!(
+                    "request_logging.payloads.redaction_paths `{path}` is invalid: {error}"
+                )
+            })?;
+        }
+        Ok(())
+    }
+
+    fn to_policy(&self) -> anyhow::Result<RequestLogPayloadPolicy> {
+        let paths = self
+            .redaction_paths
+            .iter()
+            .map(|path| {
+                parse_payload_path(path).map_err(|error| {
+                    anyhow::anyhow!(
+                        "request_logging.payloads.redaction_paths `{path}` is invalid: {error}"
+                    )
+                })
+            })
+            .collect::<anyhow::Result<Vec<PayloadPath>>>()?;
+
+        Ok(RequestLogPayloadPolicy::new(
+            self.capture_mode.into(),
+            self.request_max_bytes,
+            self.response_max_bytes,
+            self.stream_max_events,
+            paths,
+        ))
+    }
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum RequestLogPayloadCaptureModeConfig {
+    Disabled,
+    SummaryOnly,
+    #[default]
+    RedactedPayloads,
+}
+
+impl From<RequestLogPayloadCaptureModeConfig> for RequestLogPayloadCaptureMode {
+    fn from(value: RequestLogPayloadCaptureModeConfig) -> Self {
+        match value {
+            RequestLogPayloadCaptureModeConfig::Disabled => Self::Disabled,
+            RequestLogPayloadCaptureModeConfig::SummaryOnly => Self::SummaryOnly,
+            RequestLogPayloadCaptureModeConfig::RedactedPayloads => Self::RedactedPayloads,
+        }
+    }
 }
 
 impl BudgetAlertConfig {
@@ -1129,6 +1240,18 @@ const fn default_request_logging_enabled() -> bool {
     true
 }
 
+const fn default_request_log_request_max_bytes() -> usize {
+    64 * 1024
+}
+
+const fn default_request_log_response_max_bytes() -> usize {
+    64 * 1024
+}
+
+const fn default_request_log_stream_max_events() -> usize {
+    128
+}
+
 const fn default_user_global_role() -> GlobalRole {
     GlobalRole::User
 }
@@ -1186,12 +1309,119 @@ mod tests {
     use std::{env, path::Path};
 
     use gateway_core::{AuthMode, BudgetCadence, GlobalRole, MembershipRole, Money4};
+    use gateway_service::RequestLogPayloadCaptureMode;
     use tempfile::tempdir;
 
     use super::GatewayConfig;
 
     fn write_config(path: &Path, yaml: &str) {
         std::fs::write(path, yaml).expect("write config");
+    }
+
+    #[test]
+    fn request_log_payload_policy_defaults_match_current_capture_behavior() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(&config_path, "");
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let policy = config.request_log_payload_policy().expect("policy");
+
+        assert_eq!(
+            policy.capture_mode,
+            RequestLogPayloadCaptureMode::RedactedPayloads
+        );
+        assert_eq!(policy.request_max_bytes, 64 * 1024);
+        assert_eq!(policy.response_max_bytes, 64 * 1024);
+        assert_eq!(policy.stream_max_events, 128);
+    }
+
+    #[test]
+    fn parses_request_log_payload_policy_config() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+request_logging:
+  payloads:
+    capture_mode: summary_only
+    request_max_bytes: 1024
+    response_max_bytes: 2048
+    stream_max_events: 3
+    redaction_paths:
+      - body.messages.*.metadata.internal
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let policy = config.request_log_payload_policy().expect("policy");
+
+        assert_eq!(
+            policy.capture_mode,
+            RequestLogPayloadCaptureMode::SummaryOnly
+        );
+        assert_eq!(policy.request_max_bytes, 1024);
+        assert_eq!(policy.response_max_bytes, 2048);
+        assert_eq!(policy.stream_max_events, 3);
+    }
+
+    #[test]
+    fn rejects_invalid_request_log_payload_policy_config() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+request_logging:
+  payloads:
+    capture_mode: redacted_payloads
+    request_max_bytes: 0
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("request_logging.payloads.request_max_bytes must be > 0"),
+            "unexpected error: {error_text}"
+        );
+
+        write_config(
+            &config_path,
+            r#"
+request_logging:
+  payloads:
+    stream_max_events: 0
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("request_logging.payloads.stream_max_events must be > 0"),
+            "unexpected error: {error_text}"
+        );
+
+        write_config(
+            &config_path,
+            r#"
+request_logging:
+  payloads:
+    redaction_paths:
+      - body..messages
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("request_logging.payloads.redaction_paths"),
+            "unexpected error: {error_text}"
+        );
     }
 
     #[test]

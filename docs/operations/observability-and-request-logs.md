@@ -88,7 +88,7 @@ The summary row stores:
 - universal caller tags
 - status, latency, and usage totals
 - truncation flags
-- metadata such as `operation` and `stream`
+- metadata such as `operation`, `stream`, and `payload_policy`
 
 Streaming requests persist a bounded transcript payload rather than raw transport bytes.
 
@@ -99,26 +99,94 @@ The stream payload contract is incremental rather than chunk-local:
 - both `data:` and `data: ` forms are accepted
 - the latest coherent `usage` object is retained for request-log and ledger work
 
+## Payload Policy
+
+Chat-completion request-log payload persistence is controlled by `request_logging.payloads` in `gateway.yaml`.
+
+Default config:
+
+```yaml
+request_logging:
+  payloads:
+    capture_mode: redacted_payloads
+    request_max_bytes: 65536
+    response_max_bytes: 65536
+    stream_max_events: 128
+    redaction_paths: []
+```
+
+Capture modes:
+
+- `disabled`: skip request-log persistence for chat completions
+- `summary_only`: write `request_logs` summary rows with `has_payload=false`; do not write `request_log_payloads`
+- `redacted_payloads`: write summary rows and sanitized payload rows
+
+The policy is read from YAML only. The admin UI displays the policy used for each row, but does not edit it.
+
+Validation rules:
+
+- `request_max_bytes` must be greater than zero
+- `response_max_bytes` must be greater than zero
+- `stream_max_events` must be greater than zero
+- `redaction_paths` must use dot-separated object keys, with `*` as a full-segment wildcard
+- paths are anchored from the wrapped payload root, for example `body.messages.*.content.*.image_url.url`
+
+Each request-log row persists lightweight policy metadata in `request_logs.metadata_json`:
+
+```json
+{
+  "payload_policy": {
+    "capture_mode": "redacted_payloads",
+    "request_max_bytes": 65536,
+    "response_max_bytes": 65536,
+    "stream_max_events": 128,
+    "version": "builtin:v1"
+  }
+}
+```
+
 ## Redaction and Truncation Boundaries
 
-Current redaction is key-driven and header-driven.
+Payloads are wrapped before policy application:
 
-Sensitive headers include:
+- requests: `{ "headers": ..., "body": ... }`
+- responses: `{ "body": ... }`
+- streams: `{ "stream": true, "events": ..., "usage": ..., "error": ... }`
+
+Redaction applies one explicit built-in policy plus additive operator paths from `request_logging.payloads.redaction_paths`.
+
+Sensitive built-in headers include:
 
 - `authorization`
+- `anthropic-api-key`
 - `cookie`
 - `set-cookie`
+- `x-goog-api-key`
 - `x-api-key`
 
-Sensitive JSON keys include:
+Sensitive built-in JSON keys include:
 
 - `token`
 - `access_token`
 - `refresh_token`
+- `api_key`
+- `anthropic_api_key`
+- `client_secret`
+- `credentials`
+- `private_key`
 - `secret`
 - `password`
 
-Current payload policy is still heuristic and bounded. It is not operator-configurable yet.
+Known bulky provider fields are shape-preserving truncated before the whole-payload byte budget is applied. Built-ins cover OpenAI-compatible image/audio/file payloads, Vertex Gemini inline data, and Vertex Anthropic base64 source data.
+
+Processing order:
+
+1. wrap the payload
+2. apply built-in and operator redaction rules
+3. truncate known bulky fields while preserving JSON shape where possible
+4. apply `request_max_bytes` or `response_max_bytes` as a final guardrail
+
+For streams, the gateway keeps parsing every frame for usage and provider errors. Only stored event payloads are capped by `stream_max_events`; if the cap is hit, `response_payload_truncated=true`.
 
 ## Recent Contract Cleanup
 
@@ -160,9 +228,8 @@ Current list filters:
 ## Current Gaps
 
 - no documented retention or archival policy yet for `request_log_payloads`
+  - retention and purge work is tracked separately in [issue #105](https://github.com/ahstn/oceans-llm/issues/105)
 - deploy examples do not ship an OTLP collector by default
-- request-log payload policy is not operator-configurable yet
-  - [issue #18](https://github.com/ahstn/oceans-llm/issues/18)
 - stream and non-stream chat paths still differ on post-provider ledger-write failure behavior
   - [issue #49](https://github.com/ahstn/oceans-llm/issues/49)
 

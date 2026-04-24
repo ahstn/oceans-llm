@@ -38,6 +38,9 @@ pub use pricing_catalog::{
     PRICING_CATALOG_CACHE_KEY, PricingCatalog, PricingCatalogSnapshotFile, fetch_vendored_snapshot,
     is_supported_pricing_provider_id, snapshot_to_pretty_json,
 };
+pub use redaction::{
+    PayloadPath, RequestLogPayloadCaptureMode, RequestLogPayloadPolicy, parse_payload_path,
+};
 pub use request_logging::{
     ChatRequestLogContext, LoggedRequest, RequestLogging, StreamFailureSummary,
     StreamLogResultInput, StreamResponseCollector, UsageSummary,

@@ -3,10 +3,19 @@ import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { useVirtualizer } from '@tanstack/react-virtual'
 
 import { BrandIcon } from '@/components/icons/brand-icon'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import {
   Dialog,
   DialogContent,
@@ -192,9 +201,12 @@ export function RequestLogsPage() {
             </Button>
           </div>
           {hasPartialTagFilter ? (
-            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-              Provide both a tag key and tag value to filter bespoke request tags.
-            </div>
+            <Alert>
+              <AlertTitle>Incomplete tag filter</AlertTitle>
+              <AlertDescription>
+                Provide both a tag key and tag value to filter bespoke request tags.
+              </AlertDescription>
+            </Alert>
           ) : null}
           <div className="text-sm text-[var(--color-text-soft)]">
             {logPage.total} total logs loaded from gateway observability APIs.
@@ -264,6 +276,7 @@ export function RequestLogsPage() {
                       {metadataBoolean(item, 'stream') ? (
                         <Badge variant="outline">stream</Badge>
                       ) : null}
+                      <PayloadPolicyBadges item={item} />
                       <RequestTagBadges item={item} />
                     </div>
                     <Button
@@ -317,6 +330,9 @@ export function RequestLogsPage() {
                         <div className="truncate text-xs text-[var(--color-text-muted)]">
                           {item.request_log_id}
                         </div>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          <PayloadPolicyBadges item={item} />
+                        </div>
                       </div>
                       <span className="flex items-center gap-2 truncate px-3 py-3 text-[var(--color-text)]">
                         <BrandIcon iconKey={item.model_icon_key} size={16} />
@@ -369,11 +385,12 @@ export function RequestLogsPage() {
           </DialogHeader>
 
           {detailPending ? (
-            <div className="text-sm text-[var(--color-text-soft)]">Loading request log detail…</div>
+            <DetailSkeleton />
           ) : detailError ? (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-              {detailError}
-            </div>
+            <Alert variant="destructive">
+              <AlertTitle>Request log detail failed</AlertTitle>
+              <AlertDescription>{detailError}</AlertDescription>
+            </Alert>
           ) : selectedDetail ? (
             <div className="grid gap-4">
               <div className="grid gap-3 rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4 md:grid-cols-2">
@@ -426,36 +443,32 @@ export function RequestLogsPage() {
                 />
               </div>
 
-              <section className="rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4">
-                <h3 className="text-sm font-semibold text-[var(--color-text)]">Request Tags</h3>
-                <div className="mt-3 flex flex-wrap gap-2">
+              <PayloadPolicyCard log={selectedDetail.log} />
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Request Tags</CardTitle>
+                </CardHeader>
+                <CardContent className="flex flex-wrap gap-2">
                   <RequestTagBadges item={selectedDetail.log} />
-                </div>
-              </section>
+                </CardContent>
+              </Card>
 
               <div className="grid gap-4 lg:grid-cols-2">
                 <PayloadCard
                   title="Request Payload"
-                  note={
-                    selectedDetail.log.request_payload_truncated
-                      ? 'Sanitized request payload was truncated before persistence.'
-                      : 'Sanitized request payload.'
-                  }
+                  truncated={selectedDetail.log.request_payload_truncated}
                   payload={selectedDetail.payload?.request_json}
                 />
                 <PayloadCard
                   title="Response Payload"
-                  note={
-                    selectedDetail.log.response_payload_truncated
-                      ? 'Sanitized response payload was truncated before persistence.'
-                      : 'Sanitized response payload.'
-                  }
+                  truncated={selectedDetail.log.response_payload_truncated}
                   payload={selectedDetail.payload?.response_json}
                 />
               </div>
             </div>
           ) : (
-            <div className="text-sm text-[var(--color-text-soft)]">Loading request log detail…</div>
+            <DetailSkeleton />
           )}
         </DialogContent>
       </Dialog>
@@ -488,17 +501,119 @@ function DetailRow({
   )
 }
 
-function PayloadCard({ title, note, payload }: { title: string; note: string; payload: unknown }) {
+function DetailSkeleton() {
   return (
-    <section className="rounded-md border border-[color:var(--color-border)]">
-      <header className="border-b border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] px-4 py-3">
-        <h3 className="font-semibold text-[var(--color-text)]">{title}</h3>
-        <p className="text-sm text-[var(--color-text-soft)]">{note}</p>
-      </header>
-      <pre className="max-h-[360px] overflow-auto p-4 text-xs leading-6 text-[var(--color-text-muted)]">
-        {payload ? JSON.stringify(payload, null, 2) : 'No payload stored.'}
-      </pre>
-    </section>
+    <div className="flex flex-col gap-3">
+      <Skeleton className="h-20 w-full" />
+      <Skeleton className="h-32 w-full" />
+      <Skeleton className="h-48 w-full" />
+    </div>
+  )
+}
+
+function PayloadPolicyCard({ log }: { log: RequestLogView }) {
+  const policy = log.payload_policy
+  const hasTruncation = log.request_payload_truncated || log.response_payload_truncated
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <CardTitle>Payload Policy</CardTitle>
+            <CardDescription>{payloadPolicyDescription(log)}</CardDescription>
+          </div>
+          <PayloadPolicyBadges item={log} />
+        </div>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        {hasTruncation || !log.has_payload ? (
+          <Alert>
+            <AlertTitle>Payload capture state</AlertTitle>
+            <AlertDescription>
+              {hasTruncation
+                ? 'One or more sanitized payloads were truncated before persistence.'
+                : `Capture mode is ${formatCaptureMode(policy.capture_mode)}, so no payload body is stored for this row.`}
+            </AlertDescription>
+          </Alert>
+        ) : null}
+        <dl className="grid gap-3 text-sm md:grid-cols-4">
+          <DetailRow label="Capture" value={formatCaptureMode(policy.capture_mode)} />
+          <DetailRow label="Request Limit" value={formatBytes(policy.request_max_bytes)} />
+          <DetailRow label="Response Limit" value={formatBytes(policy.response_max_bytes)} />
+          <DetailRow label="Stream Events" value={String(policy.stream_max_events)} />
+        </dl>
+      </CardContent>
+    </Card>
+  )
+}
+
+function PayloadCard({
+  title,
+  truncated,
+  payload,
+}: {
+  title: string
+  truncated: boolean
+  payload: unknown
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <CardTitle>{title}</CardTitle>
+            <CardDescription>
+              {truncated
+                ? 'Sanitized payload was truncated before persistence.'
+                : 'Sanitized payload.'}
+            </CardDescription>
+          </div>
+          {truncated ? <Badge variant="warning">truncated</Badge> : <Badge variant="outline">full</Badge>}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {payload ? (
+          <pre className="max-h-[360px] overflow-auto text-xs leading-6 text-[var(--color-text-muted)]">
+            {JSON.stringify(payload, null, 2)}
+          </pre>
+        ) : (
+          <Empty>
+            <EmptyHeader>
+              <EmptyTitle>No payload stored</EmptyTitle>
+              <EmptyDescription>
+                Payload capture was disabled or summary-only for this request.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function PayloadPolicyBadges({ item }: { item: RequestLogView }) {
+  const policy = item.payload_policy
+  const hasTruncation = item.request_payload_truncated || item.response_payload_truncated
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex flex-wrap gap-1">
+            <Badge variant={item.has_payload ? 'secondary' : 'outline'}>
+              {formatCaptureMode(policy.capture_mode)}
+            </Badge>
+            {item.request_payload_truncated ? <Badge variant="warning">req truncated</Badge> : null}
+            {item.response_payload_truncated ? <Badge variant="warning">resp truncated</Badge> : null}
+            {hasTruncation ? null : item.has_payload ? <Badge variant="outline">payload</Badge> : null}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>
+          {`${formatBytes(policy.request_max_bytes)} request limit, ${formatBytes(policy.response_max_bytes)} response limit, ${policy.stream_max_events} stream events, ${policy.version}`}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   )
 }
 
@@ -516,6 +631,36 @@ function formatLatency(latencyMs: number | null) {
 
 function formatTokenCount(totalTokens: number | null) {
   return totalTokens === null ? 'n/a' : String(totalTokens)
+}
+
+function formatCaptureMode(captureMode: string) {
+  switch (captureMode) {
+    case 'disabled':
+      return 'disabled'
+    case 'summary_only':
+      return 'summary only'
+    case 'redacted_payloads':
+      return 'redacted payloads'
+    default:
+      return captureMode
+  }
+}
+
+function formatBytes(bytes: number) {
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`
+  }
+  if (bytes >= 1024) {
+    return `${Math.round(bytes / 1024)} KiB`
+  }
+  return `${bytes} B`
+}
+
+function payloadPolicyDescription(log: RequestLogView) {
+  const policy = log.payload_policy
+  return `${formatCaptureMode(policy.capture_mode)} capture with ${formatBytes(
+    policy.request_max_bytes,
+  )} request and ${formatBytes(policy.response_max_bytes)} response budgets.`
 }
 
 function metadataBoolean(item: RequestLogView, key: string) {
