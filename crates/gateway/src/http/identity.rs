@@ -8,7 +8,8 @@ use axum::{
 };
 use gateway_core::{
     AuthError, AuthMode, GatewayError, GlobalRole, IdentityRepository, IdentityUserRecord,
-    MembershipRole, OidcProviderRecord, PasswordInvitationRecord, UserRecord, UserStatus,
+    MembershipRole, OidcProviderRecord, PasswordInvitationRecord, UserRecord, UserSessionRecord,
+    UserStatus,
 };
 use gateway_store::{AnyStore, GatewayStore};
 use sha2::{Digest, Sha256};
@@ -44,6 +45,7 @@ use crate::http::{
 const SESSION_COOKIE_NAME: &str = "ogw_session";
 const INVITE_TTL_DAYS: i64 = 7;
 const SESSION_TTL_DAYS: i64 = 30;
+const SESSION_TTL_SECONDS: i64 = SESSION_TTL_DAYS * 24 * 60 * 60;
 
 #[utoipa::path(
     get,
@@ -304,44 +306,74 @@ pub async fn get_auth_session(
 )]
 pub async fn login_with_password(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(request): Json<PasswordLoginRequest>,
 ) -> Result<Response, AppError> {
+    let invalid_credentials = || AppError(GatewayError::Auth(AuthError::InvalidCredentials));
     let email_normalized = normalize_email(&request.email)?;
     let user = state
         .store
         .get_user_by_email_normalized(&email_normalized)
         .await?
-        .ok_or(AppError(GatewayError::Auth(AuthError::InvalidCredentials)))?;
+        .ok_or_else(invalid_credentials)?;
+    if user.auth_mode != AuthMode::Password {
+        return Err(invalid_credentials());
+    }
     let password_auth = state
         .store
         .get_user_password_auth(user.user_id)
         .await?
-        .ok_or(AppError(GatewayError::Auth(AuthError::InvalidCredentials)))?;
+        .ok_or_else(invalid_credentials)?;
 
-    if user.auth_mode != AuthMode::Password {
-        return Err(AppError(GatewayError::Auth(AuthError::InvalidCredentials)));
-    }
-    if user.global_role != GlobalRole::PlatformAdmin {
-        return Err(AppError(GatewayError::Auth(
-            AuthError::InsufficientPrivileges,
-        )));
-    }
-    if user.status != UserStatus::Active {
-        return Err(AppError(GatewayError::InvalidRequest(
-            "only active admins can sign in".to_string(),
-        )));
-    }
     let password_ok =
         gateway_service::verify_gateway_key_secret(&request.password, &password_auth.password_hash)
             .map_err(|error| AppError(GatewayError::Internal(error.to_string())))?;
     if !password_ok {
-        return Err(AppError(GatewayError::Auth(AuthError::InvalidCredentials)));
+        return Err(invalid_credentials());
+    }
+    if user.global_role != GlobalRole::PlatformAdmin {
+        return Err(invalid_credentials());
+    }
+    if user.status != UserStatus::Active {
+        return Err(invalid_credentials());
     }
 
     let now = OffsetDateTime::now_utc();
-    let session_cookie = issue_session_cookie(&state, user.user_id, now).await?;
+    let session_cookie =
+        issue_session_cookie(&state, user.user_id, now, session_cookie_secure(&headers)).await?;
     let mut response = Json(envelope(build_auth_session_view(user))).into_response();
     response.headers_mut().append(SET_COOKIE, session_cookie);
+    Ok(response)
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/logout",
+    responses((status = 200, body = Envelope<IdentityActionStatus>)),
+    security(("session_cookie" = []))
+)]
+pub async fn logout_current_session(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    if let Some(current_session) = resolve_session_cookie(&state, &headers).await? {
+        let now = OffsetDateTime::now_utc();
+        if current_session.session.revoked_at.is_none()
+            && current_session.session.expires_at > now
+            && current_session.session.token_hash == token_hash(&current_session.raw_token)
+        {
+            state
+                .store
+                .revoke_user_session(current_session.session.session_id, now)
+                .await?;
+        }
+    }
+
+    let mut response = Json(envelope(IdentityActionStatus { status: "ok" })).into_response();
+    response.headers_mut().append(
+        SET_COOKIE,
+        expire_session_cookie(session_cookie_secure(&headers))?,
+    );
     Ok(response)
 }
 
@@ -927,6 +959,7 @@ pub async fn oidc_start(
 )]
 pub async fn oidc_callback(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(query): Query<OidcCallbackQuery>,
 ) -> Result<Response, AppError> {
     let provider = load_enabled_oidc_provider(&state.store, &query.provider_key).await?;
@@ -992,7 +1025,8 @@ pub async fn oidc_callback(
         user
     };
 
-    let session_cookie = issue_session_cookie(&state, user.user_id, now).await?;
+    let session_cookie =
+        issue_session_cookie(&state, user.user_id, now, session_cookie_secure(&headers)).await?;
     let redirect_to = query.redirect_to.unwrap_or_else(|| {
         let query = form_urlencoded::Serializer::new(String::new())
             .append_pair("mode", "oidc")
@@ -1015,28 +1049,32 @@ fn request_origin(headers: &HeaderMap) -> String {
     format!("{proto}://{host}")
 }
 
+fn session_cookie_secure(headers: &HeaderMap) -> bool {
+    header_value(headers, "x-forwarded-proto").as_deref() == Some("https")
+        || header_value(headers, "x-forwarded-origin")
+            .is_some_and(|origin| origin.starts_with("https://"))
+}
+
 pub(crate) async fn resolve_session_user(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<Option<UserRecord>, AppError> {
-    let Some(raw_token) = cookie_value(headers, SESSION_COOKIE_NAME) else {
-        return Ok(None);
-    };
-    let Some(token_id) = parse_signed_token_id(&raw_token) else {
-        return Ok(None);
-    };
-    let Some(session) = state.store.get_user_session(token_id).await? else {
+    let Some(current_session) = resolve_session_cookie(state, headers).await? else {
         return Ok(None);
     };
     let now = OffsetDateTime::now_utc();
-    if session.revoked_at.is_some()
-        || session.expires_at <= now
-        || session.token_hash != token_hash(&raw_token)
+    if current_session.session.revoked_at.is_some()
+        || current_session.session.expires_at <= now
+        || current_session.session.token_hash != token_hash(&current_session.raw_token)
     {
         return Ok(None);
     }
 
-    let Some(user) = state.store.get_user_by_id(session.user_id).await? else {
+    let Some(user) = state
+        .store
+        .get_user_by_id(current_session.session.user_id)
+        .await?
+    else {
         return Ok(None);
     };
     if user.status == UserStatus::Disabled {
@@ -1046,9 +1084,31 @@ pub(crate) async fn resolve_session_user(
 
     state
         .store
-        .touch_user_session(session.session_id, now)
+        .touch_user_session(current_session.session.session_id, now)
         .await?;
     Ok(Some(user))
+}
+
+struct ResolvedSessionCookie {
+    raw_token: String,
+    session: UserSessionRecord,
+}
+
+async fn resolve_session_cookie(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<Option<ResolvedSessionCookie>, AppError> {
+    let Some(raw_token) = cookie_value(headers, SESSION_COOKIE_NAME) else {
+        return Ok(None);
+    };
+    let Some(token_id) = parse_signed_token_id(&raw_token) else {
+        return Ok(None);
+    };
+    let Some(session) = state.store.get_user_session(token_id).await? else {
+        return Ok(None);
+    };
+
+    Ok(Some(ResolvedSessionCookie { raw_token, session }))
 }
 
 fn build_auth_session_view(user: UserRecord) -> AuthSessionView {
@@ -1561,6 +1621,7 @@ async fn issue_session_cookie(
     state: &AppState,
     user_id: Uuid,
     now: OffsetDateTime,
+    secure: bool,
 ) -> Result<HeaderValue, AppError> {
     let session_id = Uuid::new_v4();
     let raw_token = signed_token("session", &state.identity_token_secret, session_id);
@@ -1576,11 +1637,31 @@ async fn issue_session_cookie(
         )
         .await?;
 
+    session_cookie_header(&raw_token, SESSION_TTL_SECONDS, secure)
+}
+
+fn expire_session_cookie(secure: bool) -> Result<HeaderValue, AppError> {
     HeaderValue::from_str(&format!(
-        "{SESSION_COOKIE_NAME}={raw_token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}",
-        SESSION_TTL_DAYS * 24 * 60 * 60
+        "{SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT{}",
+        secure_cookie_suffix(secure)
     ))
     .map_err(|error| AppError(GatewayError::Internal(error.to_string())))
+}
+
+fn session_cookie_header(
+    value: &str,
+    max_age_seconds: i64,
+    secure: bool,
+) -> Result<HeaderValue, AppError> {
+    HeaderValue::from_str(&format!(
+        "{SESSION_COOKIE_NAME}={value}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age_seconds}{}",
+        secure_cookie_suffix(secure)
+    ))
+    .map_err(|error| AppError(GatewayError::Internal(error.to_string())))
+}
+
+fn secure_cookie_suffix(secure: bool) -> &'static str {
+    if secure { "; Secure" } else { "" }
 }
 
 async fn load_enabled_oidc_provider(

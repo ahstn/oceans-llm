@@ -79,3 +79,4 @@ export type AuthSessionUserView = components['schemas']['AuthSessionUserView']
 export type AuthSessionView = components['schemas']['AuthSessionView']
 export type PasswordLoginInput = components['schemas']['PasswordLoginRequest']
 export type ChangePasswordInput = components['schemas']['ChangePasswordRequest']
+export type LogoutResult = IdentityActionResult

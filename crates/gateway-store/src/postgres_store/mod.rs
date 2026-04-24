@@ -351,6 +351,14 @@ impl GatewayStore for PostgresStore {
         Self::revoke_user_sessions(self, user_id, revoked_at).await
     }
 
+    async fn revoke_user_session(
+        &self,
+        session_id: Uuid,
+        revoked_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        Self::revoke_user_session(self, session_id, revoked_at).await
+    }
+
     async fn get_user_oidc_auth(
         &self,
         oidc_provider_id: &str,

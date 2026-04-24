@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react'
+import { useTransition, type ReactNode } from 'react'
 import { Link, useRouterState } from '@tanstack/react-router'
+import { toast } from 'sonner'
 
 import { AppSidebar } from '@/components/app-sidebar'
 import {
@@ -17,6 +18,7 @@ import {
 } from '@/components/ui/breadcrumb'
 import { Separator } from '@/components/ui/separator'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
+import { logoutAdminSession } from '@/server/admin-data.functions'
 import type { AuthSessionView } from '@/types/api'
 
 interface AppShellProps {
@@ -26,13 +28,30 @@ interface AppShellProps {
 
 export function AppShell({ children, session }: AppShellProps) {
   const pathname = useRouterState({ select: (state) => state.location.pathname })
+  const [isSigningOut, startSignOut] = useTransition()
   const currentPath = normalizeAdminPath(pathname)
   const activeSection = getActiveNavSection(currentPath)
   const activeItem = getActiveNavItem(currentPath)
 
+  function handleSignOut() {
+    startSignOut(async () => {
+      try {
+        await logoutAdminSession()
+        window.location.replace('/admin/login')
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Unable to sign out')
+      }
+    })
+  }
+
   return (
     <SidebarProvider>
-      <AppSidebar currentPath={currentPath} session={session} />
+      <AppSidebar
+        currentPath={currentPath}
+        session={session}
+        signOutPending={isSigningOut}
+        onSignOut={handleSignOut}
+      />
 
       <SidebarInset>
         <header className="border-border/70 bg-background/80 sticky top-0 z-20 flex h-16 shrink-0 items-center gap-3 border-b px-4 backdrop-blur-xl sm:px-6">

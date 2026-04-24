@@ -1034,6 +1034,26 @@ impl LibsqlStore {
         Ok(())
     }
 
+    pub async fn revoke_user_session(
+        &self,
+        session_id: Uuid,
+        revoked_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        self.connection
+            .execute(
+                r#"
+                UPDATE user_sessions
+                SET revoked_at = ?1
+                WHERE session_id = ?2
+                  AND revoked_at IS NULL
+                "#,
+                libsql::params![revoked_at.unix_timestamp(), session_id.to_string()],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(())
+    }
+
     pub async fn get_user_oidc_auth(
         &self,
         oidc_provider_id: &str,
