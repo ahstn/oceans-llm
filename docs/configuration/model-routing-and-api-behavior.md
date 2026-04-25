@@ -157,7 +157,7 @@ That last point matters. A model can be visible and still fail if route viabilit
 
 Current behavior highlights:
 
-- request IDs are propagated through `x-request-id`
+- request IDs are assigned once at the HTTP middleware boundary and propagated through `x-request-id`
 - budget checks run before provider execution
 - successful requests write usage when usage can be normalized
 - request logs store both requested and resolved model identity
@@ -181,6 +181,7 @@ Important differences:
 - resolve the requested model
 - capability-filter the route set
 - execute the first eligible route
+- record the provider execution attempt when request logging writes a summary row
 - write usage when usage can be normalized
 
 Current limitation:
@@ -203,6 +204,7 @@ The live runtime is intentionally narrow in this slice:
 - single-route execution only
 - no retry loop
 - no live fallback loop
+- request-attempt records describe the single provider execution attempt; configurable retry/fallback execution is tracked separately in issue #118
 - strict capability filtering before provider execution
 
 ## What This Page Does Not Own

@@ -663,6 +663,32 @@ pub struct RequestTagView {
 pub struct RequestLogDetailView {
     pub log: RequestLogSummaryView,
     pub payload: Option<RequestLogPayloadView>,
+    pub attempts: Vec<RequestAttemptView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct RequestAttemptView {
+    pub request_attempt_id: String,
+    pub request_log_id: String,
+    pub request_id: String,
+    pub attempt_number: i64,
+    pub route_id: String,
+    pub provider_key: String,
+    pub upstream_model: String,
+    pub status: String,
+    pub status_code: Option<i64>,
+    pub error_code: Option<String>,
+    pub error_detail: Option<String>,
+    pub error_detail_truncated: bool,
+    pub retryable: bool,
+    pub terminal: bool,
+    pub produced_final_response: bool,
+    pub stream: bool,
+    pub started_at: String,
+    pub completed_at: Option<String>,
+    pub latency_ms: Option<i64>,
+    #[schema(additional_properties = true)]
+    pub metadata: Map<String, Value>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

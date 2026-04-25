@@ -23,9 +23,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { requireAdminSession } from '@/routes/-admin-guard'
 import { getObservabilityRequestLogDetail, getRequestLogs } from '@/server/admin-data.functions'
-import type { RequestLogDetailView, RequestLogFiltersInput, RequestLogView } from '@/types/api'
+import type {
+  RequestAttemptView,
+  RequestLogDetailView,
+  RequestLogFiltersInput,
+  RequestLogView,
+} from '@/types/api'
 
 export const Route = createFileRoute('/observability/request-logs')({
   beforeLoad: ({ location }) => requireAdminSession(location),
@@ -454,6 +460,8 @@ export function RequestLogsPage() {
                 </CardContent>
               </Card>
 
+              <AttemptsSection attempts={selectedDetail.attempts} />
+
               <div className="grid gap-4 lg:grid-cols-2">
                 <PayloadCard
                   title="Request Payload"
@@ -548,6 +556,103 @@ function PayloadPolicyCard({ log }: { log: RequestLogView }) {
   )
 }
 
+function AttemptsSection({ attempts }: { attempts: RequestAttemptView[] }) {
+  const recordedAttempts = attempts ?? []
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Provider Attempts</CardTitle>
+        <CardDescription>
+          Ordered upstream provider execution records for this request log.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {recordedAttempts.length === 0 ? (
+          <Empty>
+            <EmptyHeader>
+              <EmptyTitle>No provider attempts recorded</EmptyTitle>
+              <EmptyDescription>
+                This request log has no persisted upstream provider attempt rows.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Attempt</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Provider</TableHead>
+                <TableHead>Upstream model</TableHead>
+                <TableHead>Latency</TableHead>
+                <TableHead>Flags</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {recordedAttempts.map((attempt) => (
+                <TableRow key={attempt.request_attempt_id}>
+                  <TableCell className="font-mono">#{attempt.attempt_number}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-col gap-1">
+                      <Badge variant={attemptStatusBadgeVariant(attempt.status)}>
+                        {attempt.status}
+                      </Badge>
+                      {attempt.error_code ? (
+                        <span className="text-xs text-[var(--color-text-soft)]">
+                          {attempt.error_code}
+                        </span>
+                      ) : null}
+                    </div>
+                  </TableCell>
+                  <TableCell className="font-mono">{attempt.provider_key}</TableCell>
+                  <TableCell className="font-mono">{attempt.upstream_model}</TableCell>
+                  <TableCell>{formatLatency(attempt.latency_ms)}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1">
+                      {attempt.retryable ? <Badge variant="outline">retryable</Badge> : null}
+                      {attempt.terminal ? <Badge variant="outline">terminal</Badge> : null}
+                      {attempt.produced_final_response ? (
+                        <Badge variant="outline">final response</Badge>
+                      ) : null}
+                      {attempt.stream ? <Badge variant="outline">stream</Badge> : null}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+        {recordedAttempts.some((attempt) => attempt.error_detail) ? (
+          <div className="mt-4 flex flex-col gap-3">
+            {recordedAttempts
+              .filter((attempt) => attempt.error_detail)
+              .map((attempt) => (
+                <div
+                  key={`${attempt.request_attempt_id}-error`}
+                  className="rounded-md border border-[color:var(--color-border)] p-3"
+                >
+                  <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">
+                    <span>Attempt #{attempt.attempt_number} error detail</span>
+                    {attempt.error_detail_truncated ? (
+                      <Badge variant="warning">truncated</Badge>
+                    ) : null}
+                  </div>
+                  <p className="mt-2 font-mono text-xs text-[var(--color-text-muted)]">
+                    {attempt.error_detail}
+                  </p>
+                  <p className="mt-2 font-mono text-xs text-[var(--color-text-soft)]">
+                    route: {attempt.route_id}
+                  </p>
+                </div>
+              ))}
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  )
+}
+
 function PayloadCard({
   title,
   truncated,
@@ -623,6 +728,10 @@ function badgeVariant(statusCode: number | null): 'success' | 'warning' | 'outli
   }
 
   return statusCode >= 400 ? 'warning' : 'success'
+}
+
+function attemptStatusBadgeVariant(status: string): 'success' | 'warning' | 'outline' {
+  return status === 'success' ? 'success' : status.endsWith('error') ? 'warning' : 'outline'
 }
 
 function formatLatency(latencyMs: number | null) {

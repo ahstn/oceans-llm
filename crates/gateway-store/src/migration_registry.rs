@@ -37,6 +37,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V18__route_compatibility_profiles.sql"),
         postgres_sql: include_str!("../migrations/postgres/V18__route_compatibility_profiles.sql"),
     },
+    MigrationManifest {
+        version: 19,
+        name: "request_log_attempts",
+        checksum: "V19__request_log_attempts.sql",
+        libsql_sql: include_str!("../migrations/V19__request_log_attempts.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V19__request_log_attempts.sql"),
+    },
 ];
 
 #[cfg(test)]

@@ -42,8 +42,9 @@ pub use redaction::{
     PayloadPath, RequestLogPayloadCaptureMode, RequestLogPayloadPolicy, parse_payload_path,
 };
 pub use request_logging::{
-    ChatRequestLogContext, LoggedRequest, RequestLogging, StreamFailureSummary,
-    StreamLogResultInput, StreamResponseCollector, UsageSummary,
+    LoggedRequest, RequestAttemptOutcome, RequestLogContext, RequestLogging, StreamFailureSummary,
+    StreamLogResultInput, StreamResponseCollector, UsageSummary, build_request_attempt,
+    failed_attempt_outcome, offset_now, successful_attempt_outcome,
 };
 pub use route_planner::WeightedRoutePlanner;
 pub use service::{GatewayService, RecordedChatUsage};

@@ -867,6 +867,62 @@ pub struct RequestLogPayloadRecord {
     pub response_json: Value,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RequestAttemptStatus {
+    Success,
+    ProviderError,
+    StreamStartError,
+    StreamError,
+}
+
+impl RequestAttemptStatus {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Success => "success",
+            Self::ProviderError => "provider_error",
+            Self::StreamStartError => "stream_start_error",
+            Self::StreamError => "stream_error",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "success" => Some(Self::Success),
+            "provider_error" => Some(Self::ProviderError),
+            "stream_start_error" => Some(Self::StreamStartError),
+            "stream_error" => Some(Self::StreamError),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RequestAttemptRecord {
+    pub request_attempt_id: Uuid,
+    pub request_log_id: Uuid,
+    pub request_id: String,
+    pub attempt_number: i64,
+    pub route_id: Uuid,
+    pub provider_key: String,
+    pub upstream_model: String,
+    pub status: RequestAttemptStatus,
+    pub status_code: Option<i64>,
+    pub error_code: Option<String>,
+    pub error_detail: Option<String>,
+    pub error_detail_truncated: bool,
+    pub retryable: bool,
+    pub terminal: bool,
+    pub produced_final_response: bool,
+    pub stream: bool,
+    pub started_at: OffsetDateTime,
+    pub completed_at: Option<OffsetDateTime>,
+    pub latency_ms: Option<i64>,
+    pub metadata: Map<String, Value>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RequestLogQuery {
     pub page: u32,
@@ -896,6 +952,7 @@ pub struct RequestLogPage {
 pub struct RequestLogDetail {
     pub log: RequestLogRecord,
     pub payload: Option<RequestLogPayloadRecord>,
+    pub attempts: Vec<RequestAttemptRecord>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

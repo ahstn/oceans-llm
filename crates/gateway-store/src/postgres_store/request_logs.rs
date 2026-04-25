@@ -52,6 +52,91 @@ fn decode_request_log_row(row: &PgRow) -> Result<RequestLogRecord, StoreError> {
     })
 }
 
+fn decode_request_attempt_row(row: &PgRow) -> Result<RequestAttemptRecord, StoreError> {
+    let request_attempt_id: String = row.try_get(0).map_err(to_query_error)?;
+    let request_log_id: String = row.try_get(1).map_err(to_query_error)?;
+    let route_id: String = row.try_get(4).map_err(to_query_error)?;
+    let status: String = row.try_get(7).map_err(to_query_error)?;
+    let error_detail_truncated: i64 = row.try_get(11).map_err(to_query_error)?;
+    let retryable: i64 = row.try_get(12).map_err(to_query_error)?;
+    let terminal: i64 = row.try_get(13).map_err(to_query_error)?;
+    let produced_final_response: i64 = row.try_get(14).map_err(to_query_error)?;
+    let stream: i64 = row.try_get(15).map_err(to_query_error)?;
+    let started_at: i64 = row.try_get(16).map_err(to_query_error)?;
+    let completed_at: Option<i64> = row.try_get(17).map_err(to_query_error)?;
+    let metadata_json: String = row.try_get(19).map_err(to_query_error)?;
+
+    Ok(RequestAttemptRecord {
+        request_attempt_id: parse_uuid(&request_attempt_id)?,
+        request_log_id: parse_uuid(&request_log_id)?,
+        request_id: row.try_get(2).map_err(to_query_error)?,
+        attempt_number: row.try_get(3).map_err(to_query_error)?,
+        route_id: parse_uuid(&route_id)?,
+        provider_key: row.try_get(5).map_err(to_query_error)?,
+        upstream_model: row.try_get(6).map_err(to_query_error)?,
+        status: RequestAttemptStatus::from_db(&status).ok_or_else(|| {
+            StoreError::Serialization(format!("invalid attempt status `{status}`"))
+        })?,
+        status_code: row.try_get(8).map_err(to_query_error)?,
+        error_code: row.try_get(9).map_err(to_query_error)?,
+        error_detail: row.try_get(10).map_err(to_query_error)?,
+        error_detail_truncated: error_detail_truncated == 1,
+        retryable: retryable == 1,
+        terminal: terminal == 1,
+        produced_final_response: produced_final_response == 1,
+        stream: stream == 1,
+        started_at: unix_to_datetime(started_at)?,
+        completed_at: completed_at.map(unix_to_datetime).transpose()?,
+        latency_ms: row.try_get(18).map_err(to_query_error)?,
+        metadata: serde_json::from_str(&metadata_json)
+            .map_err(|error| StoreError::Serialization(error.to_string()))?,
+    })
+}
+
+async fn insert_request_log_attempts(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    attempts: &[RequestAttemptRecord],
+) -> Result<(), StoreError> {
+    for attempt in attempts {
+        let metadata_json = serialize_json(&attempt.metadata)?;
+        sqlx::query(
+            r#"
+            INSERT INTO request_log_attempts (
+                request_attempt_id, request_log_id, request_id, attempt_number, route_id,
+                provider_key, upstream_model, status, status_code, error_code, error_detail,
+                error_detail_truncated, retryable, terminal, produced_final_response, stream,
+                started_at, completed_at, latency_ms, metadata_json
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+            "#,
+        )
+        .bind(attempt.request_attempt_id.to_string())
+        .bind(attempt.request_log_id.to_string())
+        .bind(attempt.request_id.as_str())
+        .bind(attempt.attempt_number)
+        .bind(attempt.route_id.to_string())
+        .bind(attempt.provider_key.as_str())
+        .bind(attempt.upstream_model.as_str())
+        .bind(attempt.status.as_str())
+        .bind(attempt.status_code)
+        .bind(attempt.error_code.as_deref())
+        .bind(attempt.error_detail.as_deref())
+        .bind(if attempt.error_detail_truncated { 1_i64 } else { 0_i64 })
+        .bind(if attempt.retryable { 1_i64 } else { 0_i64 })
+        .bind(if attempt.terminal { 1_i64 } else { 0_i64 })
+        .bind(if attempt.produced_final_response { 1_i64 } else { 0_i64 })
+        .bind(if attempt.stream { 1_i64 } else { 0_i64 })
+        .bind(attempt.started_at.unix_timestamp())
+        .bind(attempt.completed_at.map(|value| value.unix_timestamp()))
+        .bind(attempt.latency_ms)
+        .bind(metadata_json)
+        .execute(&mut **tx)
+        .await
+        .map_err(to_query_error)?;
+    }
+
+    Ok(())
+}
+
 async fn load_bespoke_tags_for_logs(
     pool: &sqlx::PgPool,
     request_log_ids: &[Uuid],
@@ -98,6 +183,16 @@ impl RequestLogRepository for PostgresStore {
         &self,
         log: &RequestLogRecord,
         payload: Option<&RequestLogPayloadRecord>,
+    ) -> Result<(), StoreError> {
+        self.insert_request_log_with_attempts(log, payload, &[])
+            .await
+    }
+
+    async fn insert_request_log_with_attempts(
+        &self,
+        log: &RequestLogRecord,
+        payload: Option<&RequestLogPayloadRecord>,
+        attempts: &[RequestAttemptRecord],
     ) -> Result<(), StoreError> {
         let metadata_json = serialize_json(&log.metadata)?;
         let mut tx = self.pool.begin().await.map_err(to_query_error)?;
@@ -161,6 +256,8 @@ impl RequestLogRepository for PostgresStore {
             .await
             .map_err(to_query_error)?;
         }
+
+        insert_request_log_attempts(&mut tx, attempts).await?;
 
         if let Some(payload) = payload {
             sqlx::query(
@@ -356,6 +453,38 @@ impl RequestLogRepository for PostgresStore {
             _ => None,
         };
 
-        Ok(RequestLogDetail { log, payload })
+        let attempts = self.list_request_log_attempts(request_log_id).await?;
+
+        Ok(RequestLogDetail {
+            log,
+            payload,
+            attempts,
+        })
+    }
+}
+
+#[async_trait]
+impl RequestAttemptRepository for PostgresStore {
+    async fn list_request_log_attempts(
+        &self,
+        request_log_id: Uuid,
+    ) -> Result<Vec<RequestAttemptRecord>, StoreError> {
+        let rows = sqlx::query(
+            r#"
+            SELECT request_attempt_id, request_log_id, request_id, attempt_number, route_id,
+                   provider_key, upstream_model, status, status_code, error_code, error_detail,
+                   error_detail_truncated, retryable, terminal, produced_final_response, stream,
+                   started_at, completed_at, latency_ms, metadata_json
+            FROM request_log_attempts
+            WHERE request_log_id = $1
+            ORDER BY attempt_number ASC
+            "#,
+        )
+        .bind(request_log_id.to_string())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+
+        rows.iter().map(decode_request_attempt_row).collect()
     }
 }

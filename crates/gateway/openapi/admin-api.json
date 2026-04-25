@@ -3321,9 +3321,16 @@
           "data": {
             "type": "object",
             "required": [
-              "log"
+              "log",
+              "attempts"
             ],
             "properties": {
+              "attempts": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/RequestAttemptView"
+                }
+              },
               "log": {
                 "$ref": "#/components/schemas/RequestLogSummaryView"
               },
@@ -3841,12 +3848,120 @@
           "vertexai"
         ]
       },
+      "RequestAttemptView": {
+        "type": "object",
+        "required": [
+          "request_attempt_id",
+          "request_log_id",
+          "request_id",
+          "attempt_number",
+          "route_id",
+          "provider_key",
+          "upstream_model",
+          "status",
+          "error_detail_truncated",
+          "retryable",
+          "terminal",
+          "produced_final_response",
+          "stream",
+          "started_at",
+          "metadata"
+        ],
+        "properties": {
+          "attempt_number": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "completed_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error_detail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error_detail_truncated": {
+            "type": "boolean"
+          },
+          "latency_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "produced_final_response": {
+            "type": "boolean"
+          },
+          "provider_key": {
+            "type": "string"
+          },
+          "request_attempt_id": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "request_log_id": {
+            "type": "string"
+          },
+          "retryable": {
+            "type": "boolean"
+          },
+          "route_id": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "status_code": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "stream": {
+            "type": "boolean"
+          },
+          "terminal": {
+            "type": "boolean"
+          },
+          "upstream_model": {
+            "type": "string"
+          }
+        }
+      },
       "RequestLogDetailView": {
         "type": "object",
         "required": [
-          "log"
+          "log",
+          "attempts"
         ],
         "properties": {
+          "attempts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RequestAttemptView"
+            }
+          },
           "log": {
             "$ref": "#/components/schemas/RequestLogSummaryView"
           },
