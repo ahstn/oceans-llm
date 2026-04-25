@@ -26,6 +26,7 @@ pub struct RequestLogContext {
     pub resolved_model_key: String,
     pub operation: &'static str,
     pub request_tags: RequestTags,
+    payload_policy: RequestLogPayloadPolicy,
     request_json: Option<Value>,
     request_payload_truncated: bool,
 }
@@ -388,6 +389,7 @@ where
             resolved_model_key: input.resolved_model_key.to_string(),
             operation: input.operation,
             request_tags: input.request_tags,
+            payload_policy: self.payload_policy.clone(),
             request_json,
             request_payload_truncated,
         }
@@ -754,7 +756,7 @@ pub fn build_request_attempt(
     let (error_detail, error_detail_truncated) = outcome
         .error_detail
         .as_deref()
-        .map(truncate_attempt_error_detail)
+        .map(|detail| truncate_attempt_error_detail(detail, &context.payload_policy))
         .map(|(detail, truncated)| (Some(detail), truncated))
         .unwrap_or((None, false));
     RequestAttemptRecord {
@@ -791,19 +793,35 @@ pub fn offset_now() -> OffsetDateTime {
     OffsetDateTime::now_utc()
 }
 
-fn truncate_attempt_error_detail(detail: &str) -> (String, bool) {
-    let redacted = redact_json_value_with_policy(
-        &Value::String(detail.to_string()),
-        &RequestLogPayloadPolicy::default(),
-    );
-    let detail = redacted.as_str().unwrap_or(detail);
-    if detail.len() <= MAX_ATTEMPT_ERROR_DETAIL_BYTES {
-        return (detail.to_string(), false);
+fn truncate_attempt_error_detail(
+    detail: &str,
+    payload_policy: &RequestLogPayloadPolicy,
+) -> (String, bool) {
+    let sanitized = sanitize_attempt_error_detail(detail, payload_policy);
+    if sanitized.len() <= MAX_ATTEMPT_ERROR_DETAIL_BYTES {
+        return (sanitized, false);
     }
     (
-        String::from_utf8_lossy(&detail.as_bytes()[..MAX_ATTEMPT_ERROR_DETAIL_BYTES]).to_string(),
+        String::from_utf8_lossy(&sanitized.as_bytes()[..MAX_ATTEMPT_ERROR_DETAIL_BYTES])
+            .to_string(),
         true,
     )
+}
+
+fn sanitize_attempt_error_detail(detail: &str, payload_policy: &RequestLogPayloadPolicy) -> String {
+    if !payload_policy.should_capture_payloads() {
+        return format!("[redacted error detail; {} bytes]", detail.len());
+    }
+
+    match serde_json::from_str::<Value>(detail) {
+        Ok(parsed @ (Value::Object(_) | Value::Array(_))) => {
+            let redacted = redact_json_value_with_policy(&parsed, payload_policy);
+            serde_json::to_string(&truncate_large_payload_fields(&redacted)).unwrap_or_else(|_| {
+                format!("[redacted structured error detail; {} bytes]", detail.len())
+            })
+        }
+        Ok(_) | Err(_) => format!("[redacted error detail; {} bytes]", detail.len()),
+    }
 }
 
 fn truncate_payload(value: Value, max_bytes: usize) -> (Value, bool) {
@@ -853,6 +871,7 @@ mod tests {
 
     use super::{
         RequestLogging, StreamFailureSummary, StreamLogResultInput, StreamResponseCollector,
+        truncate_attempt_error_detail,
     };
 
     #[derive(Clone, Default)]
@@ -1039,6 +1058,32 @@ mod tests {
                 .map(|path| parse_payload_path(path).expect("test path should parse"))
                 .collect(),
         )
+    }
+
+    #[test]
+    fn attempt_error_detail_redacts_structured_payloads_with_active_policy() {
+        let policy = policy_with_redaction_paths(&["message"]);
+        let (detail, truncated) = truncate_attempt_error_detail(
+            r#"{"message":"secret prompt","api_key":"sk-test"}"#,
+            &policy,
+        );
+
+        assert!(!truncated);
+        assert!(!detail.contains("secret prompt"));
+        assert!(!detail.contains("sk-test"));
+        assert!(detail.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn attempt_error_detail_suppresses_raw_text_when_payload_capture_is_disabled() {
+        let policy = policy(RequestLogPayloadCaptureMode::SummaryOnly, 4096, 4096, 4);
+        let (detail, truncated) =
+            truncate_attempt_error_detail("provider leaked token sk-test", &policy);
+
+        assert!(!truncated);
+        assert!(!detail.contains("sk-test"));
+        assert!(detail.starts_with("[redacted error detail; "));
+        assert!(detail.ends_with(" bytes]"));
     }
 
     #[tokio::test]

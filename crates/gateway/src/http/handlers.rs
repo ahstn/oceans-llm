@@ -838,7 +838,7 @@ fn stream_failure_attempt(
             status: RequestAttemptStatus::StreamError,
             status_code: Some(failure.status_code),
             error_code: Some(failure.error_code.clone()),
-            error_detail: Some(failure.error_code.clone()),
+            error_detail: None,
             retryable: false,
             produced_final_response: false,
         },
@@ -1311,9 +1311,9 @@ fn canonical_request_id(request_id: Option<Extension<RequestId>>) -> Result<Stri
         .to_str()
         .map(str::to_string)
         .map_err(|error| {
-            tracing::error!(error = %error, "canonical request id extension contained invalid header value");
-            AppError(GatewayError::Internal(
-                "canonical request id was not available to the handler".to_string(),
+            tracing::warn!(error = %error, "canonical request id extension contained invalid header value");
+            AppError(GatewayError::InvalidRequest(
+                "x-request-id header must be valid visible ASCII".to_string(),
             ))
         })
 }
@@ -1346,6 +1346,18 @@ mod tests {
         assert_eq!(error.0.http_status_code(), 500);
         assert_eq!(error.0.error_code(), "internal_error");
         assert!(matches!(error.0, GatewayError::Internal(_)));
+    }
+
+    #[test]
+    fn canonical_request_id_rejects_invalid_header_value_as_bad_request() {
+        let error = canonical_request_id(Some(Extension(RequestId::new(
+            HeaderValue::from_bytes(&[0xff]).expect("opaque header value"),
+        ))))
+        .expect_err("invalid header value should fail");
+
+        assert_eq!(error.0.http_status_code(), 400);
+        assert_eq!(error.0.error_code(), "invalid_request");
+        assert!(matches!(error.0, GatewayError::InvalidRequest(_)));
     }
 
     #[test]
