@@ -6,6 +6,79 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.6.0] - 2026-04-24
+### :rocket: New features
+- *(docs)* Publish docs site with vitepress by @ahstn
+- *(docs)* Publish docs site with vitepress by @ahstn in [#75](https://github.com/ahstn/oceans-llm/pull/75)
+- *(gateway)* Add declarative config seeding for teams and users by @ahstn
+- *(gateway)* Add declarative config seeding for teams and users by @ahstn in [#79](https://github.com/ahstn/oceans-llm/pull/79)
+- *(admin-ui)* Adopt shadcn sidebar preset layout by @ahstn
+- *(gateway)* Seed richer local demo data by @ahstn
+- *(admin-ui)* Add provider and model brand icons by @ahstn
+- *(admin)* Improve provider branding and lookup efficiency by @ahstn
+- *(admin-ui)* Add provider and model brand icons by @ahstn in [#81](https://github.com/ahstn/oceans-llm/pull/81)
+- *(gateway)* Seed richer local demo data by @ahstn
+- *(admin-ui)* Polish preset layout and harden admin models by @ahstn in [#83](https://github.com/ahstn/oceans-llm/pull/83)
+- *(gateway)* Seed richer local demo data by @ahstn in [#82](https://github.com/ahstn/oceans-llm/pull/82)
+- *(admin-ui)* Improve models page table scrolling by @ahstn
+- *(admin)* Add observability usage leaderboard by @ahstn in [#85](https://github.com/ahstn/oceans-llm/pull/85)
+- *(models)* Updating models api by @ahstn
+- *(admin-ui)* Improve models page table scrolling by @ahstn in [#86](https://github.com/ahstn/oceans-llm/pull/86)
+- *(gateway)* Add provider compatibility profiles by @ahstn
+- *(gateway)* Add provider compatibility profiles by @ahstn in [#94](https://github.com/ahstn/oceans-llm/pull/94)
+- *(admin)* Add current-session logout by @ahstn
+- *(admin)* Add current-session logout by @ahstn in [#104](https://github.com/ahstn/oceans-llm/pull/104)
+- *(gateway)* Add OpenAI Responses API support by @ahstn
+- *(gateway)* Add OpenAI Responses API support by @ahstn in [#95](https://github.com/ahstn/oceans-llm/pull/95)
+- *(gateway)* Harden request log payload policy by @ahstn in [#117](https://github.com/ahstn/oceans-llm/pull/117)
+
+### :bug: Bug fixes
+- *(api-keys)* Address rebase fallout and review findings by @ahstn
+- *(gateway)* Normalize declarative identity config values by @ahstn
+- *(gateway-store)* Guard seeded identity auth mutations by @ahstn
+- *(admin)* Paginate models and redact provider cache by @ahstn
+- *(gateway)* Keep local demo bootstrap-safe by @ahstn
+- *(admin-ui)* Restore upstream model column layout by @ahstn
+- *(admin-ui)* Restore upstream model column layout by @ahstn in [#87](https://github.com/ahstn/oceans-llm/pull/87)
+- *(ui)* Fixing overscroll on main body content by @ahstn
+
+### Build
+- Post release tasks - v0.5.0 by @ahstn
+
+### Changed
+- Implement live admin API key management by @ahstn
+- *(api-keys)* Harden admin lifecycle architecture by @ahstn
+- *(api-keys)* Harden admin lifecycle architecture by @ahstn in [#73](https://github.com/ahstn/oceans-llm/pull/73)
+- *(gateway-store)* Rebaseline pre-v1 migrations by @ahstn
+- Fix declarative seed validation ordering by @ahstn
+- *(main)* Resolve conflicts and harden migration reset detection by @ahstn
+- *(gateway-store)* Rebaseline pre-v1 migrations by @ahstn in [#77](https://github.com/ahstn/oceans-llm/pull/77)
+- Simplify local runtime setup with mise by @ahstn
+- Merge remote-tracking branch 'origin/codex/seed-local-demo-data' into codex/ui-preset-polish-sync by @ahstn
+- Polish API key management flows by @ahstn
+- Add observability usage leaderboard by @ahstn
+- Normalize generated admin API typings by @ahstn
+- Merge branch 'main' into codex/models-page-scroll-refresh by @ahstn
+- Fix admin UI localhost SSR auth flow by @ahstn
+- Harden request log payload policy by @ahstn
+- Merge origin/main into request log payload policy by @ahstn
+- Align payload policy OpenAPI limits by @ahstn
+
+### Documentation
+- Harden documentation graph and workflows by @ahstn
+- Harden documentation graph and workflows by @ahstn in [#74](https://github.com/ahstn/oceans-llm/pull/74)
+- Simplify canonical page metadata by @ahstn
+- *(observability)* Codify issue-54 runtime contract by @ahstn
+- *(observability)* Codify issue-54 runtime contract by @ahstn in [#76](https://github.com/ahstn/oceans-llm/pull/76)
+- Adding images/screenshots by @ahstn
+- *(adr)* Record admin logout decision by @ahstn
+
+### Miscellaneous
+- Updating gitignore by @ahstn
+
+
+
+
 ## [0.5.0] - 2026-03-29
 ### :rocket: New features
 - *(ops)* Harden migrations and adopt pitchfork-first local postgres by @ahstn
@@ -57,7 +130,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(adr)* Expand request log caller tag decision record by @ahstn
 
 ### Miscellaneous
-- *(version)* V0.5.0
+- *(version)* V0.5.0 by @ahstn
 
 ### Testing
 - *(admin-ui)* Cover trimmed request log tag filters by @ahstn
@@ -194,6 +267,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+[0.6.0]: https://github.com/ahstn/oceans-llm/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/ahstn/oceans-llm/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/ahstn/oceans-llm/compare/v0.1.0...v0.4.0
 [0.1.0]: https://github.com/ahstn/oceans-llm/tree/v0.1.0
