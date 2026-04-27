@@ -92,7 +92,7 @@ Use `mise run gateway-reset-local-demo` any time you want to recreate that riche
 
 ## Documentation Map
 
-Use the docs site instead of treating this file as the full operator manual.
+Use the docs site instead of treating this file as the full admin and maintainer manual.
 
 - repo workflow:
   - [Contributing](CONTRIBUTING.md)

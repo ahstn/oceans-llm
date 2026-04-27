@@ -43,7 +43,7 @@ export default defineConfig({
           items: [
             { text: "Budgets and Spending", link: "/operations/budgets-and-spending" },
             { text: "Observability and Request Logs", link: "/operations/observability-and-request-logs" },
-            { text: "Operator Runbooks", link: "/operations/operator-runbooks" },
+            { text: "Admin Runbooks", link: "/operations/operator-runbooks" },
           ],
         },
       ],
@@ -65,6 +65,7 @@ export default defineConfig({
             { text: "Provider API Compatibility", link: "/reference/provider-api-compatibility" },
             { text: "Data Relationships", link: "/reference/data-relationships" },
             { text: "Admin API Contract Workflow", link: "/reference/admin-api-contract-workflow" },
+            { text: "Migration Authoring", link: "/reference/migration-authoring" },
             { text: "End-to-End Contract Tests", link: "/reference/e2e-contract-tests" },
             { text: "Release Process", link: "/reference/release-process" },
           ],

@@ -184,7 +184,7 @@ Important fields:
 - `request_max_bytes`: final persisted request payload budget
 - `response_max_bytes`: final persisted response payload budget
 - `stream_max_events`: maximum stored stream events; stream usage and error parsing still sees later frames
-- `redaction_paths`: additive operator redaction paths anchored from the wrapped payload root
+- `redaction_paths`: additive admin-configured redaction paths anchored from the wrapped payload root
 
 Validation rules:
 
@@ -203,6 +203,23 @@ The checked-in configs use two runtime shapes:
   - libsql or SQLite with `path`
 - production-shaped and deploy flows:
   - PostgreSQL with `kind: postgres` and `url`
+
+Important fields:
+
+- `kind`
+  - `libsql`
+  - `postgres`
+- `path`
+  - libsql or SQLite database path
+  - defaults to `./gateway.db`
+- `url`
+  - PostgreSQL connection URL
+  - supports literal and env reference values
+- `max_connections`
+  - PostgreSQL pool size
+  - defaults to `10`
+
+If `kind` is omitted, the gateway infers `postgres` when `url` is present and `libsql` otherwise. `database.url` is required when `kind: postgres`.
 
 ## `auth`
 
@@ -264,6 +281,50 @@ Seed semantics that matter:
 - unlisted teams and users are left untouched
 
 OIDC provider existence is validated at seed time against enabled runtime OIDC providers, not YAML parse time.
+
+## `budget_alerts`
+
+`budget_alerts.email` controls the background email dispatcher for threshold alerts created by budget enforcement and budget updates.
+
+```yaml
+budget_alerts:
+  email:
+    from_email: alerts@example.com
+    from_name: "Oceans LLM"
+    poll_interval_secs: 30
+    batch_size: 25
+    transport:
+      kind: sink
+```
+
+Important fields:
+
+- `from_email`
+  - defaults to `alerts@local`
+  - cannot be empty
+- `from_name`
+  - optional display name
+- `poll_interval_secs`
+  - defaults to `30`
+  - must be greater than zero
+- `batch_size`
+  - defaults to `25`
+  - must be greater than zero
+- `transport.kind`
+  - `sink`: persist alert delivery rows without sending email
+  - `smtp`: send through SMTP
+
+SMTP transport fields:
+
+- `host`
+- `port`
+  - defaults to `587`
+- `username`
+- `password`
+- `starttls`
+  - defaults to `true`
+
+`username` and `password` must be set together when SMTP authentication is used. `password` supports the same secret-reference forms as other config secrets.
 
 ## Provider Types
 
@@ -392,6 +453,64 @@ The current `openai_compat` profile fields are Chat Completions transforms. `/v1
 
 Do not use `extra_body` for compatibility transforms. `extra_body` remains for additive provider-specific overrides, and the typed compatibility profile remains authoritative when a declared transform conflicts with an additive override.
 
+## Route Examples
+
+OpenAI direct routes usually need no compatibility overrides:
+
+```yaml
+models:
+  - id: openai-direct
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-5
+```
+
+OpenAI-compatible aggregator routes should declare known Chat Completions quirks explicitly:
+
+```yaml
+models:
+  - id: openrouter-fast
+    routes:
+      - provider: openrouter
+        upstream_model: openai/gpt-4o-mini
+        compatibility:
+          openai_compat:
+            supports_store: false
+            max_tokens_field: max_tokens
+            developer_role: system
+            reasoning_effort: omit
+            supports_stream_usage: true
+```
+
+Vertex Google routes use the Vertex provider and a publisher-qualified upstream model:
+
+```yaml
+models:
+  - id: gemini-fast
+    routes:
+      - provider: vertex-adc
+        upstream_model: google/gemini-2.0-flash
+        capabilities:
+          chat_completions: true
+          responses: false
+          embeddings: false
+```
+
+OpenAI-compatible embeddings-only routes should narrow route capability so chat and Responses requests fail early:
+
+```yaml
+models:
+  - id: text-embedding
+    routes:
+      - provider: openai-prod
+        upstream_model: text-embedding-3-small
+        capabilities:
+          chat_completions: false
+          responses: false
+          embeddings: true
+          stream: false
+```
+
 ## Validation and Failure Boundaries
 
 Config load catches several classes of failure up front:
@@ -410,8 +529,9 @@ Later failures are usually runtime problems such as:
 
 ## Current Gaps
 
-- Declarative teams, users, and budgets are not part of the config contract yet.
-- The future direction is tracked in [issue #64](https://github.com/ahstn/oceans-llm/issues/64) and [issue #65](https://github.com/ahstn/oceans-llm/issues/65).
+- Hardened SSO-backed identity matching is still deferred.
+- Declarative teams, password users, development-style OIDC users, memberships, and active budgets are part of the current seed contract.
+- The remaining SSO-backed reconciliation work is tracked in [issue #65](https://github.com/ahstn/oceans-llm/issues/65).
 
 ## What This Page Does Not Own
 

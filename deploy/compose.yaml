@@ -11,7 +11,9 @@ services:
       GATEWAY_CONFIG: /app/gateway.yaml
       ADMIN_UI_UPSTREAM: http://admin-ui:3000
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_API_KEY_SECONDARY: ${OPENAI_API_KEY_SECONDARY:-}
       GATEWAY_API_KEY: ${GATEWAY_API_KEY:-gwk_deploy.replace-me}
+      GATEWAY_BOOTSTRAP_ADMIN_PASSWORD: ${GATEWAY_BOOTSTRAP_ADMIN_PASSWORD:-change-me-admin}
       POSTGRES_URL: postgres://${POSTGRES_USER:-oceans}:${POSTGRES_PASSWORD:-oceans}@postgres:5432/${POSTGRES_DB:-oceans_llm}
     ports:
       - "${GATEWAY_PORT:-8080}:8080"

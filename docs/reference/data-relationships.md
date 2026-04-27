@@ -157,7 +157,7 @@ If neither the team nor the user is restricted, grants remain unchanged.
 - `request_logs.model_key` stores the requested gateway model
 - `request_logs.resolved_model_key` stores the canonical execution model after alias resolution
 
-This distinction matters for operator-facing observability and historical debugging. See [model-routing-and-api-behavior.md](../configuration/model-routing-and-api-behavior.md).
+This distinction matters for admin-facing observability and historical debugging. See [model-routing-and-api-behavior.md](../configuration/model-routing-and-api-behavior.md).
 
 ## Route Viability Note
 

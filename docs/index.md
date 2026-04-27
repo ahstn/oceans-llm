@@ -1,6 +1,6 @@
 # Oceans LLM Documentation
 
-This site is the operator and maintainer map for the gateway.
+This site is the admin, user, and maintainer map for the gateway.
 
 - Use it when the behavior spans more than one file.
 - Use the owning page instead of chasing the same rule through several docs.
@@ -22,15 +22,17 @@ This site is the operator and maintainer map for the gateway.
 ## Maintaining The Platform
 
 - Action-oriented recovery and upgrade work:
-  - [Operator Runbooks](operations/operator-runbooks.md)
+  - [Admin Runbooks](operations/operator-runbooks.md)
 - Cross-cutting request path across routing, logging, pricing, and spend:
   - [Request Lifecycle and Failure Modes](reference/request-lifecycle-and-failure-modes.md)
 - Provider API family support, OpenAI-compatible route quirks, and compatibility follow-up work:
   - [Provider API Compatibility](reference/provider-api-compatibility.md)
-- Admin UI capability map and live versus preview-backed surface split:
+- Admin UI capability map and live surface maturity:
   - [Admin Control Plane](access/admin-control-plane.md)
 - Generated admin contract, checked-in artifacts, and drift rules:
   - [Admin API Contract Workflow](reference/admin-api-contract-workflow.md)
+- Migration authoring and backend parity:
+  - [Migration Authoring](reference/migration-authoring.md)
 - E2E harness scope and release-side checks:
   - [End-to-End Contract Tests](reference/e2e-contract-tests.md)
   - [Release Process](reference/release-process.md)
@@ -52,7 +54,7 @@ This site is the operator and maintainer map for the gateway.
 
 - [Budgets and Spending](operations/budgets-and-spending.md)
 - [Observability and Request Logs](operations/observability-and-request-logs.md)
-- [Operator Runbooks](operations/operator-runbooks.md)
+- [Admin Runbooks](operations/operator-runbooks.md)
 
 ### Access
 
@@ -66,6 +68,7 @@ This site is the operator and maintainer map for the gateway.
 - [Provider API Compatibility](reference/provider-api-compatibility.md)
 - [Data Relationships](reference/data-relationships.md)
 - [Admin API Contract Workflow](reference/admin-api-contract-workflow.md)
+- [Migration Authoring](reference/migration-authoring.md)
 - [End-to-End Contract Tests](reference/e2e-contract-tests.md)
 - [Release Process](reference/release-process.md)
 
@@ -81,7 +84,7 @@ This site is the operator and maintainer map for the gateway.
 - Compose boot finishes but admin access is unclear:
   - [Runtime Bootstrap and Access](setup/runtime-bootstrap-and-access.md)
   - [Deploy and Operations](setup/deploy-and-operations.md)
-  - [Operator Runbooks](operations/operator-runbooks.md)
+  - [Admin Runbooks](operations/operator-runbooks.md)
 - Live admin contract changed and the UI drifted:
   - [Admin API Contract Workflow](reference/admin-api-contract-workflow.md)
   - [End-to-End Contract Tests](reference/e2e-contract-tests.md)
