@@ -107,6 +107,30 @@ describe('RequestLogsPage', () => {
           request_json: { body: { prompt: 'ping' } },
           response_json: { body: { output: 'pong' } },
         },
+        attempts: [
+          {
+            request_attempt_id: 'attempt_1',
+            request_log_id: 'reqlog_1',
+            request_id: 'req_1',
+            attempt_number: 1,
+            route_id: 'route_1',
+            provider_key: 'openai',
+            upstream_model: 'gpt-4.1-mini',
+            status: 'success',
+            status_code: 200,
+            error_code: null,
+            error_detail: null,
+            error_detail_truncated: false,
+            retryable: false,
+            terminal: true,
+            produced_final_response: true,
+            stream: false,
+            started_at: '2026-03-10T11:32:00Z',
+            completed_at: '2026-03-10T11:32:01Z',
+            latency_ms: 482,
+            metadata: {},
+          },
+        ],
       },
     })
 
@@ -125,6 +149,13 @@ describe('RequestLogsPage', () => {
     expect(screen.queryByText('Attempt Count')).not.toBeInTheDocument()
     expect(screen.queryByText('Fallback')).not.toBeInTheDocument()
     expect(screen.getByText('Payload Policy')).toBeInTheDocument()
+    expect(screen.getByText('Provider Attempts')).toBeInTheDocument()
+    expect(screen.getByText('#1')).toBeInTheDocument()
+    expect(screen.getAllByText('success').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('openai').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('gpt-4.1-mini').length).toBeGreaterThan(0)
+    expect(screen.getByText('terminal')).toBeInTheDocument()
+    expect(screen.getByText('final response')).toBeInTheDocument()
     expect(screen.getAllByText('redacted payloads').length).toBeGreaterThan(0)
     expect(screen.getByText(/"prompt": "ping"/)).toBeInTheDocument()
   })
@@ -146,6 +177,7 @@ describe('RequestLogsPage', () => {
       data: {
         log: summaryOnlyItem,
         payload: null,
+        attempts: [],
       },
     })
 

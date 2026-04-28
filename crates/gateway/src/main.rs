@@ -1309,6 +1309,10 @@ mod tests {
             _request: &CoreChatRequest,
             _context: &ProviderRequestContext,
         ) -> Result<ProviderStream, ProviderError> {
+            self.chat_calls.fetch_add(1, Ordering::SeqCst);
+            if let MockChatResult::Error(error) = self.chat_result.clone() {
+                return Err(error.into_provider_error());
+            }
             let stream = futures_util::stream::iter(
                 self.stream_chunks
                     .clone()
@@ -1509,6 +1513,21 @@ mod tests {
         response_json: Value,
     }
 
+    #[derive(Debug)]
+    struct RequestLogAttemptRow {
+        request_id: String,
+        attempt_number: i64,
+        provider_key: String,
+        upstream_model: String,
+        status: String,
+        status_code: Option<i64>,
+        error_code: Option<String>,
+        retryable: bool,
+        terminal: bool,
+        produced_final_response: bool,
+        stream: bool,
+    }
+
     async fn load_request_logs(db_path: &Path) -> Vec<RequestLogRow> {
         let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
             .build()
@@ -1596,6 +1615,49 @@ mod tests {
         }
 
         ledgers
+    }
+
+    async fn load_request_log_attempts(db_path: &Path) -> Vec<RequestLogAttemptRow> {
+        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
+            .build()
+            .await
+            .expect("libsql db");
+        let connection = db.connect().expect("libsql connection");
+        let mut rows = connection
+            .query(
+                r#"
+                SELECT request_id, attempt_number, provider_key, upstream_model, status,
+                       status_code, error_code, retryable, terminal, produced_final_response, stream
+                FROM request_log_attempts
+                ORDER BY attempt_number ASC
+                "#,
+                (),
+            )
+            .await
+            .expect("request log attempts query");
+
+        let mut attempts = Vec::new();
+        while let Some(row) = rows.next().await.expect("request log attempt row") {
+            let retryable: i64 = row.get(7).expect("retryable");
+            let terminal: i64 = row.get(8).expect("terminal");
+            let produced_final_response: i64 = row.get(9).expect("produced_final_response");
+            let stream: i64 = row.get(10).expect("stream");
+            attempts.push(RequestLogAttemptRow {
+                request_id: row.get(0).expect("request_id"),
+                attempt_number: row.get(1).expect("attempt_number"),
+                provider_key: row.get(2).expect("provider_key"),
+                upstream_model: row.get(3).expect("upstream_model"),
+                status: row.get(4).expect("status"),
+                status_code: row.get(5).expect("status_code"),
+                error_code: row.get(6).expect("error_code"),
+                retryable: retryable == 1,
+                terminal: terminal == 1,
+                produced_final_response: produced_final_response == 1,
+                stream: stream == 1,
+            });
+        }
+
+        attempts
     }
 
     async fn load_request_log_payloads(db_path: &Path) -> Vec<RequestLogPayloadRow> {
@@ -2329,6 +2391,18 @@ mod tests {
         assert!(logs[0].metadata.get("attempt_count").is_none());
         assert_eq!(logs[0].resolved_model_key.as_deref(), Some("fast"));
 
+        let attempts = load_request_log_attempts(&db_path).await;
+        assert_eq!(attempts.len(), 1);
+        assert_eq!(attempts[0].request_id, request_id);
+        assert_eq!(attempts[0].attempt_number, 1);
+        assert_eq!(attempts[0].provider_key, "openai-prod");
+        assert!(!attempts[0].upstream_model.is_empty());
+        assert_eq!(attempts[0].status, "success");
+        assert!(!attempts[0].retryable);
+        assert!(attempts[0].terminal);
+        assert!(attempts[0].produced_final_response);
+        assert!(!attempts[0].stream);
+
         let ledgers = load_usage_ledger(&db_path).await;
         assert_eq!(ledgers.len(), 1);
         assert_eq!(ledgers[0].request_id, request_id);
@@ -2900,6 +2974,7 @@ request_logging:
         let payload: Value = read_json(response).await;
         assert_eq!(payload["error"]["code"], "budget_exceeded");
         assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert!(load_request_log_attempts(&db_path).await.is_empty());
 
         let snapshot = metrics.test_snapshot();
         assert_eq!(snapshot.requests, 1);
@@ -3186,6 +3261,13 @@ request_logging:
             .await
             .expect("response");
 
+        let request_id = response
+            .headers()
+            .get("x-request-id")
+            .expect("x-request-id header")
+            .to_str()
+            .expect("request id value")
+            .to_string();
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(primary_calls.load(Ordering::SeqCst), 1);
         assert_eq!(fallback_calls.load(Ordering::SeqCst), 0);
@@ -3200,6 +3282,23 @@ request_logging:
         assert!(logs[0].metadata.get("fallback_used").is_none());
         assert!(logs[0].metadata.get("attempt_count").is_none());
         assert_eq!(logs[0].resolved_model_key.as_deref(), Some("fast"));
+
+        let attempts = load_request_log_attempts(&db_path).await;
+        assert_eq!(attempts.len(), 1);
+        assert_eq!(attempts[0].request_id, request_id);
+        assert_eq!(attempts[0].attempt_number, 1);
+        assert_eq!(attempts[0].provider_key, "primary");
+        assert_eq!(attempts[0].status, "provider_error");
+        assert_eq!(attempts[0].status_code, Some(503));
+        assert_eq!(
+            attempts[0].error_code.as_deref(),
+            Some("upstream_http_error")
+        );
+        assert!(attempts[0].retryable);
+        assert!(attempts[0].terminal);
+        assert!(!attempts[0].produced_final_response);
+        assert!(!attempts[0].stream);
+
         assert!(load_usage_ledger(&db_path).await.is_empty());
     }
 
@@ -3567,6 +3666,7 @@ request_logging:
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         assert_eq!(user_id.to_string().len(), 36);
         assert!(load_request_logs(&db_path).await.is_empty());
+        assert!(load_request_log_attempts(&db_path).await.is_empty());
         let ledgers = load_usage_ledger(&db_path).await;
         assert_eq!(ledgers.len(), 1);
         assert_eq!(ledgers[0].pricing_status, "usage_missing");
@@ -3639,11 +3739,93 @@ request_logging:
         assert_eq!(logs[0].metadata["stream"], Value::Bool(true));
         assert_eq!(logs[0].metadata["operation"], "chat_completions");
 
+        let attempts = load_request_log_attempts(&db_path).await;
+        assert_eq!(attempts.len(), 1);
+        assert_eq!(attempts[0].request_id, request_id);
+        assert_eq!(attempts[0].attempt_number, 1);
+        assert_eq!(attempts[0].provider_key, "openai-prod");
+        assert_eq!(attempts[0].status, "success");
+        assert_eq!(attempts[0].status_code, Some(200));
+        assert!(!attempts[0].retryable);
+        assert!(attempts[0].terminal);
+        assert!(attempts[0].produced_final_response);
+        assert!(attempts[0].stream);
+
         let ledgers = load_usage_ledger(&db_path).await;
         assert_eq!(ledgers.len(), 1);
         assert_eq!(ledgers[0].request_id, request_id);
         assert_eq!(ledgers[0].pricing_status, "usage_missing");
         assert_eq!(ledgers[0].computed_cost_10000, 0);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn stream_start_failure_records_failed_attempt_and_propagates_request_id() {
+        let (calls, provider) = make_chat_provider(
+            "openai-prod",
+            MockChatResult::Error(MockError::UpstreamHttp(503, "unavailable".to_string())),
+            vec![],
+            ProviderCapabilities::openai_compat_baseline(),
+        );
+        let mut registry = gateway_core::ProviderRegistry::new();
+        registry.register(Arc::new(provider));
+
+        let (app, raw_key, db_path) = build_default_test_app(registry).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .header("x-request-id", "req-stream-start-fail")
+                    .body(Body::from(
+                        json!({
+                            "model": "fast",
+                            "stream": true,
+                            "messages": [{"role":"user","content":"ping"}]
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(
+            response
+                .headers()
+                .get("x-request-id")
+                .expect("x-request-id header")
+                .to_str()
+                .expect("request id value"),
+            "req-stream-start-fail"
+        );
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        let logs = load_request_logs(&db_path).await;
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].status_code, Some(503));
+        assert_eq!(logs[0].error_code.as_deref(), Some("upstream_http_error"));
+        assert_eq!(logs[0].metadata["stream"], Value::Bool(true));
+
+        let attempts = load_request_log_attempts(&db_path).await;
+        assert_eq!(attempts.len(), 1);
+        assert_eq!(attempts[0].request_id, "req-stream-start-fail");
+        assert_eq!(attempts[0].attempt_number, 1);
+        assert_eq!(attempts[0].provider_key, "openai-prod");
+        assert_eq!(attempts[0].status, "stream_start_error");
+        assert_eq!(attempts[0].status_code, Some(503));
+        assert_eq!(
+            attempts[0].error_code.as_deref(),
+            Some("upstream_http_error")
+        );
+        assert!(attempts[0].retryable);
+        assert!(attempts[0].terminal);
+        assert!(!attempts[0].produced_final_response);
+        assert!(attempts[0].stream);
     }
 
     #[tokio::test]
@@ -3869,6 +4051,17 @@ request_logging:
         assert_eq!(logs[0].total_tokens, Some(4));
         assert_eq!(logs[0].metadata["stream"], Value::Bool(false));
         assert_eq!(logs[0].metadata["operation"], "embeddings");
+
+        let attempts = load_request_log_attempts(&db_path).await;
+        assert_eq!(attempts.len(), 1);
+        assert_eq!(attempts[0].request_id, request_id);
+        assert_eq!(attempts[0].attempt_number, 1);
+        assert_eq!(attempts[0].provider_key, "openai-prod");
+        assert_eq!(attempts[0].status, "success");
+        assert_eq!(attempts[0].status_code, Some(200));
+        assert!(attempts[0].terminal);
+        assert!(attempts[0].produced_final_response);
+        assert!(!attempts[0].stream);
 
         let ledgers = load_usage_ledger(&db_path).await;
         assert_eq!(ledgers.len(), 1);
@@ -4244,7 +4437,7 @@ request_logging:
             .expect("body bytes");
         let transcript = String::from_utf8(body.to_vec()).expect("utf8");
         assert!(transcript.contains("\"prompt_tokens\":4"));
-        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
 
         let logs = load_request_logs(&db_path).await;
         assert_eq!(logs.len(), 1);
@@ -4256,6 +4449,22 @@ request_logging:
         assert!(logs[0].prompt_tokens.is_none());
         assert!(logs[0].completion_tokens.is_none());
         assert!(logs[0].total_tokens.is_none());
+
+        let attempts = load_request_log_attempts(&db_path).await;
+        assert_eq!(attempts.len(), 1);
+        assert_eq!(attempts[0].attempt_number, 1);
+        assert_eq!(attempts[0].provider_key, "openai-prod");
+        assert_eq!(attempts[0].status, "stream_error");
+        assert_eq!(attempts[0].status_code, Some(502));
+        assert_eq!(
+            attempts[0].error_code.as_deref(),
+            Some("stream_parse_error")
+        );
+        assert!(!attempts[0].retryable);
+        assert!(attempts[0].terminal);
+        assert!(!attempts[0].produced_final_response);
+        assert!(attempts[0].stream);
+
         assert!(load_usage_ledger(&db_path).await.is_empty());
 
         let snapshot = metrics.test_snapshot();

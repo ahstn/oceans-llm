@@ -70,6 +70,7 @@ const ACTIVE_APPLICATION_TABLES: &[&str] = &[
     "request_logs",
     "request_log_payloads",
     "request_log_tags",
+    "request_log_attempts",
     "user_budgets",
     "team_budgets",
     "budget_alerts",

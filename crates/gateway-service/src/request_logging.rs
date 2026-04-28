@@ -1,10 +1,11 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use gateway_core::{
-    ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, ChatCompletionsRequest, GatewayError,
-    IdentityRepository, OpenAiErrorEnvelope, RequestLogDetail, RequestLogPage,
-    RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestTags,
-    ResponsesRequest, SseEventParser,
+    ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, ChatCompletionsRequest, EmbeddingsRequest,
+    GatewayError, IdentityRepository, ModelRoute, OpenAiErrorEnvelope, RequestAttemptRecord,
+    RequestAttemptStatus, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
+    RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestTags, ResponsesRequest,
+    SseEventParser,
 };
 
 use crate::{REQUEST_LOG_MODEL_ICON_KEY, REQUEST_LOG_PROVIDER_ICON_KEY, RequestLogIconMetadata};
@@ -18,13 +19,14 @@ use crate::redaction::{
 };
 
 #[derive(Debug, Clone)]
-pub struct ChatRequestLogContext {
+pub struct RequestLogContext {
     pub request_log_id: Uuid,
     pub request_id: String,
     pub requested_model_key: String,
     pub resolved_model_key: String,
     pub operation: &'static str,
     pub request_tags: RequestTags,
+    payload_policy: RequestLogPayloadPolicy,
     request_json: Option<Value>,
     request_payload_truncated: bool,
 }
@@ -42,6 +44,7 @@ pub struct StreamLogResultInput {
     pub latency_ms: i64,
     pub collector: StreamResponseCollector,
     pub failure: Option<StreamFailureSummary>,
+    pub attempts: Vec<RequestAttemptRecord>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -293,7 +296,7 @@ where
         request: &ChatCompletionsRequest,
         request_headers: &BTreeMap<String, String>,
         request_tags: RequestTags,
-    ) -> ChatRequestLogContext {
+    ) -> RequestLogContext {
         self.begin_operation_request(OperationRequestLogInput {
             operation: "chat_completions",
             request_id,
@@ -314,9 +317,30 @@ where
         request: &ResponsesRequest,
         request_headers: &BTreeMap<String, String>,
         request_tags: RequestTags,
-    ) -> ChatRequestLogContext {
+    ) -> RequestLogContext {
         self.begin_operation_request(OperationRequestLogInput {
             operation: "responses",
+            request_id,
+            requested_model_key,
+            resolved_model_key,
+            request,
+            request_headers,
+            request_tags,
+        })
+    }
+
+    #[must_use]
+    pub fn begin_embeddings_request(
+        &self,
+        request_id: &str,
+        requested_model_key: &str,
+        resolved_model_key: &str,
+        request: &EmbeddingsRequest,
+        request_headers: &BTreeMap<String, String>,
+        request_tags: RequestTags,
+    ) -> RequestLogContext {
+        self.begin_operation_request(OperationRequestLogInput {
+            operation: "embeddings",
             request_id,
             requested_model_key,
             resolved_model_key,
@@ -329,7 +353,7 @@ where
     fn begin_operation_request<T>(
         &self,
         input: OperationRequestLogInput<'_, T>,
-    ) -> ChatRequestLogContext
+    ) -> RequestLogContext
     where
         T: serde::Serialize,
     {
@@ -358,13 +382,14 @@ where
             (None, false)
         };
 
-        ChatRequestLogContext {
+        RequestLogContext {
             request_log_id: Uuid::new_v4(),
             request_id: input.request_id.to_string(),
             requested_model_key: input.requested_model_key.to_string(),
             resolved_model_key: input.resolved_model_key.to_string(),
             operation: input.operation,
             request_tags: input.request_tags,
+            payload_policy: self.payload_policy.clone(),
             request_json,
             request_payload_truncated,
         }
@@ -396,14 +421,16 @@ where
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn log_non_stream_success(
         &self,
         api_key: &AuthenticatedApiKey,
-        context: &ChatRequestLogContext,
+        context: &RequestLogContext,
         provider_key: &str,
         icon_metadata: RequestLogIconMetadata,
         latency_ms: i64,
         response_body: &Value,
+        attempts: Vec<RequestAttemptRecord>,
     ) -> Result<LoggedRequest, GatewayError> {
         let usage = usage_summary_from_value(response_body.get("usage"));
         let (response_json, response_payload_truncated) =
@@ -431,18 +458,21 @@ where
             ),
             response_json,
             response_payload_truncated,
+            attempts,
         )
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn log_non_stream_failure(
         &self,
         api_key: &AuthenticatedApiKey,
-        context: &ChatRequestLogContext,
+        context: &RequestLogContext,
         provider_key: &str,
         icon_metadata: RequestLogIconMetadata,
         latency_ms: i64,
         gateway_error: &GatewayError,
+        attempts: Vec<RequestAttemptRecord>,
     ) -> Result<LoggedRequest, GatewayError> {
         let (response_json, response_payload_truncated) = if self
             .payload_policy
@@ -474,6 +504,7 @@ where
             ),
             response_json,
             response_payload_truncated,
+            attempts,
         )
         .await
     }
@@ -481,7 +512,7 @@ where
     pub async fn log_stream_result(
         &self,
         api_key: &AuthenticatedApiKey,
-        context: &ChatRequestLogContext,
+        context: &RequestLogContext,
         stream_result: StreamLogResultInput,
     ) -> Result<LoggedRequest, GatewayError> {
         let StreamLogResultInput {
@@ -490,6 +521,7 @@ where
             latency_ms,
             mut collector,
             failure,
+            attempts,
         } = stream_result;
         collector.finish();
         let failure = failure.or_else(|| collector.failure().cloned());
@@ -521,6 +553,7 @@ where
             summary,
             response_json,
             response_payload_truncated,
+            attempts,
         )
         .await
     }
@@ -545,10 +578,11 @@ where
     async fn persist_chat_log(
         &self,
         api_key: &AuthenticatedApiKey,
-        context: &ChatRequestLogContext,
+        context: &RequestLogContext,
         summary: RequestLogSummary,
         response_json: Option<Value>,
         response_payload_truncated: bool,
+        attempts: Vec<RequestAttemptRecord>,
     ) -> Result<LoggedRequest, GatewayError> {
         if self.payload_policy.capture_mode == RequestLogPayloadCaptureMode::Disabled
             || !self.should_log_request(api_key).await?
@@ -599,7 +633,9 @@ where
             _ => None,
         };
 
-        self.repo.insert_request_log(&log, payload.as_ref()).await?;
+        self.repo
+            .insert_request_log_with_attempts(&log, payload.as_ref(), &attempts)
+            .await?;
 
         Ok(LoggedRequest {
             request_log_id: context.request_log_id,
@@ -666,6 +702,128 @@ fn request_log_metadata(
     metadata
 }
 
+const MAX_ATTEMPT_ERROR_DETAIL_BYTES: usize = 2 * 1024;
+
+#[derive(Debug, Clone)]
+pub struct RequestAttemptOutcome {
+    pub status: RequestAttemptStatus,
+    pub status_code: Option<i64>,
+    pub error_code: Option<String>,
+    pub error_detail: Option<String>,
+    pub retryable: bool,
+    pub produced_final_response: bool,
+}
+
+#[must_use]
+pub fn successful_attempt_outcome() -> RequestAttemptOutcome {
+    RequestAttemptOutcome {
+        status: RequestAttemptStatus::Success,
+        status_code: Some(200),
+        error_code: None,
+        error_detail: None,
+        retryable: false,
+        produced_final_response: true,
+    }
+}
+
+#[must_use]
+pub fn failed_attempt_outcome(
+    status: RequestAttemptStatus,
+    gateway_error: &GatewayError,
+    retryable: bool,
+    detail: impl Into<String>,
+) -> RequestAttemptOutcome {
+    RequestAttemptOutcome {
+        status,
+        status_code: Some(gateway_error.http_status_code().into()),
+        error_code: Some(gateway_error.error_code().to_string()),
+        error_detail: Some(detail.into()),
+        retryable,
+        produced_final_response: false,
+    }
+}
+
+#[must_use]
+pub fn build_request_attempt(
+    context: &RequestLogContext,
+    route: &ModelRoute,
+    attempt_number: i64,
+    stream: bool,
+    started_at: OffsetDateTime,
+    completed_at: OffsetDateTime,
+    outcome: RequestAttemptOutcome,
+) -> RequestAttemptRecord {
+    let (error_detail, error_detail_truncated) = outcome
+        .error_detail
+        .as_deref()
+        .map(|detail| truncate_attempt_error_detail(detail, &context.payload_policy))
+        .map(|(detail, truncated)| (Some(detail), truncated))
+        .unwrap_or((None, false));
+    RequestAttemptRecord {
+        request_attempt_id: Uuid::new_v4(),
+        request_log_id: context.request_log_id,
+        request_id: context.request_id.clone(),
+        attempt_number,
+        route_id: route.id,
+        provider_key: route.provider_key.clone(),
+        upstream_model: route.upstream_model.clone(),
+        status: outcome.status,
+        status_code: outcome.status_code,
+        error_code: outcome.error_code,
+        error_detail,
+        error_detail_truncated,
+        retryable: outcome.retryable,
+        terminal: true,
+        produced_final_response: outcome.produced_final_response,
+        stream,
+        started_at,
+        completed_at: Some(completed_at),
+        latency_ms: Some(
+            (completed_at - started_at)
+                .whole_milliseconds()
+                .try_into()
+                .unwrap_or(i64::MAX),
+        ),
+        metadata: Map::new(),
+    }
+}
+
+#[must_use]
+pub fn offset_now() -> OffsetDateTime {
+    OffsetDateTime::now_utc()
+}
+
+fn truncate_attempt_error_detail(
+    detail: &str,
+    payload_policy: &RequestLogPayloadPolicy,
+) -> (String, bool) {
+    let sanitized = sanitize_attempt_error_detail(detail, payload_policy);
+    if sanitized.len() <= MAX_ATTEMPT_ERROR_DETAIL_BYTES {
+        return (sanitized, false);
+    }
+    (
+        String::from_utf8_lossy(&sanitized.as_bytes()[..MAX_ATTEMPT_ERROR_DETAIL_BYTES])
+            .to_string(),
+        true,
+    )
+}
+
+fn sanitize_attempt_error_detail(detail: &str, payload_policy: &RequestLogPayloadPolicy) -> String {
+    if !payload_policy.should_capture_payloads() {
+        return format!("[redacted error detail; {} bytes]", detail.len());
+    }
+
+    match serde_json::from_str::<Value>(detail) {
+        Ok(parsed @ (Value::Object(_) | Value::Array(_))) => {
+            let redacted = redact_json_value_with_policy(&parsed, payload_policy);
+            serde_json::to_string(&truncate_large_payload_fields(&redacted)).unwrap_or_else(|_| {
+                format!("[redacted structured error detail; {} bytes]", detail.len())
+            })
+        }
+        Ok(_) | Err(_) => format!("[redacted error detail; {} bytes]", detail.len()),
+    }
+}
+
 fn truncate_payload(value: Value, max_bytes: usize) -> (Value, bool) {
     match serde_json::to_vec(&value) {
         Ok(bytes) if bytes.len() > max_bytes => (
@@ -713,6 +871,7 @@ mod tests {
 
     use super::{
         RequestLogging, StreamFailureSummary, StreamLogResultInput, StreamResponseCollector,
+        truncate_attempt_error_detail,
     };
 
     #[derive(Clone, Default)]
@@ -810,7 +969,11 @@ mod tests {
                 .iter()
                 .find(|payload| payload.request_log_id == request_log_id)
                 .cloned();
-            Ok(RequestLogDetail { log, payload })
+            Ok(RequestLogDetail {
+                log,
+                payload,
+                attempts: Vec::new(),
+            })
         }
     }
 
@@ -897,6 +1060,32 @@ mod tests {
         )
     }
 
+    #[test]
+    fn attempt_error_detail_redacts_structured_payloads_with_active_policy() {
+        let policy = policy_with_redaction_paths(&["message"]);
+        let (detail, truncated) = truncate_attempt_error_detail(
+            r#"{"message":"secret prompt","api_key":"sk-test"}"#,
+            &policy,
+        );
+
+        assert!(!truncated);
+        assert!(!detail.contains("secret prompt"));
+        assert!(!detail.contains("sk-test"));
+        assert!(detail.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn attempt_error_detail_suppresses_raw_text_when_payload_capture_is_disabled() {
+        let policy = policy(RequestLogPayloadCaptureMode::SummaryOnly, 4096, 4096, 4);
+        let (detail, truncated) =
+            truncate_attempt_error_detail("provider leaked token sk-test", &policy);
+
+        assert!(!truncated);
+        assert!(!detail.contains("sk-test"));
+        assert!(detail.starts_with("[redacted error detail; "));
+        assert!(detail.ends_with(" bytes]"));
+    }
+
     #[tokio::test]
     async fn suppresses_logging_for_user_toggle_disabled() {
         let user_id = Uuid::new_v4();
@@ -932,6 +1121,7 @@ mod tests {
                 },
                 120,
                 &json!({"usage": {"prompt_tokens": 1, "completion_tokens": 2}}),
+                Vec::new(),
             )
             .await
             .expect("request logging should evaluate");
@@ -988,6 +1178,7 @@ mod tests {
                 },
                 120,
                 &json!({"usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30}}),
+                Vec::new(),
             )
             .await
             .expect("request logging should evaluate");
@@ -1040,6 +1231,7 @@ mod tests {
                 sample_icon_metadata(),
                 120,
                 &json!({"usage": {"prompt_tokens": 1, "completion_tokens": 2}}),
+                Vec::new(),
             )
             .await
             .expect("request logging should evaluate");
@@ -1074,6 +1266,7 @@ mod tests {
                 sample_icon_metadata(),
                 120,
                 &json!({"usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}}),
+                Vec::new(),
             )
             .await
             .expect("summary log");
@@ -1119,6 +1312,7 @@ mod tests {
                     "choices": [{"message": {"content": "x".repeat(512)}}],
                     "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}
                 }),
+                Vec::new(),
             )
             .await
             .expect("truncated log");
@@ -1159,6 +1353,7 @@ mod tests {
                     "choices": [{"message": {"content": "operator-secret"}}],
                     "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}
                 }),
+                Vec::new(),
             )
             .await
             .expect("redacted response log");
@@ -1218,6 +1413,7 @@ mod tests {
                         status_code: 502,
                         error_code: "stream_error".to_string(),
                     }),
+                    attempts: Vec::new(),
                 },
             )
             .await
@@ -1276,6 +1472,7 @@ data: {"usage":{"prompt_tokens":4,"completion_tokens":5,"total_tokens":9}}
                     latency_ms: 120,
                     collector,
                     failure: None,
+                    attempts: Vec::new(),
                 },
             )
             .await
@@ -1324,6 +1521,7 @@ data: {"usage":{"prompt_tokens":4,"completion_tokens":5,"total_tokens":9}}
                     latency_ms: 120,
                     collector,
                     failure: None,
+                    attempts: Vec::new(),
                 },
             )
             .await

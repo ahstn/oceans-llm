@@ -31,7 +31,8 @@ This document is schema-oriented. It describes the persistent relationships that
 7. `usage_cost_events` records request ownership, model attribution, pricing status, and computed cost
 8. `request_logs` records the final user-visible request outcome
 9. `request_log_payloads` stores sanitized request and response bodies separately from the summary row
-10. `pricing_catalog_cache` stores normalized pricing snapshots used by runtime pricing resolution
+10. `request_log_attempts` stores ordered upstream provider execution attempts for a request log
+11. `pricing_catalog_cache` stores normalized pricing snapshots used by runtime pricing resolution
 11. `model_pricing` stores effective-dated pricing rows used for historical charging
 12. `usage_cost_event_duplicates_archive` preserves duplicate-ledger migration/archive context
 
@@ -109,6 +110,9 @@ Compatibility metadata is not a provider config fallback and is not an `extra_bo
 - `request_log_tags`
   - Key columns: `request_log_id`, `tag_key`, `tag_value`
   - Notes: bounded bespoke caller tags for request-log filtering and attribution
+- `request_log_attempts`
+  - Key columns: `request_attempt_id`, `request_log_id`, `request_id`, `attempt_number`, `route_id`, `provider_key`, `upstream_model`, `status`, `retryable`, `terminal`, `produced_final_response`, `stream`, `started_at`, `completed_at`, `latency_ms`
+  - Notes: attempt rows are metadata-only children of `request_logs`; they are ordered by `attempt_number` and describe provider execution, not pre-provider gateway rejections
 
 ### Pricing Catalog Cache
 
@@ -189,6 +193,6 @@ Both runtime backends are expected to stay logically aligned for:
 - seed behavior
 - aliases and request-log model identity
 - spend ledger behavior
-- request-log summary and payload persistence
+- request-log summary, payload, tag, and attempt persistence
 
 See [../crates/gateway-store/README.md](../../crates/gateway-store/README.md) for the storage-layer overview.
