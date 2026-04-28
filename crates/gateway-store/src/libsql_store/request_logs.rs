@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use super::*;
 use crate::shared::{parse_uuid, serialize_json, unix_to_datetime};
-use gateway_core::{RequestTag, RequestTags};
+use gateway_core::{RequestTag, RequestTags, RequestToolCardinality};
 
 fn normalize_query(query: &RequestLogQuery) -> (i64, i64) {
     let page = query.page.max(1);
@@ -45,6 +45,12 @@ fn decode_request_log_row(row: &libsql::Row) -> Result<RequestLogRecord, StoreEr
             component: row.get(17).map_err(to_query_error)?,
             env: row.get(18).map_err(to_query_error)?,
             bespoke: Vec::new(),
+        },
+        tool_cardinality: RequestToolCardinality {
+            referenced_mcp_server_count: row.get(22).map_err(to_query_error)?,
+            exposed_tool_count: row.get(23).map_err(to_query_error)?,
+            invoked_tool_count: row.get(24).map_err(to_query_error)?,
+            filtered_tool_count: row.get(25).map_err(to_query_error)?,
         },
         metadata: serde_json::from_str(&metadata_json)
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
@@ -213,8 +219,9 @@ impl RequestLogRepository for LibsqlStore {
                     resolved_model_key, provider_key, status_code, latency_ms, prompt_tokens,
                     completion_tokens, total_tokens, has_payload, request_payload_truncated,
                     response_payload_truncated, caller_service, caller_component, caller_env,
-                    error_code, metadata_json, occurred_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)
+                    error_code, metadata_json, occurred_at, referenced_mcp_server_count,
+                    exposed_tool_count, invoked_tool_count, filtered_tool_count
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)
                 "#,
             libsql::params![
                 log.request_log_id.to_string(),
@@ -238,7 +245,11 @@ impl RequestLogRepository for LibsqlStore {
                 log.request_tags.env.as_deref(),
                 log.error_code.as_deref(),
                 metadata_json,
-                log.occurred_at.unix_timestamp()
+                log.occurred_at.unix_timestamp(),
+                log.tool_cardinality.referenced_mcp_server_count,
+                log.tool_cardinality.exposed_tool_count,
+                log.tool_cardinality.invoked_tool_count,
+                log.tool_cardinality.filtered_tool_count
             ],
         )
         .await
@@ -361,7 +372,8 @@ impl RequestLogRepository for LibsqlStore {
                        resolved_model_key, provider_key, status_code, latency_ms, prompt_tokens,
                        completion_tokens, total_tokens, has_payload, request_payload_truncated,
                        response_payload_truncated, caller_service, caller_component, caller_env,
-                       metadata_json, occurred_at, error_code
+                       metadata_json, occurred_at, error_code, referenced_mcp_server_count,
+                       exposed_tool_count, invoked_tool_count, filtered_tool_count
                 FROM request_logs
                 WHERE (?1 IS NULL OR request_id = ?1)
                   AND (?2 IS NULL OR model_key = ?2)
@@ -448,6 +460,8 @@ impl RequestLogRepository for LibsqlStore {
                        rl.has_payload, rl.request_payload_truncated, rl.response_payload_truncated,
                        rl.caller_service, rl.caller_component, rl.caller_env,
                        rl.metadata_json, rl.occurred_at, rl.error_code,
+                       rl.referenced_mcp_server_count, rl.exposed_tool_count,
+                       rl.invoked_tool_count, rl.filtered_tool_count,
                        rlp.request_json, rlp.response_json
                 FROM request_logs rl
                 LEFT JOIN request_log_payloads rlp
@@ -470,8 +484,8 @@ impl RequestLogRepository for LibsqlStore {
         };
 
         let mut log = decode_request_log_row(&row)?;
-        let request_json: Option<String> = row.get(22).map_err(to_query_error)?;
-        let response_json: Option<String> = row.get(23).map_err(to_query_error)?;
+        let request_json: Option<String> = row.get(26).map_err(to_query_error)?;
+        let response_json: Option<String> = row.get(27).map_err(to_query_error)?;
         log.request_tags.bespoke = load_bespoke_tags_for_logs(&self.connection, &[request_log_id])
             .await?
             .remove(&request_log_id)

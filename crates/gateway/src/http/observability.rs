@@ -25,7 +25,8 @@ use crate::http::{
         LeaderboardSeriesPointView, LeaderboardSeriesValueView, LeaderboardView,
         OpenAiErrorEnvelopeView, RequestAttemptView, RequestLogDetailView, RequestLogListQuery,
         RequestLogPageView, RequestLogPayloadCaptureModeView, RequestLogPayloadPolicyView,
-        RequestLogPayloadView, RequestLogSummaryView, RequestTagView, RequestTagsView, envelope,
+        RequestLogPayloadView, RequestLogSummaryView, RequestTagView, RequestTagsView,
+        RequestToolCardinalityAveragesView, RequestToolCardinalityView, envelope,
         format_timestamp,
     },
     error::AppError,
@@ -126,6 +127,14 @@ pub async fn get_usage_leaderboard(
             total_spend_usd_10000: leader.priced_cost_usd.as_scaled_i64(),
             most_used_model: leader.top_model_key,
             total_requests: leader.total_request_count,
+            tool_cardinality_averages: RequestToolCardinalityAveragesView {
+                referenced_mcp_server_count: leader
+                    .tool_cardinality_averages
+                    .referenced_mcp_server_count,
+                exposed_tool_count: leader.tool_cardinality_averages.exposed_tool_count,
+                invoked_tool_count: leader.tool_cardinality_averages.invoked_tool_count,
+                filtered_tool_count: leader.tool_cardinality_averages.filtered_tool_count,
+            },
         })
         .collect();
 
@@ -282,6 +291,12 @@ fn summary_view(
         response_payload_truncated: log.response_payload_truncated,
         payload_policy: payload_policy_view(&log.metadata)?,
         request_tags: request_tags_view(&log.request_tags),
+        tool_cardinality: RequestToolCardinalityView {
+            referenced_mcp_server_count: log.tool_cardinality.referenced_mcp_server_count,
+            exposed_tool_count: log.tool_cardinality.exposed_tool_count,
+            invoked_tool_count: log.tool_cardinality.invoked_tool_count,
+            filtered_tool_count: log.tool_cardinality.filtered_tool_count,
+        },
         metadata: log.metadata.clone(),
         occurred_at: format_timestamp(log.occurred_at),
     })
@@ -696,6 +711,7 @@ mod tests {
             request_payload_truncated: false,
             response_payload_truncated: false,
             request_tags: RequestTags::default(),
+            tool_cardinality: gateway_core::RequestToolCardinality::default(),
             metadata,
             occurred_at: OffsetDateTime::now_utc(),
         }

@@ -1,6 +1,6 @@
 # Data Relationships
 
-`See also`: [Identity and Access](../access/identity-and-access.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](provider-api-compatibility.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [ADR: Identity Foundation for Users, Teams, and API Key Ownership](../adr/2026-03-05-identity-foundation.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md)
+`See also`: [Identity and Access](../access/identity-and-access.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](provider-api-compatibility.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [ADR: Identity Foundation for Users, Teams, and API Key Ownership](../adr/2026-03-05-identity-foundation.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md), [ADR: MCP Tool Cardinality Observability](../adr/2026-04-28-mcp-tool-cardinality-observability.md)
 
 This document is schema-oriented. It describes the persistent relationships that are hard to infer from a single file, but it does not try to restate every runtime rule owned by neighboring docs.
 
@@ -102,8 +102,8 @@ Compatibility metadata is not a provider config fallback and is not an `extra_bo
   - Key columns: `usage_event_id`, `request_id`, `ownership_scope_key`, `api_key_id`, `user_id`, `team_id`, `actor_user_id`, `model_id`, `provider_key`, `upstream_model`, `pricing_status`, `unpriced_reason`, `pricing_row_id`, `pricing_provider_id`, `computed_cost_10000`, `provider_usage`, `occurred_at`
   - Notes: this is the canonical spend ledger used for enforcement and reporting
 - `request_logs`
-  - Key columns: `request_log_id`, `request_id`, `api_key_id`, `user_id`, `team_id`, `model_key`, `resolved_model_key`, `provider_key`, `caller_service`, `caller_component`, `caller_env`, `status_code`, `metadata_json`, `occurred_at`
-  - Notes: one summary row per final request outcome; `metadata_json.payload_policy` records the capture mode and limits used for the row when request logging is enabled
+  - Key columns: `request_log_id`, `request_id`, `api_key_id`, `user_id`, `team_id`, `model_key`, `resolved_model_key`, `provider_key`, `caller_service`, `caller_component`, `caller_env`, `status_code`, `referenced_mcp_server_count`, `exposed_tool_count`, `invoked_tool_count`, `filtered_tool_count`, `metadata_json`, `occurred_at`
+  - Notes: one summary row per final request outcome; `metadata_json.payload_policy` records the capture mode and limits used for the row when request logging is enabled; tool-cardinality columns are nullable typed facts, with historical or not-yet-observable dimensions left `null`
 - `request_log_payloads`
   - Key columns: `request_log_id`, `request_json`, `response_json`
   - Notes: summary and payload are intentionally split; rows exist only when the payload policy captures redacted payloads

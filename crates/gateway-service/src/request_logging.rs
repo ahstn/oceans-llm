@@ -4,12 +4,13 @@ use gateway_core::{
     ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, ChatCompletionsRequest, EmbeddingsRequest,
     GatewayError, IdentityRepository, ModelRoute, OpenAiErrorEnvelope, RequestAttemptRecord,
     RequestAttemptStatus, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
-    RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestTags, ResponsesRequest,
-    SseEventParser,
+    RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestTags, RequestToolCardinality,
+    ResponsesRequest, SseEventParser,
 };
 
 use crate::{REQUEST_LOG_MODEL_ICON_KEY, REQUEST_LOG_PROVIDER_ICON_KEY, RequestLogIconMetadata};
 use serde_json::{Map, Value, json};
+use std::collections::HashSet;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -27,6 +28,7 @@ pub struct RequestLogContext {
     pub operation: &'static str,
     pub request_tags: RequestTags,
     payload_policy: RequestLogPayloadPolicy,
+    pub tool_cardinality: RequestToolCardinality,
     request_json: Option<Value>,
     request_payload_truncated: bool,
 }
@@ -54,6 +56,8 @@ pub struct StreamResponseCollector {
     events: Vec<Value>,
     usage: Option<Value>,
     failure: Option<StreamFailureSummary>,
+    seen_tool_call_ids: HashSet<String>,
+    anonymous_tool_call_count: i64,
     finished: bool,
     truncated: bool,
 }
@@ -80,6 +84,7 @@ struct RequestLogSummary {
     error_code: Option<String>,
     latency_ms: i64,
     usage: UsageSummary,
+    invoked_tool_count: i64,
 }
 
 impl RequestLogSummary {
@@ -89,6 +94,7 @@ impl RequestLogSummary {
         stream: bool,
         latency_ms: i64,
         usage: UsageSummary,
+        invoked_tool_count: i64,
     ) -> Self {
         Self {
             provider_key,
@@ -98,6 +104,7 @@ impl RequestLogSummary {
             error_code: None,
             latency_ms,
             usage,
+            invoked_tool_count,
         }
     }
 
@@ -117,6 +124,7 @@ impl RequestLogSummary {
             error_code: Some(error_code),
             latency_ms,
             usage: UsageSummary::default(),
+            invoked_tool_count: 0,
         }
     }
 }
@@ -175,6 +183,9 @@ impl StreamResponseCollector {
             if let Some(failure) = parsed.as_ref().and_then(stream_failure_from_value) {
                 self.failure = Some(failure);
             }
+            if let Some(parsed) = parsed.as_ref() {
+                self.observe_tool_calls(parsed);
+            }
 
             if self.events.len() >= self.payload_policy.stream_max_events {
                 self.truncated = true;
@@ -209,6 +220,26 @@ impl StreamResponseCollector {
     #[must_use]
     pub fn failure(&self) -> Option<&StreamFailureSummary> {
         self.failure.as_ref()
+    }
+
+    #[must_use]
+    pub fn invoked_tool_count(&self) -> i64 {
+        i64::try_from(self.seen_tool_call_ids.len()).unwrap_or(i64::MAX)
+            + self.anonymous_tool_call_count
+    }
+
+    fn observe_tool_calls(&mut self, value: &Value) {
+        for identity in tool_call_identities_from_value(value) {
+            match identity {
+                ToolCallIdentity::Known(id) => {
+                    self.seen_tool_call_ids.insert(id);
+                }
+                ToolCallIdentity::Anonymous => {
+                    self.anonymous_tool_call_count =
+                        self.anonymous_tool_call_count.saturating_add(1);
+                }
+            }
+        }
     }
 
     fn into_payload(self, failure: Option<&StreamFailureSummary>) -> (Value, bool) {
@@ -252,6 +283,131 @@ fn usage_value_from_stream_event(value: &Value) -> Option<&Value> {
             .get("response")
             .and_then(|response| response.get("usage"))
     })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ToolCallIdentity {
+    Known(String),
+    Anonymous,
+}
+
+fn shallow_tool_count_from_request_body(value: &Value) -> Option<i64> {
+    let tools = value.get("tools").or_else(|| {
+        value
+            .get("request")
+            .and_then(|request| request.get("tools"))
+    });
+
+    match tools {
+        None | Some(Value::Null) => Some(0),
+        Some(Value::Array(items)) => Some(i64::try_from(items.len()).unwrap_or(i64::MAX)),
+        Some(_) => Some(0),
+    }
+}
+
+#[must_use]
+pub fn invoked_tool_count_from_response_body(value: &Value) -> i64 {
+    let identities = tool_call_identities_from_value(value);
+    let mut known_ids = HashSet::new();
+    let mut anonymous = 0_i64;
+    for identity in identities {
+        match identity {
+            ToolCallIdentity::Known(id) => {
+                known_ids.insert(id);
+            }
+            ToolCallIdentity::Anonymous => {
+                anonymous = anonymous.saturating_add(1);
+            }
+        }
+    }
+    i64::try_from(known_ids.len())
+        .unwrap_or(i64::MAX)
+        .saturating_add(anonymous)
+}
+
+fn tool_call_identities_from_value(value: &Value) -> Vec<ToolCallIdentity> {
+    let mut identities = Vec::new();
+    collect_chat_tool_call_identities(value, &mut identities);
+    collect_responses_tool_call_identities(value, &mut identities);
+    identities
+}
+
+fn collect_chat_tool_call_identities(value: &Value, identities: &mut Vec<ToolCallIdentity>) {
+    let Some(choices) = value.get("choices").and_then(Value::as_array) else {
+        return;
+    };
+    for choice in choices {
+        for container in [
+            choice.get("message"),
+            choice.get("delta"),
+            choice.get("chunk").and_then(|chunk| chunk.get("delta")),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if let Some(tool_calls) = container.get("tool_calls").and_then(Value::as_array) {
+                collect_tool_call_array_identities(tool_calls, identities);
+            }
+        }
+    }
+}
+
+fn collect_responses_tool_call_identities(value: &Value, identities: &mut Vec<ToolCallIdentity>) {
+    if let Some(output) = value.get("output").and_then(Value::as_array) {
+        for item in output {
+            collect_tool_call_item_identity(item, identities);
+        }
+    }
+
+    for key in ["item", "output_item", "delta"] {
+        if let Some(item) = value.get(key) {
+            collect_tool_call_item_identity(item, identities);
+        }
+    }
+}
+
+fn collect_tool_call_array_identities(items: &[Value], identities: &mut Vec<ToolCallIdentity>) {
+    for item in items {
+        push_tool_call_identity(item, identities);
+    }
+}
+
+fn collect_tool_call_item_identity(item: &Value, identities: &mut Vec<ToolCallIdentity>) {
+    let object = match item.as_object() {
+        Some(object) => object,
+        None => return,
+    };
+    let item_type = object
+        .get("type")
+        .or_else(|| object.get("item_type"))
+        .and_then(Value::as_str);
+    let is_tool_call = item_type.is_some_and(|item_type| {
+        item_type == "function_call" || item_type == "tool_call" || item_type.contains("tool_call")
+    }) || object.contains_key("function")
+        || object.contains_key("tool_calls");
+
+    if !is_tool_call {
+        return;
+    }
+
+    push_tool_call_identity(item, identities);
+}
+
+fn push_tool_call_identity(item: &Value, identities: &mut Vec<ToolCallIdentity>) {
+    let Some(object) = item.as_object() else {
+        return;
+    };
+
+    let id = object
+        .get("id")
+        .or_else(|| object.get("call_id"))
+        .or_else(|| object.get("tool_call_id"))
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty());
+    identities.push(match id {
+        Some(id) => ToolCallIdentity::Known(id.to_string()),
+        None => ToolCallIdentity::Anonymous,
+    });
 }
 
 trait PayloadResultExt {
@@ -357,6 +513,8 @@ where
     where
         T: serde::Serialize,
     {
+        let request_body = serde_json::to_value(input.request).unwrap_or_else(|_| json!({}));
+        let exposed_tool_count = shallow_tool_count_from_request_body(&request_body);
         let (request_json, request_payload_truncated) = if self
             .payload_policy
             .should_capture_payloads()
@@ -366,7 +524,6 @@ where
                 .iter()
                 .map(|(key, value)| (key.clone(), Value::String(redact_header_value(key, value))))
                 .collect::<Map<_, _>>();
-            let request_body = serde_json::to_value(input.request).unwrap_or_else(|_| json!({}));
             let redacted = redact_json_value_with_policy(
                 &json!({
                     "headers": sanitized_headers,
@@ -390,6 +547,12 @@ where
             operation: input.operation,
             request_tags: input.request_tags,
             payload_policy: self.payload_policy.clone(),
+            tool_cardinality: RequestToolCardinality {
+                referenced_mcp_server_count: None,
+                exposed_tool_count,
+                invoked_tool_count: Some(0),
+                filtered_tool_count: None,
+            },
             request_json,
             request_payload_truncated,
         }
@@ -455,6 +618,7 @@ where
                 false,
                 latency_ms,
                 usage,
+                invoked_tool_count_from_response_body(response_body),
             ),
             response_json,
             response_payload_truncated,
@@ -526,6 +690,7 @@ where
         collector.finish();
         let failure = failure.or_else(|| collector.failure().cloned());
         let usage = usage_summary_from_value(collector.usage());
+        let invoked_tool_count = collector.invoked_tool_count();
         let (response_json, response_payload_truncated) =
             if self.payload_policy.should_capture_payloads() {
                 let (response_json, response_payload_truncated) =
@@ -543,9 +708,14 @@ where
                 failure.status_code,
                 failure.error_code,
             ),
-            None => {
-                RequestLogSummary::success(provider_key, icon_metadata, true, latency_ms, usage)
-            }
+            None => RequestLogSummary::success(
+                provider_key,
+                icon_metadata,
+                true,
+                latency_ms,
+                usage,
+                invoked_tool_count,
+            ),
         };
         self.persist_chat_log(
             api_key,
@@ -621,6 +791,10 @@ where
             request_payload_truncated: has_payload && context.request_payload_truncated,
             response_payload_truncated: has_payload && response_payload_truncated,
             request_tags: context.request_tags.clone(),
+            tool_cardinality: RequestToolCardinality {
+                invoked_tool_count: Some(summary.invoked_tool_count),
+                ..context.tool_cardinality
+            },
             metadata,
             occurred_at: OffsetDateTime::now_utc(),
         };
@@ -871,6 +1045,7 @@ mod tests {
 
     use super::{
         RequestLogging, StreamFailureSummary, StreamLogResultInput, StreamResponseCollector,
+        invoked_tool_count_from_response_body, shallow_tool_count_from_request_body,
         truncate_attempt_error_detail,
     };
 
@@ -1589,5 +1764,94 @@ data: {"usage":{"prompt_tokens":4,"completion_tokens":5,"total_tokens":9}}
         let (payload, truncated) = collector.into_payload(None);
         assert!(!truncated);
         assert_eq!(payload["events"][0]["value"], 1);
+    }
+
+    #[test]
+    fn shallow_tool_count_reads_chat_and_responses_shapes() {
+        assert_eq!(shallow_tool_count_from_request_body(&json!({})), Some(0));
+        assert_eq!(
+            shallow_tool_count_from_request_body(&json!({
+                "tools": [{"type": "function"}]
+            })),
+            Some(1)
+        );
+        assert_eq!(
+            shallow_tool_count_from_request_body(&json!({
+                "request": {
+                    "tools": [
+                        {"type": "function"},
+                        {"type": "web_search_preview"}
+                    ]
+                }
+            })),
+            Some(2)
+        );
+        assert_eq!(
+            shallow_tool_count_from_request_body(&json!({ "tools": "malformed" })),
+            Some(0)
+        );
+        assert_eq!(
+            shallow_tool_count_from_request_body(&json!({
+                "request": { "tools": {"not": "array"} }
+            })),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn invoked_tool_count_reads_non_stream_chat_and_responses_artifacts() {
+        assert_eq!(
+            invoked_tool_count_from_response_body(&json!({
+                "choices": [{
+                    "message": {
+                        "tool_calls": [
+                            {"id": "call_1", "type": "function"},
+                            {"id": "call_2", "type": "function"}
+                        ]
+                    }
+                }]
+            })),
+            2
+        );
+        assert_eq!(
+            invoked_tool_count_from_response_body(&json!({
+                "output": [
+                    {"id": "call_1", "type": "function_call"},
+                    {"call_id": "call_2", "type": "function_call"}
+                ]
+            })),
+            2
+        );
+        assert_eq!(
+            invoked_tool_count_from_response_body(&json!({
+                "choices": [{
+                    "message": {
+                        "tool_calls": [
+                            {"id": "call_1", "type": "function"},
+                            {"id": "call_1", "type": "function"}
+                        ]
+                    }
+                }]
+            })),
+            1
+        );
+    }
+
+    #[test]
+    fn stream_collector_counts_invoked_tools_from_sse_events() {
+        let mut collector = StreamResponseCollector::default();
+
+        collector.observe_chunk(
+            br#"data: {"choices":[{"delta":{"tool_calls":[{"id":"call_1","type":"function"}]}}]}
+
+data: {"choices":[{"delta":{"tool_calls":[{"id":"call_1","type":"function"}]}}]}
+
+data: {"output":[{"id":"call_2","type":"function_call"}]}
+
+"#,
+        );
+        collector.finish();
+
+        assert_eq!(collector.invoked_tool_count(), 2);
     }
 }

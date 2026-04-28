@@ -20,6 +20,7 @@ pub use domain::{
     ProviderCapabilities, ProviderConnection, ProviderRequestContext, RequestAttemptRecord,
     RequestAttemptStatus, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
     RequestLogQuery, RequestLogRecord, RequestTag, RequestTags, ResolvedModelPricing,
+    RequestToolCardinality, RequestToolCardinalityAverages, ResolvedModelPricing,
     RouteCompatibility, SYSTEM_BOOTSTRAP_ADMIN_EMAIL, SYSTEM_BOOTSTRAP_ADMIN_USER_ID,
     SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedBudget, SeedModel,
     SeedModelRoute, SeedProvider, SeedTeam, SeedUser, SeedUserMembership,

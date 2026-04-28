@@ -66,6 +66,12 @@ const items: RequestLogView[] = [
       stream_max_events: 128,
       version: 'builtin:v1',
     },
+    tool_cardinality: {
+      referenced_mcp_server_count: null,
+      exposed_tool_count: 2,
+      invoked_tool_count: 0,
+      filtered_tool_count: null,
+    },
     occurred_at: '2026-03-10T11:32:00Z',
   },
 ]
@@ -96,6 +102,9 @@ describe('RequestLogsPage', () => {
     expect(screen.getAllByText('gpt-4.1-mini')).toHaveLength(2)
     expect(screen.getAllByText('openai')).toHaveLength(2)
     expect(screen.getAllByText('req_1')).toHaveLength(2)
+    expect(screen.getAllByText(/exposed 2/)).toHaveLength(2)
+    expect(screen.getAllByText(/called 0/)).toHaveLength(2)
+    expect(screen.getAllByText(/MCP n\/a/)).toHaveLength(2)
   })
 
   it('renders request-log detail without fallback-era fields', async () => {
@@ -148,6 +157,10 @@ describe('RequestLogsPage', () => {
     ).toBeInTheDocument()
     expect(screen.queryByText('Attempt Count')).not.toBeInTheDocument()
     expect(screen.queryByText('Fallback')).not.toBeInTheDocument()
+    expect(screen.getByText('MCP & Tools')).toBeInTheDocument()
+    expect(screen.getByText('Tools Called')).toBeInTheDocument()
+    expect(screen.getAllByText('0').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('n/a').length).toBeGreaterThan(0)
     expect(screen.getByText('Payload Policy')).toBeInTheDocument()
     expect(screen.getByText('Provider Attempts')).toBeInTheDocument()
     expect(screen.getByText('#1')).toBeInTheDocument()

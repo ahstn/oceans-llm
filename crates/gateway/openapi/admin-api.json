@@ -3689,7 +3689,8 @@
           "user_id",
           "user_name",
           "total_spend_usd_10000",
-          "total_requests"
+          "total_requests",
+          "tool_cardinality_averages"
         ],
         "properties": {
           "most_used_model": {
@@ -3702,6 +3703,9 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0
+          },
+          "tool_cardinality_averages": {
+            "$ref": "#/components/schemas/RequestToolCardinalityAveragesView"
           },
           "total_requests": {
             "type": "integer",
@@ -4119,6 +4123,7 @@
           "response_payload_truncated",
           "payload_policy",
           "request_tags",
+          "tool_cardinality",
           "metadata",
           "occurred_at"
         ],
@@ -4223,6 +4228,9 @@
               "null"
             ]
           },
+          "tool_cardinality": {
+            "$ref": "#/components/schemas/RequestToolCardinalityView"
+          },
           "total_tokens": {
             "type": [
               "integer",
@@ -4282,6 +4290,72 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "RequestToolCardinalityAveragesView": {
+        "type": "object",
+        "properties": {
+          "exposed_tool_count": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "filtered_tool_count": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "invoked_tool_count": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "referenced_mcp_server_count": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        }
+      },
+      "RequestToolCardinalityView": {
+        "type": "object",
+        "properties": {
+          "exposed_tool_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "filtered_tool_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "invoked_tool_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "referenced_mcp_server_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
           }
         }
       },

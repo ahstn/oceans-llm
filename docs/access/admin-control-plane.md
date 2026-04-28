@@ -120,6 +120,8 @@ Admins can:
 - filter request logs by caller service, component, environment, and one bespoke tag match
 - inspect sanitized request-log payload detail
 - see per-row payload capture mode, byte limits, stream event limit, policy version, and truncation state
+- see per-row MCP/tool cardinality counts for request logs
+- compare leaderboard users with average tool exposure and invocation counts
 
 Request-log payload policy is read-only in the admin UI. Admins configure it through `gateway.yaml`; see [observability-and-request-logs.md](../operations/observability-and-request-logs.md).
 

@@ -1,6 +1,6 @@
 # Observability and Request Logs
 
-`See also`: [Data Relationships](../reference/data-relationships.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Admin Control Plane](../access/admin-control-plane.md), [Deploy and Operations](../setup/deploy-and-operations.md), [ADR: OTLP-First Observability and Payload-Backed Request Logs](../adr/2026-03-15-otlp-observability-and-request-log-payloads.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md)
+`See also`: [Data Relationships](../reference/data-relationships.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Admin Control Plane](../access/admin-control-plane.md), [Deploy and Operations](../setup/deploy-and-operations.md), [ADR: OTLP-First Observability and Payload-Backed Request Logs](../adr/2026-03-15-otlp-observability-and-request-log-payloads.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md), [ADR: MCP Tool Cardinality Observability](../adr/2026-04-28-mcp-tool-cardinality-observability.md)
 
 This document describes the live observability contract for the gateway.
 
@@ -94,6 +94,7 @@ The runtime emits bounded request-level signals for:
 - token totals
 - priced spend metric totals
 - usage-record totals by pricing status
+- request tool-cardinality histograms
 - caller request tags for filtering and attribution
 
 Request correlation is anchored on `x-request-id`. The HTTP middleware boundary owns request-id generation and propagation: caller-provided values are preserved, and missing values are generated once before handlers run.
@@ -144,12 +145,22 @@ The summary row stores:
 - provider key
 - universal caller tags
 - status, latency, and usage totals
+- typed MCP and tool cardinality counts
 - truncation flags
 - metadata such as `operation`, `stream`, and `payload_policy`
 
 `operation` is the public API family. Current values include `chat_completions`, `responses`, and `embeddings`.
 
 Request-attempt rows describe upstream provider execution only. Pre-provider failures such as authentication rejection, capability mismatch, route unavailability, or budget hard-limit rejection have zero attempts. In the current runtime, successful provider-backed requests record one terminal attempt. Retry and fallback execution remain disabled until the configurable policy tracked in issue #118 is implemented.
+
+Tool-cardinality fields are explicit nullable columns on `request_logs`.
+
+- `exposed_tool_count`: shallow count of OpenAI-compatible request tools.
+- `invoked_tool_count`: count of tool-call artifacts observed in normalized provider output.
+- `referenced_mcp_server_count`: nullable until an MCP access/filtering layer records server exposure.
+- `filtered_tool_count`: nullable until an MCP access/filtering layer records filtered or denied tools.
+
+New Chat Completions and Responses rows record `0` for exposed and invoked counts when no tools are present. Historical rows and unavailable MCP-specific dimensions remain `null`. Admin surfaces render `null` as `n/a` and preserve real zeroes.
 
 Streaming requests persist a bounded transcript payload rather than raw transport bytes.
 
@@ -160,6 +171,7 @@ The stream payload contract is incremental rather than chunk-local:
 - both `data:` and `data: ` forms are accepted
 - the latest coherent `usage` object is retained for request-log and ledger work
 - Responses streams also retain usage from `response.usage` on completed response events
+- streaming tool-call artifacts increment `invoked_tool_count` while SSE frames are parsed for request logging
 
 Request-log payloads are user-visible artifacts. They do not persist the transformed outbound provider request body produced by route compatibility profiles.
 
@@ -298,6 +310,7 @@ Current semantics:
 - ties sort by request count, then user name
 - chart cohort is the top 5 ranked users
 - table is the top 30 ranked users
+- per-user tool-cardinality averages use only rows where each dimension was recorded, so historical nulls do not dilute averages
 - time buckets are 12-hour UTC buckets and are zero-filled for chart stability
 - dominant model is chosen by request count, then spend, then model key
 

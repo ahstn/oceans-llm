@@ -913,6 +913,12 @@ async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'static 
             request_payload_truncated: false,
             response_payload_truncated: false,
             request_tags,
+            tool_cardinality: gateway_core::RequestToolCardinality {
+                referenced_mcp_server_count: None,
+                exposed_tool_count: Some(0),
+                invoked_tool_count: Some(0),
+                filtered_tool_count: None,
+            },
             metadata,
             occurred_at,
         };

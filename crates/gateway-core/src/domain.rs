@@ -734,6 +734,7 @@ pub struct UsageLeaderboardUserRecord {
     pub priced_cost_usd: Money4,
     pub total_request_count: i64,
     pub top_model_key: Option<String>,
+    pub tool_cardinality_averages: RequestToolCardinalityAverages,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -856,8 +857,25 @@ pub struct RequestLogRecord {
     pub request_payload_truncated: bool,
     pub response_payload_truncated: bool,
     pub request_tags: RequestTags,
+    pub tool_cardinality: RequestToolCardinality,
     pub metadata: Map<String, Value>,
     pub occurred_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct RequestToolCardinality {
+    pub referenced_mcp_server_count: Option<i64>,
+    pub exposed_tool_count: Option<i64>,
+    pub invoked_tool_count: Option<i64>,
+    pub filtered_tool_count: Option<i64>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq)]
+pub struct RequestToolCardinalityAverages {
+    pub referenced_mcp_server_count: Option<f64>,
+    pub exposed_tool_count: Option<f64>,
+    pub invoked_tool_count: Option<f64>,
+    pub filtered_tool_count: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

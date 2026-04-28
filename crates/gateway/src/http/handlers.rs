@@ -5,7 +5,7 @@ use axum::{
     body::Body,
     extract::{Extension, State},
     http::{
-        HeaderMap,
+        HeaderMap, HeaderValue,
         header::{AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE},
     },
     response::{IntoResponse, Response},
@@ -15,7 +15,7 @@ use gateway_core::{
     AuthenticatedApiKey, ChatCompletionsRequest, CoreRequestRequirements, EmbeddingsRequest,
     GatewayError, ModelsListResponse, ProviderCapabilities, ProviderClient, ProviderError,
     ProviderRequestContext, RequestAttemptRecord, RequestAttemptStatus, ResponsesRequest,
-    openai_chat_request_to_core, openai_embeddings_request_to_core,
+    RequestToolCardinality, openai_chat_request_to_core, openai_embeddings_request_to_core,
     openai_responses_request_to_core, protocol::openai::ModelCard,
 };
 use gateway_service::{
@@ -140,6 +140,16 @@ pub async fn v1_chat_completions(
                 outcome: error.error_type(),
                 latency_seconds: latency_seconds_since(request_started_at),
             });
+            state.metrics.record_tool_cardinality(
+                &ChatMetricLabels {
+                    requested_model: &resolved.selection.requested_model.model_key,
+                    resolved_model: &resolved.selection.execution_model.model_key,
+                    provider_key: "unavailable",
+                    stream: core_request.stream,
+                },
+                request_log_context.operation,
+                &request_log_context.tool_cardinality,
+            );
             return Err(AppError(error));
         }
     };
@@ -235,6 +245,16 @@ pub async fn v1_chat_completions(
                     outcome: gateway_error.error_type(),
                     latency_seconds: latency_seconds_since(request_started_at),
                 });
+                state.metrics.record_tool_cardinality(
+                    &ChatMetricLabels {
+                        requested_model: &resolved.selection.requested_model.model_key,
+                        resolved_model: &resolved.selection.execution_model.model_key,
+                        provider_key: &route.provider_key,
+                        stream: true,
+                    },
+                    request_log_context.operation,
+                    &request_log_context.tool_cardinality,
+                );
                 return Err(AppError(gateway_error));
             }
         };
@@ -341,13 +361,29 @@ pub async fn v1_chat_completions(
         vec![attempt],
     )
     .await;
+    let tool_cardinality = tool_cardinality_with_invoked(&request_log_context, &value);
     state.metrics.record_chat_request(&ChatRequestMetric {
         labels,
         status_code: 200,
         outcome: "success",
         latency_seconds: latency_seconds_since(request_started_at),
     });
-    let response = Json(value).into_response();
+    state.metrics.record_tool_cardinality(
+        &ChatMetricLabels {
+            requested_model: &resolved.selection.requested_model.model_key,
+            resolved_model: &resolved.selection.execution_model.model_key,
+            provider_key: &route.provider_key,
+            stream: false,
+        },
+        request_log_context.operation,
+        &tool_cardinality,
+    );
+    let mut response = Json(value).into_response();
+    if let Ok(request_id_header) = HeaderValue::from_str(&request_id) {
+        response
+            .headers_mut()
+            .insert("x-request-id", request_id_header);
+    }
     Ok(response)
 }
 
@@ -617,13 +653,29 @@ pub async fn v1_responses(
         vec![attempt],
     )
     .await;
+    let tool_cardinality = tool_cardinality_with_invoked(&request_log_context, &value);
     state.metrics.record_chat_request(&ChatRequestMetric {
         labels,
         status_code: 200,
         outcome: "success",
         latency_seconds: latency_seconds_since(request_started_at),
     });
-    let response = Json(value).into_response();
+    state.metrics.record_tool_cardinality(
+        &ChatMetricLabels {
+            requested_model: &resolved.selection.requested_model.model_key,
+            resolved_model: &resolved.selection.execution_model.model_key,
+            provider_key: &route.provider_key,
+            stream: false,
+        },
+        request_log_context.operation,
+        &tool_cardinality,
+    );
+    let mut response = Json(value).into_response();
+    if let Ok(request_id_header) = HeaderValue::from_str(&request_id) {
+        response
+            .headers_mut()
+            .insert("x-request-id", request_id_header);
+    }
     Ok(response)
 }
 
@@ -993,6 +1045,19 @@ fn wrap_stream_with_request_logging(
                     outcome: gateway_error.error_type(),
                     latency_seconds: latency_seconds_since(state.started_at),
                 });
+                state.metrics.record_tool_cardinality(
+                    &ChatMetricLabels {
+                        requested_model: &state.requested_model_key,
+                        resolved_model: &state.resolved_model_key,
+                        provider_key: &state.provider_key,
+                        stream: true,
+                    },
+                    state.request_log_context.operation,
+                    &RequestToolCardinality {
+                        invoked_tool_count: Some(state.collector.invoked_tool_count()),
+                        ..state.request_log_context.tool_cardinality
+                    },
+                );
                 state.finished = true;
                 Some((Err(std::io::Error::other(error_message)), state))
             }
@@ -1027,6 +1092,10 @@ fn wrap_stream_with_request_logging(
                     termination_reason = if failure.is_some() { "stream_error_chunk" } else { "complete" },
                     "chat completion stream terminated"
                 );
+                let tool_cardinality = RequestToolCardinality {
+                    invoked_tool_count: Some(state.collector.invoked_tool_count()),
+                    ..state.request_log_context.tool_cardinality
+                };
                 best_effort_log_stream_result(
                     &state.service,
                     &state.auth,
@@ -1069,6 +1138,16 @@ fn wrap_stream_with_request_logging(
                     outcome,
                     latency_seconds: latency_seconds_since(state.started_at),
                 });
+                state.metrics.record_tool_cardinality(
+                    &ChatMetricLabels {
+                        requested_model: &state.requested_model_key,
+                        resolved_model: &state.resolved_model_key,
+                        provider_key: &state.provider_key,
+                        stream: true,
+                    },
+                    state.request_log_context.operation,
+                    &tool_cardinality,
+                );
                 None
             }
         }
@@ -1155,6 +1234,18 @@ async fn best_effort_log_stream_result(
             error = %error,
             "request logging failed"
         );
+    }
+}
+
+fn tool_cardinality_with_invoked(
+    context: &gateway_service::RequestLogContext,
+    response_body: &Value,
+) -> RequestToolCardinality {
+    RequestToolCardinality {
+        invoked_tool_count: Some(gateway_service::invoked_tool_count_from_response_body(
+            response_body,
+        )),
+        ..context.tool_cardinality
     }
 }
 

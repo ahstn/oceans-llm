@@ -28,10 +28,11 @@ mod tests {
         MembershipRole, ModelPricingRecord, ModelRepository, Money4, OpenAiCompatDeveloperRole,
         OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
         PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
-        PricingProvenance, ProviderCapabilities, RequestLogRecord, RequestLogRepository,
-        RequestTags, RouteCompatibility, SYSTEM_LEGACY_TEAM_ID, SeedApiKey, SeedBudget, SeedModel,
-        SeedModelRoute, SeedProvider, SeedTeam, SeedUser, SeedUserMembership, StoreError,
-        StoreHealth, UsageLedgerRecord, UsagePricingStatus, UserStatus,
+        PricingProvenance, ProviderCapabilities, RequestLogQuery, RequestLogRecord,
+        RequestLogRepository, RequestTags, RequestToolCardinality, RouteCompatibility,
+        SYSTEM_LEGACY_TEAM_ID, SeedApiKey, SeedBudget, SeedModel, SeedModelRoute, SeedProvider,
+        SeedTeam, SeedUser, SeedUserMembership, StoreError, StoreHealth, UsageLedgerRecord,
+        UsagePricingStatus, UserStatus,
     };
     use serde_json::{Map, json};
     use serial_test::serial;
@@ -108,6 +109,7 @@ mod tests {
             + GatewayStore
             + IdentityRepository
             + ModelRepository
+            + RequestLogRepository
             + Sync,
     {
         let providers = vec![SeedProvider {
@@ -336,6 +338,93 @@ mod tests {
             );
         }
 
+        for log in [
+            RequestLogRecord {
+                request_log_id: Uuid::new_v4(),
+                request_id: "tool-ada-zero".to_string(),
+                api_key_id: api_key.id,
+                user_id: Some(ada.user_id),
+                team_id: None,
+                model_key: "fast".to_string(),
+                resolved_model_key: "fast".to_string(),
+                provider_key: "openai-prod".to_string(),
+                status_code: Some(200),
+                latency_ms: Some(20),
+                prompt_tokens: Some(1),
+                completion_tokens: Some(1),
+                total_tokens: Some(2),
+                error_code: None,
+                has_payload: false,
+                request_payload_truncated: false,
+                response_payload_truncated: false,
+                request_tags: RequestTags::default(),
+                tool_cardinality: RequestToolCardinality {
+                    referenced_mcp_server_count: None,
+                    exposed_tool_count: Some(0),
+                    invoked_tool_count: Some(0),
+                    filtered_tool_count: None,
+                },
+                metadata: Map::new(),
+                occurred_at: ada_bucket_one,
+            },
+            RequestLogRecord {
+                request_log_id: Uuid::new_v4(),
+                request_id: "tool-ada-three".to_string(),
+                api_key_id: api_key.id,
+                user_id: Some(ada.user_id),
+                team_id: None,
+                model_key: "fast".to_string(),
+                resolved_model_key: "fast".to_string(),
+                provider_key: "openai-prod".to_string(),
+                status_code: Some(200),
+                latency_ms: Some(20),
+                prompt_tokens: Some(1),
+                completion_tokens: Some(1),
+                total_tokens: Some(2),
+                error_code: None,
+                has_payload: false,
+                request_payload_truncated: false,
+                response_payload_truncated: false,
+                request_tags: RequestTags::default(),
+                tool_cardinality: RequestToolCardinality {
+                    referenced_mcp_server_count: None,
+                    exposed_tool_count: Some(3),
+                    invoked_tool_count: Some(1),
+                    filtered_tool_count: None,
+                },
+                metadata: Map::new(),
+                occurred_at: ada_bucket_two,
+            },
+            RequestLogRecord {
+                request_log_id: Uuid::new_v4(),
+                request_id: "tool-ada-historical-null".to_string(),
+                api_key_id: api_key.id,
+                user_id: Some(ada.user_id),
+                team_id: None,
+                model_key: "fast".to_string(),
+                resolved_model_key: "fast".to_string(),
+                provider_key: "openai-prod".to_string(),
+                status_code: Some(200),
+                latency_ms: Some(20),
+                prompt_tokens: Some(1),
+                completion_tokens: Some(1),
+                total_tokens: Some(2),
+                error_code: None,
+                has_payload: false,
+                request_payload_truncated: false,
+                response_payload_truncated: false,
+                request_tags: RequestTags::default(),
+                tool_cardinality: RequestToolCardinality::default(),
+                metadata: Map::new(),
+                occurred_at: ada_bucket_two,
+            },
+        ] {
+            store
+                .insert_request_log(&log, None)
+                .await
+                .expect("insert request log for leaderboard tool averages");
+        }
+
         let leaders = store
             .list_usage_user_leaderboard(window_start, window_end, 30)
             .await
@@ -345,6 +434,20 @@ mod tests {
         assert_eq!(leaders[0].priced_cost_usd.as_scaled_i64(), 30_000);
         assert_eq!(leaders[0].total_request_count, 3);
         assert_eq!(leaders[0].top_model_key.as_deref(), Some("fast"));
+        assert_eq!(
+            leaders[0].tool_cardinality_averages.exposed_tool_count,
+            Some(1.5)
+        );
+        assert_eq!(
+            leaders[0].tool_cardinality_averages.invoked_tool_count,
+            Some(0.5)
+        );
+        assert_eq!(
+            leaders[0]
+                .tool_cardinality_averages
+                .referenced_mcp_server_count,
+            None
+        );
         assert_eq!(leaders[1].user_name, "Ben");
         assert_eq!(leaders[1].priced_cost_usd.as_scaled_i64(), 30_000);
         assert_eq!(leaders[1].total_request_count, 2);
@@ -1067,6 +1170,89 @@ mod tests {
             OpenAiCompatReasoningEffort::ReasoningObject
         );
         assert!(profile.supports_stream_usage);
+
+        let occurred_at = OffsetDateTime::now_utc();
+        let zero_counts_log_id = Uuid::new_v4();
+        let zero_counts_log = RequestLogRecord {
+            request_log_id: zero_counts_log_id,
+            request_id: "req-zero-tools".to_string(),
+            api_key_id: api_key.id,
+            user_id: None,
+            team_id: api_key.owner_team_id,
+            model_key: "fast".to_string(),
+            resolved_model_key: "fast".to_string(),
+            provider_key: "openai-prod".to_string(),
+            status_code: Some(200),
+            latency_ms: Some(42),
+            prompt_tokens: Some(1),
+            completion_tokens: Some(2),
+            total_tokens: Some(3),
+            error_code: None,
+            has_payload: false,
+            request_payload_truncated: false,
+            response_payload_truncated: false,
+            request_tags: RequestTags::default(),
+            tool_cardinality: RequestToolCardinality {
+                referenced_mcp_server_count: None,
+                exposed_tool_count: Some(0),
+                invoked_tool_count: Some(0),
+                filtered_tool_count: None,
+            },
+            metadata: Map::new(),
+            occurred_at,
+        };
+        let null_counts_log = RequestLogRecord {
+            request_log_id: Uuid::new_v4(),
+            request_id: "req-null-tools".to_string(),
+            tool_cardinality: RequestToolCardinality::default(),
+            occurred_at: occurred_at - Duration::seconds(1),
+            ..zero_counts_log.clone()
+        };
+
+        store
+            .insert_request_log(&zero_counts_log, None)
+            .await
+            .expect("insert zero-count request log");
+        store
+            .insert_request_log(&null_counts_log, None)
+            .await
+            .expect("insert null-count request log");
+
+        let page = store
+            .list_request_logs(&RequestLogQuery {
+                page: 1,
+                page_size: 10,
+                request_id: None,
+                model_key: None,
+                provider_key: None,
+                status_code: None,
+                user_id: None,
+                team_id: None,
+                service: None,
+                component: None,
+                env: None,
+                tag_key: None,
+                tag_value: None,
+            })
+            .await
+            .expect("list request logs");
+        let zero_summary = page
+            .items
+            .iter()
+            .find(|log| log.request_log_id == zero_counts_log_id)
+            .expect("zero count log in list");
+        assert_eq!(zero_summary.tool_cardinality.exposed_tool_count, Some(0));
+        assert_eq!(zero_summary.tool_cardinality.invoked_tool_count, Some(0));
+        assert_eq!(
+            zero_summary.tool_cardinality.referenced_mcp_server_count,
+            None
+        );
+        let detail = store
+            .get_request_log_detail(zero_counts_log_id)
+            .await
+            .expect("request log detail");
+        assert_eq!(detail.log.tool_cardinality.exposed_tool_count, Some(0));
+        assert_eq!(detail.log.tool_cardinality.filtered_tool_count, None);
     }
 
     #[tokio::test]
@@ -3504,6 +3690,7 @@ mod tests {
             request_payload_truncated: false,
             response_payload_truncated: false,
             request_tags: RequestTags::default(),
+            tool_cardinality: gateway_core::RequestToolCardinality::default(),
             metadata: Map::new(),
             occurred_at: OffsetDateTime::now_utc(),
         };
