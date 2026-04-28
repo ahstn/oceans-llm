@@ -1,0 +1,54 @@
+[tools]
+node = "lts"
+gh = "latest"
+"npm:wrangler" = "latest"
+
+[env]
+CLOUDFLARE_PAGES_PROJECT_NAME = "oceans-llm-docs"
+CLOUDFLARE_PAGES_PRODUCTION_BRANCH = "main"
+CLOUDFLARE_PAGES_BUILD_OUTPUT_DIR = ".vitepress/dist"
+CLOUDFLARE_PAGES_CUSTOM_DOMAIN = "docs.oceans-llm.com"
+
+[tasks.install]
+description = "Install VitePress docs dependencies"
+run = "npm ci"
+
+[tasks.build]
+description = "Build the VitePress docs site"
+depends = ["install"]
+run = "npm run docs:build"
+
+[tasks.cf-pages-create]
+description = "Create the Cloudflare Pages project for the docs site"
+env = { CLOUDFLARE_ACCOUNT_ID = { required = true }, CLOUDFLARE_API_TOKEN = { required = true } }
+run = """
+set -euo pipefail
+wrangler pages project create "$CLOUDFLARE_PAGES_PROJECT_NAME" \
+  --production-branch "$CLOUDFLARE_PAGES_PRODUCTION_BRANCH"
+"""
+
+[tasks.cf-pages-deploy]
+description = "Build and deploy the docs site to Cloudflare Pages"
+depends = ["build"]
+env = { CLOUDFLARE_ACCOUNT_ID = { required = true }, CLOUDFLARE_API_TOKEN = { required = true } }
+run = """
+set -euo pipefail
+wrangler pages deploy "$CLOUDFLARE_PAGES_BUILD_OUTPUT_DIR" \
+  --project-name "$CLOUDFLARE_PAGES_PROJECT_NAME" \
+  --branch "${CLOUDFLARE_PAGES_BRANCH:-$CLOUDFLARE_PAGES_PRODUCTION_BRANCH}"
+"""
+
+[tasks.cf-register-ci]
+description = "Register Cloudflare Pages credentials and deployment parameters in GitHub Actions"
+env = { CLOUDFLARE_ACCOUNT_ID = { required = true }, CLOUDFLARE_API_TOKEN = { required = true } }
+run = """
+set -euo pipefail
+
+gh secret set CLOUDFLARE_ACCOUNT_ID --body "$CLOUDFLARE_ACCOUNT_ID"
+gh secret set CLOUDFLARE_API_TOKEN --body "$CLOUDFLARE_API_TOKEN"
+
+gh variable set CLOUDFLARE_PAGES_PROJECT_NAME --body "$CLOUDFLARE_PAGES_PROJECT_NAME"
+gh variable set CLOUDFLARE_PAGES_PRODUCTION_BRANCH --body "$CLOUDFLARE_PAGES_PRODUCTION_BRANCH"
+gh variable set CLOUDFLARE_PAGES_BUILD_OUTPUT_DIR --body "$CLOUDFLARE_PAGES_BUILD_OUTPUT_DIR"
+gh variable set CLOUDFLARE_PAGES_CUSTOM_DOMAIN --body "$CLOUDFLARE_PAGES_CUSTOM_DOMAIN"
+"""
