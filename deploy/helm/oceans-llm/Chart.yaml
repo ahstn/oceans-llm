@@ -1,0 +1,15 @@
+apiVersion: v2
+name: oceans-llm
+description: Oceans LLM gateway and admin UI for Kubernetes
+type: application
+version: 0.1.0
+appVersion: "latest"
+home: https://github.com/ahstn/oceans-llm
+sources:
+  - https://github.com/ahstn/oceans-llm
+keywords:
+  - llm
+  - gateway
+  - ai
+maintainers:
+  - name: Oceans LLM maintainers

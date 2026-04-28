@@ -1,0 +1,235 @@
+nameOverride: ""
+fullnameOverride: ""
+
+imagePullSecrets: []
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+gateway:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/ahstn/oceans-llm-gateway
+    tag: ""
+    pullPolicy: IfNotPresent
+  podLabels: {}
+  podAnnotations: {}
+  containerPort: 8080
+  configMountPath: /app/gateway.yaml
+  config:
+    server:
+      bind: "0.0.0.0:8080"
+      log_format: "json"
+    database:
+      kind: postgres
+      url: env.POSTGRES_URL
+    auth:
+      bootstrap_admin:
+        enabled: false
+        email: admin@local
+        password: env.GATEWAY_BOOTSTRAP_ADMIN_PASSWORD
+        require_password_change: true
+      seed_api_keys: []
+    request_logging:
+      payloads:
+        capture_mode: redacted_payloads
+        request_max_bytes: 65536
+        response_max_bytes: 65536
+        stream_max_events: 128
+        redaction_paths: []
+    providers: []
+    models: []
+    teams: []
+    users: []
+  extraEnv: []
+  extraEnvFrom: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  lifecycle: {}
+  migrationWaiter:
+    enabled: auto
+    intervalSeconds: 5
+    timeoutSeconds: 600
+
+adminUi:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/ahstn/oceans-llm-admin-ui
+    tag: ""
+    pullPolicy: IfNotPresent
+  podLabels: {}
+  podAnnotations: {}
+  containerPort: 3000
+  extraEnv: []
+  extraEnvFrom: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  lifecycle: {}
+
+service:
+  gateway:
+    type: ClusterIP
+    port: 8080
+    annotations: {}
+  adminUi:
+    type: ClusterIP
+    port: 3000
+    annotations: {}
+
+database:
+  mode: external
+  external:
+    existingSecret:
+      name: ""
+      key: POSTGRES_URL
+  cloudnativepg:
+    clusterName: ""
+    instances: 1
+    database: oceans_llm
+    owner: oceans
+    existingCredentialsSecret: ""
+    storage:
+      size: 20Gi
+      storageClass: ""
+    walStorage:
+      enabled: false
+      size: 10Gi
+      storageClass: ""
+    resources: {}
+    backup: {}
+    monitoring:
+      enablePodMonitor: false
+    additionalSpec: {}
+
+secrets:
+  inline: {}
+  existingSecret:
+    name: ""
+
+externalSecrets:
+  enabled: false
+  apiVersion: external-secrets.io/v1
+  refreshInterval: 1h
+  secretStoreRef:
+    name: ""
+    kind: SecretStore
+  targetName: ""
+  data: []
+  dataFrom: []
+
+migrations:
+  enabled: true
+  hook: post-install,post-upgrade
+  hookDeletePolicy: before-hook-creation,hook-succeeded
+  annotations: {}
+  podAnnotations: {}
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 3
+  resources: {}
+
+bootstrapAdminJob:
+  enabled: false
+  hook: post-install,post-upgrade
+  hookDeletePolicy: before-hook-creation,hook-succeeded
+  annotations: {}
+  podAnnotations: {}
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 3
+  resources: {}
+
+seedConfigJob:
+  enabled: false
+  hook: post-install,post-upgrade
+  hookDeletePolicy: before-hook-creation,hook-succeeded
+  annotations: {}
+  podAnnotations: {}
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 3
+  resources: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: oceans-llm.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior: {}
+
+rollout:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 25%
+      maxSurge: 25%
+
+observability:
+  env: []
+  podLabels: {}
+  podAnnotations: {}
+  sidecars: []
+  volumes: []
+  volumeMounts: []
+
+scheduling:
+  resources: {}
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  topologySpreadConstraints: []
+  priorityClassName: ""
+
+podDisruptionBudget:
+  enabled: auto
+  minAvailable: 1
+  maxUnavailable: ""
+  unhealthyPodEvictionPolicy: AlwaysAllow
+
+probes:
+  gateway:
+    liveness:
+      enabled: true
+      path: /healthz
+      initialDelaySeconds: 10
+      periodSeconds: 10
+      timeoutSeconds: 2
+      failureThreshold: 3
+    readiness:
+      enabled: true
+      path: /readyz
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      timeoutSeconds: 2
+      failureThreshold: 3
+  adminUi:
+    liveness:
+      enabled: false
+      path: /
+      initialDelaySeconds: 10
+      periodSeconds: 10
+      timeoutSeconds: 2
+      failureThreshold: 3
+    readiness:
+      enabled: false
+      path: /
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      timeoutSeconds: 2
+      failureThreshold: 3

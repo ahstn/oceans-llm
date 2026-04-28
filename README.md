@@ -120,7 +120,10 @@ Use the docs site instead of treating this file as the full admin and maintainer
 - maintainer-facing docs source notes:
   - [Documentation Source Notes](docs/README.md)
 - deploy quick start:
-  - [Deploy Compose](deploy/README.md)
+  - [Deploy](deploy/README.md)
+- Kubernetes and Helm:
+  - [Kubernetes and Helm](docs/setup/kubernetes-and-helm.md)
+  - [Helm Chart](deploy/helm/oceans-llm/README.md)
 
 ## Same-Origin Runtime Model
 

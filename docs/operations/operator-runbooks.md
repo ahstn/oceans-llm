@@ -1,10 +1,12 @@
 # Admin Runbooks
 
-`See also`: [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Deploy and Operations](../setup/deploy-and-operations.md), [Deploy Compose](../../deploy/README.md), [Configuration Reference](../configuration/configuration-reference.md), [Identity and Access](../access/identity-and-access.md), [Observability and Request Logs](observability-and-request-logs.md)
+`See also`: [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Deploy and Operations](../setup/deploy-and-operations.md), [Deploy](../../deploy/README.md), [Configuration Reference](../configuration/configuration-reference.md), [Identity and Access](../access/identity-and-access.md), [Observability and Request Logs](observability-and-request-logs.md)
 
 This page is action-oriented. It is not the place for broad topology or config reference detail.
 
 ## First Deploy
+
+### Compose
 
 - copy `deploy/.env.example` to `deploy/.env`
 - set image tags and secret values
@@ -22,7 +24,33 @@ docker compose -f deploy/compose.yaml up -d
 
 If the deploy path is meant to support the admin UI on first boot, the mounted config needs a real bootstrap-admin plan or a pre-existing admin row.
 
+### Helm
+
+- create the namespace and runtime secrets outside the chart
+- render the intended values:
+
+```bash
+helm template oceans-llm deploy/helm/oceans-llm --values values.yaml
+```
+
+- confirm ingress routes only target the gateway service
+- confirm `gateway.config.database.url` matches the selected database mode
+- install the chart:
+
+```bash
+helm install oceans-llm oci://ghcr.io/ahstn/charts/oceans-llm \
+  --version <version> \
+  --values values.yaml
+```
+
+- confirm the migration Job completed
+- confirm gateway and admin UI pods are ready
+- call `/healthz` and `/readyz` through the gateway service or ingress
+- confirm bootstrap-admin and seed-config Jobs were enabled only when intended
+
 ## Upgrade Flow
+
+### Compose
 
 - pick the target image tags
 - review release notes and image caveats
@@ -34,6 +62,62 @@ If the deploy path is meant to support the admin UI on first boot, the mounted c
 - spot-check one live `/v1/*` request
 
 If the change touches admin APIs, also recheck the live admin-backed pages rather than only the public API.
+
+### Helm
+
+- pick the target chart version
+- review release notes, chart values changes, and image caveats
+- confirm database backup or recreate policy for the target environment
+- render the upgrade:
+
+```bash
+helm template oceans-llm oci://ghcr.io/ahstn/charts/oceans-llm \
+  --version <version> \
+  --values values.yaml
+```
+
+- apply the upgrade:
+
+```bash
+helm upgrade oceans-llm oci://ghcr.io/ahstn/charts/oceans-llm \
+  --version <version> \
+  --values values.yaml
+```
+
+- confirm the migration hook Job completed
+- recheck gateway rollout, `/readyz`, admin login, and one live `/v1/*` request
+
+If the upgrade fails after chart rendering but before pods are healthy, inspect hook Jobs first, then the gateway deployment events.
+
+## Helm Rollback
+
+- inspect revisions:
+
+```bash
+helm history oceans-llm
+```
+
+- confirm the target revision and database compatibility
+- roll back:
+
+```bash
+helm rollback oceans-llm <revision>
+```
+
+- confirm the gateway deployment becomes ready
+- recheck `/readyz`, admin login, and one live `/v1/*` request
+
+Do not treat Helm rollback as a database rollback. If a migration already changed the database, review the migration notes before rolling application code back.
+
+## Helm Scheduling and HA Checks
+
+For HA gateway installs:
+
+- confirm `gateway.replicaCount > 1` or `autoscaling.minReplicas > 1`
+- confirm the rendered `PodDisruptionBudget` matches the intended disruption budget
+- confirm `scheduling.topologySpreadConstraints` and affinity rules do not make pods unschedulable
+- if using Karpenter or another dynamic node provisioner, confirm node selectors, tolerations, and priority class match available node pools
+- confirm HPA metrics are available before relying on autoscaling behavior
 
 ## Failed Migration Recovery
 
@@ -100,6 +184,8 @@ If OTLP export is configured but no collector is reachable:
 
 The request-log admin APIs can still work without a collector. OTLP export and request-log persistence are related, but they are not the same dependency.
 
+For Helm installs, wire collector access through `gateway.config.server.otel_endpoint`, `gateway.config.server.otel_metrics_endpoint`, and `observability.*` values. The chart does not install a collector.
+
 ## Secret Rotation Checkpoints
 
 When rotating secrets, check the dependent path instead of rotating blindly.
@@ -127,6 +213,7 @@ When rotating secrets, check the dependent path instead of rotating blindly.
 ## What This Page Does Not Own
 
 - compose file syntax: [../deploy/README.md](../../deploy/README.md)
+- Kubernetes chart contract: [kubernetes-and-helm.md](../setup/kubernetes-and-helm.md)
 - startup and first-access rules: [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md)
 - topology and same-origin contract: [deploy-and-operations.md](../setup/deploy-and-operations.md)
 - identity lifecycle rules: [identity-and-access.md](../access/identity-and-access.md)

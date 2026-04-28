@@ -24,6 +24,7 @@ export default defineConfig({
           items: [
             { text: "Runtime Bootstrap and Access", link: "/setup/runtime-bootstrap-and-access" },
             { text: "Deploy and Operations", link: "/setup/deploy-and-operations" },
+            { text: "Kubernetes and Helm", link: "/setup/kubernetes-and-helm" },
           ],
         },
       ],

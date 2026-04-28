@@ -12,6 +12,8 @@ This site is the admin, user, and maintainer map for the gateway.
   - [Runtime Bootstrap and Access](setup/runtime-bootstrap-and-access.md)
 - Runtime shape, same-origin model, local versus deploy caveats:
   - [Deploy and Operations](setup/deploy-and-operations.md)
+- Kubernetes and Helm chart installs:
+  - [Kubernetes and Helm](setup/kubernetes-and-helm.md)
 - YAML shape, auth modes, provider fields, and config limits:
   - [Configuration Reference](configuration/configuration-reference.md)
 - Identity lifecycle, team rules, and current admin access overlays:
@@ -43,6 +45,7 @@ This site is the admin, user, and maintainer map for the gateway.
 
 - [Runtime Bootstrap and Access](setup/runtime-bootstrap-and-access.md)
 - [Deploy and Operations](setup/deploy-and-operations.md)
+- [Kubernetes and Helm](setup/kubernetes-and-helm.md)
 
 ### Configuration
 
@@ -85,6 +88,10 @@ This site is the admin, user, and maintainer map for the gateway.
   - [Runtime Bootstrap and Access](setup/runtime-bootstrap-and-access.md)
   - [Deploy and Operations](setup/deploy-and-operations.md)
   - [Admin Runbooks](operations/operator-runbooks.md)
+- Helm install renders but pods are not ready:
+  - [Kubernetes and Helm](setup/kubernetes-and-helm.md)
+  - [Admin Runbooks](operations/operator-runbooks.md)
+  - [Observability and Request Logs](operations/observability-and-request-logs.md)
 - Live admin contract changed and the UI drifted:
   - [Admin API Contract Workflow](reference/admin-api-contract-workflow.md)
   - [End-to-End Contract Tests](reference/e2e-contract-tests.md)

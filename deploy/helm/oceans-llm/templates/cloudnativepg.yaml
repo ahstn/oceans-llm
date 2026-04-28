@@ -1,0 +1,46 @@
+{{- if eq .Values.database.mode "cloudnativepg" }}
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ include "oceans-llm.cnpgClusterName" . }}
+  labels:
+    {{- include "oceans-llm.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  instances: {{ .Values.database.cloudnativepg.instances }}
+  bootstrap:
+    initdb:
+      database: {{ .Values.database.cloudnativepg.database | quote }}
+      owner: {{ .Values.database.cloudnativepg.owner | quote }}
+      {{- with .Values.database.cloudnativepg.existingCredentialsSecret }}
+      secret:
+        name: {{ . | quote }}
+      {{- end }}
+  storage:
+    size: {{ .Values.database.cloudnativepg.storage.size | quote }}
+    {{- with .Values.database.cloudnativepg.storage.storageClass }}
+    storageClass: {{ . | quote }}
+    {{- end }}
+  {{- if .Values.database.cloudnativepg.walStorage.enabled }}
+  walStorage:
+    size: {{ .Values.database.cloudnativepg.walStorage.size | quote }}
+    {{- with .Values.database.cloudnativepg.walStorage.storageClass }}
+    storageClass: {{ . | quote }}
+    {{- end }}
+  {{- end }}
+  {{- with .Values.database.cloudnativepg.resources }}
+  resources:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.database.cloudnativepg.monitoring }}
+  monitoring:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.database.cloudnativepg.backup }}
+  backup:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.database.cloudnativepg.additionalSpec }}
+  {{- toYaml . | nindent 2 }}
+  {{- end }}
+{{- end }}

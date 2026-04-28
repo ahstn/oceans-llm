@@ -10,6 +10,8 @@ This page is the maintainer-facing release runbook.
   - [../mise.toml](../../mise.toml)
 - release workflow:
   - [../.github/workflows/release.yml](../../.github/workflows/release.yml)
+- Helm chart:
+  - [../../deploy/helm/oceans-llm](../../deploy/helm/oceans-llm/README.md)
 - changelog config:
   - [../cliff.toml](../../cliff.toml)
 
@@ -32,7 +34,7 @@ The tag workflow is distribution, not the quality gate.
 3. review the generated version changes and `CHANGELOG.md`
 4. confirm the GitHub release was created for the new tag
 5. push the release commit and tag
-6. let the tag-triggered GitHub Actions workflow build, attest, and publish images
+6. let the tag-triggered GitHub Actions workflow build, attest, and publish images, then publish the Helm chart
 
 ## What `mise run release` Does
 
@@ -54,8 +56,26 @@ Current workflow responsibilities:
 - build and publish the gateway image
 - build and publish the admin UI image
 - attest image provenance
+- validate, package, and publish the Helm chart after both image jobs succeed
 
 The workflow does not create or update the GitHub release body. It consumes the pushed tag as the image distribution trigger.
+
+## Helm Chart Publishing
+
+The release workflow publishes:
+
+```bash
+oci://ghcr.io/ahstn/charts/oceans-llm
+```
+
+For a tag `vX.Y.Z`, the chart is packaged with:
+
+- chart version: `X.Y.Z`
+- chart appVersion: `vX.Y.Z`
+
+The publish step runs `mise run helm-check`, packages [../../deploy/helm/oceans-llm](../../deploy/helm/oceans-llm/README.md), logs in to GHCR with the workflow token, and pushes the package with `helm push ... oci://ghcr.io/ahstn/charts`.
+
+The push target intentionally omits the chart basename and tag. Helm infers `oceans-llm:X.Y.Z` from the packaged chart name and version.
 
 ## Current Image Reality
 
@@ -73,6 +93,7 @@ After the workflow finishes, verify:
 
 - the GitHub release exists for the pushed tag
 - the expected image tags were published
+- the expected chart version was published at `oci://ghcr.io/ahstn/charts/oceans-llm`
 - the release notes look sane
 - the deploy docs still match the image reality
 
@@ -92,5 +113,5 @@ In practice:
 
 - If `mise run release` creates a release but local version changes fail afterward, inspect the working tree before rerunning.
 - If the tag was not pushed, fix the local state and either reuse or delete the created GitHub release deliberately.
-- If the tag was pushed but image publishing failed, fix the workflow issue and rerun the failed workflow for the same tag when possible.
+- If the tag was pushed but image or chart publishing failed, fix the workflow issue and rerun the failed workflow for the same tag when possible.
 - Avoid retagging an existing published version unless the release is still private to maintainers and no deploy path consumed it.

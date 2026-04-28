@@ -54,7 +54,8 @@ Each release uses a single semver tag such as `v0.1.0`.
 That version is shared by:
 - the GitHub release,
 - the gateway GHCR image,
-- the admin UI GHCR image.
+- the admin UI GHCR image,
+- the Helm chart published to GHCR as an OCI artifact.
 
 Why:
 - the repo ships one backend application plus one frontend application as one product,
@@ -112,12 +113,11 @@ Why:
 - the same commit history drives both version inference and release documentation,
 - the tooling is lightweight and easy to run locally.
 
-### 8. Publish GitHub releases after images are available
+### 8. Publish distribution artifacts from the tag workflow
 
-The pushed release tag triggers GitHub Actions, which builds and publishes both images, then publishes the GitHub release for that tag.
+The pushed release tag triggers GitHub Actions, which builds and publishes both images and the Helm chart for that tag.
 
 Why:
-- a public release should not appear before both images exist,
 - image publishing stays in CI where registry credentials and attestations already live,
 - local release creation stays small while CI handles distribution.
 
@@ -127,6 +127,7 @@ Each release publishes:
 
 - `ghcr.io/ahstn/oceans-llm-gateway`
 - `ghcr.io/ahstn/oceans-llm-admin-ui`
+- `oci://ghcr.io/ahstn/charts/oceans-llm`
 
 with release and moving tags.
 
@@ -134,6 +135,7 @@ Why:
 - GHCR is a natural fit for a GitHub-hosted repo,
 - multi-arch images keep deployment options open,
 - floating tags help operations without replacing immutable version tags.
+- OCI chart publishing keeps the Kubernetes install artifact next to the images without introducing a separate chart repository.
 
 ## Release Flow Overview
 
@@ -153,7 +155,8 @@ This keeps versioning and changelog generation explicit and easy to inspect befo
 1. The pushed `vX.Y.Z` tag triggers [../../.github/workflows/release.yml](../../.github/workflows/release.yml).
 2. The workflow builds and publishes the gateway and admin UI images to GHCR.
 3. The workflow applies the release image tags and provenance attestations.
-4. The workflow publishes or updates the GitHub release associated with the tag.
+4. The workflow validates, packages, and publishes the Helm chart to GHCR after both image jobs succeed.
+5. The GitHub release associated with the tag remains the release record created by the local release task.
 
 This split keeps local release authoring simple while leaving image publication and release distribution to CI.
 
@@ -238,10 +241,12 @@ Tradeoffs:
 
 The live workflow is slightly narrower than the original ADR language:
 
+- `mise run release` creates the GitHub release before the tag workflow publishes artifacts
 - `mise run release` does not push automatically
 - the current workflow publishes `vX.Y.Z`, `sha-<sha>`, and `latest`
 - the gateway image is currently `linux/amd64` only
 - the admin UI image is currently `linux/amd64` and `linux/arm64`
+- the current workflow publishes the Helm chart as `oci://ghcr.io/ahstn/charts/oceans-llm`, with chart version `X.Y.Z` and appVersion `vX.Y.Z`
 
 Treat [../release-process.md](../reference/release-process.md) as the canonical operational description.
 

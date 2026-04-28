@@ -9,6 +9,7 @@ const repoRoot = path.resolve(docsDir, "..");
 const crossCuttingPages = new Set([
   "docs/reference/request-lifecycle-and-failure-modes.md",
   "docs/setup/runtime-bootstrap-and-access.md",
+  "docs/setup/kubernetes-and-helm.md",
   "docs/operations/operator-runbooks.md",
   "docs/access/oidc-and-sso-status.md",
   "docs/reference/admin-api-contract-workflow.md",

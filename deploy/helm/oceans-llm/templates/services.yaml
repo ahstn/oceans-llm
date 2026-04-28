@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "oceans-llm.gatewayServiceName" . }}
+  labels:
+    {{- include "oceans-llm.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+  {{- with .Values.service.gateway.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.gateway.type }}
+  ports:
+    - port: {{ .Values.service.gateway.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "oceans-llm.gatewaySelectorLabels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "oceans-llm.adminUiServiceName" . }}
+  labels:
+    {{- include "oceans-llm.labels" . | nindent 4 }}
+    app.kubernetes.io/component: admin-ui
+  {{- with .Values.service.adminUi.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.adminUi.type }}
+  ports:
+    - port: {{ .Values.service.adminUi.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "oceans-llm.adminUiSelectorLabels" . | nindent 4 }}

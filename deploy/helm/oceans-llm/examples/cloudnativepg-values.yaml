@@ -1,0 +1,17 @@
+database:
+  mode: cloudnativepg
+  cloudnativepg:
+    instances: 3
+    database: oceans_llm
+    owner: oceans
+    storage:
+      size: 100Gi
+      storageClass: gp3
+    walStorage:
+      enabled: true
+      size: 20Gi
+      storageClass: gp3
+
+migrations:
+  enabled: true
+  backoffLimit: 30
