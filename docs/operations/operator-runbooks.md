@@ -39,6 +39,7 @@ helm template oceans-llm deploy/helm/oceans-llm --values values.yaml
 
 ```bash
 helm install oceans-llm oci://ghcr.io/ahstn/charts/oceans-llm \
+  --namespace <namespace> \
   --version <version> \
   --values values.yaml
 ```
@@ -81,6 +82,7 @@ helm template oceans-llm oci://ghcr.io/ahstn/charts/oceans-llm \
 
 ```bash
 helm upgrade oceans-llm oci://ghcr.io/ahstn/charts/oceans-llm \
+  --namespace <namespace> \
   --version <version> \
   --values values.yaml
 ```
@@ -96,14 +98,14 @@ If the upgrade fails after chart rendering but before pods are healthy, inspect 
 - inspect revisions:
 
 ```bash
-helm history oceans-llm
+helm history oceans-llm --namespace <namespace>
 ```
 
 - confirm the target revision and database compatibility
 - roll back:
 
 ```bash
-helm rollback oceans-llm <revision>
+helm rollback oceans-llm <revision> --namespace <namespace>
 ```
 
 - confirm the gateway deployment becomes ready

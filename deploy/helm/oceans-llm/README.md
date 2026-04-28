@@ -9,6 +9,7 @@ cluster-internal and is reached through the gateway at `/admin`.
 
 ```bash
 helm install oceans-llm oci://ghcr.io/ahstn/charts/oceans-llm \
+  --namespace <namespace> \
   --version <version> \
   --values values.yaml
 ```
@@ -35,6 +36,11 @@ For production installs, provide at least:
 - `POSTGRES_URL`
 - `GATEWAY_IDENTITY_TOKEN_SECRET`
 - provider credentials referenced by `gateway.config.providers`
+
+By default, the chart rejects `literal.*` references in `gateway.config` because
+the config is rendered into a ConfigMap. Use `env.*` references backed by
+Kubernetes Secrets. Set `gateway.allowLiteralSecretsInConfig=true` only for an
+intentional exception.
 
 ## Database Modes
 

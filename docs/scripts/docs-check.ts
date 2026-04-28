@@ -135,7 +135,10 @@ for (const filePath of canonicalDocs) {
       }
     }
   }
-  if (crossCuttingPages.has(rel(filePath)) && !/^## What This Page Does Not Own$/m.test(text)) {
+  if (
+    crossCuttingPages.has(rel(filePath)) &&
+    !/^##\s+What This Page Does Not Own\s*$/m.test(text)
+  ) {
     errors.push(`${rel(filePath)} -> missing "What This Page Does Not Own" section`);
   }
 }

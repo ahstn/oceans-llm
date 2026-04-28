@@ -11,6 +11,7 @@
         "image": { "$ref": "#/definitions/image" },
         "containerPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
         "configMountPath": { "type": "string", "minLength": 1 },
+        "allowLiteralSecretsInConfig": { "type": "boolean" },
         "config": {
           "type": "object",
           "description": "Structured gateway.yaml content rendered into the ConfigMap."
@@ -19,6 +20,9 @@
         "extraEnvFrom": { "type": "array" },
         "extraVolumes": { "type": "array" },
         "extraVolumeMounts": { "type": "array" },
+        "podSecurityContext": { "type": "object" },
+        "securityContext": { "type": "object" },
+        "initSecurityContext": { "type": "object" },
         "migrationWaiter": {
           "type": "object",
           "additionalProperties": false,
@@ -45,7 +49,9 @@
         "extraEnv": { "$ref": "#/definitions/envList" },
         "extraEnvFrom": { "type": "array" },
         "extraVolumes": { "type": "array" },
-        "extraVolumeMounts": { "type": "array" }
+        "extraVolumeMounts": { "type": "array" },
+        "podSecurityContext": { "type": "object" },
+        "securityContext": { "type": "object" }
       }
     },
     "database": {

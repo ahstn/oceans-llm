@@ -51,7 +51,7 @@ run = "helm dependency update deploy/helm/oceans-llm"
 [tasks.helm-lint]
 description = "Lint the Oceans LLM Helm chart"
 depends = ["helm-dependency-update"]
-run = "helm lint deploy/helm/oceans-llm"
+run = "helm lint deploy/helm/oceans-llm --set database.external.existingSecret.name=oceans-llm-postgres"
 
 [tasks.helm-template]
 description = "Render the Oceans LLM Helm chart examples"
@@ -61,7 +61,7 @@ set -euo pipefail
 
 chart_dir="deploy/helm/oceans-llm"
 
-helm template oceans-llm "$chart_dir" >/dev/null
+helm template oceans-llm "$chart_dir" --set database.external.existingSecret.name=oceans-llm-postgres >/dev/null
 for values_file in "$chart_dir"/examples/*.yaml; do
   helm template oceans-llm "$chart_dir" --values "$values_file" >/dev/null
 done

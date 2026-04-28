@@ -25,6 +25,10 @@ spec:
       {{- end }}
     spec:
       serviceAccountName: {{ include "oceans-llm.serviceAccountName" . }}
+      {{- with .Values.adminUi.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -52,6 +56,10 @@ spec:
         - name: admin-ui
           image: {{ include "oceans-llm.adminUiImage" . | quote }}
           imagePullPolicy: {{ .Values.adminUi.image.pullPolicy }}
+          {{- with .Values.adminUi.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.adminUi.containerPort }}

@@ -17,6 +17,13 @@ gateway:
         require_password_change: true
       seed_api_keys: []
 
+database:
+  mode: external
+  external:
+    existingSecret:
+      name: oceans-llm-postgres
+      key: POSTGRES_URL
+
 observability:
   podAnnotations:
     instrumentation.opentelemetry.io/inject-sdk: "false"

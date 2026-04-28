@@ -1,6 +1,13 @@
 gateway:
   replicaCount: 2
 
+database:
+  mode: external
+  external:
+    existingSecret:
+      name: oceans-llm-postgres
+      key: POSTGRES_URL
+
 ingress:
   enabled: true
   className: nginx
@@ -32,6 +39,7 @@ scheduling:
       cpu: 250m
       memory: 512Mi
     limits:
+      cpu: 500m
       memory: 1Gi
   topologySpreadConstraints:
     - maxSkew: 1

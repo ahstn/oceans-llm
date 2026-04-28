@@ -58,7 +58,7 @@ That means the compose deploy path and the production-shaped local path both cre
 - published chart:
   - `oci://ghcr.io/ahstn/charts/oceans-llm`
 - config:
-  - `gateway.config` values rendered to `/app/gateway.yaml`
+  - `gateway.config` values rendered to `gateway.configMountPath` (default: `/app/gateway.yaml`)
 - database:
   - external PostgreSQL by default, or an optional CloudNativePG `Cluster` when those CRDs already exist
 - checked-in first access:

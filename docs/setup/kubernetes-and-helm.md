@@ -38,13 +38,15 @@ All public HTTP traffic enters through the gateway service. The admin UI service
 
 ## Gateway Config
 
-`gateway.config` is a structured values map. Helm renders it to `gateway.yaml` in a required ConfigMap and mounts it at `/app/gateway.yaml`.
+`gateway.config` is a structured values map. Helm renders it to `gateway.yaml` in a required ConfigMap and mounts it at `gateway.configMountPath`, which defaults to `/app/gateway.yaml`.
 
 The chart intentionally has no raw YAML fallback value. Keep deploy-specific config in values files and let the chart render the gateway config.
 
 ## Secrets
 
-The gateway config supports `env.*` and `literal.*` secret references. Kubernetes installs should use env-backed references for deploy-time secrets.
+The gateway config supports `env.*` and `literal.*` secret references. Kubernetes installs should use env-backed references for deploy-time secrets because Helm renders `gateway.config` into a ConfigMap.
+
+By default, the chart rejects `literal.*` references in `gateway.config`. Set `gateway.allowLiteralSecretsInConfig=true` only when a deployment deliberately accepts the ConfigMap exposure.
 
 Supported secret sources:
 
@@ -125,7 +127,7 @@ The chart does not install an OpenTelemetry Collector or vendor agent. It expose
 - `observability.volumeMounts`
 - `observability.sidecars`
 
-Use `gateway.config.server.otel_endpoint`, `gateway.config.server.otel_metrics_endpoint`, and `observability.env` to point the gateway at an existing collector, DaemonSet, sidecar, or vendor endpoint. Examples cover OpenTelemetry and Datadog Agent style wiring without making either one a bundled dependency.
+Use `gateway.config.server.otel_endpoint`, `gateway.config.server.otel_metrics_endpoint`, and `observability.env` to point the gateway at an existing collector, DaemonSet, sidecar, or vendor endpoint. Examples cover OpenTelemetry and Datadog Agent-style wiring without making either one a bundled dependency.
 
 ## Example Values
 

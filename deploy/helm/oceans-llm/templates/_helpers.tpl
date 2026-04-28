@@ -103,7 +103,8 @@ app.kubernetes.io/component: admin-ui
 {{- if eq (toString .Values.gateway.migrationWaiter.enabled) "true" -}}
 {{- $enabled = true -}}
 {{- else if eq (toString .Values.gateway.migrationWaiter.enabled) "auto" -}}
-{{- if contains "post-install" (include "oceans-llm.migrationHook" .) -}}
+{{- $migrationHook := include "oceans-llm.migrationHook" . -}}
+{{- if or (contains "post-install" $migrationHook) (contains "post-upgrade" $migrationHook) -}}
 {{- $enabled = true -}}
 {{- end -}}
 {{- end -}}
@@ -133,9 +134,36 @@ app.kubernetes.io/component: admin-ui
 {{- end -}}
 {{- end -}}
 
+{{- define "oceans-llm.jobServiceAccountName" -}}
+{{- if and .Values.serviceAccount.create (eq (include "oceans-llm.jobNeedsHookConfig" .) "true") -}}
+{{- printf "%s-job" ((include "oceans-llm.serviceAccountName" .) | trunc 59 | trimSuffix "-") -}}
+{{- else -}}
+{{- include "oceans-llm.serviceAccountName" . -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "oceans-llm.jobPodLabels" -}}
 {{- include "oceans-llm.labels" . }}
 app.kubernetes.io/component: {{ .component }}
+{{- end -}}
+
+{{- define "oceans-llm.validateValues" -}}
+{{- $configJson := toJson .Values.gateway.config -}}
+{{- if and (not .Values.gateway.allowLiteralSecretsInConfig) (contains "literal." $configJson) -}}
+{{- fail "gateway.config contains literal.* references; use env.* references backed by secrets, or set gateway.allowLiteralSecretsInConfig=true to opt in" -}}
+{{- end -}}
+{{- $hasPostgresExtraEnv := false -}}
+{{- range .Values.gateway.extraEnv -}}
+{{- if eq .name "POSTGRES_URL" -}}
+{{- $hasPostgresExtraEnv = true -}}
+{{- end -}}
+{{- end -}}
+{{- $databaseUrl := dig "database" "url" "" .Values.gateway.config -}}
+{{- $hasInlinePostgresUrl := hasKey .Values.secrets.inline "POSTGRES_URL" -}}
+{{- $hasPostgresSource := or .Values.database.external.existingSecret.name .Values.secrets.existingSecret.name .Values.externalSecrets.enabled $hasInlinePostgresUrl $hasPostgresExtraEnv -}}
+{{- if and (eq .Values.database.mode "external") (eq $databaseUrl "env.POSTGRES_URL") (not $hasPostgresSource) -}}
+{{- fail "database.mode=external with gateway.config.database.url=env.POSTGRES_URL requires database.external.existingSecret.name, secrets.inline.POSTGRES_URL, secrets.existingSecret.name, externalSecrets.enabled, or gateway.extraEnv POSTGRES_URL" -}}
+{{- end -}}
 {{- end -}}
 
 {{- define "oceans-llm.commonEnv" -}}

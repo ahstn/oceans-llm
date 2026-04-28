@@ -19,10 +19,14 @@ metadata:
     {{- include "oceans-llm.labels" . | nindent 4 }}
     app.kubernetes.io/component: gateway
 spec:
-  {{- if .Values.podDisruptionBudget.maxUnavailable }}
+  {{- $maxUnavailable := .Values.podDisruptionBudget.maxUnavailable }}
+  {{- $minAvailable := .Values.podDisruptionBudget.minAvailable }}
+  {{- if and (ne $maxUnavailable nil) (ne (toString $maxUnavailable) "") }}
   maxUnavailable: {{ .Values.podDisruptionBudget.maxUnavailable | quote }}
-  {{- else }}
+  {{- else if and (ne $minAvailable nil) (ne (toString $minAvailable) "") }}
   minAvailable: {{ .Values.podDisruptionBudget.minAvailable | quote }}
+  {{- else }}
+  {{- fail "podDisruptionBudget requires either maxUnavailable or minAvailable" }}
   {{- end }}
   unhealthyPodEvictionPolicy: {{ .Values.podDisruptionBudget.unhealthyPodEvictionPolicy }}
   selector:

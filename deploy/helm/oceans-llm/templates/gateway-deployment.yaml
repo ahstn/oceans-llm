@@ -37,6 +37,10 @@ spec:
         {{- end }}
     spec:
       serviceAccountName: {{ include "oceans-llm.serviceAccountName" . }}
+      {{- with .Values.gateway.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -78,6 +82,10 @@ spec:
         - name: wait-for-migrations
           image: {{ include "oceans-llm.gatewayImage" . | quote }}
           imagePullPolicy: {{ .Values.gateway.image.pullPolicy }}
+          {{- with .Values.gateway.initSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           command:
             - /bin/sh
             - -ec
@@ -107,6 +115,10 @@ spec:
         - name: gateway
           image: {{ include "oceans-llm.gatewayImage" . | quote }}
           imagePullPolicy: {{ .Values.gateway.image.pullPolicy }}
+          {{- with .Values.gateway.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           command: ["gateway"]
           args: ["serve"]
           ports:
