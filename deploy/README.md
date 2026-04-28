@@ -1,10 +1,10 @@
-# Deploy Compose
+# Deploy
 
-`Owns`: the GHCR-based compose quick start in `deploy/`.
-`Depends on`: [../README.md](../README.md), [../docs/deploy-and-operations.md](../docs/setup/deploy-and-operations.md)
-`See also`: [../docs/runtime-bootstrap-and-access.md](../docs/setup/runtime-bootstrap-and-access.md), [../docs/admin-runbooks.md](../docs/operations/operator-runbooks.md)
+`Owns`: the checked-in deploy entry points under `deploy/`.
+`Depends on`: [../README.md](../README.md), [../docs/setup/deploy-and-operations.md](../docs/setup/deploy-and-operations.md)
+`See also`: [../docs/setup/runtime-bootstrap-and-access.md](../docs/setup/runtime-bootstrap-and-access.md), [../docs/setup/kubernetes-and-helm.md](../docs/setup/kubernetes-and-helm.md), [../docs/operations/operator-runbooks.md](../docs/operations/operator-runbooks.md)
 
-This directory is the quick start for the checked-in compose deploy path.
+This directory contains the checked-in compose quick start and the supported Helm chart.
 
 ## Files
 
@@ -14,8 +14,10 @@ This directory is the quick start for the checked-in compose deploy path.
   - mounted production-shaped gateway config
 - `.env.example`
   - image tags and secret inputs
+- `helm/oceans-llm`
+  - Helm chart for Kubernetes installs
 
-## Usage
+## Compose Usage
 
 ```bash
 cp deploy/.env.example deploy/.env
@@ -26,6 +28,24 @@ Default endpoint:
 
 - gateway and admin UI:
   - `http://localhost:8080`
+
+## Helm Usage
+
+The supported chart is published as:
+
+```bash
+oci://ghcr.io/ahstn/charts/oceans-llm
+```
+
+Local chart sources live in [helm/oceans-llm](helm/oceans-llm/README.md).
+
+```bash
+helm install oceans-llm oci://ghcr.io/ahstn/charts/oceans-llm \
+  --version <version> \
+  --values values.yaml
+```
+
+Use [Kubernetes and Helm](../docs/setup/kubernetes-and-helm.md) for the chart contract, secret modes, database modes, and scheduling controls.
 
 ## Required Environment
 
@@ -106,6 +126,8 @@ Hardened declarative SSO-backed identity matching remains tracked in [issue #65]
 
 Use the quick start here, then switch to the canonical pages for the rest:
 
+- Kubernetes and Helm:
+  - [Kubernetes and Helm](../docs/setup/kubernetes-and-helm.md)
 - startup and first access:
   - [Runtime Bootstrap and Access](../docs/setup/runtime-bootstrap-and-access.md)
 - topology and caveats:

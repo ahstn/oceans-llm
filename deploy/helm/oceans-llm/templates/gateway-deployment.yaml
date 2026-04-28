@@ -1,0 +1,164 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "oceans-llm.gatewayServiceName" . }}
+  labels:
+    {{- include "oceans-llm.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.gateway.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "oceans-llm.gatewaySelectorLabels" . | nindent 6 }}
+  strategy:
+    {{- toYaml .Values.rollout.strategy | nindent 4 }}
+  template:
+    metadata:
+      labels:
+        {{- include "oceans-llm.gatewaySelectorLabels" . | nindent 8 }}
+        {{- with .Values.gateway.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.observability.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        checksum/config: {{ toYaml .Values.gateway.config | sha256sum }}
+        {{- if .Values.secrets.inline }}
+        checksum/inline-secret: {{ toYaml .Values.secrets.inline | sha256sum }}
+        {{- end }}
+        {{- with .Values.gateway.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.observability.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "oceans-llm.serviceAccountName" . }}
+      {{- with .Values.gateway.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.scheduling.priorityClassName }}
+      priorityClassName: {{ . | quote }}
+      {{- end }}
+      {{- with .Values.scheduling.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.scheduling.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.scheduling.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.scheduling.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+        - name: gateway-config
+          configMap:
+            name: {{ include "oceans-llm.configMapName" . }}
+            items:
+              - key: gateway.yaml
+                path: gateway.yaml
+        {{- with .Values.gateway.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.observability.volumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- if eq (include "oceans-llm.migrationWaiterEnabled" .) "true" }}
+      initContainers:
+        - name: wait-for-migrations
+          image: {{ include "oceans-llm.gatewayImage" . | quote }}
+          imagePullPolicy: {{ .Values.gateway.image.pullPolicy }}
+          {{- with .Values.gateway.initSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              deadline=$(( $(date +%s) + {{ .Values.gateway.migrationWaiter.timeoutSeconds }} ))
+              until gateway migrate --check; do
+                if [ "$(date +%s)" -ge "$deadline" ]; then
+                  echo "timed out waiting for database migrations" >&2
+                  exit 1
+                fi
+                sleep {{ .Values.gateway.migrationWaiter.intervalSeconds }}
+              done
+          env:
+            {{- include "oceans-llm.commonEnv" . | nindent 12 }}
+          {{- $envFrom := include "oceans-llm.envFrom" . }}
+          {{- if $envFrom }}
+          envFrom:
+            {{- $envFrom | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: gateway-config
+              mountPath: {{ .Values.gateway.configMountPath | quote }}
+              subPath: gateway.yaml
+              readOnly: true
+      {{- end }}
+      containers:
+        - name: gateway
+          image: {{ include "oceans-llm.gatewayImage" . | quote }}
+          imagePullPolicy: {{ .Values.gateway.image.pullPolicy }}
+          {{- with .Values.gateway.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          command: ["gateway"]
+          args: ["serve"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.gateway.containerPort }}
+              protocol: TCP
+          env:
+            {{- include "oceans-llm.commonEnv" . | nindent 12 }}
+          {{- $envFrom := include "oceans-llm.envFrom" . }}
+          {{- if $envFrom }}
+          envFrom:
+            {{- $envFrom | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: gateway-config
+              mountPath: {{ .Values.gateway.configMountPath | quote }}
+              subPath: gateway.yaml
+              readOnly: true
+            {{- with .Values.gateway.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.observability.volumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.scheduling.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.probes.gateway.liveness.enabled }}
+          livenessProbe:
+            {{- include "oceans-llm.renderProbe" (dict "probe" .Values.probes.gateway.liveness) | nindent 12 }}
+          {{- end }}
+          {{- if .Values.probes.gateway.readiness.enabled }}
+          readinessProbe:
+            {{- include "oceans-llm.renderProbe" (dict "probe" .Values.probes.gateway.readiness) | nindent 12 }}
+          {{- end }}
+          {{- with .Values.gateway.lifecycle }}
+          lifecycle:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        {{- with .Values.observability.sidecars }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}

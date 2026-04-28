@@ -1,6 +1,6 @@
 # Deploy and Operations
 
-`See also`: [Oceans LLM Gateway](../../README.md), [Configuration Reference](../configuration/configuration-reference.md), [Runtime Bootstrap and Access](runtime-bootstrap-and-access.md), [Admin Runbooks](../operations/operator-runbooks.md), [Deploy Compose](../../deploy/README.md), [Release Process](../reference/release-process.md)
+`See also`: [Oceans LLM Gateway](../../README.md), [Configuration Reference](../configuration/configuration-reference.md), [Runtime Bootstrap and Access](runtime-bootstrap-and-access.md), [Admin Runbooks](../operations/operator-runbooks.md), [Deploy](../../deploy/README.md), [Release Process](../reference/release-process.md)
 
 This page owns the runtime shape. It does not own the action-by-action runbooks.
 
@@ -51,6 +51,22 @@ This is a product constraint, not only a local-dev convenience.
 
 That means the compose deploy path and the production-shaped local path both create a bootstrap admin, but the credential source differs. The production-shaped local path uses the local config defaults; compose expects deploy-time environment secrets.
 
+### Kubernetes Helm deployment
+
+- chart source:
+  - [../../deploy/helm/oceans-llm](../../deploy/helm/oceans-llm/README.md)
+- published chart:
+  - `oci://ghcr.io/ahstn/charts/oceans-llm`
+- config:
+  - `gateway.config` values rendered to `gateway.configMountPath` (default: `/app/gateway.yaml`)
+- database:
+  - external PostgreSQL by default, or an optional CloudNativePG `Cluster` when those CRDs already exist
+- checked-in first access:
+  - migration Job enabled by default
+  - bootstrap-admin and seed-config Jobs disabled until explicitly enabled
+
+The Helm path keeps all public traffic pointed at the gateway service. It does not expose the admin UI service through ingress.
+
 ## Why The Same-Origin Model Matters
 
 The same-origin model changes more than routing.
@@ -82,6 +98,8 @@ Relevant config knobs:
 
 The checked-in deploy path does not ship a collector by default.
 
+The Helm chart follows the same rule: it exposes env, annotations, labels, volumes, and sidecar hooks, but does not bundle a collector or vendor agent.
+
 ## Database and Migration Notes
 
 PostgreSQL is the intended production and pre-production runtime backend.
@@ -106,12 +124,16 @@ Current image support is not symmetric:
 
 Release mechanics live in [release-process.md](../reference/release-process.md). Upgrade and recovery steps live in [operator-runbooks.md](../operations/operator-runbooks.md).
 
+The release workflow also publishes the Helm chart after both deployable images build successfully. Consumers install the chart from `oci://ghcr.io/ahstn/charts/oceans-llm` with an explicit chart version.
+
 ## What This Page Does Not Own
 
 - startup behavior and first access:
   - [runtime-bootstrap-and-access.md](runtime-bootstrap-and-access.md)
 - compose quick start:
   - [../deploy/README.md](../../deploy/README.md)
+- Kubernetes chart contract:
+  - [kubernetes-and-helm.md](kubernetes-and-helm.md)
 - action-oriented recovery:
   - [operator-runbooks.md](../operations/operator-runbooks.md)
 - request routing semantics:

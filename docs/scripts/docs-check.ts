@@ -9,6 +9,7 @@ const repoRoot = path.resolve(docsDir, "..");
 const crossCuttingPages = new Set([
   "docs/reference/request-lifecycle-and-failure-modes.md",
   "docs/setup/runtime-bootstrap-and-access.md",
+  "docs/setup/kubernetes-and-helm.md",
   "docs/operations/operator-runbooks.md",
   "docs/access/oidc-and-sso-status.md",
   "docs/reference/admin-api-contract-workflow.md",
@@ -134,7 +135,10 @@ for (const filePath of canonicalDocs) {
       }
     }
   }
-  if (crossCuttingPages.has(rel(filePath)) && !/^## What This Page Does Not Own$/m.test(text)) {
+  if (
+    crossCuttingPages.has(rel(filePath)) &&
+    !/^##\s+What This Page Does Not Own\s*$/m.test(text)
+  ) {
     errors.push(`${rel(filePath)} -> missing "What This Page Does Not Own" section`);
   }
 }

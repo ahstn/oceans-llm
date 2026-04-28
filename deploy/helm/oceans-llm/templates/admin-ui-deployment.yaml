@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "oceans-llm.adminUiServiceName" . }}
+  labels:
+    {{- include "oceans-llm.labels" . | nindent 4 }}
+    app.kubernetes.io/component: admin-ui
+spec:
+  replicas: {{ .Values.adminUi.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "oceans-llm.adminUiSelectorLabels" . | nindent 6 }}
+  strategy:
+    {{- toYaml .Values.rollout.strategy | nindent 4 }}
+  template:
+    metadata:
+      labels:
+        {{- include "oceans-llm.adminUiSelectorLabels" . | nindent 8 }}
+        {{- with .Values.adminUi.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.adminUi.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "oceans-llm.serviceAccountName" . }}
+      {{- with .Values.adminUi.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.scheduling.priorityClassName }}
+      priorityClassName: {{ . | quote }}
+      {{- end }}
+      {{- with .Values.scheduling.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.scheduling.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.scheduling.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.scheduling.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: admin-ui
+          image: {{ include "oceans-llm.adminUiImage" . | quote }}
+          imagePullPolicy: {{ .Values.adminUi.image.pullPolicy }}
+          {{- with .Values.adminUi.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.adminUi.containerPort }}
+              protocol: TCP
+          env:
+            - name: PORT
+              value: {{ .Values.adminUi.containerPort | quote }}
+            {{- with .Values.adminUi.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.adminUi.extraEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.adminUi.extraVolumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.probes.adminUi.liveness.enabled }}
+          livenessProbe:
+            {{- include "oceans-llm.renderProbe" (dict "probe" .Values.probes.adminUi.liveness) | nindent 12 }}
+          {{- end }}
+          {{- if .Values.probes.adminUi.readiness.enabled }}
+          readinessProbe:
+            {{- include "oceans-llm.renderProbe" (dict "probe" .Values.probes.adminUi.readiness) | nindent 12 }}
+          {{- end }}
+          {{- with .Values.adminUi.lifecycle }}
+          lifecycle:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.scheduling.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.adminUi.extraVolumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

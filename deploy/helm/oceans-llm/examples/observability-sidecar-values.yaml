@@ -1,0 +1,47 @@
+gateway:
+  config:
+    server:
+      bind: "0.0.0.0:8080"
+      log_format: "json"
+      otel_endpoint: "http://127.0.0.1:4317"
+      otel_metrics_endpoint: "http://127.0.0.1:4317"
+      otel_export_interval_secs: 30
+    database:
+      kind: postgres
+      url: env.POSTGRES_URL
+    auth:
+      bootstrap_admin:
+        enabled: false
+        email: admin@local
+        password: env.GATEWAY_BOOTSTRAP_ADMIN_PASSWORD
+        require_password_change: true
+      seed_api_keys: []
+
+database:
+  mode: external
+  external:
+    existingSecret:
+      name: oceans-llm-postgres
+      key: POSTGRES_URL
+
+observability:
+  podAnnotations:
+    instrumentation.opentelemetry.io/inject-sdk: "false"
+  sidecars:
+    - name: otel-collector
+      image: otel/opentelemetry-collector-contrib:0.150.0
+      args:
+        - --config=/etc/otelcol/config.yaml
+      ports:
+        - name: otlp-grpc
+          containerPort: 4317
+        - name: otlp-http
+          containerPort: 4318
+      volumeMounts:
+        - name: otel-config
+          mountPath: /etc/otelcol
+          readOnly: true
+  volumes:
+    - name: otel-config
+      configMap:
+        name: oceans-llm-otel-config

@@ -13,6 +13,9 @@ env:
   MISE_EXPERIMENTAL: true
   GATEWAY_IMAGE_NAME: oceans-llm-gateway
   ADMIN_UI_IMAGE_NAME: oceans-llm-admin-ui
+  HELM_CHART_NAME: oceans-llm
+  HELM_CHART_DIR: deploy/helm/oceans-llm
+  HELM_OCI_REGISTRY: ghcr.io/ahstn/charts
 
 jobs:
   build-gateway:
@@ -70,7 +73,7 @@ jobs:
         with:
           context: .
           file: crates/gateway/Dockerfile
-          platforms: linux/amd64 
+          platforms: linux/amd64
           push: true
           provenance: false
           tags: ${{ steps.meta.outputs.tags }}
@@ -152,3 +155,40 @@ jobs:
           subject-name: ghcr.io/ahstn/${{ env.ADMIN_UI_IMAGE_NAME }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
+
+  publish-helm-chart:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs:
+      - build-gateway
+      - build-admin-ui
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup mise + tools
+        uses: jdx/mise-action@v3
+
+      - name: Validate chart
+        run: mise run helm-check
+
+      - name: Log in to GHCR for Helm
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
+
+      - name: Package and push Helm chart
+        run: |
+          set -euo pipefail
+
+          chart_version="${GITHUB_REF_NAME#v}"
+          mkdir -p dist/charts
+
+          helm package "$HELM_CHART_DIR" \
+            --version "$chart_version" \
+            --app-version "$GITHUB_REF_NAME" \
+            --destination dist/charts
+
+          helm push "dist/charts/${HELM_CHART_NAME}-${chart_version}.tgz" "oci://${HELM_OCI_REGISTRY}"

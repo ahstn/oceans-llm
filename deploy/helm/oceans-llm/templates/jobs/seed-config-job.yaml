@@ -1,0 +1,75 @@
+{{- if .Values.seedConfigJob.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "%s-seed-config" (include "oceans-llm.fullname" .) | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "oceans-llm.labels" . | nindent 4 }}
+    app.kubernetes.io/component: seed-config
+  annotations:
+    helm.sh/hook: {{ .Values.seedConfigJob.hook | quote }}
+    helm.sh/hook-weight: "20"
+    helm.sh/hook-delete-policy: {{ .Values.seedConfigJob.hookDeletePolicy | quote }}
+    {{- with .Values.seedConfigJob.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  backoffLimit: {{ .Values.seedConfigJob.backoffLimit }}
+  ttlSecondsAfterFinished: {{ .Values.seedConfigJob.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "oceans-llm.jobPodLabels" (dict "Chart" .Chart "Release" .Release "Values" .Values "component" "seed-config") | nindent 8 }}
+      {{- with .Values.seedConfigJob.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "oceans-llm.jobServiceAccountName" . }}
+      {{- with .Values.gateway.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: seed-config
+          image: {{ include "oceans-llm.gatewayImage" . | quote }}
+          imagePullPolicy: {{ .Values.gateway.image.pullPolicy }}
+          {{- with .Values.gateway.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          command: ["gateway"]
+          args: ["seed-config"]
+          env:
+            {{- include "oceans-llm.jobEnv" . | nindent 12 }}
+          {{- $envFrom := include "oceans-llm.jobEnvFrom" . }}
+          {{- if or $envFrom .Values.secrets.inline }}
+          envFrom:
+            {{- $envFrom | nindent 12 }}
+            {{- if .Values.secrets.inline }}
+            - secretRef:
+                name: {{ include "oceans-llm.jobInlineSecretName" . | quote }}
+            {{- end }}
+          {{- end }}
+          volumeMounts:
+            - name: gateway-config
+              mountPath: {{ .Values.gateway.configMountPath | quote }}
+              subPath: gateway.yaml
+              readOnly: true
+          {{- with .Values.seedConfigJob.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: gateway-config
+          configMap:
+            name: {{ include "oceans-llm.jobConfigMapName" . }}
+            items:
+              - key: gateway.yaml
+                path: gateway.yaml
+{{- end }}

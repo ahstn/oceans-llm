@@ -16,11 +16,18 @@ hero:
     - theme: alt
       text: Runtime Setup
       link: /setup/runtime-bootstrap-and-access
+    - theme: alt
+      text: Helm Chart
+      link: /setup/kubernetes-and-helm
 features:
   - title: Run the gateway
     details: Bootstrap local access, seeded admin identity, API keys, and deploy-time runtime shape.
     link: /getting-started
     linkText: Start here
+  - title: Deploy to Kubernetes
+    details: Install the OCI Helm chart, wire PostgreSQL secrets, run hook Jobs, and expose traffic through the gateway.
+    link: /setup/kubernetes-and-helm
+    linkText: Deploy
   - title: Configure routing
     details: Shape providers, aliases, pricing inputs, auth modes, and request behavior from config.
     link: /configuration/configuration-reference
@@ -37,8 +44,4 @@ features:
     details: Follow request logs, observability payloads, failure modes, and provider compatibility edges.
     link: /reference/request-lifecycle-and-failure-modes
     linkText: Trace flow
-  - title: Maintain releases
-    details: Use runbooks, contract checks, migration authoring, E2E coverage, and release processes.
-    link: /operations/operator-runbooks
-    linkText: Maintain
 ---

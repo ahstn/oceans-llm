@@ -1,0 +1,35 @@
+{{- $enabled := false -}}
+{{- if eq (toString .Values.podDisruptionBudget.enabled) "true" -}}
+{{- $enabled = true -}}
+{{- else if eq (toString .Values.podDisruptionBudget.enabled) "auto" -}}
+{{- if .Values.autoscaling.enabled -}}
+{{- if gt (int .Values.autoscaling.minReplicas) 1 -}}
+{{- $enabled = true -}}
+{{- end -}}
+{{- else if gt (int .Values.gateway.replicaCount) 1 -}}
+{{- $enabled = true -}}
+{{- end -}}
+{{- end -}}
+{{- if $enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "oceans-llm.gatewayServiceName" . }}
+  labels:
+    {{- include "oceans-llm.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  {{- $maxUnavailable := .Values.podDisruptionBudget.maxUnavailable }}
+  {{- $minAvailable := .Values.podDisruptionBudget.minAvailable }}
+  {{- if and (ne $maxUnavailable nil) (ne (toString $maxUnavailable) "") }}
+  maxUnavailable: {{ .Values.podDisruptionBudget.maxUnavailable | quote }}
+  {{- else if and (ne $minAvailable nil) (ne (toString $minAvailable) "") }}
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable | quote }}
+  {{- else }}
+  {{- fail "podDisruptionBudget requires either maxUnavailable or minAvailable" }}
+  {{- end }}
+  unhealthyPodEvictionPolicy: {{ .Values.podDisruptionBudget.unhealthyPodEvictionPolicy }}
+  selector:
+    matchLabels:
+      {{- include "oceans-llm.gatewaySelectorLabels" . | nindent 6 }}
+{{- end }}

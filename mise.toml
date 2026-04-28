@@ -4,6 +4,7 @@ node = "lts"
 bun = "1.3.13"
 postgres = { version = "17", os = ["macos"] } # skip for ci
 gh = "latest"
+helm = "latest"
 opentofu = "latest"
 git-cliff = "latest"
 cocogitto = "latest"
@@ -41,6 +42,34 @@ run = "npm run --prefix docs docs:preview"
 [tasks.docs-verify]
 description = "Run docs structure checks and build the docs site"
 depends = ["docs-check", "docs-build"]
+run = "true"
+
+[tasks.helm-dependency-update]
+description = "Update Helm chart dependencies"
+run = "helm dependency update deploy/helm/oceans-llm"
+
+[tasks.helm-lint]
+description = "Lint the Oceans LLM Helm chart"
+depends = ["helm-dependency-update"]
+run = "helm lint deploy/helm/oceans-llm --set database.external.existingSecret.name=oceans-llm-postgres"
+
+[tasks.helm-template]
+description = "Render the Oceans LLM Helm chart examples"
+depends = ["helm-dependency-update"]
+run = """
+set -euo pipefail
+
+chart_dir="deploy/helm/oceans-llm"
+
+helm template oceans-llm "$chart_dir" --set database.external.existingSecret.name=oceans-llm-postgres >/dev/null
+for values_file in "$chart_dir"/examples/*.yaml; do
+  helm template oceans-llm "$chart_dir" --values "$values_file" >/dev/null
+done
+"""
+
+[tasks.helm-check]
+description = "Run Helm dependency, lint, and template checks"
+depends = ["helm-lint", "helm-template"]
 run = "true"
 
 [tasks.fmt]

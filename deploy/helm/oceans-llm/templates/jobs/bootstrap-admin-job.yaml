@@ -1,0 +1,75 @@
+{{- if .Values.bootstrapAdminJob.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "%s-bootstrap-admin" (include "oceans-llm.fullname" .) | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "oceans-llm.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bootstrap-admin
+  annotations:
+    helm.sh/hook: {{ .Values.bootstrapAdminJob.hook | quote }}
+    helm.sh/hook-weight: "10"
+    helm.sh/hook-delete-policy: {{ .Values.bootstrapAdminJob.hookDeletePolicy | quote }}
+    {{- with .Values.bootstrapAdminJob.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  backoffLimit: {{ .Values.bootstrapAdminJob.backoffLimit }}
+  ttlSecondsAfterFinished: {{ .Values.bootstrapAdminJob.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "oceans-llm.jobPodLabels" (dict "Chart" .Chart "Release" .Release "Values" .Values "component" "bootstrap-admin") | nindent 8 }}
+      {{- with .Values.bootstrapAdminJob.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "oceans-llm.jobServiceAccountName" . }}
+      {{- with .Values.gateway.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: bootstrap-admin
+          image: {{ include "oceans-llm.gatewayImage" . | quote }}
+          imagePullPolicy: {{ .Values.gateway.image.pullPolicy }}
+          {{- with .Values.gateway.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          command: ["gateway"]
+          args: ["bootstrap-admin"]
+          env:
+            {{- include "oceans-llm.jobEnv" . | nindent 12 }}
+          {{- $envFrom := include "oceans-llm.jobEnvFrom" . }}
+          {{- if or $envFrom .Values.secrets.inline }}
+          envFrom:
+            {{- $envFrom | nindent 12 }}
+            {{- if .Values.secrets.inline }}
+            - secretRef:
+                name: {{ include "oceans-llm.jobInlineSecretName" . | quote }}
+            {{- end }}
+          {{- end }}
+          volumeMounts:
+            - name: gateway-config
+              mountPath: {{ .Values.gateway.configMountPath | quote }}
+              subPath: gateway.yaml
+              readOnly: true
+          {{- with .Values.bootstrapAdminJob.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: gateway-config
+          configMap:
+            name: {{ include "oceans-llm.jobConfigMapName" . }}
+            items:
+              - key: gateway.yaml
+                path: gateway.yaml
+{{- end }}

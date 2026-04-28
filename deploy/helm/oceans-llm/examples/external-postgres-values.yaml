@@ -1,0 +1,39 @@
+database:
+  mode: external
+  external:
+    existingSecret:
+      name: oceans-llm-postgres
+      key: POSTGRES_URL
+
+secrets:
+  existingSecret:
+    name: oceans-llm-env
+
+gateway:
+  config:
+    server:
+      bind: "0.0.0.0:8080"
+      log_format: "json"
+    database:
+      kind: postgres
+      url: env.POSTGRES_URL
+    auth:
+      bootstrap_admin:
+        enabled: false
+        email: admin@local
+        password: env.GATEWAY_BOOTSTRAP_ADMIN_PASSWORD
+        require_password_change: true
+      seed_api_keys: []
+    providers:
+      - id: openai-prod
+        type: openai_compat
+        base_url: https://api.openai.com/v1
+        pricing_provider_id: openai
+        auth:
+          kind: bearer
+          token: env.OPENAI_API_KEY
+    models:
+      - id: openai-fast
+        routes:
+          - provider: openai-prod
+            upstream_model: gpt-5

@@ -1,6 +1,6 @@
 # Runtime Bootstrap and Access
 
-`See also`: [Configuration Reference](../configuration/configuration-reference.md), [Identity and Access](../access/identity-and-access.md), [Oceans LLM Gateway](../../README.md), [Deploy Compose](../../deploy/README.md), [Deploy and Operations](deploy-and-operations.md), [Admin Runbooks](../operations/operator-runbooks.md)
+`See also`: [Configuration Reference](../configuration/configuration-reference.md), [Identity and Access](../access/identity-and-access.md), [Oceans LLM Gateway](../../README.md), [Deploy](../../deploy/README.md), [Deploy and Operations](deploy-and-operations.md), [Admin Runbooks](../operations/operator-runbooks.md)
 
 This page explains what the gateway does when it starts and what access exists right after boot.
 
@@ -39,6 +39,7 @@ The same behavior is also exposed through explicit commands:
 | Local development | `gateway.yaml` | none for checked-in defaults | libsql or SQLite | `admin@local` / `admin` from checked-in config | none by default; local demo reset seeds sample keys |
 | Production-shaped local | `gateway.prod.yaml` | `POSTGRES_URL` if not supplied by the mise task | PostgreSQL | `admin@local` / `admin`, with forced password rotation | config seed path, if keys are configured |
 | GHCR compose deploy | `deploy/config/gateway.yaml` | `GATEWAY_BOOTSTRAP_ADMIN_PASSWORD`, `GATEWAY_API_KEY`, provider secrets, Postgres env | PostgreSQL | `admin@local` with env-backed bootstrap password | `GATEWAY_API_KEY` |
+| Kubernetes Helm deploy | rendered `gateway.config` values | `POSTGRES_URL` or CloudNativePG connection secret, `GATEWAY_IDENTITY_TOKEN_SECRET`, provider secrets | PostgreSQL | opt-in bootstrap-admin Job | opt-in seed-config Job |
 
 Bootstrap admin access and seeded API keys are separate paths. One can exist without the other.
 
@@ -94,6 +95,22 @@ What exists after boot:
 - a bootstrap admin at `admin@local`
 - config-seeded teams, invited users, and any listed active budgets
 - admin access once `GATEWAY_BOOTSTRAP_ADMIN_PASSWORD` is set in the deploy environment
+
+### Kubernetes Helm deploy
+
+- chart source: [../../deploy/helm/oceans-llm](../../deploy/helm/oceans-llm/README.md)
+- mounted config: rendered from `gateway.config` values
+- database: external PostgreSQL by default, optional CloudNativePG `Cluster`
+- migrations: Helm hook Job enabled by default
+- bootstrap admin: disabled until `bootstrapAdminJob.enabled=true`
+- seeded config: disabled until `seedConfigJob.enabled=true`
+
+What exists after boot depends on the enabled Jobs:
+
+- migrations run before normal external-Postgres installs and after CloudNativePG resource creation for CloudNativePG installs
+- gateway pods do not run migrations, bootstrap admin creation, or config seeding on startup
+- data-plane keys only exist if seed-config is enabled and the rendered config contains seed keys
+- admin access only exists if bootstrap-admin is enabled or an admin already exists in the database
 
 ## Bootstrap Admin
 
@@ -155,6 +172,15 @@ The right first-access path depends on the runtime shape.
 - sign in with `admin@local` and the configured bootstrap password
 - inspect seeded teams, invited users, and budgets in `/admin`
 
+### Kubernetes Helm deploy
+
+- render the intended values with `mise run helm-template` or `helm template`
+- confirm required secrets exist before install or are produced by `ExternalSecret`
+- confirm the migration Job succeeds
+- confirm gateway and admin UI pods become ready
+- call `/healthz` and `/readyz` through the gateway service or ingress
+- sign in to `/admin` only after bootstrap-admin is intentionally enabled or a pre-existing admin exists
+
 ## Startup Paths That Are Easy To Confuse
 
 These behaviors are easy to blur together:
@@ -178,5 +204,6 @@ That means one environment can have:
 
 - config field syntax and examples: [configuration-reference.md](../configuration/configuration-reference.md)
 - deploy topology and runtime caveats: [deploy-and-operations.md](deploy-and-operations.md)
+- Kubernetes chart contract: [kubernetes-and-helm.md](kubernetes-and-helm.md)
 - step-by-step recovery and upgrade actions: [operator-runbooks.md](../operations/operator-runbooks.md)
 - user lifecycle, onboarding, and OIDC policy: [identity-and-access.md](../access/identity-and-access.md)

@@ -29,6 +29,59 @@ Current config knobs:
 
 The intended deploy path is collector-friendly OTLP export rather than an in-process Prometheus endpoint.
 
+## Kubernetes Helm Wiring
+
+The Helm chart keeps observability generic. It does not install an OpenTelemetry Collector, Datadog Agent, or any other collector.
+
+Kubernetes installs can use:
+
+- `gateway.config.server.otel_endpoint`
+- `gateway.config.server.otel_metrics_endpoint`
+- `gateway.config.server.otel_export_interval_secs`
+- `observability.env`
+- `observability.podLabels`
+- `observability.podAnnotations`
+- `observability.volumes`
+- `observability.volumeMounts`
+- `observability.sidecars`
+
+Common shapes:
+
+- existing in-cluster collector `Service`: set OTLP endpoints in `gateway.config.server.*`
+- DaemonSet collector or vendor agent: point OTLP endpoints at the node-local or service DNS address documented by that deployment
+- sidecar collector: add the collector container with `observability.sidecars` and point OTLP endpoints at `localhost`
+- annotation-driven scraping or injection: set the required labels and annotations through `observability.podLabels` and `observability.podAnnotations`
+
+Use [Kubernetes and Helm](../setup/kubernetes-and-helm.md) for chart-level values and examples.
+
+OpenTelemetry Collector service example:
+
+```yaml
+gateway:
+  config:
+    server:
+      otel_endpoint: http://otel-collector.observability.svc:4317
+      otel_metrics_endpoint: http://otel-collector.observability.svc:4317
+observability:
+  env:
+    - name: OTEL_SERVICE_NAME
+      value: oceans-llm-gateway
+```
+
+Datadog Agent OTLP example:
+
+```yaml
+gateway:
+  config:
+    server:
+      otel_endpoint: http://datadog-agent.datadog.svc:4317
+      otel_metrics_endpoint: http://datadog-agent.datadog.svc:4317
+observability:
+  podLabels:
+    tags.datadoghq.com/service: oceans-llm-gateway
+    tags.datadoghq.com/env: production
+```
+
 ## What Gets Recorded
 
 The runtime emits bounded request-level signals for:

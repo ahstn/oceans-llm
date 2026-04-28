@@ -1,0 +1,15 @@
+Oceans LLM has been rendered for release {{ .Release.Name }}.
+
+Public traffic should target the gateway service:
+
+  {{ include "oceans-llm.gatewayServiceName" . }}:{{ .Values.service.gateway.port }}
+
+The admin UI is intentionally private to the cluster and is reached through
+the gateway at /admin.
+
+Before sending traffic, verify:
+
+  kubectl get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+  kubectl port-forward svc/{{ include "oceans-llm.gatewayServiceName" . }} 8080:{{ .Values.service.gateway.port }}
+  curl --fail http://127.0.0.1:8080/healthz
+  curl --fail http://127.0.0.1:8080/readyz

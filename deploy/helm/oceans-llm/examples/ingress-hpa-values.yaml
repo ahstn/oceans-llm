@@ -1,0 +1,50 @@
+gateway:
+  replicaCount: 2
+
+database:
+  mode: external
+  external:
+    existingSecret:
+      name: oceans-llm-postgres
+      key: POSTGRES_URL
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+  hosts:
+    - host: oceans-llm.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: oceans-llm-tls
+      hosts:
+        - oceans-llm.example.com
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 8
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+    scaleDown:
+      stabilizationWindowSeconds: 300
+
+scheduling:
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/component: gateway
