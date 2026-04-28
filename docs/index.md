@@ -1,97 +1,47 @@
-# Oceans LLM Documentation
-
-This site is the admin, user, and maintainer map for the gateway.
-
-- Use it when the behavior spans more than one file.
-- Use the owning page instead of chasing the same rule through several docs.
-- Keep ADRs in the repo for decision history. They are not part of the public nav in this pass.
-
-## Running The Gateway
-
-- First boot, local access, bootstrap admin, seeded API keys:
-  - [Runtime Bootstrap and Access](setup/runtime-bootstrap-and-access.md)
-- Runtime shape, same-origin model, local versus deploy caveats:
-  - [Deploy and Operations](setup/deploy-and-operations.md)
-- Kubernetes and Helm chart installs:
-  - [Kubernetes and Helm](setup/kubernetes-and-helm.md)
-- YAML shape, auth modes, provider fields, and config limits:
-  - [Configuration Reference](configuration/configuration-reference.md)
-- Identity lifecycle, team rules, and current admin access overlays:
-  - [Identity and Access](access/identity-and-access.md)
-- Budgets, spend windows, alerts, and reporting:
-  - [Budgets and Spending](operations/budgets-and-spending.md)
-
-## Maintaining The Platform
-
-- Action-oriented recovery and upgrade work:
-  - [Admin Runbooks](operations/operator-runbooks.md)
-- Cross-cutting request path across routing, logging, pricing, and spend:
-  - [Request Lifecycle and Failure Modes](reference/request-lifecycle-and-failure-modes.md)
-- Provider API family support, OpenAI-compatible route quirks, and compatibility follow-up work:
-  - [Provider API Compatibility](reference/provider-api-compatibility.md)
-- Admin UI capability map and live surface maturity:
-  - [Admin Control Plane](access/admin-control-plane.md)
-- Generated admin contract, checked-in artifacts, and drift rules:
-  - [Admin API Contract Workflow](reference/admin-api-contract-workflow.md)
-- Migration authoring and backend parity:
-  - [Migration Authoring](reference/migration-authoring.md)
-- E2E harness scope and release-side checks:
-  - [End-to-End Contract Tests](reference/e2e-contract-tests.md)
-  - [Release Process](reference/release-process.md)
-
-## Sections
-
-### Setup
-
-- [Runtime Bootstrap and Access](setup/runtime-bootstrap-and-access.md)
-- [Deploy and Operations](setup/deploy-and-operations.md)
-- [Kubernetes and Helm](setup/kubernetes-and-helm.md)
-
-### Configuration
-
-- [Configuration Reference](configuration/configuration-reference.md)
-- [Model Routing and API Behavior](configuration/model-routing-and-api-behavior.md)
-- [Pricing Catalog and Accounting](configuration/pricing-catalog-and-accounting.md)
-
-### Operations
-
-- [Budgets and Spending](operations/budgets-and-spending.md)
-- [Observability and Request Logs](operations/observability-and-request-logs.md)
-- [Admin Runbooks](operations/operator-runbooks.md)
-
-### Access
-
-- [Identity and Access](access/identity-and-access.md)
-- [OIDC and SSO Status](access/oidc-and-sso-status.md)
-- [Admin Control Plane](access/admin-control-plane.md)
-
-### Reference
-
-- [Request Lifecycle and Failure Modes](reference/request-lifecycle-and-failure-modes.md)
-- [Provider API Compatibility](reference/provider-api-compatibility.md)
-- [Data Relationships](reference/data-relationships.md)
-- [Admin API Contract Workflow](reference/admin-api-contract-workflow.md)
-- [Migration Authoring](reference/migration-authoring.md)
-- [End-to-End Contract Tests](reference/e2e-contract-tests.md)
-- [Release Process](reference/release-process.md)
-
-## Common Questions
-
-- Model shows up but fails:
-  - [Model Routing and API Behavior](configuration/model-routing-and-api-behavior.md)
-  - [Request Lifecycle and Failure Modes](reference/request-lifecycle-and-failure-modes.md)
-- Request succeeds but is not charged:
-  - [Pricing Catalog and Accounting](configuration/pricing-catalog-and-accounting.md)
-  - [Budgets and Spending](operations/budgets-and-spending.md)
-  - [Request Lifecycle and Failure Modes](reference/request-lifecycle-and-failure-modes.md)
-- Compose boot finishes but admin access is unclear:
-  - [Runtime Bootstrap and Access](setup/runtime-bootstrap-and-access.md)
-  - [Deploy and Operations](setup/deploy-and-operations.md)
-  - [Admin Runbooks](operations/operator-runbooks.md)
-- Helm install renders but pods are not ready:
-  - [Kubernetes and Helm](setup/kubernetes-and-helm.md)
-  - [Admin Runbooks](operations/operator-runbooks.md)
-  - [Observability and Request Logs](operations/observability-and-request-logs.md)
-- Live admin contract changed and the UI drifted:
-  - [Admin API Contract Workflow](reference/admin-api-contract-workflow.md)
-  - [End-to-End Contract Tests](reference/e2e-contract-tests.md)
+---
+layout: home
+title: Oceans LLM Documentation
+sidebar: false
+hero:
+  name: Oceans LLM
+  text: Route, govern, and observe AI traffic.
+  tagline: Operate one policy-aware gateway for provider routing, identity, spend controls, and request observability.
+  image:
+    src: /images/oceans-docs-hero.png
+    alt: Oceans LLM wave gateway illustration
+  actions:
+    - theme: brand
+      text: Getting Started
+      link: /getting-started
+    - theme: alt
+      text: Runtime Setup
+      link: /setup/runtime-bootstrap-and-access
+    - theme: alt
+      text: Helm Chart
+      link: /setup/kubernetes-and-helm
+features:
+  - title: Run the gateway
+    details: Bootstrap local access, seeded admin identity, API keys, and deploy-time runtime shape.
+    link: /getting-started
+    linkText: Start here
+  - title: Deploy to Kubernetes
+    details: Install the OCI Helm chart, wire PostgreSQL secrets, run hook Jobs, and expose traffic through the gateway.
+    link: /setup/kubernetes-and-helm
+    linkText: Deploy
+  - title: Configure routing
+    details: Shape providers, aliases, pricing inputs, auth modes, and request behavior from config.
+    link: /configuration/configuration-reference
+    linkText: Configure
+  - title: Govern access
+    details: Understand admin control-plane roles, SSO state, team boundaries, and API-key ownership.
+    link: /access/identity-and-access
+    linkText: Review access
+  - title: Control spend
+    details: Track budgets, spending windows, accounting behavior, alerts, and reporting obligations.
+    link: /operations/budgets-and-spending
+    linkText: Manage budgets
+  - title: Trace requests
+    details: Follow request logs, observability payloads, failure modes, and provider compatibility edges.
+    link: /reference/request-lifecycle-and-failure-modes
+    linkText: Trace flow
+---
