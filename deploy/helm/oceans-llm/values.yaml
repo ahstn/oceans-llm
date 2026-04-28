@@ -122,7 +122,7 @@ externalSecrets:
 migrations:
   enabled: true
   hook: post-install,post-upgrade
-  hookDeletePolicy: before-hook-creation,hook-succeeded
+  hookDeletePolicy: before-hook-creation
   annotations: {}
   podAnnotations: {}
   ttlSecondsAfterFinished: 300
@@ -132,7 +132,7 @@ migrations:
 bootstrapAdminJob:
   enabled: false
   hook: post-install,post-upgrade
-  hookDeletePolicy: before-hook-creation,hook-succeeded
+  hookDeletePolicy: before-hook-creation
   annotations: {}
   podAnnotations: {}
   ttlSecondsAfterFinished: 300
@@ -142,7 +142,7 @@ bootstrapAdminJob:
 seedConfigJob:
   enabled: false
   hook: post-install,post-upgrade
-  hookDeletePolicy: before-hook-creation,hook-succeeded
+  hookDeletePolicy: before-hook-creation
   annotations: {}
   podAnnotations: {}
   ttlSecondsAfterFinished: 300

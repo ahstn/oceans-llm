@@ -82,6 +82,8 @@ Migrations run as a Helm hook Job by default on install and upgrade. The default
 
 Gateway pods include an automatic migration waiter when migrations run in a post-install or post-upgrade phase. The waiter runs `gateway migrate --check` until the schema is ready or `gateway.migrationWaiter.timeoutSeconds` is reached. That keeps gateway pods from serving ahead of the migration Job while still keeping the mutation itself in one Job.
 
+Hook Jobs default to `helm.sh/hook-delete-policy: before-hook-creation` with `ttlSecondsAfterFinished: 300`. That keeps a successful Job around briefly for logs and debugging, while ensuring the previous hook resource is deleted before Helm creates the next one. Set `hookDeletePolicy` to include `hook-succeeded` if an environment should delete successful hook Jobs immediately.
+
 CloudNativePG and ExternalSecret installs force migration hooks to post-install and post-upgrade. CloudNativePG needs the database custom resource created first. ExternalSecret installs need the ExternalSecret resource created before the target Kubernetes Secret can be materialized by External Secrets Operator.
 
 ## Traffic, Scaling, and Scheduling

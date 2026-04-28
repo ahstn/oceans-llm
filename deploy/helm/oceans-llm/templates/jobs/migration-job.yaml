@@ -1,0 +1,63 @@
+{{- if .Values.migrations.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "%s-migrate" (include "oceans-llm.fullname" .) | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "oceans-llm.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migration
+  annotations:
+    helm.sh/hook: {{ include "oceans-llm.migrationHook" . | quote }}
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: {{ .Values.migrations.hookDeletePolicy | quote }}
+    {{- with .Values.migrations.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  backoffLimit: {{ .Values.migrations.backoffLimit }}
+  ttlSecondsAfterFinished: {{ .Values.migrations.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "oceans-llm.jobPodLabels" (dict "Chart" .Chart "Release" .Release "Values" .Values "component" "migration") | nindent 8 }}
+      {{- with .Values.migrations.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "oceans-llm.serviceAccountName" . }}
+      containers:
+        - name: migrate
+          image: {{ include "oceans-llm.gatewayImage" . | quote }}
+          imagePullPolicy: {{ .Values.gateway.image.pullPolicy }}
+          command: ["gateway"]
+          args: ["migrate", "--apply"]
+          env:
+            {{- include "oceans-llm.jobEnv" . | nindent 12 }}
+          {{- $envFrom := include "oceans-llm.jobEnvFrom" . }}
+          {{- if or $envFrom .Values.secrets.inline }}
+          envFrom:
+            {{- $envFrom | nindent 12 }}
+            {{- if .Values.secrets.inline }}
+            - secretRef:
+                name: {{ include "oceans-llm.jobInlineSecretName" . | quote }}
+            {{- end }}
+          {{- end }}
+          volumeMounts:
+            - name: gateway-config
+              mountPath: {{ .Values.gateway.configMountPath | quote }}
+              subPath: gateway.yaml
+              readOnly: true
+          {{- with .Values.migrations.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: gateway-config
+          configMap:
+            name: {{ include "oceans-llm.jobConfigMapName" . }}
+            items:
+              - key: gateway.yaml
+                path: gateway.yaml
+{{- end }}

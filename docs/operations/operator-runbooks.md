@@ -47,6 +47,7 @@ helm install oceans-llm oci://ghcr.io/ahstn/charts/oceans-llm \
 - confirm gateway and admin UI pods are ready
 - call `/healthz` and `/readyz` through the gateway service or ingress
 - confirm bootstrap-admin and seed-config Jobs were enabled only when intended
+- inspect completed hook Job logs before TTL cleanup if migration or bootstrap behavior needs review
 
 ## Upgrade Flow
 
@@ -86,6 +87,7 @@ helm upgrade oceans-llm oci://ghcr.io/ahstn/charts/oceans-llm \
 
 - confirm the migration hook Job completed
 - recheck gateway rollout, `/readyz`, admin login, and one live `/v1/*` request
+- inspect completed hook Job logs before TTL cleanup if the upgrade changed database or seed behavior
 
 If the upgrade fails after chart rendering but before pods are healthy, inspect hook Jobs first, then the gateway deployment events.
 

@@ -111,6 +111,33 @@ app.kubernetes.io/component: admin-ui
 {{- $enabled -}}
 {{- end -}}
 
+{{- define "oceans-llm.jobNeedsHookConfig" -}}
+{{- $migrationHook := include "oceans-llm.migrationHook" . -}}
+{{- $needsHookConfig := or (and .Values.migrations.enabled (or (contains "pre-install" $migrationHook) (contains "pre-upgrade" $migrationHook))) (and .Values.bootstrapAdminJob.enabled (or (contains "pre-install" .Values.bootstrapAdminJob.hook) (contains "pre-upgrade" .Values.bootstrapAdminJob.hook))) (and .Values.seedConfigJob.enabled (or (contains "pre-install" .Values.seedConfigJob.hook) (contains "pre-upgrade" .Values.seedConfigJob.hook))) -}}
+{{- $needsHookConfig -}}
+{{- end -}}
+
+{{- define "oceans-llm.jobConfigMapName" -}}
+{{- if eq (include "oceans-llm.jobNeedsHookConfig" .) "true" -}}
+{{- printf "%s-job-config" (include "oceans-llm.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- include "oceans-llm.configMapName" . -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "oceans-llm.jobInlineSecretName" -}}
+{{- if eq (include "oceans-llm.jobNeedsHookConfig" .) "true" -}}
+{{- printf "%s-job-env" (include "oceans-llm.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- include "oceans-llm.inlineSecretName" . -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "oceans-llm.jobPodLabels" -}}
+{{- include "oceans-llm.labels" . }}
+app.kubernetes.io/component: {{ .component }}
+{{- end -}}
+
 {{- define "oceans-llm.commonEnv" -}}
 - name: GATEWAY_CONFIG
   value: {{ .Values.gateway.configMountPath | quote }}

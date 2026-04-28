@@ -67,6 +67,12 @@ post-install or post-upgrade hook phase. Tune that wait with:
 - `gateway.migrationWaiter.intervalSeconds`
 - `gateway.migrationWaiter.timeoutSeconds`
 
+Hook Jobs default to `hookDeletePolicy: before-hook-creation` and
+`ttlSecondsAfterFinished: 300`, which preserves completed Jobs briefly for
+inspection and removes the previous hook before a new run. Add
+`hook-succeeded` to a Job's `hookDeletePolicy` when successful Jobs should be
+deleted immediately.
+
 ## Examples
 
 Render the checked-in examples with:
