@@ -34,9 +34,9 @@ Today the implementation still:
 
 That is enough for slice-level testing and UI wiring. It is not enough to describe as finished enterprise SSO.
 
-## Practical Operator Impact
+## Practical Admin Impact
 
-Operators should assume these boundaries:
+Admins should assume these boundaries:
 
 - OIDC is usable for controlled environments and development-style testing
 - OIDC is not the hardened final story for production sign-in policy
@@ -47,12 +47,12 @@ Operators should assume these boundaries:
 
 The current forward path is visible in repo history.
 
-- Harden the OIDC flow itself:
-  - [issue #29](https://github.com/ahstn/oceans-llm/issues/29)
 - Pick and document a self-hosted test IdP story:
   - [issue #46](https://github.com/ahstn/oceans-llm/issues/46)
 - Extend declarative config once hardened identity matching exists:
   - [issue #65](https://github.com/ahstn/oceans-llm/issues/65)
+- Reopen or replace the standards-complete OIDC tracking issue before describing this as production-grade SSO:
+  - [issue #29](https://github.com/ahstn/oceans-llm/issues/29) is closed, but the current code still carries development-style callback behavior
 
 That sequence matters. Declarative SSO-backed users depend on the hardened identity contract, not the other way around.
 
@@ -68,9 +68,9 @@ That means:
 
 ## Current Gaps
 
-- Hardened OIDC flow: [issue #29](https://github.com/ahstn/oceans-llm/issues/29)
 - Self-hosted test-IdP research: [issue #46](https://github.com/ahstn/oceans-llm/issues/46)
 - Declarative SSO-backed identity config: [issue #65](https://github.com/ahstn/oceans-llm/issues/65)
+- Standards-complete OIDC tracking needs a reopened or successor issue because [issue #29](https://github.com/ahstn/oceans-llm/issues/29) is closed while the docs still describe a development-style boundary
 
 ## What This Page Does Not Own
 

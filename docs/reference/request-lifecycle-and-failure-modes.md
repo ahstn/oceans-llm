@@ -44,7 +44,7 @@ The live request path is single-route in this slice.
 15. A ledger row is written when the request has usable usage data.
 16. Post-provider budget math runs before the priced ledger row is committed.
 
-Compatibility transforms affect the provider request body and stream options. They do not change the public request model identity, alias resolution, API-key grants, or request-log attribution.
+Compatibility transforms can affect the provider request body and stream options for the selected API family. They do not change the public request model identity, alias resolution, API-key grants, or request-log attribution. Current OpenAI-compatible profile transforms are Chat Completions-specific; Responses and Embeddings use their own typed provider paths.
 
 ## Worked Example
 
@@ -163,8 +163,8 @@ For streaming requests, the request-log payload path parses SSE incrementally ac
 
 ## Known Rough Edges
 
-- Stream and non-stream paths still differ when a post-provider ledger write fails.
 - Request-log payload policy details, redaction rules, and retention status are owned by [observability-and-request-logs.md](../operations/observability-and-request-logs.md).
+- Configurable retry and fallback execution is not part of the current request path; see [issue #118](https://github.com/ahstn/oceans-llm/issues/118).
 
 For the current observability cleanup notes, see [observability-and-request-logs.md](../operations/observability-and-request-logs.md).
 

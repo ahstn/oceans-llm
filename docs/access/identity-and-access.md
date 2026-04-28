@@ -47,7 +47,7 @@ Admin sessions are durable server-side records referenced by the `ogw_session` b
 - normal sign-out revokes only the current cookie-backed session
 - logout is idempotent and clears the browser cookie even when the session is already gone
 - user lifecycle actions such as deactivation can revoke every active session for that user
-- expired, revoked, missing, or disabled-user sessions resolve as unauthenticated and return the operator to sign-in
+- expired, revoked, missing, or disabled-user sessions resolve as unauthenticated and return the admin to sign-in
 
 ## Bootstrap Admin
 
@@ -61,7 +61,7 @@ For the startup and first-access path, use [runtime-bootstrap-and-access.md](../
 
 ## Onboarding Model
 
-Current onboarding is operator-mediated.
+Current onboarding is admin-mediated.
 
 - admins create users or invite them into teams
 - the control plane generates password invite links or OIDC sign-in links
@@ -134,16 +134,15 @@ Config-backed identity is now part of the startup seed path.
 - `users` are reconciled by normalized email
 - listed users can reconcile team membership and active budgets
 - new config-seeded users start as `invited`
-- config seeding does not emit invite URLs; operators generate onboarding links from the admin UI when needed
+- config seeding does not emit invite URLs; admins generate onboarding links from the admin UI when needed
 
 ## Current Gaps
 
-- Hardened OIDC flow is still pending:
-  - [issue #29](https://github.com/ahstn/oceans-llm/issues/29)
 - Self-hosted test-IdP guidance is still pending:
   - [issue #46](https://github.com/ahstn/oceans-llm/issues/46)
 - Hardened declarative SSO-backed identity matching is still pending:
   - [issue #65](https://github.com/ahstn/oceans-llm/issues/65)
+- Standards-complete OIDC tracking needs a reopened or successor issue because [issue #29](https://github.com/ahstn/oceans-llm/issues/29) is closed while the current docs still describe development-style OIDC behavior.
 
 ## Where Identity Appears Operationally
 

@@ -104,6 +104,21 @@ This compatibility option is Chat Completions-specific. Responses streams use th
 
 The accounting model remains limited to prompt/input tokens, completion/output tokens, and total tokens in this slice.
 
+## Stored But Not Charged Yet
+
+The pricing catalog can preserve more rate metadata than the runtime charges today.
+
+| Catalog or provider signal | Current accounting status |
+| --- | --- |
+| prompt/input tokens | charged when exact pricing resolves |
+| completion/output tokens | charged when exact pricing resolves |
+| total tokens | stored for reporting and validation context |
+| cache reads/writes | not charged yet |
+| reasoning tokens or traces | not charged separately yet |
+| image, audio, and file modality counters | not charged yet |
+
+That distinction keeps the ledger conservative. The gateway should not infer spend for provider-specific counters until the pricing and request semantics are explicit. Richer token and cache accounting is tracked in [issue #92](https://github.com/ahstn/oceans-llm/issues/92).
+
 ## Relationship to Request Flow
 
 Route choice affects accounting, not only provider execution.

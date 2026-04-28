@@ -2,7 +2,7 @@
 
 `Owns`: the GHCR-based compose quick start in `deploy/`.
 `Depends on`: [../README.md](../README.md), [../docs/deploy-and-operations.md](../docs/setup/deploy-and-operations.md)
-`See also`: [../docs/runtime-bootstrap-and-access.md](../docs/setup/runtime-bootstrap-and-access.md), [../docs/operator-runbooks.md](../docs/operations/operator-runbooks.md)
+`See also`: [../docs/runtime-bootstrap-and-access.md](../docs/setup/runtime-bootstrap-and-access.md), [../docs/admin-runbooks.md](../docs/operations/operator-runbooks.md)
 
 This directory is the quick start for the checked-in compose deploy path.
 
@@ -27,6 +27,20 @@ Default endpoint:
 - gateway and admin UI:
   - `http://localhost:8080`
 
+## Required Environment
+
+Set these values in `deploy/.env` before treating the stack as usable:
+
+- `POSTGRES_DB`
+- `POSTGRES_USER`
+- `POSTGRES_PASSWORD`
+- `GATEWAY_API_KEY`
+- `GATEWAY_BOOTSTRAP_ADMIN_PASSWORD`
+- `OPENAI_API_KEY`
+- `OPENAI_API_KEY_SECONDARY`
+
+The mounted gateway config references both OpenAI keys and the bootstrap admin password through env-backed secrets. Empty provider keys can let the containers start, but provider-backed requests will fail when those routes execute.
+
 ## What Gets Created
 
 The checked-in stack creates:
@@ -50,7 +64,36 @@ The checked-in compose path does not guarantee:
 
 - hardened OIDC or SSO bootstrap
 
-Seeded password and OIDC users are created as invited identities. Operators still generate onboarding links from the admin UI when those accounts need to sign in.
+Seeded password and OIDC users are created as invited identities. Admins still generate onboarding links from the admin UI when those accounts need to sign in.
+
+## Deployment Verification
+
+After boot, run a short readiness pass before sending real traffic:
+
+- confirm the containers are healthy:
+
+```bash
+docker compose -f deploy/compose.yaml ps
+```
+
+- confirm the gateway responds:
+
+```bash
+curl --fail http://localhost:8080/healthz
+curl --fail http://localhost:8080/readyz
+```
+
+- confirm the seeded API key can see gateway models:
+
+```bash
+curl --fail \
+  -H "Authorization: Bearer ${GATEWAY_API_KEY}" \
+  http://localhost:8080/v1/models
+```
+
+- sign in to `/admin` as `admin@local` with `GATEWAY_BOOTSTRAP_ADMIN_PASSWORD`
+- confirm provider-backed traffic with one low-cost `/v1/*` request
+- inspect gateway logs if config seeding, provider auth, or route viability fails
 
 ## What This Quick Start Does Not Configure
 
@@ -68,8 +111,8 @@ Use the quick start here, then switch to the canonical pages for the rest:
 - topology and caveats:
   - [Deploy and Operations](../docs/setup/deploy-and-operations.md)
 - action-oriented recovery:
-  - [Operator Runbooks](../docs/operations/operator-runbooks.md)
+  - [Admin Runbooks](../docs/operations/operator-runbooks.md)
 - config contract:
   - [Configuration Reference](../docs/configuration/configuration-reference.md)
 
-Use [Documentation Home](../docs/index.md) when you need the full operator map.
+Use [Documentation Home](../docs/index.md) when you need the full admin, user, and maintainer map.

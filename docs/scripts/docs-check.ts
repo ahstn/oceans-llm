@@ -27,6 +27,7 @@ function shouldSkipMarkdown(filePath: string): boolean {
     relative.startsWith("docs/internal/") ||
     relative.startsWith("docs/node_modules/") ||
     relative.startsWith("docs/.vitepress/") ||
+    relative === "docs/AGENTS.md" ||
     relative === "docs/README.md"
   );
 }

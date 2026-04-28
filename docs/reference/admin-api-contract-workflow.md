@@ -52,7 +52,7 @@ When a live admin API changes:
 2. regenerate the artifacts
 3. update the admin UI code if the wire contract changed
 4. run contract drift checks
-5. update operator docs if the user-visible behavior changed
+5. update admin or user docs if the user-visible behavior changed
 
 Commands:
 
@@ -71,7 +71,7 @@ Drift is treated as a failure, not a suggestion.
 
 The normal drift guard is `mise run admin-contract-check`.
 
-## Live Versus Preview-Backed Surfaces
+## Live Surface Contract Scope
 
 Only live gateway-backed surfaces should use this contract pipeline.
 
@@ -82,12 +82,10 @@ Current live surfaces:
 - identity
 - spend
 - request logs
-
-Current preview-backed surface:
-
+- leaderboard
 - Models
 
-That split matters when deciding whether a UI page belongs in this workflow or in preview-only code.
+That split matters when deciding whether a UI page belongs in this workflow. Once a page reads from gateway APIs, changes to its admin API shape belong in generated contract maintenance even if the UI workflow is still maturing.
 
 ## API-Key Architecture Note
 
@@ -114,6 +112,6 @@ Use this rough rule:
 
 ## What This Page Does Not Own
 
-- operator-facing UI capability map: [admin-control-plane.md](../access/admin-control-plane.md)
+- admin-facing UI capability map: [admin-control-plane.md](../access/admin-control-plane.md)
 - browser and HTTP contract test scope: [e2e-contract-tests.md](e2e-contract-tests.md)
 - local quick-start commands: [../README.md](../../README.md)

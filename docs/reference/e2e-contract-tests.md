@@ -55,19 +55,22 @@ The current suite already covers:
 - public `/v1/models`
 - public `/v1/chat/completions`
 - public `/v1/responses`
+- admin Models data loading
 - admin UI API-key create, live use, and revoke
 - live spend report API behavior
 - team hard-limit enforcement for team-owned keys
 - strict `404` behavior for missing request-log detail
 - live identity-user create-and-list API coverage
 
-## Preview-Backed Surface Rule
+## Maturing Surface Rule
 
-Preview-backed pages may appear in smoke or landing assertions, but they are not treated as business-flow coverage until the underlying data is live.
+Live pages may appear in smoke or data-loading assertions before every workflow is covered end to end.
 
 Today that matters for:
 
 - Models
+
+The Models page is gateway-backed, but route/provider detail and Responses capability visibility still have follow-up work. Treat it as live data-loading coverage until those workflows harden.
 
 ## Browser Flow Versus HTTP Assertion
 
@@ -91,6 +94,41 @@ Generated admin contract maintenance belongs in the same durability bucket.
 - refresh artifacts with `mise run admin-contract-generate`
 - verify drift with `mise run admin-contract-check`
 - keep E2E assertions aligned with the checked-in contract for live surfaces
+
+## Extension Mechanics
+
+Source files:
+
+- Playwright config:
+  - [../crates/admin-ui/web/playwright.config.ts](../../crates/admin-ui/web/playwright.config.ts)
+- E2E specs:
+  - [../crates/admin-ui/web/e2e/](../../crates/admin-ui/web/e2e)
+- stack launcher:
+  - [../scripts/start-e2e-stack.sh](../../scripts/start-e2e-stack.sh)
+- deterministic upstream:
+  - [../scripts/mock-openai-upstream.mjs](../../scripts/mock-openai-upstream.mjs)
+
+Useful environment knobs:
+
+- `E2E_GATEWAY_PORT`
+- `E2E_UI_PORT`
+- `E2E_UPSTREAM_PORT`
+- `E2E_BASE_URL`
+- `E2E_GATEWAY_API_KEY`
+- `E2E_ADMIN_EMAIL`
+- `E2E_ADMIN_PASSWORD`
+- `E2E_ADMIN_NEW_PASSWORD`
+
+Playwright writes reports under `crates/admin-ui/web/playwright-report` and failure artifacts under `crates/admin-ui/web/test-results`.
+
+When adding a live admin surface:
+
+- add or update the gateway API contract first
+- regenerate checked-in admin contract artifacts if the admin API shape changed
+- extend the deterministic E2E config or mock upstream only as needed
+- prefer direct HTTP assertions for envelope/status semantics
+- use browser assertions for auth, SSR loader behavior, and visible workflow sequencing
+- keep preview-only UI behavior out of business-flow assertions
 
 ## Still Missing
 

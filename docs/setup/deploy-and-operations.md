@@ -1,6 +1,6 @@
 # Deploy and Operations
 
-`See also`: [Oceans LLM Gateway](../../README.md), [Configuration Reference](../configuration/configuration-reference.md), [Runtime Bootstrap and Access](runtime-bootstrap-and-access.md), [Operator Runbooks](../operations/operator-runbooks.md), [Deploy Compose](../../deploy/README.md), [Release Process](../reference/release-process.md)
+`See also`: [Oceans LLM Gateway](../../README.md), [Configuration Reference](../configuration/configuration-reference.md), [Runtime Bootstrap and Access](runtime-bootstrap-and-access.md), [Admin Runbooks](../operations/operator-runbooks.md), [Deploy Compose](../../deploy/README.md), [Release Process](../reference/release-process.md)
 
 This page owns the runtime shape. It does not own the action-by-action runbooks.
 
@@ -47,9 +47,9 @@ This is a product constraint, not only a local-dev convenience.
 - database:
   - PostgreSQL
 - checked-in first access:
-  - seeded API key, no checked-in bootstrap-admin block
+  - seeded API key and env-backed bootstrap admin password
 
-That means the compose deploy path and the production-shaped local path do not teach the same first-access story.
+That means the compose deploy path and the production-shaped local path both create a bootstrap admin, but the credential source differs. The production-shaped local path uses the local config defaults; compose expects deploy-time environment secrets.
 
 ## Why The Same-Origin Model Matters
 

@@ -8,6 +8,8 @@ This file stays in the repo as a maintainer note for the VitePress source tree.
   - [.vitepress/config.mts](.vitepress/config.mts)
 - Canonical provider compatibility reference:
   - [reference/provider-api-compatibility.md](reference/provider-api-compatibility.md)
+- Migration authoring checklist:
+  - [reference/migration-authoring.md](reference/migration-authoring.md)
 - ADRs:
   - [adr/](adr)
 - Internal notes:

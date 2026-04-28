@@ -86,6 +86,8 @@ Current runtime nuance:
 - the planner produces an ordered route list
 - the handler executes only the first eligible route
 
+Weight affects selection inside a single priority bucket. It does not mean the gateway sends one request to several providers, retries the next route, or falls back after an upstream error. Configurable retry and fallback remains separate follow-up work in [issue #118](https://github.com/ahstn/oceans-llm/issues/118).
+
 ## Capability-Aware Gating
 
 Routes are filtered before provider execution based on request requirements and route capability.
@@ -102,6 +104,14 @@ Current capability dimensions:
 - `developer_role`
 
 Capability metadata exists to fail early at the gateway edge. It is not a copy of provider marketing language.
+
+Effective capability is the intersection of route metadata and provider runtime support.
+
+- route capability defaults are permissive
+- provider implementations can still reject unsupported API families
+- partial provider routes should explicitly disable unsupported API families
+
+For example, current Vertex routes support the chat path but not the Responses path. A Vertex chat route should keep `responses: false` so `/v1/responses` fails during capability filtering instead of later inside the provider adapter.
 
 ## Compatibility Profiles
 
@@ -206,6 +216,8 @@ The live runtime is intentionally narrow in this slice:
 - no live fallback loop
 - request-attempt records describe the single provider execution attempt; configurable retry/fallback execution is tracked separately in issue #118
 - strict capability filtering before provider execution
+
+The open retry/fallback policy work must amend this section when it lands; see [issue #118](https://github.com/ahstn/oceans-llm/issues/118).
 
 ## What This Page Does Not Own
 

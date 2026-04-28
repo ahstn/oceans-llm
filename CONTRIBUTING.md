@@ -66,7 +66,7 @@ The workspace is split into a small set of Rust crates plus one web app. The gat
 
 ```mermaid
 graph TD
-    client["Clients / Operators"]
+    client["Clients / Admins"]
     gateway["crates/gateway"]
     service["crates/gateway-service"]
     core["crates/gateway-core"]
@@ -132,13 +132,17 @@ Release rationale and the local-to-CI handoff are documented in [docs/adr/2026-0
 
 ## Pitchfork
 
-There is no checked-in `pitchfork` configuration in this repository.
+The repository includes a checked-in `pitchfork.toml` for local PostgreSQL workflow support.
 
-If you use Pitchfork locally, treat it as a personal Git workflow layer rather than a repo contract:
+Use the mise tasks as the stable interface:
 
-- keep branches and pull requests aligned with the repo's GitHub templates and workflow checks,
-- rely on [`mise.toml`](mise.toml) and `.github/workflows/*` as the source of truth for validation,
-- do not assume other contributors are using the same local Git automation.
+- `mise run postgres-start`
+- `mise run postgres-status`
+- `mise run postgres-logs`
+- `mise run postgres-stop`
+- `mise run postgres-reset`
+
+Treat `pitchfork.toml` as local service orchestration for Postgres, not as a replacement for the repo's GitHub templates, PR flow, or CI checks.
 
 ## VS Code
 

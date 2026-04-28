@@ -26,6 +26,18 @@ The Responses API is a first-class API family. It is not translated through Chat
 | Google Generative AI | Not implemented as a direct API-key provider path | Follow-up issue | Vertex Google transport exists; direct Google native API needs separate auth, request, and stream mapping. |
 | Cross-provider multimodal files/images | Partial, provider-dependent | Follow-up issue | Needs explicit request body and accounting semantics across OpenAI-compatible, Vertex Google, Anthropic, and Google native APIs. |
 
+## Provider Type Endpoint Matrix
+
+This matrix is about current execution support, not provider marketing claims.
+
+| Provider type | `/v1/chat/completions` | `/v1/responses` | `/v1/embeddings` |
+| --- | --- | --- | --- |
+| `openai_compat` | Supported. Chat Completions route profiles can rewrite known request-shape quirks. | Supported through the distinct Responses request/provider path. Chat Completions profile transforms do not apply. | Supported. No route compatibility transforms apply in this slice. |
+| `gcp_vertex` with `google/*` upstream models | Supported for the current Vertex chat path when route capabilities allow it. | Not implemented; keep route `responses: false`. | Not implemented in this slice; keep route `embeddings: false`. |
+| `gcp_vertex` with `anthropic/*` upstream models | Supported for the current Vertex chat path when route capabilities allow it. | Not implemented; keep route `responses: false`. | Not applicable. |
+
+Route capability flags are still useful when a provider implementation does not support a public API family. They make failures happen at the gateway edge instead of later inside the provider adapter.
+
 ## Route Compatibility Metadata
 
 Provider compatibility is route metadata, not provider metadata.
@@ -52,6 +64,16 @@ models:
             reasoning_effort: omit
             supports_stream_usage: true
 ```
+
+## Effective Capabilities
+
+Effective capability is the intersection of configured route metadata and provider runtime support.
+
+- Route `capabilities` declares what the route should be allowed to attempt.
+- Provider implementations still enforce what they can actually execute.
+- Capability defaults are permissive, so routes for partial providers should set unsupported API families to `false`.
+
+For example, a Vertex Google chat route should normally set `responses: false` and `embeddings: false` until those provider paths are implemented. Otherwise the route may look viable from config alone and still fail when the provider adapter rejects the unsupported API family.
 
 ## OpenAI-Compatible Profile Fields
 
@@ -123,8 +145,11 @@ The route-profile design follows the same broad lesson visible in mature adapter
 
 These items are intentionally outside this first slice:
 
-- native Anthropic Messages public/API-family mapping
-- direct Google Generative AI provider/API-key path
-- cross-provider tool-call streaming normalization fixtures
-- cache/reasoning/modality token accounting
-- multimodal image/file compatibility across provider families
+- provider compatibility umbrella: [issue #53](https://github.com/ahstn/oceans-llm/issues/53)
+- native Anthropic Messages public/API-family mapping: [issue #89](https://github.com/ahstn/oceans-llm/issues/89)
+- direct Google Generative AI provider/API-key path: [issue #90](https://github.com/ahstn/oceans-llm/issues/90)
+- cross-provider tool-call streaming normalization fixtures: [issue #91](https://github.com/ahstn/oceans-llm/issues/91)
+- cache, reasoning, and modality token accounting: [issue #92](https://github.com/ahstn/oceans-llm/issues/92)
+- multimodal image/file compatibility across provider families: [issue #93](https://github.com/ahstn/oceans-llm/issues/93)
+- Vertex embeddings provider support: [issue #103](https://github.com/ahstn/oceans-llm/issues/103)
+- route readiness diagnostics: [issue #98](https://github.com/ahstn/oceans-llm/issues/98)

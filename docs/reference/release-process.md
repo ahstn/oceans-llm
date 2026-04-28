@@ -1,6 +1,6 @@
 # Release Process
 
-`See also`: [Contributing](../../CONTRIBUTING.md), [Deploy and Operations](../setup/deploy-and-operations.md), [Operator Runbooks](../operations/operator-runbooks.md), [ADR: Cocogitto Releases, git-cliff Changelogs, and GHCR Image Publishing](../adr/2026-03-06-release-versioning-and-ghcr-publishing.md)
+`See also`: [Contributing](../../CONTRIBUTING.md), [Deploy and Operations](../setup/deploy-and-operations.md), [Admin Runbooks](../operations/operator-runbooks.md), [ADR: Cocogitto Releases, git-cliff Changelogs, and GHCR Image Publishing](../adr/2026-03-06-release-versioning-and-ghcr-publishing.md)
 
 This page is the maintainer-facing release runbook.
 
@@ -29,9 +29,10 @@ The tag workflow is distribution, not the quality gate.
 
 1. update `main` locally
 2. run `mise run release`
-3. review the generated release commit, tag, changelog, and GitHub release draft state
-4. push the release commit and tag
-5. let the tag-triggered GitHub Actions workflow build and publish images
+3. review the generated version changes and `CHANGELOG.md`
+4. confirm the GitHub release was created for the new tag
+5. push the release commit and tag
+6. let the tag-triggered GitHub Actions workflow build, attest, and publish images
 
 ## What `mise run release` Does
 
@@ -42,7 +43,7 @@ Current task steps:
 3. `gh release create v$(cog get-version) ...`
 4. `cargo release version $(cog get-version) --execute`
 
-That means release metadata and version updates are authored locally before any push happens.
+That means release metadata and version updates are authored locally before any push happens. The GitHub release is not created as a draft by this task.
 
 ## What GitHub Actions Does
 
@@ -53,7 +54,8 @@ Current workflow responsibilities:
 - build and publish the gateway image
 - build and publish the admin UI image
 - attest image provenance
-- publish or update the GitHub release for the tag
+
+The workflow does not create or update the GitHub release body. It consumes the pushed tag as the image distribution trigger.
 
 ## Current Image Reality
 
@@ -74,7 +76,7 @@ After the workflow finishes, verify:
 - the release notes look sane
 - the deploy docs still match the image reality
 
-If the release changed operator-visible behavior, update the canonical docs in the same pass.
+If the release changed admin- or user-visible behavior, update the canonical docs in the same pass.
 
 ## CI Responsibility Boundary
 
@@ -85,3 +87,10 @@ In practice:
 - maintainers are responsible for cutting releases from a known-good state
 - normal CI is the preflight signal
 - tag CI is the distribution step
+
+## Failure Recovery Notes
+
+- If `mise run release` creates a release but local version changes fail afterward, inspect the working tree before rerunning.
+- If the tag was not pushed, fix the local state and either reuse or delete the created GitHub release deliberately.
+- If the tag was pushed but image publishing failed, fix the workflow issue and rerun the failed workflow for the same tag when possible.
+- Avoid retagging an existing published version unless the release is still private to maintainers and no deploy path consumed it.

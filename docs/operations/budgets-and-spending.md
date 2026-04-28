@@ -46,10 +46,11 @@ Budgets are enforced by owner scope:
 
 Hard-limit behavior:
 
-- if projected spend in the active window would exceed the configured amount and `hard_limit = true`, the request fails with `budget_exceeded`
+- if current priced spend in the active window is already at or above the configured amount and `hard_limit = true`, the pre-provider check fails with `budget_exceeded`
+- after provider execution, if current priced spend plus the computed request cost would exceed the configured amount, the ledger write is blocked before the priced row is committed
 - the HTTP status is `429`
-- the provider is not executed on this path
-- observability records the request as a budget rejection outcome instead of a provider execution
+- no provider call occurs on the pre-provider rejection path
+- observability records pre-provider rejection as a budget outcome instead of provider execution
 
 ## Two-Phase Enforcement
 
@@ -58,7 +59,7 @@ Budget enforcement has two phases:
 1. pre-provider blocking against current priced spend
 2. post-provider projected-cost blocking before the priced ledger row is inserted
 
-This matters because duplicate requests bypass both phases as a no-op, and because the current stream versus non-stream difference still lives in the later ledger-write stage.
+This matters because duplicate requests bypass both phases as a no-op. It also explains the boundary difference: before provider execution the gateway does not know the final request cost, but after usage and pricing are available it can block a newly computed charge that would push the owner past the hard limit.
 
 Ownership scope keys:
 
@@ -146,6 +147,33 @@ Live admin spend APIs:
 
 These routes require an authenticated platform-admin session.
 
+## Spend Report Semantics
+
+`GET /api/v1/admin/spend/report` is the summary endpoint behind the admin spend page.
+
+Supported query parameters:
+
+- `days`
+  - `7`
+  - `30`
+- `owner_kind`
+  - `all`
+  - `user`
+  - `team`
+
+The report uses full UTC-day buckets for the selected range. Daily series are zero-filled so charts can render stable timelines even when no chargeable rows exist for a day.
+
+The response separates:
+
+- total request count
+- total spend for chargeable rows
+- owner breakdowns
+- model breakdowns
+- daily spend and request points
+- counts by pricing status, including `priced`, `legacy_estimated`, `unpriced`, and `usage_missing`
+
+Only `priced` and `legacy_estimated` rows count toward spend totals. `unpriced` and `usage_missing` rows remain visible as accounting-quality signals.
+
 ## Window Semantics
 
 - daily windows start at `00:00:00 UTC`
@@ -167,7 +195,7 @@ These routes require an authenticated platform-admin session.
   - [pricing-catalog-and-accounting.md](../configuration/pricing-catalog-and-accounting.md)
 - end-to-end request path:
   - [request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md)
-- operator-facing admin UI behavior:
+- admin-facing UI behavior:
   - [admin-control-plane.md](../access/admin-control-plane.md)
 - identity lifecycle and email readiness:
   - [identity-and-access.md](../access/identity-and-access.md)

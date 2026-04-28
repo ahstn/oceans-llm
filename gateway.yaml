@@ -63,7 +63,7 @@ users:
       team: research
       role: admin
 
-  - name: Diego Research Operator
+  - name: Diego Research Analyst
     email: diego@research.local
     auth_mode: password
     request_logging_enabled: true
@@ -118,7 +118,7 @@ providers:
 
 models:
   - id: openai-fast-v2
-    description: OpenAI via compatible adapter with weighted multi-provider routing
+    description: OpenAI via compatible adapter with weighted route selection
     routes:
       - provider: openai-prod
         upstream_model: gpt-5

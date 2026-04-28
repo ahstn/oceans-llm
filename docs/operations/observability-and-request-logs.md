@@ -39,7 +39,7 @@ The runtime emits bounded request-level signals for:
 - request latency
 - request outcomes
 - token totals
-- operational cost totals
+- priced spend metric totals
 - usage-record totals by pricing status
 - caller request tags for filtering and attribution
 
@@ -136,6 +136,13 @@ Capture modes:
 
 The policy is read from YAML only. The admin UI displays the policy used for each row, but does not edit it.
 
+Owner behavior also matters:
+
+- user-owned API keys honor `users.request_logging_enabled`
+- team-owned API keys always persist request-log summary rows
+
+This is why a user-owned request can be absent from request logs while a team-owned request with the same payload policy is still visible.
+
 Validation rules:
 
 - `request_max_bytes` must be greater than zero
@@ -166,7 +173,7 @@ Payloads are wrapped before policy application:
 - responses: `{ "body": ... }`
 - streams: `{ "stream": true, "events": ..., "usage": ..., "error": ... }`
 
-Redaction applies one explicit built-in policy plus additive operator paths from `request_logging.payloads.redaction_paths`.
+Redaction applies one explicit built-in policy plus additive admin-configured paths from `request_logging.payloads.redaction_paths`.
 
 Sensitive built-in headers include:
 
@@ -195,7 +202,7 @@ Known bulky provider fields are shape-preserving truncated before the whole-payl
 Processing order:
 
 1. wrap the payload
-2. apply built-in and operator redaction rules
+2. apply built-in and admin-configured redaction rules
 3. truncate known bulky fields while preserving JSON shape where possible
 4. apply `request_max_bytes` or `response_max_bytes` as a final guardrail
 
@@ -211,7 +218,7 @@ Recent cleanup changed the contract in a few important ways.
 - stream payload parsing is more boundary-safe than the earlier chunk-by-chunk behavior
 - budget-rejected chat requests record a `budget_error` request outcome without executing the provider
 
-Operators and maintainers should stop expecting:
+Admins and maintainers should stop expecting:
 
 - fallback metadata columns to appear in new request rows
 - nullable detail lookups for missing rows
@@ -220,8 +227,28 @@ Operators and maintainers should stop expecting:
 
 Platform admins can inspect request logs through:
 
+- `GET /api/v1/admin/observability/leaderboard`
 - `GET /api/v1/admin/observability/request-logs`
 - `GET /api/v1/admin/observability/request-logs/{request_log_id}`
+
+## Usage Leaderboard
+
+The leaderboard is a separate admin observability surface from spend reporting.
+
+Endpoint:
+
+- `GET /api/v1/admin/observability/leaderboard?range=7d|31d`
+
+Current semantics:
+
+- ranked by total spend over the selected range
+- ties sort by request count, then user name
+- chart cohort is the top 5 ranked users
+- table is the top 30 ranked users
+- time buckets are 12-hour UTC buckets and are zero-filled for chart stability
+- dominant model is chosen by request count, then spend, then model key
+
+Use the leaderboard to identify recent high-usage users. Use spend reporting when the question is about owner totals, budgets, or pricing status counts.
 
 Current list filters:
 
@@ -244,8 +271,6 @@ Current list filters:
 - no documented retention or archival policy yet for `request_log_payloads`
   - retention and purge work is tracked separately in [issue #105](https://github.com/ahstn/oceans-llm/issues/105)
 - deploy examples do not ship an OTLP collector by default
-- stream and non-stream chat paths still differ on post-provider ledger-write failure behavior
-  - [issue #49](https://github.com/ahstn/oceans-llm/issues/49)
 
 ## Relationship to Spend Reporting
 
