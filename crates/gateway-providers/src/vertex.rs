@@ -1072,19 +1072,17 @@ where
                     .unwrap_or_default();
 
                 match kind {
-                    "message_start" => {
-                        if !role_emitted {
-                            let delta = openai_chunk(
-                                &stream_id,
-                                created,
-                                &model,
-                                Some("assistant"),
-                                None,
-                                None,
-                            );
-                            yield Ok(openai_sse_chunk(&delta));
-                            role_emitted = true;
-                        }
+                    "message_start" if !role_emitted => {
+                        let delta = openai_chunk(
+                            &stream_id,
+                            created,
+                            &model,
+                            Some("assistant"),
+                            None,
+                            None,
+                        );
+                        yield Ok(openai_sse_chunk(&delta));
+                        role_emitted = true;
                     }
                     "content_block_delta" => {
                         let delta = payload.get("delta").and_then(Value::as_object);
@@ -1128,19 +1126,17 @@ where
                             finish_emitted = true;
                         }
                     }
-                    "message_stop" => {
-                        if !finish_emitted {
-                            let finish = openai_chunk(
-                                &stream_id,
-                                created,
-                                &model,
-                                None,
-                                None,
-                                Some("stop"),
-                            );
-                            yield Ok(openai_sse_chunk(&finish));
-                            finish_emitted = true;
-                        }
+                    "message_stop" if !finish_emitted => {
+                        let finish = openai_chunk(
+                            &stream_id,
+                            created,
+                            &model,
+                            None,
+                            None,
+                            Some("stop"),
+                        );
+                        yield Ok(openai_sse_chunk(&finish));
+                        finish_emitted = true;
                     }
                     "error" => {
                         let message = payload
@@ -1217,23 +1213,20 @@ impl JsonObjectParser {
                     }
                     depth += 1;
                 }
-                b'}' => {
-                    if depth > 0 {
-                        depth -= 1;
-                        if depth == 0
-                            && let Some(start) = object_start.take()
-                        {
-                            let end = index + 1;
-                            let object_json = &self.buffer[start..end];
-                            let value: Value =
-                                serde_json::from_str(object_json).map_err(|error| {
-                                    ProviderError::Transport(format!(
-                                        "failed parsing streamed google JSON object: {error}"
-                                    ))
-                                })?;
-                            parsed.push(value);
-                            consumed_until = end;
-                        }
+                b'}' if depth > 0 => {
+                    depth -= 1;
+                    if depth == 0
+                        && let Some(start) = object_start.take()
+                    {
+                        let end = index + 1;
+                        let object_json = &self.buffer[start..end];
+                        let value: Value = serde_json::from_str(object_json).map_err(|error| {
+                            ProviderError::Transport(format!(
+                                "failed parsing streamed google JSON object: {error}"
+                            ))
+                        })?;
+                        parsed.push(value);
+                        consumed_until = end;
                     }
                 }
                 _ => {}
