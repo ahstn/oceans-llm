@@ -332,6 +332,7 @@ Supported provider types in the checked-in configs:
 
 - `openai_compat`
 - `gcp_vertex`
+- `aws_bedrock`
 
 ### Provider Auth Modes
 
@@ -340,6 +341,9 @@ Supported provider types in the checked-in configs:
 | `openai_compat` | `auth.token` | bearer-style token |
 | `gcp_vertex` | `auth.mode: adc` | ADC available in the runtime environment |
 | `gcp_vertex` | `auth.mode: service_account` | `credentials_path` pointing at service-account JSON or an equivalent mounted secret path |
+| `aws_bedrock` | `auth.mode: default_chain` | AWS SDK/default credential chain in the runtime environment |
+| `aws_bedrock` | `auth.mode: bearer` | Bedrock bearer token, often `env.AWS_BEARER_TOKEN_BEDROCK` |
+| `aws_bedrock` | `auth.mode: static_credentials` | AWS access key ID, secret access key, and optional session token |
 
 ### `openai_compat`
 
@@ -383,6 +387,63 @@ Routing and pricing caveats:
 - `upstream_model` must use `<publisher>/<model_id>`
 - pricing identity is inferred from the publisher prefix
 - Anthropic-on-Vertex pricing is only supported for `location=global`
+
+### `aws_bedrock`
+
+Important fields:
+
+- `id`
+- `region`
+- `endpoint_url`
+  - optional
+  - defaults to `https://bedrock-runtime.{region}.amazonaws.com`
+- `auth.mode`
+- `default_headers`
+- `timeouts.total_ms`
+- optional `display.label`
+- optional `display.icon_key`
+
+Supported auth modes:
+
+```yaml
+providers:
+  - id: bedrock
+    type: aws_bedrock
+    region: us-east-1
+    auth:
+      mode: default_chain
+```
+
+```yaml
+providers:
+  - id: bedrock-api-key
+    type: aws_bedrock
+    region: us-east-1
+    auth:
+      mode: bearer
+      token: env.AWS_BEARER_TOKEN_BEDROCK
+```
+
+```yaml
+providers:
+  - id: bedrock-static
+    type: aws_bedrock
+    region: us-east-1
+    auth:
+      mode: static_credentials
+      access_key_id: env.AWS_ACCESS_KEY_ID
+      secret_access_key: env.AWS_SECRET_ACCESS_KEY
+      session_token: env.AWS_SESSION_TOKEN
+```
+
+`default_chain` leaves credential discovery to the AWS runtime environment. The standard environment variables are `AWS_REGION` or `AWS_DEFAULT_REGION` for region-aware AWS tooling, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and optional `AWS_SESSION_TOKEN`; shared AWS config, profiles, ECS/EKS credentials, and IMDS are also part of the AWS SDK credential-chain model.
+
+Routing caveats:
+
+- `upstream_model` should be the Bedrock Runtime model identity passed to Bedrock APIs: a base model ID such as `anthropic.claude-3-5-sonnet-20240620-v1:0`, an inference profile ID such as `us.anthropic.claude-3-5-sonnet-20240620-v1:0`, or a supported Bedrock ARN.
+- Non-streaming `/v1/chat/completions` uses Bedrock Converse in this slice.
+- Keep route `stream`, `responses`, and `embeddings` capability flags `false`.
+- IAM/SigV4 request signing, streaming, `/v1/responses`, and `/v1/embeddings` are not implemented for `aws_bedrock`.
 
 ## Model Config
 
@@ -494,6 +555,21 @@ models:
           chat_completions: true
           responses: false
           embeddings: false
+```
+
+Bedrock routes can execute non-streaming Chat Completions through Converse. Keep streaming, Responses, and embeddings disabled:
+
+```yaml
+models:
+  - id: claude-bedrock
+    routes:
+      - provider: bedrock
+        upstream_model: us.anthropic.claude-3-5-sonnet-20240620-v1:0
+        capabilities:
+          chat_completions: true
+          responses: false
+          embeddings: false
+          stream: false
 ```
 
 OpenAI-compatible embeddings-only routes should narrow route capability so chat and Responses requests fail early:

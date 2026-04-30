@@ -35,6 +35,7 @@ This matrix is about current execution support, not provider marketing claims.
 | `openai_compat` | Supported. Chat Completions route profiles can rewrite known request-shape quirks. | Supported through the distinct Responses request/provider path. Chat Completions profile transforms do not apply. | Supported. No route compatibility transforms apply in this slice. |
 | `gcp_vertex` with `google/*` upstream models | Supported for the current Vertex chat path when route capabilities allow it. | Not implemented; keep route `responses: false`. | Not implemented in this slice; keep route `embeddings: false`. |
 | `gcp_vertex` with `anthropic/*` upstream models | Supported for the current Vertex chat path when route capabilities allow it. | Not implemented; keep route `responses: false`. | Not applicable. |
+| `aws_bedrock` | Supported for non-streaming Bedrock Converse when route capabilities allow it. Keep route `stream: false` until EventStream support lands. | Not implemented; keep route `responses: false`. | Not implemented; keep route `embeddings: false`. |
 
 Route capability flags are still useful when a provider implementation does not support a public API family. They make failures happen at the gateway edge instead of later inside the provider adapter.
 
@@ -74,6 +75,8 @@ Effective capability is the intersection of configured route metadata and provid
 - Capability defaults are permissive, so routes for partial providers should set unsupported API families to `false`.
 
 For example, a Vertex Google chat route should normally set `responses: false` and `embeddings: false` until those provider paths are implemented. Otherwise the route may look viable from config alone and still fail when the provider adapter rejects the unsupported API family.
+
+For Bedrock, this foundation guarantees config load, validation, seeding, registration, deterministic region, endpoint, timeout, display, auth metadata, and non-streaming Converse chat execution for bearer-token auth. Bedrock `upstream_model` values should match Bedrock Runtime model identity: base model IDs, inference profile IDs, or Bedrock ARNs accepted by the target Bedrock Runtime operation. AWS documents `InvokeModel` as requiring `bedrock:InvokeModel`; streamed invocation and Converse access require the corresponding Bedrock runtime permissions. IAM/SigV4 signing and EventStream chat streaming remain follow-up work.
 
 ## OpenAI-Compatible Profile Fields
 
@@ -152,4 +155,5 @@ These items are intentionally outside this first slice:
 - cache, reasoning, and modality token accounting: [issue #92](https://github.com/ahstn/oceans-llm/issues/92)
 - multimodal image/file compatibility across provider families: [issue #93](https://github.com/ahstn/oceans-llm/issues/93)
 - Vertex embeddings provider support: [issue #103](https://github.com/ahstn/oceans-llm/issues/103)
+- Bedrock EventStream chat streaming: [issue #128](https://github.com/ahstn/oceans-llm/issues/128)
 - route readiness diagnostics: [issue #98](https://github.com/ahstn/oceans-llm/issues/98)
