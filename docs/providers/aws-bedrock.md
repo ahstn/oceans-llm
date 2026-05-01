@@ -13,7 +13,9 @@ The gateway uses the Bedrock Runtime endpoint shape:
 - streaming chat uses Bedrock `ConverseStream` and is normalized into OpenAI-compatible chat-completion chunks
 - `/v1/responses` and `/v1/embeddings` are not implemented for `aws_bedrock` routes
 
-The runnable auth mode in the current provider adapter is bearer-token auth. AWS documents `AWS_BEARER_TOKEN_BEDROCK` as the environment variable recognized by Bedrock API-key auth and direct HTTP calls can pass the same value as `Authorization: Bearer ...`: [Use an Amazon Bedrock API key](https://docs.aws.amazon.com/en_us/bedrock/latest/userguide/api-keys-use.html). The config validator rejects `default_chain` and `static_credentials` until IAM/SigV4 request signing exists. Use bearer auth for working local and development examples.
+The provider adapter supports bearer-token auth and IAM SigV4 request signing. AWS documents `AWS_BEARER_TOKEN_BEDROCK` as the environment variable recognized by Bedrock API-key auth and direct HTTP calls can pass the same value as `Authorization: Bearer ...`: [Use an Amazon Bedrock API key](https://docs.aws.amazon.com/en_us/bedrock/latest/userguide/api-keys-use.html).
+
+For IAM auth, `auth.mode: default_chain` uses the AWS SDK default credential provider chain. In EKS, IRSA works through that chain when the pod environment includes `AWS_ROLE_ARN`, `AWS_WEB_IDENTITY_TOKEN_FILE`, and optional `AWS_ROLE_SESSION_NAME`; earlier sources in the default chain can still win, matching AWS SDK behavior. `auth.mode: static_credentials` signs with the configured access key, secret key, and optional session token.
 
 ## Provider
 
@@ -31,6 +33,26 @@ providers:
 ```
 
 `endpoint_url` is optional. When omitted, the gateway uses `https://bedrock-runtime.{region}.amazonaws.com`.
+
+IAM examples:
+
+```yaml
+providers:
+  - id: bedrock-irsa
+    type: aws_bedrock
+    region: us-east-1
+    auth:
+      mode: default_chain
+
+  - id: bedrock-static
+    type: aws_bedrock
+    region: us-east-1
+    auth:
+      mode: static_credentials
+      access_key_id: env.AWS_ACCESS_KEY_ID
+      secret_access_key: env.AWS_SECRET_ACCESS_KEY
+      session_token: env.AWS_SESSION_TOKEN
+```
 
 ## Model Identity
 
@@ -148,7 +170,7 @@ The current runtime executes one selected route. Priority and weight affect rout
 - Keep `json_schema: false` unless a specific Bedrock route has explicit provider-specific overrides and tests.
 - Use `extra_body` only for additive Bedrock or Anthropic fields you have tested for the exact model family.
 - Check the model card before adding a new `upstream_model`; Bedrock model IDs and inference profile support differ by model and Region.
-- Production IAM role or temporary credential support should wait for SigV4 request signing in the provider adapter.
+- Prefer `default_chain` for production IAM roles and IRSA. Use `static_credentials` only for constrained local or controlled deployment cases where credential rotation is handled outside the gateway.
 
 ## Validation
 

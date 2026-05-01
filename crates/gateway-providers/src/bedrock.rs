@@ -1,7 +1,18 @@
-use std::{collections::BTreeMap, time::Duration};
+use std::{
+    collections::BTreeMap,
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 
 use async_stream::stream;
 use async_trait::async_trait;
+use aws_config::{Region, default_provider::credentials::DefaultCredentialsChain};
+use aws_credential_types::{Credentials, provider::ProvideCredentials};
+use aws_sigv4::{
+    http_request::{SignableBody, SignableRequest, SigningSettings, sign},
+    sign::v4,
+};
+use aws_smithy_runtime_api::client::identity::Identity;
 use bytes::{Buf, Bytes};
 use futures_util::StreamExt;
 use gateway_core::{
@@ -10,6 +21,7 @@ use gateway_core::{
 };
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
+use tokio::sync::OnceCell;
 use url::Url;
 use uuid::Uuid;
 
@@ -62,6 +74,7 @@ impl BedrockProviderConfig {
 pub struct BedrockProvider {
     config: BedrockProviderConfig,
     client: reqwest::Client,
+    default_credentials_chain: Arc<OnceCell<DefaultCredentialsChain>>,
 }
 
 impl BedrockProvider {
@@ -77,7 +90,11 @@ impl BedrockProvider {
             .build()
             .map_err(map_reqwest_error)?;
 
-        Ok(Self { config, client })
+        Ok(Self {
+            config,
+            client,
+            default_credentials_chain: Arc::new(OnceCell::new()),
+        })
     }
 
     fn unsupported(method: &str) -> ProviderError {
@@ -112,7 +129,7 @@ impl BedrockProvider {
         )
     }
 
-    fn build_chat_request(
+    async fn build_chat_request(
         &self,
         request: &CoreChatRequest,
         context: &ProviderRequestContext,
@@ -129,7 +146,12 @@ impl BedrockProvider {
             )
         };
 
-        let mut request = self.client.post(url).json(&body);
+        let body = serde_json::to_vec(&body).map_err(|error| {
+            ProviderError::InvalidRequest(format!(
+                "failed to serialize aws_bedrock request: {error}"
+            ))
+        })?;
+        let mut request = self.client.post(url).body(body);
         request = request.header("content-type", "application/json");
         request = request.header("accept", "application/json");
         request = request.header("x-request-id", &context.request_id);
@@ -144,22 +166,11 @@ impl BedrockProvider {
             }
         }
 
-        match &self.config.auth {
-            BedrockAuthConfig::Bearer { token } => {
-                request = request.bearer_auth(token);
-            }
-            BedrockAuthConfig::DefaultChain | BedrockAuthConfig::StaticCredentials { .. } => {
-                return Err(ProviderError::NotImplemented(
-                    "aws_bedrock IAM SigV4 request signing is owned by the provider auth foundation"
-                        .to_string(),
-                ));
-            }
-        }
-
-        request.build().map_err(map_reqwest_error)
+        self.apply_auth(request.build().map_err(map_reqwest_error)?)
+            .await
     }
 
-    fn build_converse_stream_request(
+    async fn build_converse_stream_request(
         &self,
         request: &CoreChatRequest,
         context: &ProviderRequestContext,
@@ -169,7 +180,12 @@ impl BedrockProvider {
         let body = map_chat_request_to_converse(&stream_request, context)?;
         let url = self.converse_stream_endpoint(&context.upstream_model);
 
-        let mut request = self.client.post(url).json(&body);
+        let body = serde_json::to_vec(&body).map_err(|error| {
+            ProviderError::InvalidRequest(format!(
+                "failed to serialize aws_bedrock request: {error}"
+            ))
+        })?;
+        let mut request = self.client.post(url).body(body);
         request = request.header("content-type", "application/json");
         request = request.header("accept", "application/vnd.amazon.eventstream");
         request = request.header("x-request-id", &context.request_id);
@@ -184,19 +200,151 @@ impl BedrockProvider {
             }
         }
 
+        self.apply_auth(request.build().map_err(map_reqwest_error)?)
+            .await
+    }
+
+    async fn apply_auth(
+        &self,
+        mut request: reqwest::Request,
+    ) -> Result<reqwest::Request, ProviderError> {
         match &self.config.auth {
             BedrockAuthConfig::Bearer { token } => {
-                request = request.bearer_auth(token);
+                request.headers_mut().insert(
+                    reqwest::header::AUTHORIZATION,
+                    reqwest::header::HeaderValue::from_str(&format!("Bearer {token}")).map_err(
+                        |error| {
+                            ProviderError::InvalidRequest(format!(
+                                "aws_bedrock bearer token cannot be used as a header: {error}"
+                            ))
+                        },
+                    )?,
+                );
+                Ok(request)
             }
-            BedrockAuthConfig::DefaultChain | BedrockAuthConfig::StaticCredentials { .. } => {
-                return Err(ProviderError::NotImplemented(
-                    "aws_bedrock IAM SigV4 request signing is owned by the provider auth foundation"
-                        .to_string(),
-                ));
+            BedrockAuthConfig::DefaultChain => {
+                let provider = self.default_credentials_provider().await;
+                let credentials = provider.provide_credentials().await.map_err(|error| {
+                    ProviderError::Transport(format!(
+                        "failed to resolve aws_bedrock default credentials: {error}"
+                    ))
+                })?;
+                self.sign_request(request, credentials)
             }
+            BedrockAuthConfig::StaticCredentials {
+                access_key_id,
+                secret_access_key,
+                session_token,
+            } => self.sign_request(
+                request,
+                Credentials::new(
+                    access_key_id,
+                    secret_access_key,
+                    session_token.clone(),
+                    None,
+                    "oceans-llm-static-bedrock-credentials",
+                ),
+            ),
+        }
+    }
+
+    async fn default_credentials_provider(&self) -> &DefaultCredentialsChain {
+        let region = self.config.region.clone();
+        self.default_credentials_chain
+            .get_or_init(|| async move {
+                DefaultCredentialsChain::builder()
+                    .region(Region::new(region))
+                    .build()
+                    .await
+            })
+            .await
+    }
+
+    fn sign_request(
+        &self,
+        mut request: reqwest::Request,
+        credentials: Credentials,
+    ) -> Result<reqwest::Request, ProviderError> {
+        request.headers_mut().remove(reqwest::header::AUTHORIZATION);
+        request.headers_mut().remove("x-amz-date");
+        request.headers_mut().remove("x-amz-security-token");
+
+        let method = request.method().as_str().to_string();
+        let uri = request.url().as_str().to_string();
+        let body = request
+            .body()
+            .and_then(reqwest::Body::as_bytes)
+            .ok_or_else(|| {
+                ProviderError::InvalidRequest(
+                    "aws_bedrock SigV4 signing requires an in-memory request body".to_string(),
+                )
+            })?
+            .to_vec();
+
+        let headers = request
+            .headers()
+            .iter()
+            .map(|(name, value)| {
+                value
+                    .to_str()
+                    .map(|value| (name.as_str(), value))
+                    .map_err(|error| {
+                        ProviderError::InvalidRequest(format!(
+                            "aws_bedrock request header `{name}` cannot be signed: {error}"
+                        ))
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let identity: Identity = credentials.into();
+        let signing_params = v4::SigningParams::builder()
+            .identity(&identity)
+            .region(&self.config.region)
+            .name("bedrock")
+            .time(SystemTime::now())
+            .settings(SigningSettings::default())
+            .build()
+            .map_err(|error| {
+                ProviderError::Transport(format!(
+                    "failed to build aws_bedrock SigV4 signing parameters: {error}"
+                ))
+            })?
+            .into();
+        let signable_request = SignableRequest::new(
+            method.as_str(),
+            uri.as_str(),
+            headers.iter().copied(),
+            SignableBody::Bytes(&body),
+        )
+        .map_err(|error| {
+            ProviderError::Transport(format!(
+                "failed to construct aws_bedrock SigV4 canonical request: {error}"
+            ))
+        })?;
+
+        let (signing_instructions, _signature) = sign(signable_request, &signing_params)
+            .map_err(|error| {
+                ProviderError::Transport(format!("failed to sign aws_bedrock request: {error}"))
+            })?
+            .into_parts();
+        for header in signing_instructions.headers() {
+            let value = reqwest::header::HeaderValue::from_str(header.1).map_err(|error| {
+                ProviderError::Transport(format!(
+                    "aws_bedrock SigV4 signer produced invalid header `{}`: {error}",
+                    header.0
+                ))
+            })?;
+            request.headers_mut().insert(
+                reqwest::header::HeaderName::from_bytes(header.0.as_bytes()).map_err(|error| {
+                    ProviderError::Transport(format!(
+                        "aws_bedrock SigV4 signer produced invalid header name `{}`: {error}",
+                        header.0
+                    ))
+                })?,
+                value,
+            );
         }
 
-        request.build().map_err(map_reqwest_error)
+        Ok(request)
     }
 
     async fn execute_stream_request(
@@ -241,7 +389,7 @@ impl ProviderClient for BedrockProvider {
         context: &ProviderRequestContext,
     ) -> Result<Value, ProviderError> {
         let is_anthropic_claude = is_anthropic_claude_model(&context.upstream_model);
-        let request = self.build_chat_request(request, context)?;
+        let request = self.build_chat_request(request, context).await?;
         let response = self
             .client
             .execute(request)
@@ -272,7 +420,7 @@ impl ProviderClient for BedrockProvider {
         request: &CoreChatRequest,
         context: &ProviderRequestContext,
     ) -> Result<ProviderStream, ProviderError> {
-        let request = self.build_converse_stream_request(request, context)?;
+        let request = self.build_converse_stream_request(request, context).await?;
         let response = self.execute_stream_request(request).await?;
 
         Ok(normalize_bedrock_converse_stream(
@@ -2222,6 +2370,7 @@ mod tests {
     use futures_util::StreamExt;
     use gateway_core::{CoreChatMessage, CoreChatRequest, ProviderRequestContext};
     use serde_json::{Map, Value, json};
+    use serial_test::serial;
 
     use super::{
         BedrockAuthConfig, BedrockEventStreamDecoder, BedrockProvider, BedrockProviderConfig,
@@ -2387,8 +2536,8 @@ mod tests {
         assert!(error.contains("remote image URLs are not supported"));
     }
 
-    #[test]
-    fn builds_bearer_converse_request_with_encoded_model_path_and_headers() {
+    #[tokio::test]
+    async fn builds_bearer_converse_request_with_encoded_model_path_and_headers() {
         let provider = BedrockProvider::new(BedrockProviderConfig {
             provider_key: "bedrock".to_string(),
             region: "us-east-1".to_string(),
@@ -2412,6 +2561,7 @@ mod tests {
 
         let built = provider
             .build_chat_request(&request, &context("amazon.nova-pro-v1:0"))
+            .await
             .expect("request");
         let body: Value =
             serde_json::from_slice(built.body().unwrap().as_bytes().unwrap()).expect("json body");
@@ -2440,8 +2590,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn builds_bearer_anthropic_invoke_request_with_encoded_model_path() {
+    #[tokio::test]
+    async fn builds_bearer_anthropic_invoke_request_with_encoded_model_path() {
         let provider = BedrockProvider::new(BedrockProviderConfig {
             provider_key: "bedrock".to_string(),
             region: "us-east-1".to_string(),
@@ -2465,6 +2615,7 @@ mod tests {
                 &request,
                 &context("us.anthropic.claude-3-5-sonnet-20241022-v2:0"),
             )
+            .await
             .expect("request");
         let body: Value =
             serde_json::from_slice(built.body().unwrap().as_bytes().unwrap()).expect("json body");
@@ -2481,8 +2632,8 @@ mod tests {
         assert_eq!(body["max_tokens"], 64);
     }
 
-    #[test]
-    fn builds_bearer_converse_stream_request_with_eventstream_accept_header() {
+    #[tokio::test]
+    async fn builds_bearer_converse_stream_request_with_eventstream_accept_header() {
         let provider = BedrockProvider::new(BedrockProviderConfig {
             provider_key: "bedrock".to_string(),
             region: "us-east-1".to_string(),
@@ -2506,6 +2657,7 @@ mod tests {
                 &request,
                 &context("us.anthropic.claude-3-5-sonnet-20241022-v2:0"),
             )
+            .await
             .expect("request");
 
         assert_eq!(
@@ -2516,6 +2668,129 @@ mod tests {
             built.headers().get("accept").unwrap(),
             "application/vnd.amazon.eventstream"
         );
+    }
+
+    #[tokio::test]
+    async fn builds_static_credentials_converse_request_with_sigv4_headers() {
+        let provider = static_credentials_provider(Some("test-session-token"));
+        let request = CoreChatRequest {
+            model: "nova".to_string(),
+            messages: vec![message("user", "Hello")],
+            stream: false,
+            extra: BTreeMap::new(),
+        };
+
+        let built = provider
+            .build_chat_request(&request, &context("amazon.nova-pro-v1:0"))
+            .await
+            .expect("request");
+
+        assert_eq!(
+            built.url().as_str(),
+            "https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.nova-pro-v1%3A0/converse"
+        );
+        let authorization = built
+            .headers()
+            .get("authorization")
+            .expect("authorization")
+            .to_str()
+            .expect("authorization utf8");
+        assert!(authorization.starts_with("AWS4-HMAC-SHA256 "));
+        assert!(authorization.contains("Credential=test-access-key/"));
+        assert!(authorization.contains("/us-east-1/bedrock/aws4_request"));
+        assert!(authorization.contains("SignedHeaders="));
+        assert!(built.headers().get("x-amz-date").is_some());
+        assert_eq!(
+            built.headers().get("x-amz-security-token").unwrap(),
+            "test-session-token"
+        );
+    }
+
+    #[tokio::test]
+    async fn builds_static_credentials_invoke_and_converse_stream_requests_with_sigv4_headers() {
+        let provider = static_credentials_provider(None);
+        let invoke_request = CoreChatRequest {
+            model: "claude".to_string(),
+            messages: vec![message("user", "Hello")],
+            stream: false,
+            extra: BTreeMap::from([("max_tokens".to_string(), json!(64))]),
+        };
+        let stream_request = CoreChatRequest {
+            model: "nova".to_string(),
+            messages: vec![message("user", "Hello")],
+            stream: true,
+            extra: BTreeMap::new(),
+        };
+
+        let invoke = provider
+            .build_chat_request(
+                &invoke_request,
+                &context("us.anthropic.claude-3-5-sonnet-20241022-v2:0"),
+            )
+            .await
+            .expect("invoke request");
+        let stream = provider
+            .build_converse_stream_request(&stream_request, &context("amazon.nova-pro-v1:0"))
+            .await
+            .expect("stream request");
+
+        assert_eq!(
+            invoke.url().as_str(),
+            "https://bedrock-runtime.us-east-1.amazonaws.com/model/us.anthropic.claude-3-5-sonnet-20241022-v2%3A0/invoke"
+        );
+        assert!(invoke.headers().get("authorization").is_some());
+        assert!(invoke.headers().get("x-amz-date").is_some());
+        assert!(invoke.headers().get("x-amz-security-token").is_none());
+        assert_eq!(
+            stream.url().as_str(),
+            "https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.nova-pro-v1%3A0/converse-stream"
+        );
+        assert!(stream.headers().get("authorization").is_some());
+        assert!(stream.headers().get("x-amz-date").is_some());
+        assert_eq!(
+            stream.headers().get("accept").unwrap(),
+            "application/vnd.amazon.eventstream"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn default_chain_uses_aws_provider_chain_for_sigv4_signing() {
+        let _env = AwsCredentialEnvGuard::set();
+        let provider = BedrockProvider::new(BedrockProviderConfig {
+            provider_key: "bedrock".to_string(),
+            region: "us-east-1".to_string(),
+            endpoint_url: "https://bedrock-runtime.us-east-1.amazonaws.com".to_string(),
+            auth: BedrockAuthConfig::DefaultChain,
+            default_headers: BTreeMap::new(),
+            request_timeout_ms: 1_000,
+        })
+        .expect("provider");
+        let request = CoreChatRequest {
+            model: "nova".to_string(),
+            messages: vec![message("user", "Hello")],
+            stream: false,
+            extra: BTreeMap::new(),
+        };
+
+        let built = provider
+            .build_chat_request(&request, &context("amazon.nova-pro-v1:0"))
+            .await
+            .expect("request");
+        let authorization = built
+            .headers()
+            .get("authorization")
+            .expect("authorization")
+            .to_str()
+            .expect("authorization utf8");
+
+        assert!(authorization.contains("Credential=chain-access-key/"));
+        assert!(authorization.contains("/us-east-1/bedrock/aws4_request"));
+        assert_eq!(
+            built.headers().get("x-amz-security-token").unwrap(),
+            "chain-session-token"
+        );
+        assert!(built.headers().get("x-amz-date").is_some());
     }
 
     #[test]
@@ -3137,6 +3412,61 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+        }
+    }
+
+    fn static_credentials_provider(session_token: Option<&str>) -> BedrockProvider {
+        BedrockProvider::new(BedrockProviderConfig {
+            provider_key: "bedrock".to_string(),
+            region: "us-east-1".to_string(),
+            endpoint_url: "https://bedrock-runtime.us-east-1.amazonaws.com".to_string(),
+            auth: BedrockAuthConfig::StaticCredentials {
+                access_key_id: "test-access-key".to_string(),
+                secret_access_key: "test-secret-key".to_string(),
+                session_token: session_token.map(ToString::to_string),
+            },
+            default_headers: BTreeMap::new(),
+            request_timeout_ms: 1_000,
+        })
+        .expect("provider")
+    }
+
+    struct AwsCredentialEnvGuard {
+        previous: Vec<(&'static str, Option<String>)>,
+    }
+
+    impl AwsCredentialEnvGuard {
+        fn set() -> Self {
+            let keys = [
+                "AWS_ACCESS_KEY_ID",
+                "AWS_SECRET_ACCESS_KEY",
+                "AWS_SESSION_TOKEN",
+                "AWS_PROFILE",
+            ];
+            let previous = keys
+                .into_iter()
+                .map(|key| (key, std::env::var(key).ok()))
+                .collect::<Vec<_>>();
+            unsafe {
+                std::env::set_var("AWS_ACCESS_KEY_ID", "chain-access-key");
+                std::env::set_var("AWS_SECRET_ACCESS_KEY", "chain-secret-key");
+                std::env::set_var("AWS_SESSION_TOKEN", "chain-session-token");
+                std::env::remove_var("AWS_PROFILE");
+            }
+            Self { previous }
+        }
+    }
+
+    impl Drop for AwsCredentialEnvGuard {
+        fn drop(&mut self) {
+            unsafe {
+                for (key, value) in &self.previous {
+                    match value {
+                        Some(value) => std::env::set_var(key, value),
+                        None => std::env::remove_var(key),
+                    }
+                }
+            }
         }
     }
 
