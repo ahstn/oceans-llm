@@ -17,6 +17,7 @@ use utoipa::{
 };
 
 pub const ADMIN_OPENAPI_PATH: &str = "crates/gateway/openapi/admin-api.json";
+const ADMIN_OPENAPI_DOCUMENT_VERSION: &str = "0.0.0";
 
 #[derive(Debug, Serialize, ToSchema)]
 #[schema(bound = "T: ToSchema")]
@@ -754,7 +755,9 @@ impl Modify for AdminApiSecurity {
 }
 
 pub fn admin_openapi() -> utoipa::openapi::OpenApi {
-    AdminApiDoc::openapi()
+    let mut openapi = AdminApiDoc::openapi();
+    openapi.info.version = ADMIN_OPENAPI_DOCUMENT_VERSION.to_string();
+    openapi
 }
 
 pub fn write_admin_openapi(path: &Path) -> anyhow::Result<()> {
@@ -798,6 +801,13 @@ pub fn format_timestamp(value: OffsetDateTime) -> String {
 #[cfg(test)]
 mod tests {
     use super::admin_openapi;
+
+    #[test]
+    fn openapi_document_version_is_release_agnostic() {
+        let openapi = admin_openapi();
+
+        assert_eq!(openapi.info.version, "0.0.0");
+    }
 
     #[test]
     fn openapi_document_includes_live_admin_paths_and_envelopes() {

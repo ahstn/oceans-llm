@@ -13,7 +13,7 @@ The gateway uses the Bedrock Runtime endpoint shape:
 - streaming chat uses Bedrock `ConverseStream` and is normalized into OpenAI-compatible chat-completion chunks
 - `/v1/responses` and `/v1/embeddings` are not implemented for `aws_bedrock` routes
 
-The runnable auth mode in the current provider adapter is bearer-token auth. AWS documents `AWS_BEARER_TOKEN_BEDROCK` as the environment variable recognized by Bedrock API-key auth and direct HTTP calls can pass the same value as `Authorization: Bearer ...`: [Use an Amazon Bedrock API key](https://docs.aws.amazon.com/en_us/bedrock/latest/userguide/api-keys-use.html). The config parser accepts `default_chain` and `static_credentials`, but IAM/SigV4 request signing is still provider-auth follow-up work. Use bearer auth for working local and development examples.
+The runnable auth mode in the current provider adapter is bearer-token auth. AWS documents `AWS_BEARER_TOKEN_BEDROCK` as the environment variable recognized by Bedrock API-key auth and direct HTTP calls can pass the same value as `Authorization: Bearer ...`: [Use an Amazon Bedrock API key](https://docs.aws.amazon.com/en_us/bedrock/latest/userguide/api-keys-use.html). The config validator rejects `default_chain` and `static_credentials` until IAM/SigV4 request signing exists. Use bearer auth for working local and development examples.
 
 ## Provider
 
@@ -149,3 +149,7 @@ The current runtime executes one selected route. Priority and weight affect rout
 - Use `extra_body` only for additive Bedrock or Anthropic fields you have tested for the exact model family.
 - Check the model card before adding a new `upstream_model`; Bedrock model IDs and inference profile support differ by model and Region.
 - Production IAM role or temporary credential support should wait for SigV4 request signing in the provider adapter.
+
+## Validation
+
+Validate documentation-only edits with `mise run docs-check`. For runtime Bedrock adapter changes, run `mise run lint` and the focused provider tests such as `cargo test -p gateway-providers bedrock`.

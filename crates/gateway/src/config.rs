@@ -168,7 +168,12 @@ impl GatewayConfig {
                         validate_bedrock_endpoint_url(&provider.id, endpoint_url)?;
                     }
                     match &provider.auth {
-                        AwsBedrockAuthConfig::DefaultChain => {}
+                        AwsBedrockAuthConfig::DefaultChain => {
+                            bail!(
+                                "aws_bedrock provider `{}` auth.mode default_chain requires IAM SigV4 signing, which is not implemented yet; use bearer auth for executable Bedrock routes",
+                                provider.id
+                            );
+                        }
                         AwsBedrockAuthConfig::Bearer { token } => {
                             if token.trim().is_empty() {
                                 bail!(
@@ -176,32 +181,15 @@ impl GatewayConfig {
                                     provider.id
                                 );
                             }
+                            let _ = resolve_secret_reference(token).with_context(|| {
+                                format!("aws_bedrock provider `{}` bearer.token", provider.id)
+                            })?;
                         }
-                        AwsBedrockAuthConfig::StaticCredentials {
-                            access_key_id,
-                            secret_access_key,
-                            session_token,
-                        } => {
-                            if access_key_id.trim().is_empty() {
-                                bail!(
-                                    "aws_bedrock provider `{}` static_credentials.access_key_id cannot be empty",
-                                    provider.id
-                                );
-                            }
-                            if secret_access_key.trim().is_empty() {
-                                bail!(
-                                    "aws_bedrock provider `{}` static_credentials.secret_access_key cannot be empty",
-                                    provider.id
-                                );
-                            }
-                            if let Some(session_token) = session_token
-                                && session_token.trim().is_empty()
-                            {
-                                bail!(
-                                    "aws_bedrock provider `{}` static_credentials.session_token cannot be empty when set",
-                                    provider.id
-                                );
-                            }
+                        AwsBedrockAuthConfig::StaticCredentials { .. } => {
+                            bail!(
+                                "aws_bedrock provider `{}` auth.mode static_credentials requires IAM SigV4 signing, which is not implemented yet; use bearer auth for executable Bedrock routes",
+                                provider.id
+                            );
                         }
                     }
                     validate_provider_display_config(
@@ -1749,7 +1737,7 @@ models:
     }
 
     #[test]
-    fn accepts_valid_bedrock_auth_modes_and_seeds_config() {
+    fn accepts_bedrock_bearer_auth_and_seeds_config() {
         let tmp = tempdir().expect("tempdir");
         let config_path = tmp.path().join("gateway.yaml");
 
@@ -1757,11 +1745,6 @@ models:
             &config_path,
             r#"
 providers:
-  - id: bedrock-chain
-    type: aws_bedrock
-    region: us-east-1
-    auth:
-      mode: default_chain
   - id: bedrock-bearer
     type: aws_bedrock
     region: us-west-2
@@ -1769,14 +1752,6 @@ providers:
     auth:
       mode: bearer
       token: literal.test-token
-  - id: bedrock-static
-    type: aws_bedrock
-    region: eu-west-1
-    auth:
-      mode: static_credentials
-      access_key_id: literal.test-access-key
-      secret_access_key: literal.test-secret-key
-      session_token: literal.test-session-token
     default_headers:
       x-test: configured
     timeouts:
@@ -1790,31 +1765,19 @@ providers:
         let config = GatewayConfig::from_path(&config_path).expect("config should parse");
         let providers = config.seed_providers().expect("seed providers");
 
-        assert_eq!(providers.len(), 3);
+        assert_eq!(providers.len(), 1);
         assert_eq!(providers[0].provider_type, "aws_bedrock");
         assert_eq!(
             providers[0].config["endpoint_url"],
-            "https://bedrock-runtime.us-east-1.amazonaws.com"
-        );
-        assert_eq!(
-            providers[0].secrets.as_ref().unwrap()["mode"],
-            "default_chain"
-        );
-        assert_eq!(
-            providers[1].config["endpoint_url"],
             "https://bedrock-runtime.us-west-2.amazonaws.com"
         );
-        assert!(providers[1].config.get("token").is_none());
-        assert_eq!(providers[1].secrets.as_ref().unwrap()["mode"], "bearer");
-        assert_eq!(
-            providers[2].secrets.as_ref().unwrap()["mode"],
-            "static_credentials"
-        );
+        assert!(providers[0].config.get("token").is_none());
+        assert_eq!(providers[0].secrets.as_ref().unwrap()["mode"], "bearer");
 
         let runtime_configs = config
             .bedrock_provider_configs()
             .expect("runtime provider configs");
-        assert_eq!(runtime_configs[2].request_timeout_ms, 30_000);
+        assert_eq!(runtime_configs[0].request_timeout_ms, 30_000);
     }
 
     #[test]
@@ -1899,6 +1862,63 @@ providers:
 "#,
         );
         GatewayConfig::from_path(&config_path).expect_err("config should fail");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: bedrock
+    type: aws_bedrock
+    region: us-east-1
+    auth:
+      mode: default_chain
+"#,
+        );
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("default_chain requires IAM SigV4 signing"),
+            "unexpected error: {error_text}"
+        );
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: bedrock
+    type: aws_bedrock
+    region: us-east-1
+    auth:
+      mode: static_credentials
+      access_key_id: literal.test-access-key
+      secret_access_key: literal.test-secret-key
+"#,
+        );
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("static_credentials requires IAM SigV4 signing"),
+            "unexpected error: {error_text}"
+        );
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: bedrock
+    type: aws_bedrock
+    region: us-east-1
+    auth:
+      mode: bearer
+      token: raw-token
+"#,
+        );
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("unsupported secret reference `raw-token`"),
+            "unexpected error: {error_text}"
+        );
     }
 
     #[test]

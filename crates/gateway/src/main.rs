@@ -1268,7 +1268,8 @@ providers:
     type: aws_bedrock
     region: us-east-1
     auth:
-      mode: default_chain
+      mode: bearer
+      token: literal.test-token
 "#,
         )
         .expect("write config");

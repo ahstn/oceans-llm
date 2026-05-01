@@ -384,6 +384,7 @@ fn map_chat_request_to_converse(
     }
 
     reject_openai_only_fields(&passthrough)?;
+    reject_unknown_converse_fields(&passthrough)?;
     merge_object_overrides(&mut body, &context.extra_body);
     Ok(Value::Object(body))
 }
@@ -473,6 +474,7 @@ fn map_chat_request_to_anthropic_messages(
     }
     extract_anthropic_passthrough_fields(&mut body, &mut passthrough);
     reject_openai_only_fields(&passthrough)?;
+    reject_unknown_anthropic_messages_fields(&passthrough)?;
 
     merge_object_overrides(&mut body, &context.extra_body);
     if !body.contains_key("max_tokens") {
@@ -555,6 +557,9 @@ fn map_bedrock_content_blocks(content: &Value) -> Result<Vec<Value>, ProviderErr
                     "tool_result" => {
                         blocks.push(map_tool_result_content_block(object)?);
                     }
+                    "image" | "image_url" | "input_image" => {
+                        blocks.push(map_bedrock_image_block(object)?);
+                    }
                     other => {
                         return Err(ProviderError::InvalidRequest(format!(
                             "unsupported content type `{other}` for aws_bedrock Converse mapping"
@@ -568,6 +573,104 @@ fn map_bedrock_content_blocks(content: &Value) -> Result<Vec<Value>, ProviderErr
             "message content must be a string or typed content array".to_string(),
         )),
     }
+}
+
+fn map_bedrock_image_block(object: &Map<String, Value>) -> Result<Value, ProviderError> {
+    let image_url = object
+        .get("image_url")
+        .or_else(|| object.get("source"))
+        .ok_or_else(|| {
+            ProviderError::InvalidRequest(
+                "image content entries must include `image_url` or `source`".to_string(),
+            )
+        })?;
+
+    match image_url {
+        Value::Object(image_object) => {
+            if image_object.get("type").and_then(Value::as_str) == Some("base64") {
+                return map_bedrock_base64_image_source(image_object);
+            }
+            if let Some(source) = image_object.get("source").and_then(Value::as_object)
+                && source.get("type").and_then(Value::as_str) == Some("base64")
+            {
+                return map_bedrock_base64_image_source(source);
+            }
+
+            let url = image_object
+                .get("url")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    ProviderError::InvalidRequest("image_url.url must be a string".to_string())
+                })?;
+            map_bedrock_data_url_image(url, image_object)
+        }
+        Value::String(url) => map_bedrock_data_url_image(url, object),
+        _ => Err(ProviderError::InvalidRequest(
+            "image_url must be a string or object for aws_bedrock Converse".to_string(),
+        )),
+    }
+}
+
+fn map_bedrock_base64_image_source(source: &Map<String, Value>) -> Result<Value, ProviderError> {
+    let media_type = source
+        .get("media_type")
+        .or_else(|| source.get("mime_type"))
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            ProviderError::InvalidRequest(
+                "base64 image sources for aws_bedrock Converse must include `media_type`"
+                    .to_string(),
+            )
+        })?;
+    let data = source.get("data").and_then(Value::as_str).ok_or_else(|| {
+        ProviderError::InvalidRequest(
+            "base64 image sources for aws_bedrock Converse must include string `data`".to_string(),
+        )
+    })?;
+    map_bedrock_base64_image(media_type, data)
+}
+
+fn map_bedrock_data_url_image(
+    url: &str,
+    metadata: &Map<String, Value>,
+) -> Result<Value, ProviderError> {
+    let Some((media_type, data)) = url
+        .strip_prefix("data:")
+        .and_then(|rest| rest.split_once(";base64,"))
+    else {
+        return Err(ProviderError::InvalidRequest(
+            "aws_bedrock Converse only supports base64 image data URLs; remote image URLs are not supported"
+                .to_string(),
+        ));
+    };
+    let media_type = metadata
+        .get("mime_type")
+        .and_then(Value::as_str)
+        .unwrap_or(media_type);
+    map_bedrock_base64_image(media_type, data)
+}
+
+fn map_bedrock_base64_image(media_type: &str, data: &str) -> Result<Value, ProviderError> {
+    let format = match media_type {
+        "image/jpeg" => "jpeg",
+        "image/png" => "png",
+        "image/webp" => "webp",
+        "image/gif" => "gif",
+        other => {
+            return Err(ProviderError::InvalidRequest(format!(
+                "unsupported image media type `{other}` for aws_bedrock Converse"
+            )));
+        }
+    };
+
+    Ok(json!({
+        "image": {
+            "format": format,
+            "source": {
+                "bytes": data
+            }
+        }
+    }))
 }
 
 fn map_anthropic_content_blocks(content: &Value) -> Result<Vec<Value>, ProviderError> {
@@ -1023,9 +1126,31 @@ fn normalize_stop_sequences(value: Value) -> Result<Value, ProviderError> {
         Value::Array(values) if values.iter().all(Value::is_string) => Ok(Value::Array(values)),
         Value::Null => Ok(Value::Array(Vec::new())),
         _ => Err(ProviderError::InvalidRequest(
-            "`stop` must be a string or array of strings for aws_bedrock Converse".to_string(),
+            "`stop` must be a string or array of strings for aws_bedrock chat".to_string(),
         )),
     }
+}
+
+fn reject_unknown_converse_fields(extra: &BTreeMap<String, Value>) -> Result<(), ProviderError> {
+    if extra.is_empty() {
+        return Ok(());
+    }
+    let unsupported_fields = extra.keys().cloned().collect::<Vec<_>>().join(", ");
+    Err(ProviderError::InvalidRequest(format!(
+        "unsupported request field(s) for aws_bedrock Converse mapping: {unsupported_fields}. Use `additionalModelRequestFields` / `additional_model_request_fields` for model-specific Bedrock controls, or route `extra_body` to override raw Bedrock request fields"
+    )))
+}
+
+fn reject_unknown_anthropic_messages_fields(
+    extra: &BTreeMap<String, Value>,
+) -> Result<(), ProviderError> {
+    if extra.is_empty() {
+        return Ok(());
+    }
+    let unsupported_fields = extra.keys().cloned().collect::<Vec<_>>().join(", ");
+    Err(ProviderError::InvalidRequest(format!(
+        "unsupported request field(s) for aws_bedrock Anthropic Claude Messages mapping: {unsupported_fields}. Use route `extra_body` for raw provider-specific overrides"
+    )))
 }
 
 fn extract_tool_config(
@@ -2211,6 +2336,58 @@ mod tests {
     }
 
     #[test]
+    fn maps_converse_base64_image_blocks_and_rejects_remote_urls() {
+        let request = CoreChatRequest {
+            model: "nova".to_string(),
+            messages: vec![CoreChatMessage {
+                role: "user".to_string(),
+                content: json!([
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": "data:image/png;base64,aW1hZ2U="
+                        }
+                    },
+                    {"type": "text", "text": "Describe it"}
+                ]),
+                name: None,
+                extra: BTreeMap::new(),
+            }],
+            stream: true,
+            extra: BTreeMap::new(),
+        };
+
+        let body = map_chat_request_to_converse(&request, &context("amazon.nova-pro-v1:0"))
+            .expect("mapped");
+        assert_eq!(
+            body["messages"][0]["content"][0],
+            json!({
+                "image": {
+                    "format": "png",
+                    "source": {
+                        "bytes": "aW1hZ2U="
+                    }
+                }
+            })
+        );
+
+        let remote = CoreChatRequest {
+            messages: vec![CoreChatMessage {
+                content: json!([{
+                    "type": "image_url",
+                    "image_url": {"url": "https://example.test/image.png"}
+                }]),
+                ..message("user", "")
+            }],
+            ..request
+        };
+        let error = map_chat_request_to_converse(&remote, &context("amazon.nova-pro-v1:0"))
+            .expect_err("remote image rejected")
+            .to_string();
+        assert!(error.contains("remote image URLs are not supported"));
+    }
+
+    #[test]
     fn builds_bearer_converse_request_with_encoded_model_path_and_headers() {
         let provider = BedrockProvider::new(BedrockProviderConfig {
             provider_key: "bedrock".to_string(),
@@ -2339,6 +2516,23 @@ mod tests {
             built.headers().get("accept").unwrap(),
             "application/vnd.amazon.eventstream"
         );
+    }
+
+    #[test]
+    fn rejects_unknown_bedrock_converse_request_fields() {
+        let request = CoreChatRequest {
+            model: "nova".to_string(),
+            messages: vec![message("user", "Hello")],
+            stream: false,
+            extra: BTreeMap::from([("top_k".to_string(), json!(10))]),
+        };
+
+        let error = map_chat_request_to_converse(&request, &context("amazon.nova-pro-v1:0"))
+            .expect_err("unknown field rejected")
+            .to_string();
+        assert!(error.contains("unsupported request field(s)"));
+        assert!(error.contains("top_k"));
+        assert!(error.contains("additionalModelRequestFields"));
     }
 
     #[test]
@@ -2478,6 +2672,29 @@ mod tests {
                 "content": "12 C"
             })
         );
+    }
+
+    #[test]
+    fn rejects_unknown_anthropic_messages_request_fields() {
+        let request = CoreChatRequest {
+            model: "claude".to_string(),
+            messages: vec![message("user", "Hello")],
+            stream: false,
+            extra: BTreeMap::from([
+                ("max_tokens".to_string(), json!(64)),
+                ("unknown_anthropic_option".to_string(), json!(true)),
+            ]),
+        };
+
+        let error = map_chat_request_to_anthropic_messages(
+            &request,
+            &context("anthropic.claude-3-haiku-20240307-v1:0"),
+        )
+        .expect_err("unknown field rejected")
+        .to_string();
+        assert!(error.contains("unsupported request field(s)"));
+        assert!(error.contains("unknown_anthropic_option"));
+        assert!(error.contains("extra_body"));
     }
 
     #[test]

@@ -86,13 +86,24 @@ bun run --cwd crates/admin-ui/web generate:admin-api
 
 [tasks.admin-contract-check]
 description = "Verify generated admin contract artifacts are up to date"
-depends = ["admin-contract-generate"]
-run = "git diff --exit-code -- crates/gateway/openapi/admin-api.json crates/admin-ui/web/src/generated/admin-api.ts"
+depends = ["ui-install"]
+run = """
+set -euo pipefail
+
+tmpdir="$(mktemp -d)"
+trap 'rm -rf "$tmpdir"' EXIT
+
+cargo run -p gateway --bin export_admin_openapi -- "$tmpdir/admin-api.json"
+bun run --cwd crates/admin-ui/web openapi-typescript "$tmpdir/admin-api.json" -o "$tmpdir/admin-api.ts"
+
+diff -u crates/gateway/openapi/admin-api.json "$tmpdir/admin-api.json"
+diff -u crates/admin-ui/web/src/generated/admin-api.ts "$tmpdir/admin-api.ts"
+"""
 
 [tasks.lint]
 description = "Run Rust and admin UI linting"
 depends = ["ui-install"]
-run = "mise run admin-contract-check && cargo clippy --workspace --all-targets -- -D warnings && bun run --cwd crates/admin-ui/web lint"
+run = "cargo clippy --workspace --all-targets -- -D warnings && bun run --cwd crates/admin-ui/web lint"
 
 [tasks.build]
 description = "Build Rust crates and admin UI bundle"
@@ -315,7 +326,7 @@ run = "bun run --cwd crates/admin-ui/web build"
 
 [tasks.ui-lint]
 description = "Lint admin UI"
-run = "mise run admin-contract-check && bun run --cwd crates/admin-ui/web lint"
+run = "bun run --cwd crates/admin-ui/web lint"
 
 [tasks.ui-fmt]
 description = "Format admin UI"
