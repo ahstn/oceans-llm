@@ -76,7 +76,7 @@ Effective capability is the intersection of configured route metadata and provid
 
 For example, a Vertex Google chat route should normally set `responses: false` and `embeddings: false` until those provider paths are implemented. Otherwise the route may look viable from config alone and still fail when the provider adapter rejects the unsupported API family.
 
-For Bedrock, this foundation guarantees config load, validation, seeding, registration, deterministic region, endpoint, timeout, display, auth metadata, Converse chat execution, Claude Messages invocation, and ConverseStream chat streaming for bearer-token auth. Bedrock `upstream_model` values should match Bedrock Runtime model identity: base model IDs, inference profile IDs, or Bedrock ARNs accepted by the target Bedrock Runtime operation. AWS documents `InvokeModel` as requiring `bedrock:InvokeModel`; streamed invocation and Converse access require the corresponding Bedrock runtime permissions. IAM/SigV4 signing remains follow-up work.
+For Bedrock, this foundation guarantees config load, validation, seeding, registration, deterministic region, endpoint, timeout, display, auth metadata, Converse chat execution, Claude Messages invocation, and ConverseStream chat streaming for bearer-token auth. It also supports IAM/SigV4 signing for the `default_chain` and `static_credentials` auth modes. Bedrock `upstream_model` values should match Bedrock Runtime model identity: base model IDs, inference profile IDs, or Bedrock ARNs accepted by the target Bedrock Runtime operation. AWS documents `InvokeModel` as requiring `bedrock:InvokeModel`; streamed invocation and Converse access require the corresponding Bedrock runtime permissions.
 
 ## AWS Bedrock Anthropic Claude
 

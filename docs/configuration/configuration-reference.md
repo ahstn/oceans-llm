@@ -413,14 +413,14 @@ providers:
       token: env.AWS_BEARER_TOKEN_BEDROCK
 ```
 
-`default_chain` and `static_credentials` require IAM SigV4 signing, which is not implemented yet. They are rejected during config validation until provider auth supports signed Bedrock Runtime requests.
+`default_chain` and `static_credentials` use IAM SigV4 signing for Bedrock Runtime requests. `bearer` remains available for bearer-token based Bedrock access where applicable.
 
 Routing caveats:
 
 - `upstream_model` should be the Bedrock Runtime model identity passed to Bedrock APIs: a base model ID such as `anthropic.claude-3-5-sonnet-20240620-v1:0`, an inference profile ID such as `us.anthropic.claude-3-5-sonnet-20240620-v1:0`, or a supported Bedrock ARN.
 - `/v1/chat/completions` routing is provider/model-specific in this slice: Claude non-streaming requests use `InvokeModel` with Anthropic Messages, while Bedrock Converse and ConverseStream are used for supported Bedrock-native chat flows.
 - Route `stream` may be enabled for Bedrock models that support streaming through `ConverseStream`; keep `responses` and `embeddings` capability flags `false`.
-- IAM/SigV4 request signing, `/v1/responses`, and `/v1/embeddings` are not implemented for `aws_bedrock`.
+- `/v1/responses` and `/v1/embeddings` are not implemented for `aws_bedrock`.
 - Validate documentation-only updates with `mise run docs-check`.
 
 ## Model Config

@@ -1322,6 +1322,11 @@ fn extract_tool_config(
         return Ok(None);
     }
 
+    let tool_choice = extra.remove("tool_choice");
+    if tool_choice.as_ref().is_some_and(tool_choice_is_none) {
+        return Ok(None);
+    }
+
     let mut bedrock_tools = Vec::new();
     for tool in tools_array {
         let object = tool.as_object().ok_or_else(|| {
@@ -1371,7 +1376,7 @@ fn extract_tool_config(
 
     let mut tool_config = Map::new();
     tool_config.insert("tools".to_string(), Value::Array(bedrock_tools));
-    if let Some(tool_choice) = extra.remove("tool_choice")
+    if let Some(tool_choice) = tool_choice
         && let Some(mapped) = map_tool_choice(&tool_choice)?
     {
         tool_config.insert("toolChoice".to_string(), mapped);
@@ -2861,6 +2866,36 @@ mod tests {
                 "toolChoice": {"tool": {"name": "get_weather"}}
             })
         );
+    }
+
+    #[test]
+    fn omits_converse_tool_config_when_tool_choice_is_none() {
+        let request = CoreChatRequest {
+            model: "nova".to_string(),
+            messages: vec![message("user", "Do not call tools")],
+            stream: false,
+            extra: BTreeMap::from([
+                (
+                    "tools".to_string(),
+                    json!([{
+                        "type": "function",
+                        "function": {
+                            "name": "get_weather",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {"city": {"type": "string"}}
+                            }
+                        }
+                    }]),
+                ),
+                ("tool_choice".to_string(), json!("none")),
+            ]),
+        };
+
+        let body = map_chat_request_to_converse(&request, &context("amazon.nova-pro-v1:0"))
+            .expect("mapped");
+
+        assert!(body.get("toolConfig").is_none());
     }
 
     #[test]

@@ -167,6 +167,16 @@ impl GatewayConfig {
                     if let Some(endpoint_url) = provider.endpoint_url.as_deref() {
                         validate_bedrock_endpoint_url(&provider.id, endpoint_url)?;
                     }
+                    let _ = BedrockProviderConfig::resolved_endpoint_url(
+                        provider.region.trim(),
+                        provider.endpoint_url.as_deref(),
+                    )
+                    .with_context(|| {
+                        format!(
+                            "aws_bedrock provider `{}` endpoint_url is invalid",
+                            provider.id
+                        )
+                    })?;
                     match &provider.auth {
                         AwsBedrockAuthConfig::DefaultChain => {}
                         AwsBedrockAuthConfig::Bearer { token } => {
@@ -472,7 +482,7 @@ impl GatewayConfig {
                     })?;
 
                     let config = json!({
-                        "region": provider.region,
+                        "region": provider.region.trim(),
                         "endpoint_url": endpoint_url,
                         "default_headers": provider.default_headers,
                         "timeouts": provider.timeouts,
@@ -1783,7 +1793,7 @@ models:
 providers:
   - id: bedrock-bearer
     type: aws_bedrock
-    region: us-west-2
+    region: " us-west-2 "
     endpoint_url: "https://bedrock-runtime.us-west-2.amazonaws.com/"
     auth:
       mode: bearer
@@ -1807,6 +1817,7 @@ providers:
             providers[0].config["endpoint_url"],
             "https://bedrock-runtime.us-west-2.amazonaws.com"
         );
+        assert_eq!(providers[0].config["region"], "us-west-2");
         assert!(providers[0].config.get("token").is_none());
         assert_eq!(providers[0].secrets.as_ref().unwrap()["mode"], "bearer");
 
@@ -1867,6 +1878,22 @@ providers:
         let error_text = format!("{error:#}");
         assert!(
             error_text.contains("endpoint_url `not a url` is invalid"),
+            "unexpected error: {error_text}"
+        );
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: bedrock
+    type: aws_bedrock
+    region: "us east 1"
+"#,
+        );
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("aws_bedrock provider `bedrock` endpoint_url is invalid"),
             "unexpected error: {error_text}"
         );
 

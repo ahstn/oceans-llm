@@ -1279,6 +1279,8 @@ providers:
         let provider = registry.get("bedrock").expect("bedrock provider");
 
         assert_eq!(provider.provider_type(), "aws_bedrock");
+        assert!(provider.capabilities().chat_completions);
+        assert!(provider.capabilities().stream);
         assert!(!provider.capabilities().responses);
         assert!(!provider.capabilities().embeddings);
     }
