@@ -1899,20 +1899,25 @@ fn apply_converse_anthropic_thinking_compatibility(
                 merge_converse_thinking_field(additional, "effort", effort, upstream_model)?;
             }
             ClaudeThinkingPolicy::ManualWithEffortBeta => {
-                if let Some(budget_tokens) = budget_tokens {
-                    merge_converse_thinking_field(
-                        additional,
-                        "type",
-                        json!("enabled"),
-                        upstream_model,
-                    )?;
-                    merge_converse_thinking_field(
-                        additional,
-                        "budget_tokens",
-                        budget_tokens,
-                        upstream_model,
-                    )?;
-                }
+                let budget_tokens = budget_tokens
+                    .or_else(|| existing_converse_manual_thinking_budget(additional))
+                    .ok_or_else(|| {
+                        ProviderError::InvalidRequest(format!(
+                            "`reasoning_effort` requires an explicit manual thinking budget for `{upstream_model}` because this Claude model requires manual thinking when Bedrock effort is used"
+                        ))
+                    })?;
+                merge_converse_thinking_field(
+                    additional,
+                    "type",
+                    json!("enabled"),
+                    upstream_model,
+                )?;
+                merge_converse_thinking_field(
+                    additional,
+                    "budget_tokens",
+                    budget_tokens,
+                    upstream_model,
+                )?;
                 merge_converse_thinking_field(additional, "effort", effort, upstream_model)?;
             }
             ClaudeThinkingPolicy::ManualOnly => {
@@ -3557,6 +3562,57 @@ mod tests {
             })
         );
         assert!(body.get("reasoning").is_none());
+    }
+
+    #[test]
+    fn maps_opus_4_5_converse_reasoning_effort_with_manual_budget() {
+        let request = CoreChatRequest {
+            model: "claude".to_string(),
+            messages: vec![message("user", "Think carefully")],
+            stream: true,
+            extra: BTreeMap::from([
+                ("max_tokens".to_string(), json!(4096)),
+                (
+                    "reasoning".to_string(),
+                    json!({ "effort": "medium", "budget_tokens": 1024 }),
+                ),
+            ]),
+        };
+
+        let body =
+            map_chat_request_to_converse(&request, &context("anthropic.claude-opus-4-5-v1:0"))
+                .expect("mapped");
+
+        assert_eq!(
+            body["additionalModelRequestFields"],
+            json!({
+                "thinking": {
+                    "type": "enabled",
+                    "budget_tokens": 1024,
+                    "effort": "medium"
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn rejects_opus_4_5_converse_reasoning_effort_without_manual_budget() {
+        let request = CoreChatRequest {
+            model: "claude".to_string(),
+            messages: vec![message("user", "Think carefully")],
+            stream: true,
+            extra: BTreeMap::from([
+                ("max_tokens".to_string(), json!(4096)),
+                ("reasoning_effort".to_string(), json!("medium")),
+            ]),
+        };
+
+        let error =
+            map_chat_request_to_converse(&request, &context("anthropic.claude-opus-4-5-v1:0"))
+                .expect_err("budget required")
+                .to_string();
+
+        assert!(error.contains("manual thinking budget"));
     }
 
     #[test]
