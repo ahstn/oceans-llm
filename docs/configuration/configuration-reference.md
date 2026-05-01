@@ -332,6 +332,7 @@ Supported provider types in the checked-in configs:
 
 - `openai_compat`
 - `gcp_vertex`
+- `aws_bedrock`
 
 ### Provider Auth Modes
 
@@ -340,6 +341,7 @@ Supported provider types in the checked-in configs:
 | `openai_compat` | `auth.token` | bearer-style token |
 | `gcp_vertex` | `auth.mode: adc` | ADC available in the runtime environment |
 | `gcp_vertex` | `auth.mode: service_account` | `credentials_path` pointing at service-account JSON or an equivalent mounted secret path |
+| `aws_bedrock` | `auth.mode: bearer` | Bedrock bearer token, often `env.AWS_BEARER_TOKEN_BEDROCK` |
 
 ### `openai_compat`
 
@@ -383,6 +385,43 @@ Routing and pricing caveats:
 - `upstream_model` must use `<publisher>/<model_id>`
 - pricing identity is inferred from the publisher prefix
 - Anthropic-on-Vertex pricing is only supported for `location=global`
+
+### `aws_bedrock`
+
+Important fields:
+
+- `id`
+- `region`
+- `endpoint_url`
+  - optional
+  - defaults to `https://bedrock-runtime.{region}.amazonaws.com`
+- `auth.mode`
+- `default_headers`
+- `timeouts.total_ms`
+- optional `display.label`
+- optional `display.icon_key`
+
+Runnable auth mode:
+
+```yaml
+providers:
+  - id: bedrock-api-key
+    type: aws_bedrock
+    region: us-east-1
+    auth:
+      mode: bearer
+      token: env.AWS_BEARER_TOKEN_BEDROCK
+```
+
+`default_chain` and `static_credentials` use IAM SigV4 signing for Bedrock Runtime requests. `bearer` remains available for bearer-token based Bedrock access where applicable.
+
+Routing caveats:
+
+- `upstream_model` should be the Bedrock Runtime model identity passed to Bedrock APIs: a base model ID such as `anthropic.claude-3-5-sonnet-20240620-v1:0`, an inference profile ID such as `us.anthropic.claude-3-5-sonnet-20240620-v1:0`, or a supported Bedrock ARN.
+- `/v1/chat/completions` routing is provider/model-specific in this slice: Claude non-streaming requests use `InvokeModel` with Anthropic Messages, while Bedrock Converse and ConverseStream are used for supported Bedrock-native chat flows.
+- Route `stream` may be enabled for Bedrock models that support streaming through `ConverseStream`; keep `responses` and `embeddings` capability flags `false`.
+- `/v1/responses` and `/v1/embeddings` are not implemented for `aws_bedrock`.
+- Validate documentation-only updates with `mise run docs-check`.
 
 ## Model Config
 
@@ -494,6 +533,21 @@ models:
           chat_completions: true
           responses: false
           embeddings: false
+```
+
+Bedrock routes can execute Chat Completions through Claude native Messages, Converse, and ConverseStream depending on the upstream model and request shape. Keep Responses and embeddings disabled:
+
+```yaml
+models:
+  - id: claude-bedrock
+    routes:
+      - provider: bedrock
+        upstream_model: us.anthropic.claude-3-5-sonnet-20240620-v1:0
+        capabilities:
+          chat_completions: true
+          responses: false
+          embeddings: false
+          stream: true
 ```
 
 OpenAI-compatible embeddings-only routes should narrow route capability so chat and Responses requests fail early:

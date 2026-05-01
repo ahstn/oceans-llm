@@ -16,7 +16,7 @@ use gateway_core::{
     RequestLogPayloadRecord, RequestLogRecord, RequestLogRepository, RequestTag, RequestTags,
     UsageLedgerRecord, UsagePricingStatus, UserStatus,
 };
-use gateway_providers::{OpenAiCompatProvider, VertexProvider};
+use gateway_providers::{BedrockProvider, OpenAiCompatProvider, VertexProvider};
 use gateway_service::{
     DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, GatewayService, WeightedRoutePlanner,
     hash_gateway_key_secret,
@@ -1119,6 +1119,12 @@ fn build_provider_registry(config: &GatewayConfig) -> anyhow::Result<ProviderReg
         providers.register(Arc::new(provider));
     }
 
+    for provider_config in config.bedrock_provider_configs()? {
+        let provider = BedrockProvider::new(provider_config)
+            .map_err(|error| anyhow::anyhow!("failed building aws_bedrock provider: {error}"))?;
+        providers.register(Arc::new(provider));
+    }
+
     Ok(providers)
 }
 
@@ -1235,7 +1241,10 @@ mod tests {
     use url::Url;
     use uuid::Uuid;
 
-    use crate::{ensure_bootstrap_admin, ensure_seed_local_demo_targets_local_database};
+    use crate::{
+        build_provider_registry, ensure_bootstrap_admin,
+        ensure_seed_local_demo_targets_local_database,
+    };
     use gateway::{
         config::{BootstrapAdminConfig, GatewayConfig},
         http::{build_router, state::AppState},
@@ -1245,6 +1254,35 @@ mod tests {
     enum MockChatResult {
         Value(Value),
         Error(MockError),
+    }
+
+    #[test]
+    fn build_provider_registry_registers_bedrock_stub() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        std::fs::write(
+            &config_path,
+            r#"
+providers:
+  - id: bedrock
+    type: aws_bedrock
+    region: us-east-1
+    auth:
+      mode: bearer
+      token: literal.test-token
+"#,
+        )
+        .expect("write config");
+
+        let config = GatewayConfig::from_path(&config_path).expect("config");
+        let registry = build_provider_registry(&config).expect("registry");
+        let provider = registry.get("bedrock").expect("bedrock provider");
+
+        assert_eq!(provider.provider_type(), "aws_bedrock");
+        assert!(provider.capabilities().chat_completions);
+        assert!(provider.capabilities().stream);
+        assert!(!provider.capabilities().responses);
+        assert!(!provider.capabilities().embeddings);
     }
 
     #[derive(Clone)]

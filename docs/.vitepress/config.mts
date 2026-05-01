@@ -44,6 +44,10 @@ export default defineConfig({
         ],
       },
       {
+        text: "Providers",
+        items: [{ text: "AWS Bedrock", link: "/providers/aws-bedrock" }],
+      },
+      {
         text: "Operations",
         items: [
           { text: "Budgets and Spending", link: "/operations/budgets-and-spending" },
