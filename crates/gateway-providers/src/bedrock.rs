@@ -1538,7 +1538,10 @@ fn apply_anthropic_thinking_compatibility(
     extra: &mut BTreeMap<String, Value>,
     upstream_model: &str,
 ) -> Result<(), ProviderError> {
-    let effort = extract_anthropic_reasoning_effort(extra)?;
+    let reasoning_effort = extract_anthropic_reasoning_effort(extra)?;
+    let native_effort = extract_existing_anthropic_output_effort(body)?;
+    let has_native_effort = native_effort.is_some();
+    let effort = merge_optional_efforts(reasoning_effort, native_effort, upstream_model)?;
     let budget_tokens = extract_anthropic_reasoning_budget_tokens(extra);
     let policy = claude_thinking_policy(upstream_model);
 
@@ -1562,6 +1565,11 @@ fn apply_anthropic_thinking_compatibility(
                 ensure_anthropic_beta(body, "effort-2025-11-24")?;
             }
             ClaudeThinkingPolicy::ManualOnly => {
+                if has_native_effort {
+                    return Err(ProviderError::InvalidRequest(format!(
+                        "`output_config.effort` is not supported for `{upstream_model}`"
+                    )));
+                }
                 let budget_tokens = budget_tokens
                     .or_else(|| existing_manual_thinking_budget(body))
                     .ok_or_else(|| {
@@ -1594,7 +1602,9 @@ fn apply_anthropic_thinking_compatibility(
 fn extract_anthropic_reasoning_effort(
     extra: &mut BTreeMap<String, Value>,
 ) -> Result<Option<Value>, ProviderError> {
-    let reasoning_effort = extra.remove("reasoning_effort");
+    let reasoning_effort = extra
+        .remove("reasoning_effort")
+        .filter(|value| !value.is_null());
     let reasoning = extra.remove("reasoning");
 
     match (reasoning_effort, reasoning) {
@@ -1603,10 +1613,11 @@ fn extract_anthropic_reasoning_effort(
             if let Some(budget_tokens) = reasoning.remove("budget_tokens") {
                 extra.insert("reasoning_budget_tokens".to_string(), budget_tokens);
             }
-            Ok(reasoning.remove("effort"))
+            Ok(reasoning.remove("effort").filter(|value| !value.is_null()))
         }
         (Some(effort), Some(Value::Object(mut reasoning))) => {
-            if let Some(reasoning_effort) = reasoning.remove("effort")
+            if let Some(reasoning_effort) =
+                reasoning.remove("effort").filter(|value| !value.is_null())
                 && reasoning_effort != effort
             {
                 return Err(ProviderError::InvalidRequest(
@@ -1624,6 +1635,51 @@ fn extract_anthropic_reasoning_effort(
         (_, Some(_)) => Err(ProviderError::InvalidRequest(
             "`reasoning` must be an object for Anthropic Claude mapping".to_string(),
         )),
+        (None, None) => Ok(None),
+    }
+}
+
+fn extract_existing_anthropic_output_effort(
+    body: &mut Map<String, Value>,
+) -> Result<Option<Value>, ProviderError> {
+    let (effort, remove_output_config) = {
+        let Some(output_config) = body.get_mut("output_config") else {
+            return Ok(None);
+        };
+        let output_config = output_config.as_object_mut().ok_or_else(|| {
+            ProviderError::InvalidRequest(
+                "`output_config` must be an object for Anthropic Claude mapping".to_string(),
+            )
+        })?;
+
+        let effort = output_config.get("effort").cloned();
+        if effort.as_ref().is_some_and(Value::is_null) {
+            output_config.remove("effort");
+            (None, output_config.is_empty())
+        } else {
+            (effort, false)
+        }
+    };
+    if remove_output_config {
+        body.remove("output_config");
+    }
+
+    Ok(effort)
+}
+
+fn merge_optional_efforts(
+    reasoning_effort: Option<Value>,
+    native_effort: Option<Value>,
+    upstream_model: &str,
+) -> Result<Option<Value>, ProviderError> {
+    match (reasoning_effort, native_effort) {
+        (Some(reasoning_effort), Some(native_effort)) if reasoning_effort != native_effort => {
+            Err(ProviderError::InvalidRequest(format!(
+                "`reasoning_effort` conflicts with `output_config.effort` for `{upstream_model}`"
+            )))
+        }
+        (Some(reasoning_effort), _) => Ok(Some(reasoning_effort)),
+        (None, Some(native_effort)) => Ok(Some(native_effort)),
         (None, None) => Ok(None),
     }
 }
@@ -2063,6 +2119,29 @@ fn validate_converse_anthropic_sampling_fields(
         return Err(ProviderError::InvalidRequest(format!(
             "`top_k` is not supported for `{upstream_model}`; omit the field for Claude Opus 4.7+"
         )));
+    }
+    let remove_additional = if let Some(additional) = body
+        .get_mut("additionalModelRequestFields")
+        .and_then(Value::as_object_mut)
+    {
+        for field in ["top_k", "topK"] {
+            let Some(value) = additional.get(field) else {
+                continue;
+            };
+            if value.is_null() {
+                additional.remove(field);
+                continue;
+            }
+            return Err(ProviderError::InvalidRequest(format!(
+                "`{field}` is not supported for `{upstream_model}`; omit the field for Claude Opus 4.7+"
+            )));
+        }
+        additional.is_empty()
+    } else {
+        false
+    };
+    if remove_additional {
+        body.remove("additionalModelRequestFields");
     }
     Ok(())
 }
@@ -3346,6 +3425,77 @@ mod tests {
     }
 
     #[test]
+    fn ignores_null_reasoning_effort_for_anthropic_mapping() {
+        let request = CoreChatRequest {
+            model: "claude".to_string(),
+            messages: vec![message("user", "Hello")],
+            stream: false,
+            extra: BTreeMap::from([
+                ("max_tokens".to_string(), json!(4096)),
+                ("reasoning_effort".to_string(), Value::Null),
+                ("reasoning".to_string(), json!({ "effort": null })),
+                ("output_config".to_string(), json!({ "effort": null })),
+            ]),
+        };
+
+        let body = map_chat_request_to_anthropic_messages(
+            &request,
+            &context("global.anthropic.claude-opus-4-7"),
+        )
+        .expect("mapped");
+
+        assert!(body.get("thinking").is_none());
+        assert!(body.get("output_config").is_none());
+        assert!(body.get("reasoning_effort").is_none());
+        assert!(body.get("reasoning").is_none());
+    }
+
+    #[test]
+    fn validates_native_output_config_effort_for_anthropic_mapping() {
+        let request = CoreChatRequest {
+            model: "claude".to_string(),
+            messages: vec![message("user", "Think carefully")],
+            stream: false,
+            extra: BTreeMap::from([
+                ("max_tokens".to_string(), json!(4096)),
+                ("output_config".to_string(), json!({ "effort": "medium" })),
+                ("reasoning_budget_tokens".to_string(), json!(1024)),
+            ]),
+        };
+
+        let body = map_chat_request_to_anthropic_messages(
+            &request,
+            &context("anthropic.claude-opus-4-5-v1:0"),
+        )
+        .expect("mapped");
+
+        assert_eq!(body["output_config"], json!({ "effort": "medium" }));
+        assert_eq!(body["anthropic_beta"], json!(["effort-2025-11-24"]));
+    }
+
+    #[test]
+    fn rejects_native_output_config_effort_for_manual_only_anthropic_mapping() {
+        let request = CoreChatRequest {
+            model: "claude".to_string(),
+            messages: vec![message("user", "Think carefully")],
+            stream: false,
+            extra: BTreeMap::from([
+                ("max_tokens".to_string(), json!(4096)),
+                ("output_config".to_string(), json!({ "effort": "medium" })),
+            ]),
+        };
+
+        let error = map_chat_request_to_anthropic_messages(
+            &request,
+            &context("anthropic.claude-sonnet-4-5-v1:0"),
+        )
+        .expect_err("manual-only effort rejected")
+        .to_string();
+
+        assert!(error.contains("output_config.effort"));
+    }
+
+    #[test]
     fn maps_claude_converse_reasoning_effort_to_additional_model_request_fields() {
         let request = CoreChatRequest {
             model: "claude".to_string(),
@@ -3457,6 +3607,30 @@ mod tests {
 
         assert!(error.contains("temperature"));
         assert!(error.contains("non-default"));
+    }
+
+    #[test]
+    fn rejects_opus_4_7_converse_additional_model_top_k() {
+        let request = CoreChatRequest {
+            model: "claude".to_string(),
+            messages: vec![message("user", "Hello")],
+            stream: true,
+            extra: BTreeMap::from([
+                ("max_tokens".to_string(), json!(64)),
+                (
+                    "additionalModelRequestFields".to_string(),
+                    json!({ "top_k": 50 }),
+                ),
+            ]),
+        };
+
+        let error =
+            map_chat_request_to_converse(&request, &context("global.anthropic.claude-opus-4-7"))
+                .expect_err("top_k rejected")
+                .to_string();
+
+        assert!(error.contains("top_k"));
+        assert!(error.contains("Claude Opus 4.7+"));
     }
 
     #[test]

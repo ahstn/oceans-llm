@@ -474,7 +474,10 @@ fn apply_vertex_anthropic_thinking_compatibility(
     body: &mut Map<String, Value>,
     upstream_model: &str,
 ) -> Result<(), ProviderError> {
-    let effort = extract_anthropic_reasoning_effort(body)?;
+    let reasoning_effort = extract_anthropic_reasoning_effort(body)?;
+    let native_effort = extract_existing_anthropic_output_effort(body)?;
+    let has_native_effort = native_effort.is_some();
+    let effort = merge_optional_efforts(reasoning_effort, native_effort, upstream_model)?;
     let budget_tokens = extract_anthropic_reasoning_budget_tokens(body);
     let policy = claude_thinking_policy(upstream_model);
 
@@ -500,6 +503,11 @@ fn apply_vertex_anthropic_thinking_compatibility(
                 merge_anthropic_output_effort(body, effort, upstream_model)?;
             }
             ClaudeThinkingPolicy::ManualOnly => {
+                if has_native_effort {
+                    return Err(ProviderError::InvalidRequest(format!(
+                        "`output_config.effort` is not supported for `{upstream_model}`"
+                    )));
+                }
                 let budget_tokens = budget_tokens
                     .or_else(|| existing_manual_thinking_budget(body))
                     .ok_or_else(|| {
@@ -532,7 +540,9 @@ fn apply_vertex_anthropic_thinking_compatibility(
 fn extract_anthropic_reasoning_effort(
     body: &mut Map<String, Value>,
 ) -> Result<Option<Value>, ProviderError> {
-    let reasoning_effort = body.remove("reasoning_effort");
+    let reasoning_effort = body
+        .remove("reasoning_effort")
+        .filter(|value| !value.is_null());
     let reasoning = body.remove("reasoning");
 
     match (reasoning_effort, reasoning) {
@@ -541,10 +551,11 @@ fn extract_anthropic_reasoning_effort(
             if let Some(budget_tokens) = reasoning.remove("budget_tokens") {
                 body.insert("reasoning_budget_tokens".to_string(), budget_tokens);
             }
-            Ok(reasoning.remove("effort"))
+            Ok(reasoning.remove("effort").filter(|value| !value.is_null()))
         }
         (Some(effort), Some(Value::Object(mut reasoning))) => {
-            if let Some(reasoning_effort) = reasoning.remove("effort")
+            if let Some(reasoning_effort) =
+                reasoning.remove("effort").filter(|value| !value.is_null())
                 && reasoning_effort != effort
             {
                 return Err(ProviderError::InvalidRequest(
@@ -562,6 +573,51 @@ fn extract_anthropic_reasoning_effort(
         (_, Some(_)) => Err(ProviderError::InvalidRequest(
             "`reasoning` must be an object for Anthropic Vertex mapping".to_string(),
         )),
+        (None, None) => Ok(None),
+    }
+}
+
+fn extract_existing_anthropic_output_effort(
+    body: &mut Map<String, Value>,
+) -> Result<Option<Value>, ProviderError> {
+    let (effort, remove_output_config) = {
+        let Some(output_config) = body.get_mut("output_config") else {
+            return Ok(None);
+        };
+        let output_config = output_config.as_object_mut().ok_or_else(|| {
+            ProviderError::InvalidRequest(
+                "`output_config` must be an object for Anthropic Vertex mapping".to_string(),
+            )
+        })?;
+
+        let effort = output_config.get("effort").cloned();
+        if effort.as_ref().is_some_and(Value::is_null) {
+            output_config.remove("effort");
+            (None, output_config.is_empty())
+        } else {
+            (effort, false)
+        }
+    };
+    if remove_output_config {
+        body.remove("output_config");
+    }
+
+    Ok(effort)
+}
+
+fn merge_optional_efforts(
+    reasoning_effort: Option<Value>,
+    native_effort: Option<Value>,
+    upstream_model: &str,
+) -> Result<Option<Value>, ProviderError> {
+    match (reasoning_effort, native_effort) {
+        (Some(reasoning_effort), Some(native_effort)) if reasoning_effort != native_effort => {
+            Err(ProviderError::InvalidRequest(format!(
+                "`reasoning_effort` conflicts with `output_config.effort` for `{upstream_model}`"
+            )))
+        }
+        (Some(reasoning_effort), _) => Ok(Some(reasoning_effort)),
+        (None, Some(native_effort)) => Ok(Some(native_effort)),
         (None, None) => Ok(None),
     }
 }
@@ -1934,6 +1990,78 @@ mod tests {
         assert!(mapped.get("model").is_none());
         assert!(mapped.get("temperature").is_none());
         assert!(mapped.get("top_p").is_none());
+    }
+
+    #[test]
+    fn ignores_null_reasoning_effort_for_vertex_anthropic_mapping() {
+        let mut request = chat_request(vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: Value::String("hello".to_string()),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+        request
+            .extra
+            .insert("reasoning_effort".to_string(), Value::Null);
+        request
+            .extra
+            .insert("reasoning".to_string(), json!({ "effort": null }));
+        request
+            .extra
+            .insert("output_config".to_string(), json!({ "effort": null }));
+
+        let mapped = map_anthropic_request(&request, &context("anthropic/claude-opus-4-7"), false)
+            .expect("mapped");
+
+        assert!(mapped.get("thinking").is_none());
+        assert!(mapped.get("output_config").is_none());
+        assert!(mapped.get("reasoning_effort").is_none());
+        assert!(mapped.get("reasoning").is_none());
+    }
+
+    #[test]
+    fn validates_native_output_config_effort_for_vertex_anthropic_mapping() {
+        let mut request = chat_request(vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: Value::String("think carefully".to_string()),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+        request
+            .extra
+            .insert("output_config".to_string(), json!({ "effort": "xhigh" }));
+
+        let mapped = map_anthropic_request(&request, &context("anthropic/claude-opus-4-7"), false)
+            .expect("mapped");
+
+        assert_eq!(mapped["thinking"], json!({ "type": "adaptive" }));
+        assert_eq!(mapped["output_config"], json!({ "effort": "xhigh" }));
+    }
+
+    #[test]
+    fn rejects_native_output_config_effort_for_vertex_manual_only_models() {
+        let mut request = chat_request(vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: Value::String("think carefully".to_string()),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+        request
+            .extra
+            .insert("output_config".to_string(), json!({ "effort": "medium" }));
+        request
+            .extra
+            .insert("reasoning_budget_tokens".to_string(), json!(1024));
+
+        let error = map_anthropic_request(
+            &request,
+            &context("anthropic/claude-sonnet-4-5@20250929"),
+            false,
+        )
+        .expect_err("manual-only effort rejected")
+        .to_string();
+
+        assert!(error.contains("output_config.effort"));
     }
 
     #[test]
