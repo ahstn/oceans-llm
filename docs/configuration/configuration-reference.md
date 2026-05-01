@@ -385,6 +385,7 @@ Routing and pricing caveats:
 - `upstream_model` must use `<publisher>/<model_id>`
 - pricing identity is inferred from the publisher prefix
 - Anthropic-on-Vertex pricing is only supported for `location=global`
+- provider-specific configuration examples live in [Google Vertex AI](../providers/gcp-vertex.md)
 
 ### `aws_bedrock`
 

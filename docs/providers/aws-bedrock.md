@@ -95,6 +95,27 @@ models:
 
 Native Claude invocation requires callers to set `max_tokens` or `max_completion_tokens`. Bedrock-hosted Claude vision is limited to base64 image payloads in this gateway slice; remote image URLs are rejected before the provider call.
 
+### Claude Thinking Compatibility
+
+For native Claude Messages invocation, OpenAI-shaped `reasoning_effort` maps to Anthropic Messages `output_config.effort` without forwarding the OpenAI-only field. On Claude Opus 4.7 and later, the gateway also sends `thinking: { "type": "adaptive" }` and rejects manual `thinking.type: "enabled"` budgets. On Claude Opus 4.6 and Claude Sonnet 4.6, `reasoning_effort` also selects adaptive thinking, while explicit manual `thinking` budgets remain pass-through for existing callers.
+
+For Bedrock Converse and ConverseStream, the gateway uses Bedrock's provider-specific shape instead:
+
+```json
+{
+  "additionalModelRequestFields": {
+    "thinking": {
+      "type": "adaptive",
+      "effort": "high"
+    }
+  }
+}
+```
+
+Older Claude models do not support adaptive thinking. Claude Sonnet 4.5, Claude Haiku 4.5, and earlier models require a manual budget via `thinking.budget_tokens`, `reasoning.budget_tokens`, `reasoning_budget_tokens`, or `thinking_budget_tokens`; the gateway sends `thinking: { "type": "enabled", "budget_tokens": ... }` and does not add `output_config.effort`. Claude Opus 4.5 additionally supports Bedrock's beta effort parameter for native Messages invocation, so the gateway adds `anthropic_beta: ["effort-2025-11-24"]` when it maps `reasoning_effort` to `output_config.effort` for that model.
+
+For Opus 4.7 and later, non-default `temperature`, `top_p`, and `top_k` fail locally. Default `temperature: 1` and `top_p: 1` are omitted. If callers provide both normalized reasoning fields and provider-native `thinking` or `output_config` fields, the provider-native fields must agree with the normalized values; conflicting values are rejected. Other provider-native fields such as `anthropic_beta` and `context_management` remain pass-through.
+
 ## Amazon Nova Example
 
 Amazon Nova routes use the generic Bedrock Converse request shape.
@@ -169,6 +190,7 @@ The current runtime executes one selected route. Priority and weight affect rout
 - Set `responses: false` and `embeddings: false` on Bedrock routes until those API families exist in the provider adapter.
 - Keep `json_schema: false` unless a specific Bedrock route has explicit provider-specific overrides and tests.
 - Use `extra_body` only for additive Bedrock or Anthropic fields you have tested for the exact model family.
+- Chat Completions hides Claude thinking from normal `content` and `delta.content`. Native Anthropic thinking blocks and Bedrock Converse reasoning content are preserved under `provider_metadata.aws_bedrock.reasoning` for debugging and provider continuity; exact reasoning/cache accounting remains tracked by [issue #92](https://github.com/ahstn/oceans-llm/issues/92), and native Bedrock Anthropic streaming remains tracked by [issue #129](https://github.com/ahstn/oceans-llm/issues/129).
 - Check the model card before adding a new `upstream_model`; Bedrock model IDs and inference profile support differ by model and Region.
 - Prefer `default_chain` for production IAM roles and IRSA. Use `static_credentials` only for constrained local or controlled deployment cases where credential rotation is handled outside the gateway.
 

@@ -78,6 +78,33 @@ For example, a Vertex Google chat route should normally set `responses: false` a
 
 For Bedrock, this foundation guarantees config load, validation, seeding, registration, deterministic region, endpoint, timeout, display, auth metadata, Converse chat execution, Claude Messages invocation, and ConverseStream chat streaming for bearer-token auth. It also supports IAM/SigV4 signing for the `default_chain` and `static_credentials` auth modes. Bedrock `upstream_model` values should match Bedrock Runtime model identity: base model IDs, inference profile IDs, or Bedrock ARNs accepted by the target Bedrock Runtime operation. AWS documents `InvokeModel` as requiring `bedrock:InvokeModel`; streamed invocation and Converse access require the corresponding Bedrock runtime permissions.
 
+## Google Vertex Anthropic Claude
+
+Vertex-hosted Claude models are selected when the Vertex `upstream_model` starts with `anthropic/`. The model ID after the slash is used in the Vertex endpoint path:
+
+- non-streaming Chat Completions use `rawPredict`
+- streaming Chat Completions use `streamRawPredict`
+- `model` is not forwarded in the JSON body
+- `anthropic_version: "vertex-2023-10-16"` is included in the JSON body
+
+Anthropic-on-Vertex uses the Anthropic Messages body shape, so the gateway applies the same Claude request policy used for native Anthropic-style routes while preserving Vertex transport rules.
+
+Claude thinking compatibility is model-aware:
+
+| Model family | Gateway behavior |
+| --- | --- |
+| Claude Opus 4.7 and later | `reasoning_effort` or `reasoning.effort` maps to `thinking: { "type": "adaptive" }` plus `output_config.effort`; manual `thinking.type: "enabled"` and `budget_tokens` are rejected. Non-default `temperature`, `top_p`, and `top_k` are rejected; default `temperature: 1` and `top_p: 1` are omitted. |
+| Claude Opus 4.6 and Claude Sonnet 4.6 | `reasoning_effort` maps to adaptive thinking and `output_config.effort`. Caller-supplied manual budgets remain pass-through because Anthropic still accepts them, though they are deprecated upstream. |
+| Claude Mythos Preview | `reasoning_effort` maps to `output_config.effort`; `thinking.type: "disabled"` is rejected. |
+| Claude Opus 4.5 | Adaptive thinking is rejected. `reasoning_effort` maps to `output_config.effort` only when the request also includes a manual thinking budget. |
+| Claude Sonnet/Haiku 4.5 and older Claude models | Adaptive thinking is rejected. These models require an explicit manual budget from `reasoning.budget_tokens`, `reasoning_budget_tokens`, `thinking_budget_tokens`, or caller-supplied `thinking.type: "enabled"` with `budget_tokens`; the gateway does not add `output_config.effort`. |
+
+Provider-specific Anthropic fields remain available where they do not conflict with normalized compatibility behavior. If `reasoning_effort` disagrees with `reasoning.effort`, `output_config.effort`, caller-supplied `thinking`, or a manual budget, the request fails locally with a deterministic gateway error.
+
+Chat Completions response policy matches the Bedrock Claude policy. Native Anthropic `thinking` and `redacted_thinking` blocks are never concatenated into `choices[*].message.content`. Streaming `thinking_delta` and `signature_delta` events are never emitted as `delta.content`. The gateway preserves these blocks under `choices[*].message.provider_metadata.gcp_vertex.reasoning` and `choices[*].delta.provider_metadata.gcp_vertex.reasoning`.
+
+Vertex Google publisher routes remain separate from Anthropic-on-Vertex. `google/*` upstream models use Vertex `generateContent` and `streamGenerateContent`; Anthropic Messages fields such as `thinking`, `output_config`, and `anthropic_version` do not apply to those routes.
+
 ## AWS Bedrock Anthropic Claude
 
 Bedrock-hosted Claude models are selected when the Bedrock `upstream_model` contains `anthropic.claude`, including regional inference profile IDs such as `us.anthropic.claude-3-5-sonnet-20241022-v2:0`. Non-streaming Chat Completions for those routes use Bedrock Runtime `InvokeModel` (`/model/{modelId}/invoke`) with Anthropic's native Messages body instead of the generic Converse body.
@@ -88,13 +115,31 @@ The native Bedrock Anthropic body always includes:
 - combined `system` and `developer` text as Anthropic `system`
 - `messages` with Anthropic `text`, `image`, `tool_use`, and `tool_result` content blocks
 - `max_tokens` from `max_tokens` or `max_completion_tokens`
-- `temperature`, `top_p`, `top_k`, and `stop_sequences`
+- `temperature`, `top_p`, `top_k`, and `stop_sequences`, subject to Claude Opus 4.7+ sampling restrictions
 - function tools as Anthropic custom tools with `input_schema`
 - `tool_choice` mapped from OpenAI `auto`, `required`, and named function choices
 
-The implementation rejects missing `max_tokens` for native Claude invocation because Bedrock marks it required. It also rejects OpenAI-only controls such as penalties, `n`, `seed`, `parallel_tool_calls`, and `response_format`. JSON schema mode should stay disabled in route capabilities unless a route explicitly uses Bedrock/Anthropic-specific `output_config` through provider overrides and accepts the non-OpenAI contract. Thinking and beta features are pass-through provider fields (`thinking`, `output_config`, `anthropic_beta`, `context_management`) rather than normalized OpenAI fields in this slice.
+The implementation rejects missing `max_tokens` for native Claude invocation because Bedrock marks it required. It also rejects OpenAI-only controls such as penalties, `n`, `seed`, `parallel_tool_calls`, and `response_format`. JSON schema mode should stay disabled in route capabilities unless a route explicitly uses Bedrock/Anthropic-specific `output_config` through provider overrides and accepts the non-OpenAI contract.
+
+Claude thinking compatibility is model-aware:
+
+| Model family | Gateway behavior |
+| --- | --- |
+| Claude Opus 4.7 and later | `reasoning_effort` or `reasoning.effort` maps to `thinking: { "type": "adaptive" }` plus `output_config.effort`; manual `thinking.type: "enabled"` and `budget_tokens` are rejected. Non-default `temperature`, `top_p`, and `top_k` are rejected; default `temperature: 1` and `top_p: 1` are omitted. |
+| Claude Opus 4.6 and Claude Sonnet 4.6 | `reasoning_effort` or `reasoning.effort` maps to adaptive thinking and `output_config.effort`. Caller-supplied manual `thinking.type: "enabled"` with `budget_tokens` remains pass-through because Anthropic still accepts it. |
+| Claude Mythos Preview | `reasoning_effort` maps to adaptive thinking and `output_config.effort`; `thinking.type: "disabled"` is rejected. |
+| Claude Opus 4.5 | Adaptive thinking is rejected. `reasoning_effort` maps to Bedrock's beta `output_config.effort` for native Messages invocation and adds `anthropic_beta: ["effort-2025-11-24"]`. If a manual budget is also supplied through `reasoning.budget_tokens`, `reasoning_budget_tokens`, `thinking_budget_tokens`, or caller-supplied `thinking.type: "enabled"` with `budget_tokens`, the gateway sends manual `thinking.type: "enabled"` as well. |
+| Claude Sonnet/Haiku 4.5 and older Claude models | Adaptive thinking is rejected. These models do not receive `output_config.effort`; they require an explicit manual budget from `reasoning.budget_tokens`, `reasoning_budget_tokens`, `thinking_budget_tokens`, or caller-supplied `thinking.type: "enabled"` with `budget_tokens`, and the gateway then sends manual `thinking.type: "enabled"`. |
+
+Provider-specific fields remain available where they do not conflict with normalized compatibility behavior. `anthropic_beta`, `context_management`, `container`, and `metadata` are copied through. `thinking` and `output_config` are copied through first, then normalized OpenAI-shaped reasoning fields are applied. If `reasoning_effort` disagrees with `reasoning.effort`, `output_config.effort`, caller-supplied `thinking`, or a manual budget, the request fails locally with a deterministic gateway error instead of leaking incompatible OpenAI-only fields upstream. Route `extra_body` is still a final raw override for operator-controlled experiments.
+
+For Bedrock Converse and ConverseStream, Claude thinking controls are written to `additionalModelRequestFields.thinking`. Adaptive models receive `type: "adaptive"` and `effort` inside that object. Manual-budget models receive `type: "enabled"` and `budget_tokens` inside that object. Existing unrelated `additionalModelRequestFields` keys are preserved, while conflicting `thinking` values are rejected locally.
 
 Vision is supported only for Bedrock-compatible base64 image payloads. Remote image URLs are rejected because Bedrock Anthropic Messages requires base64 image sources. Tools and tool-result turns are supported for Claude 3+ models, subject to the model's Bedrock feature availability.
+
+Chat Completions response policy for Anthropic thinking is deliberately conservative. Native Anthropic `thinking` and `redacted_thinking` blocks, plus Bedrock Converse `reasoningContent` text, signatures, and redacted data, are never concatenated into `choices[*].message.content` or streamed as `delta.content`. The visible Chat Completions content remains answer text and tool calls only. Reasoning state that providers require for debugging or tool-use continuity is preserved under `choices[*].message.provider_metadata.aws_bedrock.reasoning` for non-streaming responses, and under `choices[*].delta.provider_metadata.aws_bedrock.reasoning` for ConverseStream chunks. Direct Anthropic Messages routes should follow the same split when added: hidden or summarized thinking metadata may be preserved explicitly, but it must not leak through ordinary Chat Completions text fields.
+
+Anthropic documents that Claude 4 models can return summarized thinking, encrypted signatures, and `redacted_thinking` blocks. Claude Opus 4.7 defaults thinking display to `omitted`, so a stream can open an empty thinking block, emit only a signature delta, and then begin normal text. Bedrock Converse represents equivalent state as `reasoningContent`, including `reasoningText.text`, `reasoningText.signature`, and redacted content. The gateway preserves those fields as provider metadata and treats billed output token counts as provider usage until exact reasoning accounting is implemented.
 
 Streaming boundary: native Anthropic Messages streaming over `InvokeModelWithResponseStream` is not part of this issue. If a Bedrock route enables streaming, it is using the generic Bedrock Converse stream adapter from [issue #128](https://github.com/ahstn/oceans-llm/issues/128), not the native Anthropic Messages stream event contract.
 
@@ -142,7 +187,7 @@ This is intentionally narrower than full tool-call streaming normalization. Tool
 
 The Responses stream adapter is separate. It parses SSE frames for transport safety, preserves `event: response.*` names and JSON payloads, surfaces malformed or incomplete streams as structured SSE error chunks, and appends one final `data: [DONE]` only after a successful upstream stream that omitted it.
 
-Bedrock chat streaming is a separate transport adapter because Bedrock Runtime does not return SSE for ConverseStream. It decodes AWS Smithy/EventStream frames, reads string headers such as `:message-type`, `:event-type`, and `:exception-type`, and normalizes ConverseStream events into Chat Completions SSE chunks. `messageStart` emits the assistant role, `contentBlockDelta` emits text or function-tool argument deltas, `messageStop` emits the terminal finish reason, and `metadata.usage` emits an OpenAI-shaped usage chunk when present. EventStream exception frames and malformed or incomplete frames emit structured SSE error chunks and do not receive a final `[DONE]`.
+Bedrock chat streaming is a separate transport adapter because Bedrock Runtime does not return SSE for ConverseStream. It decodes AWS Smithy/EventStream frames, reads string headers such as `:message-type`, `:event-type`, and `:exception-type`, and normalizes ConverseStream events into Chat Completions SSE chunks. `messageStart` emits the assistant role, `contentBlockDelta` emits text, function-tool argument deltas, or provider reasoning metadata deltas, `messageStop` emits the terminal finish reason, and `metadata.usage` emits an OpenAI-shaped usage chunk when present. EventStream exception frames and malformed or incomplete frames emit structured SSE error chunks and do not receive a final `[DONE]`.
 
 The current Bedrock frame parser validates frame lengths, header boundaries, supported header encodings, JSON payload shape, and clean finalization. It recognizes the prelude CRC and message CRC fields but does not validate CRC checksums in this slice. Provider-native `InvokeModelWithResponseStream` mappings, including Anthropic-specific native streaming payloads, remain separate provider-family work.
 

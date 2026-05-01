@@ -430,8 +430,313 @@ fn map_anthropic_request(
         );
     }
 
+    apply_vertex_anthropic_thinking_compatibility(&mut body, &context.upstream_model)?;
+    validate_vertex_anthropic_sampling_fields(&mut body, &context.upstream_model)?;
     merge_object_overrides(&mut body, &context.extra_body);
     Ok(Value::Object(body))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ClaudeThinkingPolicy {
+    AdaptiveOnly,
+    AdaptivePreferred,
+    ManualWithEffort,
+    ManualOnly,
+    MythosPreview,
+}
+
+fn claude_thinking_policy(upstream_model: &str) -> ClaudeThinkingPolicy {
+    let model = upstream_model.to_ascii_lowercase();
+    if model.contains("claude-mythos-preview") {
+        ClaudeThinkingPolicy::MythosPreview
+    } else if is_opus_4_7_or_later(&model) {
+        ClaudeThinkingPolicy::AdaptiveOnly
+    } else if model.contains("claude-opus-4-6") || model.contains("claude-sonnet-4-6") {
+        ClaudeThinkingPolicy::AdaptivePreferred
+    } else if model.contains("claude-opus-4-5") {
+        ClaudeThinkingPolicy::ManualWithEffort
+    } else {
+        ClaudeThinkingPolicy::ManualOnly
+    }
+}
+
+fn is_opus_4_7_or_later(model: &str) -> bool {
+    let Some(rest) = model.split("claude-opus-4-").nth(1) else {
+        return false;
+    };
+    rest.split(|ch: char| !ch.is_ascii_digit())
+        .next()
+        .and_then(|minor| minor.parse::<u16>().ok())
+        .is_some_and(|minor| minor >= 7)
+}
+
+fn apply_vertex_anthropic_thinking_compatibility(
+    body: &mut Map<String, Value>,
+    upstream_model: &str,
+) -> Result<(), ProviderError> {
+    let effort = extract_anthropic_reasoning_effort(body)?;
+    let budget_tokens = extract_anthropic_reasoning_budget_tokens(body);
+    let policy = claude_thinking_policy(upstream_model);
+
+    validate_caller_thinking_for_policy(body, policy, upstream_model)?;
+
+    if let Some(effort) = effort {
+        match policy {
+            ClaudeThinkingPolicy::AdaptiveOnly
+            | ClaudeThinkingPolicy::AdaptivePreferred
+            | ClaudeThinkingPolicy::MythosPreview => {
+                ensure_anthropic_adaptive_thinking(body, upstream_model)?;
+                merge_anthropic_output_effort(body, effort, upstream_model)?;
+            }
+            ClaudeThinkingPolicy::ManualWithEffort => {
+                let budget_tokens = budget_tokens
+                    .or_else(|| existing_manual_thinking_budget(body))
+                    .ok_or_else(|| {
+                        ProviderError::InvalidRequest(format!(
+                            "`reasoning_effort` requires an explicit manual thinking budget for `{upstream_model}` because this Claude model does not support adaptive thinking"
+                        ))
+                    })?;
+                ensure_anthropic_manual_thinking(body, budget_tokens, upstream_model)?;
+                merge_anthropic_output_effort(body, effort, upstream_model)?;
+            }
+            ClaudeThinkingPolicy::ManualOnly => {
+                let budget_tokens = budget_tokens
+                    .or_else(|| existing_manual_thinking_budget(body))
+                    .ok_or_else(|| {
+                        ProviderError::InvalidRequest(format!(
+                            "`reasoning_effort` requires an explicit manual thinking budget for `{upstream_model}` because this Claude model does not support adaptive thinking or effort"
+                        ))
+                    })?;
+                ensure_anthropic_manual_thinking(body, budget_tokens, upstream_model)?;
+            }
+        }
+    } else if let Some(budget_tokens) = budget_tokens {
+        match policy {
+            ClaudeThinkingPolicy::AdaptiveOnly => {
+                return Err(ProviderError::InvalidRequest(format!(
+                    "`reasoning.budget_tokens` is not supported for `{upstream_model}`; use adaptive thinking with `reasoning_effort` or `output_config.effort`"
+                )));
+            }
+            ClaudeThinkingPolicy::AdaptivePreferred
+            | ClaudeThinkingPolicy::ManualWithEffort
+            | ClaudeThinkingPolicy::ManualOnly
+            | ClaudeThinkingPolicy::MythosPreview => {
+                ensure_anthropic_manual_thinking(body, budget_tokens, upstream_model)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn extract_anthropic_reasoning_effort(
+    body: &mut Map<String, Value>,
+) -> Result<Option<Value>, ProviderError> {
+    let reasoning_effort = body.remove("reasoning_effort");
+    let reasoning = body.remove("reasoning");
+
+    match (reasoning_effort, reasoning) {
+        (Some(effort), None) => Ok(Some(effort)),
+        (None, Some(Value::Object(mut reasoning))) => {
+            if let Some(budget_tokens) = reasoning.remove("budget_tokens") {
+                body.insert("reasoning_budget_tokens".to_string(), budget_tokens);
+            }
+            Ok(reasoning.remove("effort"))
+        }
+        (Some(effort), Some(Value::Object(mut reasoning))) => {
+            if let Some(reasoning_effort) = reasoning.remove("effort")
+                && reasoning_effort != effort
+            {
+                return Err(ProviderError::InvalidRequest(
+                    "`reasoning_effort` conflicts with `reasoning.effort` for Anthropic Vertex mapping"
+                        .to_string(),
+                ));
+            }
+            if let Some(budget_tokens) = reasoning.remove("budget_tokens") {
+                body.insert("reasoning_budget_tokens".to_string(), budget_tokens);
+            }
+            Ok(Some(effort))
+        }
+        (None, Some(Value::Null)) => Ok(None),
+        (Some(effort), Some(Value::Null)) => Ok(Some(effort)),
+        (_, Some(_)) => Err(ProviderError::InvalidRequest(
+            "`reasoning` must be an object for Anthropic Vertex mapping".to_string(),
+        )),
+        (None, None) => Ok(None),
+    }
+}
+
+fn extract_anthropic_reasoning_budget_tokens(body: &mut Map<String, Value>) -> Option<Value> {
+    if let Some(value) = body.remove("thinking_budget_tokens") {
+        return Some(value);
+    }
+    if let Some(value) = body.remove("reasoning_budget_tokens") {
+        return Some(value);
+    }
+    None
+}
+
+fn validate_caller_thinking_for_policy(
+    body: &Map<String, Value>,
+    policy: ClaudeThinkingPolicy,
+    upstream_model: &str,
+) -> Result<(), ProviderError> {
+    let Some(thinking) = body.get("thinking") else {
+        return Ok(());
+    };
+    let thinking_type = thinking
+        .as_object()
+        .and_then(|object| object.get("type"))
+        .and_then(Value::as_str);
+
+    match policy {
+        ClaudeThinkingPolicy::AdaptiveOnly => {
+            if thinking_type == Some("enabled") {
+                return Err(ProviderError::InvalidRequest(format!(
+                    "`thinking.type: enabled` with manual `budget_tokens` is not supported for `{upstream_model}`; use `thinking.type: adaptive` and `output_config.effort`"
+                )));
+            }
+        }
+        ClaudeThinkingPolicy::ManualOnly | ClaudeThinkingPolicy::ManualWithEffort => {
+            if thinking_type == Some("adaptive") {
+                return Err(ProviderError::InvalidRequest(format!(
+                    "`thinking.type: adaptive` is not supported for `{upstream_model}`; use `thinking.type: enabled` with `budget_tokens`"
+                )));
+            }
+        }
+        ClaudeThinkingPolicy::MythosPreview => {
+            if thinking_type == Some("disabled") {
+                return Err(ProviderError::InvalidRequest(
+                    "`thinking.type: disabled` is not supported for Claude Mythos Preview"
+                        .to_string(),
+                ));
+            }
+        }
+        ClaudeThinkingPolicy::AdaptivePreferred => {}
+    }
+
+    Ok(())
+}
+
+fn ensure_anthropic_adaptive_thinking(
+    body: &mut Map<String, Value>,
+    upstream_model: &str,
+) -> Result<(), ProviderError> {
+    match body.get("thinking") {
+        None => {
+            body.insert("thinking".to_string(), json!({ "type": "adaptive" }));
+            Ok(())
+        }
+        Some(Value::Object(object))
+            if object.get("type").and_then(Value::as_str) == Some("adaptive") =>
+        {
+            Ok(())
+        }
+        Some(_) => Err(ProviderError::InvalidRequest(format!(
+            "`reasoning_effort` requires `thinking.type: adaptive` for `{upstream_model}` and conflicts with caller-supplied `thinking`"
+        ))),
+    }
+}
+
+fn ensure_anthropic_manual_thinking(
+    body: &mut Map<String, Value>,
+    budget_tokens: Value,
+    upstream_model: &str,
+) -> Result<(), ProviderError> {
+    match body.get("thinking") {
+        None => {
+            body.insert(
+                "thinking".to_string(),
+                json!({ "type": "enabled", "budget_tokens": budget_tokens }),
+            );
+            Ok(())
+        }
+        Some(Value::Object(object))
+            if object.get("type").and_then(Value::as_str) == Some("enabled") =>
+        {
+            match object.get("budget_tokens") {
+                Some(existing) if existing == &budget_tokens => Ok(()),
+                Some(_) => Err(ProviderError::InvalidRequest(format!(
+                    "manual Anthropic thinking budget for `{upstream_model}` conflicts with caller-supplied `thinking.budget_tokens`"
+                ))),
+                None => Err(ProviderError::InvalidRequest(format!(
+                    "`thinking.type: enabled` for `{upstream_model}` must include `budget_tokens`"
+                ))),
+            }
+        }
+        Some(_) => Err(ProviderError::InvalidRequest(format!(
+            "manual Anthropic thinking budget for `{upstream_model}` conflicts with caller-supplied `thinking`"
+        ))),
+    }
+}
+
+fn existing_manual_thinking_budget(body: &Map<String, Value>) -> Option<Value> {
+    let thinking = body.get("thinking")?.as_object()?;
+    if thinking.get("type").and_then(Value::as_str) == Some("enabled") {
+        thinking.get("budget_tokens").cloned()
+    } else {
+        None
+    }
+}
+
+fn merge_anthropic_output_effort(
+    body: &mut Map<String, Value>,
+    effort: Value,
+    upstream_model: &str,
+) -> Result<(), ProviderError> {
+    match body.get_mut("output_config") {
+        None => {
+            body.insert("output_config".to_string(), json!({ "effort": effort }));
+            Ok(())
+        }
+        Some(Value::Object(output_config)) => match output_config.get("effort") {
+            Some(existing) if existing != &effort => Err(ProviderError::InvalidRequest(format!(
+                "`reasoning_effort` conflicts with `output_config.effort` for `{upstream_model}`"
+            ))),
+            Some(_) => Ok(()),
+            None => {
+                output_config.insert("effort".to_string(), effort);
+                Ok(())
+            }
+        },
+        Some(_) => Err(ProviderError::InvalidRequest(
+            "`output_config` must be an object for Anthropic Vertex mapping".to_string(),
+        )),
+    }
+}
+
+fn validate_vertex_anthropic_sampling_fields(
+    body: &mut Map<String, Value>,
+    upstream_model: &str,
+) -> Result<(), ProviderError> {
+    if claude_thinking_policy(upstream_model) != ClaudeThinkingPolicy::AdaptiveOnly {
+        return Ok(());
+    }
+
+    for field in ["temperature", "top_p", "top_k"] {
+        let Some(value) = body.get(field) else {
+            continue;
+        };
+        if value.is_null() || is_default_anthropic_sampling_value(field, value) {
+            body.remove(field);
+            continue;
+        }
+        return Err(ProviderError::InvalidRequest(format!(
+            "`{field}` is not supported with non-default values for `{upstream_model}`; omit the field for Claude Opus 4.7+"
+        )));
+    }
+
+    Ok(())
+}
+
+fn is_default_anthropic_sampling_value(field: &str, value: &Value) -> bool {
+    match field {
+        "temperature" | "top_p" => value
+            .as_f64()
+            .is_some_and(|number| (number - 1.0).abs() < f64::EPSILON),
+        "top_k" => false,
+        _ => false,
+    }
 }
 
 fn message_content_as_text(content: &Value) -> Result<String, ProviderError> {
@@ -767,32 +1072,38 @@ fn normalize_anthropic_response(value: &Value, context: &ProviderRequestContext)
         .map(str::to_string)
         .unwrap_or_else(|| format!("chatcmpl-{}", Uuid::new_v4().simple()));
     let created = OffsetDateTime::now_utc().unix_timestamp();
-    let text = value
+    let blocks = value
         .get("content")
         .and_then(Value::as_array)
-        .map(|blocks| {
-            blocks
-                .iter()
-                .filter_map(|block| {
-                    let object = block.as_object()?;
-                    if object.get("type").and_then(Value::as_str) == Some("text") {
-                        object
-                            .get("text")
-                            .and_then(Value::as_str)
-                            .map(str::to_string)
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join("")
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
+    let text = blocks
+        .iter()
+        .filter_map(|block| {
+            if block.get("type").and_then(Value::as_str) == Some("text") {
+                block.get("text").and_then(Value::as_str)
+            } else {
+                None
+            }
         })
-        .unwrap_or_default();
+        .collect::<Vec<_>>()
+        .join("");
+    let thinking_blocks = extract_anthropic_thinking_blocks(blocks);
     let finish_reason = value
         .get("stop_reason")
         .and_then(Value::as_str)
         .map(map_anthropic_finish_reason)
         .unwrap_or("stop");
+
+    let mut message = Map::new();
+    message.insert("role".to_string(), Value::String("assistant".to_string()));
+    message.insert("content".to_string(), Value::String(text));
+    if !thinking_blocks.is_empty() {
+        message.insert(
+            "provider_metadata".to_string(),
+            vertex_reasoning_metadata("anthropic_messages", thinking_blocks),
+        );
+    }
 
     let mut completion = Map::new();
     completion.insert("id".to_string(), Value::String(id));
@@ -809,7 +1120,7 @@ fn normalize_anthropic_response(value: &Value, context: &ProviderRequestContext)
         "choices".to_string(),
         Value::Array(vec![json!({
             "index": 0,
-            "message": {"role":"assistant","content": text},
+            "message": message,
             "finish_reason": finish_reason
         })]),
     );
@@ -819,6 +1130,84 @@ fn normalize_anthropic_response(value: &Value, context: &ProviderRequestContext)
     }
 
     Value::Object(completion)
+}
+
+fn extract_anthropic_thinking_blocks(blocks: &[Value]) -> Vec<Value> {
+    blocks
+        .iter()
+        .filter_map(|block| match block.get("type").and_then(Value::as_str) {
+            Some("thinking") => {
+                let mut normalized = Map::new();
+                normalized.insert("type".to_string(), Value::String("thinking".to_string()));
+                normalized.insert(
+                    "thinking".to_string(),
+                    block
+                        .get("thinking")
+                        .cloned()
+                        .unwrap_or_else(|| Value::String(String::new())),
+                );
+                if let Some(signature) = block.get("signature").cloned() {
+                    normalized.insert("signature".to_string(), signature);
+                }
+                Some(Value::Object(normalized))
+            }
+            Some("redacted_thinking") => {
+                let mut normalized = Map::new();
+                normalized.insert(
+                    "type".to_string(),
+                    Value::String("redacted_thinking".to_string()),
+                );
+                if let Some(data) = block.get("data").cloned() {
+                    normalized.insert("data".to_string(), data);
+                }
+                Some(Value::Object(normalized))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn normalize_anthropic_thinking_delta(delta: &Map<String, Value>) -> Option<Value> {
+    match delta.get("type").and_then(Value::as_str) {
+        Some("thinking_delta") => {
+            let mut normalized = Map::new();
+            normalized.insert(
+                "type".to_string(),
+                Value::String("thinking_delta".to_string()),
+            );
+            normalized.insert(
+                "thinking".to_string(),
+                delta
+                    .get("thinking")
+                    .cloned()
+                    .unwrap_or_else(|| Value::String(String::new())),
+            );
+            Some(Value::Object(normalized))
+        }
+        Some("signature_delta") => {
+            let mut normalized = Map::new();
+            normalized.insert(
+                "type".to_string(),
+                Value::String("signature_delta".to_string()),
+            );
+            if let Some(signature) = delta.get("signature").cloned() {
+                normalized.insert("signature".to_string(), signature);
+            }
+            Some(Value::Object(normalized))
+        }
+        _ => None,
+    }
+}
+
+fn vertex_reasoning_metadata(source: &str, blocks: Vec<Value>) -> Value {
+    json!({
+        "gcp_vertex": {
+            "reasoning": {
+                "source": source,
+                "blocks": blocks
+            }
+        }
+    })
 }
 
 fn map_google_usage(value: &Value) -> Option<Value> {
@@ -1105,6 +1494,32 @@ where
                             );
                             yield Ok(openai_sse_chunk(&chunk));
                             role_emitted = true;
+                        } else if let Some(delta) = delta
+                            && let Some(block) = normalize_anthropic_thinking_delta(delta)
+                        {
+                            let mut outbound_delta = Map::new();
+                            if !role_emitted {
+                                outbound_delta.insert(
+                                    "role".to_string(),
+                                    Value::String("assistant".to_string()),
+                                );
+                            }
+                            outbound_delta.insert(
+                                "provider_metadata".to_string(),
+                                vertex_reasoning_metadata(
+                                    "anthropic_messages_stream",
+                                    vec![block],
+                                ),
+                            );
+                            let chunk = openai_delta_chunk(
+                                &stream_id,
+                                created,
+                                &model,
+                                Value::Object(outbound_delta),
+                                None,
+                            );
+                            yield Ok(openai_sse_chunk(&chunk));
+                            role_emitted = true;
                         }
                     }
                     "message_delta" => {
@@ -1275,6 +1690,26 @@ fn openai_chunk(
         "created": created,
         "model": model,
         "choices": [Value::Object(choice)]
+    })
+}
+
+fn openai_delta_chunk(
+    id: &str,
+    created: i64,
+    model: &str,
+    delta: Value,
+    finish_reason: Option<&str>,
+) -> Value {
+    json!({
+        "id": id,
+        "object": "chat.completion.chunk",
+        "created": created,
+        "model": model,
+        "choices": [{
+            "index": 0,
+            "delta": delta,
+            "finish_reason": finish_reason
+        }]
     })
 }
 
@@ -1475,6 +1910,161 @@ mod tests {
     }
 
     #[test]
+    fn maps_vertex_opus_4_7_reasoning_effort_to_adaptive_thinking() {
+        let mut request = chat_request(vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: Value::String("think carefully".to_string()),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+        request.extra.insert("model".to_string(), json!("fast"));
+        request
+            .extra
+            .insert("reasoning_effort".to_string(), json!("xhigh"));
+        request.extra.insert("temperature".to_string(), json!(1.0));
+        request.extra.insert("top_p".to_string(), json!(1.0));
+
+        let mapped = map_anthropic_request(&request, &context("anthropic/claude-opus-4-7"), false)
+            .expect("mapped");
+
+        assert_eq!(mapped["anthropic_version"], "vertex-2023-10-16");
+        assert_eq!(mapped["thinking"], json!({ "type": "adaptive" }));
+        assert_eq!(mapped["output_config"], json!({ "effort": "xhigh" }));
+        assert!(mapped.get("reasoning_effort").is_none());
+        assert!(mapped.get("model").is_none());
+        assert!(mapped.get("temperature").is_none());
+        assert!(mapped.get("top_p").is_none());
+    }
+
+    #[test]
+    fn maps_vertex_opus_and_sonnet_4_6_reasoning_effort_to_adaptive_thinking() {
+        for model in ["anthropic/claude-opus-4-6", "anthropic/claude-sonnet-4-6"] {
+            let mut request = chat_request(vec![CoreChatMessage {
+                role: "user".to_string(),
+                content: Value::String("think carefully".to_string()),
+                name: None,
+                extra: BTreeMap::new(),
+            }]);
+            request
+                .extra
+                .insert("reasoning_effort".to_string(), json!("high"));
+
+            let mapped = map_anthropic_request(&request, &context(model), false).expect("mapped");
+
+            assert_eq!(mapped["thinking"], json!({ "type": "adaptive" }));
+            assert_eq!(mapped["output_config"], json!({ "effort": "high" }));
+            assert!(mapped.get("reasoning_effort").is_none());
+        }
+    }
+
+    #[test]
+    fn maps_vertex_opus_4_5_reasoning_effort_with_manual_budget() {
+        let mut request = chat_request(vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: Value::String("think carefully".to_string()),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+        request.extra.insert(
+            "reasoning".to_string(),
+            json!({ "effort": "medium", "budget_tokens": 2048 }),
+        );
+
+        let mapped = map_anthropic_request(
+            &request,
+            &context("anthropic/claude-opus-4-5@20251101"),
+            false,
+        )
+        .expect("mapped");
+
+        assert_eq!(
+            mapped["thinking"],
+            json!({ "type": "enabled", "budget_tokens": 2048 })
+        );
+        assert_eq!(mapped["output_config"], json!({ "effort": "medium" }));
+        assert!(mapped.get("reasoning").is_none());
+    }
+
+    #[test]
+    fn maps_vertex_older_claude_reasoning_budget_to_manual_thinking() {
+        let mut request = chat_request(vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: Value::String("think carefully".to_string()),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+        request.extra.insert(
+            "reasoning".to_string(),
+            json!({ "effort": "medium", "budget_tokens": 1024 }),
+        );
+
+        let mapped = map_anthropic_request(
+            &request,
+            &context("anthropic/claude-sonnet-4-5@20250929"),
+            false,
+        )
+        .expect("mapped");
+
+        assert_eq!(
+            mapped["thinking"],
+            json!({ "type": "enabled", "budget_tokens": 1024 })
+        );
+        assert!(mapped.get("output_config").is_none());
+        assert!(mapped.get("reasoning").is_none());
+    }
+
+    #[test]
+    fn rejects_vertex_opus_4_7_manual_thinking_budget() {
+        let mut request = chat_request(vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: Value::String("think carefully".to_string()),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+        request.extra.insert(
+            "thinking".to_string(),
+            json!({ "type": "enabled", "budget_tokens": 4096 }),
+        );
+
+        let error = map_anthropic_request(&request, &context("anthropic/claude-opus-4-7"), false)
+            .expect_err("manual thinking should be rejected");
+
+        match error {
+            ProviderError::InvalidRequest(message) => {
+                assert!(message.contains("thinking.type: enabled"));
+            }
+            other => panic!("unexpected error: {other}"),
+        }
+    }
+
+    #[test]
+    fn rejects_vertex_older_claude_adaptive_thinking() {
+        let mut request = chat_request(vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: Value::String("think carefully".to_string()),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+        request
+            .extra
+            .insert("thinking".to_string(), json!({ "type": "adaptive" }));
+
+        let error = map_anthropic_request(
+            &request,
+            &context("anthropic/claude-haiku-4-5@20251001"),
+            false,
+        )
+        .expect_err("adaptive thinking should be rejected");
+
+        match error {
+            ProviderError::InvalidRequest(message) => {
+                assert!(message.contains("thinking.type: adaptive"));
+            }
+            other => panic!("unexpected error: {other}"),
+        }
+    }
+
+    #[test]
     fn normalizes_google_response_into_openai_shape() {
         let response = json!({
             "responseId": "resp-123",
@@ -1502,6 +2092,36 @@ mod tests {
         assert_eq!(normalized["choices"][0]["message"]["content"], "hello");
         assert_eq!(normalized["usage"]["prompt_tokens"], 5);
         assert_eq!(normalized["usage"]["completion_tokens"], 7);
+    }
+
+    #[test]
+    fn normalizes_anthropic_thinking_metadata_without_leaking_into_content() {
+        let response = json!({
+            "id":"msg_123",
+            "content":[
+                {"type":"thinking","thinking":"summarized hidden reasoning","signature":"sig-thinking"},
+                {"type":"redacted_thinking","data":"encrypted-redacted"},
+                {"type":"text","text":"visible answer"}
+            ],
+            "stop_reason":"end_turn",
+            "usage":{"input_tokens":5,"output_tokens":7}
+        });
+        let normalized =
+            normalize_anthropic_response(&response, &context("anthropic/claude-opus-4-7"));
+        let message = &normalized["choices"][0]["message"];
+
+        assert_eq!(message["content"], "visible answer");
+        assert_eq!(
+            message["provider_metadata"]["gcp_vertex"]["reasoning"]["source"],
+            "anthropic_messages"
+        );
+        assert_eq!(
+            message["provider_metadata"]["gcp_vertex"]["reasoning"]["blocks"],
+            json!([
+                {"type":"thinking","thinking":"summarized hidden reasoning","signature":"sig-thinking"},
+                {"type":"redacted_thinking","data":"encrypted-redacted"}
+            ])
+        );
     }
 
     #[test]
@@ -1652,6 +2272,42 @@ data: {"type":"vertex_event"}
         assert!(!rendered.contains("data: [DONE]"));
     }
 
+    #[tokio::test]
+    async fn anthropic_stream_preserves_thinking_and_signature_metadata() {
+        let upstream = stream::iter(vec![Ok(Bytes::from(concat!(
+            "event: message_start\n",
+            "data: {\"type\":\"message_start\"}\n\n",
+            "event: content_block_delta\n",
+            "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"\"}}\n\n",
+            "event: content_block_delta\n",
+            "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"signature_delta\",\"signature\":\"sig-stream\"}}\n\n",
+            "event: content_block_delta\n",
+            "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"visible\"}}\n\n",
+            "event: message_delta\n",
+            "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\n"
+        )))]);
+        let stream = super::normalize_anthropic_stream(
+            upstream,
+            "chatcmpl-test".to_string(),
+            1,
+            "fast".to_string(),
+        );
+        let bytes: Vec<_> = stream.collect().await;
+        let rendered = bytes
+            .into_iter()
+            .map(|item| String::from_utf8(item.expect("chunk").to_vec()).expect("utf8"))
+            .collect::<String>();
+
+        assert!(rendered.contains("\"content\":\"visible\""));
+        assert!(rendered.contains("\"provider_metadata\""));
+        assert!(rendered.contains("\"gcp_vertex\""));
+        assert!(rendered.contains("\"thinking_delta\""));
+        assert!(rendered.contains("\"signature_delta\""));
+        assert!(rendered.contains("\"sig-stream\""));
+        assert_eq!(rendered.matches("\"role\":\"assistant\"").count(), 1);
+        assert!(rendered.contains("data: [DONE]"));
+    }
+
     fn vertex_provider_for_test(api_host: String) -> VertexProvider {
         VertexProvider::new(VertexProviderConfig {
             provider_key: "vertex-prod".to_string(),
@@ -1756,7 +2412,9 @@ data: {"type":"vertex_event"}
                      State(captured): State<Arc<Mutex<Option<Value>>>>,
                      headers: HeaderMap,
                      Json(payload): Json<Value>| async move {
-                        assert!(path.ends_with(":streamRawPredict"));
+                        assert!(path.ends_with(
+                            "publishers/anthropic/models/claude-sonnet-4-6:streamRawPredict"
+                        ));
                         assert_eq!(
                             headers
                                 .get("authorization")
@@ -1823,6 +2481,7 @@ data: {"type":"vertex_event"}
             request_payload["anthropic_version"],
             Value::String("vertex-2023-10-16".to_string())
         );
+        assert!(request_payload.get("model").is_none());
         assert_eq!(request_payload["stream"], Value::Bool(true));
     }
 }

@@ -45,7 +45,10 @@ export default defineConfig({
       },
       {
         text: "Providers",
-        items: [{ text: "AWS Bedrock", link: "/providers/aws-bedrock" }],
+        items: [
+          { text: "AWS Bedrock", link: "/providers/aws-bedrock" },
+          { text: "Google Vertex AI", link: "/providers/gcp-vertex" },
+        ],
       },
       {
         text: "Operations",
