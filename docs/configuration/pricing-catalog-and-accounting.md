@@ -119,7 +119,7 @@ The pricing catalog can preserve more rate metadata than the runtime charges tod
 
 That distinction keeps the ledger conservative. The gateway should not infer spend for provider-specific counters until the pricing and request semantics are explicit. Richer token and cache accounting is tracked in [issue #92](https://github.com/ahstn/oceans-llm/issues/92).
 
-AWS Bedrock Anthropic Claude responses preserve the raw Anthropic usage object under `usage.provider_usage`, including cache counters such as `cache_read_input_tokens` and `cache_creation_input_tokens` when Bedrock returns them. Durable accounting still uses only normalized `prompt_tokens`, `completion_tokens`, and `total_tokens`; cache read/write discounts or surcharges are not priced in this slice.
+AWS Bedrock Anthropic Claude responses preserve the raw Anthropic usage object under `usage.provider_usage`, including cache counters such as `cache_read_input_tokens` and `cache_creation_input_tokens` when Bedrock returns them. Bedrock Claude thinking and Converse reasoning blocks are preserved as provider metadata on Chat Completions messages or stream deltas, but they are not priced as separate ledger dimensions. Durable accounting still uses only normalized `prompt_tokens`, `completion_tokens`, and `total_tokens`; cache read/write discounts, hidden thinking costs, and reasoning-specific counters remain aligned with [issue #92](https://github.com/ahstn/oceans-llm/issues/92).
 
 ## Relationship to Request Flow
 
