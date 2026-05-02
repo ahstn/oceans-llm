@@ -1,8 +1,14 @@
 use std::{collections::HashMap, sync::Arc};
 
+use gateway_client_config::{
+    ClientConfig, ClientConfigInput, ClientModelCapabilities, DEFAULT_API_KEY_ENV_VAR,
+    DEFAULT_GATEWAY_BASE_URL, DEFAULT_PROVIDER_ID, infer_anthropic_thinking_policy,
+    render_default_configs,
+};
 use gateway_core::{
     GatewayError, GatewayModel, ModelPricingRecord, ModelRepository, ModelRoute,
-    PricingCatalogRepository, PricingModalities, ProviderConnection, ProviderRepository,
+    PricingCatalogRepository, PricingModalities, ProviderCapabilities, ProviderConnection,
+    ProviderRepository,
 };
 use time::OffsetDateTime;
 
@@ -40,6 +46,7 @@ pub struct AdminModelSummary {
     pub model_icon_key: Option<ModelIconKey>,
     pub input_cost_per_million_tokens_usd_10000: Option<i64>,
     pub output_cost_per_million_tokens_usd_10000: Option<i64>,
+    pub cache_read_cost_per_million_tokens_usd_10000: Option<i64>,
     pub context_window_tokens: Option<i64>,
     pub input_window_tokens: Option<i64>,
     pub output_window_tokens: Option<i64>,
@@ -48,6 +55,7 @@ pub struct AdminModelSummary {
     pub supports_tool_calling: Option<bool>,
     pub supports_structured_output: Option<bool>,
     pub supports_attachments: Option<bool>,
+    pub client_configurations: Vec<ClientConfig>,
 }
 
 #[derive(Debug, Clone)]
@@ -130,6 +138,16 @@ where
                     .into_iter()
                     .chain([execution_model.model_key.as_str(), model.model_key.as_str()]),
             );
+            let client_configurations = build_client_configurations(ClientConfigContext {
+                model: &model,
+                execution_model: &execution_model,
+                primary_route,
+                primary_provider,
+                provider_display: provider_display.as_ref(),
+                model_icon_key,
+                pricing_record: pricing_record.as_ref(),
+                route_capabilities,
+            });
 
             items.push(AdminModelSummary {
                 id: model.model_key.clone(),
@@ -159,6 +177,13 @@ where
                             .map(|value| value.as_scaled_i64())
                     },
                 ),
+                cache_read_cost_per_million_tokens_usd_10000: pricing_record.as_ref().and_then(
+                    |record| {
+                        record
+                            .cache_read_cost_per_million_tokens
+                            .map(|value| value.as_scaled_i64())
+                    },
+                ),
                 context_window_tokens: pricing_record
                     .as_ref()
                     .and_then(|record| record.limits.context),
@@ -175,11 +200,146 @@ where
                 supports_attachments: pricing_record
                     .as_ref()
                     .map(|record| supports_attachments(&record.modalities)),
+                client_configurations,
             });
         }
 
         Ok(items)
     }
+}
+
+struct ClientConfigContext<'a> {
+    model: &'a GatewayModel,
+    execution_model: &'a GatewayModel,
+    primary_route: Option<&'a ModelRoute>,
+    primary_provider: Option<&'a ProviderConnection>,
+    provider_display: Option<&'a crate::ProviderDisplayIdentity>,
+    model_icon_key: Option<ModelIconKey>,
+    pricing_record: Option<&'a ModelPricingRecord>,
+    route_capabilities: Option<ProviderCapabilities>,
+}
+
+fn build_client_configurations(context: ClientConfigContext<'_>) -> Vec<ClientConfig> {
+    if !is_anthropic_labeled(
+        context.model,
+        context.execution_model,
+        context.primary_route,
+        context.primary_provider,
+        context.provider_display,
+        context.model_icon_key,
+    ) {
+        return Vec::new();
+    }
+
+    let thinking_policy = infer_anthropic_thinking_policy(
+        context
+            .primary_route
+            .map(|route| route.upstream_model.as_str())
+            .into_iter()
+            .chain(
+                context
+                    .primary_provider
+                    .map(|provider| provider.provider_key.as_str()),
+            )
+            .chain(
+                context
+                    .primary_provider
+                    .map(|provider| provider.provider_type.as_str()),
+            )
+            .chain(
+                context
+                    .provider_display
+                    .map(|display| display.label.as_str()),
+            )
+            .chain([
+                context.execution_model.model_key.as_str(),
+                context.model.model_key.as_str(),
+            ]),
+    );
+
+    let capabilities = context.route_capabilities.unwrap_or_default();
+    let input = ClientConfigInput {
+        model_id: context.model.model_key.clone(),
+        display_name: context
+            .model
+            .description
+            .clone()
+            .or_else(|| {
+                context
+                    .pricing_record
+                    .map(|record| record.display_name.clone())
+            })
+            .unwrap_or_else(|| context.model.model_key.clone()),
+        upstream_model: context
+            .primary_route
+            .map(|route| route.upstream_model.clone()),
+        provider_id: DEFAULT_PROVIDER_ID.to_string(),
+        provider_name: DEFAULT_PROVIDER_ID.to_string(),
+        gateway_base_url: DEFAULT_GATEWAY_BASE_URL.to_string(),
+        api_key_env_var: DEFAULT_API_KEY_ENV_VAR.to_string(),
+        input_cost_per_million_tokens_usd_10000: context.pricing_record.and_then(|record| {
+            record
+                .input_cost_per_million_tokens
+                .map(|value| value.as_scaled_i64())
+        }),
+        output_cost_per_million_tokens_usd_10000: context.pricing_record.and_then(|record| {
+            record
+                .output_cost_per_million_tokens
+                .map(|value| value.as_scaled_i64())
+        }),
+        cache_read_cost_per_million_tokens_usd_10000: context.pricing_record.and_then(|record| {
+            record
+                .cache_read_cost_per_million_tokens
+                .map(|value| value.as_scaled_i64())
+        }),
+        context_window_tokens: context
+            .pricing_record
+            .and_then(|record| record.limits.context),
+        input_window_tokens: context
+            .pricing_record
+            .and_then(|record| record.limits.input),
+        output_window_tokens: context
+            .pricing_record
+            .and_then(|record| record.limits.output),
+        capabilities: ClientModelCapabilities {
+            tool_calling: capabilities.tools,
+            attachments: context
+                .pricing_record
+                .is_some_and(|record| supports_attachments(&record.modalities)),
+            vision: capabilities.vision,
+        },
+        thinking_policy,
+    };
+
+    render_default_configs(&input)
+}
+
+fn is_anthropic_labeled(
+    model: &GatewayModel,
+    execution_model: &GatewayModel,
+    primary_route: Option<&ModelRoute>,
+    primary_provider: Option<&ProviderConnection>,
+    provider_display: Option<&crate::ProviderDisplayIdentity>,
+    model_icon_key: Option<ModelIconKey>,
+) -> bool {
+    matches!(
+        model_icon_key,
+        Some(ModelIconKey::Anthropic | ModelIconKey::Claude)
+    ) || provider_display.is_some_and(|display| display.icon_key == ProviderIconKey::Anthropic)
+        || [
+            Some(model.model_key.as_str()),
+            Some(execution_model.model_key.as_str()),
+            primary_route.map(|route| route.upstream_model.as_str()),
+            primary_provider.map(|provider| provider.provider_key.as_str()),
+            primary_provider.map(|provider| provider.provider_type.as_str()),
+            provider_display.map(|display| display.label.as_str()),
+        ]
+        .into_iter()
+        .flatten()
+        .any(|value| {
+            let value = value.to_ascii_lowercase();
+            value.contains("anthropic") || value.contains("claude")
+        })
 }
 
 async fn resolve_display_pricing<R>(
@@ -577,6 +737,7 @@ mod tests {
             alias.output_cost_per_million_tokens_usd_10000,
             Some(100_000)
         );
+        assert_eq!(alias.cache_read_cost_per_million_tokens_usd_10000, None);
         assert_eq!(alias.context_window_tokens, Some(400_000));
         assert_eq!(alias.input_window_tokens, Some(272_000));
         assert_eq!(alias.output_window_tokens, Some(128_000));
@@ -585,6 +746,7 @@ mod tests {
         assert_eq!(alias.supports_tool_calling, Some(true));
         assert_eq!(alias.supports_structured_output, Some(true));
         assert_eq!(alias.supports_attachments, Some(true));
+        assert!(alias.client_configurations.is_empty());
     }
 
     #[tokio::test]
@@ -625,8 +787,10 @@ mod tests {
         assert_eq!(items[0].status, AdminModelStatus::Degraded);
         assert_eq!(items[0].provider_key.as_deref(), Some("missing"));
         assert_eq!(items[0].input_cost_per_million_tokens_usd_10000, None);
+        assert_eq!(items[0].cache_read_cost_per_million_tokens_usd_10000, None);
         assert_eq!(items[0].supports_streaming, Some(true));
         assert_eq!(items[0].supports_attachments, None);
+        assert!(items[0].client_configurations.is_empty());
     }
 
     #[tokio::test]
@@ -720,6 +884,7 @@ mod tests {
         assert_eq!(items[0].supports_vision, Some(false));
         assert_eq!(items[0].supports_structured_output, Some(true));
         assert_eq!(items[0].supports_attachments, Some(false));
+        assert!(items[0].client_configurations.is_empty());
     }
 
     #[tokio::test]
@@ -781,5 +946,97 @@ mod tests {
         assert_eq!(items[0].supports_tool_calling, Some(true));
         assert_eq!(items[0].supports_structured_output, Some(true));
         assert_eq!(items[0].supports_attachments, None);
+        assert!(items[0].client_configurations.is_empty());
+    }
+
+    #[tokio::test]
+    async fn list_models_includes_client_configs_for_anthropic_labeled_models() {
+        let model_id = Uuid::new_v4();
+        let route_id = Uuid::new_v4();
+        let mut pricing = pricing_record(
+            "google-vertex-anthropic",
+            "claude-sonnet-4-6",
+            "3.0000",
+            "15.0000",
+            (Some(200_000), None, Some(64_000)),
+            &["text", "image"],
+        );
+        pricing.cache_read_cost_per_million_tokens =
+            Some(Money4::from_decimal_str("0.3000").expect("cache read cost"));
+
+        let repo = Arc::new(CountingRepo {
+            models: vec![GatewayModel {
+                id: model_id,
+                model_key: "claude-sonnet".to_string(),
+                alias_target_model_key: None,
+                description: Some("Claude Sonnet".to_string()),
+                tags: vec!["anthropic".to_string()],
+                rank: 1,
+            }],
+            routes_by_model: HashMap::from([(
+                model_id,
+                vec![ModelRoute {
+                    id: route_id,
+                    model_id,
+                    provider_key: "anthropic-prod".to_string(),
+                    upstream_model: "anthropic/claude-sonnet-4-6".to_string(),
+                    priority: 0,
+                    weight: 1.0,
+                    enabled: true,
+                    extra_headers: Default::default(),
+                    extra_body: Default::default(),
+                    capabilities: ProviderCapabilities::with_dimensions(
+                        true, false, true, true, true, true, true,
+                    ),
+                    compatibility: Default::default(),
+                }],
+            )]),
+            providers_by_key: HashMap::from([(
+                "anthropic-prod".to_string(),
+                ProviderConnection {
+                    provider_key: "anthropic-prod".to_string(),
+                    provider_type: "gcp_vertex".to_string(),
+                    config: json!({
+                        "display": {"label": "Anthropic", "icon_key": "anthropic"},
+                        "location": "global"
+                    }),
+                    secrets: None,
+                },
+            )]),
+            pricing_by_key: HashMap::from([(
+                (
+                    "google-vertex-anthropic".to_string(),
+                    "claude-sonnet-4-6".to_string(),
+                ),
+                pricing,
+            )]),
+            ..Default::default()
+        });
+
+        let service = AdminModelsService::new(repo);
+        let items = service.list_models().await.expect("admin models");
+
+        assert_eq!(
+            items[0].cache_read_cost_per_million_tokens_usd_10000,
+            Some(3_000)
+        );
+        assert_eq!(items[0].client_configurations.len(), 2);
+        assert_eq!(items[0].client_configurations[0].key, "opencode");
+        assert!(
+            items[0].client_configurations[0]
+                .content
+                .contains("\"cache_read\": 0.3")
+        );
+        assert!(
+            items[0].client_configurations[0]
+                .content
+                .contains("\"variants\"")
+        );
+        assert_eq!(items[0].client_configurations[1].key, "pi");
+        assert!(
+            items[0].client_configurations[1]
+                .content
+                .contains("\"thinkingLevelMap\"")
+        );
     }
 }

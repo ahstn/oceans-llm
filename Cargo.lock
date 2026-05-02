@@ -1399,6 +1399,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "gateway-client-config"
+version = "0.6.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "gateway-core"
 version = "0.6.0"
 dependencies = [
@@ -1447,6 +1455,7 @@ dependencies = [
  "argon2",
  "async-trait",
  "axum 0.8.8",
+ "gateway-client-config",
  "gateway-core",
  "itertools 0.14.0",
  "rand 0.8.5",

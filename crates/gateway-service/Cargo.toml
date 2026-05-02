@@ -8,6 +8,7 @@ anyhow.workspace = true
 argon2.workspace = true
 async-trait.workspace = true
 gateway-core.workspace = true
+gateway-client-config.workspace = true
 itertools.workspace = true
 rand.workspace = true
 reqwest.workspace = true

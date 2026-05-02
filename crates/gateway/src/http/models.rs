@@ -7,7 +7,10 @@ use gateway_service::{AdminModelSummary, AdminModelsService};
 
 use crate::http::{
     admin_auth::require_platform_admin,
-    admin_contract::{AdminModelListQuery, AdminModelPageView, AdminModelView, Envelope, envelope},
+    admin_contract::{
+        AdminModelClientConfigView, AdminModelListQuery, AdminModelPageView, AdminModelView,
+        Envelope, envelope,
+    },
     error::AppError,
     state::AppState,
 };
@@ -70,6 +73,8 @@ fn map_model_summary(model: AdminModelSummary) -> AdminModelView {
         model_icon_key: model.model_icon_key.map(Into::into),
         input_cost_per_million_tokens_usd_10000: model.input_cost_per_million_tokens_usd_10000,
         output_cost_per_million_tokens_usd_10000: model.output_cost_per_million_tokens_usd_10000,
+        cache_read_cost_per_million_tokens_usd_10000: model
+            .cache_read_cost_per_million_tokens_usd_10000,
         context_window_tokens: model.context_window_tokens,
         input_window_tokens: model.input_window_tokens,
         output_window_tokens: model.output_window_tokens,
@@ -78,5 +83,16 @@ fn map_model_summary(model: AdminModelSummary) -> AdminModelView {
         supports_tool_calling: model.supports_tool_calling,
         supports_structured_output: model.supports_structured_output,
         supports_attachments: model.supports_attachments,
+        client_configurations: model
+            .client_configurations
+            .into_iter()
+            .map(|config| AdminModelClientConfigView {
+                key: config.key,
+                label: config.label,
+                filename: config.filename,
+                content: config.content,
+                notes: config.notes,
+            })
+            .collect(),
     }
 }
