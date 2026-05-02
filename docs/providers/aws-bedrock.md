@@ -11,6 +11,7 @@ The gateway uses the Bedrock Runtime endpoint shape:
 - non-Anthropic chat models use Bedrock `Converse`
 - Anthropic Claude chat models use Bedrock `InvokeModel` with the native Anthropic Messages body for non-streaming requests
 - streaming chat uses Bedrock `ConverseStream` and is normalized into OpenAI-compatible chat-completion chunks
+- native Anthropic Messages streaming through `InvokeModelWithResponseStream` is not implemented in this gateway slice
 - `/v1/responses` and `/v1/embeddings` are not implemented for `aws_bedrock` routes
 
 The provider adapter supports bearer-token auth and IAM SigV4 request signing. AWS documents `AWS_BEARER_TOKEN_BEDROCK` as the environment variable recognized by Bedrock API-key auth and direct HTTP calls can pass the same value as `Authorization: Bearer ...`: [Use an Amazon Bedrock API key](https://docs.aws.amazon.com/en_us/bedrock/latest/userguide/api-keys-use.html).
@@ -116,6 +117,12 @@ Older Claude models do not support adaptive thinking. Claude Sonnet 4.5, Claude 
 
 For Opus 4.7 and later, non-default `temperature`, `top_p`, and `top_k` fail locally. Default `temperature: 1` and `top_p: 1` are omitted. If callers provide both normalized reasoning fields and provider-native `thinking` or `output_config` fields, the provider-native fields must agree with the normalized values; conflicting values are rejected. Other provider-native fields such as `anthropic_beta` and `context_management` remain pass-through.
 
+### Streaming and Tool Continuations
+
+Streaming Bedrock routes currently use Bedrock `ConverseStream`. Native Anthropic Messages streaming through `InvokeModelWithResponseStream` remains a separate follow-up tracked by [issue #139](https://github.com/ahstn/oceans-llm/issues/139). This matters for Claude-specific stream contracts: native Messages streams emit Anthropic SSE events such as `thinking_delta`, `signature_delta`, and `content_block_start`, while the current Bedrock stream path normalizes Bedrock Converse EventStream events.
+
+Chat Completions hides Claude thinking from normal `content` and `delta.content`. Native Anthropic thinking blocks and Bedrock Converse reasoning content are preserved under `provider_metadata.aws_bedrock.reasoning` for debugging and provider continuity. The gateway does not yet rehydrate those preserved `thinking`, `signature`, or `redacted_thinking` blocks back into future request content when callers send tool results. Anthropic documents that tool-use continuations with thinking may require complete unmodified thinking blocks, so callers should treat this as unsupported gateway-managed continuity until [issue #140](https://github.com/ahstn/oceans-llm/issues/140) lands.
+
 ## Amazon Nova Example
 
 Amazon Nova routes use the generic Bedrock Converse request shape.
@@ -190,7 +197,7 @@ The current runtime executes one selected route. Priority and weight affect rout
 - Set `responses: false` and `embeddings: false` on Bedrock routes until those API families exist in the provider adapter.
 - Keep `json_schema: false` unless a specific Bedrock route has explicit provider-specific overrides and tests.
 - Use `extra_body` only for additive Bedrock or Anthropic fields you have tested for the exact model family.
-- Chat Completions hides Claude thinking from normal `content` and `delta.content`. Native Anthropic thinking blocks and Bedrock Converse reasoning content are preserved under `provider_metadata.aws_bedrock.reasoning` for debugging and provider continuity; exact reasoning/cache accounting remains tracked by [issue #92](https://github.com/ahstn/oceans-llm/issues/92), and native Bedrock Anthropic streaming remains tracked by [issue #129](https://github.com/ahstn/oceans-llm/issues/129).
+- Chat Completions hides Claude thinking from normal `content` and `delta.content`. Native Anthropic thinking blocks and Bedrock Converse reasoning content are preserved under `provider_metadata.aws_bedrock.reasoning` for debugging and provider continuity. Exact reasoning/cache accounting remains tracked by [issue #92](https://github.com/ahstn/oceans-llm/issues/92), native Bedrock Anthropic streaming remains tracked by [issue #139](https://github.com/ahstn/oceans-llm/issues/139), and thinking block replay for tool-use continuations remains tracked by [issue #140](https://github.com/ahstn/oceans-llm/issues/140).
 - Check the model card before adding a new `upstream_model`; Bedrock model IDs and inference profile support differ by model and Region.
 - Prefer `default_chain` for production IAM roles and IRSA. Use `static_credentials` only for constrained local or controlled deployment cases where credential rotation is handled outside the gateway.
 

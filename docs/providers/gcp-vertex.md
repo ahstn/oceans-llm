@@ -103,6 +103,8 @@ models:
 
 Native Claude invocation requires `max_tokens`. If callers omit it, the gateway currently supplies `max_tokens: 1024` for Anthropic-on-Vertex routes.
 
+Keep `tools: false` and `vision: false` for Anthropic-on-Vertex routes in this slice. Upstream Claude-on-Vertex uses an Anthropic Messages-like API and current model cards advertise broader agent, computer-use, image, and document capabilities for some Claude models, but the gateway's current Anthropic-on-Vertex mapper is intentionally narrower. Function tools, tool-result continuations, image blocks, document blocks, and their stream behavior remain capability-gated until request mapping and fixtures are added in [issue #141](https://github.com/ahstn/oceans-llm/issues/141).
+
 ### Claude Thinking Compatibility
 
 For Anthropic-on-Vertex, OpenAI-shaped `reasoning_effort` maps to Anthropic Messages `output_config.effort` without forwarding the OpenAI-only field. The gateway also applies model-aware thinking policy before sending the Vertex request.
@@ -177,7 +179,7 @@ Manual budget example for an older Claude model:
 
 For Claude Sonnet 4.5, the gateway sends manual `thinking.type: "enabled"` with `budget_tokens` and omits `output_config.effort`. For Claude Opus 4.5, it sends the manual budget and `output_config.effort`.
 
-Chat Completions hides Claude thinking from normal `content` and `delta.content`. Native Anthropic `thinking`, `redacted_thinking`, `thinking_delta`, and `signature_delta` blocks are preserved under `provider_metadata.gcp_vertex.reasoning` for debugging and provider continuity.
+Chat Completions hides Claude thinking from normal `content` and `delta.content`. Native Anthropic `thinking`, `redacted_thinking`, `thinking_delta`, and `signature_delta` blocks are preserved under `provider_metadata.gcp_vertex.reasoning` for debugging and provider continuity. The gateway does not yet rehydrate that provider metadata into future Anthropic content blocks when callers send tool results. Anthropic documents that tool-use continuations with thinking may require complete unmodified thinking blocks, so gateway-managed replay remains tracked by [issue #140](https://github.com/ahstn/oceans-llm/issues/140).
 
 ## Gemini Example
 
@@ -210,6 +212,7 @@ Vertex Google multimodal inputs currently accept `gs://` image and file URIs thr
 - Vertex AI limits Anthropic request payloads to 30 MB. Large documents and many images can hit that byte limit before the model token limit.
 - Keep `json_schema: false` unless a route has explicit provider-specific overrides and tests.
 - Use `extra_body` only for additive provider fields you have tested for the exact publisher and model family.
+- Keep Anthropic-on-Vertex `tools: false` and `vision: false` unless you have gateway fixtures for that route. Upstream Claude model capability is not enough by itself; route capability flags should reflect the gateway mapper and tests.
 - Check Anthropic and Google Cloud model pages before adding a new Claude route; model IDs, endpoint availability, context windows, and retirement dates vary by model and location.
 
 ## Validation

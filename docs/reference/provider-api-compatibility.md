@@ -103,6 +103,10 @@ Provider-specific Anthropic fields remain available where they do not conflict w
 
 Chat Completions response policy matches the Bedrock Claude policy. Native Anthropic `thinking` and `redacted_thinking` blocks are never concatenated into `choices[*].message.content`. Streaming `thinking_delta` and `signature_delta` events are never emitted as `delta.content`. The gateway preserves these blocks under `choices[*].message.provider_metadata.gcp_vertex.reasoning` and `choices[*].delta.provider_metadata.gcp_vertex.reasoning`.
 
+Provider metadata preservation is not yet request-side replay. The current Vertex Anthropic mapper does not rehydrate preserved `thinking`, `signature`, or `redacted_thinking` blocks into later assistant content when callers send tool results. Tool-use continuations that require exact thinking block round-trip are tracked by [issue #140](https://github.com/ahstn/oceans-llm/issues/140).
+
+Vertex Claude route capabilities should stay aligned with tested gateway behavior, not only upstream model capability. Function tools, tool-result continuations, image/document content blocks, and related stream behavior for Anthropic-on-Vertex are tracked by [issue #141](https://github.com/ahstn/oceans-llm/issues/141). The broader cross-provider tool and multimodal matrices remain tracked by [issue #91](https://github.com/ahstn/oceans-llm/issues/91) and [issue #93](https://github.com/ahstn/oceans-llm/issues/93).
+
 Vertex Google publisher routes remain separate from Anthropic-on-Vertex. `google/*` upstream models use Vertex `generateContent` and `streamGenerateContent`; Anthropic Messages fields such as `thinking`, `output_config`, and `anthropic_version` do not apply to those routes.
 
 ## AWS Bedrock Anthropic Claude
@@ -141,7 +145,9 @@ Chat Completions response policy for Anthropic thinking is deliberately conserva
 
 Anthropic documents that Claude 4 models can return summarized thinking, encrypted signatures, and `redacted_thinking` blocks. Claude Opus 4.7 defaults thinking display to `omitted`, so a stream can open an empty thinking block, emit only a signature delta, and then begin normal text. Bedrock Converse represents equivalent state as `reasoningContent`, including `reasoningText.text`, `reasoningText.signature`, and redacted content. The gateway preserves those fields as provider metadata and treats billed output token counts as provider usage until exact reasoning accounting is implemented.
 
-Streaming boundary: native Anthropic Messages streaming over `InvokeModelWithResponseStream` is not part of this issue. If a Bedrock route enables streaming, it is using the generic Bedrock Converse stream adapter from [issue #128](https://github.com/ahstn/oceans-llm/issues/128), not the native Anthropic Messages stream event contract.
+Provider metadata preservation is not yet request-side replay. The current Bedrock Anthropic mappers do not rehydrate preserved `thinking`, `signature`, or `redacted_thinking` blocks into later assistant content when callers send tool results. Tool-use continuations that require exact thinking block round-trip are tracked by [issue #140](https://github.com/ahstn/oceans-llm/issues/140). Exact cache, reasoning, and modality token accounting remains tracked by [issue #92](https://github.com/ahstn/oceans-llm/issues/92).
+
+Streaming boundary: native Anthropic Messages streaming over `InvokeModelWithResponseStream` is not implemented in this slice. If a Bedrock route enables streaming, it is using the generic Bedrock Converse stream adapter from [issue #128](https://github.com/ahstn/oceans-llm/issues/128), not the native Anthropic Messages stream event contract. Native Bedrock Anthropic Messages streaming is tracked by [issue #139](https://github.com/ahstn/oceans-llm/issues/139).
 
 ## OpenAI-Compatible Profile Fields
 
@@ -189,7 +195,7 @@ The Responses stream adapter is separate. It parses SSE frames for transport saf
 
 Bedrock chat streaming is a separate transport adapter because Bedrock Runtime does not return SSE for ConverseStream. It decodes AWS Smithy/EventStream frames, reads string headers such as `:message-type`, `:event-type`, and `:exception-type`, and normalizes ConverseStream events into Chat Completions SSE chunks. `messageStart` emits the assistant role, `contentBlockDelta` emits text, function-tool argument deltas, or provider reasoning metadata deltas, `messageStop` emits the terminal finish reason, and `metadata.usage` emits an OpenAI-shaped usage chunk when present. EventStream exception frames and malformed or incomplete frames emit structured SSE error chunks and do not receive a final `[DONE]`.
 
-The current Bedrock frame parser validates frame lengths, header boundaries, supported header encodings, JSON payload shape, and clean finalization. It recognizes the prelude CRC and message CRC fields but does not validate CRC checksums in this slice. Provider-native `InvokeModelWithResponseStream` mappings, including Anthropic-specific native streaming payloads, remain separate provider-family work.
+The current Bedrock frame parser validates frame lengths, header boundaries, supported header encodings, JSON payload shape, and clean finalization. It recognizes the prelude CRC and message CRC fields but does not validate CRC checksums in this slice. Provider-native `InvokeModelWithResponseStream` mappings, including Anthropic-specific native streaming payloads, remain separate provider-family work tracked by [issue #139](https://github.com/ahstn/oceans-llm/issues/139).
 
 ## Accounting Boundary
 
@@ -224,5 +230,7 @@ These items are intentionally outside this first slice:
 - cache, reasoning, and modality token accounting: [issue #92](https://github.com/ahstn/oceans-llm/issues/92)
 - multimodal image/file compatibility across provider families: [issue #93](https://github.com/ahstn/oceans-llm/issues/93)
 - Vertex embeddings provider support: [issue #103](https://github.com/ahstn/oceans-llm/issues/103)
-- Bedrock native InvokeModel provider-family streaming mappings: [issue #129](https://github.com/ahstn/oceans-llm/issues/129)
+- Bedrock native Anthropic Messages streaming over `InvokeModelWithResponseStream`: [issue #139](https://github.com/ahstn/oceans-llm/issues/139)
+- Anthropic thinking block replay for tool-use continuations: [issue #140](https://github.com/ahstn/oceans-llm/issues/140)
+- Vertex Claude tool and multimodal parity: [issue #141](https://github.com/ahstn/oceans-llm/issues/141)
 - route readiness diagnostics: [issue #98](https://github.com/ahstn/oceans-llm/issues/98)
