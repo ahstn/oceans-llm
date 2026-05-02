@@ -430,9 +430,9 @@ fn map_anthropic_request(
         );
     }
 
+    merge_object_overrides(&mut body, &context.extra_body);
     apply_vertex_anthropic_thinking_compatibility(&mut body, &context.upstream_model)?;
     validate_vertex_anthropic_sampling_fields(&mut body, &context.upstream_model)?;
-    merge_object_overrides(&mut body, &context.extra_body);
     Ok(Value::Object(body))
 }
 
@@ -640,10 +640,12 @@ fn validate_caller_thinking_for_policy(
     let Some(thinking) = body.get("thinking") else {
         return Ok(());
     };
-    let thinking_type = thinking
-        .as_object()
-        .and_then(|object| object.get("type"))
-        .and_then(Value::as_str);
+    let thinking = thinking.as_object().ok_or_else(|| {
+        ProviderError::InvalidRequest(
+            "`thinking` must be an object for Anthropic Vertex mapping".to_string(),
+        )
+    })?;
+    let thinking_type = thinking.get("type").and_then(Value::as_str);
 
     match policy {
         ClaudeThinkingPolicy::AdaptiveOnly => {
@@ -669,6 +671,16 @@ fn validate_caller_thinking_for_policy(
             }
         }
         ClaudeThinkingPolicy::AdaptivePreferred => {}
+    }
+
+    if thinking_type == Some("enabled")
+        && thinking
+            .get("budget_tokens")
+            .is_none_or(|value| value.is_null())
+    {
+        return Err(ProviderError::InvalidRequest(format!(
+            "`thinking.type: enabled` for `{upstream_model}` must include `budget_tokens`"
+        )));
     }
 
     Ok(())
@@ -2160,6 +2172,59 @@ mod tests {
         match error {
             ProviderError::InvalidRequest(message) => {
                 assert!(message.contains("thinking.type: enabled"));
+            }
+            other => panic!("unexpected error: {other}"),
+        }
+    }
+
+    #[test]
+    fn rejects_vertex_extra_body_that_bypasses_anthropic_validation() {
+        let request = chat_request(vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: Value::String("think carefully".to_string()),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+        let mut context = context("anthropic/claude-opus-4-7");
+        context
+            .extra_body
+            .insert("temperature".to_string(), json!(0.2));
+
+        let error = map_anthropic_request(&request, &context, false)
+            .expect_err("route extra_body should be validated after merge");
+
+        match error {
+            ProviderError::InvalidRequest(message) => {
+                assert!(message.contains("temperature"));
+                assert!(message.contains("Claude Opus 4.7+"));
+            }
+            other => panic!("unexpected error: {other}"),
+        }
+    }
+
+    #[test]
+    fn rejects_vertex_native_manual_thinking_without_budget() {
+        let mut request = chat_request(vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: Value::String("think carefully".to_string()),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+        request
+            .extra
+            .insert("thinking".to_string(), json!({ "type": "enabled" }));
+
+        let error = map_anthropic_request(
+            &request,
+            &context("anthropic/claude-sonnet-4-5@20250929"),
+            false,
+        )
+        .expect_err("native manual thinking requires a budget");
+
+        match error {
+            ProviderError::InvalidRequest(message) => {
+                assert!(message.contains("thinking.type: enabled"));
+                assert!(message.contains("budget_tokens"));
             }
             other => panic!("unexpected error: {other}"),
         }
