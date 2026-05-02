@@ -2,8 +2,12 @@ name: helm-ci
 
 on:
   pull_request:
+    paths:
+      - "deploy/helm/oceans-llm/**"
   push:
     branches: ["main"]
+    paths:
+      - "deploy/helm/oceans-llm/**"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

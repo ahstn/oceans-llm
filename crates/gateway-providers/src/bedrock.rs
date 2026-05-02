@@ -1702,10 +1702,12 @@ fn validate_caller_thinking_for_policy(
     let Some(thinking) = body.get("thinking") else {
         return Ok(());
     };
-    let thinking_type = thinking
-        .as_object()
-        .and_then(|object| object.get("type"))
-        .and_then(Value::as_str);
+    let thinking = thinking.as_object().ok_or_else(|| {
+        ProviderError::InvalidRequest(
+            "`thinking` must be an object for aws_bedrock Anthropic Claude mapping".to_string(),
+        )
+    })?;
+    let thinking_type = thinking.get("type").and_then(Value::as_str);
 
     match policy {
         ClaudeThinkingPolicy::AdaptiveOnly => {
@@ -1738,6 +1740,16 @@ fn validate_caller_thinking_for_policy(
             }
         }
         ClaudeThinkingPolicy::AdaptivePreferred => {}
+    }
+
+    if thinking_type == Some("enabled")
+        && thinking
+            .get("budget_tokens")
+            .is_none_or(|value| value.is_null())
+    {
+        return Err(ProviderError::InvalidRequest(format!(
+            "`thinking.type: enabled` for `{upstream_model}` must include `budget_tokens`"
+        )));
     }
 
     Ok(())
@@ -2013,10 +2025,13 @@ fn validate_converse_caller_thinking_for_policy_object(
     let Some(thinking) = additional.get("thinking") else {
         return Ok(());
     };
-    let thinking_type = thinking
-        .as_object()
-        .and_then(|object| object.get("type"))
-        .and_then(Value::as_str);
+    let thinking = thinking.as_object().ok_or_else(|| {
+        ProviderError::InvalidRequest(
+            "`additionalModelRequestFields.thinking` must be an object for aws_bedrock Converse"
+                .to_string(),
+        )
+    })?;
+    let thinking_type = thinking.get("type").and_then(Value::as_str);
 
     match policy {
         ClaudeThinkingPolicy::AdaptiveOnly => {
@@ -2042,6 +2057,15 @@ fn validate_converse_caller_thinking_for_policy_object(
             }
         }
         ClaudeThinkingPolicy::AdaptivePreferred => {}
+    }
+    if thinking_type == Some("enabled")
+        && thinking
+            .get("budget_tokens")
+            .is_none_or(|value| value.is_null())
+    {
+        return Err(ProviderError::InvalidRequest(format!(
+            "`additionalModelRequestFields.thinking.type: enabled` for `{upstream_model}` must include `budget_tokens`"
+        )));
     }
     Ok(())
 }
@@ -2097,10 +2121,19 @@ fn validate_converse_anthropic_sampling_fields(
         return Ok(());
     }
 
+    if let Some(value) = extra.remove("top_k")
+        && !value.is_null()
+    {
+        return Err(ProviderError::InvalidRequest(format!(
+            "`top_k` is not supported for `{upstream_model}`; omit the field for Claude Opus 4.7+"
+        )));
+    }
+
     let Some(inference_config) = body
         .get_mut("inferenceConfig")
         .and_then(Value::as_object_mut)
     else {
+        validate_converse_additional_top_k(body, upstream_model)?;
         return Ok(());
     };
     for (field, bedrock_field) in [("temperature", "temperature"), ("top_p", "topP")] {
@@ -2118,13 +2151,13 @@ fn validate_converse_anthropic_sampling_fields(
     if inference_config.is_empty() {
         body.remove("inferenceConfig");
     }
-    if let Some(value) = extra.remove("top_k")
-        && !value.is_null()
-    {
-        return Err(ProviderError::InvalidRequest(format!(
-            "`top_k` is not supported for `{upstream_model}`; omit the field for Claude Opus 4.7+"
-        )));
-    }
+    validate_converse_additional_top_k(body, upstream_model)
+}
+
+fn validate_converse_additional_top_k(
+    body: &mut Map<String, Value>,
+    upstream_model: &str,
+) -> Result<(), ProviderError> {
     let remove_additional = if let Some(additional) = body
         .get_mut("additionalModelRequestFields")
         .and_then(Value::as_object_mut)
@@ -3690,6 +3723,30 @@ mod tests {
     }
 
     #[test]
+    fn rejects_opus_4_7_converse_additional_model_top_k_without_inference_config() {
+        let request = CoreChatRequest {
+            model: "claude".to_string(),
+            messages: vec![message("user", "Hello")],
+            stream: true,
+            extra: BTreeMap::from([(
+                "additionalModelRequestFields".to_string(),
+                json!({
+                    "thinking": {"type": "adaptive"},
+                    "top_k": 50
+                }),
+            )]),
+        };
+
+        let error =
+            map_chat_request_to_converse(&request, &context("global.anthropic.claude-opus-4-7"))
+                .expect_err("top_k rejected without inferenceConfig")
+                .to_string();
+
+        assert!(error.contains("top_k"));
+        assert!(error.contains("Claude Opus 4.7+"));
+    }
+
+    #[test]
     fn rejects_opus_4_7_manual_thinking_budget() {
         let request = CoreChatRequest {
             model: "claude".to_string(),
@@ -3713,6 +3770,53 @@ mod tests {
 
         assert!(error.contains("thinking.type: enabled"));
         assert!(error.contains("claude-opus-4-7"));
+    }
+
+    #[test]
+    fn rejects_native_manual_thinking_without_budget() {
+        let request = CoreChatRequest {
+            model: "claude".to_string(),
+            messages: vec![message("user", "Think carefully")],
+            stream: false,
+            extra: BTreeMap::from([
+                ("max_tokens".to_string(), json!(4096)),
+                ("thinking".to_string(), json!({ "type": "enabled" })),
+            ]),
+        };
+
+        let error = map_chat_request_to_anthropic_messages(
+            &request,
+            &context("anthropic.claude-haiku-4-5-v1:0"),
+        )
+        .expect_err("manual thinking requires budget")
+        .to_string();
+
+        assert!(error.contains("thinking.type: enabled"));
+        assert!(error.contains("budget_tokens"));
+    }
+
+    #[test]
+    fn rejects_converse_manual_thinking_without_budget() {
+        let request = CoreChatRequest {
+            model: "claude".to_string(),
+            messages: vec![message("user", "Think carefully")],
+            stream: true,
+            extra: BTreeMap::from([
+                ("max_tokens".to_string(), json!(4096)),
+                (
+                    "additionalModelRequestFields".to_string(),
+                    json!({ "thinking": { "type": "enabled" } }),
+                ),
+            ]),
+        };
+
+        let error =
+            map_chat_request_to_converse(&request, &context("anthropic.claude-haiku-4-5-v1:0"))
+                .expect_err("manual thinking requires budget")
+                .to_string();
+
+        assert!(error.contains("additionalModelRequestFields.thinking.type: enabled"));
+        assert!(error.contains("budget_tokens"));
     }
 
     #[test]

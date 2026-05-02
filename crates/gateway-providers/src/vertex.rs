@@ -478,7 +478,7 @@ fn apply_vertex_anthropic_thinking_compatibility(
     let native_effort = extract_existing_anthropic_output_effort(body)?;
     let has_native_effort = native_effort.is_some();
     let effort = merge_optional_efforts(reasoning_effort, native_effort, upstream_model)?;
-    let budget_tokens = extract_anthropic_reasoning_budget_tokens(body);
+    let budget_tokens = extract_anthropic_reasoning_budget_tokens(body)?;
     let policy = claude_thinking_policy(upstream_model);
 
     validate_caller_thinking_for_policy(body, policy, upstream_model)?;
@@ -622,14 +622,24 @@ fn merge_optional_efforts(
     }
 }
 
-fn extract_anthropic_reasoning_budget_tokens(body: &mut Map<String, Value>) -> Option<Value> {
-    if let Some(value) = body.remove("thinking_budget_tokens") {
-        return Some(value);
+fn extract_anthropic_reasoning_budget_tokens(
+    body: &mut Map<String, Value>,
+) -> Result<Option<Value>, ProviderError> {
+    let thinking_budget = body
+        .remove("thinking_budget_tokens")
+        .filter(|value| !value.is_null());
+    let reasoning_budget = body
+        .remove("reasoning_budget_tokens")
+        .filter(|value| !value.is_null());
+
+    match (thinking_budget, reasoning_budget) {
+        (Some(left), Some(right)) if left != right => Err(ProviderError::InvalidRequest(
+            "`thinking_budget_tokens` conflicts with `reasoning_budget_tokens` for Anthropic Vertex mapping"
+                .to_string(),
+        )),
+        (Some(value), _) | (_, Some(value)) => Ok(Some(value)),
+        (None, None) => Ok(None),
     }
-    if let Some(value) = body.remove("reasoning_budget_tokens") {
-        return Some(value);
-    }
-    None
 }
 
 fn validate_caller_thinking_for_policy(
@@ -1267,6 +1277,23 @@ fn normalize_anthropic_thinking_delta(delta: &Map<String, Value>) -> Option<Valu
     }
 }
 
+fn normalize_anthropic_thinking_start(block: &Map<String, Value>) -> Option<Value> {
+    match block.get("type").and_then(Value::as_str) {
+        Some("redacted_thinking") => {
+            let mut normalized = Map::new();
+            normalized.insert(
+                "type".to_string(),
+                Value::String("redacted_thinking".to_string()),
+            );
+            if let Some(data) = block.get("data").cloned() {
+                normalized.insert("data".to_string(), data);
+            }
+            Some(Value::Object(normalized))
+        }
+        _ => None,
+    }
+}
+
 fn vertex_reasoning_metadata(source: &str, blocks: Vec<Value>) -> Value {
     json!({
         "gcp_vertex": {
@@ -1564,6 +1591,37 @@ where
                             role_emitted = true;
                         } else if let Some(delta) = delta
                             && let Some(block) = normalize_anthropic_thinking_delta(delta)
+                        {
+                            let mut outbound_delta = Map::new();
+                            if !role_emitted {
+                                outbound_delta.insert(
+                                    "role".to_string(),
+                                    Value::String("assistant".to_string()),
+                                );
+                            }
+                            outbound_delta.insert(
+                                "provider_metadata".to_string(),
+                                vertex_reasoning_metadata(
+                                    "anthropic_messages_stream",
+                                    vec![block],
+                                ),
+                            );
+                            let chunk = openai_delta_chunk(
+                                &stream_id,
+                                created,
+                                &model,
+                                Value::Object(outbound_delta),
+                                None,
+                            );
+                            yield Ok(openai_sse_chunk(&chunk));
+                            role_emitted = true;
+                        }
+                    }
+                    "content_block_start" => {
+                        if let Some(block) = payload
+                            .get("content_block")
+                            .and_then(Value::as_object)
+                            .and_then(normalize_anthropic_thinking_start)
                         {
                             let mut outbound_delta = Map::new();
                             if !role_emitted {
@@ -2077,6 +2135,63 @@ mod tests {
     }
 
     #[test]
+    fn ignores_null_vertex_thinking_budget_alias_before_reasoning_budget() {
+        let mut request = chat_request(vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: Value::String("think carefully".to_string()),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+        request
+            .extra
+            .insert("thinking_budget_tokens".to_string(), Value::Null);
+        request
+            .extra
+            .insert("reasoning_budget_tokens".to_string(), json!(1024));
+
+        let mapped = map_anthropic_request(
+            &request,
+            &context("anthropic/claude-sonnet-4-5@20250929"),
+            false,
+        )
+        .expect("mapped");
+
+        assert_eq!(
+            mapped["thinking"],
+            json!({ "type": "enabled", "budget_tokens": 1024 })
+        );
+        assert!(mapped.get("thinking_budget_tokens").is_none());
+        assert!(mapped.get("reasoning_budget_tokens").is_none());
+    }
+
+    #[test]
+    fn rejects_conflicting_vertex_thinking_budget_aliases() {
+        let mut request = chat_request(vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: Value::String("think carefully".to_string()),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+        request
+            .extra
+            .insert("thinking_budget_tokens".to_string(), json!(2048));
+        request
+            .extra
+            .insert("reasoning_budget_tokens".to_string(), json!(1024));
+
+        let error = map_anthropic_request(
+            &request,
+            &context("anthropic/claude-sonnet-4-5@20250929"),
+            false,
+        )
+        .expect_err("conflicting budgets rejected")
+        .to_string();
+
+        assert!(error.contains("thinking_budget_tokens"));
+        assert!(error.contains("reasoning_budget_tokens"));
+    }
+
+    #[test]
     fn maps_vertex_opus_and_sonnet_4_6_reasoning_effort_to_adaptive_thinking() {
         for model in ["anthropic/claude-opus-4-6", "anthropic/claude-sonnet-4-6"] {
             let mut request = chat_request(vec![CoreChatMessage {
@@ -2497,6 +2612,38 @@ data: {"type":"vertex_event"}
         assert!(rendered.contains("\"thinking_delta\""));
         assert!(rendered.contains("\"signature_delta\""));
         assert!(rendered.contains("\"sig-stream\""));
+        assert_eq!(rendered.matches("\"role\":\"assistant\"").count(), 1);
+        assert!(rendered.contains("data: [DONE]"));
+    }
+
+    #[tokio::test]
+    async fn anthropic_stream_preserves_redacted_thinking_start_metadata() {
+        let upstream = stream::iter(vec![Ok(Bytes::from(concat!(
+            "event: message_start\n",
+            "data: {\"type\":\"message_start\"}\n\n",
+            "event: content_block_start\n",
+            "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"redacted_thinking\",\"data\":\"encrypted-redacted\"}}\n\n",
+            "event: content_block_delta\n",
+            "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"visible\"}}\n\n",
+            "event: message_delta\n",
+            "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\n"
+        )))]);
+        let stream = super::normalize_anthropic_stream(
+            upstream,
+            "chatcmpl-test".to_string(),
+            1,
+            "fast".to_string(),
+        );
+        let bytes: Vec<_> = stream.collect().await;
+        let rendered = bytes
+            .into_iter()
+            .map(|item| String::from_utf8(item.expect("chunk").to_vec()).expect("utf8"))
+            .collect::<String>();
+
+        assert!(rendered.contains("\"content\":\"visible\""));
+        assert!(rendered.contains("\"provider_metadata\""));
+        assert!(rendered.contains("\"redacted_thinking\""));
+        assert!(rendered.contains("\"encrypted-redacted\""));
         assert_eq!(rendered.matches("\"role\":\"assistant\"").count(), 1);
         assert!(rendered.contains("data: [DONE]"));
     }
