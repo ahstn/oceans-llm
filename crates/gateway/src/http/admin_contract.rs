@@ -203,6 +203,7 @@ pub struct AdminModelView {
     pub model_icon_key: Option<ModelIconKeyView>,
     pub input_cost_per_million_tokens_usd_10000: Option<i64>,
     pub output_cost_per_million_tokens_usd_10000: Option<i64>,
+    pub cache_read_cost_per_million_tokens_usd_10000: Option<i64>,
     pub context_window_tokens: Option<i64>,
     pub input_window_tokens: Option<i64>,
     pub output_window_tokens: Option<i64>,
@@ -211,6 +212,16 @@ pub struct AdminModelView {
     pub supports_tool_calling: Option<bool>,
     pub supports_structured_output: Option<bool>,
     pub supports_attachments: Option<bool>,
+    pub client_configurations: Vec<AdminModelClientConfigView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AdminModelClientConfigView {
+    pub key: String,
+    pub label: String,
+    pub filename: String,
+    pub content: String,
+    pub notes: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Default, IntoParams)]

@@ -562,6 +562,13 @@ export interface components {
             team_name?: string | null;
             team_role?: string | null;
         };
+        AdminModelClientConfigView: {
+            content: string;
+            filename: string;
+            key: string;
+            label: string;
+            notes: string[];
+        };
         AdminModelPageView: {
             items: components["schemas"]["AdminModelView"][];
             /** Format: int32 */
@@ -575,6 +582,9 @@ export interface components {
         AdminModelStatusView: "healthy" | "degraded";
         AdminModelView: {
             alias_of?: string | null;
+            /** Format: int64 */
+            cache_read_cost_per_million_tokens_usd_10000?: number | null;
+            client_configurations: components["schemas"]["AdminModelClientConfigView"][];
             /** Format: int64 */
             context_window_tokens?: number | null;
             description?: string | null;

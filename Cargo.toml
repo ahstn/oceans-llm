@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/admin-ui",
+    "crates/gateway-client-config",
     "crates/gateway",
     "crates/gateway-core",
     "crates/gateway-providers",
@@ -12,6 +13,7 @@ resolver = "2"
 [workspace.dependencies]
 admin-ui = { path = "crates/admin-ui" }
 gateway-core = { path = "crates/gateway-core" }
+gateway-client-config = { path = "crates/gateway-client-config" }
 gateway-providers = { path = "crates/gateway-providers" }
 gateway-service = { path = "crates/gateway-service" }
 gateway-store = { path = "crates/gateway-store" }

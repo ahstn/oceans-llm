@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -38,6 +38,7 @@ const modelPage: ModelPageView = {
       model_icon_key: 'gemini',
       input_cost_per_million_tokens_usd_10000: 3_000,
       output_cost_per_million_tokens_usd_10000: 25_000,
+      cache_read_cost_per_million_tokens_usd_10000: null,
       context_window_tokens: 1_048_576,
       input_window_tokens: null,
       output_window_tokens: 65_536,
@@ -48,6 +49,47 @@ const modelPage: ModelPageView = {
       supports_attachments: true,
       tags: ['fast', 'cheap'],
       status: 'healthy',
+      client_configurations: [],
+    },
+    {
+      id: 'claude-sonnet',
+      resolved_model_key: 'claude-sonnet',
+      alias_of: null,
+      description: 'Claude Sonnet via Anthropic',
+      provider_key: 'anthropic-prod',
+      provider_label: 'Anthropic',
+      provider_icon_key: 'anthropic',
+      upstream_model: 'anthropic/claude-sonnet-4-6',
+      model_icon_key: 'claude',
+      input_cost_per_million_tokens_usd_10000: 30_000,
+      output_cost_per_million_tokens_usd_10000: 150_000,
+      cache_read_cost_per_million_tokens_usd_10000: 3_000,
+      context_window_tokens: 200_000,
+      input_window_tokens: null,
+      output_window_tokens: 64_000,
+      supports_streaming: true,
+      supports_vision: false,
+      supports_tool_calling: true,
+      supports_structured_output: true,
+      supports_attachments: false,
+      tags: ['anthropic', 'reasoning'],
+      status: 'healthy',
+      client_configurations: [
+        {
+          key: 'opencode',
+          label: 'OpenCode',
+          filename: 'opencode.json',
+          content: '{\n  "provider": "opencode"\n}',
+          notes: [],
+        },
+        {
+          key: 'pi',
+          label: 'Pi',
+          filename: 'models.json',
+          content: '{\n  "provider": "pi"\n}',
+          notes: ['Manual note'],
+        },
+      ],
     },
     {
       id: 'backup-fast',
@@ -61,6 +103,7 @@ const modelPage: ModelPageView = {
       model_icon_key: 'gemini',
       input_cost_per_million_tokens_usd_10000: 3_000,
       output_cost_per_million_tokens_usd_10000: 25_000,
+      cache_read_cost_per_million_tokens_usd_10000: null,
       context_window_tokens: 1_048_576,
       input_window_tokens: null,
       output_window_tokens: 65_536,
@@ -71,11 +114,12 @@ const modelPage: ModelPageView = {
       supports_attachments: true,
       tags: ['fast', 'fallback'],
       status: 'degraded',
+      client_configurations: [],
     },
   ],
   page: 1,
   page_size: 30,
-  total: 2,
+  total: 3,
 }
 
 describe('ModelsPage', () => {
@@ -128,6 +172,7 @@ describe('ModelsPage', () => {
       'Cost / 1M Tokens',
       'Context Window',
       'Capabilities',
+      'Client Config',
     ])
 
     const identityCell = screen.getAllByTestId('models-desktop-cell-backup-fast')[0]
@@ -148,6 +193,7 @@ describe('ModelsPage', () => {
     expect(within(backupCells[4] as HTMLElement).getByText('Output')).toBeInTheDocument()
     expect(within(backupCells[5] as HTMLElement).getByText('Streaming')).toBeInTheDocument()
     expect(within(backupCells[5] as HTMLElement).getByText('Vision')).toBeInTheDocument()
+    expect(within(backupCells[6] as HTMLElement).getByText('—')).toBeInTheDocument()
   })
 
   it('does not render the notes column in the desktop table', async () => {
@@ -165,5 +211,37 @@ describe('ModelsPage', () => {
 
     expect(within(table).queryByText('Notes')).not.toBeInTheDocument()
     expect(within(table).queryByText('Gemini fallback on Vertex')).not.toBeInTheDocument()
+  })
+
+  it('opens client config dialog, switches tabs, and copies active JSON', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, {
+      clipboard: { writeText },
+    })
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+
+    const { ModelsPage } = await import('@/routes/models')
+
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+
+    const table = screen.getAllByTestId('models-desktop-table')[0]
+    const claudeRow = within(table).getByText('claude-sonnet').closest('tr')
+    expect(claudeRow).not.toBeNull()
+
+    fireEvent.click(within(claudeRow as HTMLElement).getByRole('button', { name: /Client config/i }))
+    expect(screen.getByRole('dialog', { name: 'Client config' })).toBeInTheDocument()
+    expect(screen.getByText('opencode.json')).toBeInTheDocument()
+    expect(screen.getByText(/"provider": "opencode"/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Pi' }))
+    expect(screen.getByText('models.json')).toBeInTheDocument()
+    expect(screen.getByText(/"provider": "pi"/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy JSON' }))
+    expect(writeText).toHaveBeenCalledWith('{\n  "provider": "pi"\n}')
   })
 })

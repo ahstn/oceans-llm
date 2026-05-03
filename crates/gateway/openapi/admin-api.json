@@ -1837,6 +1837,36 @@
           }
         }
       },
+      "AdminModelClientConfigView": {
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "filename",
+          "content",
+          "notes"
+        ],
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "AdminModelPageView": {
         "type": "object",
         "required": [
@@ -1882,7 +1912,8 @@
           "id",
           "resolved_model_key",
           "tags",
-          "status"
+          "status",
+          "client_configurations"
         ],
         "properties": {
           "alias_of": {
@@ -1890,6 +1921,19 @@
               "string",
               "null"
             ]
+          },
+          "cache_read_cost_per_million_tokens_usd_10000": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "client_configurations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminModelClientConfigView"
+            }
           },
           "context_window_tokens": {
             "type": [

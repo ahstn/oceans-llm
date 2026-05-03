@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import {
   AttachmentIcon,
@@ -17,6 +17,13 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
   Empty,
   EmptyContent,
   EmptyDescription,
@@ -33,6 +40,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { requireAdminSession } from '@/routes/-admin-guard'
 import { getModels } from '@/server/admin-data.functions'
 import type { ModelView } from '@/types/api'
@@ -63,6 +71,10 @@ export function ModelsPage() {
   const { data: modelPage } = Route.useLoaderData()
   const search = Route.useSearch()
   const router = useRouter()
+  const [configDialog, setConfigDialog] = useState<{
+    model: ModelView
+    activeKey: string
+  } | null>(null)
   const totalPages = Math.max(1, Math.ceil(modelPage.total / modelPage.page_size))
 
   function navigateToPage(page: number) {
@@ -76,14 +88,27 @@ export function ModelsPage() {
     })
   }
 
-  async function handleCopy(modelId: string) {
+  async function handleCopyValue(value: string, successMessage: string) {
     try {
-      await navigator.clipboard.writeText(modelId)
-      toast.success('Model ID copied')
+      await navigator.clipboard.writeText(value)
+      toast.success(successMessage)
     } catch {
       toast.error('Clipboard access failed')
     }
   }
+
+  function openClientConfig(model: ModelView) {
+    const firstConfig = model.client_configurations[0]
+    if (!firstConfig) {
+      return
+    }
+    setConfigDialog({ model, activeKey: firstConfig.key })
+  }
+
+  const activeClientConfig =
+    configDialog?.model.client_configurations.find((config) => config.key === configDialog.activeKey) ??
+    configDialog?.model.client_configurations[0] ??
+    null
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
@@ -125,12 +150,17 @@ export function ModelsPage() {
             <>
               <div className="grid gap-4 md:hidden" data-testid="models-mobile-list">
                 {modelPage.items.map((model) => (
-                  <ModelCard key={model.id} model={model} onCopy={handleCopy} />
+                  <ModelCard
+                    key={model.id}
+                    model={model}
+                    onCopy={(modelId) => handleCopyValue(modelId, 'Model ID copied')}
+                    onOpenClientConfig={openClientConfig}
+                  />
                 ))}
               </div>
 
               <div className="hidden min-w-0 md:block" data-testid="models-desktop-table">
-                <Table className="min-w-[82rem] table-fixed">
+                <Table className="min-w-[92rem] table-fixed">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="bg-card sticky left-0 z-20 w-[16rem] min-w-[16rem] px-4">
@@ -141,6 +171,7 @@ export function ModelsPage() {
                       <TableHead className="w-[12rem] px-4">Cost / 1M Tokens</TableHead>
                       <TableHead className="w-[12rem] px-4">Context Window</TableHead>
                       <TableHead className="w-[18rem] px-4">Capabilities</TableHead>
+                      <TableHead className="w-[10rem] px-4">Client Config</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -169,7 +200,7 @@ export function ModelsPage() {
                                     variant="ghost"
                                     className="shrink-0"
                                     aria-label={`Copy model ID ${model.id}`}
-                                    onClick={() => handleCopy(model.id)}
+                                    onClick={() => handleCopyValue(model.id, 'Model ID copied')}
                                   >
                                     <AppIcon icon={Copy01Icon} size={14} stroke={1.5} />
                                   </Button>
@@ -229,6 +260,9 @@ export function ModelsPage() {
                         <TableCell className="px-4 whitespace-normal">
                           <CapabilityBadges model={model} />
                         </TableCell>
+                        <TableCell className="px-4 whitespace-normal">
+                          <ClientConfigButton model={model} onOpen={openClientConfig} />
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -257,11 +291,34 @@ export function ModelsPage() {
           </div>
         </CardContent>
       </Card>
+
+      <ClientConfigDialog
+        model={configDialog?.model ?? null}
+        activeKey={configDialog?.activeKey ?? null}
+        activeConfig={activeClientConfig}
+        onActiveKeyChange={(activeKey) =>
+          setConfigDialog((current) => (current ? { ...current, activeKey } : current))
+        }
+        onCopy={(content) => handleCopyValue(content, 'Client config copied')}
+        onOpenChange={(open) => {
+          if (!open) {
+            setConfigDialog(null)
+          }
+        }}
+      />
     </div>
   )
 }
 
-function ModelCard({ model, onCopy }: { model: ModelView; onCopy: (modelId: string) => void }) {
+function ModelCard({
+  model,
+  onCopy,
+  onOpenClientConfig,
+}: {
+  model: ModelView
+  onCopy: (modelId: string) => void
+  onOpenClientConfig: (model: ModelView) => void
+}) {
   return (
     <Card>
       <CardHeader className="gap-4">
@@ -321,8 +378,109 @@ function ModelCard({ model, onCopy }: { model: ModelView; onCopy: (modelId: stri
           <MetricDetail label="Capabilities" value={<CapabilityBadges model={model} />} />
         </dl>
         <ModelNotes model={model} />
+        <ClientConfigButton model={model} onOpen={onOpenClientConfig} />
       </CardContent>
     </Card>
+  )
+}
+
+function ClientConfigButton({
+  model,
+  onOpen,
+}: {
+  model: ModelView
+  onOpen: (model: ModelView) => void
+}) {
+  if (model.client_configurations.length === 0) {
+    return <span className="text-[var(--color-text-soft)]">—</span>
+  }
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className="gap-2"
+      onClick={() => onOpen(model)}
+    >
+      <AppIcon icon={CodeIcon} size={14} stroke={1.5} />
+      Client config
+    </Button>
+  )
+}
+
+function ClientConfigDialog({
+  model,
+  activeKey,
+  activeConfig,
+  onActiveKeyChange,
+  onCopy,
+  onOpenChange,
+}: {
+  model: ModelView | null
+  activeKey: string | null
+  activeConfig: ModelView['client_configurations'][number] | null
+  onActiveKeyChange: (key: string) => void
+  onCopy: (content: string) => void
+  onOpenChange: (open: boolean) => void
+}) {
+  return (
+    <Dialog open={model !== null} onOpenChange={onOpenChange}>
+      <DialogContent className="w-[min(920px,calc(100vw-32px))]">
+        <DialogHeader>
+          <DialogTitle>Client config</DialogTitle>
+          <DialogDescription>
+            {model ? `${model.id} via ${providerTypeLabel(model)}` : 'Local client configuration'}
+          </DialogDescription>
+        </DialogHeader>
+
+        {model && activeConfig ? (
+          <div className="flex min-w-0 flex-col gap-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <ToggleGroup
+                type="single"
+                value={activeKey ?? activeConfig.key}
+                onValueChange={(value) => {
+                  if (value) {
+                    onActiveKeyChange(value)
+                  }
+                }}
+                variant="outline"
+                size="sm"
+                spacing={0}
+                aria-label="Client config"
+              >
+                {model.client_configurations.map((config) => (
+                  <ToggleGroupItem key={config.key} value={config.key} aria-label={config.label}>
+                    {config.label}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+              <Button type="button" variant="outline" size="sm" onClick={() => onCopy(activeConfig.content)}>
+                Copy JSON
+              </Button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--color-text-muted)]">
+              <Badge variant="secondary">{activeConfig.filename}</Badge>
+              <span>{model.upstream_model ?? model.resolved_model_key}</span>
+            </div>
+
+            <pre className="max-h-[460px] min-h-[280px] overflow-auto rounded-md border bg-[var(--color-surface-muted)] p-4 text-xs leading-6 text-[var(--color-text-muted)]">
+              <code>{activeConfig.content}</code>
+            </pre>
+
+            {activeConfig.notes.length > 0 ? (
+              <div className="flex flex-col gap-2 text-sm text-[var(--color-text-muted)]">
+                {activeConfig.notes.map((note) => (
+                  <p key={note}>{note}</p>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </DialogContent>
+    </Dialog>
   )
 }
 
