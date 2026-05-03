@@ -6,7 +6,7 @@ Accepted.
 
 ## Context
 
-Operators need request-level visibility into how many tools are exposed to a model and how many tool calls are invoked. This is a prerequisite for MCP governance, but the gateway does not yet have a dedicated MCP access and filtering subsystem.
+Admins need request-level visibility into how many tools are exposed to a model and how many tool calls are invoked. This is a prerequisite for MCP governance, but the gateway does not yet have a dedicated MCP access and filtering subsystem.
 
 The MCP tools model separates tool exposure through `tools/list` from invocation through `tools/call`. The gateway can observe analogous OpenAI-compatible Chat Completions and Responses traffic today, but it cannot yet authoritatively report MCP server references or filtered tool counts.
 

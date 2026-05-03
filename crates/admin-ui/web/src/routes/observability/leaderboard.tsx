@@ -316,8 +316,8 @@ function ToolAverages({ leader }: { leader: LeaderboardLeaderView }) {
   )
 }
 
-function formatAverageCount(value: number | null) {
-  if (value === null) {
+function formatAverageCount(value: number | null | undefined) {
+  if (value == null) {
     return 'n/a'
   }
 

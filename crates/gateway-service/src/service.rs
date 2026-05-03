@@ -262,6 +262,7 @@ where
         provider_key: &str,
         icon_metadata: RequestLogIconMetadata,
         latency_ms: i64,
+        invoked_tool_count: i64,
         response_body: &Value,
         attempts: Vec<gateway_core::RequestAttemptRecord>,
     ) -> Result<LoggedRequest, GatewayError> {
@@ -272,6 +273,7 @@ where
                 provider_key,
                 icon_metadata,
                 latency_ms,
+                invoked_tool_count,
                 response_body,
                 attempts,
             )

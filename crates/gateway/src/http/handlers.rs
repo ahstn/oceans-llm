@@ -14,8 +14,8 @@ use futures_util::{StreamExt, stream};
 use gateway_core::{
     AuthenticatedApiKey, ChatCompletionsRequest, CoreRequestRequirements, EmbeddingsRequest,
     GatewayError, ModelsListResponse, ProviderCapabilities, ProviderClient, ProviderError,
-    ProviderRequestContext, RequestAttemptRecord, RequestAttemptStatus, ResponsesRequest,
-    RequestToolCardinality, openai_chat_request_to_core, openai_embeddings_request_to_core,
+    ProviderRequestContext, RequestAttemptRecord, RequestAttemptStatus, RequestToolCardinality,
+    ResponsesRequest, openai_chat_request_to_core, openai_embeddings_request_to_core,
     openai_responses_request_to_core, protocol::openai::ModelCard,
 };
 use gateway_service::{
@@ -328,15 +328,21 @@ pub async fn v1_chat_completions(
             )
             .await;
             state.metrics.record_chat_request(&ChatRequestMetric {
-                labels,
+                labels: labels.clone(),
                 status_code: i64::from(error.http_status_code()),
                 outcome: error.error_type(),
                 latency_seconds: latency_seconds_since(request_started_at),
             });
+            state.metrics.record_tool_cardinality(
+                &labels,
+                request_log_context.operation,
+                &request_log_context.tool_cardinality,
+            );
             return Err(AppError(error));
         }
     };
     let attempt = success_attempt(&request_log_context, &route, false, attempt_started_at);
+    let tool_cardinality = tool_cardinality_with_invoked(&request_log_context, &value);
     finalize_successful_usage_accounting(
         &state,
         UsageAccountingContext {
@@ -357,11 +363,11 @@ pub async fn v1_chat_completions(
         &route.provider_key,
         icon_metadata,
         latency_ms_since(request_started_at),
+        tool_cardinality.invoked_tool_count.unwrap_or(0),
         &value,
         vec![attempt],
     )
     .await;
-    let tool_cardinality = tool_cardinality_with_invoked(&request_log_context, &value);
     state.metrics.record_chat_request(&ChatRequestMetric {
         labels,
         status_code: 200,
@@ -452,6 +458,16 @@ pub async fn v1_responses(
                 outcome: error.error_type(),
                 latency_seconds: latency_seconds_since(request_started_at),
             });
+            state.metrics.record_tool_cardinality(
+                &ChatMetricLabels {
+                    requested_model: &resolved.selection.requested_model.model_key,
+                    resolved_model: &resolved.selection.execution_model.model_key,
+                    provider_key: "unavailable",
+                    stream: core_request.stream,
+                },
+                request_log_context.operation,
+                &request_log_context.tool_cardinality,
+            );
             return Err(AppError(error));
         }
     };
@@ -542,11 +558,16 @@ pub async fn v1_responses(
                 )
                 .await;
                 state.metrics.record_chat_request(&ChatRequestMetric {
-                    labels,
+                    labels: labels.clone(),
                     status_code: i64::from(gateway_error.http_status_code()),
                     outcome: gateway_error.error_type(),
                     latency_seconds: latency_seconds_since(request_started_at),
                 });
+                state.metrics.record_tool_cardinality(
+                    &labels,
+                    request_log_context.operation,
+                    &request_log_context.tool_cardinality,
+                );
                 return Err(AppError(gateway_error));
             }
         };
@@ -620,15 +641,21 @@ pub async fn v1_responses(
             )
             .await;
             state.metrics.record_chat_request(&ChatRequestMetric {
-                labels,
+                labels: labels.clone(),
                 status_code: i64::from(error.http_status_code()),
                 outcome: error.error_type(),
                 latency_seconds: latency_seconds_since(request_started_at),
             });
+            state.metrics.record_tool_cardinality(
+                &labels,
+                request_log_context.operation,
+                &request_log_context.tool_cardinality,
+            );
             return Err(AppError(error));
         }
     };
     let attempt = success_attempt(&request_log_context, &route, false, attempt_started_at);
+    let tool_cardinality = tool_cardinality_with_invoked(&request_log_context, &value);
     finalize_successful_usage_accounting(
         &state,
         UsageAccountingContext {
@@ -649,11 +676,11 @@ pub async fn v1_responses(
         &route.provider_key,
         icon_metadata,
         latency_ms_since(request_started_at),
+        tool_cardinality.invoked_tool_count.unwrap_or(0),
         &value,
         vec![attempt],
     )
     .await;
-    let tool_cardinality = tool_cardinality_with_invoked(&request_log_context, &value);
     state.metrics.record_chat_request(&ChatRequestMetric {
         labels,
         status_code: 200,
@@ -799,6 +826,7 @@ pub async fn v1_embeddings(
         &route.provider_key,
         icon_metadata,
         latency_ms_since(request_started_at),
+        0,
         &value,
         vec![attempt],
     )
@@ -1162,6 +1190,7 @@ async fn best_effort_log_non_stream_success(
     provider_key: &str,
     icon_metadata: RequestLogIconMetadata,
     latency_ms: i64,
+    invoked_tool_count: i64,
     response_body: &Value,
     attempts: Vec<RequestAttemptRecord>,
 ) {
@@ -1172,6 +1201,7 @@ async fn best_effort_log_non_stream_success(
             provider_key,
             icon_metadata,
             latency_ms,
+            invoked_tool_count,
             response_body,
             attempts,
         )

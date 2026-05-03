@@ -224,8 +224,9 @@ impl StreamResponseCollector {
 
     #[must_use]
     pub fn invoked_tool_count(&self) -> i64 {
-        i64::try_from(self.seen_tool_call_ids.len()).unwrap_or(i64::MAX)
-            + self.anonymous_tool_call_count
+        i64::try_from(self.seen_tool_call_ids.len())
+            .unwrap_or(i64::MAX)
+            .saturating_add(self.anonymous_tool_call_count)
     }
 
     fn observe_tool_calls(&mut self, value: &Value) {
@@ -337,16 +338,20 @@ fn collect_chat_tool_call_identities(value: &Value, identities: &mut Vec<ToolCal
         return;
     };
     for choice in choices {
-        for container in [
-            choice.get("message"),
+        if let Some(message) = choice.get("message")
+            && let Some(tool_calls) = message.get("tool_calls").and_then(Value::as_array)
+        {
+            collect_tool_call_array_identities(tool_calls, identities, true);
+        }
+        for delta in [
             choice.get("delta"),
             choice.get("chunk").and_then(|chunk| chunk.get("delta")),
         ]
         .into_iter()
         .flatten()
         {
-            if let Some(tool_calls) = container.get("tool_calls").and_then(Value::as_array) {
-                collect_tool_call_array_identities(tool_calls, identities);
+            if let Some(tool_calls) = delta.get("tool_calls").and_then(Value::as_array) {
+                collect_tool_call_array_identities(tool_calls, identities, false);
             }
         }
     }
@@ -355,45 +360,66 @@ fn collect_chat_tool_call_identities(value: &Value, identities: &mut Vec<ToolCal
 fn collect_responses_tool_call_identities(value: &Value, identities: &mut Vec<ToolCallIdentity>) {
     if let Some(output) = value.get("output").and_then(Value::as_array) {
         for item in output {
-            collect_tool_call_item_identity(item, identities);
+            collect_tool_call_item_identity(item, identities, true);
         }
     }
 
-    for key in ["item", "output_item", "delta"] {
+    for key in ["item", "output_item"] {
         if let Some(item) = value.get(key) {
-            collect_tool_call_item_identity(item, identities);
+            collect_tool_call_item_identity(item, identities, true);
         }
     }
-}
 
-fn collect_tool_call_array_identities(items: &[Value], identities: &mut Vec<ToolCallIdentity>) {
-    for item in items {
-        push_tool_call_identity(item, identities);
+    if let Some(delta) = value.get("delta") {
+        collect_tool_call_item_identity(delta, identities, false);
     }
 }
 
-fn collect_tool_call_item_identity(item: &Value, identities: &mut Vec<ToolCallIdentity>) {
+fn collect_tool_call_array_identities(
+    items: &[Value],
+    identities: &mut Vec<ToolCallIdentity>,
+    allow_anonymous: bool,
+) {
+    for item in items {
+        push_tool_call_identity(item, identities, allow_anonymous);
+    }
+}
+
+fn collect_tool_call_item_identity(
+    item: &Value,
+    identities: &mut Vec<ToolCallIdentity>,
+    allow_anonymous: bool,
+) {
     let object = match item.as_object() {
         Some(object) => object,
         None => return,
     };
+
+    if let Some(tool_calls) = object.get("tool_calls").and_then(Value::as_array) {
+        collect_tool_call_array_identities(tool_calls, identities, allow_anonymous);
+        return;
+    }
+
     let item_type = object
         .get("type")
         .or_else(|| object.get("item_type"))
         .and_then(Value::as_str);
     let is_tool_call = item_type.is_some_and(|item_type| {
         item_type == "function_call" || item_type == "tool_call" || item_type.contains("tool_call")
-    }) || object.contains_key("function")
-        || object.contains_key("tool_calls");
+    }) || object.contains_key("function");
 
     if !is_tool_call {
         return;
     }
 
-    push_tool_call_identity(item, identities);
+    push_tool_call_identity(item, identities, allow_anonymous);
 }
 
-fn push_tool_call_identity(item: &Value, identities: &mut Vec<ToolCallIdentity>) {
+fn push_tool_call_identity(
+    item: &Value,
+    identities: &mut Vec<ToolCallIdentity>,
+    allow_anonymous: bool,
+) {
     let Some(object) = item.as_object() else {
         return;
     };
@@ -406,7 +432,8 @@ fn push_tool_call_identity(item: &Value, identities: &mut Vec<ToolCallIdentity>)
         .filter(|value| !value.trim().is_empty());
     identities.push(match id {
         Some(id) => ToolCallIdentity::Known(id.to_string()),
-        None => ToolCallIdentity::Anonymous,
+        None if allow_anonymous => ToolCallIdentity::Anonymous,
+        None => return,
     });
 }
 
@@ -592,6 +619,7 @@ where
         provider_key: &str,
         icon_metadata: RequestLogIconMetadata,
         latency_ms: i64,
+        invoked_tool_count: i64,
         response_body: &Value,
         attempts: Vec<RequestAttemptRecord>,
     ) -> Result<LoggedRequest, GatewayError> {
@@ -618,7 +646,7 @@ where
                 false,
                 latency_ms,
                 usage,
-                invoked_tool_count_from_response_body(response_body),
+                invoked_tool_count,
             ),
             response_json,
             response_payload_truncated,
@@ -1295,6 +1323,7 @@ mod tests {
                     model_icon_key: Some(crate::ModelIconKey::OpenAI),
                 },
                 120,
+                0,
                 &json!({"usage": {"prompt_tokens": 1, "completion_tokens": 2}}),
                 Vec::new(),
             )
@@ -1352,6 +1381,7 @@ mod tests {
                     model_icon_key: Some(crate::ModelIconKey::OpenAI),
                 },
                 120,
+                0,
                 &json!({"usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30}}),
                 Vec::new(),
             )
@@ -1405,6 +1435,7 @@ mod tests {
                 "openai-prod",
                 sample_icon_metadata(),
                 120,
+                0,
                 &json!({"usage": {"prompt_tokens": 1, "completion_tokens": 2}}),
                 Vec::new(),
             )
@@ -1440,6 +1471,7 @@ mod tests {
                 "openai-prod",
                 sample_icon_metadata(),
                 120,
+                0,
                 &json!({"usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}}),
                 Vec::new(),
             )
@@ -1483,6 +1515,7 @@ mod tests {
                 "openai-prod",
                 sample_icon_metadata(),
                 120,
+                0,
                 &json!({
                     "choices": [{"message": {"content": "x".repeat(512)}}],
                     "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}
@@ -1524,6 +1557,7 @@ mod tests {
                 "openai-prod",
                 sample_icon_metadata(),
                 120,
+                0,
                 &json!({
                     "choices": [{"message": {"content": "operator-secret"}}],
                     "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}
@@ -1835,6 +1869,18 @@ data: {"usage":{"prompt_tokens":4,"completion_tokens":5,"total_tokens":9}}
             })),
             1
         );
+        assert_eq!(
+            invoked_tool_count_from_response_body(&json!({
+                "output": [{
+                    "type": "message",
+                    "tool_calls": [
+                        {"id": "call_1", "type": "function"},
+                        {"id": "call_2", "type": "function"}
+                    ]
+                }]
+            })),
+            2
+        );
     }
 
     #[test]
@@ -1853,5 +1899,23 @@ data: {"output":[{"id":"call_2","type":"function_call"}]}
         collector.finish();
 
         assert_eq!(collector.invoked_tool_count(), 2);
+    }
+
+    #[test]
+    fn stream_collector_ignores_chat_tool_call_delta_fragments_without_ids() {
+        let mut collector = StreamResponseCollector::default();
+
+        collector.observe_chunk(
+            br#"data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function"}]}}]}
+
+data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"city\""}}]}}]}
+
+data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":":\"London\"}"}}]}}]}
+
+"#,
+        );
+        collector.finish();
+
+        assert_eq!(collector.invoked_tool_count(), 1);
     }
 }

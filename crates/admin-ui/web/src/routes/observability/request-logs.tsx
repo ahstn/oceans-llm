@@ -797,8 +797,8 @@ function formatTokenCount(totalTokens: number | null) {
   return totalTokens === null ? 'n/a' : String(totalTokens)
 }
 
-function formatToolCount(value: number | null) {
-  return value === null ? 'n/a' : String(value)
+function formatToolCount(value: number | null | undefined) {
+  return value == null ? 'n/a' : String(value)
 }
 
 function formatCaptureMode(captureMode: string) {
