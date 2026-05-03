@@ -18,6 +18,7 @@ use opentelemetry_sdk::{
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::config::ServerConfig;
+use gateway_core::RequestToolCardinality;
 
 #[derive(Clone)]
 pub struct GatewayMetrics {
@@ -25,6 +26,7 @@ pub struct GatewayMetrics {
     request_duration: Histogram<f64>,
     tokens: Counter<u64>,
     cost_usd: Counter<f64>,
+    tool_cardinality: Histogram<u64>,
     usage_records: Counter<u64>,
     usage_record_failures: Counter<u64>,
     #[cfg(any(test, debug_assertions))]
@@ -94,6 +96,10 @@ impl GatewayMetrics {
             cost_usd: meter
                 .f64_counter("gateway.chat.cost.usd")
                 .with_description("Operational chat request cost totals in USD")
+                .build(),
+            tool_cardinality: meter
+                .u64_histogram("gateway.chat.tool_cardinality")
+                .with_description("Per-request MCP and tool cardinality counts")
                 .build(),
             usage_records: meter
                 .u64_counter("gateway.chat.usage_records")
@@ -169,6 +175,31 @@ impl GatewayMetrics {
         let mut attrs = base_attrs(labels);
         attrs.push(KeyValue::new("operation", operation.to_string()));
         self.usage_record_failures.add(1, &attrs);
+    }
+
+    pub fn record_tool_cardinality(
+        &self,
+        labels: &ChatMetricLabels<'_>,
+        operation: &str,
+        cardinality: &RequestToolCardinality,
+    ) {
+        for (dimension, value) in [
+            (
+                "referenced_mcp_servers",
+                cardinality.referenced_mcp_server_count,
+            ),
+            ("exposed_tools", cardinality.exposed_tool_count),
+            ("invoked_tools", cardinality.invoked_tool_count),
+            ("filtered_tools", cardinality.filtered_tool_count),
+        ] {
+            let Some(value) = value.and_then(|value| u64::try_from(value).ok()) else {
+                continue;
+            };
+            let mut attrs = base_attrs(labels);
+            attrs.push(KeyValue::new("operation", operation.to_string()));
+            attrs.push(KeyValue::new("dimension", dimension));
+            self.tool_cardinality.record(value, &attrs);
+        }
     }
 
     #[cfg(any(test, debug_assertions))]

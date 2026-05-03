@@ -67,6 +67,12 @@ const leaderboardData = {
       total_spend_usd_10000: 71000,
       most_used_model: 'fast',
       total_requests: 11,
+      tool_cardinality_averages: {
+        referenced_mcp_server_count: null,
+        exposed_tool_count: 2,
+        invoked_tool_count: 0,
+        filtered_tool_count: null,
+      },
     },
     {
       user_id: 'user_2',
@@ -74,6 +80,12 @@ const leaderboardData = {
       total_spend_usd_10000: 62000,
       most_used_model: 'reasoning',
       total_requests: 8,
+      tool_cardinality_averages: {
+        referenced_mcp_server_count: null,
+        exposed_tool_count: 3.5,
+        invoked_tool_count: 1.25,
+        filtered_tool_count: null,
+      },
     },
   ],
 }
@@ -103,6 +115,10 @@ describe('ObservabilityLeaderboardPage', () => {
     expect(scope.getByText('Ada')).toBeInTheDocument()
     expect(scope.getByText('Ben')).toBeInTheDocument()
     expect(scope.getByText('fast')).toBeInTheDocument()
+    expect(scope.getByText('Avg Tools')).toBeInTheDocument()
+    expect(scope.getByText('exposed 2')).toBeInTheDocument()
+    expect(scope.getByText('called 0')).toBeInTheDocument()
+    expect(scope.getByText('exposed 3.5')).toBeInTheDocument()
   })
 
   it('refetches leaderboard data when the date range changes', async () => {

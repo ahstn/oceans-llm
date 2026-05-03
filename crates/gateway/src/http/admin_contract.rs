@@ -479,6 +479,7 @@ pub struct LeaderboardLeaderView {
     pub total_spend_usd_10000: i64,
     pub most_used_model: Option<String>,
     pub total_requests: i64,
+    pub tool_cardinality_averages: RequestToolCardinalityAveragesView,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -632,9 +633,26 @@ pub struct RequestLogSummaryView {
     pub response_payload_truncated: bool,
     pub payload_policy: RequestLogPayloadPolicyView,
     pub request_tags: RequestTagsView,
+    pub tool_cardinality: RequestToolCardinalityView,
     #[schema(additional_properties = true)]
     pub metadata: Map<String, Value>,
     pub occurred_at: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct RequestToolCardinalityView {
+    pub referenced_mcp_server_count: Option<i64>,
+    pub exposed_tool_count: Option<i64>,
+    pub invoked_tool_count: Option<i64>,
+    pub filtered_tool_count: Option<i64>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct RequestToolCardinalityAveragesView {
+    pub referenced_mcp_server_count: Option<f64>,
+    pub exposed_tool_count: Option<f64>,
+    pub invoked_tool_count: Option<f64>,
+    pub filtered_tool_count: Option<f64>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

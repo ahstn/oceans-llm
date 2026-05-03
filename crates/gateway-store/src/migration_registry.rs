@@ -44,6 +44,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V19__request_log_attempts.sql"),
         postgres_sql: include_str!("../migrations/postgres/V19__request_log_attempts.sql"),
     },
+    MigrationManifest {
+        version: 20,
+        name: "request_log_tool_cardinality",
+        checksum: "V20__request_log_tool_cardinality.sql",
+        libsql_sql: include_str!("../migrations/V20__request_log_tool_cardinality.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V20__request_log_tool_cardinality.sql"),
+    },
 ];
 
 #[cfg(test)]

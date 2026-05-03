@@ -683,6 +683,19 @@ impl BudgetRepository for LibsqlStore {
                             ORDER BY request_count DESC, priced_cost_10000 DESC, model_key ASC
                         ) AS model_rank
                     FROM model_totals
+                ),
+                tool_totals AS (
+                    SELECT
+                        user_id,
+                        AVG(referenced_mcp_server_count) AS avg_referenced_mcp_server_count,
+                        AVG(exposed_tool_count) AS avg_exposed_tool_count,
+                        AVG(invoked_tool_count) AS avg_invoked_tool_count,
+                        AVG(filtered_tool_count) AS avg_filtered_tool_count
+                    FROM request_logs
+                    WHERE occurred_at >= ?1
+                      AND occurred_at < ?2
+                      AND user_id IS NOT NULL
+                    GROUP BY user_id
                 )
                 SELECT
                     user_totals.user_id,
@@ -693,11 +706,17 @@ impl BudgetRepository for LibsqlStore {
                         + user_totals.unpriced_request_count
                         + user_totals.usage_missing_request_count
                     ) AS total_request_count,
-                    ranked_models.model_key
+                    ranked_models.model_key,
+                    tool_totals.avg_referenced_mcp_server_count,
+                    tool_totals.avg_exposed_tool_count,
+                    tool_totals.avg_invoked_tool_count,
+                    tool_totals.avg_filtered_tool_count
                 FROM user_totals
                 LEFT JOIN ranked_models
                     ON ranked_models.user_id = user_totals.user_id
                    AND ranked_models.model_rank = 1
+                LEFT JOIN tool_totals
+                    ON tool_totals.user_id = user_totals.user_id
                 ORDER BY
                     user_totals.priced_cost_10000 DESC,
                     total_request_count DESC,
@@ -722,6 +741,12 @@ impl BudgetRepository for LibsqlStore {
                 priced_cost_usd: Money4::from_scaled(row.get::<i64>(2).map_err(to_query_error)?),
                 total_request_count: row.get(3).map_err(to_query_error)?,
                 top_model_key: row.get(4).map_err(to_query_error)?,
+                tool_cardinality_averages: gateway_core::RequestToolCardinalityAverages {
+                    referenced_mcp_server_count: row.get(5).map_err(to_query_error)?,
+                    exposed_tool_count: row.get(6).map_err(to_query_error)?,
+                    invoked_tool_count: row.get(7).map_err(to_query_error)?,
+                    filtered_tool_count: row.get(8).map_err(to_query_error)?,
+                },
             });
         }
 

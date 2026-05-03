@@ -10,12 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   Dialog,
   DialogContent,
@@ -271,6 +266,14 @@ export function RequestLogsPage() {
                     </div>
                     <div>
                       <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                        Tools
+                      </dt>
+                      <dd className="text-[var(--color-text-muted)]">
+                        <ToolCardinalityInline item={item} />
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
                         Timestamp
                       </dt>
                       <dd className="text-[var(--color-text-muted)]">{item.occurred_at}</dd>
@@ -299,79 +302,85 @@ export function RequestLogsPage() {
           </div>
 
           <div
-            className="hidden overflow-hidden rounded-md border border-[color:var(--color-border)] lg:block"
+            className="hidden min-w-0 overflow-x-auto rounded-md border border-[color:var(--color-border)] lg:block"
             data-testid="request-log-desktop-table"
           >
-            <div className="grid grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)_minmax(0,1fr)_88px_96px_88px_120px] bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
-              <span className="px-3 py-2 font-semibold">Request</span>
-              <span className="px-3 py-2 font-semibold">Model</span>
-              <span className="px-3 py-2 font-semibold">Provider</span>
-              <span className="px-3 py-2 font-semibold">Status</span>
-              <span className="px-3 py-2 font-semibold">Latency</span>
-              <span className="px-3 py-2 font-semibold">Tokens</span>
-              <span className="px-3 py-2 font-semibold">Inspect</span>
-            </div>
-            <div ref={parentRef} className="h-[430px] overflow-auto">
-              <div
-                className="relative"
-                style={{
-                  height: `${rowVirtualizer.getTotalSize()}px`,
-                }}
-              >
-                {rows.map((virtualRow) => {
-                  const item = logPage.items[virtualRow.index]
-                  return (
-                    <div
-                      key={item.request_log_id}
-                      className="absolute top-0 left-0 grid w-full grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)_minmax(0,1fr)_88px_96px_88px_120px] border-t border-[color:var(--color-border)] align-top text-sm"
-                      style={{
-                        height: `${virtualRow.size}px`,
-                        transform: `translateY(${virtualRow.start}px)`,
-                      }}
-                    >
-                      <div className="min-w-0 px-3 py-3">
-                        <div className="truncate font-mono text-xs text-[var(--color-text-soft)]">
-                          {item.request_id}
+            <div className="min-w-[78rem]">
+              <div className="grid grid-cols-[minmax(18rem,1.45fr)_minmax(12rem,1fr)_minmax(12rem,1fr)_88px_96px_88px_160px_120px] bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
+                <span className="px-3 py-2 font-semibold">Request</span>
+                <span className="px-3 py-2 font-semibold">Model</span>
+                <span className="px-3 py-2 font-semibold">Provider</span>
+                <span className="px-3 py-2 font-semibold">Status</span>
+                <span className="px-3 py-2 font-semibold">Latency</span>
+                <span className="px-3 py-2 font-semibold">Tokens</span>
+                <span className="px-3 py-2 font-semibold">Tools</span>
+                <span className="px-3 py-2 font-semibold">Inspect</span>
+              </div>
+              <div ref={parentRef} className="h-[430px] overflow-y-auto">
+                <div
+                  className="relative"
+                  style={{
+                    height: `${rowVirtualizer.getTotalSize()}px`,
+                  }}
+                >
+                  {rows.map((virtualRow) => {
+                    const item = logPage.items[virtualRow.index]
+                    return (
+                      <div
+                        key={item.request_log_id}
+                        className="absolute top-0 left-0 grid w-full grid-cols-[minmax(18rem,1.45fr)_minmax(12rem,1fr)_minmax(12rem,1fr)_88px_96px_88px_160px_120px] border-t border-[color:var(--color-border)] align-top text-sm"
+                        style={{
+                          height: `${virtualRow.size}px`,
+                          transform: `translateY(${virtualRow.start}px)`,
+                        }}
+                      >
+                        <div className="min-w-0 px-3 py-3">
+                          <div className="truncate font-mono text-xs text-[var(--color-text-soft)]">
+                            {item.request_id}
+                          </div>
+                          <div className="truncate text-xs text-[var(--color-text-muted)]">
+                            {item.request_log_id}
+                          </div>
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            <PayloadPolicyBadges item={item} />
+                          </div>
                         </div>
-                        <div className="truncate text-xs text-[var(--color-text-muted)]">
-                          {item.request_log_id}
-                        </div>
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          <PayloadPolicyBadges item={item} />
+                        <span className="flex items-center gap-2 truncate px-3 py-3 text-[var(--color-text)]">
+                          <BrandIcon iconKey={item.model_icon_key} size={16} />
+                          <span className="truncate">{item.model_key}</span>
+                        </span>
+                        <span className="flex items-center gap-2 truncate px-3 py-3 text-[var(--color-text-muted)]">
+                          <BrandIcon iconKey={item.provider_icon_key} size={14} />
+                          <span className="truncate">{item.provider_key}</span>
+                        </span>
+                        <span className="px-3 py-3">
+                          <Badge variant={badgeVariant(item.status_code)}>
+                            {item.status_code ?? 'n/a'}
+                          </Badge>
+                        </span>
+                        <span className="px-3 py-3 text-[var(--color-text-muted)]">
+                          {formatLatency(item.latency_ms)}
+                        </span>
+                        <span className="px-3 py-3 text-[var(--color-text-muted)]">
+                          {formatTokenCount(item.total_tokens)}
+                        </span>
+                        <span className="px-3 py-3 text-[var(--color-text-muted)]">
+                          <ToolCardinalityInline item={item} />
+                        </span>
+                        <div className="px-3 py-2.5">
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            className="w-full"
+                            onClick={() => openDetail(item.request_log_id)}
+                          >
+                            Inspect
+                          </Button>
                         </div>
                       </div>
-                      <span className="flex items-center gap-2 truncate px-3 py-3 text-[var(--color-text)]">
-                        <BrandIcon iconKey={item.model_icon_key} size={16} />
-                        <span className="truncate">{item.model_key}</span>
-                      </span>
-                      <span className="flex items-center gap-2 truncate px-3 py-3 text-[var(--color-text-muted)]">
-                        <BrandIcon iconKey={item.provider_icon_key} size={14} />
-                        <span className="truncate">{item.provider_key}</span>
-                      </span>
-                      <span className="px-3 py-3">
-                        <Badge variant={badgeVariant(item.status_code)}>
-                          {item.status_code ?? 'n/a'}
-                        </Badge>
-                      </span>
-                      <span className="px-3 py-3 text-[var(--color-text-muted)]">
-                        {formatLatency(item.latency_ms)}
-                      </span>
-                      <span className="px-3 py-3 text-[var(--color-text-muted)]">
-                        {formatTokenCount(item.total_tokens)}
-                      </span>
-                      <div className="px-3 py-2.5">
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          className="w-full"
-                          onClick={() => openDetail(item.request_log_id)}
-                        >
-                          Inspect
-                        </Button>
-                      </div>
-                    </div>
-                  )
-                })}
+                    )
+                  })}
+                </div>
               </div>
             </div>
           </div>
@@ -448,6 +457,8 @@ export function RequestLogsPage() {
                   value={metadataBoolean(selectedDetail.log, 'stream') ? 'yes' : 'no'}
                 />
               </div>
+
+              <ToolCardinalityCard item={selectedDetail.log} />
 
               <PayloadPolicyCard log={selectedDetail.log} />
 
@@ -550,6 +561,42 @@ function PayloadPolicyCard({ log }: { log: RequestLogView }) {
           <DetailRow label="Request Limit" value={formatBytes(policy.request_max_bytes)} />
           <DetailRow label="Response Limit" value={formatBytes(policy.response_max_bytes)} />
           <DetailRow label="Stream Events" value={String(policy.stream_max_events)} />
+        </dl>
+      </CardContent>
+    </Card>
+  )
+}
+
+function ToolCardinalityInline({ item }: { item: RequestLogView }) {
+  const counts = item.tool_cardinality
+
+  return (
+    <span className="inline-flex flex-wrap gap-x-2 gap-y-1 text-xs tabular-nums">
+      <span>MCP {formatToolCount(counts.referenced_mcp_server_count)}</span>
+      <span>exposed {formatToolCount(counts.exposed_tool_count)}</span>
+      <span>called {formatToolCount(counts.invoked_tool_count)}</span>
+      <span>filtered {formatToolCount(counts.filtered_tool_count)}</span>
+    </span>
+  )
+}
+
+function ToolCardinalityCard({ item }: { item: RequestLogView }) {
+  const counts = item.tool_cardinality
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>MCP &amp; Tools</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+          <DetailRow
+            label="MCP Servers"
+            value={formatToolCount(counts.referenced_mcp_server_count)}
+          />
+          <DetailRow label="Tools Exposed" value={formatToolCount(counts.exposed_tool_count)} />
+          <DetailRow label="Tools Called" value={formatToolCount(counts.invoked_tool_count)} />
+          <DetailRow label="Tools Filtered" value={formatToolCount(counts.filtered_tool_count)} />
         </dl>
       </CardContent>
     </Card>
@@ -674,7 +721,11 @@ function PayloadCard({
                 : 'Sanitized payload.'}
             </CardDescription>
           </div>
-          {truncated ? <Badge variant="warning">truncated</Badge> : <Badge variant="outline">full</Badge>}
+          {truncated ? (
+            <Badge variant="warning">truncated</Badge>
+          ) : (
+            <Badge variant="outline">full</Badge>
+          )}
         </div>
       </CardHeader>
       <CardContent>
@@ -710,8 +761,12 @@ function PayloadPolicyBadges({ item }: { item: RequestLogView }) {
               {formatCaptureMode(policy.capture_mode)}
             </Badge>
             {item.request_payload_truncated ? <Badge variant="warning">req truncated</Badge> : null}
-            {item.response_payload_truncated ? <Badge variant="warning">resp truncated</Badge> : null}
-            {hasTruncation ? null : item.has_payload ? <Badge variant="outline">payload</Badge> : null}
+            {item.response_payload_truncated ? (
+              <Badge variant="warning">resp truncated</Badge>
+            ) : null}
+            {hasTruncation ? null : item.has_payload ? (
+              <Badge variant="outline">payload</Badge>
+            ) : null}
           </span>
         </TooltipTrigger>
         <TooltipContent>
@@ -740,6 +795,10 @@ function formatLatency(latencyMs: number | null) {
 
 function formatTokenCount(totalTokens: number | null) {
   return totalTokens === null ? 'n/a' : String(totalTokens)
+}
+
+function formatToolCount(value: number | null | undefined) {
+  return value == null ? 'n/a' : String(value)
 }
 
 function formatCaptureMode(captureMode: string) {

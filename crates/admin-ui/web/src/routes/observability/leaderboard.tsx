@@ -28,7 +28,7 @@ import {
   getObservabilityLeaderboard,
   refreshObservabilityLeaderboard,
 } from '@/server/admin-data.functions'
-import type { LeaderboardRange, LeaderboardView } from '@/types/api'
+import type { LeaderboardRange, LeaderboardLeaderView, LeaderboardView } from '@/types/api'
 
 export const Route = createFileRoute('/observability/leaderboard')({
   beforeLoad: ({ location }) => requireAdminSession(location),
@@ -210,7 +210,8 @@ export function ObservabilityLeaderboardPage() {
         <CardHeader>
           <CardTitle>Top Users</CardTitle>
           <CardDescription>
-            Ranked by total spend for the selected range with the dominant model by request volume.
+            Ranked by total spend for the selected range with dominant model, request volume, and
+            average tool exposure and invocation counts.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -220,7 +221,7 @@ export function ObservabilityLeaderboardPage() {
             <LeaderboardEmptyState />
           ) : (
             <div className="overflow-hidden rounded-md border border-[color:var(--color-border)]">
-              <Table data-testid="leaderboard-table">
+              <Table data-testid="leaderboard-table" className="min-w-[72rem]">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-16">Rank</TableHead>
@@ -228,6 +229,7 @@ export function ObservabilityLeaderboardPage() {
                     <TableHead className="text-right">Total spend</TableHead>
                     <TableHead>Most used model</TableHead>
                     <TableHead className="text-right">Total requests</TableHead>
+                    <TableHead>Avg Tools</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -243,6 +245,9 @@ export function ObservabilityLeaderboardPage() {
                       <TableCell>{leader.most_used_model ?? '—'}</TableCell>
                       <TableCell className="text-right">
                         {NUMBER_FORMATTER.format(leader.total_requests)}
+                      </TableCell>
+                      <TableCell>
+                        <ToolAverages leader={leader} />
                       </TableCell>
                     </TableRow>
                   ))}
@@ -290,6 +295,33 @@ function LeaderboardEmptyState() {
       </EmptyHeader>
     </Empty>
   )
+}
+
+function ToolAverages({ leader }: { leader: LeaderboardLeaderView }) {
+  const averages = leader.tool_cardinality_averages
+
+  return (
+    <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-[var(--color-text-muted)]">
+      <span className="tabular-nums">
+        MCP {formatAverageCount(averages.referenced_mcp_server_count)}
+      </span>
+      <span className="tabular-nums">
+        exposed {formatAverageCount(averages.exposed_tool_count)}
+      </span>
+      <span className="tabular-nums">called {formatAverageCount(averages.invoked_tool_count)}</span>
+      <span className="tabular-nums">
+        filtered {formatAverageCount(averages.filtered_tool_count)}
+      </span>
+    </div>
+  )
+}
+
+function formatAverageCount(value: number | null | undefined) {
+  if (value == null) {
+    return 'n/a'
+  }
+
+  return Number.isInteger(value) ? String(value) : value.toFixed(1)
 }
 
 function formatAxisTick(value: string) {

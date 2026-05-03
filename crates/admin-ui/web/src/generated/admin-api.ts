@@ -1004,6 +1004,7 @@ export interface components {
             most_used_model?: string | null;
             /** Format: int32 */
             rank: number;
+            tool_cardinality_averages: components["schemas"]["RequestToolCardinalityAveragesView"];
             /** Format: int64 */
             total_requests: number;
             /** Format: int64 */
@@ -1137,6 +1138,7 @@ export interface components {
             /** Format: int64 */
             status_code?: number | null;
             team_id?: string | null;
+            tool_cardinality: components["schemas"]["RequestToolCardinalityView"];
             /** Format: int64 */
             total_tokens?: number | null;
             user_id?: string | null;
@@ -1150,6 +1152,26 @@ export interface components {
             component?: string | null;
             env?: string | null;
             service?: string | null;
+        };
+        RequestToolCardinalityAveragesView: {
+            /** Format: double */
+            exposed_tool_count?: number | null;
+            /** Format: double */
+            filtered_tool_count?: number | null;
+            /** Format: double */
+            invoked_tool_count?: number | null;
+            /** Format: double */
+            referenced_mcp_server_count?: number | null;
+        };
+        RequestToolCardinalityView: {
+            /** Format: int64 */
+            exposed_tool_count?: number | null;
+            /** Format: int64 */
+            filtered_tool_count?: number | null;
+            /** Format: int64 */
+            invoked_tool_count?: number | null;
+            /** Format: int64 */
+            referenced_mcp_server_count?: number | null;
         };
         ResponseMeta: {
             generated_at: string;
