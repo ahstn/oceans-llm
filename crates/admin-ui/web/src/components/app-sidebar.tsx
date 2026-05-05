@@ -44,29 +44,35 @@ export function AppSidebar({ currentPath, session, signOutPending, onSignOut }: 
 
   return (
     <Sidebar collapsible="icon" variant="inset">
-      <SidebarHeader className="border-sidebar-border/70 gap-3 border-b p-3">
+      <SidebarHeader className="gap-3 p-3 pb-2">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
               size="lg"
-              className="border-sidebar-border/70 bg-sidebar-accent/40 hover:bg-sidebar-accent/40 h-auto cursor-default rounded-xl border px-3 py-3 opacity-100"
+              className="hover:bg-sidebar-accent/60 h-auto cursor-default rounded-lg px-1 py-1 opacity-100"
             >
               <span className="bg-sidebar-primary text-sidebar-primary-foreground flex size-9 items-center justify-center rounded-lg">
                 OC
               </span>
-              <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="text-sidebar-foreground truncate font-medium">Oceans Gateway</span>
-                <span className="text-sidebar-foreground/70 truncate text-xs">
-                  Control plane · admin
+              <div className="grid min-w-0 flex-1 text-left leading-tight">
+                <span className="text-sidebar-foreground truncate text-sm font-medium">
+                  Oceans Gateway
                 </span>
+                <span className="text-sidebar-foreground/70 truncate text-xs">Control plane</span>
               </div>
+              <AppIcon
+                icon={ArrowRight01Icon}
+                size={16}
+                stroke={1.5}
+                className="ml-auto rotate-90 text-sidebar-foreground/70 group-data-[collapsible=icon]:hidden"
+              />
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
 
       <SidebarContent className="px-2 py-3">
-        <SidebarMenu className="gap-2">
+        <SidebarMenu className="gap-1">
           {adminNavSections.map((section) => {
             const isSectionActive = section.items.some((item) =>
               matchesAdminPath(currentPath, item.to),
@@ -84,7 +90,7 @@ export function AppSidebar({ currentPath, session, signOutPending, onSignOut }: 
                     <SidebarMenuButton
                       tooltip={section.label}
                       isActive={isSectionActive}
-                      className="rounded-xl"
+                      className="h-8 rounded-lg px-2 text-sm font-normal"
                     >
                       <AppIcon icon={section.icon} size={16} stroke={1.5} />
                       <span>{section.label}</span>
@@ -97,13 +103,17 @@ export function AppSidebar({ currentPath, session, signOutPending, onSignOut }: 
                     </SidebarMenuButton>
                   </CollapsibleTrigger>
                   <CollapsibleContent>
-                    <SidebarMenuSub className="mx-0 mt-1 border-l-0 px-0 py-0 pl-2">
+                    <SidebarMenuSub className="mt-1 ml-4 gap-1 border-l px-2 py-0.5">
                       {section.items.map((item) => {
                         const active = matchesAdminPath(currentPath, item.to)
 
                         return (
                           <SidebarMenuSubItem key={item.to}>
-                            <SidebarMenuSubButton asChild isActive={active}>
+                            <SidebarMenuSubButton
+                              asChild
+                              isActive={active}
+                              className="h-7 text-sm"
+                            >
                               <Link to={item.to}>
                                 <AppIcon icon={item.icon} size={15} stroke={1.5} />
                                 <span>{item.label}</span>
@@ -126,7 +136,7 @@ export function AppSidebar({ currentPath, session, signOutPending, onSignOut }: 
           <SidebarMenuItem>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <SidebarMenuButton size="lg" className="h-auto rounded-xl px-3 py-3">
+                <SidebarMenuButton size="lg" className="h-auto rounded-lg px-2 py-2">
                   <Avatar className="size-8 rounded-lg">
                     <AvatarFallback className="bg-sidebar-primary/15 text-sidebar-primary rounded-lg">
                       {getInitials(session.user.name)}

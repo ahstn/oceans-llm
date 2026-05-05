@@ -426,7 +426,7 @@ function ClientConfigDialog({
 }) {
   return (
     <Dialog open={model !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[min(920px,calc(100vw-32px))]">
+      <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-[min(920px,calc(100vw-2rem))] md:min-w-[35vw]">
         <DialogHeader>
           <DialogTitle>Client config</DialogTitle>
           <DialogDescription>
@@ -456,22 +456,27 @@ function ClientConfigDialog({
                   </ToggleGroupItem>
                 ))}
               </ToggleGroup>
-              <Button type="button" variant="outline" size="sm" onClick={() => onCopy(activeConfig.content)}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => onCopy(activeConfig.content)}
+              >
                 Copy JSON
               </Button>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--color-text-muted)]">
+            <div className="text-muted-foreground flex flex-wrap items-center gap-2 text-sm">
               <Badge variant="secondary">{activeConfig.filename}</Badge>
               <span>{model.upstream_model ?? model.resolved_model_key}</span>
             </div>
 
-            <pre className="max-h-[460px] min-h-[280px] overflow-auto rounded-md border bg-[var(--color-surface-muted)] p-4 text-xs leading-6 text-[var(--color-text-muted)]">
+            <pre className="bg-muted text-muted-foreground max-h-[min(55vh,520px)] min-h-[320px] overflow-auto rounded-md border p-4 text-xs leading-6">
               <code>{activeConfig.content}</code>
             </pre>
 
             {activeConfig.notes.length > 0 ? (
-              <div className="flex flex-col gap-2 text-sm text-[var(--color-text-muted)]">
+              <div className="text-muted-foreground flex flex-col gap-2 text-sm">
                 {activeConfig.notes.map((note) => (
                   <p key={note}>{note}</p>
                 ))}
