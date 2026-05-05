@@ -10,13 +10,15 @@ describe('BrandIcon', () => {
     expect(container.querySelector('img')).toBeInTheDocument()
   })
 
-  it('renders mask-backed icons like openai and openrouter', () => {
-    const { rerender, container } = render(<BrandIcon iconKey="openai" title="OpenAI" />)
+  it('renders inline svg icons like openai', () => {
+    const { container } = render(<BrandIcon iconKey="openai" title="OpenAI" />)
 
-    expect(container.querySelector('img')).not.toBeInTheDocument()
+    expect(container.querySelector('svg')).toBeInTheDocument()
     expect(container.firstElementChild).toHaveAttribute('title', 'OpenAI')
+  })
 
-    rerender(<BrandIcon iconKey="openrouter" title="OpenRouter" />)
+  it('renders mask-backed icons like openrouter', () => {
+    const { container } = render(<BrandIcon iconKey="openrouter" title="OpenRouter" />)
 
     expect(container.querySelector('img')).not.toBeInTheDocument()
     expect(container.firstElementChild).toHaveAttribute('title', 'OpenRouter')
