@@ -5,6 +5,16 @@ export default defineConfig({
   description: "Operator and maintainer docs for the Oceans LLM gateway.",
   lang: "en-US",
   appearance: "dark",
+  head: [
+    [
+      "link",
+      {
+        rel: "icon",
+        type: "image/png",
+        href: "/images/oceans-logo-rounded-square.png",
+      },
+    ],
+  ],
   ignoreDeadLinks: true,
   srcExclude: ["README.md", "AGENTS.md", "adr/**", "internal/**"],
   themeConfig: {
@@ -20,7 +30,10 @@ export default defineConfig({
       { text: "Home", link: "/" },
       { text: "Getting Started", link: "/getting-started" },
       { text: "Setup", link: "/setup/runtime-bootstrap-and-access" },
-      { text: "Reference", link: "/reference/request-lifecycle-and-failure-modes" },
+      {
+        text: "Reference",
+        link: "/reference/request-lifecycle-and-failure-modes",
+      },
     ],
     sidebar: [
       {
@@ -30,17 +43,32 @@ export default defineConfig({
       {
         text: "Setup",
         items: [
-          { text: "Runtime Bootstrap and Access", link: "/setup/runtime-bootstrap-and-access" },
-          { text: "Deploy and Operations", link: "/setup/deploy-and-operations" },
+          {
+            text: "Runtime Bootstrap and Access",
+            link: "/setup/runtime-bootstrap-and-access",
+          },
+          {
+            text: "Deploy and Operations",
+            link: "/setup/deploy-and-operations",
+          },
           { text: "Kubernetes and Helm", link: "/setup/kubernetes-and-helm" },
         ],
       },
       {
         text: "Configuration",
         items: [
-          { text: "Configuration Reference", link: "/configuration/configuration-reference" },
-          { text: "Model Routing and API Behavior", link: "/configuration/model-routing-and-api-behavior" },
-          { text: "Pricing Catalog and Accounting", link: "/configuration/pricing-catalog-and-accounting" },
+          {
+            text: "Configuration Reference",
+            link: "/configuration/configuration-reference",
+          },
+          {
+            text: "Model Routing and API Behavior",
+            link: "/configuration/model-routing-and-api-behavior",
+          },
+          {
+            text: "Pricing Catalog and Accounting",
+            link: "/configuration/pricing-catalog-and-accounting",
+          },
         ],
       },
       {
@@ -53,8 +81,14 @@ export default defineConfig({
       {
         text: "Operations",
         items: [
-          { text: "Budgets and Spending", link: "/operations/budgets-and-spending" },
-          { text: "Observability and Request Logs", link: "/operations/observability-and-request-logs" },
+          {
+            text: "Budgets and Spending",
+            link: "/operations/budgets-and-spending",
+          },
+          {
+            text: "Observability and Request Logs",
+            link: "/operations/observability-and-request-logs",
+          },
           { text: "Admin Runbooks", link: "/operations/operator-runbooks" },
         ],
       },
@@ -69,12 +103,27 @@ export default defineConfig({
       {
         text: "Reference",
         items: [
-          { text: "Request Lifecycle and Failure Modes", link: "/reference/request-lifecycle-and-failure-modes" },
-          { text: "Provider API Compatibility", link: "/reference/provider-api-compatibility" },
+          {
+            text: "Request Lifecycle and Failure Modes",
+            link: "/reference/request-lifecycle-and-failure-modes",
+          },
+          {
+            text: "Provider API Compatibility",
+            link: "/reference/provider-api-compatibility",
+          },
           { text: "Data Relationships", link: "/reference/data-relationships" },
-          { text: "Admin API Contract Workflow", link: "/reference/admin-api-contract-workflow" },
-          { text: "Migration Authoring", link: "/reference/migration-authoring" },
-          { text: "End-to-End Contract Tests", link: "/reference/e2e-contract-tests" },
+          {
+            text: "Admin API Contract Workflow",
+            link: "/reference/admin-api-contract-workflow",
+          },
+          {
+            text: "Migration Authoring",
+            link: "/reference/migration-authoring",
+          },
+          {
+            text: "End-to-End Contract Tests",
+            link: "/reference/e2e-contract-tests",
+          },
           { text: "Release Process", link: "/reference/release-process" },
         ],
       },
