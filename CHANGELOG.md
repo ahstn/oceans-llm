@@ -6,6 +6,58 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+### :rocket: New features
+- *(deploy)* Add Helm OCI chart by @ahstn
+- *(deploy)* Add Helm OCI chart by @ahstn in [#120](https://github.com/ahstn/oceans-llm/pull/120)
+- *(gateway)* Add request-attempt observability by @ahstn
+- *(gateway)* Add request-attempt observability by @ahstn in [#119](https://github.com/ahstn/oceans-llm/pull/119)
+- *(gateway)* Add bedrock streaming and claude support by @ahstn
+- *(gateway)* Support bedrock aws credential chain by @ahstn
+- *(gateway)* Add AWS Bedrock streaming and Claude support by @ahstn in [#130](https://github.com/ahstn/oceans-llm/pull/130)
+- *(providers)* Add claude thinking compatibility by @ahstn
+- *(providers)* Add claude thinking compatibility by @ahstn in [#135](https://github.com/ahstn/oceans-llm/pull/135)
+- *(admin)* Add Anthropic client config snippets by @ahstn
+- *(admin)* Add Anthropic client config snippets by @ahstn in [#142](https://github.com/ahstn/oceans-llm/pull/142)
+- *(observability)* Add tool cardinality request logs by @ahstn
+- *(observability)* Add tool cardinality request logs by @ahstn in [#123](https://github.com/ahstn/oceans-llm/pull/123)
+
+### :bug: Bug fixes
+- *(deploy)* Address Helm review feedback by @ahstn
+- *(gateway)* Sanitize request-attempt error details by @ahstn
+- *(gateway)* Stabilize admin contract checks by @ahstn
+- *(gateway)* Satisfy vertex stream clippy by @ahstn
+- *(gateway)* Satisfy vertex stream clippy by @ahstn in [#125](https://github.com/ahstn/oceans-llm/pull/125)
+- *(gateway)* Stabilize admin contract checks by @ahstn in [#124](https://github.com/ahstn/oceans-llm/pull/124)
+- *(gateway)* Address bedrock review feedback by @ahstn
+- *(gateway)* Address bedrock review feedback by @ahstn
+- *(providers)* Validate native claude effort fields by @ahstn
+- *(providers)* Require bedrock converse thinking budgets by @ahstn
+- *(providers)* Validate vertex anthropic overrides by @ahstn
+- *(providers)* Tighten anthropic thinking validation by @ahstn
+- *(observability)* Address tool cardinality review findings by @ahstn
+
+### Build
+- Post release tasks - v0.6.0 by @ahstn
+
+### Changed
+- *(deploy)* Split Helm hook jobs by @ahstn
+- Merge remote-tracking branch 'origin/main' into codex/helm-oci-chart by @ahstn
+- Merge branch 'main' into issue-chain-17-18-19 by @ahstn
+- Add AWS Bedrock provider and Converse chat support by @ahstn
+
+### Documentation
+- Various docs updates by @ahstn
+- Adding docs deploy by @ahstn
+- Overhauling theme by @ahstn
+- *(providers)* Split anthropic parity follow-ups by @ahstn
+
+### Testing
+- *(gateway)* Close request-attempt observability gaps by @ahstn
+
+
+
+
 ## [0.6.0] - 2026-04-24
 ### :rocket: New features
 - *(docs)* Publish docs site with vitepress by @ahstn
@@ -267,6 +319,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+[unreleased]: https://github.com/ahstn/oceans-llm/compare/v0.6.0...HEAD
 [0.6.0]: https://github.com/ahstn/oceans-llm/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/ahstn/oceans-llm/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/ahstn/oceans-llm/compare/v0.1.0...v0.4.0

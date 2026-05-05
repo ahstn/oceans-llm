@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "admin-ui"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "axum 0.8.8",
  "http 1.4.0",
@@ -1360,7 +1360,7 @@ dependencies = [
 
 [[package]]
 name = "gateway"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "admin-ui",
  "anyhow",
@@ -1400,7 +1400,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-client-config"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1408,7 +1408,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-core"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1422,7 +1422,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-providers"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1449,7 +1449,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-service"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "argon2",
@@ -1470,7 +1470,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-store"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "async-trait",
