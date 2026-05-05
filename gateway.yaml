@@ -38,6 +38,22 @@ teams:
       hard_limit: true
       timezone: UTC
 
+  - key: applied-ai
+    name: Applied AI
+    budget:
+      cadence: monthly
+      amount_usd: "750.0000"
+      hard_limit: true
+      timezone: UTC
+
+  - key: operations
+    name: Operations
+    budget:
+      cadence: monthly
+      amount_usd: "500.0000"
+      hard_limit: true
+      timezone: UTC
+
 users:
   - name: Alice Platform Lead
     email: alice@platform.local
@@ -84,6 +100,94 @@ users:
       team: research
       role: member
 
+  - name: Faye Research Scientist
+    email: faye@research.local
+    auth_mode: password
+    request_logging_enabled: true
+    membership:
+      team: research
+      role: member
+
+  - name: Gina Research Engineer
+    email: gina@research.local
+    auth_mode: password
+    request_logging_enabled: true
+    membership:
+      team: research
+      role: member
+
+  - name: Hugo Research Analyst
+    email: hugo@research.local
+    auth_mode: password
+    request_logging_enabled: true
+    membership:
+      team: research
+      role: member
+
+  - name: Ivy Research Coordinator
+    email: ivy@research.local
+    auth_mode: password
+    request_logging_enabled: true
+    membership:
+      team: research
+      role: member
+
+  - name: Jules Research Operator
+    email: jules@research.local
+    auth_mode: password
+    request_logging_enabled: true
+    membership:
+      team: research
+      role: member
+
+  - name: Frank Applied Lead
+    email: frank@applied.local
+    auth_mode: password
+    request_logging_enabled: true
+    membership:
+      team: applied-ai
+      role: admin
+
+  - name: Grace Applied Engineer
+    email: grace@applied.local
+    auth_mode: password
+    request_logging_enabled: true
+    membership:
+      team: applied-ai
+      role: member
+
+  - name: Heidi Applied Analyst
+    email: heidi@applied.local
+    auth_mode: password
+    request_logging_enabled: true
+    membership:
+      team: applied-ai
+      role: member
+
+  - name: Ivan Operations Lead
+    email: ivan@operations.local
+    auth_mode: password
+    request_logging_enabled: true
+    membership:
+      team: operations
+      role: admin
+
+  - name: Judy Operations Analyst
+    email: judy@operations.local
+    auth_mode: password
+    request_logging_enabled: true
+    membership:
+      team: operations
+      role: member
+
+  - name: Mallory Operations Engineer
+    email: mallory@operations.local
+    auth_mode: password
+    request_logging_enabled: true
+    membership:
+      team: operations
+      role: member
+
 providers:
   - id: openai-prod
     type: openai_compat
@@ -116,6 +220,15 @@ providers:
       mode: service_account
       credentials_path: /path/to/service-account.json
 
+  - id: bedrock-us-east-1
+    type: aws_bedrock
+    region: us-east-1
+    auth:
+      mode: default_chain
+    display:
+      label: AWS Bedrock
+      icon_key: aws
+
 models:
   - id: openai-fast-v2
     description: OpenAI via compatible adapter with weighted route selection
@@ -142,3 +255,27 @@ models:
     routes:
       - provider: vertex-claude
         upstream_model: anthropic/claude-sonnet-4-6
+
+  - id: claude-opus
+    description: Claude Opus on Vertex
+    routes:
+      - provider: vertex-claude
+        upstream_model: anthropic/claude-opus-4-7
+
+  - id: bedrock-claude-sonnet
+    description: Claude Sonnet on AWS Bedrock
+    routes:
+      - provider: bedrock-us-east-1
+        upstream_model: us.anthropic.claude-sonnet-4-6-v1:0
+
+  - id: gpt-oss-120b
+    description: OpenAI OSS on AWS Bedrock
+    routes:
+      - provider: bedrock-us-east-1
+        upstream_model: gpt-oss-120b
+
+  - id: gemini-pro-preview
+    description: Gemini preview on Vertex
+    routes:
+      - provider: vertex-adc
+        upstream_model: google/gemini-3.1-pro-preview

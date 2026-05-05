@@ -136,13 +136,16 @@
   --color-warning-soft: color-mix(in oklch, oklch(0.769 0.156 77.727) 24%, transparent);
   --color-danger: var(--destructive);
   --color-danger-soft: color-mix(in oklch, var(--destructive) 24%, transparent);
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: color-mix(in oklch, var(--border) 62%, var(--foreground) 38%);
+  --scrollbar-thumb-hover: color-mix(in oklch, var(--border) 46%, var(--foreground) 54%);
   --shadow-panel: 0 20px 45px color-mix(in oklch, black 86%, var(--primary) 14% / 0.24);
   --shadow-soft: 0 12px 28px color-mix(in oklch, black 88%, var(--primary) 12% / 0.14);
 }
 
 * {
   box-sizing: border-box;
-  letter-spacing: -0.15px;
+  letter-spacing: 0;
 }
 
 html,
@@ -240,6 +243,34 @@ textarea {
 @layer base {
   * {
     @apply border-border outline-ring/50;
+
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+    scrollbar-width: thin;
+  }
+
+  *::-webkit-scrollbar {
+    width: 0.75rem;
+    height: 0.75rem;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    background-clip: content-box;
+    border: 3px solid transparent;
+    border-radius: 999px;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
+    background-clip: content-box;
+  }
+
+  *::-webkit-scrollbar-corner {
+    background: transparent;
   }
 
   body {
