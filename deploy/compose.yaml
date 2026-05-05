@@ -25,6 +25,7 @@ services:
     image: ghcr.io/ahstn/oceans-llm-admin-ui:${OCEANS_LLM_VERSION:-latest}
     environment:
       PORT: "3000"
+      ADMIN_GATEWAY_ORIGIN: http://gateway:8080
     expose:
       - "3000"
     restart: unless-stopped
