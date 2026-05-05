@@ -57,7 +57,7 @@ run = "helm lint deploy/helm/oceans-llm --set database.external.existingSecret.n
 description = "Render the Oceans LLM Helm chart examples"
 depends = ["helm-dependency-update"]
 run = """
-set -euo pipefail
+set -eu
 
 chart_dir="deploy/helm/oceans-llm"
 
