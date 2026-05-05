@@ -2,13 +2,8 @@ import { ArrowRight01Icon } from '@hugeicons/core-free-icons'
 import { Link } from '@tanstack/react-router'
 
 import { AppIcon } from '@/components/icons/app-icon'
-import {
-  adminNavSections,
-  getActiveNavSection,
-  matchesAdminPath,
-} from '@/components/layout/admin-nav'
+import { adminNavSections, matchesAdminPath } from '@/components/layout/admin-nav'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,13 +16,13 @@ import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarMenuSub,
-  SidebarMenuSubButton,
-  SidebarMenuSubItem,
   SidebarRail,
 } from '@/components/ui/sidebar'
 import type { AuthSessionView } from '@/types/api'
@@ -40,95 +35,63 @@ interface AppSidebarProps {
 }
 
 export function AppSidebar({ currentPath, session, signOutPending, onSignOut }: AppSidebarProps) {
-  const activeSection = getActiveNavSection(currentPath)
-
   return (
     <Sidebar collapsible="icon" variant="inset">
       <SidebarHeader className="gap-3 p-3 pb-2">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
+              asChild
               size="lg"
-              className="hover:bg-sidebar-accent/60 h-auto cursor-default rounded-lg px-1 py-1 opacity-100"
+              className="h-auto cursor-default rounded-lg px-1 py-1 opacity-100 hover:bg-transparent hover:text-sidebar-foreground active:bg-transparent active:text-sidebar-foreground"
             >
-              <span className="bg-sidebar-primary text-sidebar-primary-foreground flex size-9 items-center justify-center rounded-lg">
-                OC
-              </span>
-              <div className="grid min-w-0 flex-1 text-left leading-tight">
-                <span className="text-sidebar-foreground truncate text-sm font-medium">
-                  Oceans Gateway
+              <div>
+                <span className="bg-sidebar-primary text-sidebar-primary-foreground flex size-9 items-center justify-center rounded-lg">
+                  OC
                 </span>
-                <span className="text-sidebar-foreground/70 truncate text-xs">Control plane</span>
+                <div className="grid min-w-0 flex-1 text-left leading-tight">
+                  <span className="text-sidebar-foreground truncate text-sm font-medium">
+                    Oceans Gateway
+                  </span>
+                  <span className="text-sidebar-foreground/70 truncate text-xs">Control plane</span>
+                </div>
               </div>
-              <AppIcon
-                icon={ArrowRight01Icon}
-                size={16}
-                stroke={1.5}
-                className="ml-auto rotate-90 text-sidebar-foreground/70 group-data-[collapsible=icon]:hidden"
-              />
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
 
       <SidebarContent className="px-2 py-3">
-        <SidebarMenu className="gap-1">
-          {adminNavSections.map((section) => {
-            const isSectionActive = section.items.some((item) =>
-              matchesAdminPath(currentPath, item.to),
-            )
+        {adminNavSections.map((section) => (
+          <SidebarGroup key={section.label} className="px-0 py-1">
+            <SidebarGroupLabel className="px-2 text-xs font-medium">
+              {section.label}
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu className="gap-1">
+                {section.items.map((item) => {
+                  const active = matchesAdminPath(currentPath, item.to)
 
-            return (
-              <Collapsible
-                key={`${section.label}-${isSectionActive}`}
-                asChild
-                defaultOpen={activeSection?.label === section.label}
-                className="group/collapsible"
-              >
-                <SidebarMenuItem>
-                  <CollapsibleTrigger asChild>
-                    <SidebarMenuButton
-                      tooltip={section.label}
-                      isActive={isSectionActive}
-                      className="h-8 rounded-lg px-2 text-sm font-normal"
-                    >
-                      <AppIcon icon={section.icon} size={16} stroke={1.5} />
-                      <span>{section.label}</span>
-                      <AppIcon
-                        icon={ArrowRight01Icon}
-                        size={16}
-                        stroke={1.5}
-                        className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90"
-                      />
-                    </SidebarMenuButton>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <SidebarMenuSub className="mt-1 ml-4 gap-1 border-l px-2 py-0.5">
-                      {section.items.map((item) => {
-                        const active = matchesAdminPath(currentPath, item.to)
-
-                        return (
-                          <SidebarMenuSubItem key={item.to}>
-                            <SidebarMenuSubButton
-                              asChild
-                              isActive={active}
-                              className="h-7 text-sm"
-                            >
-                              <Link to={item.to}>
-                                <AppIcon icon={item.icon} size={15} stroke={1.5} />
-                                <span>{item.label}</span>
-                              </Link>
-                            </SidebarMenuSubButton>
-                          </SidebarMenuSubItem>
-                        )
-                      })}
-                    </SidebarMenuSub>
-                  </CollapsibleContent>
-                </SidebarMenuItem>
-              </Collapsible>
-            )
-          })}
-        </SidebarMenu>
+                  return (
+                    <SidebarMenuItem key={item.to}>
+                      <SidebarMenuButton
+                        asChild
+                        tooltip={item.label}
+                        isActive={active}
+                        className="h-8 rounded-lg px-2 text-sm font-normal"
+                      >
+                        <Link to={item.to}>
+                          <AppIcon icon={item.icon} size={16} stroke={1.5} />
+                          <span>{item.label}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  )
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ))}
       </SidebarContent>
 
       <SidebarFooter className="border-sidebar-border/70 gap-3 border-t p-3">

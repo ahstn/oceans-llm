@@ -56,7 +56,7 @@ export function AppShell({ children, session }: AppShellProps) {
       <SidebarInset>
         <header className="border-border/70 bg-background/80 sticky top-0 z-20 flex h-16 shrink-0 items-center gap-3 border-b px-4 backdrop-blur-xl sm:px-6">
           <SidebarTrigger className="-ml-1" />
-          <Separator orientation="vertical" className="data-[orientation=vertical]:h-4" />
+          <Separator orientation="vertical" className="data-[orientation=vertical]:h-auto" />
 
           <Breadcrumb>
             <BreadcrumbList>
