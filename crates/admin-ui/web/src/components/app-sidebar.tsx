@@ -46,10 +46,10 @@ export function AppSidebar({ currentPath, session, signOutPending, onSignOut }: 
               className="h-auto cursor-default rounded-lg px-1 py-1 opacity-100 hover:bg-transparent hover:text-sidebar-foreground active:bg-transparent active:text-sidebar-foreground"
             >
               <div>
-                <span className="bg-sidebar-primary text-sidebar-primary-foreground flex size-9 items-center justify-center rounded-lg">
+                <span className="bg-sidebar-primary text-sidebar-primary-foreground flex size-8 items-center justify-center rounded-lg">
                   OC
                 </span>
-                <div className="grid min-w-0 flex-1 text-left leading-tight">
+                <div className="grid min-w-0 flex-1 text-left leading-tight group-data-[collapsible=icon]:hidden">
                   <span className="text-sidebar-foreground truncate text-sm font-medium">
                     Oceans Gateway
                   </span>
