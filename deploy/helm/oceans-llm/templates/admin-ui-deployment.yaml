@@ -67,6 +67,8 @@ spec:
           env:
             - name: PORT
               value: {{ .Values.adminUi.containerPort | quote }}
+            - name: ADMIN_GATEWAY_ORIGIN
+              value: {{ printf "http://%s:%v" (include "oceans-llm.gatewayServiceName" .) .Values.service.gateway.port | quote }}
             {{- with .Values.adminUi.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

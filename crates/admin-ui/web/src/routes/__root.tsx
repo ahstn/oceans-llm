@@ -15,6 +15,7 @@ import {
 import { Toaster } from 'sonner'
 
 import { AppShell } from '@/components/layout/app-shell'
+import { GlobalErrorPage } from '@/components/layout/global-error-page'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { getAuthSession } from '@/server/admin-data.functions'
 import globalsCss from '@/styles/globals.css?url'
@@ -70,6 +71,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
     return { session: adminSession }
   },
+  errorComponent: RootErrorComponent,
   head: () => ({
     meta: [
       { charSet: 'utf-8' },
@@ -84,6 +86,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   }),
   component: RootComponent,
 })
+
+function RootErrorComponent(props: Parameters<typeof GlobalErrorPage>[0]) {
+  return (
+    <RootDocument>
+      <GlobalErrorPage {...props} />
+    </RootDocument>
+  )
+}
 
 function RootComponent() {
   const pathname = useRouterState({ select: (state) => state.location.pathname })
