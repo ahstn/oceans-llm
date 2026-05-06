@@ -19,7 +19,7 @@ import { GlobalErrorPage } from "@/components/layout/global-error-page";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { getAuthSession } from "@/server/admin-data.functions";
 import globalsCss from "@/styles/globals.css?url";
-import faviconUrl from "../../../../../docs/images/oceans-logo-rounded-square.png?url";
+import faviconUrl from "@/assets/oceans-logo-rounded-square.png?url";
 import {
   DEFAULT_SIGNED_IN_PATH,
   buildRedirectTarget,
