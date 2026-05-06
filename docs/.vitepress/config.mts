@@ -19,7 +19,7 @@ export default defineConfig({
   srcExclude: ["README.md", "AGENTS.md", "adr/**", "internal/**"],
   themeConfig: {
     logo: {
-      src: "/images/oceans-llm-logo.png",
+      src: "/images/oceans-logo-rounded-square.png",
       alt: "Oceans LLM",
     },
     siteTitle: "Oceans LLM",

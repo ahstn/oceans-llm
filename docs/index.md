@@ -7,7 +7,7 @@ hero:
   text: Route, govern, and observe AI traffic.
   tagline: Operate one policy-aware gateway for provider routing, identity, spend controls, and request observability.
   image:
-    src: /images/oceans-docs-hero.png
+    src: /images/oceans-logo-rounded-square.png
     alt: Oceans LLM wave gateway illustration
   actions:
     - theme: brand
