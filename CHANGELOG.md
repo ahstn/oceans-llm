@@ -36,21 +36,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(providers)* Validate vertex anthropic overrides by @ahstn
 - *(providers)* Tighten anthropic thinking validation by @ahstn
 - *(observability)* Address tool cardinality review findings by @ahstn
+- Correcting helm lint issue by @ahstn
+- Correcting helm mise command by @ahstn
+- *(admin-ui)* Harden containers and improve error diagnostics by @ahstn in [#143](https://github.com/ahstn/oceans-llm/pull/143)
+- *(admin-ui)* Address review feedback by @ahstn
+- *(admin-ui)* Polish admin shell by @ahstn in [#144](https://github.com/ahstn/oceans-llm/pull/144)
 
 ### Build
 - Post release tasks - v0.6.0 by @ahstn
+- Post release tasks - v0.7.0 by @ahstn
+- *(ui)* Updating ui dependencies by @ahstn
 
 ### Changed
 - *(deploy)* Split Helm hook jobs by @ahstn
 - Merge remote-tracking branch 'origin/main' into codex/helm-oci-chart by @ahstn
 - Merge branch 'main' into issue-chain-17-18-19 by @ahstn
 - Add AWS Bedrock provider and Converse chat support by @ahstn
+- Improve container runtime hardening and admin errors by @ahstn
+- Polish admin UI shell by @ahstn
+- Refine admin sidebar navigation by @ahstn
+- Restore inset shell border by @ahstn
+- Theme native admin scrollbars by @ahstn
+- Render OpenAI brand icon inline by @ahstn
+- Expand local demo seed data by @ahstn
 
 ### Documentation
 - Various docs updates by @ahstn
 - Adding docs deploy by @ahstn
 - Overhauling theme by @ahstn
 - *(providers)* Split anthropic parity follow-ups by @ahstn
+- Updating favicon and adding images by @ahstn
+- Updating favicon and adding images by @ahstn in [#146](https://github.com/ahstn/oceans-llm/pull/146)
 
 ### Testing
 - *(gateway)* Close request-attempt observability gaps by @ahstn
