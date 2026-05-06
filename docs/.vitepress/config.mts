@@ -124,6 +124,7 @@ export default defineConfig({
             text: "End-to-End Contract Tests",
             link: "/reference/e2e-contract-tests",
           },
+          { text: "Screenshots", link: "/reference/screenshots" },
           { text: "Release Process", link: "/reference/release-process" },
         ],
       },
