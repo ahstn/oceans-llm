@@ -79,6 +79,8 @@ Arguments and results must be redacted and bounded before persistence. Sensitive
 
 Request logs keep the request-level outcome and tool cardinality. MCP invocation logs keep per-tool audit detail.
 
+`request_id` is the durable correlation key. `request_log_id` is an optional non-owning link when the request-log row is known; it is not required for insertion because request-log summaries are written at final outcome and may be absent or purged independently.
+
 Use request logs first when debugging the model/API request. Use MCP invocation logs when the question is which tool ran, whether access policy allowed it, how long it took, and whether the tool result failed or was truncated.
 
 ## What This Page Does Not Own

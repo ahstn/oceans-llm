@@ -116,7 +116,7 @@ Compatibility metadata is not a provider config fallback and is not an `extra_bo
   - Notes: attempt rows are metadata-only children of `request_logs`; they are ordered by `attempt_number` and describe provider execution, not pre-provider gateway rejections
 - `mcp_tool_invocations`
   - Key columns: `mcp_tool_invocation_id`, `request_log_id`, `request_id`, `api_key_id`, `user_id`, `team_id`, `owner_kind`, `server_id`, `server_display_key`, `tool_id`, `tool_display_key`, `status`, `policy_result`, `latency_ms`, `error_code`, `has_payload`, `arguments_payload_truncated`, `result_payload_truncated`, `arguments_payload_redacted`, `result_payload_redacted`, `metadata_json`, `occurred_at`
-  - Notes: MCP invocation rows are correlated by `request_id`; `request_log_id` is nullable and set null if a request log is purged, so MCP audit rows can outlive request-log retention. Server/tool stable IDs are nullable until registry records exist, but display keys are required.
+  - Notes: MCP invocation rows are correlated by `request_id`; `request_log_id` is nullable and non-owning because request-log summaries are written at final outcome and may be absent or purged independently. Server/tool stable IDs are nullable until registry records exist, but display keys are required.
 - `mcp_tool_invocation_payloads`
   - Key columns: `mcp_tool_invocation_id`, `arguments_json`, `result_json`
   - Notes: payload rows exist only when MCP invocation payload policy captures sanitized payloads; summary rows are still recorded when payload capture is disabled.

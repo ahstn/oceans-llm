@@ -98,8 +98,11 @@ where
         let model_resolver = ModelResolver::new(store.clone());
         let pricing_catalog = PricingCatalog::new(store.clone());
         let request_logging =
-            RequestLogging::new_with_payload_policy(store.clone(), payload_policy);
-        let mcp_invocation_logging = McpInvocationLogging::new(store.clone());
+            RequestLogging::new_with_payload_policy(store.clone(), payload_policy.clone());
+        let mcp_invocation_logging = McpInvocationLogging::new_with_payload_policy(
+            store.clone(),
+            crate::McpInvocationPayloadPolicy::from_request_log_policy(payload_policy),
+        );
 
         Self {
             store,
@@ -722,16 +725,18 @@ mod tests {
         ApiKeyOwnerKind, ApiKeyRepository, AuthenticatedApiKey, BudgetRepository, GatewayModel,
         McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationPayloadRecord,
         McpToolInvocationQuery, McpToolInvocationRecord, McpToolInvocationRepository,
-        ModelRepository, ModelRoute, Money4, PricingCatalogRepository, ProviderCapabilities,
-        ProviderConnection, ProviderRepository, RequestLogDetail, RequestLogPage,
-        RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository,
-        RoutePlanner, StoreError, StoreHealth,
+        McpToolInvocationStatus, McpToolPolicyResult, ModelRepository, ModelRoute, Money4,
+        PricingCatalogRepository, ProviderCapabilities, ProviderConnection, ProviderRepository,
+        RequestLogDetail, RequestLogPage, RequestLogPayloadRecord, RequestLogQuery,
+        RequestLogRecord, RequestLogRepository, RoutePlanner, StoreError, StoreHealth,
     };
     use serde_json::{Map, json};
     use time::OffsetDateTime;
+    use tokio::sync::Mutex;
     use uuid::Uuid;
 
-    use super::GatewayService;
+    use super::{GatewayService, McpInvocationLogInput};
+    use crate::{RequestLogPayloadPolicy, SinkBudgetAlertSender};
 
     #[derive(Default)]
     struct TestRepo {
@@ -739,6 +744,12 @@ mod tests {
         routes: Vec<ModelRoute>,
         providers: HashMap<String, ProviderConnection>,
         provider_lookups: AtomicUsize,
+        mcp_invocations: Mutex<
+            Vec<(
+                McpToolInvocationRecord,
+                Option<McpToolInvocationPayloadRecord>,
+            )>,
+        >,
     }
 
     #[async_trait]
@@ -946,9 +957,13 @@ mod tests {
     impl McpToolInvocationRepository for TestRepo {
         async fn insert_mcp_tool_invocation(
             &self,
-            _invocation: &McpToolInvocationRecord,
-            _payload: Option<&McpToolInvocationPayloadRecord>,
+            invocation: &McpToolInvocationRecord,
+            payload: Option<&McpToolInvocationPayloadRecord>,
         ) -> Result<(), StoreError> {
+            self.mcp_invocations
+                .lock()
+                .await
+                .push((invocation.clone(), payload.cloned()));
             Ok(())
         }
 
@@ -956,7 +971,19 @@ mod tests {
             &self,
             _query: &McpToolInvocationQuery,
         ) -> Result<McpToolInvocationPage, StoreError> {
-            unreachable!("not used in resolve_request test")
+            let items = self
+                .mcp_invocations
+                .lock()
+                .await
+                .iter()
+                .map(|(invocation, _)| invocation.clone())
+                .collect::<Vec<_>>();
+            Ok(McpToolInvocationPage {
+                total: items.len() as u64,
+                items,
+                page: 1,
+                page_size: 100,
+            })
         }
 
         async fn get_mcp_tool_invocation_detail(
@@ -1064,6 +1091,7 @@ mod tests {
             routes: vec![route(model.id, "router")],
             providers: HashMap::from([("router".to_string(), provider("router"))]),
             provider_lookups: AtomicUsize::new(0),
+            mcp_invocations: Mutex::new(Vec::new()),
         });
         let service = GatewayService::new(repo.clone(), Arc::new(PassthroughPlanner));
 
@@ -1106,6 +1134,7 @@ mod tests {
             routes: vec![route(model.id, "missing")],
             providers: HashMap::new(),
             provider_lookups: AtomicUsize::new(0),
+            mcp_invocations: Mutex::new(Vec::new()),
         });
         let service = GatewayService::new(repo.clone(), Arc::new(PassthroughPlanner));
 
@@ -1119,5 +1148,61 @@ mod tests {
             gateway_core::GatewayError::Route(gateway_core::RouteError::NoRoutesAvailable(_))
         ));
         assert_eq!(repo.provider_lookups.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn configured_disabled_payload_policy_suppresses_mcp_payload_rows() {
+        let repo = Arc::new(TestRepo::default());
+        let service = GatewayService::new_with_budget_alert_sender_and_payload_policy(
+            repo.clone(),
+            Arc::new(PassthroughPlanner),
+            Arc::new(SinkBudgetAlertSender),
+            RequestLogPayloadPolicy::new(
+                crate::RequestLogPayloadCaptureMode::Disabled,
+                4096,
+                4096,
+                1,
+                Vec::new(),
+            ),
+        );
+        let auth = AuthenticatedApiKey {
+            id: Uuid::new_v4(),
+            public_id: "dev123".to_string(),
+            name: "dev".to_string(),
+            owner_kind: ApiKeyOwnerKind::User,
+            owner_user_id: Some(Uuid::new_v4()),
+            owner_team_id: None,
+        };
+
+        let logged = service
+            .log_mcp_tool_invocation(
+                &auth,
+                McpInvocationLogInput {
+                    request_log_id: None,
+                    request_id: "req_123".to_string(),
+                    server_id: None,
+                    server_display_key: "github".to_string(),
+                    server_display_name: "GitHub".to_string(),
+                    tool_id: None,
+                    tool_display_key: "issues.create".to_string(),
+                    tool_display_name: "Create issue".to_string(),
+                    status: McpToolInvocationStatus::Success,
+                    policy_result: McpToolPolicyResult::Allowed,
+                    latency_ms: Some(10),
+                    error_code: None,
+                    arguments_json: Some(json!({"token": "secret"})),
+                    result_json: Some(json!({"ok": true})),
+                    metadata: Map::new(),
+                    occurred_at: OffsetDateTime::now_utc(),
+                },
+            )
+            .await
+            .expect("log MCP invocation");
+
+        assert!(!logged.wrote_payload);
+        let invocations = repo.mcp_invocations.lock().await;
+        assert_eq!(invocations.len(), 1);
+        assert!(!invocations[0].0.has_payload);
+        assert!(invocations[0].1.is_none());
     }
 }

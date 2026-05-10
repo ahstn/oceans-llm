@@ -23,7 +23,6 @@ CREATE TABLE IF NOT EXISTS mcp_tool_invocations (
   result_payload_redacted BIGINT NOT NULL DEFAULT 0 CHECK (result_payload_redacted IN (0, 1)),
   metadata_json TEXT NOT NULL DEFAULT '{}',
   occurred_at BIGINT NOT NULL,
-  FOREIGN KEY (request_log_id) REFERENCES request_logs(request_log_id) ON DELETE SET NULL,
   FOREIGN KEY (api_key_id) REFERENCES api_keys(id) ON DELETE SET NULL,
   FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE SET NULL,
   FOREIGN KEY (team_id) REFERENCES teams(team_id) ON DELETE SET NULL
@@ -64,6 +63,9 @@ CREATE INDEX IF NOT EXISTS mcp_tool_invocations_policy_time_idx
 
 CREATE INDEX IF NOT EXISTS mcp_tool_invocations_occurred_at_brin_idx
   ON mcp_tool_invocations USING BRIN (occurred_at);
+
+CREATE INDEX IF NOT EXISTS mcp_tool_invocations_recent_idx
+  ON mcp_tool_invocations (occurred_at DESC, mcp_tool_invocation_id DESC);
 
 CREATE TABLE IF NOT EXISTS mcp_tool_invocation_payloads (
   mcp_tool_invocation_id TEXT PRIMARY KEY,
