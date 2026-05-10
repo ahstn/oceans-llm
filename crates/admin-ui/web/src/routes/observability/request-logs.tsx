@@ -818,32 +818,30 @@ function formatCaptureMode(captureMode: string) {
 }
 
 function OperationBadge({ item }: { item: RequestLogView }) {
-  const operation = operationMetadata(item)
+  const label = operationLabel(item)
 
-  if (!operation) {
+  if (!label) {
     return null
   }
 
-  return <Badge variant="secondary">{formatOperation(operation)}</Badge>
+  return <Badge variant="secondary">{label}</Badge>
 }
 
 function OperationDetailRow({ item }: { item: RequestLogView }) {
-  const operation = operationMetadata(item)
+  const label = operationLabel(item)
 
-  if (!operation) {
+  if (!label) {
     return null
   }
 
-  return <DetailRow label="Operation" value={formatOperation(operation)} />
+  return <DetailRow label="Operation" value={label} />
 }
 
-function operationMetadata(item: RequestLogView) {
-  return metadataString(item, 'operation')
-}
-
-function metadataString(item: RequestLogView, key: string) {
-  const value = item.metadata[key]
-  return typeof value === 'string' && value.trim().length > 0 ? value : null
+function operationLabel(item: RequestLogView) {
+  const operation = item.metadata.operation
+  return typeof operation === 'string' && operation.trim().length > 0
+    ? formatOperation(operation)
+    : null
 }
 
 function formatOperation(operation: string) {
