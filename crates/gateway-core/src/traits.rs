@@ -11,7 +11,9 @@ use crate::{
     domain::{
         ApiKeyRecord, BudgetAlertDeliveryRecord, BudgetAlertDispatchTask, BudgetAlertHistoryPage,
         BudgetAlertHistoryQuery, BudgetAlertRecord, GatewayModel, HarnessUsageBucketRecord,
-        HarnessUsageLeaderRecord, ModelPricingRecord, ModelRoute, Money4, NewApiKeyRecord,
+        HarnessUsageLeaderRecord, McpToolInvocationDetail,
+        McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
+        McpToolInvocationRecord, ModelPricingRecord, ModelRoute, Money4, NewApiKeyRecord,
         PricingCatalogCacheRecord, ProviderCapabilities, ProviderConnection,
         ProviderRequestContext, RequestAttemptRecord, RequestLogDetail, RequestLogPage,
         RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, SpendDailyAggregateRecord,
@@ -403,6 +405,25 @@ pub trait RequestAttemptRepository: Send + Sync {
         &self,
         request_log_id: Uuid,
     ) -> Result<Vec<RequestAttemptRecord>, StoreError>;
+}
+
+#[async_trait]
+pub trait McpToolInvocationRepository: Send + Sync {
+    async fn insert_mcp_tool_invocation(
+        &self,
+        invocation: &McpToolInvocationRecord,
+        payload: Option<&McpToolInvocationPayloadRecord>,
+    ) -> Result<(), StoreError>;
+
+    async fn list_mcp_tool_invocations(
+        &self,
+        query: &McpToolInvocationQuery,
+    ) -> Result<McpToolInvocationPage, StoreError>;
+
+    async fn get_mcp_tool_invocation_detail(
+        &self,
+        mcp_tool_invocation_id: Uuid,
+    ) -> Result<McpToolInvocationDetail, StoreError>;
 }
 
 #[async_trait]

@@ -6,16 +6,17 @@ use axum::{
     http::HeaderMap,
 };
 use gateway_core::{
-    BudgetRepository, GatewayError, ProviderConnection, ProviderRepository, RequestAttemptRecord,
-    RequestLogDetail, RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord,
-    RequestLogRepository, RequestTag, RequestTags,
+    BudgetRepository, GatewayError, McpToolInvocationDetail, McpToolInvocationPayloadRecord,
+    McpToolInvocationQuery, McpToolInvocationRecord, McpToolInvocationStatus, McpToolPolicyResult,
+    ProviderConnection, ProviderRepository, RequestAttemptRecord, RequestLogDetail,
+    RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestTag, RequestTags,
 };
 use gateway_service::{
     model_icon_key_from_metadata, provider_icon_key_from_metadata, resolve_model_icon_key,
     resolve_provider_display,
 };
 use serde_json::{Map, Value};
-use time::{Duration, OffsetDateTime, UtcOffset};
+use time::{Duration, OffsetDateTime, UtcOffset, format_description::well_known::Rfc3339};
 use uuid::Uuid;
 
 use crate::http::{
@@ -25,10 +26,12 @@ use crate::http::{
         HarnessUsageSeriesPointView, HarnessUsageSeriesValueView, HarnessUsageView,
         LeaderboardChartUserView, LeaderboardLeaderView, LeaderboardQuery,
         LeaderboardSeriesPointView, LeaderboardSeriesValueView, LeaderboardView,
-        OpenAiErrorEnvelopeView, RequestAttemptView, RequestLogDetailView, RequestLogListQuery,
-        RequestLogPageView, RequestLogPayloadCaptureModeView, RequestLogPayloadPolicyView,
-        RequestLogPayloadView, RequestLogSummaryView, RequestTagView, RequestTagsView,
-        RequestToolCardinalityAveragesView, RequestToolCardinalityView, envelope, format_timestamp,
+        McpToolInvocationDetailView, McpToolInvocationListQuery, McpToolInvocationPageView,
+        McpToolInvocationPayloadView, McpToolInvocationSummaryView, OpenAiErrorEnvelopeView,
+        RequestAttemptView, RequestLogDetailView, RequestLogListQuery, RequestLogPageView,
+        RequestLogPayloadCaptureModeView, RequestLogPayloadPolicyView, RequestLogPayloadView,
+        RequestLogSummaryView, RequestTagView, RequestTagsView, RequestToolCardinalityAveragesView,
+        RequestToolCardinalityView, envelope, format_timestamp,
     },
     error::AppError,
     request_tags::build_bespoke_tag_filter,
@@ -332,6 +335,80 @@ pub async fn get_request_log_detail(
     Ok(Json(envelope(detail_view(detail, provider.as_ref())?)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/observability/mcp-invocations",
+    params(McpToolInvocationListQuery),
+    responses((status = 200, body = Envelope<McpToolInvocationPageView>)),
+    security(("session_cookie" = []))
+)]
+pub async fn list_mcp_tool_invocations(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<McpToolInvocationListQuery>,
+) -> Result<Json<Envelope<McpToolInvocationPageView>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+
+    let query = McpToolInvocationQuery {
+        page: query.page.unwrap_or(DEFAULT_PAGE).max(1),
+        page_size: query
+            .page_size
+            .unwrap_or(DEFAULT_PAGE_SIZE)
+            .clamp(1, MAX_PAGE_SIZE),
+        request_id: empty_to_none(query.request_id),
+        server_display_key: empty_to_none(query.server_display_key),
+        server_display_name: empty_to_none(query.server_display_name),
+        tool_display_key: empty_to_none(query.tool_display_key),
+        tool_display_name: empty_to_none(query.tool_display_name),
+        api_key_id: parse_optional_uuid(query.api_key_id.as_deref(), "api_key_id")?,
+        user_id: parse_optional_uuid(query.user_id.as_deref(), "user_id")?,
+        team_id: parse_optional_uuid(query.team_id.as_deref(), "team_id")?,
+        status: parse_optional_mcp_status(query.status.as_deref())?,
+        policy_result: parse_optional_mcp_policy_result(query.policy_result.as_deref())?,
+        occurred_at_start: parse_optional_timestamp(
+            query.occurred_at_start.as_deref(),
+            "occurred_at_start",
+        )?,
+        occurred_at_end: parse_optional_timestamp(
+            query.occurred_at_end.as_deref(),
+            "occurred_at_end",
+        )?,
+    };
+
+    let page = state.service.list_mcp_tool_invocations(&query).await?;
+    let items = page.items.iter().map(mcp_invocation_summary_view).collect();
+    Ok(Json(envelope(McpToolInvocationPageView {
+        items,
+        page: page.page,
+        page_size: page.page_size,
+        total: page.total,
+    })))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/observability/mcp-invocations/{mcp_tool_invocation_id}",
+    params(("mcp_tool_invocation_id" = String, Path, description = "MCP tool invocation identifier")),
+    responses(
+        (status = 200, body = Envelope<McpToolInvocationDetailView>),
+        (status = 404, body = OpenAiErrorEnvelopeView, description = "MCP tool invocation not found")
+    ),
+    security(("session_cookie" = []))
+)]
+pub async fn get_mcp_tool_invocation_detail(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(mcp_tool_invocation_id): Path<Uuid>,
+) -> Result<Json<Envelope<McpToolInvocationDetailView>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+
+    let detail = state
+        .service
+        .get_mcp_tool_invocation_detail(mcp_tool_invocation_id)
+        .await?;
+    Ok(Json(envelope(mcp_invocation_detail_view(detail))))
+}
+
 async fn provider_connections_by_key(
     state: &AppState,
     logs: &[RequestLogRecord],
@@ -361,6 +438,53 @@ async fn provider_connection(
         .get_provider_by_key(provider_key)
         .await
         .map_err(|error| AppError(error.into()))
+}
+
+fn mcp_invocation_detail_view(detail: McpToolInvocationDetail) -> McpToolInvocationDetailView {
+    McpToolInvocationDetailView {
+        invocation: mcp_invocation_summary_view(&detail.invocation),
+        payload: detail.payload.map(mcp_invocation_payload_view),
+    }
+}
+
+fn mcp_invocation_payload_view(
+    payload: McpToolInvocationPayloadRecord,
+) -> McpToolInvocationPayloadView {
+    McpToolInvocationPayloadView {
+        arguments_json: payload.arguments_json,
+        result_json: payload.result_json,
+    }
+}
+
+fn mcp_invocation_summary_view(
+    invocation: &McpToolInvocationRecord,
+) -> McpToolInvocationSummaryView {
+    McpToolInvocationSummaryView {
+        mcp_tool_invocation_id: invocation.mcp_tool_invocation_id.to_string(),
+        request_log_id: invocation.request_log_id.map(|value| value.to_string()),
+        request_id: invocation.request_id.clone(),
+        api_key_id: invocation.api_key_id.map(|value| value.to_string()),
+        user_id: invocation.user_id.map(|value| value.to_string()),
+        team_id: invocation.team_id.map(|value| value.to_string()),
+        owner_kind: invocation.owner_kind.as_str().to_string(),
+        server_id: invocation.server_id.map(|value| value.to_string()),
+        server_display_key: invocation.server_display_key.clone(),
+        server_display_name: invocation.server_display_name.clone(),
+        tool_id: invocation.tool_id.map(|value| value.to_string()),
+        tool_display_key: invocation.tool_display_key.clone(),
+        tool_display_name: invocation.tool_display_name.clone(),
+        status: invocation.status.as_str().to_string(),
+        policy_result: invocation.policy_result.as_str().to_string(),
+        latency_ms: invocation.latency_ms,
+        error_code: invocation.error_code.clone(),
+        has_payload: invocation.has_payload,
+        arguments_payload_truncated: invocation.arguments_payload_truncated,
+        result_payload_truncated: invocation.result_payload_truncated,
+        arguments_payload_redacted: invocation.arguments_payload_redacted,
+        result_payload_redacted: invocation.result_payload_redacted,
+        metadata: invocation.metadata.clone(),
+        occurred_at: format_timestamp(invocation.occurred_at),
+    }
 }
 
 fn summary_view(
@@ -569,6 +693,52 @@ fn parse_optional_uuid(value: Option<&str>, field_name: &str) -> Result<Option<U
             "invalid {field_name} `{value}`: {error}"
         )))
     })
+}
+
+fn parse_optional_mcp_status(
+    value: Option<&str>,
+) -> Result<Option<McpToolInvocationStatus>, AppError> {
+    let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    McpToolInvocationStatus::from_db(value)
+        .map(Some)
+        .ok_or_else(|| {
+            AppError(GatewayError::InvalidRequest(format!(
+                "invalid MCP invocation status `{value}`"
+            )))
+        })
+}
+
+fn parse_optional_mcp_policy_result(
+    value: Option<&str>,
+) -> Result<Option<McpToolPolicyResult>, AppError> {
+    let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    McpToolPolicyResult::from_db(value)
+        .map(Some)
+        .ok_or_else(|| {
+            AppError(GatewayError::InvalidRequest(format!(
+                "invalid MCP policy result `{value}`"
+            )))
+        })
+}
+
+fn parse_optional_timestamp(
+    value: Option<&str>,
+    field_name: &str,
+) -> Result<Option<OffsetDateTime>, AppError> {
+    let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    OffsetDateTime::parse(value, &Rfc3339)
+        .map(Some)
+        .map_err(|error| {
+            AppError(GatewayError::InvalidRequest(format!(
+                "invalid {field_name} `{value}`: {error}"
+            )))
+        })
 }
 
 #[derive(Clone, Copy)]

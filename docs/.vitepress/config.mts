@@ -88,6 +88,16 @@ export default defineConfig({
           {
             text: "Observability and Request Logs",
             link: "/operations/observability-and-request-logs",
+            items: [
+              {
+                text: "Request Logs",
+                link: "/operations/observability/request-logs",
+              },
+              {
+                text: "MCP Invocations",
+                link: "/operations/observability/mcp-invocations",
+              },
+            ],
           },
           {
             text: "Agent Harness Usage",

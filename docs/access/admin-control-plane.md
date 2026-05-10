@@ -1,6 +1,6 @@
 # Admin Control Plane
 
-`See also`: [Identity and Access](identity-and-access.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Agent Harness Usage](../operations/agent-harness-usage.md), [Admin API Contract Workflow](../reference/admin-api-contract-workflow.md), [End-to-End Contract Tests](../reference/e2e-contract-tests.md), [OIDC and SSO Status](oidc-and-sso-status.md)
+`See also`: [Identity and Access](identity-and-access.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../operations/observability/mcp-invocations.md), [Agent Harness Usage](../operations/agent-harness-usage.md), [Admin API Contract Workflow](../reference/admin-api-contract-workflow.md), [End-to-End Contract Tests](../reference/e2e-contract-tests.md), [OIDC and SSO Status](oidc-and-sso-status.md)
 
 This page describes what admins can actually do in the admin UI today.
 
@@ -28,6 +28,7 @@ These areas are backed by real gateway APIs today:
 - spend usage reporting
 - spend budget management for users and teams
 - request-log list and detail inspection
+- MCP invocation list and detail inspection once the gateway exposes invocation records
 
 ## Live But Still Maturing Surfaces
 
@@ -124,6 +125,7 @@ Admins can:
 - see per-row payload capture mode, byte limits, stream event limit, policy version, and truncation state
 - see per-row MCP/tool cardinality counts for request logs
 - see normalized harness and bounded raw `User-Agent` detail for request logs
+- inspect request-linked MCP invocations by request id, server, tool, API key, user, team, status, and time range
 - compare leaderboard users with average tool exposure and invocation counts
 
 Request-log payload policy is read-only in the admin UI. Admins configure it through `gateway.yaml`; see [observability-and-request-logs.md](../operations/observability-and-request-logs.md).
@@ -134,6 +136,7 @@ Current limits:
 - admin mutation audit logs are still tracked separately in [issue #99](https://github.com/ahstn/oceans-llm/issues/99)
 - request-log detail missing rows return `404 not_found`
 - request-log filtering ergonomics still have follow-up work
+- MCP invocation persistence and API behavior are still hardening in the backend MCP observability slice
 
 ## Non-Human Callers Today
 

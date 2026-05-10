@@ -1,6 +1,6 @@
 # Request Lifecycle and Failure Modes
 
-`See also`: [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](provider-api-compatibility.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Configuration Reference](../configuration/configuration-reference.md), [Identity and Access](../access/identity-and-access.md), [Data Relationships](data-relationships.md), [ADR: V1 Runtime Simplification for Routing and Streaming](../adr/2026-03-15-v1-runtime-simplification.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md)
+`See also`: [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](provider-api-compatibility.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../operations/observability/mcp-invocations.md), [Configuration Reference](../configuration/configuration-reference.md), [Identity and Access](../access/identity-and-access.md), [Data Relationships](data-relationships.md), [ADR: V1 Runtime Simplification for Routing and Streaming](../adr/2026-03-15-v1-runtime-simplification.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md)
 
 This page is the cross-cutting view. Neighboring docs own their own policy slices. This page explains how those slices connect during one request.
 
@@ -38,11 +38,12 @@ The live request path is single-route in this slice.
 9. The provider adapter applies any declared compatibility transforms to the outbound provider request.
 10. The first eligible route executes.
 11. The provider execution attempt is recorded as request-attempt metadata when a request-log summary is written.
-12. Request logs are written for the user-visible outcome.
-13. Usage is normalized when possible.
-14. Pricing is resolved exactly or the request is marked `unpriced`.
-15. A ledger row is written when the request has usable usage data.
-16. Post-provider budget math runs before the priced ledger row is committed.
+12. MCP tool invocations, when enabled for the request path, are logged as separate request-correlated audit records.
+13. Request logs are written for the user-visible outcome.
+14. Usage is normalized when possible.
+15. Pricing is resolved exactly or the request is marked `unpriced`.
+16. A ledger row is written when the request has usable usage data.
+17. Post-provider budget math runs before the priced ledger row is committed.
 
 Compatibility transforms can affect the provider request body and stream options for the selected API family. They do not change the public request model identity, alias resolution, API-key grants, or request-log attribution. Current OpenAI-compatible profile transforms are Chat Completions-specific; Responses and Embeddings use their own typed provider paths.
 
@@ -152,6 +153,7 @@ Request logs and spend rows are related, but they are not the same object.
 - `request_logs` owns the user-visible request outcome.
 - `request_log_payloads` owns sanitized request and response bodies.
 - `request_log_attempts` owns ordered upstream provider execution metadata.
+- MCP invocation records own per-tool status, policy result, latency, and sanitized argument/result metadata.
 - `usage_cost_events` owns spend enforcement and spend reporting.
 
 That separation matters in two common cases:

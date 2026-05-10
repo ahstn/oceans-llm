@@ -118,6 +118,14 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
             "/api/v1/admin/observability/request-logs/{request_log_id}",
             get(get_request_log_detail),
         )
+        .route(
+            "/api/v1/admin/observability/mcp-invocations",
+            get(list_mcp_tool_invocations),
+        )
+        .route(
+            "/api/v1/admin/observability/mcp-invocations/{mcp_tool_invocation_id}",
+            get(get_mcp_tool_invocation_detail),
+        )
         .route("/api/v1/auth/session", get(get_auth_session))
         .route("/api/v1/auth/login/password", post(login_with_password))
         .route("/api/v1/auth/logout", post(logout_current_session))

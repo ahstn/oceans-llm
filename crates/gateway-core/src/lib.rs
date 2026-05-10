@@ -13,7 +13,9 @@ pub use domain::{
     BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus, BudgetAlertDispatchTask,
     BudgetAlertHistoryPage, BudgetAlertHistoryQuery, BudgetAlertHistoryRecord, BudgetAlertRecord,
     BudgetCadence, BudgetWindow, GatewayModel, GlobalRole, HarnessUsageBucketRecord,
-    HarnessUsageLeaderRecord, IdentityUserRecord, MembershipRole, ModelAccessMode,
+    HarnessUsageLeaderRecord, IdentityUserRecord, McpToolInvocationDetail,
+    McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
+    McpToolInvocationRecord, McpToolInvocationStatus, McpToolPolicyResult, MembershipRole, ModelAccessMode,
     ModelPricingRecord, ModelRoute, Money4, NewApiKeyRecord, OidcProviderRecord,
     OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
     OpenAiCompatRouteCompatibility, PasswordInvitationRecord, PricingCatalogCacheRecord,
@@ -28,7 +30,7 @@ pub use domain::{
     SpendOwnerAggregateRecord, TeamBudgetRecord, TeamMembershipRecord, TeamRecord,
     UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord, UsageLedgerRecord,
     UsagePricingStatus, UserBudgetRecord, UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord,
-    UserSessionRecord, UserStatus, budget_window_utc,
+    UserSessionRecord, budget_window_utc,
 };
 pub use error::{AuthError, GatewayError, ProviderError, RouteError, StoreError};
 pub use protocol::core::{
@@ -49,7 +51,7 @@ pub use protocol::translate::{
 pub use streaming::{ParsedSseEvent, SseEventParser, Utf8ChunkDecoder};
 pub use traits::{
     AdminApiKeyRepository, AdminIdentityRepository, ApiKeyRepository, BudgetAlertRepository,
-    BudgetRepository, IdentityRepository, ModelRepository, PricingCatalogRepository,
-    ProviderClient, ProviderRegistry, ProviderRepository, ProviderStream, RequestAttemptRepository,
-    RequestLogRepository, RoutePlanner, StoreHealth,
+    BudgetRepository, IdentityRepository, McpToolInvocationRepository, ModelRepository,
+    PricingCatalogRepository, ProviderClient, ProviderRegistry, ProviderRepository, ProviderStream,
+    RequestAttemptRepository, RequestLogRepository, RoutePlanner, StoreHealth,
 };

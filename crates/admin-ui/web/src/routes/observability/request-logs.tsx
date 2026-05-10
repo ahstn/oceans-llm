@@ -600,11 +600,22 @@ function ToolCardinalityInline({ item }: { item: RequestLogView }) {
 
 function ToolCardinalityCard({ item }: { item: RequestLogView }) {
   const counts = item.tool_cardinality
+  const mcpInvocationsHref = `/admin/observability/mcp-invocations?request_id=${encodeURIComponent(
+    item.request_id,
+  )}`
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>MCP &amp; Tools</CardTitle>
+      <CardHeader className="flex flex-row items-start justify-between gap-4">
+        <div className="flex flex-col gap-1">
+          <CardTitle>MCP &amp; Tools</CardTitle>
+          <CardDescription>
+            Request-level tool cardinality, with request-linked MCP invocation drill-down.
+          </CardDescription>
+        </div>
+        <Button type="button" variant="outline" asChild>
+          <a href={mcpInvocationsHref}>View MCP Invocations</a>
+        </Button>
       </CardHeader>
       <CardContent>
         <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">

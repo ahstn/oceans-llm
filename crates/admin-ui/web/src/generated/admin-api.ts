@@ -276,6 +276,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/observability/mcp-invocations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_mcp_tool_invocations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/observability/mcp-invocations/{mcp_tool_invocation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_mcp_tool_invocation_detail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/observability/request-logs": {
         parameters: {
             query?: never;
@@ -934,6 +966,25 @@ export interface components {
             };
             meta: components["schemas"]["ResponseMeta"];
         };
+        Envelope_McpToolInvocationDetailView: {
+            data: {
+                invocation: components["schemas"]["McpToolInvocationSummaryView"];
+                payload?: null | components["schemas"]["McpToolInvocationPayloadView"];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_McpToolInvocationPageView: {
+            data: {
+                items: components["schemas"]["McpToolInvocationSummaryView"][];
+                /** Format: int32 */
+                page: number;
+                /** Format: int32 */
+                page_size: number;
+                /** Format: int64 */
+                total: number;
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
         Envelope_Option_AuthSessionView: {
             data: null | {
                 must_change_password: boolean;
@@ -1095,6 +1146,52 @@ export interface components {
             series: components["schemas"]["LeaderboardSeriesPointView"][];
             window_end: string;
             window_start: string;
+        };
+        McpToolInvocationDetailView: {
+            invocation: components["schemas"]["McpToolInvocationSummaryView"];
+            payload?: null | components["schemas"]["McpToolInvocationPayloadView"];
+        };
+        McpToolInvocationPageView: {
+            items: components["schemas"]["McpToolInvocationSummaryView"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int64 */
+            total: number;
+        };
+        McpToolInvocationPayloadView: {
+            arguments_json: unknown;
+            result_json: unknown;
+        };
+        McpToolInvocationSummaryView: {
+            api_key_id?: string | null;
+            arguments_payload_redacted: boolean;
+            arguments_payload_truncated: boolean;
+            error_code?: string | null;
+            has_payload: boolean;
+            /** Format: int64 */
+            latency_ms?: number | null;
+            mcp_tool_invocation_id: string;
+            metadata: {
+                [key: string]: unknown;
+            };
+            occurred_at: string;
+            owner_kind: string;
+            policy_result: string;
+            request_id: string;
+            request_log_id?: string | null;
+            result_payload_redacted: boolean;
+            result_payload_truncated: boolean;
+            server_display_key: string;
+            server_display_name: string;
+            server_id?: string | null;
+            status: string;
+            team_id?: string | null;
+            tool_display_key: string;
+            tool_display_name: string;
+            tool_id?: string | null;
+            user_id?: string | null;
         };
         /** @enum {string} */
         ModelIconKeyView: "anthropic" | "claude" | "gemini" | "openai" | "openrouter" | "vertexai";
@@ -1826,6 +1923,71 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_LeaderboardView"];
+                };
+            };
+        };
+    };
+    list_mcp_tool_invocations: {
+        parameters: {
+            query?: {
+                page?: number | null;
+                page_size?: number | null;
+                request_id?: string | null;
+                server_display_key?: string | null;
+                server_display_name?: string | null;
+                tool_display_key?: string | null;
+                tool_display_name?: string | null;
+                api_key_id?: string | null;
+                user_id?: string | null;
+                team_id?: string | null;
+                status?: string | null;
+                policy_result?: string | null;
+                occurred_at_start?: string | null;
+                occurred_at_end?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpToolInvocationPageView"];
+                };
+            };
+        };
+    };
+    get_mcp_tool_invocation_detail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description MCP tool invocation identifier */
+                mcp_tool_invocation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpToolInvocationDetailView"];
+                };
+            };
+            /** @description MCP tool invocation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
                 };
             };
         };

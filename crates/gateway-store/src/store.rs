@@ -4,10 +4,11 @@ use async_trait::async_trait;
 use gateway_core::{
     AdminApiKeyRepository, AdminIdentityRepository, ApiKeyRepository, AuthMode,
     BudgetAlertRepository, BudgetRepository, GlobalRole, IdentityRepository, IdentityUserRecord,
-    MembershipRole, ModelRepository, OidcProviderRecord, PasswordInvitationRecord,
-    PricingCatalogRepository, ProviderRepository, RequestLogRepository, SeedApiKey, SeedModel,
-    SeedProvider, SeedTeam, SeedUser, StoreError, StoreHealth, TeamMembershipRecord, TeamRecord,
-    UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
+    McpToolInvocationRepository, MembershipRole, ModelRepository, OidcProviderRecord,
+    PasswordInvitationRecord, PricingCatalogRepository, ProviderRepository, RequestLogRepository,
+    SeedApiKey, SeedModel, SeedProvider, SeedTeam, SeedUser, StoreError, StoreHealth,
+    TeamMembershipRecord, TeamRecord, UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord,
+    UserSessionRecord, UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -40,6 +41,7 @@ pub trait GatewayStore:
     + BudgetRepository
     + BudgetAlertRepository
     + RequestLogRepository
+    + McpToolInvocationRepository
     + PricingCatalogRepository
     + StoreHealth
     + Send
@@ -757,6 +759,31 @@ impl gateway_core::RequestAttemptRepository for AnyStore {
         request_log_id: Uuid,
     ) -> Result<Vec<gateway_core::RequestAttemptRecord>, StoreError> {
         dispatch_store!(self, list_request_log_attempts(request_log_id))
+    }
+}
+
+#[async_trait]
+impl gateway_core::McpToolInvocationRepository for AnyStore {
+    async fn insert_mcp_tool_invocation(
+        &self,
+        invocation: &gateway_core::McpToolInvocationRecord,
+        payload: Option<&gateway_core::McpToolInvocationPayloadRecord>,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(self, insert_mcp_tool_invocation(invocation, payload))
+    }
+
+    async fn list_mcp_tool_invocations(
+        &self,
+        query: &gateway_core::McpToolInvocationQuery,
+    ) -> Result<gateway_core::McpToolInvocationPage, StoreError> {
+        dispatch_store!(self, list_mcp_tool_invocations(query))
+    }
+
+    async fn get_mcp_tool_invocation_detail(
+        &self,
+        mcp_tool_invocation_id: Uuid,
+    ) -> Result<gateway_core::McpToolInvocationDetail, StoreError> {
+        dispatch_store!(self, get_mcp_tool_invocation_detail(mcp_tool_invocation_id))
     }
 }
 

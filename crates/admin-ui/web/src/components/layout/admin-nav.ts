@@ -46,6 +46,11 @@ export const adminNavSections: AdminNavSection[] = [
         to: '/observability/request-logs',
         icon: SearchIcon,
       },
+      {
+        label: 'MCP Invocations',
+        to: '/observability/mcp-invocations',
+        icon: SearchIcon,
+      },
     ],
   },
   {

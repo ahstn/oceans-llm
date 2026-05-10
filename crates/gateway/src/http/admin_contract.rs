@@ -656,6 +656,73 @@ pub struct RequestLogListQuery {
     pub tag_value: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Default, IntoParams)]
+pub struct McpToolInvocationListQuery {
+    pub page: Option<u32>,
+    pub page_size: Option<u32>,
+    pub request_id: Option<String>,
+    pub server_display_key: Option<String>,
+    pub server_display_name: Option<String>,
+    pub tool_display_key: Option<String>,
+    pub tool_display_name: Option<String>,
+    pub api_key_id: Option<String>,
+    pub user_id: Option<String>,
+    pub team_id: Option<String>,
+    pub status: Option<String>,
+    pub policy_result: Option<String>,
+    pub occurred_at_start: Option<String>,
+    pub occurred_at_end: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct McpToolInvocationPageView {
+    pub items: Vec<McpToolInvocationSummaryView>,
+    pub page: u32,
+    pub page_size: u32,
+    pub total: u64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct McpToolInvocationSummaryView {
+    pub mcp_tool_invocation_id: String,
+    pub request_log_id: Option<String>,
+    pub request_id: String,
+    pub api_key_id: Option<String>,
+    pub user_id: Option<String>,
+    pub team_id: Option<String>,
+    pub owner_kind: String,
+    pub server_id: Option<String>,
+    pub server_display_key: String,
+    pub server_display_name: String,
+    pub tool_id: Option<String>,
+    pub tool_display_key: String,
+    pub tool_display_name: String,
+    pub status: String,
+    pub policy_result: String,
+    pub latency_ms: Option<i64>,
+    pub error_code: Option<String>,
+    pub has_payload: bool,
+    pub arguments_payload_truncated: bool,
+    pub result_payload_truncated: bool,
+    pub arguments_payload_redacted: bool,
+    pub result_payload_redacted: bool,
+    #[schema(additional_properties = true)]
+    pub metadata: Map<String, Value>,
+    pub occurred_at: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct McpToolInvocationPayloadView {
+    pub arguments_json: Value,
+    pub result_json: Value,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct McpToolInvocationDetailView {
+    pub invocation: McpToolInvocationSummaryView,
+    pub payload: Option<McpToolInvocationPayloadView>,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct RequestLogPageView {
     pub items: Vec<RequestLogSummaryView>,
@@ -823,7 +890,9 @@ pub struct RequestLogPayloadView {
         crate::http::observability::get_usage_leaderboard,
         crate::http::observability::get_harness_usage,
         crate::http::observability::list_request_logs,
-        crate::http::observability::get_request_log_detail
+        crate::http::observability::get_request_log_detail,
+        crate::http::observability::list_mcp_tool_invocations,
+        crate::http::observability::get_mcp_tool_invocation_detail
     ),
     components(schemas(ObservabilityRangeQueryValue)),
     modifiers(&AdminApiSecurity)
@@ -908,6 +977,12 @@ mod tests {
         assert!(paths.contains_key("/api/v1/admin/spend/report"));
         assert!(paths.contains_key("/api/v1/admin/observability/leaderboard"));
         assert!(paths.contains_key("/api/v1/admin/observability/request-logs/{request_log_id}"));
+        assert!(paths.contains_key("/api/v1/admin/observability/mcp-invocations"));
+        assert!(
+            paths.contains_key(
+                "/api/v1/admin/observability/mcp-invocations/{mcp_tool_invocation_id}"
+            )
+        );
         assert!(paths.contains_key("/api/v1/auth/session"));
         assert!(paths.contains_key("/api/v1/auth/logout"));
 
@@ -922,6 +997,11 @@ mod tests {
             components
                 .schemas
                 .contains_key("Envelope_RequestLogDetailView")
+        );
+        assert!(
+            components
+                .schemas
+                .contains_key("Envelope_McpToolInvocationDetailView")
         );
     }
 }

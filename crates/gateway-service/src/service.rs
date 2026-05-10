@@ -2,12 +2,13 @@ use std::sync::Arc;
 
 use gateway_core::{
     ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, BudgetAlertRepository, BudgetRepository,
-    ChatCompletionsRequest, GatewayError, GatewayModel, IdentityRepository, ModelRepository,
-    ModelRoute, Money4, PricingCatalogRepository, PricingResolution, PricingUnpricedReason,
-    ProviderRepository, RequestLogDetail, RequestLogPage, RequestLogQuery, RequestLogRecord,
-    RequestLogRepository, RequestTags, ResolvedModelPricing, ResponsesRequest, RouteError,
-    RoutePlanner, StoreHealth, TeamBudgetRecord, UsageLedgerRecord, UsagePricingStatus,
-    UserBudgetRecord,
+    ChatCompletionsRequest, GatewayError, GatewayModel, IdentityRepository,
+    McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationQuery,
+    McpToolInvocationRepository, ModelRepository, ModelRoute, Money4, PricingCatalogRepository,
+    PricingResolution, PricingUnpricedReason, ProviderRepository, RequestLogDetail, RequestLogPage,
+    RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestTags, ResolvedModelPricing,
+    ResponsesRequest, RouteError, RoutePlanner, StoreHealth, TeamBudgetRecord, UsageLedgerRecord,
+    UsagePricingStatus, UserBudgetRecord,
 };
 use serde_json::{Value, json};
 use time::OffsetDateTime;
@@ -20,6 +21,7 @@ use crate::{
     ResolvedProviderConnection, StreamLogResultInput, StreamResponseCollector,
     budget_alerts::{BudgetAlertSender, BudgetAlertService, SinkBudgetAlertSender},
     budget_guard::{BudgetGuard, BudgetGuardDisposition},
+    mcp_invocation_logging::{McpInvocationLogInput, McpInvocationLogging},
 };
 
 #[derive(Debug, Clone)]
@@ -42,6 +44,7 @@ pub struct GatewayService<S, P> {
     model_resolver: ModelResolver<S>,
     pricing_catalog: PricingCatalog<S>,
     request_logging: RequestLogging<S>,
+    mcp_invocation_logging: McpInvocationLogging<S>,
     planner: Arc<P>,
 }
 
@@ -54,6 +57,7 @@ where
         + IdentityRepository
         + PricingCatalogRepository
         + RequestLogRepository
+        + McpToolInvocationRepository
         + ProviderRepository
         + StoreHealth
         + Send
@@ -95,6 +99,7 @@ where
         let pricing_catalog = PricingCatalog::new(store.clone());
         let request_logging =
             RequestLogging::new_with_payload_policy(store.clone(), payload_policy);
+        let mcp_invocation_logging = McpInvocationLogging::new(store.clone());
 
         Self {
             store,
@@ -105,6 +110,7 @@ where
             model_resolver,
             pricing_catalog,
             request_logging,
+            mcp_invocation_logging,
             planner,
         }
     }
@@ -341,6 +347,32 @@ where
     ) -> Result<RequestLogDetail, GatewayError> {
         self.request_logging
             .get_request_log_detail(request_log_id)
+            .await
+    }
+
+    pub async fn log_mcp_tool_invocation(
+        &self,
+        auth: &AuthenticatedApiKey,
+        input: McpInvocationLogInput,
+    ) -> Result<crate::LoggedMcpToolInvocation, GatewayError> {
+        self.mcp_invocation_logging
+            .log_invocation(auth, input)
+            .await
+    }
+
+    pub async fn list_mcp_tool_invocations(
+        &self,
+        query: &McpToolInvocationQuery,
+    ) -> Result<McpToolInvocationPage, GatewayError> {
+        self.mcp_invocation_logging.list_invocations(query).await
+    }
+
+    pub async fn get_mcp_tool_invocation_detail(
+        &self,
+        mcp_tool_invocation_id: Uuid,
+    ) -> Result<McpToolInvocationDetail, GatewayError> {
+        self.mcp_invocation_logging
+            .get_invocation_detail(mcp_tool_invocation_id)
             .await
     }
 
@@ -688,6 +720,8 @@ mod tests {
     use async_trait::async_trait;
     use gateway_core::{
         ApiKeyOwnerKind, ApiKeyRepository, AuthenticatedApiKey, BudgetRepository, GatewayModel,
+        McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationPayloadRecord,
+        McpToolInvocationQuery, McpToolInvocationRecord, McpToolInvocationRepository,
         ModelRepository, ModelRoute, Money4, PricingCatalogRepository, ProviderCapabilities,
         ProviderConnection, ProviderRepository, RequestLogDetail, RequestLogPage,
         RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository,
@@ -904,6 +938,31 @@ mod tests {
             &self,
             _request_log_id: Uuid,
         ) -> Result<RequestLogDetail, StoreError> {
+            unreachable!("not used in resolve_request test")
+        }
+    }
+
+    #[async_trait]
+    impl McpToolInvocationRepository for TestRepo {
+        async fn insert_mcp_tool_invocation(
+            &self,
+            _invocation: &McpToolInvocationRecord,
+            _payload: Option<&McpToolInvocationPayloadRecord>,
+        ) -> Result<(), StoreError> {
+            Ok(())
+        }
+
+        async fn list_mcp_tool_invocations(
+            &self,
+            _query: &McpToolInvocationQuery,
+        ) -> Result<McpToolInvocationPage, StoreError> {
+            unreachable!("not used in resolve_request test")
+        }
+
+        async fn get_mcp_tool_invocation_detail(
+            &self,
+            _mcp_tool_invocation_id: Uuid,
+        ) -> Result<McpToolInvocationDetail, StoreError> {
             unreachable!("not used in resolve_request test")
         }
     }

@@ -60,6 +60,14 @@ export type RequestLogPageView = components['schemas']['RequestLogPageView']
 export type RequestLogFiltersInput = NonNullable<
   operations['list_request_logs']['parameters']['query']
 >
+export type McpInvocationView = components['schemas']['McpToolInvocationSummaryView']
+export type McpInvocationPayloadView = components['schemas']['McpToolInvocationPayloadView']
+export type McpInvocationDetailView = components['schemas']['McpToolInvocationDetailView']
+export type McpInvocationPageView = components['schemas']['McpToolInvocationPageView']
+export type McpInvocationFiltersInput = NonNullable<
+  operations['list_mcp_tool_invocations']['parameters']['query']
+>
+export type McpInvocationStatus = NonNullable<McpInvocationFiltersInput['status']>
 
 export type TeamAdminView = components['schemas']['AdminTeamAdminView']
 export type TeamMemberView = components['schemas']['AdminTeamMemberView']

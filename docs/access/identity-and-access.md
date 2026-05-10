@@ -1,6 +1,6 @@
 # Identity and Access
 
-`See also`: [Data Relationships](../reference/data-relationships.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [OIDC and SSO Status](oidc-and-sso-status.md), [Admin Control Plane](admin-control-plane.md), [Budgets and Spending](../operations/budgets-and-spending.md), [ADR: Admin Identity Lifecycle and Team Member Workflow Hardening](../adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md)
+`See also`: [Data Relationships](../reference/data-relationships.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [OIDC and SSO Status](oidc-and-sso-status.md), [Admin Control Plane](admin-control-plane.md), [Budgets and Spending](../operations/budgets-and-spending.md), [MCP Invocations](../operations/observability/mcp-invocations.md), [ADR: Admin Identity Lifecycle and Team Member Workflow Hardening](../adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md)
 
 This page describes the live identity model across the gateway and admin control plane.
 
@@ -125,6 +125,8 @@ Request logging policy is partly owned by identity.
 - user-owned requests honor `users.request_logging_enabled`
 - team-owned requests always persist request logs
 - the admin identity view exposes the current user preference read-only
+
+MCP invocation logging follows the same ownership vocabulary for audit context. Invocation rows should preserve the API key, user, and team ids available at execution time, but they do not rewrite historical ownership when a user changes teams or an API key is revoked later.
 
 ## Declarative Identity Seed
 
