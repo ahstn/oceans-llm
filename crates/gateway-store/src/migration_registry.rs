@@ -51,6 +51,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V20__request_log_tool_cardinality.sql"),
         postgres_sql: include_str!("../migrations/postgres/V20__request_log_tool_cardinality.sql"),
     },
+    MigrationManifest {
+        version: 21,
+        name: "request_log_agent_harness",
+        checksum: "V21__request_log_agent_harness.sql",
+        libsql_sql: include_str!("../migrations/V21__request_log_agent_harness.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V21__request_log_agent_harness.sql"),
+    },
 ];
 
 #[cfg(test)]

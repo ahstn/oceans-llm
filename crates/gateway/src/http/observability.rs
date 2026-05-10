@@ -7,8 +7,8 @@ use axum::{
 };
 use gateway_core::{
     BudgetRepository, GatewayError, ProviderConnection, ProviderRepository, RequestAttemptRecord,
-    RequestLogDetail, RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestTag,
-    RequestTags,
+    RequestLogDetail, RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord,
+    RequestLogRepository, RequestTag, RequestTags,
 };
 use gateway_service::{
     model_icon_key_from_metadata, provider_icon_key_from_metadata, resolve_model_icon_key,
@@ -21,7 +21,9 @@ use uuid::Uuid;
 use crate::http::{
     admin_auth::require_platform_admin,
     admin_contract::{
-        Envelope, LeaderboardChartUserView, LeaderboardLeaderView, LeaderboardQuery,
+        Envelope, HarnessUsageChartHarnessView, HarnessUsageLeaderView, HarnessUsageQuery,
+        HarnessUsageSeriesPointView, HarnessUsageSeriesValueView, HarnessUsageView,
+        LeaderboardChartUserView, LeaderboardLeaderView, LeaderboardQuery,
         LeaderboardSeriesPointView, LeaderboardSeriesValueView, LeaderboardView,
         OpenAiErrorEnvelopeView, RequestAttemptView, RequestLogDetailView, RequestLogListQuery,
         RequestLogPageView, RequestLogPayloadCaptureModeView, RequestLogPayloadPolicyView,
@@ -39,6 +41,8 @@ const MAX_PAGE_SIZE: u32 = 500;
 const LEADERBOARD_BUCKET_HOURS: u8 = 12;
 const LEADERBOARD_CHART_USERS: usize = 5;
 const LEADERBOARD_LIMIT: u32 = 30;
+const HARNESS_USAGE_CHART_HARNESSES: usize = 5;
+const HARNESS_USAGE_LIMIT: u32 = 30;
 
 #[utoipa::path(
     get,
@@ -143,6 +147,106 @@ pub async fn get_usage_leaderboard(
         window_start: format_timestamp(window_start),
         window_end: format_timestamp(window_end),
         chart_users,
+        series,
+        leaders,
+    })))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/observability/harness-usage",
+    params(HarnessUsageQuery),
+    responses((status = 200, body = Envelope<HarnessUsageView>)),
+    security(("session_cookie" = []))
+)]
+pub async fn get_harness_usage(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<HarnessUsageQuery>,
+) -> Result<Json<Envelope<HarnessUsageView>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+
+    let range = parse_leaderboard_range(query.range.as_deref())?;
+    let (window_start, window_end) = leaderboard_window_bounds_utc(range.days())?;
+    let leaders = state
+        .store
+        .list_harness_usage_leaders(window_start, window_end, HARNESS_USAGE_LIMIT)
+        .await?;
+    let top_chart_harnesses = leaders
+        .iter()
+        .take(HARNESS_USAGE_CHART_HARNESSES)
+        .collect::<Vec<_>>();
+    let chart_harnesses = top_chart_harnesses
+        .iter()
+        .enumerate()
+        .map(|(index, leader)| HarnessUsageChartHarnessView {
+            rank: (index + 1) as u32,
+            agent_harness_key: leader.agent_harness_key.clone(),
+            agent_harness_label: leader.agent_harness_label.clone(),
+            total_requests: leader.request_count,
+        })
+        .collect::<Vec<_>>();
+    let chart_harness_keys = top_chart_harnesses
+        .iter()
+        .map(|leader| leader.agent_harness_key.clone())
+        .collect::<Vec<_>>();
+    let bucket_rows = state
+        .store
+        .list_harness_usage_bucket_aggregates(
+            window_start,
+            window_end,
+            LEADERBOARD_BUCKET_HOURS,
+            &chart_harness_keys,
+        )
+        .await?;
+
+    let mut bucket_map = BTreeMap::<i64, HashMap<String, i64>>::new();
+    for row in bucket_rows {
+        bucket_map
+            .entry(row.bucket_start.unix_timestamp())
+            .or_default()
+            .insert(row.agent_harness_key, row.request_count);
+    }
+
+    let bucket_width = Duration::hours(i64::from(LEADERBOARD_BUCKET_HOURS));
+    let bucket_count = (range.days() as usize * 24) / usize::from(LEADERBOARD_BUCKET_HOURS);
+    let mut series = Vec::with_capacity(bucket_count);
+    for bucket_index in 0..bucket_count {
+        let bucket_start = window_start + (bucket_width * (bucket_index as i32));
+        let values = chart_harness_keys
+            .iter()
+            .map(|agent_harness_key| HarnessUsageSeriesValueView {
+                agent_harness_key: agent_harness_key.clone(),
+                request_count: bucket_map
+                    .get(&bucket_start.unix_timestamp())
+                    .and_then(|values| values.get(agent_harness_key))
+                    .copied()
+                    .unwrap_or(0),
+            })
+            .collect();
+        series.push(HarnessUsageSeriesPointView {
+            bucket_start: format_timestamp(bucket_start),
+            values,
+        });
+    }
+
+    let leaders = leaders
+        .into_iter()
+        .enumerate()
+        .map(|(index, leader)| HarnessUsageLeaderView {
+            rank: (index + 1) as u32,
+            agent_harness_key: leader.agent_harness_key,
+            agent_harness_label: leader.agent_harness_label,
+            total_requests: leader.request_count,
+        })
+        .collect();
+
+    Ok(Json(envelope(HarnessUsageView {
+        range: range.as_str().to_string(),
+        bucket_hours: LEADERBOARD_BUCKET_HOURS,
+        window_start: format_timestamp(window_start),
+        window_end: format_timestamp(window_end),
+        chart_harnesses,
         series,
         leaders,
     })))
@@ -296,6 +400,8 @@ fn summary_view(
             invoked_tool_count: log.tool_cardinality.invoked_tool_count,
             filtered_tool_count: log.tool_cardinality.filtered_tool_count,
         },
+        agent_harness_key: log.agent_harness_key.clone(),
+        agent_harness_label: log.agent_harness_label.clone(),
         metadata: log.metadata.clone(),
         occurred_at: format_timestamp(log.occurred_at),
     })
@@ -366,6 +472,7 @@ fn detail_view(
 ) -> Result<RequestLogDetailView, AppError> {
     Ok(RequestLogDetailView {
         log: summary_view(&detail.log, provider)?,
+        user_agent_raw: detail.log.user_agent_raw,
         payload: detail.payload.map(payload_view),
         attempts: detail.attempts.into_iter().map(attempt_view).collect(),
     })
@@ -711,6 +818,9 @@ mod tests {
             response_payload_truncated: false,
             request_tags: RequestTags::default(),
             tool_cardinality: gateway_core::RequestToolCardinality::default(),
+            user_agent_raw: None,
+            agent_harness_key: "unknown".to_string(),
+            agent_harness_label: "Unknown".to_string(),
             metadata,
             occurred_at: OffsetDateTime::now_utc(),
         }

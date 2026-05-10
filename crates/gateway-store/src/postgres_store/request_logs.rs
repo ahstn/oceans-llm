@@ -2,7 +2,10 @@ use std::collections::BTreeMap;
 
 use super::*;
 use crate::shared::{parse_uuid, serialize_json, unix_to_datetime};
-use gateway_core::{RequestTag, RequestTags, RequestToolCardinality};
+use gateway_core::{
+    HarnessUsageBucketRecord, HarnessUsageLeaderRecord, RequestTag, RequestTags,
+    RequestToolCardinality,
+};
 
 fn normalize_query(query: &RequestLogQuery) -> (i64, i64) {
     let page = query.page.max(1);
@@ -52,6 +55,9 @@ fn decode_request_log_row(row: &PgRow) -> Result<RequestLogRecord, StoreError> {
             invoked_tool_count: row.try_get(24).map_err(to_query_error)?,
             filtered_tool_count: row.try_get(25).map_err(to_query_error)?,
         },
+        user_agent_raw: row.try_get(26).map_err(to_query_error)?,
+        agent_harness_key: row.try_get(27).map_err(to_query_error)?,
+        agent_harness_label: row.try_get(28).map_err(to_query_error)?,
         metadata: serde_json::from_str(&metadata_json)
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
         occurred_at: unix_to_datetime(occurred_at)?,
@@ -211,8 +217,9 @@ impl RequestLogRepository for PostgresStore {
                 completion_tokens, total_tokens, has_payload, request_payload_truncated,
                 response_payload_truncated, caller_service, caller_component, caller_env,
                 error_code, metadata_json, occurred_at, referenced_mcp_server_count,
-                exposed_tool_count, invoked_tool_count, filtered_tool_count
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
+                exposed_tool_count, invoked_tool_count, filtered_tool_count, user_agent_raw,
+                agent_harness_key, agent_harness_label
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
             "#,
         )
         .bind(log.request_log_id.to_string())
@@ -249,6 +256,9 @@ impl RequestLogRepository for PostgresStore {
         .bind(log.tool_cardinality.exposed_tool_count)
         .bind(log.tool_cardinality.invoked_tool_count)
         .bind(log.tool_cardinality.filtered_tool_count)
+        .bind(log.user_agent_raw.as_deref())
+        .bind(log.agent_harness_key.as_str())
+        .bind(log.agent_harness_label.as_str())
         .execute(&mut *tx)
         .await
         .map_err(to_query_error)?;
@@ -354,7 +364,8 @@ impl RequestLogRepository for PostgresStore {
                    completion_tokens, total_tokens, has_payload, request_payload_truncated,
                    response_payload_truncated, caller_service, caller_component, caller_env,
                    metadata_json, occurred_at, error_code, referenced_mcp_server_count,
-                   exposed_tool_count, invoked_tool_count, filtered_tool_count
+                   exposed_tool_count, invoked_tool_count, filtered_tool_count, user_agent_raw,
+                   agent_harness_key, agent_harness_label
             FROM request_logs
             WHERE ($1::text IS NULL OR request_id = $1)
               AND ($2::text IS NULL OR model_key = $2)
@@ -419,6 +430,87 @@ impl RequestLogRepository for PostgresStore {
         })
     }
 
+    async fn list_harness_usage_leaders(
+        &self,
+        window_start: time::OffsetDateTime,
+        window_end: time::OffsetDateTime,
+        limit: u32,
+    ) -> Result<Vec<HarnessUsageLeaderRecord>, StoreError> {
+        let rows = sqlx::query(
+            r#"
+            SELECT agent_harness_key,
+                   MIN(agent_harness_label) AS agent_harness_label,
+                   COUNT(*) AS request_count
+            FROM request_logs
+            WHERE occurred_at >= $1
+              AND occurred_at < $2
+            GROUP BY agent_harness_key
+            ORDER BY request_count DESC, agent_harness_label ASC, agent_harness_key ASC
+            LIMIT $3
+            "#,
+        )
+        .bind(window_start.unix_timestamp())
+        .bind(window_end.unix_timestamp())
+        .bind(i64::from(limit))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+
+        rows.iter()
+            .map(|row| {
+                Ok(HarnessUsageLeaderRecord {
+                    agent_harness_key: row.try_get(0).map_err(to_query_error)?,
+                    agent_harness_label: row.try_get(1).map_err(to_query_error)?,
+                    request_count: row.try_get(2).map_err(to_query_error)?,
+                })
+            })
+            .collect()
+    }
+
+    async fn list_harness_usage_bucket_aggregates(
+        &self,
+        window_start: time::OffsetDateTime,
+        window_end: time::OffsetDateTime,
+        bucket_hours: u8,
+        agent_harness_keys: &[String],
+    ) -> Result<Vec<HarnessUsageBucketRecord>, StoreError> {
+        if agent_harness_keys.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let rows = sqlx::query(
+            r#"
+            SELECT agent_harness_key,
+                   $1 + (((occurred_at - $1) / $3) * $3) AS bucket_start,
+                   COUNT(*) AS request_count
+            FROM request_logs
+            WHERE occurred_at >= $1
+              AND occurred_at < $2
+              AND agent_harness_key = ANY($4)
+            GROUP BY agent_harness_key, bucket_start
+            ORDER BY bucket_start ASC, agent_harness_key ASC
+            "#,
+        )
+        .bind(window_start.unix_timestamp())
+        .bind(window_end.unix_timestamp())
+        .bind(i64::from(bucket_hours) * 60 * 60)
+        .bind(agent_harness_keys)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+
+        rows.iter()
+            .map(|row| {
+                let bucket_start: i64 = row.try_get(1).map_err(to_query_error)?;
+                Ok(HarnessUsageBucketRecord {
+                    agent_harness_key: row.try_get(0).map_err(to_query_error)?,
+                    bucket_start: unix_to_datetime(bucket_start)?,
+                    request_count: row.try_get(2).map_err(to_query_error)?,
+                })
+            })
+            .collect()
+    }
+
     async fn get_request_log_detail(
         &self,
         request_log_id: Uuid,
@@ -433,6 +525,7 @@ impl RequestLogRepository for PostgresStore {
                    rl.metadata_json, rl.occurred_at, rl.error_code,
                    rl.referenced_mcp_server_count, rl.exposed_tool_count,
                    rl.invoked_tool_count, rl.filtered_tool_count,
+                   rl.user_agent_raw, rl.agent_harness_key, rl.agent_harness_label,
                    rlp.request_json, rlp.response_json
             FROM request_logs rl
             LEFT JOIN request_log_payloads rlp
@@ -456,8 +549,8 @@ impl RequestLogRepository for PostgresStore {
             .await?
             .remove(&request_log_id)
             .unwrap_or_default();
-        let request_json: Option<serde_json::Value> = row.try_get(26).map_err(to_query_error)?;
-        let response_json: Option<serde_json::Value> = row.try_get(27).map_err(to_query_error)?;
+        let request_json: Option<serde_json::Value> = row.try_get(29).map_err(to_query_error)?;
+        let response_json: Option<serde_json::Value> = row.try_get(30).map_err(to_query_error)?;
         let payload = match (request_json, response_json) {
             (Some(request_json), Some(response_json)) => Some(RequestLogPayloadRecord {
                 request_log_id,

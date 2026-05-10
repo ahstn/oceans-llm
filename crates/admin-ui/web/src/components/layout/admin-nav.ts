@@ -32,6 +32,11 @@ export const adminNavSections: AdminNavSection[] = [
         icon: Notification03Icon,
       },
       {
+        label: 'Agent Harnesses',
+        to: '/observability/agent-harnesses',
+        icon: Notification03Icon,
+      },
+      {
         label: 'Usage Costs',
         to: '/observability/usage-costs',
         icon: Notification03Icon,

@@ -313,6 +313,9 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
             response_payload_truncated: false,
             request_tags,
             tool_cardinality: usage::demo_tool_cardinality(fixture),
+            user_agent_raw: Some("opencode/1.0.0 (local demo)".to_string()),
+            agent_harness_key: "opencode".to_string(),
+            agent_harness_label: "Opencode".to_string(),
             metadata,
             occurred_at,
         };

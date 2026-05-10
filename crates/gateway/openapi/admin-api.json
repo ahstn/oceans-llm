@@ -700,6 +700,44 @@
         ]
       }
     },
+    "/api/v1/admin/observability/harness-usage": {
+      "get": {
+        "tags": [
+          "crate::http::observability"
+        ],
+        "operationId": "get_harness_usage",
+        "parameters": [
+          {
+            "name": "range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_HarnessUsageView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/observability/leaderboard": {
       "get": {
         "tags": [
@@ -3168,6 +3206,64 @@
           }
         }
       },
+      "Envelope_HarnessUsageView": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "range",
+              "bucket_hours",
+              "window_start",
+              "window_end",
+              "chart_harnesses",
+              "series",
+              "leaders"
+            ],
+            "properties": {
+              "bucket_hours": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "chart_harnesses": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/HarnessUsageChartHarnessView"
+                }
+              },
+              "leaders": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/HarnessUsageLeaderView"
+                }
+              },
+              "range": {
+                "type": "string"
+              },
+              "series": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/HarnessUsageSeriesPointView"
+                }
+              },
+              "window_end": {
+                "type": "string"
+              },
+              "window_start": {
+                "type": "string"
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
       "Envelope_IdentityActionStatus": {
         "type": "object",
         "required": [
@@ -3386,6 +3482,12 @@
                   {
                     "$ref": "#/components/schemas/RequestLogPayloadView"
                   }
+                ]
+              },
+              "user_agent_raw": {
+                "type": [
+                  "string",
+                  "null"
                 ]
               }
             }
@@ -3613,6 +3715,138 @@
           },
           "meta": {
             "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "HarnessUsageChartHarnessView": {
+        "type": "object",
+        "required": [
+          "rank",
+          "agent_harness_key",
+          "agent_harness_label",
+          "total_requests"
+        ],
+        "properties": {
+          "agent_harness_key": {
+            "type": "string"
+          },
+          "agent_harness_label": {
+            "type": "string"
+          },
+          "rank": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "total_requests": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "HarnessUsageLeaderView": {
+        "type": "object",
+        "required": [
+          "rank",
+          "agent_harness_key",
+          "agent_harness_label",
+          "total_requests"
+        ],
+        "properties": {
+          "agent_harness_key": {
+            "type": "string"
+          },
+          "agent_harness_label": {
+            "type": "string"
+          },
+          "rank": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "total_requests": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "HarnessUsageSeriesPointView": {
+        "type": "object",
+        "required": [
+          "bucket_start",
+          "values"
+        ],
+        "properties": {
+          "bucket_start": {
+            "type": "string"
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HarnessUsageSeriesValueView"
+            }
+          }
+        }
+      },
+      "HarnessUsageSeriesValueView": {
+        "type": "object",
+        "required": [
+          "agent_harness_key",
+          "request_count"
+        ],
+        "properties": {
+          "agent_harness_key": {
+            "type": "string"
+          },
+          "request_count": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "HarnessUsageView": {
+        "type": "object",
+        "required": [
+          "range",
+          "bucket_hours",
+          "window_start",
+          "window_end",
+          "chart_harnesses",
+          "series",
+          "leaders"
+        ],
+        "properties": {
+          "bucket_hours": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "chart_harnesses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HarnessUsageChartHarnessView"
+            }
+          },
+          "leaders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HarnessUsageLeaderView"
+            }
+          },
+          "range": {
+            "type": "string"
+          },
+          "series": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HarnessUsageSeriesPointView"
+            }
+          },
+          "window_end": {
+            "type": "string"
+          },
+          "window_start": {
+            "type": "string"
           }
         }
       },
@@ -4022,6 +4256,12 @@
                 "$ref": "#/components/schemas/RequestLogPayloadView"
               }
             ]
+          },
+          "user_agent_raw": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -4124,10 +4364,18 @@
           "payload_policy",
           "request_tags",
           "tool_cardinality",
+          "agent_harness_key",
+          "agent_harness_label",
           "metadata",
           "occurred_at"
         ],
         "properties": {
+          "agent_harness_key": {
+            "type": "string"
+          },
+          "agent_harness_label": {
+            "type": "string"
+          },
           "api_key_id": {
             "type": "string"
           },

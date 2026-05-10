@@ -718,6 +718,36 @@ impl RequestLogRepository for AnyStore {
     ) -> Result<gateway_core::RequestLogDetail, StoreError> {
         dispatch_store!(self, get_request_log_detail(request_log_id))
     }
+
+    async fn list_harness_usage_leaders(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        limit: u32,
+    ) -> Result<Vec<gateway_core::HarnessUsageLeaderRecord>, StoreError> {
+        dispatch_store!(
+            self,
+            list_harness_usage_leaders(window_start, window_end, limit)
+        )
+    }
+
+    async fn list_harness_usage_bucket_aggregates(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        bucket_hours: u8,
+        agent_harness_keys: &[String],
+    ) -> Result<Vec<gateway_core::HarnessUsageBucketRecord>, StoreError> {
+        dispatch_store!(
+            self,
+            list_harness_usage_bucket_aggregates(
+                window_start,
+                window_end,
+                bucket_hours,
+                agent_harness_keys
+            )
+        )
+    }
 }
 
 #[async_trait]

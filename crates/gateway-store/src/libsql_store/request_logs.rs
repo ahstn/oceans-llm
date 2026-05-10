@@ -2,7 +2,10 @@ use std::collections::BTreeMap;
 
 use super::*;
 use crate::shared::{parse_uuid, serialize_json, unix_to_datetime};
-use gateway_core::{RequestTag, RequestTags, RequestToolCardinality};
+use gateway_core::{
+    HarnessUsageBucketRecord, HarnessUsageLeaderRecord, RequestTag, RequestTags,
+    RequestToolCardinality,
+};
 
 fn normalize_query(query: &RequestLogQuery) -> (i64, i64) {
     let page = query.page.max(1);
@@ -52,6 +55,9 @@ fn decode_request_log_row(row: &libsql::Row) -> Result<RequestLogRecord, StoreEr
             invoked_tool_count: row.get(24).map_err(to_query_error)?,
             filtered_tool_count: row.get(25).map_err(to_query_error)?,
         },
+        user_agent_raw: row.get(26).map_err(to_query_error)?,
+        agent_harness_key: row.get(27).map_err(to_query_error)?,
+        agent_harness_label: row.get(28).map_err(to_query_error)?,
         metadata: serde_json::from_str(&metadata_json)
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
         occurred_at: unix_to_datetime(occurred_at)?,
@@ -220,8 +226,9 @@ impl RequestLogRepository for LibsqlStore {
                     completion_tokens, total_tokens, has_payload, request_payload_truncated,
                     response_payload_truncated, caller_service, caller_component, caller_env,
                     error_code, metadata_json, occurred_at, referenced_mcp_server_count,
-                    exposed_tool_count, invoked_tool_count, filtered_tool_count
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)
+                    exposed_tool_count, invoked_tool_count, filtered_tool_count, user_agent_raw,
+                    agent_harness_key, agent_harness_label
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29)
                 "#,
             libsql::params![
                 log.request_log_id.to_string(),
@@ -249,7 +256,10 @@ impl RequestLogRepository for LibsqlStore {
                 log.tool_cardinality.referenced_mcp_server_count,
                 log.tool_cardinality.exposed_tool_count,
                 log.tool_cardinality.invoked_tool_count,
-                log.tool_cardinality.filtered_tool_count
+                log.tool_cardinality.filtered_tool_count,
+                log.user_agent_raw.as_deref(),
+                log.agent_harness_key.as_str(),
+                log.agent_harness_label.as_str()
             ],
         )
         .await
@@ -373,7 +383,8 @@ impl RequestLogRepository for LibsqlStore {
                        completion_tokens, total_tokens, has_payload, request_payload_truncated,
                        response_payload_truncated, caller_service, caller_component, caller_env,
                        metadata_json, occurred_at, error_code, referenced_mcp_server_count,
-                       exposed_tool_count, invoked_tool_count, filtered_tool_count
+                       exposed_tool_count, invoked_tool_count, filtered_tool_count, user_agent_raw,
+                       agent_harness_key, agent_harness_label
                 FROM request_logs
                 WHERE (?1 IS NULL OR request_id = ?1)
                   AND (?2 IS NULL OR model_key = ?2)
@@ -446,6 +457,112 @@ impl RequestLogRepository for LibsqlStore {
         })
     }
 
+    async fn list_harness_usage_leaders(
+        &self,
+        window_start: time::OffsetDateTime,
+        window_end: time::OffsetDateTime,
+        limit: u32,
+    ) -> Result<Vec<HarnessUsageLeaderRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT agent_harness_key,
+                       MIN(agent_harness_label) AS agent_harness_label,
+                       COUNT(*) AS request_count
+                FROM request_logs
+                WHERE occurred_at >= ?1
+                  AND occurred_at < ?2
+                GROUP BY agent_harness_key
+                ORDER BY request_count DESC, agent_harness_label ASC, agent_harness_key ASC
+                LIMIT ?3
+                "#,
+                libsql::params![
+                    window_start.unix_timestamp(),
+                    window_end.unix_timestamp(),
+                    i64::from(limit)
+                ],
+            )
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?;
+
+        let mut leaders = Vec::new();
+        while let Some(row) = rows
+            .next()
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?
+        {
+            leaders.push(HarnessUsageLeaderRecord {
+                agent_harness_key: row.get(0).map_err(to_query_error)?,
+                agent_harness_label: row.get(1).map_err(to_query_error)?,
+                request_count: row.get(2).map_err(to_query_error)?,
+            });
+        }
+        Ok(leaders)
+    }
+
+    async fn list_harness_usage_bucket_aggregates(
+        &self,
+        window_start: time::OffsetDateTime,
+        window_end: time::OffsetDateTime,
+        bucket_hours: u8,
+        agent_harness_keys: &[String],
+    ) -> Result<Vec<HarnessUsageBucketRecord>, StoreError> {
+        if agent_harness_keys.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let placeholders = (0..agent_harness_keys.len())
+            .map(|index| format!("?{}", index + 4))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let bucket_seconds = i64::from(bucket_hours) * 60 * 60;
+        let query = format!(
+            r#"
+            SELECT agent_harness_key,
+                   ?1 + (((occurred_at - ?1) / ?3) * ?3) AS bucket_start,
+                   COUNT(*) AS request_count
+            FROM request_logs
+            WHERE occurred_at >= ?1
+              AND occurred_at < ?2
+              AND agent_harness_key IN ({placeholders})
+            GROUP BY agent_harness_key, bucket_start
+            ORDER BY bucket_start ASC, agent_harness_key ASC
+            "#
+        );
+        let mut params = vec![
+            libsql::Value::Integer(window_start.unix_timestamp()),
+            libsql::Value::Integer(window_end.unix_timestamp()),
+            libsql::Value::Integer(bucket_seconds),
+        ];
+        params.extend(
+            agent_harness_keys
+                .iter()
+                .map(|key| libsql::Value::Text(key.clone())),
+        );
+
+        let mut rows = self
+            .connection
+            .query(&query, params)
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?;
+
+        let mut buckets = Vec::new();
+        while let Some(row) = rows
+            .next()
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?
+        {
+            let bucket_start: i64 = row.get(1).map_err(to_query_error)?;
+            buckets.push(HarnessUsageBucketRecord {
+                agent_harness_key: row.get(0).map_err(to_query_error)?,
+                bucket_start: unix_to_datetime(bucket_start)?,
+                request_count: row.get(2).map_err(to_query_error)?,
+            });
+        }
+        Ok(buckets)
+    }
+
     async fn get_request_log_detail(
         &self,
         request_log_id: Uuid,
@@ -462,6 +579,7 @@ impl RequestLogRepository for LibsqlStore {
                        rl.metadata_json, rl.occurred_at, rl.error_code,
                        rl.referenced_mcp_server_count, rl.exposed_tool_count,
                        rl.invoked_tool_count, rl.filtered_tool_count,
+                       rl.user_agent_raw, rl.agent_harness_key, rl.agent_harness_label,
                        rlp.request_json, rlp.response_json
                 FROM request_logs rl
                 LEFT JOIN request_log_payloads rlp
@@ -484,8 +602,8 @@ impl RequestLogRepository for LibsqlStore {
         };
 
         let mut log = decode_request_log_row(&row)?;
-        let request_json: Option<String> = row.get(26).map_err(to_query_error)?;
-        let response_json: Option<String> = row.get(27).map_err(to_query_error)?;
+        let request_json: Option<String> = row.get(29).map_err(to_query_error)?;
+        let response_json: Option<String> = row.get(30).map_err(to_query_error)?;
         log.request_tags.bespoke = load_bespoke_tags_for_logs(&self.connection, &[request_log_id])
             .await?
             .remove(&request_log_id)

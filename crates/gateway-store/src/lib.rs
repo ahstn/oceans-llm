@@ -364,6 +364,9 @@ mod tests {
                     invoked_tool_count: Some(0),
                     filtered_tool_count: None,
                 },
+                user_agent_raw: None,
+                agent_harness_key: "unknown".to_string(),
+                agent_harness_label: "Unknown".to_string(),
                 metadata: Map::new(),
                 occurred_at: ada_bucket_one,
             },
@@ -392,6 +395,9 @@ mod tests {
                     invoked_tool_count: Some(1),
                     filtered_tool_count: None,
                 },
+                user_agent_raw: None,
+                agent_harness_key: "unknown".to_string(),
+                agent_harness_label: "Unknown".to_string(),
                 metadata: Map::new(),
                 occurred_at: ada_bucket_two,
             },
@@ -415,6 +421,9 @@ mod tests {
                 response_payload_truncated: false,
                 request_tags: RequestTags::default(),
                 tool_cardinality: RequestToolCardinality::default(),
+                user_agent_raw: None,
+                agent_harness_key: "unknown".to_string(),
+                agent_harness_label: "Unknown".to_string(),
                 metadata: Map::new(),
                 occurred_at: ada_bucket_two,
             },
@@ -1198,6 +1207,9 @@ mod tests {
                 invoked_tool_count: Some(0),
                 filtered_tool_count: None,
             },
+            user_agent_raw: Some("opencode/1.2.3".to_string()),
+            agent_harness_key: "opencode".to_string(),
+            agent_harness_label: "Opencode".to_string(),
             metadata: Map::new(),
             occurred_at,
         };
@@ -1206,6 +1218,13 @@ mod tests {
             request_id: "req-null-tools".to_string(),
             tool_cardinality: RequestToolCardinality::default(),
             occurred_at: occurred_at - Duration::seconds(1),
+            ..zero_counts_log.clone()
+        };
+        let changed_label_log = RequestLogRecord {
+            request_log_id: Uuid::new_v4(),
+            request_id: "req-changed-harness-label".to_string(),
+            agent_harness_label: "Zpencode".to_string(),
+            occurred_at: occurred_at - Duration::seconds(2),
             ..zero_counts_log.clone()
         };
 
@@ -1217,6 +1236,10 @@ mod tests {
             .insert_request_log(&null_counts_log, None)
             .await
             .expect("insert null-count request log");
+        store
+            .insert_request_log(&changed_label_log, None)
+            .await
+            .expect("insert changed-label request log");
 
         let page = store
             .list_request_logs(&RequestLogQuery {
@@ -1244,6 +1267,12 @@ mod tests {
         assert_eq!(zero_summary.tool_cardinality.exposed_tool_count, Some(0));
         assert_eq!(zero_summary.tool_cardinality.invoked_tool_count, Some(0));
         assert_eq!(
+            zero_summary.user_agent_raw.as_deref(),
+            Some("opencode/1.2.3")
+        );
+        assert_eq!(zero_summary.agent_harness_key, "opencode");
+        assert_eq!(zero_summary.agent_harness_label, "Opencode");
+        assert_eq!(
             zero_summary.tool_cardinality.referenced_mcp_server_count,
             None
         );
@@ -1253,6 +1282,33 @@ mod tests {
             .expect("request log detail");
         assert_eq!(detail.log.tool_cardinality.exposed_tool_count, Some(0));
         assert_eq!(detail.log.tool_cardinality.filtered_tool_count, None);
+        assert_eq!(detail.log.user_agent_raw.as_deref(), Some("opencode/1.2.3"));
+
+        let harness_leaders = store
+            .list_harness_usage_leaders(
+                occurred_at - Duration::hours(1),
+                occurred_at + Duration::hours(1),
+                10,
+            )
+            .await
+            .expect("harness leaders");
+        assert_eq!(harness_leaders.len(), 1);
+        assert_eq!(harness_leaders[0].agent_harness_key, "opencode");
+        assert_eq!(harness_leaders[0].agent_harness_label, "Opencode");
+        assert_eq!(harness_leaders[0].request_count, 3);
+
+        let harness_buckets = store
+            .list_harness_usage_bucket_aggregates(
+                occurred_at - Duration::hours(1),
+                occurred_at + Duration::hours(1),
+                12,
+                &["opencode".to_string()],
+            )
+            .await
+            .expect("harness bucket aggregates");
+        assert_eq!(harness_buckets.len(), 1);
+        assert_eq!(harness_buckets[0].agent_harness_key, "opencode");
+        assert_eq!(harness_buckets[0].request_count, 3);
     }
 
     #[tokio::test]
@@ -3691,6 +3747,9 @@ mod tests {
             response_payload_truncated: false,
             request_tags: RequestTags::default(),
             tool_cardinality: gateway_core::RequestToolCardinality::default(),
+            user_agent_raw: None,
+            agent_harness_key: "unknown".to_string(),
+            agent_harness_label: "Unknown".to_string(),
             metadata: Map::new(),
             occurred_at: OffsetDateTime::now_utc(),
         };

@@ -244,6 +244,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/observability/harness-usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_harness_usage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/observability/leaderboard": {
         parameters: {
             query?: never;
@@ -877,6 +893,19 @@ export interface components {
             };
             meta: components["schemas"]["ResponseMeta"];
         };
+        Envelope_HarnessUsageView: {
+            data: {
+                /** Format: int32 */
+                bucket_hours: number;
+                chart_harnesses: components["schemas"]["HarnessUsageChartHarnessView"][];
+                leaders: components["schemas"]["HarnessUsageLeaderView"][];
+                range: string;
+                series: components["schemas"]["HarnessUsageSeriesPointView"][];
+                window_end: string;
+                window_start: string;
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
         Envelope_IdentityActionStatus: {
             data: {
                 status: string;
@@ -925,6 +954,7 @@ export interface components {
                 attempts: components["schemas"]["RequestAttemptView"][];
                 log: components["schemas"]["RequestLogSummaryView"];
                 payload?: null | components["schemas"]["RequestLogPayloadView"];
+                user_agent_raw?: string | null;
             };
             meta: components["schemas"]["ResponseMeta"];
         };
@@ -982,6 +1012,41 @@ export interface components {
                 owner_kind: string;
             };
             meta: components["schemas"]["ResponseMeta"];
+        };
+        HarnessUsageChartHarnessView: {
+            agent_harness_key: string;
+            agent_harness_label: string;
+            /** Format: int32 */
+            rank: number;
+            /** Format: int64 */
+            total_requests: number;
+        };
+        HarnessUsageLeaderView: {
+            agent_harness_key: string;
+            agent_harness_label: string;
+            /** Format: int32 */
+            rank: number;
+            /** Format: int64 */
+            total_requests: number;
+        };
+        HarnessUsageSeriesPointView: {
+            bucket_start: string;
+            values: components["schemas"]["HarnessUsageSeriesValueView"][];
+        };
+        HarnessUsageSeriesValueView: {
+            agent_harness_key: string;
+            /** Format: int64 */
+            request_count: number;
+        };
+        HarnessUsageView: {
+            /** Format: int32 */
+            bucket_hours: number;
+            chart_harnesses: components["schemas"]["HarnessUsageChartHarnessView"][];
+            leaders: components["schemas"]["HarnessUsageLeaderView"][];
+            range: string;
+            series: components["schemas"]["HarnessUsageSeriesPointView"][];
+            window_end: string;
+            window_start: string;
         };
         IdentityActionStatus: {
             status: string;
@@ -1084,6 +1149,7 @@ export interface components {
             attempts: components["schemas"]["RequestAttemptView"][];
             log: components["schemas"]["RequestLogSummaryView"];
             payload?: null | components["schemas"]["RequestLogPayloadView"];
+            user_agent_raw?: string | null;
         };
         RequestLogPageView: {
             items: components["schemas"]["RequestLogSummaryView"][];
@@ -1111,6 +1177,8 @@ export interface components {
             response_json: unknown;
         };
         RequestLogSummaryView: {
+            agent_harness_key: string;
+            agent_harness_label: string;
             api_key_id: string;
             /** Format: int64 */
             completion_tokens?: number | null;
@@ -1714,6 +1782,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_AdminModelPageView"];
+                };
+            };
+        };
+    };
+    get_harness_usage: {
+        parameters: {
+            query?: {
+                range?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_HarnessUsageView"];
                 };
             };
         };

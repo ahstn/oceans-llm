@@ -394,6 +394,11 @@ pub struct LeaderboardQuery {
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
+pub struct HarnessUsageQuery {
+    pub range: Option<String>,
+}
+
+#[derive(Debug, Deserialize, IntoParams)]
 pub struct BudgetAlertHistoryRequestQuery {
     pub page: Option<u32>,
     pub page_size: Option<u32>,
@@ -491,6 +496,45 @@ pub struct LeaderboardView {
     pub chart_users: Vec<LeaderboardChartUserView>,
     pub series: Vec<LeaderboardSeriesPointView>,
     pub leaders: Vec<LeaderboardLeaderView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct HarnessUsageChartHarnessView {
+    pub rank: u32,
+    pub agent_harness_key: String,
+    pub agent_harness_label: String,
+    pub total_requests: i64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct HarnessUsageSeriesValueView {
+    pub agent_harness_key: String,
+    pub request_count: i64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct HarnessUsageSeriesPointView {
+    pub bucket_start: String,
+    pub values: Vec<HarnessUsageSeriesValueView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct HarnessUsageLeaderView {
+    pub rank: u32,
+    pub agent_harness_key: String,
+    pub agent_harness_label: String,
+    pub total_requests: i64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct HarnessUsageView {
+    pub range: String,
+    pub bucket_hours: u8,
+    pub window_start: String,
+    pub window_end: String,
+    pub chart_harnesses: Vec<HarnessUsageChartHarnessView>,
+    pub series: Vec<HarnessUsageSeriesPointView>,
+    pub leaders: Vec<HarnessUsageLeaderView>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -634,6 +678,8 @@ pub struct RequestLogSummaryView {
     pub payload_policy: RequestLogPayloadPolicyView,
     pub request_tags: RequestTagsView,
     pub tool_cardinality: RequestToolCardinalityView,
+    pub agent_harness_key: String,
+    pub agent_harness_label: String,
     #[schema(additional_properties = true)]
     pub metadata: Map<String, Value>,
     pub occurred_at: String,
@@ -692,6 +738,7 @@ pub struct RequestTagView {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct RequestLogDetailView {
     pub log: RequestLogSummaryView,
+    pub user_agent_raw: Option<String>,
     pub payload: Option<RequestLogPayloadView>,
     pub attempts: Vec<RequestAttemptView>,
 }
@@ -764,6 +811,7 @@ pub struct RequestLogPayloadView {
         crate::http::spend::upsert_team_budget,
         crate::http::spend::deactivate_team_budget,
         crate::http::observability::get_usage_leaderboard,
+        crate::http::observability::get_harness_usage,
         crate::http::observability::list_request_logs,
         crate::http::observability::get_request_log_detail
     ),

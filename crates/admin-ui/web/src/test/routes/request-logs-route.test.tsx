@@ -72,6 +72,8 @@ const items: RequestLogView[] = [
       invoked_tool_count: 0,
       filtered_tool_count: null,
     },
+    agent_harness_key: 'opencode',
+    agent_harness_label: 'Opencode',
     occurred_at: '2026-03-10T11:32:00Z',
   },
 ]
@@ -112,6 +114,7 @@ describe('RequestLogsPage', () => {
     getObservabilityRequestLogDetailMock.mockResolvedValue({
       data: {
         log: items[0],
+        user_agent_raw: 'opencode/1.2.3',
         payload: {
           request_json: { body: { prompt: 'ping' } },
           response_json: { body: { output: 'pong' } },
@@ -158,6 +161,9 @@ describe('RequestLogsPage', () => {
     expect(screen.queryByText('Attempt Count')).not.toBeInTheDocument()
     expect(screen.queryByText('Fallback')).not.toBeInTheDocument()
     expect(screen.getByText('MCP & Tools')).toBeInTheDocument()
+    expect(screen.getByText('Agent Harness')).toBeInTheDocument()
+    expect(screen.getByText('Opencode')).toBeInTheDocument()
+    expect(screen.getByText('opencode/1.2.3')).toBeInTheDocument()
     expect(screen.getByText('Tools Called')).toBeInTheDocument()
     expect(screen.getAllByText('0').length).toBeGreaterThan(0)
     expect(screen.getAllByText('n/a').length).toBeGreaterThan(0)
@@ -189,6 +195,7 @@ describe('RequestLogsPage', () => {
     getObservabilityRequestLogDetailMock.mockResolvedValue({
       data: {
         log: summaryOnlyItem,
+        user_agent_raw: null,
         payload: null,
         attempts: [],
       },

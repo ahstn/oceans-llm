@@ -19,6 +19,8 @@ import type {
   InvitationStateView,
   LeaderboardRange,
   LeaderboardView,
+  HarnessUsageRange,
+  HarnessUsageView,
   LogoutResult,
   ModelPageView,
   PasswordInviteResult,
@@ -119,6 +121,21 @@ export async function getUsageLeaderboard(params?: {
   const client = createGatewayApiClient()
   return unwrapGatewayResponse(
     await client.GET('/api/v1/admin/observability/leaderboard', {
+      params: {
+        query: {
+          range: params?.range,
+        },
+      },
+    }),
+  )
+}
+
+export async function getHarnessUsage(params?: {
+  range?: HarnessUsageRange
+}): Promise<ApiEnvelope<HarnessUsageView>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.GET('/api/v1/admin/observability/harness-usage', {
       params: {
         query: {
           range: params?.range,
