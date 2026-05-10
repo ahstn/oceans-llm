@@ -3,9 +3,9 @@ use crate::shared::{parse_uuid, serialize_json, unix_to_datetime};
 
 fn normalize_query(query: &McpToolInvocationQuery) -> (i64, i64) {
     let page = query.page.max(1);
-    let page_size = query.page_size.clamp(1, 200);
-    let offset = i64::from(page.saturating_sub(1) * page_size);
-    (i64::from(page), offset)
+    let page_size = query.page_size.clamp(1, MAX_MCP_TOOL_INVOCATION_PAGE_SIZE);
+    let offset = u64::from(page.saturating_sub(1)) * u64::from(page_size);
+    (i64::from(page), offset as i64)
 }
 
 fn decode_mcp_tool_invocation_row(
@@ -148,7 +148,7 @@ impl McpToolInvocationRepository for LibsqlStore {
         query: &McpToolInvocationQuery,
     ) -> Result<McpToolInvocationPage, StoreError> {
         let (page, offset) = normalize_query(query);
-        let page_size = i64::from(query.page_size.clamp(1, 200));
+        let page_size = i64::from(query.page_size.clamp(1, MAX_MCP_TOOL_INVOCATION_PAGE_SIZE));
         let api_key_id = query.api_key_id.map(|value| value.to_string());
         let user_id = query.user_id.map(|value| value.to_string());
         let team_id = query.team_id.map(|value| value.to_string());
@@ -317,5 +317,27 @@ impl McpToolInvocationRepository for LibsqlStore {
             invocation,
             payload,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_query_handles_large_page_without_overflow() {
+        let query = McpToolInvocationQuery {
+            page: u32::MAX,
+            page_size: u32::MAX,
+            ..McpToolInvocationQuery::default()
+        };
+
+        let (page, offset) = normalize_query(&query);
+
+        assert_eq!(page, i64::from(u32::MAX));
+        assert_eq!(
+            offset,
+            i64::from(u32::MAX - 1) * i64::from(MAX_MCP_TOOL_INVOCATION_PAGE_SIZE)
+        );
     }
 }

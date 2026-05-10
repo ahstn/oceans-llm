@@ -224,7 +224,7 @@ fn sanitize_payload(
     match serde_json::to_vec(&redacted) {
         Ok(encoded) if encoded.len() <= max_bytes => (redacted, false),
         Ok(encoded) => {
-            let preview = String::from_utf8_lossy(&encoded[..max_bytes.min(encoded.len())]);
+            let preview = String::from_utf8_lossy(truncate_at_utf8_boundary(&encoded, max_bytes));
             (
                 json!({
                     "truncated": true,
@@ -241,6 +241,15 @@ fn sanitize_payload(
             true,
         ),
     }
+}
+
+fn truncate_at_utf8_boundary(encoded: &[u8], max_bytes: usize) -> &[u8] {
+    let truncate_at = max_bytes.min(encoded.len());
+    let mut safe_truncate = truncate_at;
+    while safe_truncate > 0 && std::str::from_utf8(&encoded[..safe_truncate]).is_err() {
+        safe_truncate -= 1;
+    }
+    &encoded[..safe_truncate]
 }
 
 #[cfg(test)]
@@ -369,6 +378,22 @@ mod tests {
         assert!(invocations[0].arguments_payload_truncated);
         assert_eq!(payloads.len(), 1);
         assert_eq!(payloads[0].arguments_json["truncated"], true);
+    }
+
+    #[test]
+    fn truncated_preview_stops_at_utf8_boundary() {
+        let policy = RequestLogPayloadPolicy::new(
+            RequestLogPayloadCaptureMode::RedactedPayloads,
+            4096,
+            4096,
+            1,
+            Vec::new(),
+        );
+        let (payload, truncated) = sanitize_payload(&json!("éééé"), 4, &policy);
+
+        assert!(truncated);
+        let preview = payload["preview"].as_str().expect("preview string");
+        assert!(!preview.contains('\u{fffd}'));
     }
 
     fn sample_auth() -> AuthenticatedApiKey {

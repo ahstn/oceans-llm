@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { RequestLogView } from '@/types/api'
@@ -13,6 +14,7 @@ const routeMock = {
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
+  Link: ({ children }: { children: ReactNode }) => <a>{children}</a>,
   useRouter: () => ({
     navigate: navigateMock,
   }),

@@ -2,7 +2,7 @@
 
 `See also`: [Observability and Request Logs](../observability-and-request-logs.md), [MCP Invocations](mcp-invocations.md), [Request Lifecycle and Failure Modes](../../reference/request-lifecycle-and-failure-modes.md), [Data Relationships](../../reference/data-relationships.md), [Admin Control Plane](../../access/admin-control-plane.md)
 
-Request logs are the primary operator view for one gateway request. They are request-scoped, not tool-scoped: each row describes the user-visible API outcome, selected model route, owner context, payload capture state, and bounded tool cardinality.
+Request logs are the primary admin view for one gateway request. They are request-scoped, not tool-scoped: each row describes the user-visible API outcome, selected model route, owner context, payload capture state, and bounded tool cardinality.
 
 ## Admin UI Route
 
@@ -17,7 +17,7 @@ The page supports:
 - provider-attempt inspection for upstream execution metadata
 - MCP/tool cardinality fields for exposed, invoked, filtered, and referenced MCP server counts
 
-When MCP invocation logging is available, request-log detail links to `/admin/observability/mcp-invocations?request_id=<request_id>` so admins can move from request outcome to individual tool calls.
+When MCP invocation logging is available, request-log detail links to `/admin/observability/mcp-invocations?request_id={request_id}` so admins can move from request outcome to individual tool calls.
 
 ## API Contract
 
@@ -55,7 +55,7 @@ MCP tool execution rows are intentionally separate from request logs. Request lo
 
 ## Failure Reading
 
-Pre-provider failures such as `budget_error`, `invalid_request`, and `no_routes_available` can produce request-log summary rows with no provider attempts. Provider-backed failures can include one or more request-attempt rows once retry/fallback execution exists.
+Pre-provider request-log outcomes such as `budget_error`, `invalid_request`, and `no_routes_available` can produce summary rows with no provider attempts. The `budget_error` outcome corresponds to the caller-facing `budget_exceeded` error code. Provider-backed failures can include one or more request-attempt rows once retry/fallback execution exists.
 
 Missing detail rows return `404 not_found`.
 
@@ -64,3 +64,7 @@ Missing detail rows return `404 not_found`.
 - MCP per-tool invocation records: [mcp-invocations.md](mcp-invocations.md)
 - payload redaction policy details: [Observability and Request Logs](../observability-and-request-logs.md)
 - request path and failure classes: [Request Lifecycle and Failure Modes](../../reference/request-lifecycle-and-failure-modes.md)
+
+## Validation
+
+Run `mise run docs:check` before handing off documentation changes.

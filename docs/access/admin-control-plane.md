@@ -28,7 +28,7 @@ These areas are backed by real gateway APIs today:
 - spend usage reporting
 - spend budget management for users and teams
 - request-log list and detail inspection
-- MCP invocation list and detail inspection once the gateway exposes invocation records
+- MCP invocation list and detail inspection
 
 ## Live But Still Maturing Surfaces
 

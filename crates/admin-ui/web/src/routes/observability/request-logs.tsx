@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useTransition, type ReactNode } from 'react'
-import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { Link, createFileRoute, useRouter } from '@tanstack/react-router'
 import { useVirtualizer } from '@tanstack/react-virtual'
 
 import { BrandIcon } from '@/components/icons/brand-icon'
@@ -600,9 +600,6 @@ function ToolCardinalityInline({ item }: { item: RequestLogView }) {
 
 function ToolCardinalityCard({ item }: { item: RequestLogView }) {
   const counts = item.tool_cardinality
-  const mcpInvocationsHref = `/admin/observability/mcp-invocations?request_id=${encodeURIComponent(
-    item.request_id,
-  )}`
 
   return (
     <Card>
@@ -614,7 +611,9 @@ function ToolCardinalityCard({ item }: { item: RequestLogView }) {
           </CardDescription>
         </div>
         <Button type="button" variant="outline" asChild>
-          <a href={mcpInvocationsHref}>View MCP Invocations</a>
+          <Link to="/observability/mcp-invocations" search={{ request_id: item.request_id }}>
+            View MCP Invocations
+          </Link>
         </Button>
       </CardHeader>
       <CardContent>

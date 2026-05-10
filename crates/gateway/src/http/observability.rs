@@ -6,10 +6,11 @@ use axum::{
     http::HeaderMap,
 };
 use gateway_core::{
-    BudgetRepository, GatewayError, McpToolInvocationDetail, McpToolInvocationPayloadRecord,
-    McpToolInvocationQuery, McpToolInvocationRecord, McpToolInvocationStatus, McpToolPolicyResult,
-    ProviderConnection, ProviderRepository, RequestAttemptRecord, RequestLogDetail,
-    RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestTag, RequestTags,
+    BudgetRepository, GatewayError, MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, McpToolInvocationDetail,
+    McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
+    McpToolInvocationStatus, McpToolPolicyResult, ProviderConnection, ProviderRepository,
+    RequestAttemptRecord, RequestLogDetail, RequestLogPayloadRecord, RequestLogQuery,
+    RequestLogRecord, RequestLogRepository, RequestTag, RequestTags,
 };
 use gateway_service::{
     model_icon_key_from_metadata, provider_icon_key_from_metadata, resolve_model_icon_key,
@@ -354,7 +355,7 @@ pub async fn list_mcp_tool_invocations(
         page_size: query
             .page_size
             .unwrap_or(DEFAULT_PAGE_SIZE)
-            .clamp(1, MAX_PAGE_SIZE),
+            .clamp(1, MAX_MCP_TOOL_INVOCATION_PAGE_SIZE),
         request_id: empty_to_none(query.request_id),
         server_display_key: empty_to_none(query.server_display_key),
         server_display_name: empty_to_none(query.server_display_name),

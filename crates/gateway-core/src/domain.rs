@@ -1095,6 +1095,8 @@ pub struct McpToolInvocationPayloadRecord {
     pub result_json: Value,
 }
 
+pub const MAX_MCP_TOOL_INVOCATION_PAGE_SIZE: u32 = 500;
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct McpToolInvocationQuery {
     pub page: u32,

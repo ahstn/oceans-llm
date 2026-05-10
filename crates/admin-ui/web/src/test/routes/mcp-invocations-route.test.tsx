@@ -146,6 +146,34 @@ describe('McpInvocationsPage', () => {
     expect(screen.getByText(/"number": 115/)).toBeInTheDocument()
   })
 
+  it('renders scalar JSON payloads instead of treating them as missing', async () => {
+    routeMock.useLoaderData.mockReturnValue({
+      data: { items: [item], page: 1, page_size: 25, total: 1 },
+    })
+    getObservabilityMcpInvocationDetailMock.mockResolvedValue({
+      data: {
+        invocation: item,
+        payload: {
+          arguments_json: false,
+          result_json: 0,
+        },
+      },
+    })
+
+    const { McpInvocationsPage } = await import('@/routes/observability/mcp-invocations')
+
+    render(<McpInvocationsPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Inspect' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('mcp-invocation-detail')).toBeInTheDocument()
+    })
+
+    expect(screen.getByText('false')).toBeInTheDocument()
+    expect(screen.getByText('0')).toBeInTheDocument()
+    expect(screen.queryByText('No payload stored')).not.toBeInTheDocument()
+  })
+
   it('renders an explicit empty state', async () => {
     routeMock.useLoaderData.mockReturnValue({
       data: { items: [], page: 1, page_size: 25, total: 0 },

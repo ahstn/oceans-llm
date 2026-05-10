@@ -24,7 +24,7 @@ The list shows owner context, server/tool identity, status, policy result, laten
 
 ## API Contract
 
-The admin UI slice expects these endpoints once the backend contract lands:
+The admin UI slice uses these endpoints:
 
 - `GET /api/v1/admin/observability/mcp-invocations`
 - `GET /api/v1/admin/observability/mcp-invocations/{mcp_tool_invocation_id}`
@@ -41,8 +41,8 @@ Expected list filters:
 - `team_id`
 - `status`
 - `policy_result`
-- `occurred_at_start`
-- `occurred_at_end`
+- `occurred_at_start` (RFC3339 timestamp)
+- `occurred_at_end` (RFC3339 timestamp)
 
 Expected statuses:
 
@@ -88,3 +88,7 @@ Use request logs first when debugging the model/API request. Use MCP invocation 
 - request-log payload policy and stream parsing: [Observability and Request Logs](../observability-and-request-logs.md)
 - request lifecycle failure classes: [Request Lifecycle and Failure Modes](../../reference/request-lifecycle-and-failure-modes.md)
 - user, team, and API-key ownership policy: [Identity and Access](../../access/identity-and-access.md)
+
+## Validation
+
+Run `mise run docs:check` before handing off documentation changes.

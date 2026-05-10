@@ -42,8 +42,7 @@ The live request path is single-route in this slice.
 13. Request logs are written for the user-visible outcome.
 14. Usage is normalized when possible.
 15. Pricing is resolved exactly or the request is marked `unpriced`.
-16. A ledger row is written when the request has usable usage data.
-17. Post-provider budget math runs before the priced ledger row is committed.
+16. When the request has usable usage data, the gateway prepares the ledger row, applies post-provider budget math, and commits the priced or unpriced ledger row in that order.
 
 Compatibility transforms can affect the provider request body and stream options for the selected API family. They do not change the public request model identity, alias resolution, API-key grants, or request-log attribution. Current OpenAI-compatible profile transforms are Chat Completions-specific; Responses and Embeddings use their own typed provider paths.
 

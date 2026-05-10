@@ -556,7 +556,7 @@ function PayloadCard({
         </div>
       </CardHeader>
       <CardContent>
-        {payload ? (
+        {payload !== null && payload !== undefined ? (
           <pre className="max-h-[360px] overflow-auto text-xs leading-6 text-[var(--color-text-muted)]">
             {JSON.stringify(payload, null, 2)}
           </pre>
