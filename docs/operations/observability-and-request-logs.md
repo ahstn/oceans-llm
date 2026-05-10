@@ -300,6 +300,8 @@ Platform admins can inspect request logs through:
 
 Request-log list and detail responses include the row metadata, so admins can see the public operation for each row, such as `chat_completions`, `responses`, or `embeddings`, alongside the typed payload policy and truncation fields.
 
+Validate documentation-only edits to this page with `mise run docs:check` before handoff.
+
 ## Usage Leaderboard
 
 The leaderboard is a separate admin observability surface from spend reporting.
