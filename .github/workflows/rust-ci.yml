@@ -46,14 +46,14 @@ jobs:
       - name: Run `mise run lint`
         run: mise run lint
 
-      - name: Run `mise run check-rust-postgres`
-        run: mise run check-rust-postgres
+      - name: Run gateway-store Postgres check
+        run: mise //crates/gateway-store:check
 
       - name: Test Rust workspace
         run: mise exec -- cargo test --workspace
 
-      - name: Run `mise run test-rust-postgres`
-        run: mise run test-rust-postgres
+      - name: Run gateway-store Postgres tests
+        run: mise //crates/gateway-store:test:postgres
 
-      - name: Run `mise run test-gateway-postgres-smoke`
-        run: mise run test-gateway-postgres-smoke
+      - name: Run gateway Postgres smoke checks
+        run: mise //crates/gateway-store:smoke:postgres

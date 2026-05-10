@@ -1,0 +1,81 @@
+[tasks.check]
+description = "Compile gateway-store and gateway Postgres targets"
+run = "cargo check -p gateway-store -p gateway --all-targets"
+
+[tasks."postgres:start"]
+description = "Start local Postgres via pitchfork"
+run = "pitchfork start postgres"
+
+[tasks."postgres:stop"]
+description = "Stop local Postgres via pitchfork"
+run = "pitchfork stop postgres"
+
+[tasks."postgres:status"]
+description = "Show local Postgres daemon status via pitchfork"
+run = "pitchfork list --hide-header | rg '^oceans_llm/postgres\\b'"
+
+[tasks."postgres:logs"]
+description = "Tail local Postgres daemon logs via pitchfork"
+run = "pitchfork logs postgres"
+
+[tasks."postgres:reset"]
+description = "Reset the local Postgres data directory and restart via pitchfork"
+run = """
+set -eu
+pitchfork stop postgres >/dev/null 2>&1 || true
+../../scripts/postgres-pitchfork.sh reset
+pitchfork start postgres
+"""
+
+[tasks."postgres:env"]
+description = "Print env exports for local Postgres URLs"
+run = "../../scripts/postgres-pitchfork.sh print-env"
+
+[tasks."test:postgres"]
+description = "Run focused Postgres-backed gateway-store tests"
+env = { TEST_POSTGRES_URL = { required = true } }
+run = "cargo test -p gateway-store postgres_"
+
+[tasks."smoke:postgres"]
+description = "Run gateway Postgres smoke checks with explicit CLI commands"
+env = { POSTGRES_URL = { required = true } }
+run = """
+set -eu
+
+export OPENAI_API_KEY="${OPENAI_API_KEY:-test-openai-key}"
+export OPENAI_API_KEY_SECONDARY="${OPENAI_API_KEY_SECONDARY:-test-openai-key-secondary}"
+gateway_port=8080
+gateway_log="${TMPDIR:-/tmp}/gateway-postgres-smoke.log"
+gateway_config="../../gateway.prod.yaml"
+
+: > "$gateway_log"
+
+cargo run -p gateway --bin gateway -- --config "$gateway_config" migrate --apply
+cargo run -p gateway --bin gateway -- --config "$gateway_config" seed-config
+cargo run -p gateway --bin gateway -- --config "$gateway_config" bootstrap-admin
+
+cargo run -p gateway --bin gateway -- --config "$gateway_config" serve --run-migrations false --bootstrap-admin false --seed-config false >"$gateway_log" 2>&1 &
+gateway_pid=$!
+
+cleanup() {
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    echo "--- gateway smoke log ---" >&2
+    cat "$gateway_log" >&2 || true
+  fi
+  kill "$gateway_pid" >/dev/null 2>&1 || true
+  wait "$gateway_pid" >/dev/null 2>&1 || true
+}
+
+trap cleanup EXIT INT TERM
+
+for _ in $(seq 1 30); do
+  if curl --fail --silent --show-error "http://127.0.0.1:${gateway_port}/readyz" >/dev/null; then
+    break
+  fi
+  sleep 1
+done
+
+curl --fail --silent --show-error "http://127.0.0.1:${gateway_port}/healthz" >/dev/null
+curl --fail --silent --show-error "http://127.0.0.1:${gateway_port}/readyz" >/dev/null
+"""

@@ -1,3 +1,11 @@
+experimental_monorepo_root = true
+
+[settings]
+experimental = true
+
+[monorepo]
+config_roots = ["docs", "crates/gateway-store"]
+
 [tools]
 rust = "stable"
 node = "lts"
@@ -14,35 +22,6 @@ prek = "latest"
 [tasks.install]
 description = "Install or update tool versions from mise.toml"
 run = "mise install"
-
-[tasks.docs-check]
-description = "Validate markdown links and required docs graph headers"
-depends = ["docs-install"]
-run = "npm run --prefix docs docs:check"
-
-[tasks.docs-install]
-description = "Install VitePress docs dependencies"
-run = "npm ci --prefix docs"
-
-[tasks.docs-dev]
-description = "Run the VitePress docs site locally"
-depends = ["docs-install"]
-run = "npm run --prefix docs docs:dev"
-
-[tasks.docs-build]
-description = "Build the VitePress docs site"
-depends = ["docs-install"]
-run = "npm run --prefix docs docs:build"
-
-[tasks.docs-preview]
-description = "Preview the built VitePress docs site"
-depends = ["docs-build"]
-run = "npm run --prefix docs docs:preview"
-
-[tasks.docs-verify]
-description = "Run docs structure checks and build the docs site"
-depends = ["docs-check", "docs-build"]
-run = "true"
 
 [tasks.helm-dependency-update]
 description = "Update Helm chart dependencies"
@@ -114,91 +93,10 @@ run = "cargo build --workspace && bun run --cwd crates/admin-ui/web build"
 description = "Run `gateway serve`"
 run = "cargo run -p gateway --bin gateway -- serve"
 
-[tasks.check-rust-postgres]
-description = "Compile the Rust Postgres-backed runtime and store targets"
-run = "cargo check -p gateway-store -p gateway --all-targets"
-
-[tasks.postgres-start]
-description = "Start local Postgres via pitchfork"
-run = "pitchfork start postgres"
-
-[tasks.postgres-stop]
-description = "Stop local Postgres via pitchfork"
-run = "pitchfork stop postgres"
-
-[tasks.postgres-status]
-description = "Show local Postgres daemon status via pitchfork"
-run = "pitchfork list --hide-header | rg '^oceans_llm/postgres\\b'"
-
-[tasks.postgres-logs]
-description = "Tail local Postgres daemon logs via pitchfork"
-run = "pitchfork logs postgres"
-
-[tasks.postgres-reset]
-description = "Reset the local Postgres data directory and restart via pitchfork"
-run = """
-set -eu
-pitchfork stop postgres >/dev/null 2>&1 || true
-./scripts/postgres-pitchfork.sh reset
-pitchfork start postgres
-"""
-
-[tasks.postgres-env]
-description = "Print env exports for local Postgres URLs"
-run = "./scripts/postgres-pitchfork.sh print-env"
-
 [tasks.test]
 description = "Run Rust and admin UI tests"
 depends = ["ui-install"]
 run = "cargo test --workspace && bun run --cwd crates/admin-ui/web test"
-
-[tasks.test-rust-postgres]
-description = "Run focused Postgres-backed Rust tests"
-env = { TEST_POSTGRES_URL = { required = true } }
-run = "cargo test -p gateway-store postgres_"
-
-[tasks.test-gateway-postgres-smoke]
-description = "Run gateway Postgres smoke checks with explicit CLI commands"
-env = { POSTGRES_URL = { required = true } }
-run = """
-set -eu
-
-export OPENAI_API_KEY="${OPENAI_API_KEY:-test-openai-key}"
-export OPENAI_API_KEY_SECONDARY="${OPENAI_API_KEY_SECONDARY:-test-openai-key-secondary}"
-gateway_port=8080
-gateway_log="${TMPDIR:-/tmp}/gateway-postgres-smoke.log"
-
-: > "$gateway_log"
-
-cargo run -p gateway --bin gateway -- --config gateway.prod.yaml migrate --apply
-cargo run -p gateway --bin gateway -- --config gateway.prod.yaml seed-config
-cargo run -p gateway --bin gateway -- --config gateway.prod.yaml bootstrap-admin
-
-cargo run -p gateway --bin gateway -- --config gateway.prod.yaml serve --run-migrations false --bootstrap-admin false --seed-config false >"$gateway_log" 2>&1 &
-gateway_pid=$!
-
-cleanup() {
-  status=$?
-  if [ "$status" -ne 0 ]; then
-    echo "--- gateway smoke log ---" >&2
-    cat "$gateway_log" >&2 || true
-  fi
-  kill "$gateway_pid" >/dev/null 2>&1 || true
-  wait "$gateway_pid" >/dev/null 2>&1 || true
-}
-
-trap cleanup EXIT INT TERM
-
-for _ in $(seq 1 30); do
-  if curl --fail --silent --show-error "http://127.0.0.1:${gateway_port}/readyz" >/dev/null; then
-    break
-  fi
-  sleep 1
-done
-
-curl --fail --silent --show-error "http://127.0.0.1:${gateway_port}/healthz" >/dev/null
-curl --fail --silent --show-error "http://127.0.0.1:${gateway_port}/readyz" >/dev/null
-"""
 
 [tasks.gateway-serve]
 description = "Run local `gateway serve` against `gateway.yaml`"

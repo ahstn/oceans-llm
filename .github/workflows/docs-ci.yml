@@ -25,4 +25,4 @@ jobs:
         uses: jdx/mise-action@e79ddf65a11cec7b0e882bedced08d6e976efb2d
 
       - name: Verify docs site
-        run: mise run docs-verify
+        run: mise //docs:verify

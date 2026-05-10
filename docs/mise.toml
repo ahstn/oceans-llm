@@ -13,10 +13,30 @@ CLOUDFLARE_PAGES_CUSTOM_DOMAIN = "docs.oceans-llm.com"
 description = "Install VitePress docs dependencies"
 run = "npm ci"
 
+[tasks.check]
+description = "Validate markdown links and required docs graph headers"
+depends = [":install"]
+run = "npm run docs:check"
+
+[tasks.dev]
+description = "Run the VitePress docs site locally"
+depends = [":install"]
+run = "npm run docs:dev"
+
 [tasks.build]
 description = "Build the VitePress docs site"
-depends = ["install"]
+depends = [":install"]
 run = "npm run docs:build"
+
+[tasks.preview]
+description = "Preview the built VitePress docs site"
+depends = [":build"]
+run = "npm run docs:preview"
+
+[tasks.verify]
+description = "Run docs structure checks and build the docs site"
+depends = [":check", ":build"]
+run = "true"
 
 [tasks.cf-pages-create]
 description = "Create the Cloudflare Pages project for the docs site"
@@ -29,7 +49,7 @@ wrangler pages project create "$CLOUDFLARE_PAGES_PROJECT_NAME" \
 
 [tasks.cf-pages-deploy]
 description = "Build and deploy the docs site to Cloudflare Pages"
-depends = ["build"]
+depends = [":build"]
 env = { CLOUDFLARE_ACCOUNT_ID = { required = true }, CLOUDFLARE_API_TOKEN = { required = true } }
 run = """
 set -euo pipefail
