@@ -418,6 +418,7 @@ describe('server-side admin data wrappers', () => {
                     bespoke: [{ key: 'feature', value: 'guest_checkout' }],
                   },
                   metadata: {
+                    operation: 'chat_completions',
                     stream: false,
                   },
                   payload_policy: {
@@ -475,6 +476,7 @@ describe('server-side admin data wrappers', () => {
                   bespoke: [{ key: 'feature', value: 'guest_checkout' }],
                 },
                 metadata: {
+                  operation: 'chat_completions',
                   stream: false,
                 },
                 payload_policy: {

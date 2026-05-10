@@ -57,6 +57,7 @@ const items: RequestLogView[] = [
       bespoke: [{ key: 'feature', value: 'guest_checkout' }],
     },
     metadata: {
+      operation: 'chat_completions',
       stream: false,
     },
     payload_policy: {
@@ -105,6 +106,43 @@ describe('RequestLogsPage', () => {
     expect(screen.getAllByText(/exposed 2/)).toHaveLength(2)
     expect(screen.getAllByText(/called 0/)).toHaveLength(2)
     expect(screen.getAllByText(/MCP n\/a/)).toHaveLength(2)
+    expect(screen.getAllByText('Chat Completions')).toHaveLength(2)
+    expect(screen.getByText('service:checkout')).toBeInTheDocument()
+    expect(screen.getByText('component:pricing_api')).toBeInTheDocument()
+    expect(screen.getByText('env:prod')).toBeInTheDocument()
+    expect(screen.getByText('feature:guest_checkout')).toBeInTheDocument()
+  })
+
+  it('renders known and unknown operation metadata without hiding stream badges', async () => {
+    const responsesItem: RequestLogView = {
+      ...items[0],
+      request_log_id: 'reqlog_2',
+      request_id: 'req_2',
+      metadata: {
+        operation: 'responses',
+        stream: true,
+      },
+    }
+    const unknownOperationItem: RequestLogView = {
+      ...items[0],
+      request_log_id: 'reqlog_3',
+      request_id: 'req_3',
+      metadata: {
+        operation: 'batch_predictions',
+        stream: false,
+      },
+    }
+    routeMock.useLoaderData.mockReturnValue({
+      data: { items: [items[0], responsesItem, unknownOperationItem], total: 3 },
+    })
+
+    const { RequestLogsPage } = await import('@/routes/observability/request-logs')
+
+    render(<RequestLogsPage />)
+
+    expect(screen.getByText('Responses')).toBeInTheDocument()
+    expect(screen.getByText('Batch Predictions')).toBeInTheDocument()
+    expect(screen.getByText('stream')).toBeInTheDocument()
   })
 
   it('renders request-log detail without fallback-era fields', async () => {
@@ -155,6 +193,9 @@ describe('RequestLogsPage', () => {
     expect(
       screen.getByText('Review summary fields and sanitized request and response payloads.'),
     ).toBeInTheDocument()
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('Operation')).toBeInTheDocument()
+    expect(within(dialog).getByText('Chat Completions')).toBeInTheDocument()
     expect(screen.queryByText('Attempt Count')).not.toBeInTheDocument()
     expect(screen.queryByText('Fallback')).not.toBeInTheDocument()
     expect(screen.getByText('MCP & Tools')).toBeInTheDocument()

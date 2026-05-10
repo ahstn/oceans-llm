@@ -282,6 +282,7 @@ export function RequestLogsPage() {
 
                   <div className="mt-4 flex items-center justify-between gap-3">
                     <div className="flex flex-wrap gap-2">
+                      <OperationBadge item={item} />
                       {metadataBoolean(item, 'stream') ? (
                         <Badge variant="outline">stream</Badge>
                       ) : null}
@@ -342,6 +343,7 @@ export function RequestLogsPage() {
                             {item.request_log_id}
                           </div>
                           <div className="mt-1 flex flex-wrap gap-1">
+                            <OperationBadge item={item} />
                             <PayloadPolicyBadges item={item} />
                           </div>
                         </div>
@@ -452,6 +454,7 @@ export function RequestLogsPage() {
                   label="Tokens"
                   value={formatTokenCount(selectedDetail.log.total_tokens)}
                 />
+                <OperationDetailRow item={selectedDetail.log} />
                 <DetailRow
                   label="Stream"
                   value={metadataBoolean(selectedDetail.log, 'stream') ? 'yes' : 'no'}
@@ -811,6 +814,54 @@ function formatCaptureMode(captureMode: string) {
       return 'redacted payloads'
     default:
       return captureMode
+  }
+}
+
+function OperationBadge({ item }: { item: RequestLogView }) {
+  const operation = operationMetadata(item)
+
+  if (!operation) {
+    return null
+  }
+
+  return <Badge variant="secondary">{formatOperation(operation)}</Badge>
+}
+
+function OperationDetailRow({ item }: { item: RequestLogView }) {
+  const operation = operationMetadata(item)
+
+  if (!operation) {
+    return null
+  }
+
+  return <DetailRow label="Operation" value={formatOperation(operation)} />
+}
+
+function operationMetadata(item: RequestLogView) {
+  return metadataString(item, 'operation')
+}
+
+function metadataString(item: RequestLogView, key: string) {
+  const value = item.metadata[key]
+  return typeof value === 'string' && value.trim().length > 0 ? value : null
+}
+
+function formatOperation(operation: string) {
+  switch (operation) {
+    case 'chat_completions':
+      return 'Chat Completions'
+    case 'responses':
+      return 'Responses'
+    case 'embeddings':
+      return 'Embeddings'
+    default: {
+      const formatted = operation
+        .split(/[_\s-]+/)
+        .filter((part) => part.length > 0)
+        .map((part) => part[0].toUpperCase() + part.slice(1))
+        .join(' ')
+      return formatted.length > 0 ? formatted : operation
+    }
   }
 }
 

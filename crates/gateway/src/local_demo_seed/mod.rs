@@ -5,7 +5,7 @@ use gateway_core::{
     RequestLogRecord, RequestLogRepository, RequestTag, RequestTags, UsageLedgerRecord,
     UsagePricingStatus, UserStatus,
 };
-use gateway_service::hash_gateway_key_secret;
+use gateway_service::{RequestLogPayloadPolicy, hash_gateway_key_secret};
 use gateway_store::{AnyStore, GatewayStore};
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
@@ -284,6 +284,15 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
             }],
         };
         let metadata = Map::from_iter([
+            (
+                "operation".to_string(),
+                Value::String("chat_completions".to_string()),
+            ),
+            ("stream".to_string(), Value::Bool(false)),
+            (
+                "payload_policy".to_string(),
+                RequestLogPayloadPolicy::default().metadata_value(),
+            ),
             (
                 "seed_source".to_string(),
                 Value::String("local_demo_seed".to_string()),
