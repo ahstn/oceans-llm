@@ -119,6 +119,7 @@ Admins can:
 - inspect request-log summaries
 - filter request logs by caller service, component, environment, and one bespoke tag match
 - inspect sanitized request-log payload detail
+- see each request log's public operation through row metadata
 - see per-row payload capture mode, byte limits, stream event limit, policy version, and truncation state
 - see per-row MCP/tool cardinality counts for request logs
 - compare leaderboard users with average tool exposure and invocation counts
