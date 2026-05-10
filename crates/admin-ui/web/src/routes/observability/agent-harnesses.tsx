@@ -84,7 +84,6 @@ export function AgentHarnessesPage() {
   })
 
   function refreshRange(nextRange: HarnessUsageRange) {
-    setRange(nextRange)
     setIsRefreshing(true)
 
     startTransition(async () => {
@@ -95,6 +94,7 @@ export function AgentHarnessesPage() {
           },
         })
         setUsage(response.data)
+        setRange(toHarnessUsageRange(response.data.range))
       } catch (error) {
         toast.error(getErrorMessage(error))
       } finally {
@@ -279,6 +279,7 @@ function formatAxisTick(value: string) {
   return new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
+    timeZone: 'UTC',
   }).format(date)
 }
 
@@ -291,6 +292,7 @@ function formatTooltipLabel(value: string) {
     month: 'short',
     day: 'numeric',
     hour: 'numeric',
+    timeZone: 'UTC',
   }).format(date)
 }
 

@@ -390,12 +390,22 @@ pub struct SpendReportQuery {
 
 #[derive(Debug, Deserialize, IntoParams)]
 pub struct LeaderboardQuery {
+    #[param(value_type = ObservabilityRangeQueryValue, required = false)]
     pub range: Option<String>,
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
 pub struct HarnessUsageQuery {
+    #[param(value_type = ObservabilityRangeQueryValue, required = false)]
     pub range: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub enum ObservabilityRangeQueryValue {
+    #[serde(rename = "7d")]
+    SevenDays,
+    #[serde(rename = "31d")]
+    ThirtyOneDays,
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
@@ -815,6 +825,7 @@ pub struct RequestLogPayloadView {
         crate::http::observability::list_request_logs,
         crate::http::observability::get_request_log_detail
     ),
+    components(schemas(ObservabilityRangeQueryValue)),
     modifiers(&AdminApiSecurity)
 )]
 pub struct AdminApiDoc;

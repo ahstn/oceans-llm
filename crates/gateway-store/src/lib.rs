@@ -1283,6 +1283,8 @@ mod tests {
         assert_eq!(detail.log.tool_cardinality.exposed_tool_count, Some(0));
         assert_eq!(detail.log.tool_cardinality.filtered_tool_count, None);
         assert_eq!(detail.log.user_agent_raw.as_deref(), Some("opencode/1.2.3"));
+        assert_eq!(detail.log.agent_harness_key, "opencode");
+        assert_eq!(detail.log.agent_harness_label, "Opencode");
 
         let harness_leaders = store
             .list_harness_usage_leaders(

@@ -2,6 +2,8 @@
 
 `See also`: [Observability and Request Logs](observability-and-request-logs.md), [Data Relationships](../reference/data-relationships.md), [Admin Control Plane](../access/admin-control-plane.md)
 
+Implementation references: [`request_logging.rs`](../../crates/gateway-service/src/request_logging.rs), [`observability.rs`](../../crates/gateway/src/http/observability.rs), [`agent-harnesses.tsx`](../../crates/admin-ui/web/src/routes/observability/agent-harnesses.tsx)
+
 Agent harness usage is an admin observability surface for understanding which coding-agent clients self-report data-plane requests through the gateway. It is derived from inbound HTTP `User-Agent` headers, so it is operational classification evidence, not authenticated client identity or abuse attribution.
 
 ## What Gets Stored

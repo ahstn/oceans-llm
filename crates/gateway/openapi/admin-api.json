@@ -712,10 +712,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "$ref": "#/components/schemas/ObservabilityRangeQueryValue"
             }
           }
         ],
@@ -750,10 +747,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "$ref": "#/components/schemas/ObservabilityRangeQueryValue"
             }
           }
         ],
@@ -4046,6 +4040,13 @@
           "openai",
           "openrouter",
           "vertexai"
+        ]
+      },
+      "ObservabilityRangeQueryValue": {
+        "type": "string",
+        "enum": [
+          "7d",
+          "31d"
         ]
       },
       "OpenAiErrorBodyView": {

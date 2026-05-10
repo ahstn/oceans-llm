@@ -113,7 +113,8 @@ describe('AgentHarnessesPage', () => {
     const { AgentHarnessesPage } = await import('@/routes/observability/agent-harnesses')
 
     const view = render(<AgentHarnessesPage />)
-    fireEvent.click(within(view.container).getByRole('radio', { name: 'Last 31 days' }))
+    const scope = within(view.container)
+    fireEvent.click(scope.getByRole('radio', { name: 'Last 31 days' }))
 
     await waitFor(() => {
       expect(refreshObservabilityHarnessUsageMock).toHaveBeenCalledWith({
@@ -121,6 +122,33 @@ describe('AgentHarnessesPage', () => {
           range: '31d',
         },
       })
+      expect(scope.getByRole('radio', { name: 'Last 31 days' })).toHaveAttribute(
+        'data-state',
+        'on',
+      )
+    })
+  })
+
+  it('keeps the previous range selected when a range refresh fails', async () => {
+    routeMock.useLoaderData.mockReturnValue({ data: harnessUsageData })
+    refreshObservabilityHarnessUsageMock.mockRejectedValue(new Error('refresh failed'))
+
+    const { AgentHarnessesPage } = await import('@/routes/observability/agent-harnesses')
+
+    const view = render(<AgentHarnessesPage />)
+    const scope = within(view.container)
+    fireEvent.click(scope.getByRole('radio', { name: 'Last 31 days' }))
+
+    await waitFor(() => {
+      expect(refreshObservabilityHarnessUsageMock).toHaveBeenCalledWith({
+        data: {
+          range: '31d',
+        },
+      })
+      expect(scope.getByRole('radio', { name: 'Last 7 days' })).toHaveAttribute(
+        'data-state',
+        'on',
+      )
     })
   })
 

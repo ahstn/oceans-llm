@@ -190,15 +190,19 @@ pub async fn get_harness_usage(
         .iter()
         .map(|leader| leader.agent_harness_key.clone())
         .collect::<Vec<_>>();
-    let bucket_rows = state
-        .store
-        .list_harness_usage_bucket_aggregates(
-            window_start,
-            window_end,
-            LEADERBOARD_BUCKET_HOURS,
-            &chart_harness_keys,
-        )
-        .await?;
+    let bucket_rows = if chart_harness_keys.is_empty() {
+        Vec::new()
+    } else {
+        state
+            .store
+            .list_harness_usage_bucket_aggregates(
+                window_start,
+                window_end,
+                LEADERBOARD_BUCKET_HOURS,
+                &chart_harness_keys,
+            )
+            .await?
+    };
 
     let mut bucket_map = BTreeMap::<i64, HashMap<String, i64>>::new();
     for row in bucket_rows {

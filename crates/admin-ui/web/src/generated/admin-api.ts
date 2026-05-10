@@ -1098,6 +1098,8 @@ export interface components {
         };
         /** @enum {string} */
         ModelIconKeyView: "anthropic" | "claude" | "gemini" | "openai" | "openrouter" | "vertexai";
+        /** @enum {string} */
+        ObservabilityRangeQueryValue: "7d" | "31d";
         OpenAiErrorBodyView: {
             code?: string | null;
             message: string;
@@ -1789,7 +1791,7 @@ export interface operations {
     get_harness_usage: {
         parameters: {
             query?: {
-                range?: string | null;
+                range?: components["schemas"]["ObservabilityRangeQueryValue"];
             };
             header?: never;
             path?: never;
@@ -1810,7 +1812,7 @@ export interface operations {
     get_usage_leaderboard: {
         parameters: {
             query?: {
-                range?: string | null;
+                range?: components["schemas"]["ObservabilityRangeQueryValue"];
             };
             header?: never;
             path?: never;

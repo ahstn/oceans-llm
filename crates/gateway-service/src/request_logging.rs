@@ -583,7 +583,7 @@ where
         } else {
             (None, false)
         };
-        let user_agent_raw = normalized_user_agent(input.request_headers.get("user-agent"));
+        let user_agent_raw = normalized_user_agent(request_user_agent(input.request_headers));
         let harness = classify_agent_harness(user_agent_raw.as_deref());
 
         RequestLogContext {
@@ -877,6 +877,13 @@ fn normalized_user_agent(value: Option<&String>) -> Option<String> {
         .map(|value| value.trim())
         .filter(|value| !value.is_empty())
         .map(truncate_user_agent)
+}
+
+fn request_user_agent(headers: &BTreeMap<String, String>) -> Option<&String> {
+    headers
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("user-agent"))
+        .map(|(_, value)| value)
 }
 
 fn truncate_user_agent(value: &str) -> String {
@@ -1198,7 +1205,8 @@ mod tests {
     use super::{
         AgentHarness, RequestLogging, StreamFailureSummary, StreamLogResultInput,
         StreamResponseCollector, classify_agent_harness, invoked_tool_count_from_response_body,
-        normalized_user_agent, shallow_tool_count_from_request_body, truncate_attempt_error_detail,
+        normalized_user_agent, request_user_agent, shallow_tool_count_from_request_body,
+        truncate_attempt_error_detail,
     };
 
     #[derive(Clone, Default)]
@@ -1284,6 +1292,16 @@ mod tests {
 
         assert_eq!(normalized.len(), 512);
         assert!(normalized.chars().all(|value| value == 'a'));
+    }
+
+    #[test]
+    fn reads_user_agent_header_case_insensitively() {
+        let headers = BTreeMap::from([("User-Agent".to_string(), "opencode/1.2.3".to_string())]);
+
+        assert_eq!(
+            request_user_agent(&headers).map(String::as_str),
+            Some("opencode/1.2.3")
+        );
     }
 
     #[async_trait]
