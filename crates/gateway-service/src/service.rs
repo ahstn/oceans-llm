@@ -8,8 +8,8 @@ use gateway_core::{
     PricingResolution, PricingUnpricedReason, ProviderRepository, RequestLogDetail, RequestLogPage,
     RequestLogPurgeResult, RequestLogQuery, RequestLogRecord, RequestLogRepository,
     RequestLogRetentionWindow, RequestTags, ResolvedModelPricing, ResponsesRequest, RouteError,
-    RoutePlanner, StoreHealth, TeamBudgetRecord, UsageLedgerRecord, UsagePricingStatus,
-    UserBudgetRecord,
+    RoutePlanner, ServiceAccountBudgetRecord, StoreHealth, TeamBudgetRecord, UsageLedgerRecord,
+    UsagePricingStatus, UserBudgetRecord,
 };
 use serde_json::{Value, json};
 use time::OffsetDateTime;
@@ -420,6 +420,17 @@ where
     ) -> Result<(), GatewayError> {
         self.budget_alerts
             .evaluate_after_team_budget_upsert(budget, current_spend, occurred_at)
+            .await
+    }
+
+    pub async fn evaluate_budget_alert_after_service_account_budget_upsert(
+        &self,
+        budget: &ServiceAccountBudgetRecord,
+        current_spend: Money4,
+        occurred_at: OffsetDateTime,
+    ) -> Result<(), GatewayError> {
+        self.budget_alerts
+            .evaluate_after_service_account_budget_upsert(budget, current_spend, occurred_at)
             .await
     }
 

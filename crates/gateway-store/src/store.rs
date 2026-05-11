@@ -64,6 +64,9 @@ pub trait GatewayStore:
     async fn list_active_service_accounts(
         &self,
     ) -> Result<Vec<gateway_core::ServiceAccountRecord>, StoreError>;
+    async fn list_service_accounts(
+        &self,
+    ) -> Result<Vec<gateway_core::ServiceAccountRecord>, StoreError>;
     async fn create_service_account(
         &self,
         team_id: Uuid,
@@ -510,6 +513,12 @@ impl AdminIdentityRepository for AnyStore {
         &self,
     ) -> Result<Vec<gateway_core::ServiceAccountRecord>, StoreError> {
         dispatch_store!(self, list_active_service_accounts())
+    }
+
+    async fn list_service_accounts(
+        &self,
+    ) -> Result<Vec<gateway_core::ServiceAccountRecord>, StoreError> {
+        dispatch_store!(self, list_service_accounts())
     }
 }
 
@@ -1011,6 +1020,12 @@ impl GatewayStore for AnyStore {
         &self,
     ) -> Result<Vec<gateway_core::ServiceAccountRecord>, StoreError> {
         dispatch_store!(self, list_active_service_accounts())
+    }
+
+    async fn list_service_accounts(
+        &self,
+    ) -> Result<Vec<gateway_core::ServiceAccountRecord>, StoreError> {
+        dispatch_store!(self, list_service_accounts())
     }
 
     async fn list_enabled_oidc_providers(&self) -> Result<Vec<OidcProviderRecord>, StoreError> {

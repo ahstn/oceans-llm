@@ -99,6 +99,79 @@ CREATE UNIQUE INDEX IF NOT EXISTS service_account_budgets_active_service_account
 CREATE INDEX IF NOT EXISTS service_account_budgets_service_account_idx
   ON service_account_budgets (service_account_id);
 
+DROP TABLE IF EXISTS budget_alerts_new;
+
+CREATE TABLE budget_alerts_new (
+  budget_alert_id TEXT PRIMARY KEY,
+  ownership_scope_key TEXT NOT NULL,
+  owner_kind TEXT NOT NULL CHECK (owner_kind IN ('user', 'team', 'service_account')),
+  owner_id TEXT NOT NULL,
+  owner_name TEXT NOT NULL,
+  budget_id TEXT NOT NULL,
+  cadence TEXT NOT NULL CHECK (cadence IN ('daily', 'weekly', 'monthly')),
+  threshold_bps INTEGER NOT NULL CHECK (threshold_bps > 0 AND threshold_bps <= 10000),
+  window_start INTEGER NOT NULL,
+  window_end INTEGER NOT NULL,
+  spend_before_10000 INTEGER NOT NULL CHECK (spend_before_10000 >= 0),
+  spend_after_10000 INTEGER NOT NULL CHECK (spend_after_10000 >= 0),
+  remaining_budget_10000 INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+INSERT INTO budget_alerts_new (
+  budget_alert_id, ownership_scope_key, owner_kind, owner_id, owner_name, budget_id,
+  cadence, threshold_bps, window_start, window_end, spend_before_10000,
+  spend_after_10000, remaining_budget_10000, created_at, updated_at
+)
+SELECT budget_alert_id, ownership_scope_key, owner_kind, owner_id, owner_name, budget_id,
+       cadence, threshold_bps, window_start, window_end, spend_before_10000,
+       spend_after_10000, remaining_budget_10000, created_at, updated_at
+FROM budget_alerts;
+
+DROP TABLE IF EXISTS budget_alert_deliveries_new;
+
+CREATE TABLE budget_alert_deliveries_new (
+  budget_alert_delivery_id TEXT PRIMARY KEY,
+  budget_alert_id TEXT NOT NULL,
+  channel TEXT NOT NULL CHECK (channel IN ('email')),
+  delivery_status TEXT NOT NULL CHECK (delivery_status IN ('pending', 'sent', 'failed')),
+  recipient TEXT,
+  provider_message_id TEXT,
+  failure_reason TEXT,
+  queued_at INTEGER NOT NULL,
+  last_attempted_at INTEGER,
+  sent_at INTEGER,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (budget_alert_id) REFERENCES budget_alerts_new(budget_alert_id) ON DELETE CASCADE
+);
+
+INSERT INTO budget_alert_deliveries_new (
+  budget_alert_delivery_id, budget_alert_id, channel, delivery_status, recipient,
+  provider_message_id, failure_reason, queued_at, last_attempted_at, sent_at, updated_at
+)
+SELECT budget_alert_delivery_id, budget_alert_id, channel, delivery_status, recipient,
+       provider_message_id, failure_reason, queued_at, last_attempted_at, sent_at, updated_at
+FROM budget_alert_deliveries;
+
+DROP TABLE budget_alert_deliveries;
+DROP TABLE budget_alerts;
+
+ALTER TABLE budget_alerts_new RENAME TO budget_alerts;
+ALTER TABLE budget_alert_deliveries_new RENAME TO budget_alert_deliveries;
+
+CREATE UNIQUE INDEX IF NOT EXISTS budget_alerts_scope_threshold_window_uidx
+  ON budget_alerts (ownership_scope_key, budget_id, threshold_bps, window_start);
+
+CREATE INDEX IF NOT EXISTS budget_alerts_created_at_idx
+  ON budget_alerts (created_at DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS budget_alert_deliveries_alert_recipient_uidx
+  ON budget_alert_deliveries (budget_alert_id, channel, recipient);
+
+CREATE INDEX IF NOT EXISTS budget_alert_deliveries_status_idx
+  ON budget_alert_deliveries (delivery_status, queued_at);
+
 ALTER TABLE usage_cost_event_duplicates_archive ADD COLUMN service_account_id TEXT;
 ALTER TABLE usage_cost_events ADD COLUMN service_account_id TEXT;
 

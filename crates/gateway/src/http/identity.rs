@@ -142,7 +142,7 @@ pub async fn list_identity_service_accounts(
     headers: HeaderMap,
 ) -> Result<Json<Envelope<AdminServiceAccountsPayload>>, AppError> {
     let actor = require_active_admin_or_team_manager(&state, &headers, None).await?;
-    let teams = state.store.list_active_teams().await?;
+    let mut teams = state.store.list_active_teams().await?;
     let mut service_accounts = state.store.list_active_service_accounts().await?;
 
     if actor.global_role != GlobalRole::PlatformAdmin {
@@ -154,6 +154,7 @@ pub async fn list_identity_service_accounts(
                 AuthError::InsufficientPrivileges,
             )))?;
         service_accounts.retain(|account| account.team_id == membership.team_id);
+        teams.retain(|team| team.team_id == membership.team_id);
     }
 
     Ok(Json(envelope(AdminServiceAccountsPayload {
@@ -1314,17 +1315,17 @@ async fn generate_unique_team_key(store: &AnyStore, name: &str) -> Result<String
 
 async fn generate_unique_service_account_key(
     store: &AnyStore,
-    team_id: Uuid,
+    _team_id: Uuid,
     name: &str,
 ) -> Result<String, AppError> {
     let base = slugify_team_name(name);
-    let existing = store.list_active_service_accounts().await?;
+    let existing = store.list_service_accounts().await?;
     let mut candidate = base.clone();
     let mut suffix = 2_u32;
 
     while existing
         .iter()
-        .any(|account| account.team_id == team_id && account.service_account_key == candidate)
+        .any(|account| account.service_account_key == candidate)
     {
         candidate = format!("{base}-{suffix}");
         suffix += 1;

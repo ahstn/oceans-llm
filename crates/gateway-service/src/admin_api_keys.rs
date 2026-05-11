@@ -116,10 +116,11 @@ where
         let users = self.repo.list_identity_users().await?;
         let active_teams = self.repo.list_active_teams().await?;
         let teams = self.repo.list_teams().await?;
-        let service_accounts = self.repo.list_active_service_accounts().await?;
+        let service_accounts = self.repo.list_service_accounts().await?;
+        let active_service_accounts = self.repo.list_active_service_accounts().await?;
         let models = self.repo.list_models().await?;
         let service_account_owners =
-            build_service_account_owner_options(&service_accounts, &teams)?;
+            build_service_account_owner_options(&active_service_accounts, &teams)?;
 
         let mut items = Vec::with_capacity(api_keys.len());
         for api_key in api_keys {
@@ -246,7 +247,7 @@ where
 
         let users = self.repo.list_identity_users().await?;
         let teams = self.repo.list_teams().await?;
-        let service_accounts = self.repo.list_active_service_accounts().await?;
+        let service_accounts = self.repo.list_service_accounts().await?;
         let api_key = self
             .repo
             .get_api_key_by_id(api_key_id)
@@ -266,7 +267,7 @@ where
     ) -> Result<AdminApiKeySummary, GatewayError> {
         let users = self.repo.list_identity_users().await?;
         let teams = self.repo.list_teams().await?;
-        let service_accounts = self.repo.list_active_service_accounts().await?;
+        let service_accounts = self.repo.list_service_accounts().await?;
         let models = self.repo.list_models().await?;
         let api_key = self
             .repo
@@ -685,6 +686,10 @@ mod tests {
                 .filter(|service_account| service_account.status == ServiceAccountStatus::Active)
                 .cloned()
                 .collect())
+        }
+
+        async fn list_service_accounts(&self) -> Result<Vec<ServiceAccountRecord>, StoreError> {
+            Ok(self.service_accounts.clone())
         }
     }
 

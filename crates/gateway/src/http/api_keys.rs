@@ -3,7 +3,10 @@ use axum::{
     extract::{Path, State},
     http::HeaderMap,
 };
-use gateway_core::GatewayError;
+use gateway_core::{
+    AdminApiKeyRepository, ApiKeyOwnerKind, AuthError, GatewayError, GlobalRole,
+    IdentityRepository, MembershipRole, UserStatus,
+};
 use gateway_service::{
     AdminApiKeyModelOption, AdminApiKeyService, AdminApiKeyServiceAccountOwner, AdminApiKeySummary,
     AdminApiKeyTeamOwner, AdminApiKeyUserOwner, AdminApiKeysPayload as ServiceAdminApiKeysPayload,
@@ -14,7 +17,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::http::{
-    admin_auth::require_platform_admin,
+    admin_auth::require_authenticated_session,
     admin_contract::{Envelope, envelope, format_timestamp},
     error::AppError,
     state::AppState,
@@ -122,11 +125,11 @@ pub async fn list_api_keys(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Envelope<AdminApiKeysPayload>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let scope = require_api_key_admin_scope(&state, &headers).await?;
 
     let service = AdminApiKeyService::new(state.store.clone());
     let payload = service.list_api_keys().await?;
-    Ok(Json(envelope(map_payload(payload))))
+    Ok(Json(envelope(map_payload_for_scope(payload, &scope))))
 }
 
 #[utoipa::path(
@@ -141,7 +144,8 @@ pub async fn create_api_key(
     headers: HeaderMap,
     Json(request): Json<CreateApiKeyRequest>,
 ) -> Result<Json<Envelope<CreateApiKeyResponse>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let scope = require_api_key_admin_scope(&state, &headers).await?;
+    authorize_create_api_key(&state, &scope, &request).await?;
 
     let service = AdminApiKeyService::new(state.store.clone());
     let result = service
@@ -172,12 +176,14 @@ pub async fn update_api_key(
     Path(api_key_id): Path<String>,
     Json(request): Json<UpdateApiKeyRequest>,
 ) -> Result<Json<Envelope<UpdateApiKeyResponse>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let scope = require_api_key_admin_scope(&state, &headers).await?;
+    let api_key_id = parse_uuid(&api_key_id, "api_key_id")?;
+    authorize_existing_api_key(&state, &scope, api_key_id).await?;
 
     let service = AdminApiKeyService::new(state.store.clone());
     let api_key = service
         .update_api_key(
-            parse_uuid(&api_key_id, "api_key_id")?,
+            api_key_id,
             UpdateAdminApiKeyInput {
                 model_keys: request.model_keys,
             },
@@ -201,16 +207,122 @@ pub async fn revoke_api_key(
     headers: HeaderMap,
     Path(api_key_id): Path<String>,
 ) -> Result<Json<Envelope<RevokeApiKeyResponse>>, AppError> {
-    require_platform_admin(&state, &headers).await?;
+    let scope = require_api_key_admin_scope(&state, &headers).await?;
+    let api_key_id = parse_uuid(&api_key_id, "api_key_id")?;
+    authorize_existing_api_key(&state, &scope, api_key_id).await?;
 
     let service = AdminApiKeyService::new(state.store.clone());
-    let api_key = service
-        .revoke_api_key(parse_uuid(&api_key_id, "api_key_id")?)
-        .await?;
+    let api_key = service.revoke_api_key(api_key_id).await?;
 
     Ok(Json(envelope(RevokeApiKeyResponse {
         api_key: map_api_key_summary(api_key),
     })))
+}
+
+enum ApiKeyAdminScope {
+    Platform,
+    Team(Uuid),
+}
+
+async fn require_api_key_admin_scope(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<ApiKeyAdminScope, AppError> {
+    let actor = require_authenticated_session(state, headers).await?;
+    if actor.status != UserStatus::Active {
+        return Err(insufficient_privileges());
+    }
+    if actor.global_role == GlobalRole::PlatformAdmin {
+        return Ok(ApiKeyAdminScope::Platform);
+    }
+
+    let membership = state
+        .store
+        .get_team_membership_for_user(actor.user_id)
+        .await?
+        .ok_or_else(insufficient_privileges)?;
+    if !matches!(
+        membership.role,
+        MembershipRole::Owner | MembershipRole::Admin
+    ) {
+        return Err(insufficient_privileges());
+    }
+
+    Ok(ApiKeyAdminScope::Team(membership.team_id))
+}
+
+async fn authorize_create_api_key(
+    state: &AppState,
+    scope: &ApiKeyAdminScope,
+    request: &CreateApiKeyRequest,
+) -> Result<(), AppError> {
+    let ApiKeyAdminScope::Team(team_id) = scope else {
+        return Ok(());
+    };
+    if request.owner_kind.trim() != "service_account" {
+        return Err(insufficient_privileges());
+    }
+    let Some(raw_service_account_id) = request.owner_service_account_id.as_deref() else {
+        return Err(insufficient_privileges());
+    };
+    let service_account_id = parse_uuid(raw_service_account_id, "owner_service_account_id")?;
+    let service_account = state
+        .store
+        .get_service_account_by_id(service_account_id)
+        .await?
+        .ok_or_else(insufficient_privileges)?;
+    if service_account.team_id != *team_id {
+        return Err(insufficient_privileges());
+    }
+    Ok(())
+}
+
+async fn authorize_existing_api_key(
+    state: &AppState,
+    scope: &ApiKeyAdminScope,
+    api_key_id: Uuid,
+) -> Result<(), AppError> {
+    let ApiKeyAdminScope::Team(team_id) = scope else {
+        return Ok(());
+    };
+    let api_key = state
+        .store
+        .get_api_key_by_id(api_key_id)
+        .await?
+        .ok_or_else(|| {
+            AppError(GatewayError::InvalidRequest(
+                "api key not found".to_string(),
+            ))
+        })?;
+    if api_key.owner_kind != ApiKeyOwnerKind::ServiceAccount
+        || api_key.owner_team_id != Some(*team_id)
+    {
+        return Err(insufficient_privileges());
+    }
+    Ok(())
+}
+
+fn map_payload_for_scope(
+    payload: ServiceAdminApiKeysPayload,
+    scope: &ApiKeyAdminScope,
+) -> AdminApiKeysPayload {
+    let mut mapped = map_payload(payload);
+    if let ApiKeyAdminScope::Team(team_id) = scope {
+        let team_id = team_id.to_string();
+        mapped
+            .items
+            .retain(|item| item.owner_service_account_team_id.as_deref() == Some(team_id.as_str()));
+        mapped.teams.retain(|team| team.id == team_id);
+        mapped
+            .service_accounts
+            .retain(|service_account| service_account.team_id == team_id);
+        mapped.users.clear();
+    }
+    mapped
+}
+
+fn insufficient_privileges() -> AppError {
+    AppError(GatewayError::Auth(AuthError::InsufficientPrivileges))
 }
 
 fn map_payload(payload: ServiceAdminApiKeysPayload) -> AdminApiKeysPayload {

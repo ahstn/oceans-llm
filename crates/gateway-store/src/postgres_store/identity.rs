@@ -197,6 +197,22 @@ impl PostgresStore {
         rows.iter().map(decode_service_account_record).collect()
     }
 
+    pub async fn list_service_accounts(&self) -> Result<Vec<ServiceAccountRecord>, StoreError> {
+        let rows = sqlx::query(
+            r#"
+            SELECT service_account_id, team_id, service_account_key, service_account_name,
+                   status, model_access_mode, metadata_json, created_at, updated_at, disabled_at
+            FROM service_accounts
+            ORDER BY service_account_name ASC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+
+        rows.iter().map(decode_service_account_record).collect()
+    }
+
     pub async fn create_service_account(
         &self,
         team_id: Uuid,

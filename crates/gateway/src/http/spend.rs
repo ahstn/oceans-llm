@@ -489,6 +489,14 @@ pub async fn upsert_service_account_budget(
         .store
         .sum_usage_cost_for_service_account_in_window(service_account_id, window_start, window_end)
         .await?;
+    state
+        .service
+        .evaluate_budget_alert_after_service_account_budget_upsert(
+            &budget,
+            current_window_spend,
+            now,
+        )
+        .await?;
 
     Ok(Json(envelope(UpsertBudgetResultView {
         owner_kind: "service_account".to_string(),

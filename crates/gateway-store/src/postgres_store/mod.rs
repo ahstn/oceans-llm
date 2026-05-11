@@ -120,6 +120,10 @@ impl GatewayStore for PostgresStore {
         Self::list_active_service_accounts(self).await
     }
 
+    async fn list_service_accounts(&self) -> Result<Vec<ServiceAccountRecord>, StoreError> {
+        Self::list_service_accounts(self).await
+    }
+
     async fn create_service_account(
         &self,
         team_id: Uuid,
@@ -528,5 +532,9 @@ impl AdminIdentityRepository for PostgresStore {
 
     async fn list_active_service_accounts(&self) -> Result<Vec<ServiceAccountRecord>, StoreError> {
         Self::list_active_service_accounts(self).await
+    }
+
+    async fn list_service_accounts(&self) -> Result<Vec<ServiceAccountRecord>, StoreError> {
+        Self::list_service_accounts(self).await
     }
 }

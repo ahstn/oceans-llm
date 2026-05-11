@@ -5,7 +5,8 @@ use gateway_core::{
     ApiKeyOwnerKind, AuthenticatedApiKey, BudgetAlertChannel, BudgetAlertDeliveryRecord,
     BudgetAlertDeliveryStatus, BudgetAlertDispatchTask, BudgetAlertRecord, BudgetAlertRepository,
     BudgetCadence, BudgetRepository, GatewayError, IdentityRepository, MembershipRole, Money4,
-    TeamBudgetRecord, UsageLedgerRecord, UserBudgetRecord, UserStatus, budget_window_utc,
+    ServiceAccountBudgetRecord, TeamBudgetRecord, UsageLedgerRecord, UserBudgetRecord, UserStatus,
+    budget_window_utc,
 };
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tracing::{info, warn};
@@ -238,6 +239,28 @@ where
         self.create_alert_if_needed(AlertEvaluation {
             owner,
             budget_id: budget.team_budget_id,
+            cadence: budget.cadence,
+            budget_amount: budget.amount_usd,
+            occurred_at,
+            spent_before: current_spend,
+            spent_after: current_spend,
+            immediate_on_existing_threshold: true,
+        })
+        .await
+    }
+
+    pub async fn evaluate_after_service_account_budget_upsert(
+        &self,
+        budget: &ServiceAccountBudgetRecord,
+        current_spend: Money4,
+        occurred_at: OffsetDateTime,
+    ) -> Result<(), GatewayError> {
+        let owner = self
+            .resolve_service_account_owner(budget.service_account_id)
+            .await?;
+        self.create_alert_if_needed(AlertEvaluation {
+            owner,
+            budget_id: budget.service_account_budget_id,
             cadence: budget.cadence,
             budget_amount: budget.amount_usd,
             occurred_at,
