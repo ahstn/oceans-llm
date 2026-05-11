@@ -24,20 +24,20 @@ This document is schema-oriented. It describes the persistent relationships that
 2. `users` 0..1 `team_memberships`
 3. `teams` 0..N `service_accounts`
 4. `api_keys` belongs to exactly one principal owner: user or service account
-4. `api_keys` N..N `gateway_models` through `api_key_model_grants`
-5. Optional restriction overlays:
+5. `api_keys` N..N `gateway_models` through `api_key_model_grants`
+6. Optional restriction overlays:
    - `user_model_allowlist`
    - `team_model_allowlist`
-6. `user_budgets`, `team_budgets`, and `service_account_budgets` each allow one active budget per owner
-7. `usage_cost_events` records request ownership, model attribution, pricing status, and computed cost
-8. `request_logs` records the final user-visible request outcome
-9. `request_log_payloads` stores sanitized request and response bodies separately from the summary row
-10. `request_log_attempts` stores ordered upstream provider execution attempts for a request log
-11. `mcp_tool_invocations` stores individual tool-call audit rows correlated by `request_id`
-12. Request-log purge removes old request-log parents and their payload, tag, and attempt children without touching spend ledger rows
-13. `pricing_catalog_cache` stores normalized pricing snapshots used by runtime pricing resolution
-14. `model_pricing` stores effective-dated pricing rows used for historical charging
-15. `usage_cost_event_duplicates_archive` preserves duplicate-ledger migration/archive context
+7. `user_budgets`, `team_budgets`, and `service_account_budgets` each allow one active budget per owner
+8. `usage_cost_events` records request ownership, model attribution, pricing status, and computed cost
+9. `request_logs` records the final user-visible request outcome
+10. `request_log_payloads` stores sanitized request and response bodies separately from the summary row
+11. `request_log_attempts` stores ordered upstream provider execution attempts for a request log
+12. `mcp_tool_invocations` stores individual tool-call audit rows correlated by `request_id`
+13. Request-log purge removes old request-log parents and their payload, tag, and attempt children without touching spend ledger rows
+14. `pricing_catalog_cache` stores normalized pricing snapshots used by runtime pricing resolution
+15. `model_pricing` stores effective-dated pricing rows used for historical charging
+16. `usage_cost_event_duplicates_archive` preserves duplicate-ledger migration/archive context
 
 ## Table Catalog
 

@@ -250,50 +250,32 @@ impl BudgetRepository for PostgresStore {
         timezone: &str,
         updated_at: OffsetDateTime,
     ) -> Result<ServiceAccountBudgetRecord, StoreError> {
-        let updated = sqlx::query(
+        sqlx::query(
             r#"
-            UPDATE service_account_budgets
-            SET cadence = $1,
-                amount_10000 = $2,
-                hard_limit = $3,
-                timezone = $4,
-                updated_at = $5
-            WHERE service_account_id = $6
-              AND is_active = 1
+            INSERT INTO service_account_budgets (
+                service_account_budget_id, service_account_id, cadence, amount_10000,
+                hard_limit, timezone, is_active, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8)
+            ON CONFLICT (service_account_id) WHERE is_active = 1
+            DO UPDATE SET
+                cadence = excluded.cadence,
+                amount_10000 = excluded.amount_10000,
+                hard_limit = excluded.hard_limit,
+                timezone = excluded.timezone,
+                updated_at = excluded.updated_at
             "#,
         )
+        .bind(Uuid::new_v4().to_string())
+        .bind(service_account_id.to_string())
         .bind(cadence.as_str())
         .bind(amount_usd.as_scaled_i64())
         .bind(if hard_limit { 1_i64 } else { 0_i64 })
         .bind(timezone)
         .bind(updated_at.unix_timestamp())
-        .bind(service_account_id.to_string())
+        .bind(updated_at.unix_timestamp())
         .execute(&self.pool)
         .await
-        .map_err(to_query_error)?
-        .rows_affected();
-
-        if updated == 0 {
-            sqlx::query(
-                r#"
-                INSERT INTO service_account_budgets (
-                    service_account_budget_id, service_account_id, cadence, amount_10000,
-                    hard_limit, timezone, is_active, created_at, updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8)
-                "#,
-            )
-            .bind(Uuid::new_v4().to_string())
-            .bind(service_account_id.to_string())
-            .bind(cadence.as_str())
-            .bind(amount_usd.as_scaled_i64())
-            .bind(if hard_limit { 1_i64 } else { 0_i64 })
-            .bind(timezone)
-            .bind(updated_at.unix_timestamp())
-            .bind(updated_at.unix_timestamp())
-            .execute(&self.pool)
-            .await
-            .map_err(to_query_error)?;
-        }
+        .map_err(to_query_error)?;
 
         self.get_active_budget_for_service_account(service_account_id)
             .await?

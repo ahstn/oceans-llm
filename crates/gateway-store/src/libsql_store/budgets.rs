@@ -276,54 +276,34 @@ impl BudgetRepository for LibsqlStore {
         timezone: &str,
         updated_at: OffsetDateTime,
     ) -> Result<ServiceAccountBudgetRecord, StoreError> {
-        let updated = self
-            .connection
+        self.connection
             .execute(
                 r#"
-                UPDATE service_account_budgets
-                SET cadence = ?1,
-                    amount_10000 = ?2,
-                    hard_limit = ?3,
-                    timezone = ?4,
-                    updated_at = ?5
-                WHERE service_account_id = ?6
-                  AND is_active = 1
+                INSERT INTO service_account_budgets (
+                    service_account_budget_id, service_account_id, cadence, amount_10000,
+                    hard_limit, timezone, is_active, created_at, updated_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8)
+                ON CONFLICT(service_account_id) WHERE is_active = 1
+                DO UPDATE SET
+                    cadence = excluded.cadence,
+                    amount_10000 = excluded.amount_10000,
+                    hard_limit = excluded.hard_limit,
+                    timezone = excluded.timezone,
+                    updated_at = excluded.updated_at
                 "#,
                 libsql::params![
+                    Uuid::new_v4().to_string(),
+                    service_account_id.to_string(),
                     cadence.as_str(),
                     amount_usd.as_scaled_i64(),
                     if hard_limit { 1 } else { 0 },
                     timezone,
                     updated_at.unix_timestamp(),
-                    service_account_id.to_string()
+                    updated_at.unix_timestamp(),
                 ],
             )
             .await
             .map_err(to_query_error)?;
-
-        if updated == 0 {
-            self.connection
-                .execute(
-                    r#"
-                    INSERT INTO service_account_budgets (
-                        service_account_budget_id, service_account_id, cadence, amount_10000,
-                        hard_limit, timezone, is_active, created_at, updated_at
-                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8)
-                    "#,
-                    libsql::params![
-                        Uuid::new_v4().to_string(),
-                        service_account_id.to_string(),
-                        cadence.as_str(),
-                        amount_usd.as_scaled_i64(),
-                        if hard_limit { 1 } else { 0 },
-                        timezone,
-                        updated_at.unix_timestamp(),
-                        updated_at.unix_timestamp(),
-                    ],
-                )
-                .await
-                .map_err(to_query_error)?;
-        }
 
         self.get_active_budget_for_service_account(service_account_id)
             .await?

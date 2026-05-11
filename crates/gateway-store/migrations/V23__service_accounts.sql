@@ -18,6 +18,9 @@ CREATE INDEX IF NOT EXISTS service_accounts_team_idx
 CREATE INDEX IF NOT EXISTS service_accounts_status_idx
   ON service_accounts (status);
 
+CREATE UNIQUE INDEX IF NOT EXISTS service_accounts_id_team_uidx
+  ON service_accounts (service_account_id, team_id);
+
 CREATE TABLE IF NOT EXISTS service_account_model_allowlist (
   service_account_id TEXT NOT NULL,
   model_id TEXT NOT NULL,
@@ -30,6 +33,52 @@ CREATE INDEX IF NOT EXISTS service_account_model_allowlist_model_idx
   ON service_account_model_allowlist (model_id);
 
 DROP TABLE IF EXISTS api_keys_new;
+
+DROP TABLE IF EXISTS v21_api_key_model_grants_preserved;
+CREATE TEMP TABLE v21_api_key_model_grants_preserved AS
+SELECT grant_row.*
+FROM api_key_model_grants AS grant_row
+JOIN api_keys AS key_row ON key_row.id = grant_row.api_key_id
+WHERE key_row.owner_kind = 'user';
+
+DROP TABLE IF EXISTS v21_request_logs_preserved;
+CREATE TEMP TABLE v21_request_logs_preserved AS
+SELECT log_row.*
+FROM request_logs AS log_row
+JOIN api_keys AS key_row ON key_row.id = log_row.api_key_id
+WHERE key_row.owner_kind = 'user';
+
+DROP TABLE IF EXISTS v21_request_log_payloads_preserved;
+CREATE TEMP TABLE v21_request_log_payloads_preserved AS
+SELECT payload_row.*
+FROM request_log_payloads AS payload_row
+JOIN v21_request_logs_preserved AS log_row ON log_row.request_log_id = payload_row.request_log_id;
+
+DROP TABLE IF EXISTS v21_request_log_tags_preserved;
+CREATE TEMP TABLE v21_request_log_tags_preserved AS
+SELECT tag_row.*
+FROM request_log_tags AS tag_row
+JOIN v21_request_logs_preserved AS log_row ON log_row.request_log_id = tag_row.request_log_id;
+
+DROP TABLE IF EXISTS v21_request_log_attempts_preserved;
+CREATE TEMP TABLE v21_request_log_attempts_preserved AS
+SELECT attempt_row.*
+FROM request_log_attempts AS attempt_row
+JOIN v21_request_logs_preserved AS log_row ON log_row.request_log_id = attempt_row.request_log_id;
+
+DROP TABLE IF EXISTS v21_usage_cost_events_preserved;
+CREATE TEMP TABLE v21_usage_cost_events_preserved AS
+SELECT event_row.*
+FROM usage_cost_events AS event_row
+JOIN api_keys AS key_row ON key_row.id = event_row.api_key_id
+WHERE key_row.owner_kind = 'user';
+
+DROP TABLE IF EXISTS v21_audit_log_actor_keys_preserved;
+CREATE TEMP TABLE v21_audit_log_actor_keys_preserved AS
+SELECT audit_row.id, audit_row.actor_api_key_id
+FROM audit_logs AS audit_row
+JOIN api_keys AS key_row ON key_row.id = audit_row.actor_api_key_id
+WHERE key_row.owner_kind = 'user';
 
 CREATE TABLE api_keys_new (
   id TEXT PRIMARY KEY,
@@ -46,11 +95,13 @@ CREATE TABLE api_keys_new (
   revoked_at INTEGER,
   CHECK (
     (owner_kind = 'user' AND owner_user_id IS NOT NULL AND owner_team_id IS NULL AND owner_service_account_id IS NULL) OR
-    (owner_kind = 'service_account' AND owner_service_account_id IS NOT NULL AND owner_user_id IS NULL)
+    (owner_kind = 'service_account' AND owner_service_account_id IS NOT NULL AND owner_team_id IS NOT NULL AND owner_user_id IS NULL)
   ),
   FOREIGN KEY (owner_user_id) REFERENCES users(user_id) ON DELETE CASCADE,
   FOREIGN KEY (owner_team_id) REFERENCES teams(team_id) ON DELETE SET NULL,
-  FOREIGN KEY (owner_service_account_id) REFERENCES service_accounts(service_account_id) ON DELETE CASCADE
+  FOREIGN KEY (owner_service_account_id) REFERENCES service_accounts(service_account_id) ON DELETE CASCADE,
+  FOREIGN KEY (owner_service_account_id, owner_team_id)
+    REFERENCES service_accounts(service_account_id, team_id) ON DELETE CASCADE
 );
 
 INSERT INTO api_keys_new (
@@ -67,6 +118,40 @@ WHERE owner_kind = 'user';
 
 DROP TABLE api_keys;
 ALTER TABLE api_keys_new RENAME TO api_keys;
+
+INSERT INTO api_key_model_grants
+SELECT * FROM v21_api_key_model_grants_preserved;
+
+INSERT INTO request_logs
+SELECT * FROM v21_request_logs_preserved;
+
+INSERT INTO request_log_payloads
+SELECT * FROM v21_request_log_payloads_preserved;
+
+INSERT INTO request_log_tags
+SELECT * FROM v21_request_log_tags_preserved;
+
+INSERT INTO request_log_attempts
+SELECT * FROM v21_request_log_attempts_preserved;
+
+INSERT INTO usage_cost_events
+SELECT * FROM v21_usage_cost_events_preserved;
+
+UPDATE audit_logs
+SET actor_api_key_id = (
+  SELECT preserved.actor_api_key_id
+  FROM v21_audit_log_actor_keys_preserved AS preserved
+  WHERE preserved.id = audit_logs.id
+)
+WHERE id IN (SELECT id FROM v21_audit_log_actor_keys_preserved);
+
+DROP TABLE v21_api_key_model_grants_preserved;
+DROP TABLE v21_request_log_payloads_preserved;
+DROP TABLE v21_request_log_tags_preserved;
+DROP TABLE v21_request_log_attempts_preserved;
+DROP TABLE v21_request_logs_preserved;
+DROP TABLE v21_usage_cost_events_preserved;
+DROP TABLE v21_audit_log_actor_keys_preserved;
 
 CREATE INDEX IF NOT EXISTS api_keys_owner_user_idx
   ON api_keys (owner_user_id);

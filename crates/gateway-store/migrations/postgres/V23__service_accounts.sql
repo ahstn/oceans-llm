@@ -18,6 +18,9 @@ CREATE INDEX IF NOT EXISTS service_accounts_team_idx
 CREATE INDEX IF NOT EXISTS service_accounts_status_idx
   ON service_accounts (status);
 
+CREATE UNIQUE INDEX IF NOT EXISTS service_accounts_id_team_uidx
+  ON service_accounts (service_account_id, team_id);
+
 CREATE TABLE IF NOT EXISTS service_account_model_allowlist (
   service_account_id TEXT NOT NULL,
   model_id TEXT NOT NULL,
@@ -58,8 +61,16 @@ ALTER TABLE api_keys
   ADD CONSTRAINT api_keys_owner_check
   CHECK (
     (owner_kind = 'user' AND owner_user_id IS NOT NULL AND owner_team_id IS NULL AND owner_service_account_id IS NULL) OR
-    (owner_kind = 'service_account' AND owner_service_account_id IS NOT NULL AND owner_user_id IS NULL)
+    (owner_kind = 'service_account' AND owner_service_account_id IS NOT NULL AND owner_team_id IS NOT NULL AND owner_user_id IS NULL)
   );
+
+ALTER TABLE api_keys
+  DROP CONSTRAINT IF EXISTS api_keys_owner_service_account_team_fkey;
+
+ALTER TABLE api_keys
+  ADD CONSTRAINT api_keys_owner_service_account_team_fkey
+  FOREIGN KEY (owner_service_account_id, owner_team_id)
+  REFERENCES service_accounts(service_account_id, team_id) ON DELETE CASCADE;
 
 DROP INDEX IF EXISTS api_keys_owner_team_idx;
 

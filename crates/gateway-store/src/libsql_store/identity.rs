@@ -291,7 +291,8 @@ impl LibsqlStore {
         service_account_name: &str,
         updated_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
-        self.connection
+        let updated = self
+            .connection
             .execute(
                 r#"
                 UPDATE service_accounts
@@ -306,6 +307,11 @@ impl LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
+        if updated == 0 {
+            return Err(StoreError::NotFound(
+                "active service account not found".to_string(),
+            ));
+        }
         Ok(())
     }
 

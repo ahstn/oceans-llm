@@ -321,7 +321,7 @@ Seed semantics that matter:
 
 OIDC provider existence is validated at seed time against enabled runtime OIDC providers, not YAML parse time.
 
-Service accounts are managed by platform admins or by owning-team owners and admins. They are not a replacement spelling for `auth.seed_api_keys`.
+Service accounts are managed by admins. They are not a replacement spelling for `auth.seed_api_keys`.
 
 ## `budget_alerts`
 

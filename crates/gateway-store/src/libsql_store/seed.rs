@@ -235,8 +235,11 @@ impl LibsqlStore {
                         status, model_access_mode, metadata_json, created_at, updated_at, disabled_at
                     ) VALUES (?1, ?2, ?3, 'Seed API Keys', 'active', 'all', '{}', ?4, ?4, NULL)
                     ON CONFLICT(service_account_id) DO UPDATE SET
+                        team_id = excluded.team_id,
+                        service_account_key = excluded.service_account_key,
                         service_account_name = excluded.service_account_name,
                         status = excluded.status,
+                        model_access_mode = excluded.model_access_mode,
                         metadata_json = excluded.metadata_json,
                         updated_at = excluded.updated_at,
                         disabled_at = NULL

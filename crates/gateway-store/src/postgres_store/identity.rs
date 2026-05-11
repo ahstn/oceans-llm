@@ -250,7 +250,7 @@ impl PostgresStore {
         service_account_name: &str,
         updated_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
-        sqlx::query(
+        let updated = sqlx::query(
             r#"
             UPDATE service_accounts
             SET service_account_name = $1, updated_at = $2
@@ -262,7 +262,13 @@ impl PostgresStore {
         .bind(service_account_id.to_string())
         .execute(&self.pool)
         .await
-        .map_err(to_write_error)?;
+        .map_err(to_write_error)?
+        .rows_affected();
+        if updated == 0 {
+            return Err(StoreError::NotFound(
+                "active service account not found".to_string(),
+            ));
+        }
         Ok(())
     }
 
