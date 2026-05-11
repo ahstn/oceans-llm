@@ -22,6 +22,9 @@ import type {
   HarnessUsageRange,
   HarnessUsageView,
   LogoutResult,
+  McpInvocationDetailView,
+  McpInvocationFiltersInput,
+  McpInvocationPageView,
   ModelPageView,
   PasswordInviteResult,
   PasswordLoginInput,
@@ -241,6 +244,30 @@ export async function getRequestLogDetail(
   return unwrapGatewayResponse(
     await client.GET('/api/v1/admin/observability/request-logs/{request_log_id}', {
       params: { path: { request_log_id: requestLogId } },
+    }),
+  )
+}
+
+export async function listMcpInvocations(
+  filters: McpInvocationFiltersInput = {},
+): Promise<ApiEnvelope<McpInvocationPageView>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.GET('/api/v1/admin/observability/mcp-invocations', {
+      params: {
+        query: filters,
+      },
+    }),
+  )
+}
+
+export async function getMcpInvocationDetail(
+  invocationId: string,
+): Promise<ApiEnvelope<McpInvocationDetailView>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.GET('/api/v1/admin/observability/mcp-invocations/{mcp_tool_invocation_id}', {
+      params: { path: { mcp_tool_invocation_id: invocationId } },
     }),
   )
 }

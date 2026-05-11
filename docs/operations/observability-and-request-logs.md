@@ -1,8 +1,13 @@
 # Observability and Request Logs
 
-`See also`: [Agent Harness Usage](agent-harness-usage.md), [Data Relationships](../reference/data-relationships.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Admin Control Plane](../access/admin-control-plane.md), [Deploy and Operations](../setup/deploy-and-operations.md), [ADR: OTLP-First Observability and Payload-Backed Request Logs](../adr/2026-03-15-otlp-observability-and-request-log-payloads.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md), [ADR: MCP Tool Cardinality Observability](../adr/2026-04-28-mcp-tool-cardinality-observability.md)
+`See also`: [Request Logs](observability/request-logs.md), [MCP Invocations](observability/mcp-invocations.md), [Agent Harness Usage](agent-harness-usage.md), [Data Relationships](../reference/data-relationships.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Admin Control Plane](../access/admin-control-plane.md), [Deploy and Operations](../setup/deploy-and-operations.md), [ADR: OTLP-First Observability and Payload-Backed Request Logs](../adr/2026-03-15-otlp-observability-and-request-log-payloads.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md), [ADR: MCP Tool Cardinality Observability](../adr/2026-04-28-mcp-tool-cardinality-observability.md)
 
 This document describes the live observability contract for the gateway.
+
+## Observability Pages
+
+- [Request Logs](observability/request-logs.md): request-scoped admin list/detail, payload policy state, provider attempts, and request-level tool cardinality.
+- [MCP Invocations](observability/mcp-invocations.md): per-tool MCP audit rows, request correlation, owner context, authorization policy result, latency, and redacted argument/result metadata.
 
 ## Source of Truth
 
@@ -302,6 +307,11 @@ Platform admins can inspect request logs through:
 
 Request-log list and detail responses include the row metadata, so admins can see the public operation for each row, such as `chat_completions`, `responses`, or `embeddings`, alongside the typed payload policy and truncation fields.
 
+The MCP invocation admin UI consumes these generated admin API endpoints:
+
+- `GET /api/v1/admin/observability/mcp-invocations`
+- `GET /api/v1/admin/observability/mcp-invocations/{mcp_tool_invocation_id}`
+
 Validate documentation-only edits to this page with `mise run docs:check` before handoff.
 
 ## Usage Leaderboard
@@ -344,7 +354,7 @@ Current semantics:
 
 Use [Agent Harness Usage](agent-harness-usage.md) for the classifier contract and page behavior.
 
-Current list filters:
+Request-log list filters:
 
 - `page`
 - `page_size`

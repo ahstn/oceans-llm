@@ -4,12 +4,14 @@ import {
   createApiKey,
   deactivateUser,
   getRequestLogDetail,
+  getMcpInvocationDetail,
   getSpendReport,
   getUsageLeaderboard,
   listApiKeys,
   listModels,
   listBudgetAlertHistory,
   listRequestLogs,
+  listMcpInvocations,
   listSpendBudgets,
   listTeams,
   listUsers,
@@ -505,6 +507,87 @@ describe('server-side admin data wrappers', () => {
         }
       }
 
+      if (path === '/api/v1/admin/observability/mcp-invocations') {
+        return {
+          data: {
+            data: {
+              items: [
+                {
+                  mcp_tool_invocation_id: 'mcpinv_1',
+                  request_id: 'req_1',
+                  request_log_id: 'reqlog_1',
+                  api_key_id: 'api_key_1',
+                  user_id: null,
+                  team_id: 'team_1',
+                  server_id: 'server_1',
+                  server_display_key: 'github',
+                  server_display_name: 'GitHub',
+                  tool_id: 'tool_1',
+                  tool_display_key: 'create_issue',
+                  tool_display_name: 'Create issue',
+                  status: 'success',
+                  policy_result: 'allowed',
+                  latency_ms: 120,
+                  error_code: null,
+                  has_payload: true,
+                  arguments_payload_redacted: true,
+                  arguments_payload_truncated: false,
+                  result_payload_redacted: true,
+                  result_payload_truncated: false,
+                  metadata: {},
+                  occurred_at: '2026-03-10T11:33:00Z',
+                },
+              ],
+              page: 1,
+              page_size: 25,
+              total: 1,
+            },
+            meta: { generated_at: '2026-03-10T11:32:00Z' },
+          },
+          response: { status: 200 },
+        }
+      }
+
+      if (path === '/api/v1/admin/observability/mcp-invocations/{mcp_tool_invocation_id}') {
+        return {
+          data: {
+            data: {
+              invocation: {
+                mcp_tool_invocation_id: 'mcpinv_1',
+                request_id: 'req_1',
+                request_log_id: 'reqlog_1',
+                api_key_id: 'api_key_1',
+                user_id: null,
+                team_id: 'team_1',
+                server_id: 'server_1',
+                server_display_key: 'github',
+                server_display_name: 'GitHub',
+                tool_id: 'tool_1',
+                tool_display_key: 'create_issue',
+                tool_display_name: 'Create issue',
+                status: 'success',
+                policy_result: 'allowed',
+                latency_ms: 120,
+                error_code: null,
+                has_payload: true,
+                arguments_payload_redacted: true,
+                arguments_payload_truncated: false,
+                result_payload_redacted: true,
+                result_payload_truncated: false,
+                metadata: {},
+                occurred_at: '2026-03-10T11:33:00Z',
+              },
+              payload: {
+                arguments_json: { owner: 'ahstn', repo: 'oceans-llm' },
+                result_json: { number: 115 },
+              },
+            },
+            meta: { generated_at: '2026-03-10T11:32:00Z' },
+          },
+          response: { status: 200 },
+        }
+      }
+
       throw new Error(`Unexpected GET path: ${path}`)
     })
 
@@ -594,6 +677,7 @@ describe('server-side admin data wrappers', () => {
       spendBudgets,
       budgetAlerts,
       logs,
+      mcpInvocations,
       teams,
       users,
     ] = await Promise.all([
@@ -604,6 +688,7 @@ describe('server-side admin data wrappers', () => {
       listSpendBudgets(),
       listBudgetAlertHistory(),
       listRequestLogs(),
+      listMcpInvocations(),
       listTeams(),
       listUsers(),
     ])
@@ -618,6 +703,7 @@ describe('server-side admin data wrappers', () => {
     expect(spendBudgets.data.users.length).toBe(0)
     expect(budgetAlerts.data.items.length).toBe(0)
     expect(logs.data.items.length).toBeGreaterThan(0)
+    expect(mcpInvocations.data.items[0].server_display_key).toBe('github')
     expect(teams.data.teams.length).toBeGreaterThan(0)
     expect(teams.data.users.length).toBeGreaterThan(0)
     expect(users.data.users.length).toBeGreaterThan(0)
@@ -671,6 +757,31 @@ describe('server-side admin data wrappers', () => {
     const detail = await getRequestLogDetail('reqlog_1')
     expect(detail.data.log.request_log_id).toBe('reqlog_1')
     expect(detail.data.payload?.response_json).toEqual({ body: { output: 'pong' } })
+  })
+
+  it('wires MCP invocation list and detail to the expected gateway paths', async () => {
+    const invocations = await listMcpInvocations({
+      request_id: 'req_1',
+      server_display_key: 'github',
+    })
+    const detail = await getMcpInvocationDetail('mcpinv_1')
+
+    expect(invocations.data.items[0].tool_display_key).toBe('create_issue')
+    expect(detail.data.payload?.result_json).toEqual({ number: 115 })
+    expect(GET).toHaveBeenCalledWith('/api/v1/admin/observability/mcp-invocations', {
+      params: {
+        query: {
+          request_id: 'req_1',
+          server_display_key: 'github',
+        },
+      },
+    })
+    expect(GET).toHaveBeenCalledWith(
+      '/api/v1/admin/observability/mcp-invocations/{mcp_tool_invocation_id}',
+      {
+        params: { path: { mcp_tool_invocation_id: 'mcpinv_1' } },
+      },
+    )
   })
 
   it('wires leaderboard fetches to the documented gateway path and query params', async () => {

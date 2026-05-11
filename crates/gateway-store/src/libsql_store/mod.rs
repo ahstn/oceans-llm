@@ -2,6 +2,7 @@ mod api_keys;
 mod budget_alerts;
 mod budgets;
 mod identity;
+mod mcp_tool_invocations;
 mod models;
 mod pricing_catalog;
 mod providers;
@@ -19,7 +20,10 @@ use gateway_core::{
     BudgetAlertDeliveryStatus, BudgetAlertDispatchTask, BudgetAlertHistoryPage,
     BudgetAlertHistoryQuery, BudgetAlertHistoryRecord, BudgetAlertRecord, BudgetAlertRepository,
     BudgetCadence, BudgetRepository, GatewayModel, GlobalRole, IdentityRepository,
-    IdentityUserRecord, MembershipRole, ModelAccessMode, ModelPricingRecord, ModelRepository,
+    IdentityUserRecord, MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, McpToolInvocationDetail,
+    McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
+    McpToolInvocationRecord, McpToolInvocationRepository, McpToolInvocationStatus,
+    McpToolPolicyResult, MembershipRole, ModelAccessMode, ModelPricingRecord, ModelRepository,
     ModelRoute, Money4, NewApiKeyRecord, OidcProviderRecord, PasswordInvitationRecord,
     PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
     PricingProvenance, ProviderConnection, ProviderRepository, RequestAttemptRecord,

@@ -990,6 +990,145 @@ pub struct RequestLogDetail {
     pub attempts: Vec<RequestAttemptRecord>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum McpToolInvocationStatus {
+    Success,
+    Unauthorized,
+    PolicyDenied,
+    UpstreamError,
+    GatewayError,
+    Timeout,
+    InvalidRequest,
+}
+
+impl McpToolInvocationStatus {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Success => "success",
+            Self::Unauthorized => "unauthorized",
+            Self::PolicyDenied => "policy_denied",
+            Self::UpstreamError => "upstream_error",
+            Self::GatewayError => "gateway_error",
+            Self::Timeout => "timeout",
+            Self::InvalidRequest => "invalid_request",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "success" => Some(Self::Success),
+            "unauthorized" => Some(Self::Unauthorized),
+            "policy_denied" => Some(Self::PolicyDenied),
+            "upstream_error" => Some(Self::UpstreamError),
+            "gateway_error" => Some(Self::GatewayError),
+            "timeout" => Some(Self::Timeout),
+            "invalid_request" => Some(Self::InvalidRequest),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum McpToolPolicyResult {
+    Allowed,
+    Denied,
+    NotEvaluated,
+}
+
+impl McpToolPolicyResult {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Allowed => "allowed",
+            Self::Denied => "denied",
+            Self::NotEvaluated => "not_evaluated",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "allowed" => Some(Self::Allowed),
+            "denied" => Some(Self::Denied),
+            "not_evaluated" => Some(Self::NotEvaluated),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpToolInvocationRecord {
+    pub mcp_tool_invocation_id: Uuid,
+    pub request_log_id: Option<Uuid>,
+    pub request_id: String,
+    pub api_key_id: Option<Uuid>,
+    pub user_id: Option<Uuid>,
+    pub team_id: Option<Uuid>,
+    pub owner_kind: ApiKeyOwnerKind,
+    pub server_id: Option<Uuid>,
+    pub server_display_key: String,
+    pub server_display_name: String,
+    pub tool_id: Option<Uuid>,
+    pub tool_display_key: String,
+    pub tool_display_name: String,
+    pub status: McpToolInvocationStatus,
+    pub policy_result: McpToolPolicyResult,
+    pub latency_ms: Option<i64>,
+    pub error_code: Option<String>,
+    pub has_payload: bool,
+    pub arguments_payload_truncated: bool,
+    pub result_payload_truncated: bool,
+    pub arguments_payload_redacted: bool,
+    pub result_payload_redacted: bool,
+    pub metadata: Map<String, Value>,
+    pub occurred_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpToolInvocationPayloadRecord {
+    pub mcp_tool_invocation_id: Uuid,
+    pub arguments_json: Value,
+    pub result_json: Value,
+}
+
+pub const MAX_MCP_TOOL_INVOCATION_PAGE_SIZE: u32 = 500;
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct McpToolInvocationQuery {
+    pub page: u32,
+    pub page_size: u32,
+    pub request_id: Option<String>,
+    pub server_display_key: Option<String>,
+    pub server_display_name: Option<String>,
+    pub tool_display_key: Option<String>,
+    pub tool_display_name: Option<String>,
+    pub api_key_id: Option<Uuid>,
+    pub user_id: Option<Uuid>,
+    pub team_id: Option<Uuid>,
+    pub status: Option<McpToolInvocationStatus>,
+    pub policy_result: Option<McpToolPolicyResult>,
+    pub occurred_at_start: Option<OffsetDateTime>,
+    pub occurred_at_end: Option<OffsetDateTime>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpToolInvocationPage {
+    pub items: Vec<McpToolInvocationRecord>,
+    pub page: u32,
+    pub page_size: u32,
+    pub total: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpToolInvocationDetail {
+    pub invocation: McpToolInvocationRecord,
+    pub payload: Option<McpToolInvocationPayloadRecord>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PricingCatalogCacheRecord {
     pub catalog_key: String,

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useTransition, type ReactNode } from 'react'
-import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { Link, createFileRoute, useRouter } from '@tanstack/react-router'
 import { useVirtualizer } from '@tanstack/react-virtual'
 
 import { BrandIcon } from '@/components/icons/brand-icon'
@@ -603,8 +603,18 @@ function ToolCardinalityCard({ item }: { item: RequestLogView }) {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>MCP &amp; Tools</CardTitle>
+      <CardHeader className="flex flex-row items-start justify-between gap-4">
+        <div className="flex flex-col gap-1">
+          <CardTitle>MCP &amp; Tools</CardTitle>
+          <CardDescription>
+            Request-level tool cardinality, with request-linked MCP invocation drill-down.
+          </CardDescription>
+        </div>
+        <Button type="button" variant="outline" asChild>
+          <Link to="/observability/mcp-invocations" search={{ request_id: item.request_id }}>
+            View MCP Invocations
+          </Link>
+        </Button>
       </CardHeader>
       <CardContent>
         <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">

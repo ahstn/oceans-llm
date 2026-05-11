@@ -58,6 +58,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V21__request_log_agent_harness.sql"),
         postgres_sql: include_str!("../migrations/postgres/V21__request_log_agent_harness.sql"),
     },
+    MigrationManifest {
+        version: 22,
+        name: "mcp_tool_invocations",
+        checksum: "V22__mcp_tool_invocations.sql",
+        libsql_sql: include_str!("../migrations/V22__mcp_tool_invocations.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V22__mcp_tool_invocations.sql"),
+    },
 ];
 
 #[cfg(test)]

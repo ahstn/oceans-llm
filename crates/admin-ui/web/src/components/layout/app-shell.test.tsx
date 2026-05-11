@@ -56,6 +56,7 @@ describe('AppShell', () => {
       'Models',
       'Control Plane',
       'Observability',
+      'MCP Invocations',
       'Identity',
       'Admin User',
       'admin@example.com',

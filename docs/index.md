@@ -41,7 +41,7 @@ features:
     link: /operations/budgets-and-spending
     linkText: Manage budgets
   - title: Trace requests
-    details: Follow request logs, observability payloads, failure modes, and provider compatibility edges.
-    link: /reference/request-lifecycle-and-failure-modes
-    linkText: Trace flow
+    details: Follow request logs, MCP invocation records, observability payloads, failure modes, and provider compatibility edges.
+    link: /operations/observability/request-logs
+    linkText: Inspect observability
 ---

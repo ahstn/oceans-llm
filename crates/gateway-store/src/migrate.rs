@@ -71,6 +71,8 @@ const ACTIVE_APPLICATION_TABLES: &[&str] = &[
     "request_log_payloads",
     "request_log_tags",
     "request_log_attempts",
+    "mcp_tool_invocations",
+    "mcp_tool_invocation_payloads",
     "user_budgets",
     "team_budgets",
     "budget_alerts",

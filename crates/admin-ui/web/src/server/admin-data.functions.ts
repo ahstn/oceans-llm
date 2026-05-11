@@ -16,11 +16,13 @@ import {
   reactivateUser,
   getRequestLogDetail,
   getHarnessUsage,
+  getMcpInvocationDetail,
   getSession,
   getUsageLeaderboard,
   getSpendReport,
   getInvitation,
   listRequestLogs,
+  listMcpInvocations,
   listSpendBudgets,
   listTeams,
   listUsers,
@@ -181,6 +183,18 @@ export const getRequestLogs = createServerFn({ method: 'POST' }).handler(
 export const getObservabilityRequestLogDetail = createServerFn({ method: 'GET' }).handler(
   async ({ data }: { data: { requestLogId: string } }) => {
     return getRequestLogDetail(data.requestLogId)
+  },
+)
+
+export const getMcpInvocations = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data?: Parameters<typeof listMcpInvocations>[0] }) => {
+    return listMcpInvocations(data)
+  },
+)
+
+export const getObservabilityMcpInvocationDetail = createServerFn({ method: 'GET' }).handler(
+  async ({ data }: { data: { invocationId: string } }) => {
+    return getMcpInvocationDetail(data.invocationId)
   },
 )
 

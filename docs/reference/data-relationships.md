@@ -1,6 +1,6 @@
 # Data Relationships
 
-`See also`: [Identity and Access](../access/identity-and-access.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](provider-api-compatibility.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [ADR: Identity Foundation for Users, Teams, and API Key Ownership](../adr/2026-03-05-identity-foundation.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md), [ADR: MCP Tool Cardinality Observability](../adr/2026-04-28-mcp-tool-cardinality-observability.md)
+`See also`: [Identity and Access](../access/identity-and-access.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](provider-api-compatibility.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../operations/observability/mcp-invocations.md), [ADR: Identity Foundation for Users, Teams, and API Key Ownership](../adr/2026-03-05-identity-foundation.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md), [ADR: MCP Tool Cardinality Observability](../adr/2026-04-28-mcp-tool-cardinality-observability.md)
 
 This document is schema-oriented. It describes the persistent relationships that are hard to infer from a single file, but it does not try to restate every runtime rule owned by neighboring docs.
 
@@ -32,9 +32,10 @@ This document is schema-oriented. It describes the persistent relationships that
 8. `request_logs` records the final user-visible request outcome
 9. `request_log_payloads` stores sanitized request and response bodies separately from the summary row
 10. `request_log_attempts` stores ordered upstream provider execution attempts for a request log
-11. `pricing_catalog_cache` stores normalized pricing snapshots used by runtime pricing resolution
-11. `model_pricing` stores effective-dated pricing rows used for historical charging
-12. `usage_cost_event_duplicates_archive` preserves duplicate-ledger migration/archive context
+11. `mcp_tool_invocations` stores individual tool-call audit rows correlated by `request_id`
+12. `pricing_catalog_cache` stores normalized pricing snapshots used by runtime pricing resolution
+13. `model_pricing` stores effective-dated pricing rows used for historical charging
+14. `usage_cost_event_duplicates_archive` preserves duplicate-ledger migration/archive context
 
 ## Table Catalog
 
@@ -113,6 +114,12 @@ Compatibility metadata is not a provider config fallback and is not an `extra_bo
 - `request_log_attempts`
   - Key columns: `request_attempt_id`, `request_log_id`, `request_id`, `attempt_number`, `route_id`, `provider_key`, `upstream_model`, `status`, `retryable`, `terminal`, `produced_final_response`, `stream`, `started_at`, `completed_at`, `latency_ms`
   - Notes: attempt rows are metadata-only children of `request_logs`; they are ordered by `attempt_number` and describe provider execution, not pre-provider gateway rejections
+- `mcp_tool_invocations`
+  - Key columns: `mcp_tool_invocation_id`, `request_log_id`, `request_id`, `api_key_id`, `user_id`, `team_id`, `owner_kind`, `server_id`, `server_display_key`, `tool_id`, `tool_display_key`, `status`, `policy_result`, `latency_ms`, `error_code`, `has_payload`, `arguments_payload_truncated`, `result_payload_truncated`, `arguments_payload_redacted`, `result_payload_redacted`, `metadata_json`, `occurred_at`
+  - Notes: MCP invocation rows are correlated by `request_id`; `request_log_id` is nullable and non-owning because request-log summaries are written at final outcome and may be absent or purged independently. Server/tool stable IDs are nullable until registry records exist, but display keys are required.
+- `mcp_tool_invocation_payloads`
+  - Key columns: `mcp_tool_invocation_id`, `arguments_json`, `result_json`
+  - Notes: payload rows exist only when MCP invocation payload policy captures sanitized payloads; summary rows are still recorded when payload capture is disabled.
 
 ### Pricing Catalog Cache
 

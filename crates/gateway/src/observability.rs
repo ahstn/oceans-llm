@@ -27,6 +27,8 @@ pub struct GatewayMetrics {
     tokens: Counter<u64>,
     cost_usd: Counter<f64>,
     tool_cardinality: Histogram<u64>,
+    mcp_tool_invocations: Counter<u64>,
+    mcp_tool_invocation_duration: Histogram<f64>,
     usage_records: Counter<u64>,
     usage_record_failures: Counter<u64>,
     #[cfg(any(test, debug_assertions))]
@@ -53,6 +55,14 @@ pub struct ChatRequestMetric<'a> {
     pub status_code: i64,
     pub outcome: &'a str,
     pub latency_seconds: f64,
+}
+
+#[derive(Debug, Clone)]
+pub struct McpToolInvocationMetric<'a> {
+    pub status: &'a str,
+    pub policy_result: &'a str,
+    pub owner_kind: &'a str,
+    pub latency_seconds: Option<f64>,
 }
 
 #[cfg(any(test, debug_assertions))]
@@ -100,6 +110,15 @@ impl GatewayMetrics {
             tool_cardinality: meter
                 .u64_histogram("gateway.chat.tool_cardinality")
                 .with_description("Per-request MCP and tool cardinality counts")
+                .build(),
+            mcp_tool_invocations: meter
+                .u64_counter("gateway.mcp.tool_invocations")
+                .with_description("MCP tool invocation totals")
+                .build(),
+            mcp_tool_invocation_duration: meter
+                .f64_histogram("gateway.mcp.tool_invocation.duration")
+                .with_unit("s")
+                .with_description("MCP tool invocation duration in seconds")
                 .build(),
             usage_records: meter
                 .u64_counter("gateway.chat.usage_records")
@@ -199,6 +218,22 @@ impl GatewayMetrics {
             attrs.push(KeyValue::new("operation", operation.to_string()));
             attrs.push(KeyValue::new("dimension", dimension));
             self.tool_cardinality.record(value, &attrs);
+        }
+    }
+
+    pub fn record_mcp_tool_invocation(&self, metric: &McpToolInvocationMetric<'_>) {
+        let attrs = vec![
+            KeyValue::new("status", metric.status.to_string()),
+            KeyValue::new("policy_result", metric.policy_result.to_string()),
+            KeyValue::new("owner_kind", metric.owner_kind.to_string()),
+        ];
+
+        self.mcp_tool_invocations.add(1, &attrs);
+        if let Some(latency_seconds) = metric.latency_seconds
+            && latency_seconds >= 0.0
+        {
+            self.mcp_tool_invocation_duration
+                .record(latency_seconds, &attrs);
         }
     }
 

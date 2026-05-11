@@ -25,7 +25,9 @@ mod tests {
         ApiKeyOwnerKind, ApiKeyRepository, AuthMode, BudgetAlertChannel, BudgetAlertDeliveryRecord,
         BudgetAlertDeliveryStatus, BudgetAlertHistoryQuery, BudgetAlertRecord,
         BudgetAlertRepository, BudgetCadence, BudgetRepository, GlobalRole, IdentityRepository,
-        MembershipRole, ModelPricingRecord, ModelRepository, Money4, OpenAiCompatDeveloperRole,
+        McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
+        McpToolInvocationRepository, McpToolInvocationStatus, McpToolPolicyResult, MembershipRole,
+        ModelPricingRecord, ModelRepository, Money4, OpenAiCompatDeveloperRole,
         OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
         PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
         PricingProvenance, ProviderCapabilities, RequestLogQuery, RequestLogRecord,
@@ -100,6 +102,171 @@ mod tests {
             computed_cost_usd: Money4::from_scaled(computed_cost_10000),
             occurred_at,
         }
+    }
+
+    fn build_mcp_tool_invocation(
+        request_id: &str,
+        api_key_id: Option<Uuid>,
+        user_id: Option<Uuid>,
+        team_id: Option<Uuid>,
+        occurred_at: OffsetDateTime,
+    ) -> McpToolInvocationRecord {
+        McpToolInvocationRecord {
+            mcp_tool_invocation_id: Uuid::new_v4(),
+            request_log_id: None,
+            request_id: request_id.to_string(),
+            api_key_id,
+            user_id,
+            team_id,
+            owner_kind: if team_id.is_some() {
+                ApiKeyOwnerKind::Team
+            } else {
+                ApiKeyOwnerKind::User
+            },
+            server_id: None,
+            server_display_key: "github-prod".to_string(),
+            server_display_name: "GitHub Production".to_string(),
+            tool_id: None,
+            tool_display_key: "issues.create".to_string(),
+            tool_display_name: "Create Issue".to_string(),
+            status: McpToolInvocationStatus::Success,
+            policy_result: McpToolPolicyResult::Allowed,
+            latency_ms: Some(42),
+            error_code: None,
+            has_payload: true,
+            arguments_payload_truncated: false,
+            result_payload_truncated: true,
+            arguments_payload_redacted: true,
+            result_payload_redacted: false,
+            metadata: Map::new(),
+            occurred_at,
+        }
+    }
+
+    async fn exercise_mcp_tool_invocation_repository<S>(store: &S)
+    where
+        S: GatewayStore + McpToolInvocationRepository + Sync,
+    {
+        let providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: json!({"base_url": "https://api.openai.com/v1"}),
+            secrets: None,
+        }];
+        let models = vec![SeedModel {
+            model_key: "fast".to_string(),
+            alias_target_model_key: None,
+            description: None,
+            tags: vec![],
+            rank: 10,
+            routes: vec![SeedModelRoute {
+                provider_key: "openai-prod".to_string(),
+                upstream_model: "gpt-4o-mini".to_string(),
+                priority: 10,
+                weight: 1.0,
+                enabled: true,
+                extra_headers: Map::new(),
+                extra_body: Map::new(),
+                capabilities: ProviderCapabilities::all_enabled(),
+                compatibility: Default::default(),
+            }],
+        }];
+        let api_keys = vec![SeedApiKey {
+            name: "dev".to_string(),
+            public_id: "dev123".to_string(),
+            secret_hash: "hash".to_string(),
+            allowed_models: vec!["fast".to_string()],
+        }];
+
+        store
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[])
+            .await
+            .expect("seed");
+        let api_key = store
+            .get_api_key_by_public_id("dev123")
+            .await
+            .expect("load api key")
+            .expect("api key");
+        let occurred_at = OffsetDateTime::now_utc();
+        let invocation = build_mcp_tool_invocation(
+            "req-mcp-1",
+            Some(api_key.id),
+            None,
+            api_key.owner_team_id,
+            occurred_at,
+        );
+        let payload = McpToolInvocationPayloadRecord {
+            mcp_tool_invocation_id: invocation.mcp_tool_invocation_id,
+            arguments_json: json!({"owner": "ahstn", "token": "[REDACTED]"}),
+            result_json: json!({"issue": 115, "truncated": true}),
+        };
+        let denied = McpToolInvocationRecord {
+            mcp_tool_invocation_id: Uuid::new_v4(),
+            request_id: "req-mcp-2".to_string(),
+            tool_display_key: "repos.delete".to_string(),
+            tool_display_name: "Delete Repository".to_string(),
+            status: McpToolInvocationStatus::Unauthorized,
+            policy_result: McpToolPolicyResult::Denied,
+            has_payload: false,
+            occurred_at: occurred_at - Duration::seconds(60),
+            ..invocation.clone()
+        };
+
+        store
+            .insert_mcp_tool_invocation(&invocation, Some(&payload))
+            .await
+            .expect("insert invocation");
+        store
+            .insert_mcp_tool_invocation(&denied, None)
+            .await
+            .expect("insert denied invocation");
+
+        let page = store
+            .list_mcp_tool_invocations(&McpToolInvocationQuery {
+                page: 1,
+                page_size: 10,
+                request_id: Some("req-mcp-1".to_string()),
+                server_display_key: Some("github-prod".to_string()),
+                server_display_name: Some("GitHub Production".to_string()),
+                tool_display_key: Some("issues.create".to_string()),
+                tool_display_name: Some("Create Issue".to_string()),
+                api_key_id: Some(api_key.id),
+                user_id: None,
+                team_id: api_key.owner_team_id,
+                status: Some(McpToolInvocationStatus::Success),
+                policy_result: Some(McpToolPolicyResult::Allowed),
+                occurred_at_start: Some(occurred_at - Duration::seconds(5)),
+                occurred_at_end: Some(occurred_at + Duration::seconds(5)),
+            })
+            .await
+            .expect("list invocations");
+        assert_eq!(page.total, 1);
+        assert_eq!(page.items[0].tool_display_key, "issues.create");
+        assert!(page.items[0].arguments_payload_redacted);
+        assert!(page.items[0].result_payload_truncated);
+
+        let denied_page = store
+            .list_mcp_tool_invocations(&McpToolInvocationQuery {
+                page: 1,
+                page_size: 10,
+                status: Some(McpToolInvocationStatus::Unauthorized),
+                policy_result: Some(McpToolPolicyResult::Denied),
+                ..Default::default()
+            })
+            .await
+            .expect("list denied invocations");
+        assert_eq!(denied_page.total, 1);
+        assert_eq!(denied_page.items[0].request_id, "req-mcp-2");
+
+        let detail = store
+            .get_mcp_tool_invocation_detail(invocation.mcp_tool_invocation_id)
+            .await
+            .expect("invocation detail");
+        assert_eq!(detail.invocation.request_id, "req-mcp-1");
+        assert_eq!(
+            detail.payload.expect("payload").arguments_json["token"],
+            "[REDACTED]"
+        );
     }
 
     async fn exercise_usage_leaderboard_reporting<S>(store: &S)
@@ -1311,6 +1478,20 @@ mod tests {
         assert_eq!(harness_buckets.len(), 1);
         assert_eq!(harness_buckets[0].agent_harness_key, "opencode");
         assert_eq!(harness_buckets[0].request_count, 3);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_mcp_tool_invocations_round_trip_and_filter() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        exercise_mcp_tool_invocation_repository(&store).await;
     }
 
     #[tokio::test]
@@ -4335,6 +4516,32 @@ mod tests {
             .await
             .expect_err("missing request log should fail");
         assert!(matches!(error, StoreError::NotFound(_)));
+
+        drop(store);
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_mcp_tool_invocations_round_trip_and_filter() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!("skipping postgres MCP invocation test because TEST_POSTGRES_URL is not set");
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options)
+            .await
+            .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        exercise_mcp_tool_invocation_repository(&store).await;
 
         drop(store);
         drop_postgres_test_database(&test_db).await;

@@ -18,6 +18,7 @@ import { Route as AccountReadyRouteImport } from './routes/account-ready'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ObservabilityUsageCostsRouteImport } from './routes/observability/usage-costs'
 import { Route as ObservabilityRequestLogsRouteImport } from './routes/observability/request-logs'
+import { Route as ObservabilityMcpInvocationsRouteImport } from './routes/observability/mcp-invocations'
 import { Route as ObservabilityLeaderboardRouteImport } from './routes/observability/leaderboard'
 import { Route as ObservabilityAgentHarnessesRouteImport } from './routes/observability/agent-harnesses'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
@@ -70,6 +71,12 @@ const ObservabilityRequestLogsRoute =
     path: '/observability/request-logs',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ObservabilityMcpInvocationsRoute =
+  ObservabilityMcpInvocationsRouteImport.update({
+    id: '/observability/mcp-invocations',
+    path: '/observability/mcp-invocations',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ObservabilityLeaderboardRoute =
   ObservabilityLeaderboardRouteImport.update({
     id: '/observability/leaderboard',
@@ -111,6 +118,7 @@ export interface FileRoutesByFullPath {
   '/invite/$token': typeof InviteTokenRoute
   '/observability/agent-harnesses': typeof ObservabilityAgentHarnessesRoute
   '/observability/leaderboard': typeof ObservabilityLeaderboardRoute
+  '/observability/mcp-invocations': typeof ObservabilityMcpInvocationsRoute
   '/observability/request-logs': typeof ObservabilityRequestLogsRoute
   '/observability/usage-costs': typeof ObservabilityUsageCostsRoute
 }
@@ -127,6 +135,7 @@ export interface FileRoutesByTo {
   '/invite/$token': typeof InviteTokenRoute
   '/observability/agent-harnesses': typeof ObservabilityAgentHarnessesRoute
   '/observability/leaderboard': typeof ObservabilityLeaderboardRoute
+  '/observability/mcp-invocations': typeof ObservabilityMcpInvocationsRoute
   '/observability/request-logs': typeof ObservabilityRequestLogsRoute
   '/observability/usage-costs': typeof ObservabilityUsageCostsRoute
 }
@@ -144,6 +153,7 @@ export interface FileRoutesById {
   '/invite/$token': typeof InviteTokenRoute
   '/observability/agent-harnesses': typeof ObservabilityAgentHarnessesRoute
   '/observability/leaderboard': typeof ObservabilityLeaderboardRoute
+  '/observability/mcp-invocations': typeof ObservabilityMcpInvocationsRoute
   '/observability/request-logs': typeof ObservabilityRequestLogsRoute
   '/observability/usage-costs': typeof ObservabilityUsageCostsRoute
 }
@@ -162,6 +172,7 @@ export interface FileRouteTypes {
     | '/invite/$token'
     | '/observability/agent-harnesses'
     | '/observability/leaderboard'
+    | '/observability/mcp-invocations'
     | '/observability/request-logs'
     | '/observability/usage-costs'
   fileRoutesByTo: FileRoutesByTo
@@ -178,6 +189,7 @@ export interface FileRouteTypes {
     | '/invite/$token'
     | '/observability/agent-harnesses'
     | '/observability/leaderboard'
+    | '/observability/mcp-invocations'
     | '/observability/request-logs'
     | '/observability/usage-costs'
   id:
@@ -194,6 +206,7 @@ export interface FileRouteTypes {
     | '/invite/$token'
     | '/observability/agent-harnesses'
     | '/observability/leaderboard'
+    | '/observability/mcp-invocations'
     | '/observability/request-logs'
     | '/observability/usage-costs'
   fileRoutesById: FileRoutesById
@@ -211,6 +224,7 @@ export interface RootRouteChildren {
   InviteTokenRoute: typeof InviteTokenRoute
   ObservabilityAgentHarnessesRoute: typeof ObservabilityAgentHarnessesRoute
   ObservabilityLeaderboardRoute: typeof ObservabilityLeaderboardRoute
+  ObservabilityMcpInvocationsRoute: typeof ObservabilityMcpInvocationsRoute
   ObservabilityRequestLogsRoute: typeof ObservabilityRequestLogsRoute
   ObservabilityUsageCostsRoute: typeof ObservabilityUsageCostsRoute
 }
@@ -280,6 +294,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ObservabilityRequestLogsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/observability/mcp-invocations': {
+      id: '/observability/mcp-invocations'
+      path: '/observability/mcp-invocations'
+      fullPath: '/observability/mcp-invocations'
+      preLoaderRoute: typeof ObservabilityMcpInvocationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/observability/leaderboard': {
       id: '/observability/leaderboard'
       path: '/observability/leaderboard'
@@ -331,6 +352,7 @@ const rootRouteChildren: RootRouteChildren = {
   InviteTokenRoute: InviteTokenRoute,
   ObservabilityAgentHarnessesRoute: ObservabilityAgentHarnessesRoute,
   ObservabilityLeaderboardRoute: ObservabilityLeaderboardRoute,
+  ObservabilityMcpInvocationsRoute: ObservabilityMcpInvocationsRoute,
   ObservabilityRequestLogsRoute: ObservabilityRequestLogsRoute,
   ObservabilityUsageCostsRoute: ObservabilityUsageCostsRoute,
 }

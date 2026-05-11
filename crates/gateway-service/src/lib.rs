@@ -4,6 +4,7 @@ pub mod authenticator;
 pub mod budget_alerts;
 pub mod budget_guard;
 pub mod icon_identity;
+pub mod mcp_invocation_logging;
 pub mod model_access;
 pub mod model_resolution;
 pub mod pricing_catalog;
@@ -28,6 +29,10 @@ pub use icon_identity::{
     REQUEST_LOG_PROVIDER_ICON_KEY, RequestLogIconMetadata, model_icon_key_from_metadata,
     provider_icon_key_from_metadata, resolve_model_icon_key, resolve_provider_display,
     resolve_provider_display_from_parts,
+};
+pub use mcp_invocation_logging::{
+    LoggedMcpToolInvocation, McpInvocationLogInput, McpInvocationLogging,
+    McpInvocationPayloadPolicy,
 };
 pub use model_access::ModelAccess;
 pub use model_resolution::{
