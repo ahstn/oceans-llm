@@ -15,6 +15,7 @@ import {
   listBudgetAlertHistory,
   reactivateUser,
   getRequestLogDetail,
+  getHarnessUsage,
   getSession,
   getUsageLeaderboard,
   getSpendReport,
@@ -85,6 +86,18 @@ export const getObservabilityLeaderboard = createServerFn({ method: 'GET' }).han
 export const refreshObservabilityLeaderboard = createServerFn({ method: 'POST' }).handler(
   async ({ data }: { data: { range: '7d' | '31d' } }) => {
     return getUsageLeaderboard(data)
+  },
+)
+
+export const getObservabilityHarnessUsage = createServerFn({ method: 'GET' }).handler(
+  async ({ data }: { data?: { range?: '7d' | '31d' } }) => {
+    return getHarnessUsage(data)
+  },
+)
+
+export const refreshObservabilityHarnessUsage = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: { range: '7d' | '31d' } }) => {
+    return getHarnessUsage(data)
   },
 )
 

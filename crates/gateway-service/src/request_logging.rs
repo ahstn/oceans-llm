@@ -27,11 +27,29 @@ pub struct RequestLogContext {
     pub resolved_model_key: String,
     pub operation: &'static str,
     pub request_tags: RequestTags,
+    pub user_agent_raw: Option<String>,
+    pub agent_harness_key: String,
+    pub agent_harness_label: String,
     payload_policy: RequestLogPayloadPolicy,
     pub tool_cardinality: RequestToolCardinality,
     request_json: Option<Value>,
     request_payload_truncated: bool,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AgentHarness {
+    pub key: &'static str,
+    pub label: &'static str,
+}
+
+impl AgentHarness {
+    pub const UNKNOWN: Self = Self {
+        key: "unknown",
+        label: "Unknown",
+    };
+}
+
+const MAX_USER_AGENT_RAW_CHARS: usize = 512;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StreamFailureSummary {
@@ -565,6 +583,8 @@ where
         } else {
             (None, false)
         };
+        let user_agent_raw = normalized_user_agent(request_user_agent(input.request_headers));
+        let harness = classify_agent_harness(user_agent_raw.as_deref());
 
         RequestLogContext {
             request_log_id: Uuid::new_v4(),
@@ -573,6 +593,9 @@ where
             resolved_model_key: input.resolved_model_key.to_string(),
             operation: input.operation,
             request_tags: input.request_tags,
+            user_agent_raw,
+            agent_harness_key: harness.key.to_string(),
+            agent_harness_label: harness.label.to_string(),
             payload_policy: self.payload_policy.clone(),
             tool_cardinality: RequestToolCardinality {
                 referenced_mcp_server_count: None,
@@ -823,6 +846,9 @@ where
                 invoked_tool_count: Some(summary.invoked_tool_count),
                 ..context.tool_cardinality
             },
+            user_agent_raw: context.user_agent_raw.clone(),
+            agent_harness_key: context.agent_harness_key.clone(),
+            agent_harness_label: context.agent_harness_label.clone(),
             metadata,
             occurred_at: OffsetDateTime::now_utc(),
         };
@@ -844,6 +870,111 @@ where
             wrote: true,
         })
     }
+}
+
+fn normalized_user_agent(value: Option<&String>) -> Option<String> {
+    value
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(truncate_user_agent)
+}
+
+fn request_user_agent(headers: &BTreeMap<String, String>) -> Option<&String> {
+    headers
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("user-agent"))
+        .map(|(_, value)| value)
+}
+
+fn truncate_user_agent(value: &str) -> String {
+    if value.chars().count() <= MAX_USER_AGENT_RAW_CHARS {
+        return value.to_string();
+    }
+
+    value
+        .chars()
+        .take(MAX_USER_AGENT_RAW_CHARS)
+        .collect::<String>()
+}
+
+#[must_use]
+pub fn classify_agent_harness(user_agent: Option<&str>) -> AgentHarness {
+    let Some(user_agent) = user_agent.map(str::trim).filter(|value| !value.is_empty()) else {
+        return AgentHarness::UNKNOWN;
+    };
+
+    let lower = user_agent.to_ascii_lowercase();
+    if lower.contains("agent/opencode") {
+        return AgentHarness {
+            key: "opencode",
+            label: "Opencode",
+        };
+    }
+    if lower.contains("agent/claude-code") {
+        return AgentHarness {
+            key: "claude_code",
+            label: "Claude Code",
+        };
+    }
+    if lower.contains("agent/gemini-cli") {
+        return AgentHarness {
+            key: "gemini_cli",
+            label: "Gemini CLI",
+        };
+    }
+    if lower.contains("agent/copilot-cli") {
+        return AgentHarness {
+            key: "copilot_cli",
+            label: "Copilot CLI",
+        };
+    }
+    if lower.starts_with("opencode/") {
+        return AgentHarness {
+            key: "opencode",
+            label: "Opencode",
+        };
+    }
+    if looks_like_pi_user_agent(user_agent, &lower) {
+        return AgentHarness {
+            key: "pi",
+            label: "Pi",
+        };
+    }
+    if lower.starts_with("claude-code/") || lower.starts_with("claude-user (claude-code/") {
+        return AgentHarness {
+            key: "claude_code",
+            label: "Claude Code",
+        };
+    }
+    if user_agent.starts_with("GeminiCLI")
+        && (user_agent.starts_with("GeminiCLI/") || user_agent.starts_with("GeminiCLI-"))
+    {
+        return AgentHarness {
+            key: "gemini_cli",
+            label: "Gemini CLI",
+        };
+    }
+    if user_agent.starts_with("CloudCodeVSCode/") {
+        return AgentHarness {
+            key: "gemini_cli",
+            label: "Gemini CLI",
+        };
+    }
+    if lower.starts_with("githubcopilot/") {
+        return AgentHarness {
+            key: "github_copilot",
+            label: "GitHub Copilot",
+        };
+    }
+
+    AgentHarness::UNKNOWN
+}
+
+fn looks_like_pi_user_agent(user_agent: &str, lower: &str) -> bool {
+    lower.starts_with("pi/")
+        && user_agent.contains(" (")
+        && user_agent.ends_with(')')
+        && (lower.contains("; bun/") || lower.contains("; node/"))
 }
 
 #[must_use]
@@ -1072,8 +1203,9 @@ mod tests {
     };
 
     use super::{
-        RequestLogging, StreamFailureSummary, StreamLogResultInput, StreamResponseCollector,
-        invoked_tool_count_from_response_body, shallow_tool_count_from_request_body,
+        AgentHarness, RequestLogging, StreamFailureSummary, StreamLogResultInput,
+        StreamResponseCollector, classify_agent_harness, invoked_tool_count_from_response_body,
+        normalized_user_agent, request_user_agent, shallow_tool_count_from_request_body,
         truncate_attempt_error_detail,
     };
 
@@ -1082,6 +1214,94 @@ mod tests {
         users: Arc<Mutex<Vec<UserRecord>>>,
         logs: Arc<Mutex<Vec<RequestLogRecord>>>,
         payloads: Arc<Mutex<Vec<RequestLogPayloadRecord>>>,
+    }
+
+    #[test]
+    fn classifies_known_agent_harness_user_agents() {
+        let cases = [
+            ("opencode/1.2.3", "opencode", "Opencode"),
+            ("opencode/1.2.3-beta.1", "opencode", "Opencode"),
+            ("pi/0.4.0 (darwin; bun/1.2.19; arm64)", "pi", "Pi"),
+            ("pi/0.4.0 (linux; node/v22.14.0; x64)", "pi", "Pi"),
+            ("claude-code/2.1.89 (cli)", "claude_code", "Claude Code"),
+            (
+                "Claude-User (claude-code/2.1.83; +https://support.anthropic.com/)",
+                "claude_code",
+                "Claude Code",
+            ),
+            (
+                "GeminiCLI/0.37.0/gemini-pro (linux; x64; terminal)",
+                "gemini_cli",
+                "Gemini CLI",
+            ),
+            (
+                "GeminiCLI-a2a-server/0.34.0/gemini-pro (linux; x64; vscode)",
+                "gemini_cli",
+                "Gemini CLI",
+            ),
+            (
+                "CloudCodeVSCode/0.37.0 (aidev_client; os_type=Linux; proxy_client=geminicli)",
+                "gemini_cli",
+                "Gemini CLI",
+            ),
+            ("GitHub CLI 2.88.1 Agent/opencode", "opencode", "Opencode"),
+            (
+                "GitHub CLI 2.88.1 Agent/claude-code",
+                "claude_code",
+                "Claude Code",
+            ),
+            (
+                "GitHub CLI 2.88.1 Agent/gemini-cli",
+                "gemini_cli",
+                "Gemini CLI",
+            ),
+            (
+                "GitHub CLI 2.88.1 Agent/copilot-cli",
+                "copilot_cli",
+                "Copilot CLI",
+            ),
+            ("GithubCopilot/1.155.0", "github_copilot", "GitHub Copilot"),
+            ("GitHubCopilot/1.155.0", "github_copilot", "GitHub Copilot"),
+        ];
+
+        for (user_agent, key, label) in cases {
+            assert_eq!(
+                classify_agent_harness(Some(user_agent)),
+                AgentHarness { key, label }
+            );
+        }
+    }
+
+    #[test]
+    fn classifies_missing_empty_and_unmatched_user_agents_as_unknown() {
+        for user_agent in [
+            None,
+            Some(""),
+            Some("   "),
+            Some("undici"),
+            Some("Mozilla/5.0"),
+        ] {
+            assert_eq!(classify_agent_harness(user_agent), AgentHarness::UNKNOWN);
+        }
+    }
+
+    #[test]
+    fn normalizes_user_agent_with_length_cap() {
+        let value = "a".repeat(600);
+        let normalized = normalized_user_agent(Some(&value)).expect("normalized user agent");
+
+        assert_eq!(normalized.len(), 512);
+        assert!(normalized.chars().all(|value| value == 'a'));
+    }
+
+    #[test]
+    fn reads_user_agent_header_case_insensitively() {
+        let headers = BTreeMap::from([("User-Agent".to_string(), "opencode/1.2.3".to_string())]);
+
+        assert_eq!(
+            request_user_agent(&headers).map(String::as_str),
+            Some("opencode/1.2.3")
+        );
     }
 
     #[async_trait]

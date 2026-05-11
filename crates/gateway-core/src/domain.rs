@@ -745,6 +745,20 @@ pub struct UsageLeaderboardBucketRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HarnessUsageLeaderRecord {
+    pub agent_harness_key: String,
+    pub agent_harness_label: String,
+    pub request_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HarnessUsageBucketRecord {
+    pub agent_harness_key: String,
+    pub bucket_start: OffsetDateTime,
+    pub request_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsageLedgerRecord {
     pub usage_event_id: Uuid,
     pub request_id: String,
@@ -858,6 +872,9 @@ pub struct RequestLogRecord {
     pub response_payload_truncated: bool,
     pub request_tags: RequestTags,
     pub tool_cardinality: RequestToolCardinality,
+    pub user_agent_raw: Option<String>,
+    pub agent_harness_key: String,
+    pub agent_harness_label: String,
     pub metadata: Map<String, Value>,
     pub occurred_at: OffsetDateTime,
 }

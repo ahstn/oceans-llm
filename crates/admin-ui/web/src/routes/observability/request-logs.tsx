@@ -18,7 +18,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import { requireAdminSession } from '@/routes/-admin-guard'
 import { getObservabilityRequestLogDetail, getRequestLogs } from '@/server/admin-data.functions'
 import type {
@@ -459,6 +466,12 @@ export function RequestLogsPage() {
                   label="Stream"
                   value={metadataBoolean(selectedDetail.log, 'stream') ? 'yes' : 'no'}
                 />
+                <DetailRow label="Agent Harness" value={selectedDetail.log.agent_harness_label} />
+                <DetailRow
+                  label="User-Agent"
+                  value={selectedDetail.user_agent_raw ?? 'n/a'}
+                  mono={Boolean(selectedDetail.user_agent_raw)}
+                />
               </div>
 
               <ToolCardinalityCard item={selectedDetail.log} />
@@ -514,7 +527,9 @@ function DetailRow({
       </dt>
       <dd
         className={
-          mono ? 'font-mono text-sm text-[var(--color-text)]' : 'text-sm text-[var(--color-text)]'
+          mono
+            ? 'font-mono text-sm break-all text-[var(--color-text)]'
+            : 'text-sm text-[var(--color-text)]'
         }
       >
         {value}

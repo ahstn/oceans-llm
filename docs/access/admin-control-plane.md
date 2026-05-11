@@ -1,6 +1,6 @@
 # Admin Control Plane
 
-`See also`: [Identity and Access](identity-and-access.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Admin API Contract Workflow](../reference/admin-api-contract-workflow.md), [End-to-End Contract Tests](../reference/e2e-contract-tests.md), [OIDC and SSO Status](oidc-and-sso-status.md)
+`See also`: [Identity and Access](identity-and-access.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Agent Harness Usage](../operations/agent-harness-usage.md), [Admin API Contract Workflow](../reference/admin-api-contract-workflow.md), [End-to-End Contract Tests](../reference/e2e-contract-tests.md), [OIDC and SSO Status](oidc-and-sso-status.md)
 
 This page describes what admins can actually do in the admin UI today.
 
@@ -116,12 +116,14 @@ Admins can:
 - filter spend by owner kind
 - manage user and team budgets
 - inspect the 7-day or 31-day usage leaderboard
+- inspect 7-day or 31-day self-reported agent harness usage by request count
 - inspect request-log summaries
 - filter request logs by caller service, component, environment, and one bespoke tag match
 - inspect sanitized request-log payload detail
 - see each request log's public operation through row metadata
 - see per-row payload capture mode, byte limits, stream event limit, policy version, and truncation state
 - see per-row MCP/tool cardinality counts for request logs
+- see normalized harness and bounded raw `User-Agent` detail for request logs
 - compare leaderboard users with average tool exposure and invocation counts
 
 Request-log payload policy is read-only in the admin UI. Admins configure it through `gateway.yaml`; see [observability-and-request-logs.md](../operations/observability-and-request-logs.md).

@@ -83,6 +83,7 @@ Current live surfaces:
 - spend
 - request logs
 - leaderboard
+- agent harness usage
 - Models
 
 That split matters when deciding whether a UI page belongs in this workflow. Once a page reads from gateway APIs, changes to its admin API shape belong in generated contract maintenance even if the UI workflow is still maturing.

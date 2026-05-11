@@ -89,6 +89,10 @@ export default defineConfig({
             text: "Observability and Request Logs",
             link: "/operations/observability-and-request-logs",
           },
+          {
+            text: "Agent Harness Usage",
+            link: "/operations/agent-harness-usage",
+          },
           { text: "Admin Runbooks", link: "/operations/operator-runbooks" },
         ],
       },

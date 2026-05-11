@@ -10,13 +10,14 @@ use uuid::Uuid;
 use crate::{
     domain::{
         ApiKeyRecord, BudgetAlertDeliveryRecord, BudgetAlertDispatchTask, BudgetAlertHistoryPage,
-        BudgetAlertHistoryQuery, BudgetAlertRecord, GatewayModel, ModelPricingRecord, ModelRoute,
-        Money4, NewApiKeyRecord, PricingCatalogCacheRecord, ProviderCapabilities,
-        ProviderConnection, ProviderRequestContext, RequestAttemptRecord, RequestLogDetail,
-        RequestLogPage, RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord,
-        SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord,
-        TeamBudgetRecord, TeamMembershipRecord, TeamRecord, UsageLeaderboardBucketRecord,
-        UsageLeaderboardUserRecord, UsageLedgerRecord, UserBudgetRecord, UserRecord,
+        BudgetAlertHistoryQuery, BudgetAlertRecord, GatewayModel, HarnessUsageBucketRecord,
+        HarnessUsageLeaderRecord, ModelPricingRecord, ModelRoute, Money4, NewApiKeyRecord,
+        PricingCatalogCacheRecord, ProviderCapabilities, ProviderConnection,
+        ProviderRequestContext, RequestAttemptRecord, RequestLogDetail, RequestLogPage,
+        RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, SpendDailyAggregateRecord,
+        SpendModelAggregateRecord, SpendOwnerAggregateRecord, TeamBudgetRecord,
+        TeamMembershipRecord, TeamRecord, UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord,
+        UsageLedgerRecord, UserBudgetRecord, UserRecord,
     },
     error::{ProviderError, RouteError, StoreError},
     protocol::core::{ChatRequest, EmbeddingsRequest, ResponsesRequest},
@@ -368,6 +369,32 @@ pub trait RequestLogRepository: Send + Sync {
         &self,
         request_log_id: Uuid,
     ) -> Result<RequestLogDetail, StoreError>;
+
+    async fn list_harness_usage_leaders(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        limit: u32,
+    ) -> Result<Vec<HarnessUsageLeaderRecord>, StoreError> {
+        let _ = (window_start, window_end, limit);
+        Err(StoreError::Unexpected(
+            "list_harness_usage_leaders is not implemented for this repository".to_string(),
+        ))
+    }
+
+    async fn list_harness_usage_bucket_aggregates(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        bucket_hours: u8,
+        agent_harness_keys: &[String],
+    ) -> Result<Vec<HarnessUsageBucketRecord>, StoreError> {
+        let _ = (window_start, window_end, bucket_hours, agent_harness_keys);
+        Err(StoreError::Unexpected(
+            "list_harness_usage_bucket_aggregates is not implemented for this repository"
+                .to_string(),
+        ))
+    }
 }
 
 #[async_trait]

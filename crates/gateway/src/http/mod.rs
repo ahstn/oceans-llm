@@ -107,6 +107,10 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
             get(get_usage_leaderboard),
         )
         .route(
+            "/api/v1/admin/observability/harness-usage",
+            get(get_harness_usage),
+        )
+        .route(
             "/api/v1/admin/observability/request-logs",
             get(list_request_logs),
         )

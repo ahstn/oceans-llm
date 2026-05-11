@@ -1,6 +1,6 @@
 # Observability and Request Logs
 
-`See also`: [Data Relationships](../reference/data-relationships.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Admin Control Plane](../access/admin-control-plane.md), [Deploy and Operations](../setup/deploy-and-operations.md), [ADR: OTLP-First Observability and Payload-Backed Request Logs](../adr/2026-03-15-otlp-observability-and-request-log-payloads.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md), [ADR: MCP Tool Cardinality Observability](../adr/2026-04-28-mcp-tool-cardinality-observability.md)
+`See also`: [Agent Harness Usage](agent-harness-usage.md), [Data Relationships](../reference/data-relationships.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Admin Control Plane](../access/admin-control-plane.md), [Deploy and Operations](../setup/deploy-and-operations.md), [ADR: OTLP-First Observability and Payload-Backed Request Logs](../adr/2026-03-15-otlp-observability-and-request-log-payloads.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md), [ADR: MCP Tool Cardinality Observability](../adr/2026-04-28-mcp-tool-cardinality-observability.md)
 
 This document describes the live observability contract for the gateway.
 
@@ -146,6 +146,7 @@ The summary row stores:
 - universal caller tags
 - status, latency, and usage totals
 - typed MCP and tool cardinality counts
+- bounded raw `User-Agent` and normalized agent harness key/label
 - truncation flags
 - metadata such as `operation`, `stream`, and `payload_policy`
 
@@ -295,6 +296,7 @@ Admins and maintainers should stop expecting:
 Platform admins can inspect request logs through:
 
 - `GET /api/v1/admin/observability/leaderboard`
+- `GET /api/v1/admin/observability/harness-usage`
 - `GET /api/v1/admin/observability/request-logs`
 - `GET /api/v1/admin/observability/request-logs/{request_log_id}`
 
@@ -321,6 +323,26 @@ Current semantics:
 - dominant model is chosen by request count, then spend, then model key
 
 Use the leaderboard to identify recent high-usage users. Use spend reporting when the question is about owner totals, budgets, or pricing status counts.
+
+## Agent Harness Usage
+
+Harness usage is a separate admin observability surface from the user leaderboard.
+
+Endpoint:
+
+- `GET /api/v1/admin/observability/harness-usage?range=7d|31d`
+
+Current semantics:
+
+- ranked by request count over the selected range
+- chart cohort is the top 5 ranked harnesses
+- table is the top 30 ranked harnesses
+- time buckets are 12-hour UTC buckets and are zero-filled for chart stability
+- aggregation groups by `agent_harness_key`, not raw `User-Agent`
+- bounded raw `User-Agent` values remain available in request-log detail for debugging
+- harness classification is self-reported from `User-Agent` and is not authenticated client identity
+
+Use [Agent Harness Usage](agent-harness-usage.md) for the classifier contract and page behavior.
 
 Current list filters:
 
