@@ -1512,6 +1512,7 @@ mod tests {
             api_key_id: Uuid::new_v4(),
             user_id: None,
             team_id: None,
+            service_account_id: None,
             model_key: "fast".to_string(),
             resolved_model_key: "fast".to_string(),
             provider_key: "openai-prod".to_string(),

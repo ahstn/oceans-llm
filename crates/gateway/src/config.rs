@@ -3,6 +3,7 @@ use std::{collections::BTreeMap, env, fs, path::Path};
 use anyhow::{Context, bail};
 use gateway_core::{
     AuthMode, BudgetCadence, GlobalRole, MembershipRole, Money4, OpenAiCompatDeveloperRole,
+    OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
     ProviderCapabilities, RequestLogRetentionWindow, RouteCompatibility, SeedApiKey, SeedBudget,
     SeedModel, SeedModelRoute, SeedProvider, SeedTeam, SeedUser, SeedUserMembership,
     parse_gateway_api_key,
