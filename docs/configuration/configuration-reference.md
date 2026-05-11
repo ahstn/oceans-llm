@@ -274,7 +274,7 @@ Operational guidance:
 
 - store gateway API-key values in the deployment secret manager, not in YAML
 - grant only the gateway models the workload needs
-- prefer team-owned keys for non-human callers until first-class gateway service-account owners exist
+- prefer team-owned keys for service callers until first-class gateway service-account owners exist
 - attach a team budget to the owning team when service-account-style traffic must be capped
 - rotate by creating or seeding a replacement key, moving the caller, then revoking or removing the old key
 

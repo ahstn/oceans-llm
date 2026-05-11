@@ -61,7 +61,7 @@ Admins can:
 - replace model grants for an active key
 - revoke a key so runtime auth rejects it immediately
 
-For non-human workloads, create a team-owned API key for the workload or owning platform team. Treat the key as a gateway service-account-style credential:
+For service workloads, create a team-owned API key for the workload or owning platform team. Treat the key as a gateway service-account-style credential:
 
 - give it a workload-specific name
 - grant only the gateway models the workload needs
@@ -145,7 +145,7 @@ Current limits:
 - request-log filtering ergonomics still have follow-up work
 - MCP invocation persistence and API behavior are still hardening in the backend MCP observability slice
 
-## Non-Human Callers Today
+## Service Callers Today
 
 The gateway does not yet have a separate `service_account` API-key owner kind. Current service-account-style caller choices are:
 

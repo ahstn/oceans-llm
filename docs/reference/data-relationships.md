@@ -192,7 +192,7 @@ Those rules are owned by [configuration-reference.md](../configuration/configura
 - User-owned and team-owned API keys share the same `api_keys` table
 - Team-owned usage and request logs can exist without an acting user
 - Current team spend attribution remains `actor:none` at the ownership-scope level
-- Non-human gateway callers should use explicit team-owned keys with narrow model grants and team budgets until service-account owners become first-class
+- Service callers should use explicit team-owned keys with narrow model grants and team budgets until service-account owners become first-class
 - Provider service-account credentials such as Vertex service-account JSON authorize the gateway to call a provider and do not create a gateway caller owner
 
 That ownership model is explained operationally in [identity-and-access.md](../access/identity-and-access.md) and [budgets-and-spending.md](../operations/budgets-and-spending.md).

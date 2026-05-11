@@ -26,7 +26,7 @@ The product uses first-class users, teams, and API-key ownership.
 Gateway service-account-style callers are modeled with API keys today, not a distinct owner kind.
 
 - Use a team-owned API key for shared automation or service workloads.
-- Use a user-owned API key only for traffic that should spend against one person.
+- Use a user-owned API key only for traffic that should spend against one user.
 - Use config-seeded keys for bootstrap or deployment-managed callers, knowing they are owned by `system-legacy`.
 - Keep provider service-account credentials out of this identity model; they belong to provider config.
 
@@ -135,7 +135,7 @@ Budget enforcement follows the API-key owner:
 - team-owned keys spend against the owning team budget
 - config-seeded `system-legacy` keys spend against the reserved team ownership scope
 
-Team budgets are aggregate guardrails for team-owned traffic. They do not identify an individual actor for fairness inside the team in this slice. For non-human service-account-style traffic, create a dedicated team or an explicit owning team budget when the workload needs its own cap.
+Team budgets are aggregate guardrails for team-owned traffic. They do not identify an individual user for fairness inside the team in this slice. For service-account-style callers, create a dedicated team or an explicit owning team budget when the workload needs its own cap.
 
 [Issue #106](https://github.com/ahstn/oceans-llm/issues/106) tracks the broader budget taxonomy question: whether service accounts become a first-class owner kind, how personal budgets should relate to team aggregate budgets, and how model-specific budgets should fit without replacing the canonical spend ledger.
 
