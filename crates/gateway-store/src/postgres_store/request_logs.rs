@@ -59,9 +59,9 @@ fn decode_request_log_row(row: &PgRow) -> Result<RequestLogRecord, StoreError> {
             invoked_tool_count: row.try_get(25).map_err(to_query_error)?,
             filtered_tool_count: row.try_get(26).map_err(to_query_error)?,
         },
-        user_agent_raw: row.try_get(26).map_err(to_query_error)?,
-        agent_harness_key: row.try_get(27).map_err(to_query_error)?,
-        agent_harness_label: row.try_get(28).map_err(to_query_error)?,
+        user_agent_raw: row.try_get(27).map_err(to_query_error)?,
+        agent_harness_key: row.try_get(28).map_err(to_query_error)?,
+        agent_harness_label: row.try_get(29).map_err(to_query_error)?,
         metadata: serde_json::from_str(&metadata_json)
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
         occurred_at: unix_to_datetime(occurred_at)?,

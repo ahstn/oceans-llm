@@ -1208,6 +1208,7 @@ mod tests {
             owner_kind: ApiKeyOwnerKind::User,
             owner_user_id: Some(Uuid::new_v4()),
             owner_team_id: None,
+            owner_service_account_id: None,
         };
 
         let logged = service
