@@ -577,15 +577,15 @@ impl RequestLogRepository for PostgresStore {
         dry_run: bool,
     ) -> Result<RequestLogPurgeResult, StoreError> {
         let cutoff_unix = cutoff.unix_timestamp();
-        if dry_run {
-            let total_row = sqlx::query("SELECT COUNT(*) FROM request_logs WHERE occurred_at < $1")
-                .bind(cutoff_unix)
-                .fetch_one(&self.pool)
-                .await
-                .map_err(to_query_error)?;
-            let matched_count: i64 = total_row.try_get(0).map_err(to_query_error)?;
-            let matched_count = u64::try_from(matched_count.max(0)).unwrap_or(u64::MAX);
+        let total_row = sqlx::query("SELECT COUNT(*) FROM request_logs WHERE occurred_at < $1")
+            .bind(cutoff_unix)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(to_query_error)?;
+        let matched_count: i64 = total_row.try_get(0).map_err(to_query_error)?;
+        let matched_count = u64::try_from(matched_count.max(0)).unwrap_or(u64::MAX);
 
+        if dry_run {
             return Ok(RequestLogPurgeResult {
                 cutoff,
                 dry_run,
@@ -623,7 +623,7 @@ impl RequestLogRepository for PostgresStore {
         Ok(RequestLogPurgeResult {
             cutoff,
             dry_run,
-            matched_count: deleted_count,
+            matched_count,
             deleted_count,
         })
     }

@@ -64,6 +64,8 @@ Use `mise run gateway-reset-local-demo` any time you want to recreate that riche
 - request-log retention purge:
   - `mise run gateway-purge-request-logs-dry-run`
   - `mise run gateway-purge-request-logs`
+  - `mise run gateway-purge-request-logs-dry-run-prod`
+  - `mise run gateway-purge-request-logs-prod`
 - local-only demo dataset seed:
   - `mise run gateway-seed-local-demo`
 - local-only demo dataset reset:

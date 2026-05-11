@@ -153,7 +153,7 @@ The gateway does not yet have a separate `service_account` API-key owner kind. C
 - config-seeded keys owned by the reserved `system-legacy` team
 - user-owned keys only when the key genuinely acts on behalf of one user
 
-Prefer team-owned keys for automation, CI jobs, batch workers, and shared services. Team ownership gives operators an explicit budget and reporting boundary even though the current team ownership scope is still `actor:none`.
+Prefer team-owned keys for automation, CI jobs, batch workers, and shared services. Team ownership gives admins an explicit budget and reporting boundary even though the current team ownership scope is still `actor:none`.
 
 Do not confuse gateway service-account-style API keys with provider credential auth such as Vertex `auth.mode: service_account`. Gateway API keys authenticate clients to Oceans LLM. Provider service-account credentials authenticate Oceans LLM to an upstream cloud provider.
 

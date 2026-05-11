@@ -198,19 +198,21 @@ Preview a purge:
 
 ```bash
 mise run gateway-purge-request-logs-dry-run
+mise run gateway-purge-request-logs-dry-run-prod
 ```
 
 Apply it:
 
 ```bash
 mise run gateway-purge-request-logs
+mise run gateway-purge-request-logs-prod
 ```
 
-Supported windows are `1d`, `3d`, and `7d`; set `RETENTION=1d|3d|7d` before the `mise` task to override the `7d` default. The default operational choice is `7d`; use `1d` or `3d` only when the environment has tight storage requirements and operators are comfortable losing request-detail history quickly.
+Supported windows are `1d`, `3d`, and `7d`; set `RETENTION=1d|3d|7d` before the `mise` task to override the `7d` default. The default admin choice is `7d`; use `1d` or `3d` only when the environment has tight storage requirements and admins are comfortable losing request-detail history quickly.
 
 The purge removes old parent request-log rows and their detail children, including payloads, caller tags, and provider execution attempts. It does not remove `usage_cost_events`, so spend and budget reporting remain ledger-backed after old request-log detail is gone.
 
-Recurring purge is off by default. If enabled in config, use `request_logging.purge.schedule` with a daily 5-field cron expression and rely on the runtime daily guard as a backstop, not as the primary scheduler.
+Recurring purge is off by default. If enabled in config, use `request_logging.purge.schedule` with a daily 5-field cron expression and rely on the runtime UTC-day guard as a backstop, not as the primary scheduler. Each gateway process starts its own recurring purge loop, so HA deployments should enable recurring purge on only the intended process or accept that every replica will independently evaluate the same retention schedule.
 
 ## Secret Rotation Checkpoints
 

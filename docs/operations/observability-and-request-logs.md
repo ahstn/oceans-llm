@@ -185,13 +185,13 @@ Provider stream transcripts can include normalized compatibility output, such as
 
 ## Request Log Retention and Purge
 
-Request-log retention is operator-controlled. The supported retention windows are intentionally small and explicit:
+Request-log retention is admin-controlled. The supported retention windows are intentionally small and explicit:
 
 - `1d`
 - `3d`
 - `7d`
 
-The default retention window is `7d`. Operators can run the purge command manually before enabling any recurring cleanup:
+The default retention window is `7d`. Admins can run the purge command manually before enabling any recurring cleanup:
 
 ```bash
 mise run gateway-purge-request-logs-dry-run
@@ -206,7 +206,7 @@ When the command runs without `--dry-run`, it deletes matching `request_logs` ro
 - `request_log_tags`
 - `request_log_attempts`
 
-Operators should not hand-delete only one request-log table. Manual partial deletion can leave observability detail misleading even when database constraints prevent direct orphan rows.
+Admins should not hand-delete only one request-log table. Manual partial deletion can leave observability detail misleading even when database constraints prevent direct orphan rows.
 
 Recurring purge is disabled by default and must be opted into from config. Use a standard cron expression and keep the schedule daily or less frequent:
 
@@ -225,7 +225,8 @@ Runtime safety rules:
 - only `1d`, `3d`, and `7d` are valid windows
 - `schedule` uses standard 5-field cron syntax
 - recurring schedules must not be more frequent than daily
-- the runtime keeps a daily guard so a recurring worker cannot purge more than once per day even if a bad schedule is supplied
+- each gateway process starts its own recurring worker when enabled
+- the runtime keeps a UTC-day guard so a recurring worker cannot purge more than once per day even if a bad schedule is supplied
 
 Retention only affects operational request-log tables. It does not delete spend ledger rows in `usage_cost_events`, budget history, provider config, model config, users, teams, or API keys.
 

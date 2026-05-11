@@ -137,7 +137,7 @@ Budget enforcement follows the API-key owner:
 
 Team budgets are aggregate guardrails for team-owned traffic. They do not identify an individual actor for fairness inside the team in this slice. For non-human service-account-style traffic, create a dedicated team or an explicit owning team budget when the workload needs its own cap.
 
-Issue #106 tracks the broader budget taxonomy question: whether service accounts become a first-class owner kind, how personal budgets should relate to team aggregate budgets, and how model-specific budgets should fit without replacing the canonical spend ledger.
+[Issue #106](https://github.com/ahstn/oceans-llm/issues/106) tracks the broader budget taxonomy question: whether service accounts become a first-class owner kind, how personal budgets should relate to team aggregate budgets, and how model-specific budgets should fit without replacing the canonical spend ledger.
 
 ## Request Logging Preference
 

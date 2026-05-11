@@ -636,25 +636,23 @@ impl RequestLogRepository for LibsqlStore {
         dry_run: bool,
     ) -> Result<RequestLogPurgeResult, StoreError> {
         let cutoff_unix = cutoff.unix_timestamp();
-        if dry_run {
-            let mut count_rows = self
-                .connection
-                .query(
-                    "SELECT COUNT(*) FROM request_logs WHERE occurred_at < ?1",
-                    [cutoff_unix],
-                )
-                .await
-                .map_err(|error| StoreError::Query(error.to_string()))?;
-            let count_row = count_rows
-                .next()
-                .await
-                .map_err(|error| StoreError::Query(error.to_string()))?
-                .ok_or_else(|| {
-                    StoreError::Query("request log purge count row missing".to_string())
-                })?;
-            let matched_count: i64 = count_row.get(0).map_err(to_query_error)?;
-            let matched_count = u64::try_from(matched_count.max(0)).unwrap_or(u64::MAX);
+        let mut count_rows = self
+            .connection
+            .query(
+                "SELECT COUNT(*) FROM request_logs WHERE occurred_at < ?1",
+                [cutoff_unix],
+            )
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?;
+        let count_row = count_rows
+            .next()
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?
+            .ok_or_else(|| StoreError::Query("request log purge count row missing".to_string()))?;
+        let matched_count: i64 = count_row.get(0).map_err(to_query_error)?;
+        let matched_count = u64::try_from(matched_count.max(0)).unwrap_or(u64::MAX);
 
+        if dry_run {
             return Ok(RequestLogPurgeResult {
                 cutoff,
                 dry_run,
@@ -665,19 +663,65 @@ impl RequestLogRepository for LibsqlStore {
 
         let mut deleted_count = 0_u64;
         loop {
-            let batch_deleted = self
+            let mut rows = self
                 .connection
-                .execute(
-                    "DELETE FROM request_logs
-                     WHERE request_log_id IN (
-                         SELECT request_log_id
-                         FROM request_logs
-                         WHERE occurred_at < ?1
-                         ORDER BY occurred_at, request_log_id
-                         LIMIT ?2
-                     )",
+                .query(
+                    "SELECT request_log_id
+                     FROM request_logs
+                     WHERE occurred_at < ?1
+                     ORDER BY occurred_at, request_log_id
+                     LIMIT ?2",
                     [cutoff_unix, REQUEST_LOG_PURGE_BATCH_SIZE],
                 )
+                .await
+                .map_err(|error| StoreError::Query(error.to_string()))?;
+
+            let mut request_log_ids = Vec::<String>::new();
+            while let Some(row) = rows
+                .next()
+                .await
+                .map_err(|error| StoreError::Query(error.to_string()))?
+            {
+                request_log_ids.push(row.get(0).map_err(to_query_error)?);
+            }
+
+            if request_log_ids.is_empty() {
+                break;
+            }
+
+            let placeholders = (0..request_log_ids.len())
+                .map(|index| format!("?{}", index + 1))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let params = request_log_ids
+                .iter()
+                .map(|id| libsql::Value::Text(id.clone()))
+                .collect::<Vec<_>>();
+            let tx = self
+                .connection
+                .transaction()
+                .await
+                .map_err(|error| StoreError::Query(error.to_string()))?;
+            for table in [
+                "request_log_payloads",
+                "request_log_tags",
+                "request_log_attempts",
+            ] {
+                tx.execute(
+                    &format!("DELETE FROM {table} WHERE request_log_id IN ({placeholders})"),
+                    params.clone(),
+                )
+                .await
+                .map_err(|error| StoreError::Query(error.to_string()))?;
+            }
+            let batch_deleted = tx
+                .execute(
+                    &format!("DELETE FROM request_logs WHERE request_log_id IN ({placeholders})"),
+                    params,
+                )
+                .await
+                .map_err(|error| StoreError::Query(error.to_string()))?;
+            tx.commit()
                 .await
                 .map_err(|error| StoreError::Query(error.to_string()))?;
 
@@ -691,7 +735,7 @@ impl RequestLogRepository for LibsqlStore {
         Ok(RequestLogPurgeResult {
             cutoff,
             dry_run,
-            matched_count: deleted_count,
+            matched_count,
             deleted_count,
         })
     }
