@@ -61,6 +61,9 @@ Use `mise run gateway-reset-local-demo` any time you want to recreate that riche
   - `mise run gateway-bootstrap-admin`
 - local explicit config seed:
   - `mise run gateway-seed-config`
+- request-log retention purge:
+  - `mise run gateway-purge-request-logs-dry-run`
+  - `mise run gateway-purge-request-logs`
 - local-only demo dataset seed:
   - `mise run gateway-seed-local-demo`
 - local-only demo dataset reset:
@@ -104,6 +107,8 @@ Use the docs site instead of treating this file as the full admin and maintainer
   - [Configuration Reference](docs/configuration/configuration-reference.md)
 - identity:
   - [Identity and Access](docs/access/identity-and-access.md)
+- gateway API keys and service-account-style callers:
+  - [Admin Control Plane](docs/access/admin-control-plane.md)
 - routing:
   - [Model Routing and API Behavior](docs/configuration/model-routing-and-api-behavior.md)
 - provider API compatibility:

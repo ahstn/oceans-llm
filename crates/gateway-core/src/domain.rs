@@ -991,6 +991,40 @@ pub struct RequestLogDetail {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RequestLogRetentionWindow {
+    #[serde(rename = "1d")]
+    OneDay,
+    #[serde(rename = "3d")]
+    ThreeDays,
+    #[serde(rename = "7d")]
+    SevenDays,
+}
+
+impl RequestLogRetentionWindow {
+    #[must_use]
+    pub const fn days(self) -> i64 {
+        match self {
+            Self::OneDay => 1,
+            Self::ThreeDays => 3,
+            Self::SevenDays => 7,
+        }
+    }
+
+    #[must_use]
+    pub fn cutoff_at(self, now: OffsetDateTime) -> OffsetDateTime {
+        now - time::Duration::days(self.days())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RequestLogPurgeResult {
+    pub cutoff: OffsetDateTime,
+    pub dry_run: bool,
+    pub matched_count: u64,
+    pub deleted_count: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum McpToolInvocationStatus {
     Success,

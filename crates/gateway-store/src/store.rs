@@ -750,6 +750,14 @@ impl RequestLogRepository for AnyStore {
             )
         )
     }
+
+    async fn purge_request_logs_older_than(
+        &self,
+        cutoff: time::OffsetDateTime,
+        dry_run: bool,
+    ) -> Result<gateway_core::RequestLogPurgeResult, StoreError> {
+        dispatch_store!(self, purge_request_logs_older_than(cutoff, dry_run))
+    }
 }
 
 #[async_trait]

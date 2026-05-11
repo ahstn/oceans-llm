@@ -4,9 +4,9 @@ use anyhow::{Context, bail};
 use gateway_core::{
     AuthMode, BudgetCadence, GlobalRole, MembershipRole, Money4, OpenAiCompatDeveloperRole,
     OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
-    ProviderCapabilities, RouteCompatibility, SYSTEM_LEGACY_TEAM_KEY, SeedApiKey, SeedBudget,
-    SeedModel, SeedModelRoute, SeedProvider, SeedTeam, SeedUser, SeedUserMembership,
-    parse_gateway_api_key,
+    ProviderCapabilities, RequestLogRetentionWindow, RouteCompatibility, SYSTEM_LEGACY_TEAM_KEY,
+    SeedApiKey, SeedBudget, SeedModel, SeedModelRoute, SeedProvider, SeedTeam, SeedUser,
+    SeedUserMembership, parse_gateway_api_key,
 };
 use gateway_providers::{
     BedrockAuthConfig, BedrockProviderConfig, OpenAiCompatConfig, VertexAuthConfig,
@@ -859,11 +859,40 @@ pub struct BudgetAlertConfig {
 pub struct RequestLoggingConfig {
     #[serde(default)]
     pub payloads: RequestLogPayloadConfig,
+    #[serde(default)]
+    pub purge: RequestLogPurgeConfig,
 }
 
 impl RequestLoggingConfig {
     fn validate(&self) -> anyhow::Result<()> {
-        self.payloads.validate()
+        self.payloads.validate()?;
+        self.purge.validate()
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RequestLogPurgeConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_request_log_purge_retention")]
+    pub retention: RequestLogRetentionWindow,
+    #[serde(default = "default_request_log_purge_schedule")]
+    pub schedule: String,
+}
+
+impl Default for RequestLogPurgeConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            retention: default_request_log_purge_retention(),
+            schedule: default_request_log_purge_schedule(),
+        }
+    }
+}
+
+impl RequestLogPurgeConfig {
+    fn validate(&self) -> anyhow::Result<()> {
+        validate_daily_cron_schedule("request_logging.purge.schedule", self.schedule.as_str())
     }
 }
 
@@ -1606,6 +1635,39 @@ const fn default_budget_alert_batch_size() -> u32 {
     25
 }
 
+const fn default_request_log_purge_retention() -> RequestLogRetentionWindow {
+    RequestLogRetentionWindow::SevenDays
+}
+
+fn default_request_log_purge_schedule() -> String {
+    "0 0 * * *".to_string()
+}
+
+fn validate_daily_cron_schedule(field_name: &str, schedule: &str) -> anyhow::Result<()> {
+    let schedule = schedule.trim();
+    let fields = schedule.split_whitespace().count();
+    if fields != 5 {
+        bail!("{field_name} must use standard 5-field cron syntax");
+    }
+
+    let parsed: cron::Schedule = format!("0 {schedule}")
+        .parse()
+        .with_context(|| format!("{field_name} `{schedule}` is invalid"))?;
+    let mut upcoming = parsed.upcoming(chrono::Utc);
+    let first = upcoming
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("{field_name} `{schedule}` has no upcoming run"))?;
+    let second = upcoming
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("{field_name} `{schedule}` has fewer than two runs"))?;
+
+    if second - first < chrono::Duration::days(1) {
+        bail!("{field_name} must not run more frequently than once per day");
+    }
+
+    Ok(())
+}
+
 const fn default_budget_alert_smtp_port() -> u16 {
     587
 }
@@ -1628,7 +1690,7 @@ mod tests {
 
     use gateway_core::{
         AuthMode, BudgetCadence, GlobalRole, MembershipRole, Money4, OpenAiCompatDeveloperRole,
-        OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
+        OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, RequestLogRetentionWindow,
     };
     use gateway_service::RequestLogPayloadCaptureMode;
     use tempfile::tempdir;
@@ -1656,6 +1718,74 @@ mod tests {
         assert_eq!(policy.request_max_bytes, 64 * 1024);
         assert_eq!(policy.response_max_bytes, 64 * 1024);
         assert_eq!(policy.stream_max_events, 128);
+    }
+
+    #[test]
+    fn request_log_purge_config_defaults_are_disabled_with_daily_retention() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(&config_path, "");
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+
+        assert!(!config.request_logging.purge.enabled);
+        assert_eq!(
+            config.request_logging.purge.retention,
+            RequestLogRetentionWindow::SevenDays
+        );
+        assert_eq!(config.request_logging.purge.schedule, "0 0 * * *");
+    }
+
+    #[test]
+    fn parses_request_log_purge_config() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+request_logging:
+  purge:
+    enabled: true
+    retention: 3d
+    schedule: "30 1 * * *"
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+
+        assert!(config.request_logging.purge.enabled);
+        assert_eq!(
+            config.request_logging.purge.retention,
+            RequestLogRetentionWindow::ThreeDays
+        );
+        assert_eq!(config.request_logging.purge.schedule, "30 1 * * *");
+    }
+
+    #[test]
+    fn rejects_request_log_purge_schedule_more_frequent_than_daily() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+request_logging:
+  purge:
+    enabled: true
+    schedule: "0 */12 * * *"
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains(
+                "request_logging.purge.schedule must not run more frequently than once per day"
+            ),
+            "unexpected error: {error_text}"
+        );
     }
 
     #[test]

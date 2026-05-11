@@ -4,8 +4,10 @@ use super::*;
 use crate::shared::{parse_uuid, serialize_json, unix_to_datetime};
 use gateway_core::{
     HarnessUsageBucketRecord, HarnessUsageLeaderRecord, RequestTag, RequestTags,
-    RequestToolCardinality,
+    RequestLogPurgeResult, RequestToolCardinality,
 };
+
+const REQUEST_LOG_PURGE_BATCH_SIZE: i64 = 1_000;
 
 fn normalize_query(query: &RequestLogQuery) -> (i64, i64) {
     let page = query.page.max(1);
@@ -566,6 +568,63 @@ impl RequestLogRepository for PostgresStore {
             log,
             payload,
             attempts,
+        })
+    }
+
+    async fn purge_request_logs_older_than(
+        &self,
+        cutoff: OffsetDateTime,
+        dry_run: bool,
+    ) -> Result<RequestLogPurgeResult, StoreError> {
+        let cutoff_unix = cutoff.unix_timestamp();
+        if dry_run {
+            let total_row = sqlx::query("SELECT COUNT(*) FROM request_logs WHERE occurred_at < $1")
+                .bind(cutoff_unix)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(to_query_error)?;
+            let matched_count: i64 = total_row.try_get(0).map_err(to_query_error)?;
+            let matched_count = u64::try_from(matched_count.max(0)).unwrap_or(u64::MAX);
+
+            return Ok(RequestLogPurgeResult {
+                cutoff,
+                dry_run,
+                matched_count,
+                deleted_count: 0,
+            });
+        }
+
+        let mut deleted_count = 0_u64;
+        loop {
+            let batch_deleted = sqlx::query(
+                "DELETE FROM request_logs
+                 WHERE request_log_id IN (
+                     SELECT request_log_id
+                     FROM request_logs
+                     WHERE occurred_at < $1
+                     ORDER BY occurred_at, request_log_id
+                     LIMIT $2
+                 )",
+            )
+            .bind(cutoff_unix)
+            .bind(REQUEST_LOG_PURGE_BATCH_SIZE)
+            .execute(&self.pool)
+            .await
+            .map_err(to_query_error)?
+            .rows_affected();
+
+            if batch_deleted == 0 {
+                break;
+            }
+
+            deleted_count = deleted_count.saturating_add(batch_deleted);
+        }
+
+        Ok(RequestLogPurgeResult {
+            cutoff,
+            dry_run,
+            matched_count: deleted_count,
+            deleted_count,
         })
     }
 }

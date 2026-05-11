@@ -18,6 +18,8 @@ This page is the admin, user, and maintainer map for the gateway.
   - [Configuration Reference](configuration/configuration-reference.md)
 - Identity lifecycle, team rules, and current admin access overlays:
   - [Identity and Access](access/identity-and-access.md)
+- Gateway API-key management and service-account-style caller conventions:
+  - [Admin Control Plane](access/admin-control-plane.md)
 - Budgets, spend windows, alerts, and reporting:
   - [Budgets and Spending](operations/budgets-and-spending.md)
 
@@ -25,6 +27,8 @@ This page is the admin, user, and maintainer map for the gateway.
 
 - Action-oriented recovery and upgrade work:
   - [Admin Runbooks](operations/operator-runbooks.md)
+- Request-log payload policy and retention purge:
+  - [Observability and Request Logs](operations/observability-and-request-logs.md)
 - Cross-cutting request path across routing, logging, pricing, and spend:
   - [Request Lifecycle and Failure Modes](reference/request-lifecycle-and-failure-modes.md)
 - Provider API family support, OpenAI-compatible route quirks, and compatibility follow-up work:

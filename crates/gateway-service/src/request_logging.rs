@@ -4,8 +4,9 @@ use gateway_core::{
     ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, ChatCompletionsRequest, EmbeddingsRequest,
     GatewayError, IdentityRepository, ModelRoute, OpenAiErrorEnvelope, RequestAttemptRecord,
     RequestAttemptStatus, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
-    RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestTags, RequestToolCardinality,
-    ResponsesRequest, SseEventParser,
+    RequestLogPurgeResult, RequestLogQuery, RequestLogRecord, RequestLogRepository,
+    RequestLogRetentionWindow, RequestTags, RequestToolCardinality, ResponsesRequest,
+    SseEventParser,
 };
 
 use crate::{REQUEST_LOG_MODEL_ICON_KEY, REQUEST_LOG_PROVIDER_ICON_KEY, RequestLogIconMetadata};
@@ -796,6 +797,18 @@ where
             .map_err(Into::into)
     }
 
+    pub async fn purge_request_logs(
+        &self,
+        retention_window: RequestLogRetentionWindow,
+        dry_run: bool,
+    ) -> Result<RequestLogPurgeResult, GatewayError> {
+        let cutoff = retention_window.cutoff_at(OffsetDateTime::now_utc());
+        self.repo
+            .purge_request_logs_older_than(cutoff, dry_run)
+            .await
+            .map_err(Into::into)
+    }
+
     async fn persist_chat_log(
         &self,
         api_key: &AuthenticatedApiKey,
@@ -1189,9 +1202,9 @@ mod tests {
     use gateway_core::{
         ApiKeyOwnerKind, AuthMode, AuthenticatedApiKey, ChatCompletionsRequest, GlobalRole,
         IdentityRepository, ModelAccessMode, RequestLogDetail, RequestLogPage,
-        RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository,
-        RequestTag, RequestTags, StoreError, TeamMembershipRecord, TeamRecord, UserRecord,
-        UserStatus,
+        RequestLogPayloadRecord, RequestLogPurgeResult, RequestLogQuery, RequestLogRecord,
+        RequestLogRepository, RequestLogRetentionWindow, RequestTag, RequestTags, StoreError,
+        TeamMembershipRecord, TeamRecord, UserRecord, UserStatus,
     };
     use serde_json::{Value, json};
     use time::OffsetDateTime;
@@ -1398,6 +1411,39 @@ mod tests {
                 attempts: Vec::new(),
             })
         }
+
+        async fn purge_request_logs_older_than(
+            &self,
+            cutoff: OffsetDateTime,
+            dry_run: bool,
+        ) -> Result<RequestLogPurgeResult, StoreError> {
+            let matched_count = self
+                .logs
+                .lock()
+                .expect("logs lock")
+                .iter()
+                .filter(|log| log.occurred_at < cutoff)
+                .count() as u64;
+            if dry_run {
+                return Ok(RequestLogPurgeResult {
+                    cutoff,
+                    dry_run,
+                    matched_count,
+                    deleted_count: 0,
+                });
+            }
+
+            self.logs
+                .lock()
+                .expect("logs lock")
+                .retain(|log| log.occurred_at >= cutoff);
+            Ok(RequestLogPurgeResult {
+                cutoff,
+                dry_run,
+                matched_count,
+                deleted_count: matched_count,
+            })
+        }
     }
 
     fn user_record(user_id: Uuid, request_logging_enabled: bool) -> UserRecord {
@@ -1452,6 +1498,32 @@ mod tests {
             messages: Vec::new(),
             stream,
             extra: BTreeMap::new(),
+        }
+    }
+
+    fn sample_log(request_id: &str, occurred_at: OffsetDateTime) -> RequestLogRecord {
+        RequestLogRecord {
+            request_log_id: Uuid::new_v4(),
+            request_id: request_id.to_string(),
+            api_key_id: Uuid::new_v4(),
+            user_id: None,
+            team_id: None,
+            model_key: "fast".to_string(),
+            resolved_model_key: "fast".to_string(),
+            provider_key: "openai-prod".to_string(),
+            status_code: Some(200),
+            latency_ms: Some(42),
+            prompt_tokens: Some(1),
+            completion_tokens: Some(2),
+            total_tokens: Some(3),
+            error_code: None,
+            has_payload: false,
+            request_payload_truncated: false,
+            response_payload_truncated: false,
+            request_tags: RequestTags::default(),
+            tool_cardinality: Default::default(),
+            metadata: Default::default(),
+            occurred_at,
         }
     }
 
@@ -1552,6 +1624,40 @@ mod tests {
 
         assert!(!wrote.wrote);
         assert_eq!(repo.logs.lock().expect("logs lock").len(), 0);
+    }
+
+    #[tokio::test]
+    async fn purge_request_logs_uses_typed_retention_window() {
+        let now = OffsetDateTime::now_utc();
+        let repo = Arc::new(InMemoryRepo {
+            users: Arc::new(Mutex::new(Vec::new())),
+            logs: Arc::new(Mutex::new(vec![
+                sample_log("old", now - time::Duration::days(2)),
+                sample_log("young", now),
+            ])),
+            payloads: Arc::new(Mutex::new(Vec::new())),
+        });
+        let logging = RequestLogging::new(repo.clone());
+
+        let dry_run = logging
+            .purge_request_logs(RequestLogRetentionWindow::OneDay, true)
+            .await
+            .expect("dry run purge");
+        assert!(dry_run.dry_run);
+        assert_eq!(dry_run.matched_count, 1);
+        assert_eq!(dry_run.deleted_count, 0);
+        assert_eq!(repo.logs.lock().expect("logs lock").len(), 2);
+
+        let purge = logging
+            .purge_request_logs(RequestLogRetentionWindow::OneDay, false)
+            .await
+            .expect("purge logs");
+        assert!(!purge.dry_run);
+        assert_eq!(purge.matched_count, 1);
+        assert_eq!(purge.deleted_count, 1);
+        let logs = repo.logs.lock().expect("logs lock");
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].request_id, "young");
     }
 
     #[tokio::test]

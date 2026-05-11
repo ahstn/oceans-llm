@@ -18,6 +18,8 @@ The provider adapter supports bearer-token auth and IAM SigV4 request signing. A
 
 For IAM auth, `auth.mode: default_chain` uses the AWS SDK default credential provider chain. In EKS, IRSA works through that chain when the pod environment includes `AWS_ROLE_ARN`, `AWS_WEB_IDENTITY_TOKEN_FILE`, and optional `AWS_ROLE_SESSION_NAME`; earlier sources in the default chain can still win, matching AWS SDK behavior. `auth.mode: static_credentials` signs with the configured access key, secret key, and optional session token.
 
+AWS IAM roles, static credentials, and Bedrock bearer tokens are provider credentials for the gateway process. They are separate from gateway API keys used by clients. A workload calling Oceans LLM should still use a gateway API key, usually a team-owned key for service-account-style traffic.
+
 ## Provider
 
 ```yaml
@@ -54,6 +56,13 @@ providers:
       secret_access_key: env.AWS_SECRET_ACCESS_KEY
       session_token: env.AWS_SESSION_TOKEN
 ```
+
+For production service workloads:
+
+- prefer `default_chain` with an IAM role or IRSA over long-lived static credentials
+- grant the role only the Bedrock Runtime actions and model resources required by the configured routes
+- keep gateway API-key ownership and budgets in Oceans LLM; keep AWS permission boundaries in IAM
+- rotate static credentials outside the gateway and restart or reload the affected runtime path when they change
 
 ## Model Identity
 

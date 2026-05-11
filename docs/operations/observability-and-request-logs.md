@@ -183,6 +183,52 @@ Request-log payloads are user-visible artifacts. They do not persist the transfo
 
 Provider stream transcripts can include normalized compatibility output, such as promoted usage or canonical reasoning deltas, because that normalized stream is what the gateway returns to callers. Responses streams preserve `response.*` event names and payloads rather than being rewritten into Chat Completions chunks.
 
+## Request Log Retention and Purge
+
+Request-log retention is operator-controlled. The supported retention windows are intentionally small and explicit:
+
+- `1d`
+- `3d`
+- `7d`
+
+The default retention window is `7d`. Operators can run the purge command manually before enabling any recurring cleanup:
+
+```bash
+mise run gateway-purge-request-logs-dry-run
+mise run gateway-purge-request-logs
+```
+
+Use `--dry-run` first in production-shaped environments. A dry run reports how many parent request-log rows are older than the selected retention cutoff without deleting data.
+
+When the command runs without `--dry-run`, it deletes matching `request_logs` rows and their request-log children:
+
+- `request_log_payloads`
+- `request_log_tags`
+- `request_log_attempts`
+
+Operators should not hand-delete only one request-log table. Manual partial deletion can leave observability detail misleading even when database constraints prevent direct orphan rows.
+
+Recurring purge is disabled by default and must be opted into from config. Use a standard cron expression and keep the schedule daily or less frequent:
+
+```yaml
+request_logging:
+  purge:
+    enabled: false
+    retention: 7d
+    schedule: "0 0 * * *"
+```
+
+Runtime safety rules:
+
+- `enabled` defaults to `false`
+- `retention` defaults to `7d`
+- only `1d`, `3d`, and `7d` are valid windows
+- `schedule` uses standard 5-field cron syntax
+- recurring schedules must not be more frequent than daily
+- the runtime keeps a daily guard so a recurring worker cannot purge more than once per day even if a bad schedule is supplied
+
+Retention only affects operational request-log tables. It does not delete spend ledger rows in `usage_cost_events`, budget history, provider config, model config, users, teams, or API keys.
+
 ## Payload Policy
 
 Chat-completion request-log payload persistence is controlled by `request_logging.payloads` in `gateway.yaml`.
@@ -372,8 +418,6 @@ Request-log list filters:
 
 ## Current Gaps
 
-- no documented retention or archival policy yet for `request_log_payloads`
-  - retention and purge work is tracked separately in [issue #105](https://github.com/ahstn/oceans-llm/issues/105)
 - deploy examples do not ship an OTLP collector by default
 
 ## Relationship to Spend Reporting

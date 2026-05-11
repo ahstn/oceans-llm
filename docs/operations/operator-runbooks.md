@@ -190,6 +190,28 @@ The request-log admin APIs can still work without a collector. OTLP export and r
 
 For Helm installs, wire collector access through `gateway.config.server.otel_endpoint`, `gateway.config.server.otel_metrics_endpoint`, and `observability.*` values. The chart does not install a collector.
 
+## Request-Log Retention Purge
+
+Use the supported purge command instead of deleting request-log tables by hand.
+
+Preview a purge:
+
+```bash
+mise run gateway-purge-request-logs-dry-run
+```
+
+Apply it:
+
+```bash
+mise run gateway-purge-request-logs
+```
+
+Supported windows are `1d`, `3d`, and `7d`; set `RETENTION=1d|3d|7d` before the `mise` task to override the `7d` default. The default operational choice is `7d`; use `1d` or `3d` only when the environment has tight storage requirements and operators are comfortable losing request-detail history quickly.
+
+The purge removes old parent request-log rows and their detail children, including payloads, caller tags, and provider execution attempts. It does not remove `usage_cost_events`, so spend and budget reporting remain ledger-backed after old request-log detail is gone.
+
+Recurring purge is off by default. If enabled in config, use `request_logging.purge.schedule` with a daily 5-field cron expression and rely on the runtime daily guard as a backstop, not as the primary scheduler.
+
 ## Secret Rotation Checkpoints
 
 When rotating secrets, check the dependent path instead of rotating blindly.
@@ -200,6 +222,8 @@ When rotating secrets, check the dependent path instead of rotating blindly.
 - restart or reseed as needed
 - verify `/v1/models` with the new key
 - verify the old key fails if revocation was intended
+
+For service-account-style callers, prefer a team-owned gateway API key with a narrow model grant set and an explicit team budget. Name the key after the workload, keep the raw secret in your secret manager, and rotate by creating a replacement key before revoking the old one.
 
 ### Bootstrap admin password
 
@@ -213,6 +237,8 @@ When rotating secrets, check the dependent path instead of rotating blindly.
 - restart or reload the affected service path
 - run one live request through the affected provider
 - confirm request logs show the expected provider key
+
+Provider service-account credentials are upstream cloud credentials, not gateway caller identities. Rotating a Vertex service-account JSON file or an AWS IAM role changes provider access only; it does not rotate gateway API keys used by clients.
 
 ## What This Page Does Not Own
 

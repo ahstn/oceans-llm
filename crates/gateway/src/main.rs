@@ -2,18 +2,19 @@ use std::{env, net::SocketAddr, path::Path, sync::Arc, time::Duration};
 
 use admin_ui::AdminUiConfig;
 use anyhow::Context;
+use chrono::{DateTime, Utc};
 use clap::Parser;
 use gateway::{
-    cli::{Cli, Command, MigrateAction, ServeArgs},
-    config::{BootstrapAdminConfig, BudgetAlertEmailConfig, GatewayConfig},
+    cli::{Cli, Command, MigrateAction, PurgeRequestLogsArgs, ServeArgs},
+    config::{BootstrapAdminConfig, BudgetAlertEmailConfig, GatewayConfig, RequestLogPurgeConfig},
     email::build_budget_alert_sender,
     http::{build_router, state::AppState},
     observability,
 };
-use gateway_core::ProviderRegistry;
+use gateway_core::{ProviderRegistry, RequestLogPurgeResult, RequestLogRetentionWindow};
 use gateway_providers::{BedrockProvider, OpenAiCompatProvider, VertexProvider};
 use gateway_service::{
-    DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, GatewayService, WeightedRoutePlanner,
+    DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, GatewayService, RequestLogging, WeightedRoutePlanner,
     hash_gateway_key_secret,
 };
 use gateway_store::{
@@ -36,6 +37,7 @@ async fn main() -> anyhow::Result<()> {
     let result = match cli.command.unwrap_or(Command::Serve(ServeArgs::default())) {
         Command::Serve(args) => run_serve(&config, observability.metrics.clone(), args).await,
         Command::Migrate(args) => run_migrate(&config, args.action()?).await,
+        Command::PurgeRequestLogs(args) => run_purge_request_logs_command(&config, args).await,
         Command::BootstrapAdmin => run_bootstrap_admin_command(&config).await,
         Command::SeedConfig => run_seed_config_command(&config).await,
         Command::SeedLocalDemo => run_seed_local_demo_command(&config).await,
@@ -159,25 +161,13 @@ async fn run_serve_with_store(
         seed_config(store.as_ref(), config).await?;
     }
 
-    let planner = Arc::new(WeightedRoutePlanner::default());
-    let budget_alert_sender = build_budget_alert_sender(&config.budget_alerts.email)
-        .context("failed to build budget alert email sender")?;
-    let payload_policy = config
-        .request_log_payload_policy()
-        .context("failed to build request log payload policy")?;
-    let service = Arc::new(
-        GatewayService::new_with_budget_alert_sender_and_payload_policy(
-            store,
-            planner,
-            budget_alert_sender,
-            payload_policy,
-        ),
-    );
+    let service = build_gateway_service(config, store)?;
     if let Err(error) = service.refresh_pricing_catalog_if_stale().await {
         tracing::warn!(error = %error, "initial pricing catalog refresh failed");
     }
     spawn_pricing_catalog_refresh_loop(service.clone());
     spawn_budget_alert_delivery_loop(service.clone(), &config.budget_alerts.email);
+    spawn_request_log_purge_loop(service.clone(), &config.request_logging.purge);
     let providers = build_provider_registry(config)?;
 
     let bind_address: SocketAddr = config
@@ -278,6 +268,29 @@ async fn run_seed_local_demo_command(config: &GatewayConfig) -> anyhow::Result<(
         println!("{name}: {raw_key}");
     }
 
+    Ok(())
+}
+
+async fn run_purge_request_logs_command(
+    config: &GatewayConfig,
+    args: PurgeRequestLogsArgs,
+) -> anyhow::Result<()> {
+    let database_options = database_options(config)?;
+    maybe_run_migrations(&database_options, true).await?;
+    let store = Arc::new(
+        AnyStore::connect(&database_options)
+            .await
+            .context("failed to initialize gateway store")?,
+    );
+    let request_logging = RequestLogging::new(store);
+    let result = request_logging
+        .purge_request_logs(args.retention, args.dry_run)
+        .await
+        .context("failed to purge request logs")?;
+    println!("cutoff: {}", result.cutoff);
+    println!("dry_run: {}", result.dry_run);
+    println!("matched_count: {}", result.matched_count);
+    println!("deleted_count: {}", result.deleted_count);
     Ok(())
 }
 
@@ -399,6 +412,106 @@ fn spawn_budget_alert_delivery_loop(
     });
 }
 
+fn spawn_request_log_purge_loop(
+    service: Arc<GatewayService<AnyStore, WeightedRoutePlanner>>,
+    config: &RequestLogPurgeConfig,
+) {
+    if !config.enabled {
+        return;
+    }
+
+    let schedule = match parse_request_log_purge_schedule(&config.schedule) {
+        Ok(schedule) => schedule,
+        Err(error) => {
+            tracing::warn!(error = %error, "request log purge schedule is invalid");
+            return;
+        }
+    };
+    let retention = config.retention;
+
+    tokio::spawn(async move {
+        let mut last_started_at: Option<DateTime<Utc>> = None;
+
+        loop {
+            let now = Utc::now();
+            let delay = delay_until_next_cron_run(&schedule, now);
+            tokio::time::sleep(delay).await;
+
+            let started_at = Utc::now();
+            if !daily_purge_guard_allows_run(started_at, last_started_at) {
+                tracing::warn!("request log purge skipped by daily runtime guard");
+                continue;
+            }
+            last_started_at = Some(started_at);
+
+            if let Err(error) =
+                purge_request_logs_from_service(service.clone(), retention, false).await
+            {
+                tracing::warn!(error = %error, "background request log purge failed");
+            }
+        }
+    });
+}
+
+async fn purge_request_logs_from_service(
+    service: Arc<GatewayService<AnyStore, WeightedRoutePlanner>>,
+    retention: RequestLogRetentionWindow,
+    dry_run: bool,
+) -> anyhow::Result<RequestLogPurgeResult> {
+    service
+        .purge_request_logs(retention, dry_run)
+        .await
+        .context("failed to purge request logs")
+}
+
+fn build_gateway_service(
+    config: &GatewayConfig,
+    store: Arc<AnyStore>,
+) -> anyhow::Result<Arc<GatewayService<AnyStore, WeightedRoutePlanner>>> {
+    let planner = Arc::new(WeightedRoutePlanner::default());
+    let budget_alert_sender = build_budget_alert_sender(&config.budget_alerts.email)
+        .context("failed to build budget alert email sender")?;
+    let payload_policy = config
+        .request_log_payload_policy()
+        .context("failed to build request log payload policy")?;
+    Ok(Arc::new(
+        GatewayService::new_with_budget_alert_sender_and_payload_policy(
+            store,
+            planner,
+            budget_alert_sender,
+            payload_policy,
+        ),
+    ))
+}
+
+fn parse_request_log_purge_schedule(schedule: &str) -> anyhow::Result<cron::Schedule> {
+    format!("0 {}", schedule.trim())
+        .parse()
+        .with_context(|| format!("invalid request log purge schedule `{schedule}`"))
+}
+
+fn delay_until_next_cron_run(schedule: &cron::Schedule, now: DateTime<Utc>) -> Duration {
+    let next = schedule
+        .after(&now)
+        .find(|candidate| *candidate > now)
+        .expect("validated request log purge schedule should have a next run");
+    next.signed_duration_since(now)
+        .to_std()
+        .expect("next request log purge run should be after the current time")
+}
+
+fn daily_purge_guard_allows_run(
+    now: DateTime<Utc>,
+    last_started_at: Option<DateTime<Utc>>,
+) -> bool {
+    match last_started_at {
+        Some(last_started_at) => {
+            now.signed_duration_since(last_started_at) >= chrono::Duration::days(1)
+        }
+        None => true,
+    }
+}
+
 fn pricing_catalog_refresh_interval() -> Duration {
     DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL
 }
@@ -425,6 +538,7 @@ mod tests {
             Arc,
             atomic::{AtomicUsize, Ordering},
         },
+        time::Duration,
     };
 
     use admin_ui::AdminUiConfig;
@@ -436,6 +550,7 @@ mod tests {
         response::Response,
         routing::post,
     };
+    use chrono::TimeZone;
     use gateway_core::{
         ApiKeyRepository, AuthMode, BudgetAlertChannel, BudgetAlertDeliveryRecord,
         BudgetAlertDeliveryStatus, BudgetAlertRepository, BudgetCadence, BudgetRepository,
@@ -464,8 +579,9 @@ mod tests {
     use uuid::Uuid;
 
     use crate::{
-        build_provider_registry, ensure_bootstrap_admin,
-        ensure_seed_local_demo_targets_local_database,
+        build_provider_registry, daily_purge_guard_allows_run, delay_until_next_cron_run,
+        ensure_bootstrap_admin, ensure_seed_local_demo_targets_local_database,
+        parse_request_log_purge_schedule,
     };
     use gateway::{
         config::{BootstrapAdminConfig, GatewayConfig},
@@ -505,6 +621,37 @@ providers:
         assert!(provider.capabilities().stream);
         assert!(!provider.capabilities().responses);
         assert!(!provider.capabilities().embeddings);
+    }
+
+    #[test]
+    fn request_log_purge_daily_guard_blocks_runs_within_one_day() {
+        let now = chrono::Utc
+            .with_ymd_and_hms(2026, 5, 10, 12, 0, 0)
+            .single()
+            .expect("datetime");
+
+        assert!(daily_purge_guard_allows_run(now, None));
+        assert!(!daily_purge_guard_allows_run(
+            now,
+            Some(now - chrono::Duration::hours(23))
+        ));
+        assert!(daily_purge_guard_allows_run(
+            now,
+            Some(now - chrono::Duration::days(1))
+        ));
+    }
+
+    #[test]
+    fn request_log_purge_cron_delay_uses_standard_five_field_schedule() {
+        let now = chrono::Utc
+            .with_ymd_and_hms(2026, 5, 10, 12, 0, 0)
+            .single()
+            .expect("datetime");
+
+        let schedule = parse_request_log_purge_schedule("0 0 * * *").expect("schedule");
+        let delay = delay_until_next_cron_run(&schedule, now);
+
+        assert_eq!(delay, Duration::from_secs(12 * 60 * 60));
     }
 
     #[derive(Clone)]
