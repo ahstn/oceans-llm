@@ -221,6 +221,8 @@ Each request-log row persists lightweight policy metadata in `request_logs.metad
 
 ```json
 {
+  "operation": "chat_completions",
+  "stream": false,
   "payload_policy": {
     "capture_mode": "redacted_payloads",
     "request_max_bytes": 65536,
@@ -297,6 +299,10 @@ Platform admins can inspect request logs through:
 - `GET /api/v1/admin/observability/harness-usage`
 - `GET /api/v1/admin/observability/request-logs`
 - `GET /api/v1/admin/observability/request-logs/{request_log_id}`
+
+Request-log list and detail responses include the row metadata, so admins can see the public operation for each row, such as `chat_completions`, `responses`, or `embeddings`, alongside the typed payload policy and truncation fields.
+
+Validate documentation-only edits to this page with `mise run docs:check` before handoff.
 
 ## Usage Leaderboard
 
