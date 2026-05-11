@@ -4,9 +4,9 @@ use anyhow::{Context, bail};
 use gateway_core::{
     AuthMode, BudgetCadence, GlobalRole, MembershipRole, Money4, OpenAiCompatDeveloperRole,
     OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
-    ProviderCapabilities, RequestLogRetentionWindow, RouteCompatibility, SYSTEM_LEGACY_TEAM_KEY,
-    SeedApiKey, SeedBudget, SeedModel, SeedModelRoute, SeedProvider, SeedTeam, SeedUser,
-    SeedUserMembership, parse_gateway_api_key,
+    ProviderCapabilities, RequestLogRetentionWindow, RouteCompatibility, SeedApiKey, SeedBudget,
+    SeedModel, SeedModelRoute, SeedProvider, SeedTeam, SeedUser, SeedUserMembership,
+    parse_gateway_api_key,
 };
 use gateway_providers::{
     BedrockAuthConfig, BedrockProviderConfig, OpenAiCompatConfig, VertexAuthConfig,
@@ -306,9 +306,6 @@ impl GatewayConfig {
             let team_key = normalize_config_team_key(&team.key)?;
             if team.name.trim().is_empty() {
                 bail!("team `{team_key}` name cannot be empty");
-            }
-            if team_key == SYSTEM_LEGACY_TEAM_KEY {
-                bail!("team key `{SYSTEM_LEGACY_TEAM_KEY}` is reserved");
             }
             if !team_keys.insert(team_key.clone()) {
                 bail!("duplicate team key `{team_key}`");
@@ -2673,7 +2670,7 @@ users:
     }
 
     #[test]
-    fn rejects_reserved_declarative_team_keys() {
+    fn accepts_system_legacy_as_ordinary_team_key() {
         let tmp = tempdir().expect("tempdir");
         let config_path = tmp.path().join("gateway.yaml");
 
@@ -2686,11 +2683,10 @@ teams:
 "#,
         );
 
-        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
-        let error_text = format!("{error:#}");
-        assert!(
-            error_text.contains("team key `system-legacy` is reserved"),
-            "unexpected error: {error_text}"
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        assert_eq!(
+            config.seed_teams().expect("seed teams")[0].team_key,
+            "system-legacy"
         );
     }
 

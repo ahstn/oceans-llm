@@ -93,8 +93,8 @@ export function UsageCostsPage() {
               <SelectContent>
                 <SelectGroup>
                   <SelectItem value="all">All owners</SelectItem>
-                  <SelectItem value="user">Users only</SelectItem>
-                  <SelectItem value="team">Teams only</SelectItem>
+                  <SelectItem value="user">User owners</SelectItem>
+                  <SelectItem value="team">Team scopes</SelectItem>
                 </SelectGroup>
               </SelectContent>
             </Select>
@@ -157,7 +157,9 @@ export function UsageCostsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Owner Breakdown</CardTitle>
-          <CardDescription>Spend by specific user and team ownership scopes.</CardDescription>
+          <CardDescription>
+            Spend by user, service account, and team ownership scopes.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="overflow-hidden rounded-md border border-[color:var(--color-border)]">
@@ -179,7 +181,7 @@ export function UsageCostsPage() {
                   className="grid grid-cols-[120px_minmax(0,1fr)_170px_120px_120px] border-t border-[color:var(--color-border)]"
                 >
                   <span className="px-3 py-3">
-                    <Badge>{owner.owner_kind}</Badge>
+                    <Badge>{formatOwnerKind(owner.owner_kind)}</Badge>
                   </span>
                   <span className="truncate px-3 py-3 text-sm text-[var(--color-text)]">
                     {owner.owner_name}
@@ -261,4 +263,12 @@ function getErrorMessage(error: unknown) {
     return error.message
   }
   return 'Request failed'
+}
+
+function formatOwnerKind(ownerKind: string) {
+  if (ownerKind === 'service_account') {
+    return 'service account'
+  }
+
+  return ownerKind
 }

@@ -1,6 +1,6 @@
 # Admin Control Plane
 
-`See also`: [Identity and Access](identity-and-access.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../operations/observability/mcp-invocations.md), [Agent Harness Usage](../operations/agent-harness-usage.md), [Admin API Contract Workflow](../reference/admin-api-contract-workflow.md), [End-to-End Contract Tests](../reference/e2e-contract-tests.md), [OIDC and SSO Status](oidc-and-sso-status.md)
+`See also`: [Identity and Access](identity-and-access.md), [Service Accounts](service-accounts.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../operations/observability/mcp-invocations.md), [Agent Harness Usage](../operations/agent-harness-usage.md), [Admin API Contract Workflow](../reference/admin-api-contract-workflow.md), [End-to-End Contract Tests](../reference/e2e-contract-tests.md), [OIDC and SSO Status](oidc-and-sso-status.md)
 
 This page describes what admins can actually do in the admin UI today.
 
@@ -23,6 +23,7 @@ These areas are backed by real gateway APIs today:
 - API key inventory, creation, and revocation
 - identity users and lifecycle management
 - identity teams and member transfer or removal workflows
+- team-owned service-account management
 - password invite and onboarding links
 - OIDC pre-provisioning flows
 - spend usage reporting
@@ -42,7 +43,7 @@ That split matters for admin expectations and test scope.
 
 The current product contract is mixed on purpose:
 
-- identity, spend, API keys, request logs, leaderboard, and Models are live gateway-backed surfaces
+- identity, service accounts, spend, API keys, request logs, leaderboard, and Models are live gateway-backed surfaces
 - Models still needs richer runtime capability visibility, including Responses support
 
 Tracked follow-up:
@@ -55,7 +56,7 @@ Tracked follow-up:
 Admins can:
 
 - list API keys with owner summary and grant list
-- create a new key for an explicit user or team owner
+- create a new key for an explicit user or service-account owner
 - grant access to an explicit set of gateway models at creation time
 - copy the raw key once from the create response
 - replace model grants for an active key
@@ -76,6 +77,7 @@ Current limits:
 - no restore-from-revoked flow
 - revoked keys are read-only
 - model choice is limited to the live gateway model catalog
+- direct team-owned runtime keys are not supported
 
 ## Identity Workflows Available Today
 
@@ -92,6 +94,7 @@ Admins can:
 - pre-provision OIDC users against enabled providers
 - remove team members
 - transfer team members between teams with an explicit destination role
+- manage team service accounts according to their team scope
 - sign out of the current browser session
 
 Current limits:
@@ -102,7 +105,7 @@ Current limits:
 
 ## Admin Auth and Session Behavior
 
-Only `platform_admin` accounts can enter the admin control plane. Ordinary `user` accounts are data-plane identities unless their global role is changed.
+Most global admin-control-plane workflows require a `platform_admin` account. Service-account workflows also allow scoped team operators: active team owners and team admins can manage service accounts for their own team without gaining platform-wide access. Ordinary members remain data-plane identities unless their role changes.
 
 Current session behavior is cookie-backed and admin-visible:
 
@@ -147,15 +150,18 @@ Current limits:
 
 ## Service Callers Today
 
-The gateway does not yet have a separate `service_account` API-key owner kind. Current service-account-style caller choices are:
+The gateway uses first-class service accounts for non-human team callers.
 
-- team-owned API keys created in the admin UI
-- config-seeded keys owned by the reserved `system-legacy` team
-- user-owned keys only when the key genuinely acts on behalf of one user
+Management rules:
 
-Prefer team-owned keys for automation, CI jobs, batch workers, and shared services. Team ownership gives admins an explicit budget and reporting boundary even though the current team ownership scope is still `actor:none`.
+- platform admins can manage service accounts across all teams
+- team owners and team admins can manage service accounts for their own team
+- ordinary members and non-members cannot manage service accounts
+- service-account deletion is deactivation
 
-Do not confuse gateway service-account-style API keys with provider credential auth such as Vertex `auth.mode: service_account`. Gateway API keys authenticate clients to Oceans LLM. Provider service-account credentials authenticate Oceans LLM to an upstream cloud provider.
+Direct team-owned runtime API keys and `system-legacy` compatibility are removed. Team automation should use credentials attached to a team-owned service account.
+
+Do not confuse this with provider credential auth such as Vertex `auth.mode: service_account`. Provider service-account auth lets the gateway call an upstream provider; gateway service accounts let callers authenticate to the gateway. See [service-accounts.md](service-accounts.md).
 
 ## Current Gaps
 

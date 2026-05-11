@@ -17,6 +17,7 @@ pub struct AuthenticatedApiKey {
     pub owner_kind: ApiKeyOwnerKind,
     pub owner_user_id: Option<Uuid>,
     pub owner_team_id: Option<Uuid>,
+    pub owner_service_account_id: Option<Uuid>,
 }
 
 impl AuthenticatedApiKey {
@@ -28,6 +29,11 @@ impl AuthenticatedApiKey {
     #[must_use]
     pub fn is_team_owned(&self) -> bool {
         self.owner_kind == ApiKeyOwnerKind::Team
+    }
+
+    #[must_use]
+    pub fn is_service_account_owned(&self) -> bool {
+        self.owner_kind == ApiKeyOwnerKind::ServiceAccount
     }
 }
 

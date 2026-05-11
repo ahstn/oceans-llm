@@ -5,10 +5,12 @@ use serde_json::{Map, Value};
 use time::{Date, Duration, Month, OffsetDateTime, UtcOffset};
 use uuid::Uuid;
 
-pub const SYSTEM_LEGACY_TEAM_ID: &str = "00000000-0000-0000-0000-000000000001";
-pub const SYSTEM_LEGACY_TEAM_KEY: &str = "system-legacy";
+pub const CONFIG_SEED_TEAM_ID: &str = "00000000-0000-0000-0000-000000000001";
+pub const CONFIG_SEED_TEAM_KEY: &str = "config-seed";
 pub const SYSTEM_BOOTSTRAP_ADMIN_USER_ID: &str = "00000000-0000-0000-0000-000000000002";
 pub const SYSTEM_BOOTSTRAP_ADMIN_EMAIL: &str = "admin@local";
+pub const CONFIG_SEED_SERVICE_ACCOUNT_ID: &str = "00000000-0000-0000-0000-000000000003";
+pub const CONFIG_SEED_SERVICE_ACCOUNT_KEY: &str = "seed-api-keys";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Default)]
 #[serde(transparent)]
@@ -371,6 +373,7 @@ const fn next_calendar_month(year: i32, month: Month) -> (i32, Month) {
 pub enum ApiKeyOwnerKind {
     User,
     Team,
+    ServiceAccount,
 }
 
 impl ApiKeyOwnerKind {
@@ -379,6 +382,7 @@ impl ApiKeyOwnerKind {
         match self {
             Self::User => "user",
             Self::Team => "team",
+            Self::ServiceAccount => "service_account",
         }
     }
 
@@ -387,6 +391,33 @@ impl ApiKeyOwnerKind {
         match value {
             "user" => Some(Self::User),
             "team" => Some(Self::Team),
+            "service_account" => Some(Self::ServiceAccount),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ServiceAccountStatus {
+    Active,
+    Disabled,
+}
+
+impl ServiceAccountStatus {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Disabled => "disabled",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "active" => Some(Self::Active),
+            "disabled" => Some(Self::Disabled),
             _ => None,
         }
     }
@@ -428,6 +459,7 @@ pub struct ApiKeyRecord {
     pub owner_kind: ApiKeyOwnerKind,
     pub owner_user_id: Option<Uuid>,
     pub owner_team_id: Option<Uuid>,
+    pub owner_service_account_id: Option<Uuid>,
     pub created_at: OffsetDateTime,
     pub last_used_at: Option<OffsetDateTime>,
     pub revoked_at: Option<OffsetDateTime>,
@@ -441,6 +473,7 @@ pub struct NewApiKeyRecord {
     pub owner_kind: ApiKeyOwnerKind,
     pub owner_user_id: Option<Uuid>,
     pub owner_team_id: Option<Uuid>,
+    pub owner_service_account_id: Option<Uuid>,
     pub created_at: OffsetDateTime,
 }
 
@@ -453,6 +486,20 @@ pub struct TeamRecord {
     pub model_access_mode: ModelAccessMode,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceAccountRecord {
+    pub service_account_id: Uuid,
+    pub team_id: Uuid,
+    pub service_account_key: String,
+    pub service_account_name: String,
+    pub status: ServiceAccountStatus,
+    pub model_access_mode: ModelAccessMode,
+    pub metadata: Value,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+    pub disabled_at: Option<OffsetDateTime>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -558,6 +605,19 @@ pub struct UserBudgetRecord {
 pub struct TeamBudgetRecord {
     pub team_budget_id: Uuid,
     pub team_id: Uuid,
+    pub cadence: BudgetCadence,
+    pub amount_usd: Money4,
+    pub hard_limit: bool,
+    pub timezone: String,
+    pub is_active: bool,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceAccountBudgetRecord {
+    pub service_account_budget_id: Uuid,
+    pub service_account_id: Uuid,
     pub cadence: BudgetCadence,
     pub amount_usd: Money4,
     pub hard_limit: bool,
@@ -766,6 +826,7 @@ pub struct UsageLedgerRecord {
     pub api_key_id: Uuid,
     pub user_id: Option<Uuid>,
     pub team_id: Option<Uuid>,
+    pub service_account_id: Option<Uuid>,
     pub actor_user_id: Option<Uuid>,
     pub model_id: Option<Uuid>,
     pub provider_key: String,
@@ -858,6 +919,7 @@ pub struct RequestLogRecord {
     pub api_key_id: Uuid,
     pub user_id: Option<Uuid>,
     pub team_id: Option<Uuid>,
+    pub service_account_id: Option<Uuid>,
     pub model_key: String,
     pub resolved_model_key: String,
     pub provider_key: String,
@@ -968,6 +1030,7 @@ pub struct RequestLogQuery {
     pub status_code: Option<i64>,
     pub user_id: Option<Uuid>,
     pub team_id: Option<Uuid>,
+    pub service_account_id: Option<Uuid>,
     pub service: Option<String>,
     pub component: Option<String>,
     pub env: Option<String>,

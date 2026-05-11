@@ -21,11 +21,12 @@ fn decode_request_log_row(row: &libsql::Row) -> Result<RequestLogRecord, StoreEr
     let api_key_id: String = row.get(2).map_err(to_query_error)?;
     let user_id: Option<String> = row.get(3).map_err(to_query_error)?;
     let team_id: Option<String> = row.get(4).map_err(to_query_error)?;
-    let has_payload: i64 = row.get(13).map_err(to_query_error)?;
-    let request_payload_truncated: i64 = row.get(14).map_err(to_query_error)?;
-    let response_payload_truncated: i64 = row.get(15).map_err(to_query_error)?;
-    let occurred_at: i64 = row.get(20).map_err(to_query_error)?;
-    let metadata_json: String = row.get(19).map_err(to_query_error)?;
+    let service_account_id: Option<String> = row.get(5).map_err(to_query_error)?;
+    let has_payload: i64 = row.get(14).map_err(to_query_error)?;
+    let request_payload_truncated: i64 = row.get(15).map_err(to_query_error)?;
+    let response_payload_truncated: i64 = row.get(16).map_err(to_query_error)?;
+    let occurred_at: i64 = row.get(21).map_err(to_query_error)?;
+    let metadata_json: String = row.get(20).map_err(to_query_error)?;
 
     Ok(RequestLogRecord {
         request_log_id: parse_uuid(&request_log_id)?,
@@ -33,33 +34,34 @@ fn decode_request_log_row(row: &libsql::Row) -> Result<RequestLogRecord, StoreEr
         api_key_id: parse_uuid(&api_key_id)?,
         user_id: user_id.as_deref().map(parse_uuid).transpose()?,
         team_id: team_id.as_deref().map(parse_uuid).transpose()?,
-        model_key: row.get(5).map_err(to_query_error)?,
-        resolved_model_key: row.get(6).map_err(to_query_error)?,
-        provider_key: row.get(7).map_err(to_query_error)?,
-        status_code: row.get(8).map_err(to_query_error)?,
-        latency_ms: row.get(9).map_err(to_query_error)?,
-        prompt_tokens: row.get(10).map_err(to_query_error)?,
-        completion_tokens: row.get(11).map_err(to_query_error)?,
-        total_tokens: row.get(12).map_err(to_query_error)?,
-        error_code: row.get(21).map_err(to_query_error)?,
+        service_account_id: service_account_id.as_deref().map(parse_uuid).transpose()?,
+        model_key: row.get(6).map_err(to_query_error)?,
+        resolved_model_key: row.get(7).map_err(to_query_error)?,
+        provider_key: row.get(8).map_err(to_query_error)?,
+        status_code: row.get(9).map_err(to_query_error)?,
+        latency_ms: row.get(10).map_err(to_query_error)?,
+        prompt_tokens: row.get(11).map_err(to_query_error)?,
+        completion_tokens: row.get(12).map_err(to_query_error)?,
+        total_tokens: row.get(13).map_err(to_query_error)?,
+        error_code: row.get(22).map_err(to_query_error)?,
         has_payload: has_payload == 1,
         request_payload_truncated: request_payload_truncated == 1,
         response_payload_truncated: response_payload_truncated == 1,
         request_tags: RequestTags {
-            service: row.get(16).map_err(to_query_error)?,
-            component: row.get(17).map_err(to_query_error)?,
-            env: row.get(18).map_err(to_query_error)?,
+            service: row.get(17).map_err(to_query_error)?,
+            component: row.get(18).map_err(to_query_error)?,
+            env: row.get(19).map_err(to_query_error)?,
             bespoke: Vec::new(),
         },
         tool_cardinality: RequestToolCardinality {
-            referenced_mcp_server_count: row.get(22).map_err(to_query_error)?,
-            exposed_tool_count: row.get(23).map_err(to_query_error)?,
-            invoked_tool_count: row.get(24).map_err(to_query_error)?,
-            filtered_tool_count: row.get(25).map_err(to_query_error)?,
+            referenced_mcp_server_count: row.get(23).map_err(to_query_error)?,
+            exposed_tool_count: row.get(24).map_err(to_query_error)?,
+            invoked_tool_count: row.get(25).map_err(to_query_error)?,
+            filtered_tool_count: row.get(26).map_err(to_query_error)?,
         },
-        user_agent_raw: row.get(26).map_err(to_query_error)?,
-        agent_harness_key: row.get(27).map_err(to_query_error)?,
-        agent_harness_label: row.get(28).map_err(to_query_error)?,
+        user_agent_raw: row.get(27).map_err(to_query_error)?,
+        agent_harness_key: row.get(28).map_err(to_query_error)?,
+        agent_harness_label: row.get(29).map_err(to_query_error)?,
         metadata: serde_json::from_str(&metadata_json)
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
         occurred_at: unix_to_datetime(occurred_at)?,
@@ -223,14 +225,14 @@ impl RequestLogRepository for LibsqlStore {
         tx.execute(
             r#"
                 INSERT INTO request_logs (
-                    request_log_id, request_id, api_key_id, user_id, team_id, model_key,
+                    request_log_id, request_id, api_key_id, user_id, team_id, service_account_id, model_key,
                     resolved_model_key, provider_key, status_code, latency_ms, prompt_tokens,
                     completion_tokens, total_tokens, has_payload, request_payload_truncated,
                     response_payload_truncated, caller_service, caller_component, caller_env,
                     error_code, metadata_json, occurred_at, referenced_mcp_server_count,
                     exposed_tool_count, invoked_tool_count, filtered_tool_count, user_agent_raw,
                     agent_harness_key, agent_harness_label
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29)
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30)
                 "#,
             libsql::params![
                 log.request_log_id.to_string(),
@@ -238,6 +240,7 @@ impl RequestLogRepository for LibsqlStore {
                 log.api_key_id.to_string(),
                 log.user_id.map(|value| value.to_string()),
                 log.team_id.map(|value| value.to_string()),
+                log.service_account_id.map(|value| value.to_string()),
                 log.model_key.as_str(),
                 log.resolved_model_key.as_str(),
                 log.provider_key.as_str(),
@@ -321,6 +324,7 @@ impl RequestLogRepository for LibsqlStore {
         let provider_key = query.provider_key.as_deref();
         let user_id = query.user_id.map(|value| value.to_string());
         let team_id = query.team_id.map(|value| value.to_string());
+        let service_account_id = query.service_account_id.map(|value| value.to_string());
         let service = query.service.as_deref();
         let component = query.component.as_deref();
         let env = query.env.as_deref();
@@ -339,17 +343,18 @@ impl RequestLogRepository for LibsqlStore {
                   AND (?4 IS NULL OR status_code = ?4)
                   AND (?5 IS NULL OR user_id = ?5)
                   AND (?6 IS NULL OR team_id = ?6)
-                  AND (?7 IS NULL OR caller_service = ?7)
-                  AND (?8 IS NULL OR caller_component = ?8)
-                  AND (?9 IS NULL OR caller_env = ?9)
+                  AND (?7 IS NULL OR service_account_id = ?7)
+                  AND (?8 IS NULL OR caller_service = ?8)
+                  AND (?9 IS NULL OR caller_component = ?9)
+                  AND (?10 IS NULL OR caller_env = ?10)
                   AND (
-                    (?10 IS NULL AND ?11 IS NULL)
+                    (?11 IS NULL AND ?12 IS NULL)
                     OR EXISTS (
                       SELECT 1
                       FROM request_log_tags
                       WHERE request_log_tags.request_log_id = request_logs.request_log_id
-                        AND request_log_tags.tag_key = ?10
-                        AND request_log_tags.tag_value = ?11
+                        AND request_log_tags.tag_key = ?11
+                        AND request_log_tags.tag_value = ?12
                     )
                   )
                 "#,
@@ -360,6 +365,7 @@ impl RequestLogRepository for LibsqlStore {
                     query.status_code,
                     user_id.clone(),
                     team_id.clone(),
+                    service_account_id.clone(),
                     service,
                     component,
                     env,
@@ -380,7 +386,7 @@ impl RequestLogRepository for LibsqlStore {
             .connection
             .query(
                 r#"
-                SELECT request_log_id, request_id, api_key_id, user_id, team_id, model_key,
+                SELECT request_log_id, request_id, api_key_id, user_id, team_id, service_account_id, model_key,
                        resolved_model_key, provider_key, status_code, latency_ms, prompt_tokens,
                        completion_tokens, total_tokens, has_payload, request_payload_truncated,
                        response_payload_truncated, caller_service, caller_component, caller_env,
@@ -394,21 +400,22 @@ impl RequestLogRepository for LibsqlStore {
                   AND (?4 IS NULL OR status_code = ?4)
                   AND (?5 IS NULL OR user_id = ?5)
                   AND (?6 IS NULL OR team_id = ?6)
-                  AND (?7 IS NULL OR caller_service = ?7)
-                  AND (?8 IS NULL OR caller_component = ?8)
-                  AND (?9 IS NULL OR caller_env = ?9)
+                  AND (?7 IS NULL OR service_account_id = ?7)
+                  AND (?8 IS NULL OR caller_service = ?8)
+                  AND (?9 IS NULL OR caller_component = ?9)
+                  AND (?10 IS NULL OR caller_env = ?10)
                   AND (
-                    (?10 IS NULL AND ?11 IS NULL)
+                    (?11 IS NULL AND ?12 IS NULL)
                     OR EXISTS (
                       SELECT 1
                       FROM request_log_tags
                       WHERE request_log_tags.request_log_id = request_logs.request_log_id
-                        AND request_log_tags.tag_key = ?10
-                        AND request_log_tags.tag_value = ?11
+                        AND request_log_tags.tag_key = ?11
+                        AND request_log_tags.tag_value = ?12
                     )
                   )
                 ORDER BY occurred_at DESC, request_log_id DESC
-                LIMIT ?12 OFFSET ?13
+                LIMIT ?13 OFFSET ?14
                 "#,
                 libsql::params![
                     request_id,
@@ -417,6 +424,7 @@ impl RequestLogRepository for LibsqlStore {
                     query.status_code,
                     user_id,
                     team_id,
+                    service_account_id,
                     service,
                     component,
                     env,
@@ -573,7 +581,7 @@ impl RequestLogRepository for LibsqlStore {
             .connection
             .query(
                 r#"
-                SELECT rl.request_log_id, rl.request_id, rl.api_key_id, rl.user_id, rl.team_id,
+                SELECT rl.request_log_id, rl.request_id, rl.api_key_id, rl.user_id, rl.team_id, rl.service_account_id,
                        rl.model_key, rl.resolved_model_key, rl.provider_key, rl.status_code,
                        rl.latency_ms, rl.prompt_tokens, rl.completion_tokens, rl.total_tokens,
                        rl.has_payload, rl.request_payload_truncated, rl.response_payload_truncated,
@@ -604,8 +612,8 @@ impl RequestLogRepository for LibsqlStore {
         };
 
         let mut log = decode_request_log_row(&row)?;
-        let request_json: Option<String> = row.get(29).map_err(to_query_error)?;
-        let response_json: Option<String> = row.get(30).map_err(to_query_error)?;
+        let request_json: Option<String> = row.get(30).map_err(to_query_error)?;
+        let response_json: Option<String> = row.get(31).map_err(to_query_error)?;
         log.request_tags.bespoke = load_bespoke_tags_for_logs(&self.connection, &[request_log_id])
             .await?
             .remove(&request_log_id)

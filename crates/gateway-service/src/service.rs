@@ -8,8 +8,8 @@ use gateway_core::{
     PricingResolution, PricingUnpricedReason, ProviderRepository, RequestLogDetail, RequestLogPage,
     RequestLogPurgeResult, RequestLogQuery, RequestLogRecord, RequestLogRepository,
     RequestLogRetentionWindow, RequestTags, ResolvedModelPricing, ResponsesRequest, RouteError,
-    RoutePlanner, StoreHealth, TeamBudgetRecord, UsageLedgerRecord, UsagePricingStatus,
-    UserBudgetRecord,
+    RoutePlanner, ServiceAccountBudgetRecord, StoreHealth, TeamBudgetRecord, UsageLedgerRecord,
+    UsagePricingStatus, UserBudgetRecord,
 };
 use serde_json::{Value, json};
 use time::OffsetDateTime;
@@ -423,6 +423,17 @@ where
             .await
     }
 
+    pub async fn evaluate_budget_alert_after_service_account_budget_upsert(
+        &self,
+        budget: &ServiceAccountBudgetRecord,
+        current_spend: Money4,
+        occurred_at: OffsetDateTime,
+    ) -> Result<(), GatewayError> {
+        self.budget_alerts
+            .evaluate_after_service_account_budget_upsert(budget, current_spend, occurred_at)
+            .await
+    }
+
     pub async fn resolve_route_pricing(
         &self,
         route: &ModelRoute,
@@ -472,6 +483,7 @@ where
             api_key_id: auth.id,
             user_id: auth.owner_user_id,
             team_id: auth.owner_team_id,
+            service_account_id: auth.owner_service_account_id,
             actor_user_id: None,
             model_id: Some(model.id),
             provider_key: route.provider_key.clone(),
@@ -613,11 +625,14 @@ fn ownership_scope_key(
             Ok(format!("user:{user_id}"))
         }
         ApiKeyOwnerKind::Team => {
-            let team_id = auth.owner_team_id.ok_or(AuthError::ApiKeyOwnerInvalid)?;
-            let actor_segment = actor_user_id
-                .map(|value| value.to_string())
-                .unwrap_or_else(|| "none".to_string());
-            Ok(format!("team:{team_id}:actor:{actor_segment}"))
+            let _ = actor_user_id;
+            Err(AuthError::ApiKeyOwnerInvalid.into())
+        }
+        ApiKeyOwnerKind::ServiceAccount => {
+            let service_account_id = auth
+                .owner_service_account_id
+                .ok_or(AuthError::ApiKeyOwnerInvalid)?;
+            Ok(format!("service_account:{service_account_id}"))
         }
     }
 }
@@ -1051,6 +1066,7 @@ mod tests {
             owner_kind: ApiKeyOwnerKind::User,
             owner_user_id: None,
             owner_team_id: None,
+            owner_service_account_id: None,
         }
     }
 
@@ -1192,6 +1208,7 @@ mod tests {
             owner_kind: ApiKeyOwnerKind::User,
             owner_user_id: Some(Uuid::new_v4()),
             owner_team_id: None,
+            owner_service_account_id: None,
         };
 
         let logged = service

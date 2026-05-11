@@ -1,6 +1,6 @@
 # Configuration Reference
 
-`See also`: [Oceans LLM Gateway](../../README.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Model Routing and API Behavior](model-routing-and-api-behavior.md), [Pricing Catalog and Accounting](pricing-catalog-and-accounting.md), [OIDC and SSO Status](../access/oidc-and-sso-status.md)
+`See also`: [Oceans LLM Gateway](../../README.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Service Accounts](../access/service-accounts.md), [Model Routing and API Behavior](model-routing-and-api-behavior.md), [Pricing Catalog and Accounting](pricing-catalog-and-accounting.md), [OIDC and SSO Status](../access/oidc-and-sso-status.md)
 
 This page owns config syntax and parse-time rules. It does not own the full runtime story after a request starts moving.
 
@@ -86,9 +86,6 @@ auth:
     email: "admin@local"
     password: env.GATEWAY_BOOTSTRAP_ADMIN_PASSWORD
     require_password_change: true
-  seed_api_keys:
-    - name: "gateway"
-      value: env.GATEWAY_API_KEY
 
 providers:
   - id: vertex
@@ -149,7 +146,7 @@ Important defaults from config parsing and domain deserialization:
 - `request_logging.purge.enabled` defaults to `false`
 - `request_logging.purge.retention` defaults to `7d`
 
-The startup meaning of bootstrap-admin and seeded API keys lives in [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md).
+The startup meaning of bootstrap-admin lives in [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md). Non-human data-plane access is managed through [service accounts](../access/service-accounts.md), not config-seeded legacy runtime keys.
 
 ## `server`
 
@@ -246,15 +243,14 @@ If `kind` is omitted, the gateway infers `postgres` when `url` is present and `l
 
 Important fields:
 
-- `seed_api_keys`
 - `bootstrap_admin`
 
 Important distinctions:
 
-- `seed_api_keys` creates data-plane access
 - `bootstrap_admin` creates control-plane access
 - `bootstrap_admin.require_password_change` changes first-login behavior
 - `bootstrap_admin.password` must be `literal.*` or `env.*`
+- legacy `seed_api_keys` is not part of the service-account model
 
 Seeded API keys are gateway caller credentials. They are useful for bootstrap automation and service-account-style workloads, but they are not upstream cloud provider service-account credentials. Config-seeded keys are owned by the reserved `system-legacy` team; keys created in the admin UI can be owned by an explicit user or team.
 
@@ -282,7 +278,7 @@ For startup behavior and first access after boot, use [runtime-bootstrap-and-acc
 
 ## Declarative Teams And Users
 
-`teams` and `users` extend the same startup seed path used for providers, models, and API keys.
+`teams` and `users` extend the same startup seed path used for providers and models.
 
 Important `teams` fields:
 
@@ -305,7 +301,7 @@ Important `users` fields:
 Validation rules that matter:
 
 - team keys must be unique
-- `system-legacy` is reserved and cannot be configured
+- `system-legacy` has no reserved meaning and is not a compatibility owner
 - user emails are normalized and must be unique
 - `admin@local` is reserved for the bootstrap admin
 - `users[*].auth_mode` supports `password` and `oidc`
@@ -324,6 +320,8 @@ Seed semantics that matter:
 - unlisted teams and users are left untouched
 
 OIDC provider existence is validated at seed time against enabled runtime OIDC providers, not YAML parse time.
+
+Service accounts are managed by admins. They are not a replacement spelling for `auth.seed_api_keys`.
 
 ## `budget_alerts`
 
@@ -383,7 +381,7 @@ Supported provider types in the checked-in configs:
 | --- | --- | --- |
 | `openai_compat` | `auth.token` | bearer-style token |
 | `gcp_vertex` | `auth.mode: adc` | ADC available in the runtime environment |
-| `gcp_vertex` | `auth.mode: service_account` | `credentials_path` pointing at service-account JSON or an equivalent mounted secret path |
+| `gcp_vertex` | `auth.mode: service_account` | upstream Google Cloud service-account JSON through `credentials_path` or an equivalent mounted secret path |
 | `aws_bedrock` | `auth.mode: bearer` | Bedrock bearer token, often `env.AWS_BEARER_TOKEN_BEDROCK` |
 
 Provider auth config controls how the gateway authenticates to upstream providers. It is separate from gateway API keys, which authenticate callers to the gateway.

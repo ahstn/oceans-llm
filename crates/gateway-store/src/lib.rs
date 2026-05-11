@@ -24,18 +24,18 @@ mod tests {
     use gateway_core::{
         ApiKeyOwnerKind, ApiKeyRepository, AuthMode, BudgetAlertChannel, BudgetAlertDeliveryRecord,
         BudgetAlertDeliveryStatus, BudgetAlertHistoryQuery, BudgetAlertRecord,
-        BudgetAlertRepository, BudgetCadence, BudgetRepository, GlobalRole, IdentityRepository,
-        McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
-        McpToolInvocationRepository, McpToolInvocationStatus, McpToolPolicyResult, MembershipRole,
-        ModelPricingRecord, ModelRepository, Money4, OpenAiCompatDeveloperRole,
-        OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
-        PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
-        PricingProvenance, ProviderCapabilities, RequestAttemptRecord, RequestAttemptStatus,
-        RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository,
-        RequestTag, RequestTags, RequestToolCardinality, RouteCompatibility, SYSTEM_LEGACY_TEAM_ID,
-        SeedApiKey, SeedBudget, SeedModel, SeedModelRoute, SeedProvider, SeedTeam, SeedUser,
-        SeedUserMembership, StoreError, StoreHealth, UsageLedgerRecord, UsagePricingStatus,
-        UserStatus,
+        BudgetAlertRepository, BudgetCadence, BudgetRepository, CONFIG_SEED_SERVICE_ACCOUNT_ID,
+        CONFIG_SEED_TEAM_ID, GlobalRole, IdentityRepository, McpToolInvocationPayloadRecord,
+        McpToolInvocationQuery, McpToolInvocationRecord, McpToolInvocationRepository,
+        McpToolInvocationStatus, McpToolPolicyResult, MembershipRole, ModelPricingRecord,
+        ModelRepository, Money4, OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField,
+        OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility, PricingCatalogCacheRecord,
+        PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
+        ProviderCapabilities, RequestAttemptRecord, RequestAttemptStatus, RequestLogPayloadRecord,
+        RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestTag, RequestTags,
+        RequestToolCardinality, RouteCompatibility, SeedApiKey, SeedBudget, SeedModel,
+        SeedModelRoute, SeedProvider, SeedTeam, SeedUser, SeedUserMembership, StoreError,
+        StoreHealth, UsageLedgerRecord, UsagePricingStatus, UserStatus,
     };
     use serde_json::{Map, json};
     use serial_test::serial;
@@ -47,8 +47,9 @@ mod tests {
 
     use crate::{
         GatewayStore, LibsqlStore, MigrationTestHook, PostgresStore, StoreConnectionOptions,
-        check_migrations_with_options, migration_registry::MIGRATION_REGISTRY, run_migrations,
-        run_migrations_with_options, run_migrations_with_options_for_test,
+        check_migrations_with_options,
+        migration_registry::{MIGRATION_REGISTRY, MigrationBackend},
+        run_migrations, run_migrations_with_options, run_migrations_with_options_for_test,
         status_migrations_with_options,
     };
 
@@ -77,6 +78,7 @@ mod tests {
             api_key_id,
             user_id,
             team_id,
+            service_account_id: None,
             actor_user_id: None,
             model_id,
             provider_key: "openai-prod".to_string(),
@@ -513,6 +515,7 @@ mod tests {
                 api_key_id: api_key.id,
                 user_id: Some(ada.user_id),
                 team_id: None,
+                service_account_id: None,
                 model_key: "fast".to_string(),
                 resolved_model_key: "fast".to_string(),
                 provider_key: "openai-prod".to_string(),
@@ -544,6 +547,7 @@ mod tests {
                 api_key_id: api_key.id,
                 user_id: Some(ada.user_id),
                 team_id: None,
+                service_account_id: None,
                 model_key: "fast".to_string(),
                 resolved_model_key: "fast".to_string(),
                 provider_key: "openai-prod".to_string(),
@@ -575,6 +579,7 @@ mod tests {
                 api_key_id: api_key.id,
                 user_id: Some(ada.user_id),
                 team_id: None,
+                service_account_id: None,
                 model_key: "fast".to_string(),
                 resolved_model_key: "fast".to_string(),
                 provider_key: "openai-prod".to_string(),
@@ -1308,10 +1313,14 @@ mod tests {
             .await
             .expect("query key")
             .expect("api key should exist");
-        assert_eq!(api_key.owner_kind, ApiKeyOwnerKind::Team);
+        let seed_team_id = Uuid::parse_str(CONFIG_SEED_TEAM_ID).expect("seed team uuid");
+        let seed_service_account_id =
+            Uuid::parse_str(CONFIG_SEED_SERVICE_ACCOUNT_ID).expect("seed service account uuid");
+        assert_eq!(api_key.owner_kind, ApiKeyOwnerKind::ServiceAccount);
+        assert_eq!(api_key.owner_team_id, Some(seed_team_id));
         assert_eq!(
-            api_key.owner_team_id,
-            Some(Uuid::parse_str(SYSTEM_LEGACY_TEAM_ID).expect("legacy team uuid"))
+            api_key.owner_service_account_id,
+            Some(seed_service_account_id)
         );
         assert_eq!(api_key.owner_user_id, None);
 
@@ -1356,6 +1365,7 @@ mod tests {
             api_key_id: api_key.id,
             user_id: None,
             team_id: api_key.owner_team_id,
+            service_account_id: None,
             model_key: "fast".to_string(),
             resolved_model_key: "fast".to_string(),
             provider_key: "openai-prod".to_string(),
@@ -1419,6 +1429,7 @@ mod tests {
                 status_code: None,
                 user_id: None,
                 team_id: None,
+                service_account_id: None,
                 service: None,
                 component: None,
                 env: None,
@@ -1545,6 +1556,7 @@ mod tests {
             api_key_id: api_key.id,
             user_id: None,
             team_id: api_key.owner_team_id,
+            service_account_id: None,
             model_key: "fast".to_string(),
             resolved_model_key: "fast".to_string(),
             provider_key: "openai-prod".to_string(),
@@ -1740,6 +1752,7 @@ mod tests {
             api_key_id: api_key.id,
             user_id: None,
             team_id: api_key.owner_team_id,
+            service_account_id: None,
             model_key: "fast".to_string(),
             resolved_model_key: "fast".to_string(),
             provider_key: "openai-prod".to_string(),
@@ -2485,6 +2498,9 @@ mod tests {
             .expect("db");
         let conn = db.connect().expect("connection");
         let now = time::OffsetDateTime::now_utc().unix_timestamp();
+        conn.execute("PRAGMA foreign_keys = ON", ())
+            .await
+            .expect("enable foreign keys");
 
         let invalid_result = conn
             .execute(
@@ -2498,6 +2514,266 @@ mod tests {
             .await;
 
         assert!(invalid_result.is_err());
+
+        let service_team_id = Uuid::new_v4();
+        let other_team_id = Uuid::new_v4();
+        let service_account_id = Uuid::new_v4();
+        conn.execute(
+            r#"
+            INSERT INTO teams (
+              team_id, team_key, team_name, status, model_access_mode, created_at, updated_at
+            ) VALUES
+              (?1, 'service-team', 'Service Team', 'active', 'all', ?3, ?3),
+              (?2, 'other-team', 'Other Team', 'active', 'all', ?3, ?3)
+            "#,
+            libsql::params![service_team_id.to_string(), other_team_id.to_string(), now],
+        )
+        .await
+        .expect("teams");
+        conn.execute(
+            r#"
+            INSERT INTO service_accounts (
+              service_account_id, team_id, service_account_key, service_account_name,
+              status, model_access_mode, metadata_json, created_at, updated_at
+            ) VALUES (?1, ?2, 'svc', 'Service', 'active', 'all', '{}', ?3, ?3)
+            "#,
+            libsql::params![
+                service_account_id.to_string(),
+                service_team_id.to_string(),
+                now
+            ],
+        )
+        .await
+        .expect("service account");
+
+        let mismatched_team_result = conn
+            .execute(
+                r#"
+                INSERT INTO api_keys (
+                  id, public_id, secret_hash, name, status, owner_kind,
+                  owner_user_id, owner_team_id, owner_service_account_id, created_at
+                ) VALUES (?1, 'invalid_service_team', 'hash', 'invalid', 'active',
+                  'service_account', NULL, ?2, ?3, ?4)
+                "#,
+                libsql::params![
+                    Uuid::new_v4().to_string(),
+                    other_team_id.to_string(),
+                    service_account_id.to_string(),
+                    now
+                ],
+            )
+            .await;
+        assert!(mismatched_team_result.is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_service_account_migration_preserves_user_key_history() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
+            .build()
+            .await
+            .expect("db");
+        let conn = db.connect().expect("connection");
+
+        for migration in MIGRATION_REGISTRY
+            .iter()
+            .filter(|migration| migration.version < 21)
+        {
+            conn.execute_batch(migration.sql_for(MigrationBackend::Libsql))
+                .await
+                .unwrap_or_else(|error| panic!("apply migration {}: {error}", migration.version));
+        }
+
+        let now = time::OffsetDateTime::now_utc().unix_timestamp();
+        let team_id = Uuid::new_v4();
+        let user_id = Uuid::new_v4();
+        let model_id = Uuid::new_v4();
+        let api_key_id = Uuid::new_v4();
+        let request_log_id = Uuid::new_v4();
+        let usage_event_id = Uuid::new_v4();
+        let request_attempt_id = Uuid::new_v4();
+
+        conn.execute(
+            r#"
+            INSERT INTO providers (provider_key, provider_type, config_json, created_at, updated_at)
+            VALUES ('openai-prod', 'openai_compat', '{}', ?1, ?1)
+            "#,
+            libsql::params![now],
+        )
+        .await
+        .expect("provider");
+        conn.execute(
+            r#"
+            INSERT INTO gateway_models (
+              id, model_key, description, tags_json, rank, created_at, updated_at
+            ) VALUES (?1, 'gpt-test', 'test', '[]', 1, ?2, ?2)
+            "#,
+            libsql::params![model_id.to_string(), now],
+        )
+        .await
+        .expect("model");
+        conn.execute(
+            r#"
+            INSERT INTO teams (
+              team_id, team_key, team_name, status, model_access_mode, created_at, updated_at
+            ) VALUES (?1, 'team', 'Team', 'active', 'all', ?2, ?2)
+            "#,
+            libsql::params![team_id.to_string(), now],
+        )
+        .await
+        .expect("team");
+        conn.execute(
+            r#"
+            INSERT INTO users (
+              user_id, name, email, email_normalized, global_role, auth_mode, status,
+              request_logging_enabled, model_access_mode, created_at, updated_at
+            ) VALUES (?1, 'User', 'user@example.com', 'user@example.com', 'user', 'password', 'active', 1, 'all', ?2, ?2)
+            "#,
+            libsql::params![user_id.to_string(), now],
+        )
+        .await
+        .expect("user");
+        conn.execute(
+            r#"
+            INSERT INTO api_keys (
+              id, public_id, secret_hash, name, status, owner_kind, owner_user_id, owner_team_id, created_at
+            ) VALUES (?1, 'pub_user', 'hash', 'User key', 'active', 'user', ?2, NULL, ?3)
+            "#,
+            libsql::params![api_key_id.to_string(), user_id.to_string(), now],
+        )
+        .await
+        .expect("api key");
+        conn.execute(
+            "INSERT INTO api_key_model_grants (api_key_id, model_id) VALUES (?1, ?2)",
+            libsql::params![api_key_id.to_string(), model_id.to_string()],
+        )
+        .await
+        .expect("grant");
+        conn.execute(
+            r#"
+            INSERT INTO audit_logs (ts, actor_api_key_id, action, object_type, details_json)
+            VALUES (?1, ?2, 'test', 'api_key', '{}')
+            "#,
+            libsql::params![now, api_key_id.to_string()],
+        )
+        .await
+        .expect("audit log");
+        conn.execute(
+            r#"
+            INSERT INTO request_logs (
+              request_log_id, request_id, api_key_id, user_id, team_id, model_key, provider_key,
+              status_code, latency_ms, prompt_tokens, completion_tokens, total_tokens, metadata_json,
+              occurred_at, resolved_model_key, has_payload, caller_service
+            ) VALUES (?1, 'req-1', ?2, ?3, ?4, 'gpt-test', 'openai-prod',
+              200, 10, 1, 2, 3, '{}', ?5, 'gpt-test', 1, 'tests')
+            "#,
+            libsql::params![
+                request_log_id.to_string(),
+                api_key_id.to_string(),
+                user_id.to_string(),
+                team_id.to_string(),
+                now
+            ],
+        )
+        .await
+        .expect("request log");
+        conn.execute(
+            "INSERT INTO request_log_payloads (request_log_id, request_json, response_json) VALUES (?1, '{}', '{}')",
+            libsql::params![request_log_id.to_string()],
+        )
+        .await
+        .expect("payload");
+        conn.execute(
+            "INSERT INTO request_log_tags (request_log_id, tag_key, tag_value) VALUES (?1, 'env', 'test')",
+            libsql::params![request_log_id.to_string()],
+        )
+        .await
+        .expect("tag");
+        conn.execute(
+            r#"
+            INSERT INTO request_log_attempts (
+              request_attempt_id, request_log_id, request_id, attempt_number, route_id,
+              provider_key, upstream_model, status, retryable, terminal, produced_final_response,
+              stream, started_at, completed_at, metadata_json
+            ) VALUES (?1, ?2, 'req-1', 1, 'route-1', 'openai-prod', 'gpt-test',
+              'success', 0, 1, 1, 0, ?3, ?3, '{}')
+            "#,
+            libsql::params![
+                request_attempt_id.to_string(),
+                request_log_id.to_string(),
+                now
+            ],
+        )
+        .await
+        .expect("attempt");
+        conn.execute(
+            r#"
+            INSERT INTO usage_cost_events (
+              usage_event_id, request_id, ownership_scope_key, api_key_id, user_id, team_id,
+              model_id, provider_key, upstream_model, provider_usage_json, pricing_status,
+              computed_cost_10000, occurred_at
+            ) VALUES (?1, 'req-1', ?2, ?3, ?4, ?5, ?6, 'openai-prod', 'gpt-test',
+              '{}', 'priced', 123, ?7)
+            "#,
+            libsql::params![
+                usage_event_id.to_string(),
+                format!("user:{}", user_id),
+                api_key_id.to_string(),
+                user_id.to_string(),
+                team_id.to_string(),
+                model_id.to_string(),
+                now
+            ],
+        )
+        .await
+        .expect("usage event");
+
+        let v21 = MIGRATION_REGISTRY
+            .iter()
+            .find(|migration| migration.version == 21)
+            .expect("v21 migration");
+        conn.execute_batch(v21.sql_for(MigrationBackend::Libsql))
+            .await
+            .expect("apply v21");
+
+        for table in [
+            "api_key_model_grants",
+            "request_logs",
+            "request_log_payloads",
+            "request_log_tags",
+            "request_log_attempts",
+            "usage_cost_events",
+        ] {
+            let sql = format!("SELECT COUNT(*) FROM {table}");
+            let count: i64 = conn
+                .query(&sql, ())
+                .await
+                .expect("count query")
+                .next()
+                .await
+                .expect("count row")
+                .expect("count row")
+                .get(0)
+                .expect("count value");
+            assert_eq!(count, 1, "{table} rows should survive api_keys rebuild");
+        }
+
+        let actor_api_key_id: Option<String> = conn
+            .query("SELECT actor_api_key_id FROM audit_logs", ())
+            .await
+            .expect("audit query")
+            .next()
+            .await
+            .expect("audit row")
+            .expect("audit row")
+            .get(0)
+            .expect("actor api key");
+        assert_eq!(
+            actor_api_key_id.as_deref(),
+            Some(api_key_id.to_string().as_str())
+        );
     }
 
     #[tokio::test]
@@ -4029,11 +4305,12 @@ mod tests {
             .await
             .expect("get key")
             .expect("api key exists");
-        assert_eq!(key.owner_kind, ApiKeyOwnerKind::Team);
-        assert_eq!(
-            key.owner_team_id.expect("team owner").to_string(),
-            SYSTEM_LEGACY_TEAM_ID
-        );
+        let seed_team_id = Uuid::parse_str(CONFIG_SEED_TEAM_ID).expect("seed team uuid");
+        let seed_service_account_id =
+            Uuid::parse_str(CONFIG_SEED_SERVICE_ACCOUNT_ID).expect("seed service account uuid");
+        assert_eq!(key.owner_kind, ApiKeyOwnerKind::ServiceAccount);
+        assert_eq!(key.owner_team_id, Some(seed_team_id));
+        assert_eq!(key.owner_service_account_id, Some(seed_service_account_id));
         assert!(
             store
                 .list_models_for_api_key(key.id)
@@ -4194,6 +4471,7 @@ mod tests {
             api_key_id: key.id,
             user_id: Some(member.user_id),
             team_id: Some(team.team_id),
+            service_account_id: None,
             actor_user_id: None,
             model_id: None,
             provider_key: "openai-prod".to_string(),
@@ -4223,6 +4501,7 @@ mod tests {
             api_key_id: key.id,
             user_id: Some(member.user_id),
             team_id: Some(team.team_id),
+            service_account_id: None,
             actor_user_id: None,
             model_id: None,
             provider_key: "openai-prod".to_string(),
@@ -4291,6 +4570,7 @@ mod tests {
             api_key_id: key.id,
             user_id: Some(member.user_id),
             team_id: Some(team.team_id),
+            service_account_id: None,
             model_key: "fast".to_string(),
             resolved_model_key: "fast-v2".to_string(),
             provider_key: "openai-prod".to_string(),

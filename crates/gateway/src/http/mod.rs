@@ -85,6 +85,14 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
             post(transfer_identity_team_member),
         )
         .route(
+            "/api/v1/admin/identity/service-accounts",
+            get(list_identity_service_accounts).post(create_identity_service_account),
+        )
+        .route(
+            "/api/v1/admin/identity/service-accounts/{service_account_id}",
+            patch(update_identity_service_account).delete(disable_identity_service_account),
+        )
+        .route(
             "/api/v1/admin/identity/users/{user_id}/password-invite",
             post(regenerate_password_invite),
         )
@@ -101,6 +109,11 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
         .route(
             "/api/v1/admin/spend/budgets/teams/{team_id}",
             axum::routing::put(upsert_team_budget).delete(deactivate_team_budget),
+        )
+        .route(
+            "/api/v1/admin/spend/budgets/service-accounts/{service_account_id}",
+            axum::routing::put(upsert_service_account_budget)
+                .delete(deactivate_service_account_budget),
         )
         .route(
             "/api/v1/admin/observability/leaderboard",

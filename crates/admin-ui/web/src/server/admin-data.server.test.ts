@@ -77,11 +77,14 @@ describe('server-side admin data wrappers', () => {
                 name: 'Production Gateway',
                 prefix: 'gwk_prod',
                 status: 'active',
-                owner_kind: 'team',
-                owner_id: 'team_1',
-                owner_name: 'Core Platform',
+                owner_kind: 'service_account',
+                owner_id: 'service_account_1',
+                owner_name: 'Deploy Bot',
                 owner_email: null,
                 owner_team_key: 'core-platform',
+                owner_service_account_key: 'deploy-bot',
+                owner_service_account_team_id: 'team_1',
+                owner_service_account_team_key: 'core-platform',
                 model_keys: ['fast', 'reasoning'],
                 created_at: '2026-03-14T12:00:00Z',
                 last_used_at: '2026-03-18T09:15:00Z',
@@ -90,6 +93,16 @@ describe('server-side admin data wrappers', () => {
             ],
             users: [{ id: 'user_1', name: 'Jane Admin', email: 'jane@example.com' }],
             teams: [{ id: 'team_1', name: 'Core Platform', key: 'core-platform' }],
+            service_accounts: [
+              {
+                id: 'service_account_1',
+                name: 'Deploy Bot',
+                key: 'deploy-bot',
+                team_id: 'team_1',
+                team_key: 'core-platform',
+                team_name: 'Core Platform',
+              },
+            ],
             models: [
               { id: 'model_1', key: 'fast', description: 'Fast tier', tags: ['fast'] },
               {
@@ -112,11 +125,14 @@ describe('server-side admin data wrappers', () => {
               name: 'Production Gateway',
               prefix: 'gwk_prod_2',
               status: 'active',
-              owner_kind: 'team',
-              owner_id: 'team_1',
-              owner_name: 'Core Platform',
+              owner_kind: 'service_account',
+              owner_id: 'service_account_1',
+              owner_name: 'Deploy Bot',
               owner_email: null,
               owner_team_key: 'core-platform',
+              owner_service_account_key: 'deploy-bot',
+              owner_service_account_team_id: 'team_1',
+              owner_service_account_team_key: 'core-platform',
               model_keys: ['fast'],
               created_at: '2026-03-20T09:00:00Z',
               last_used_at: null,
@@ -167,11 +183,14 @@ describe('server-side admin data wrappers', () => {
               name: 'Production Gateway',
               prefix: 'gwk_prod',
               status: 'revoked',
-              owner_kind: 'team',
-              owner_id: 'team_1',
-              owner_name: 'Core Platform',
+              owner_kind: 'service_account',
+              owner_id: 'service_account_1',
+              owner_name: 'Deploy Bot',
               owner_email: null,
               owner_team_key: 'core-platform',
+              owner_service_account_key: 'deploy-bot',
+              owner_service_account_team_id: 'team_1',
+              owner_service_account_team_key: 'core-platform',
               model_keys: ['fast', 'reasoning'],
               created_at: '2026-03-14T12:00:00Z',
               last_used_at: '2026-03-18T09:15:00Z',
@@ -601,11 +620,14 @@ describe('server-side admin data wrappers', () => {
                 name: 'Production Gateway',
                 prefix: 'gwk_prod',
                 status: 'active',
-                owner_kind: 'team',
-                owner_id: 'team_1',
-                owner_name: 'Core Platform',
+                owner_kind: 'service_account',
+                owner_id: 'service_account_1',
+                owner_name: 'Deploy Bot',
                 owner_email: null,
                 owner_team_key: 'core-platform',
+                owner_service_account_key: 'deploy-bot',
+                owner_service_account_team_id: 'team_1',
+                owner_service_account_team_key: 'core-platform',
                 model_keys: ['reasoning'],
                 created_at: '2026-03-14T12:00:00Z',
                 last_used_at: '2026-03-18T09:15:00Z',
@@ -694,7 +716,7 @@ describe('server-side admin data wrappers', () => {
     ])
 
     expect(apiKeys.data.items.length).toBeGreaterThan(0)
-    expect(apiKeys.data.items[0].owner_kind).toBe('team')
+    expect(apiKeys.data.items[0].owner_kind).toBe('service_account')
     expect(apiKeys.data.models.map((model) => model.key)).toContain('fast')
     expect(models.data.items.length).toBeGreaterThan(0)
     expect(spendReport.data.window_days).toBeGreaterThan(0)
@@ -714,9 +736,10 @@ describe('server-side admin data wrappers', () => {
     await expect(
       createApiKey({
         name: 'Production Gateway',
-        owner_kind: 'team',
+        owner_kind: 'service_account',
         owner_user_id: null,
         owner_team_id: 'team_1',
+        owner_service_account_id: 'service_account_1',
         model_keys: ['fast'],
       }),
     ).resolves.toMatchObject({

@@ -5,7 +5,8 @@ use gateway_core::{
     ApiKeyOwnerKind, AuthenticatedApiKey, BudgetAlertChannel, BudgetAlertDeliveryRecord,
     BudgetAlertDeliveryStatus, BudgetAlertDispatchTask, BudgetAlertRecord, BudgetAlertRepository,
     BudgetCadence, BudgetRepository, GatewayError, IdentityRepository, MembershipRole, Money4,
-    TeamBudgetRecord, UsageLedgerRecord, UserBudgetRecord, UserStatus, budget_window_utc,
+    ServiceAccountBudgetRecord, TeamBudgetRecord, UsageLedgerRecord, UserBudgetRecord, UserStatus,
+    budget_window_utc,
 };
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tracing::{info, warn};
@@ -126,10 +127,56 @@ where
                 })
                 .await
             }
-            ApiKeyOwnerKind::Team => {
-                let team_id = api_key.owner_team_id.ok_or_else(|| {
-                    GatewayError::Internal("team-owned key missing team_id".to_string())
+            ApiKeyOwnerKind::Team => Err(GatewayError::Internal(
+                "team-owned api keys are no longer supported".to_string(),
+            )),
+            ApiKeyOwnerKind::ServiceAccount => {
+                let service_account_id = api_key.owner_service_account_id.ok_or_else(|| {
+                    GatewayError::Internal(
+                        "service-account-owned key missing service_account_id".to_string(),
+                    )
                 })?;
+                let team_id = api_key.owner_team_id.ok_or_else(|| {
+                    GatewayError::Internal("service-account-owned key missing team_id".to_string())
+                })?;
+                if let Some(budget) = self
+                    .repo
+                    .get_active_budget_for_service_account(service_account_id)
+                    .await?
+                {
+                    let (window_start, window_end) =
+                        usage_window_bounds(budget.cadence, ledger.occurred_at)?;
+                    let spent_after = self
+                        .repo
+                        .sum_usage_cost_for_service_account_in_window(
+                            service_account_id,
+                            window_start,
+                            window_end,
+                        )
+                        .await?;
+                    let spent_before = spent_after
+                        .checked_sub(ledger.computed_cost_usd)
+                        .ok_or_else(|| {
+                            GatewayError::Internal(
+                                "budget threshold spend subtraction overflow".to_string(),
+                            )
+                        })?;
+                    let owner = self
+                        .resolve_service_account_owner(service_account_id)
+                        .await?;
+                    self.create_alert_if_needed(AlertEvaluation {
+                        owner,
+                        budget_id: budget.service_account_budget_id,
+                        cadence: budget.cadence,
+                        budget_amount: budget.amount_usd,
+                        occurred_at: ledger.occurred_at,
+                        spent_before,
+                        spent_after,
+                        immediate_on_existing_threshold: false,
+                    })
+                    .await?;
+                }
+
                 let Some(budget) = self.repo.get_active_budget_for_team(team_id).await? else {
                     return Ok(());
                 };
@@ -192,6 +239,28 @@ where
         self.create_alert_if_needed(AlertEvaluation {
             owner,
             budget_id: budget.team_budget_id,
+            cadence: budget.cadence,
+            budget_amount: budget.amount_usd,
+            occurred_at,
+            spent_before: current_spend,
+            spent_after: current_spend,
+            immediate_on_existing_threshold: true,
+        })
+        .await
+    }
+
+    pub async fn evaluate_after_service_account_budget_upsert(
+        &self,
+        budget: &ServiceAccountBudgetRecord,
+        current_spend: Money4,
+        occurred_at: OffsetDateTime,
+    ) -> Result<(), GatewayError> {
+        let owner = self
+            .resolve_service_account_owner(budget.service_account_id)
+            .await?;
+        self.create_alert_if_needed(AlertEvaluation {
+            owner,
+            budget_id: budget.service_account_budget_id,
             cadence: budget.cadence,
             budget_amount: budget.amount_usd,
             occurred_at,
@@ -361,6 +430,27 @@ where
             recipients: recipients.into_iter().collect(),
         })
     }
+
+    async fn resolve_service_account_owner(
+        &self,
+        service_account_id: Uuid,
+    ) -> Result<AlertOwnerContext, GatewayError> {
+        let service_account = self
+            .repo
+            .get_service_account_by_id(service_account_id)
+            .await?
+            .ok_or_else(|| {
+                GatewayError::Internal(format!(
+                    "budget alert service account `{service_account_id}` missing"
+                ))
+            })?;
+        let mut owner = self.resolve_team_owner(service_account.team_id).await?;
+        owner.owner_kind = ApiKeyOwnerKind::ServiceAccount;
+        owner.owner_id = service_account.service_account_id;
+        owner.owner_name = service_account.service_account_name;
+        owner.ownership_scope_key = format!("service_account:{service_account_id}");
+        Ok(owner)
+    }
 }
 
 fn remaining_budget_floor_zero(budget_amount: Money4, spend: Money4) -> Money4 {
@@ -449,7 +539,8 @@ mod tests {
 
     use gateway_core::{
         AuthMode, BudgetAlertDispatchTask, BudgetAlertHistoryPage, BudgetAlertHistoryQuery,
-        BudgetAlertRepository, GlobalRole, IdentityRepository, ModelAccessMode, StoreError,
+        BudgetAlertRepository, GlobalRole, IdentityRepository, ModelAccessMode,
+        ServiceAccountBudgetRecord, ServiceAccountRecord, ServiceAccountStatus, StoreError,
         TeamMembershipRecord, TeamRecord, UserBudgetRecord, UserRecord,
     };
     use time::OffsetDateTime;
@@ -462,6 +553,9 @@ mod tests {
         team: Option<TeamRecord>,
         team_memberships: Vec<TeamMembershipRecord>,
         team_users: Vec<UserRecord>,
+        service_account: Option<ServiceAccountRecord>,
+        active_service_account_budget: Option<ServiceAccountBudgetRecord>,
+        service_account_spend: Money4,
         active_team_budget: Option<TeamBudgetRecord>,
         team_spend: Money4,
         alerts: Arc<Mutex<Vec<BudgetAlertRecord>>>,
@@ -487,6 +581,16 @@ mod tests {
 
         async fn get_team_by_id(&self, team_id: Uuid) -> Result<Option<TeamRecord>, StoreError> {
             Ok(self.team.clone().filter(|team| team.team_id == team_id))
+        }
+
+        async fn get_service_account_by_id(
+            &self,
+            service_account_id: Uuid,
+        ) -> Result<Option<ServiceAccountRecord>, StoreError> {
+            Ok(self
+                .service_account
+                .clone()
+                .filter(|record| record.service_account_id == service_account_id))
         }
 
         async fn get_team_membership_for_user(
@@ -543,6 +647,13 @@ mod tests {
             Ok(self.active_team_budget.clone())
         }
 
+        async fn get_active_budget_for_service_account(
+            &self,
+            _service_account_id: Uuid,
+        ) -> Result<Option<ServiceAccountBudgetRecord>, StoreError> {
+            Ok(self.active_service_account_budget.clone())
+        }
+
         async fn get_usage_ledger_by_request_and_scope(
             &self,
             _request_id: &str,
@@ -567,6 +678,15 @@ mod tests {
             _window_end: OffsetDateTime,
         ) -> Result<Money4, StoreError> {
             Ok(self.team_spend)
+        }
+
+        async fn sum_usage_cost_for_service_account_in_window(
+            &self,
+            _service_account_id: Uuid,
+            _window_start: OffsetDateTime,
+            _window_end: OffsetDateTime,
+        ) -> Result<Money4, StoreError> {
+            Ok(self.service_account_spend)
         }
 
         async fn insert_usage_ledger_if_absent(
@@ -699,6 +819,21 @@ mod tests {
         }
     }
 
+    fn build_service_account(service_account_id: Uuid, team_id: Uuid) -> ServiceAccountRecord {
+        ServiceAccountRecord {
+            service_account_id,
+            team_id,
+            service_account_key: "batch".to_string(),
+            service_account_name: "Batch Jobs".to_string(),
+            status: ServiceAccountStatus::Active,
+            model_access_mode: ModelAccessMode::All,
+            metadata: serde_json::json!({}),
+            created_at: OffsetDateTime::now_utc(),
+            updated_at: OffsetDateTime::now_utc(),
+            disabled_at: None,
+        }
+    }
+
     #[tokio::test]
     async fn monthly_budget_upsert_creates_one_alert_even_when_repeated() {
         let user_id = Uuid::new_v4();
@@ -805,6 +940,7 @@ mod tests {
         let owner_id = Uuid::new_v4();
         let admin_id = Uuid::new_v4();
         let member_id = Uuid::new_v4();
+        let service_account_id = Uuid::new_v4();
         let now = OffsetDateTime::now_utc();
         let repo = Arc::new(InMemoryRepo {
             team: Some(TeamRecord {
@@ -849,6 +985,7 @@ mod tests {
                     UserStatus::Active,
                 ),
             ],
+            service_account: Some(build_service_account(service_account_id, team_id)),
             active_team_budget: Some(TeamBudgetRecord {
                 team_budget_id: Uuid::new_v4(),
                 team_id,
@@ -868,17 +1005,19 @@ mod tests {
             id: Uuid::new_v4(),
             public_id: "gwk_test".to_string(),
             name: "test".to_string(),
-            owner_kind: ApiKeyOwnerKind::Team,
+            owner_kind: ApiKeyOwnerKind::ServiceAccount,
             owner_user_id: None,
             owner_team_id: Some(team_id),
+            owner_service_account_id: Some(service_account_id),
         };
         let ledger = UsageLedgerRecord {
             usage_event_id: Uuid::new_v4(),
             request_id: "req-1".to_string(),
-            ownership_scope_key: format!("team:{team_id}:actor:none"),
+            ownership_scope_key: format!("service_account:{service_account_id}"),
             api_key_id: api_key.id,
             user_id: None,
             team_id: Some(team_id),
+            service_account_id: Some(service_account_id),
             actor_user_id: None,
             model_id: None,
             provider_key: "openai-prod".to_string(),
@@ -963,6 +1102,7 @@ mod tests {
     async fn threshold_crossing_to_overspent_still_creates_alert() {
         let team_id = Uuid::new_v4();
         let owner_id = Uuid::new_v4();
+        let service_account_id = Uuid::new_v4();
         let now = OffsetDateTime::now_utc();
         let repo = Arc::new(InMemoryRepo {
             team: Some(TeamRecord {
@@ -987,6 +1127,7 @@ mod tests {
                 "owner@example.com",
                 UserStatus::Active,
             )],
+            service_account: Some(build_service_account(service_account_id, team_id)),
             active_team_budget: Some(TeamBudgetRecord {
                 team_budget_id: Uuid::new_v4(),
                 team_id,
@@ -1006,17 +1147,19 @@ mod tests {
             id: Uuid::new_v4(),
             public_id: "gwk_test".to_string(),
             name: "test".to_string(),
-            owner_kind: ApiKeyOwnerKind::Team,
+            owner_kind: ApiKeyOwnerKind::ServiceAccount,
             owner_user_id: None,
             owner_team_id: Some(team_id),
+            owner_service_account_id: Some(service_account_id),
         };
         let ledger = UsageLedgerRecord {
             usage_event_id: Uuid::new_v4(),
             request_id: "req-overspent".to_string(),
-            ownership_scope_key: format!("team:{team_id}:actor:none"),
+            ownership_scope_key: format!("service_account:{service_account_id}"),
             api_key_id: api_key.id,
             user_id: None,
             team_id: Some(team_id),
+            service_account_id: Some(service_account_id),
             actor_user_id: None,
             model_id: None,
             provider_key: "openai-prod".to_string(),

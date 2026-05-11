@@ -20,9 +20,9 @@ export const Route = createFileRoute('/api-keys')({
 
 export function ApiKeysPage() {
   const {
-    data: { items, users, teams, models },
+    data: { items, users, service_accounts, models },
   } = Route.useLoaderData() as { data: ApiKeysPayload }
-  const state = useApiKeysPageState({ items, users, teams })
+  const state = useApiKeysPageState({ items, users, service_accounts })
 
   return (
     <div className="flex flex-col gap-4">
@@ -44,7 +44,7 @@ export function ApiKeysPage() {
         modelOptions={models}
         open={state.isCreateOpen}
         ownerLabel={state.selectedOwnerLabel}
-        teamOptions={teams}
+        serviceAccountOptions={service_accounts}
         userOptions={users}
         submitDisabled={state.isCreateDisabled}
         onModelToggle={state.actions.toggleModelKey}

@@ -10,6 +10,8 @@ export interface ApiEnvelope<T> {
 
 export type ApiKeyOwnerUserView = components['schemas']['AdminApiKeyUserOwnerView']
 export type ApiKeyOwnerTeamView = components['schemas']['AdminApiKeyTeamOwnerView']
+export type ApiKeyOwnerServiceAccountView =
+  components['schemas']['AdminApiKeyServiceAccountOwnerView']
 export type ApiKeyModelOptionView = components['schemas']['AdminApiKeyModelView']
 export type ApiKeyView = components['schemas']['AdminApiKeyView']
 export type ApiKeysPayload = components['schemas']['AdminApiKeysPayload']

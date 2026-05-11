@@ -125,6 +125,24 @@ where
             }
         }
 
+        if let Some(service_account_id) = api_key.owner_service_account_id {
+            let service_account = self
+                .repo
+                .get_service_account_by_id(service_account_id)
+                .await?
+                .ok_or(AuthError::ApiKeyOwnerInvalid)?;
+            if service_account.model_access_mode == ModelAccessMode::Restricted {
+                let allowed_for_service_account = self
+                    .repo
+                    .list_allowed_model_keys_for_service_account(service_account_id)
+                    .await?
+                    .into_iter()
+                    .collect::<HashSet<_>>();
+                allowed_model_keys =
+                    intersect_allowed(allowed_model_keys, allowed_for_service_account);
+            }
+        }
+
         if let Some(user_id) = api_key.owner_user_id {
             let user = self
                 .repo
@@ -323,6 +341,7 @@ mod tests {
             owner_kind,
             owner_user_id,
             owner_team_id,
+            owner_service_account_id: None,
         }
     }
 

@@ -6,7 +6,7 @@ impl AdminApiKeyRepository for PostgresStore {
         let rows = sqlx::query(
             r#"
             SELECT id, public_id, secret_hash, name, status,
-                   owner_kind, owner_user_id, owner_team_id,
+                   owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
                    created_at, last_used_at, revoked_at
             FROM api_keys
             ORDER BY created_at DESC, public_id ASC
@@ -26,7 +26,7 @@ impl AdminApiKeyRepository for PostgresStore {
         let row = sqlx::query(
             r#"
             SELECT id, public_id, secret_hash, name, status,
-                   owner_kind, owner_user_id, owner_team_id,
+                   owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
                    created_at, last_used_at, revoked_at
             FROM api_keys
             WHERE id = $1
@@ -47,9 +47,9 @@ impl AdminApiKeyRepository for PostgresStore {
             r#"
             INSERT INTO api_keys (
                 id, public_id, secret_hash, name, status,
-                owner_kind, owner_user_id, owner_team_id,
+                owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
                 created_at, last_used_at, revoked_at
-            ) VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8, NULL, NULL)
+            ) VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8, $9, NULL, NULL)
             "#,
         )
         .bind(api_key_id.to_string())
@@ -59,6 +59,11 @@ impl AdminApiKeyRepository for PostgresStore {
         .bind(api_key.owner_kind.as_str())
         .bind(api_key.owner_user_id.map(|value| value.to_string()))
         .bind(api_key.owner_team_id.map(|value| value.to_string()))
+        .bind(
+            api_key
+                .owner_service_account_id
+                .map(|value| value.to_string()),
+        )
         .bind(api_key.created_at.unix_timestamp())
         .execute(&self.pool)
         .await
@@ -127,7 +132,7 @@ impl ApiKeyRepository for PostgresStore {
         let row = sqlx::query(
             r#"
             SELECT id, public_id, secret_hash, name, status,
-                   owner_kind, owner_user_id, owner_team_id,
+                   owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
                    created_at, last_used_at, revoked_at
             FROM api_keys
             WHERE public_id = $1
@@ -151,5 +156,12 @@ impl ApiKeyRepository for PostgresStore {
             .await
             .map_err(to_query_error)?;
         Ok(())
+    }
+
+    async fn get_service_account_by_id(
+        &self,
+        service_account_id: Uuid,
+    ) -> Result<Option<ServiceAccountRecord>, StoreError> {
+        Self::get_service_account_by_id(self, service_account_id).await
     }
 }

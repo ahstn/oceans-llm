@@ -14,9 +14,9 @@ pub mod route_planner;
 pub mod service;
 
 pub use admin_api_keys::{
-    AdminApiKeyModelOption, AdminApiKeyService, AdminApiKeySummary, AdminApiKeyTeamOwner,
-    AdminApiKeyUserOwner, AdminApiKeysPayload, CreateAdminApiKeyInput, CreateAdminApiKeyResult,
-    UpdateAdminApiKeyInput,
+    AdminApiKeyModelOption, AdminApiKeyService, AdminApiKeyServiceAccountOwner, AdminApiKeySummary,
+    AdminApiKeyTeamOwner, AdminApiKeyUserOwner, AdminApiKeysPayload, CreateAdminApiKeyInput,
+    CreateAdminApiKeyResult, UpdateAdminApiKeyInput,
 };
 pub use admin_models::{AdminModelStatus, AdminModelSummary, AdminModelsService};
 pub use authenticator::{Authenticator, hash_gateway_key_secret, verify_gateway_key_secret};
