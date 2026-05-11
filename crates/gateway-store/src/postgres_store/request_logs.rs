@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use super::*;
 use crate::shared::{parse_uuid, serialize_json, unix_to_datetime};
 use gateway_core::{
-    HarnessUsageBucketRecord, HarnessUsageLeaderRecord, RequestTag, RequestTags,
-    RequestLogPurgeResult, RequestToolCardinality,
+    HarnessUsageBucketRecord, HarnessUsageLeaderRecord, RequestLogPurgeResult, RequestTag,
+    RequestTags, RequestToolCardinality,
 };
 
 const REQUEST_LOG_PURGE_BATCH_SIZE: i64 = 1_000;

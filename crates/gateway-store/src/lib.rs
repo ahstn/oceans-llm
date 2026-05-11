@@ -1567,6 +1567,9 @@ mod tests {
                 }],
             },
             tool_cardinality: RequestToolCardinality::default(),
+            user_agent_raw: None,
+            agent_harness_key: "unknown".to_string(),
+            agent_harness_label: "Unknown".to_string(),
             metadata: Map::new(),
             occurred_at: now - Duration::days(4),
         };
@@ -1759,6 +1762,9 @@ mod tests {
                 }],
             },
             tool_cardinality: RequestToolCardinality::default(),
+            user_agent_raw: None,
+            agent_harness_key: "unknown".to_string(),
+            agent_harness_label: "Unknown".to_string(),
             metadata: Map::new(),
             occurred_at: now - Duration::days(4),
         };

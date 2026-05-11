@@ -1522,6 +1522,9 @@ mod tests {
             response_payload_truncated: false,
             request_tags: RequestTags::default(),
             tool_cardinality: Default::default(),
+            user_agent_raw: None,
+            agent_harness_key: "unknown".to_string(),
+            agent_harness_label: "Unknown".to_string(),
             metadata: Default::default(),
             occurred_at,
         }
