@@ -224,6 +224,7 @@ mod tests {
             owner_kind: ApiKeyOwnerKind::Team,
             owner_user_id: None,
             owner_team_id: Some(team_id),
+            owner_service_account_id: None,
         }
     }
 

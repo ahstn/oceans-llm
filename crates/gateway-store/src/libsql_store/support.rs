@@ -29,9 +29,10 @@ pub(super) fn decode_api_key(row: &libsql::Row) -> Result<ApiKeyRecord, StoreErr
     let owner_kind: String = row.get(5).map_err(to_query_error)?;
     let owner_user_id: Option<String> = row.get(6).map_err(to_query_error)?;
     let owner_team_id: Option<String> = row.get(7).map_err(to_query_error)?;
-    let created_at: i64 = row.get(8).map_err(to_query_error)?;
-    let last_used_at: Option<i64> = row.get(9).map_err(to_query_error)?;
-    let revoked_at: Option<i64> = row.get(10).map_err(to_query_error)?;
+    let owner_service_account_id: Option<String> = row.get(8).map_err(to_query_error)?;
+    let created_at: i64 = row.get(9).map_err(to_query_error)?;
+    let last_used_at: Option<i64> = row.get(10).map_err(to_query_error)?;
+    let revoked_at: Option<i64> = row.get(11).map_err(to_query_error)?;
 
     Ok(ApiKeyRecord {
         id: parse_uuid(&id)?,
@@ -49,6 +50,10 @@ pub(super) fn decode_api_key(row: &libsql::Row) -> Result<ApiKeyRecord, StoreErr
         })?,
         owner_user_id: owner_user_id.as_deref().map(parse_uuid).transpose()?,
         owner_team_id: owner_team_id.as_deref().map(parse_uuid).transpose()?,
+        owner_service_account_id: owner_service_account_id
+            .as_deref()
+            .map(parse_uuid)
+            .transpose()?,
         created_at: unix_to_datetime(created_at)?,
         last_used_at: last_used_at.map(unix_to_datetime).transpose()?,
         revoked_at: revoked_at.map(unix_to_datetime).transpose()?,
@@ -205,6 +210,37 @@ pub(super) fn decode_team_record(row: &libsql::Row) -> Result<TeamRecord, StoreE
     })
 }
 
+pub(super) fn decode_service_account_record(
+    row: &libsql::Row,
+) -> Result<ServiceAccountRecord, StoreError> {
+    let service_account_id: String = row.get(0).map_err(to_query_error)?;
+    let team_id: String = row.get(1).map_err(to_query_error)?;
+    let status: String = row.get(4).map_err(to_query_error)?;
+    let model_access_mode: String = row.get(5).map_err(to_query_error)?;
+    let metadata_json: String = row.get(6).map_err(to_query_error)?;
+    let created_at: i64 = row.get(7).map_err(to_query_error)?;
+    let updated_at: i64 = row.get(8).map_err(to_query_error)?;
+    let disabled_at: Option<i64> = row.get(9).map_err(to_query_error)?;
+
+    Ok(ServiceAccountRecord {
+        service_account_id: parse_uuid(&service_account_id)?,
+        team_id: parse_uuid(&team_id)?,
+        service_account_key: row.get(2).map_err(to_query_error)?,
+        service_account_name: row.get(3).map_err(to_query_error)?,
+        status: ServiceAccountStatus::from_db(&status).ok_or_else(|| {
+            StoreError::Serialization(format!("unknown service account status `{status}`"))
+        })?,
+        model_access_mode: ModelAccessMode::from_db(&model_access_mode).ok_or_else(|| {
+            StoreError::Serialization(format!("unknown model access mode `{model_access_mode}`"))
+        })?,
+        metadata: serde_json::from_str(&metadata_json)
+            .map_err(|error| StoreError::Serialization(error.to_string()))?,
+        created_at: unix_to_datetime(created_at)?,
+        updated_at: unix_to_datetime(updated_at)?,
+        disabled_at: disabled_at.map(unix_to_datetime).transpose()?,
+    })
+}
+
 pub(super) fn decode_team_membership_record(
     row: &libsql::Row,
 ) -> Result<TeamMembershipRecord, StoreError> {
@@ -354,6 +390,33 @@ pub(super) fn decode_team_budget_record(row: &libsql::Row) -> Result<TeamBudgetR
     })
 }
 
+pub(super) fn decode_service_account_budget_record(
+    row: &libsql::Row,
+) -> Result<ServiceAccountBudgetRecord, StoreError> {
+    let service_account_budget_id: String = row.get(0).map_err(to_query_error)?;
+    let service_account_id: String = row.get(1).map_err(to_query_error)?;
+    let cadence: String = row.get(2).map_err(to_query_error)?;
+    let amount_10000: i64 = row.get(3).map_err(to_query_error)?;
+    let hard_limit: i64 = row.get(4).map_err(to_query_error)?;
+    let is_active: i64 = row.get(6).map_err(to_query_error)?;
+    let created_at: i64 = row.get(7).map_err(to_query_error)?;
+    let updated_at: i64 = row.get(8).map_err(to_query_error)?;
+
+    Ok(ServiceAccountBudgetRecord {
+        service_account_budget_id: parse_uuid(&service_account_budget_id)?,
+        service_account_id: parse_uuid(&service_account_id)?,
+        cadence: BudgetCadence::from_db(&cadence).ok_or_else(|| {
+            StoreError::Serialization(format!("unknown budget cadence `{cadence}`"))
+        })?,
+        amount_usd: Money4::from_scaled(amount_10000),
+        hard_limit: hard_limit == 1,
+        timezone: row.get(5).map_err(to_query_error)?,
+        is_active: is_active == 1,
+        created_at: unix_to_datetime(created_at)?,
+        updated_at: unix_to_datetime(updated_at)?,
+    })
+}
+
 pub(super) fn decode_pricing_catalog_cache_record(
     row: &libsql::Row,
 ) -> Result<PricingCatalogCacheRecord, StoreError> {
@@ -374,16 +437,17 @@ pub(super) fn decode_usage_ledger_record(
     let api_key_id: String = row.get(3).map_err(to_query_error)?;
     let user_id: Option<String> = row.get(4).map_err(to_query_error)?;
     let team_id: Option<String> = row.get(5).map_err(to_query_error)?;
-    let actor_user_id: Option<String> = row.get(6).map_err(to_query_error)?;
-    let model_id: Option<String> = row.get(7).map_err(to_query_error)?;
-    let provider_usage_json: String = row.get(13).map_err(to_query_error)?;
-    let pricing_status: String = row.get(14).map_err(to_query_error)?;
-    let pricing_row_id: Option<String> = row.get(16).map_err(to_query_error)?;
-    let pricing_source_fetched_at: Option<i64> = row.get(21).map_err(to_query_error)?;
-    let input_cost_per_million_tokens_10000: Option<i64> = row.get(23).map_err(to_query_error)?;
-    let output_cost_per_million_tokens_10000: Option<i64> = row.get(24).map_err(to_query_error)?;
-    let computed_cost_10000: i64 = row.get(25).map_err(to_query_error)?;
-    let occurred_at: i64 = row.get(26).map_err(to_query_error)?;
+    let service_account_id: Option<String> = row.get(6).map_err(to_query_error)?;
+    let actor_user_id: Option<String> = row.get(7).map_err(to_query_error)?;
+    let model_id: Option<String> = row.get(8).map_err(to_query_error)?;
+    let provider_usage_json: String = row.get(14).map_err(to_query_error)?;
+    let pricing_status: String = row.get(15).map_err(to_query_error)?;
+    let pricing_row_id: Option<String> = row.get(17).map_err(to_query_error)?;
+    let pricing_source_fetched_at: Option<i64> = row.get(22).map_err(to_query_error)?;
+    let input_cost_per_million_tokens_10000: Option<i64> = row.get(24).map_err(to_query_error)?;
+    let output_cost_per_million_tokens_10000: Option<i64> = row.get(25).map_err(to_query_error)?;
+    let computed_cost_10000: i64 = row.get(26).map_err(to_query_error)?;
+    let occurred_at: i64 = row.get(27).map_err(to_query_error)?;
 
     Ok(UsageLedgerRecord {
         usage_event_id: parse_uuid(&usage_event_id)?,
@@ -392,28 +456,29 @@ pub(super) fn decode_usage_ledger_record(
         api_key_id: parse_uuid(&api_key_id)?,
         user_id: user_id.as_deref().map(parse_uuid).transpose()?,
         team_id: team_id.as_deref().map(parse_uuid).transpose()?,
+        service_account_id: service_account_id.as_deref().map(parse_uuid).transpose()?,
         actor_user_id: actor_user_id.as_deref().map(parse_uuid).transpose()?,
         model_id: model_id.as_deref().map(parse_uuid).transpose()?,
-        provider_key: row.get(8).map_err(to_query_error)?,
-        upstream_model: row.get(9).map_err(to_query_error)?,
-        prompt_tokens: row.get(10).map_err(to_query_error)?,
-        completion_tokens: row.get(11).map_err(to_query_error)?,
-        total_tokens: row.get(12).map_err(to_query_error)?,
+        provider_key: row.get(9).map_err(to_query_error)?,
+        upstream_model: row.get(10).map_err(to_query_error)?,
+        prompt_tokens: row.get(11).map_err(to_query_error)?,
+        completion_tokens: row.get(12).map_err(to_query_error)?,
+        total_tokens: row.get(13).map_err(to_query_error)?,
         provider_usage: serde_json::from_str(&provider_usage_json)
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
         pricing_status: UsagePricingStatus::from_db(&pricing_status).ok_or_else(|| {
             StoreError::Serialization(format!("unknown usage pricing status `{pricing_status}`"))
         })?,
-        unpriced_reason: row.get(15).map_err(to_query_error)?,
+        unpriced_reason: row.get(16).map_err(to_query_error)?,
         pricing_row_id: pricing_row_id.as_deref().map(parse_uuid).transpose()?,
-        pricing_provider_id: row.get(17).map_err(to_query_error)?,
-        pricing_model_id: row.get(18).map_err(to_query_error)?,
-        pricing_source: row.get(19).map_err(to_query_error)?,
-        pricing_source_etag: row.get(20).map_err(to_query_error)?,
+        pricing_provider_id: row.get(18).map_err(to_query_error)?,
+        pricing_model_id: row.get(19).map_err(to_query_error)?,
+        pricing_source: row.get(20).map_err(to_query_error)?,
+        pricing_source_etag: row.get(21).map_err(to_query_error)?,
         pricing_source_fetched_at: pricing_source_fetched_at
             .map(unix_to_datetime)
             .transpose()?,
-        pricing_last_updated: row.get(22).map_err(to_query_error)?,
+        pricing_last_updated: row.get(23).map_err(to_query_error)?,
         input_cost_per_million_tokens: input_cost_per_million_tokens_10000.map(Money4::from_scaled),
         output_cost_per_million_tokens: output_cost_per_million_tokens_10000
             .map(Money4::from_scaled),

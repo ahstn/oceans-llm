@@ -1,6 +1,6 @@
 # Getting Started
 
-`See also`: [Runtime Bootstrap and Access](setup/runtime-bootstrap-and-access.md), [Deploy and Operations](setup/deploy-and-operations.md), [Configuration Reference](configuration/configuration-reference.md)
+`See also`: [Runtime Bootstrap and Access](setup/runtime-bootstrap-and-access.md), [Service Accounts](access/service-accounts.md), [Deploy and Operations](setup/deploy-and-operations.md), [Configuration Reference](configuration/configuration-reference.md)
 
 This page is the admin, user, and maintainer map for the gateway.
 
@@ -10,7 +10,7 @@ This page is the admin, user, and maintainer map for the gateway.
 
 ## Running The Gateway
 
-- First boot, local access, bootstrap admin, seeded API keys:
+- First boot, local access, bootstrap admin, and data-plane access:
   - [Runtime Bootstrap and Access](setup/runtime-bootstrap-and-access.md)
 - Runtime shape, same-origin model, local versus deploy caveats:
   - [Deploy and Operations](setup/deploy-and-operations.md)
@@ -18,8 +18,8 @@ This page is the admin, user, and maintainer map for the gateway.
   - [Configuration Reference](configuration/configuration-reference.md)
 - Identity lifecycle, team rules, and current admin access overlays:
   - [Identity and Access](access/identity-and-access.md)
-- Gateway API-key management and service-account-style caller conventions:
-  - [Admin Control Plane](access/admin-control-plane.md)
+- Non-human team callers and service-account credentials:
+  - [Service Accounts](access/service-accounts.md)
 - Budgets, spend windows, alerts, and reporting:
   - [Budgets and Spending](operations/budgets-and-spending.md)
 
@@ -65,6 +65,7 @@ This page is the admin, user, and maintainer map for the gateway.
 ### Access
 
 - [Identity and Access](access/identity-and-access.md)
+- [Service Accounts](access/service-accounts.md)
 - [OIDC and SSO Status](access/oidc-and-sso-status.md)
 - [Admin Control Plane](access/admin-control-plane.md)
 

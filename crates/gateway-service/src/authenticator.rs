@@ -6,7 +6,7 @@ use argon2::{
 };
 use gateway_core::{
     ApiKeyOwnerKind, ApiKeyRepository, ApiKeyStatus, AuthError, AuthenticatedApiKey, GatewayError,
-    extract_bearer_token, parse_gateway_api_key,
+    ServiceAccountStatus, extract_bearer_token, parse_gateway_api_key,
 };
 
 #[derive(Clone)]
@@ -53,14 +53,35 @@ where
 
         let owner_is_valid = match record.owner_kind {
             ApiKeyOwnerKind::User => {
-                record.owner_user_id.is_some() && record.owner_team_id.is_none()
+                record.owner_user_id.is_some()
+                    && record.owner_team_id.is_none()
+                    && record.owner_service_account_id.is_none()
             }
-            ApiKeyOwnerKind::Team => {
-                record.owner_team_id.is_some() && record.owner_user_id.is_none()
+            ApiKeyOwnerKind::ServiceAccount => {
+                record.owner_user_id.is_none()
+                    && record.owner_team_id.is_some()
+                    && record.owner_service_account_id.is_some()
             }
+            ApiKeyOwnerKind::Team => false,
         };
         if !owner_is_valid {
             return Err(AuthError::ApiKeyOwnerInvalid.into());
+        }
+
+        if let ApiKeyOwnerKind::ServiceAccount = record.owner_kind {
+            let service_account_id = record
+                .owner_service_account_id
+                .ok_or(AuthError::ApiKeyOwnerInvalid)?;
+            let service_account = self
+                .repo
+                .get_service_account_by_id(service_account_id)
+                .await?
+                .ok_or(AuthError::ApiKeyOwnerInvalid)?;
+            if service_account.status != ServiceAccountStatus::Active
+                || Some(service_account.team_id) != record.owner_team_id
+            {
+                return Err(AuthError::ApiKeyOwnerInvalid.into());
+            }
         }
 
         let password_hash = PasswordHash::new(&record.secret_hash)
@@ -79,6 +100,7 @@ where
             owner_kind: record.owner_kind,
             owner_user_id: record.owner_user_id,
             owner_team_id: record.owner_team_id,
+            owner_service_account_id: record.owner_service_account_id,
         })
     }
 }
@@ -109,7 +131,8 @@ mod tests {
     use async_trait::async_trait;
     use gateway_core::{
         ApiKeyOwnerKind, ApiKeyRecord, ApiKeyRepository, ApiKeyStatus, AuthError, GatewayError,
-        StoreError, parse_gateway_api_key,
+        ModelAccessMode, ServiceAccountRecord, ServiceAccountStatus, StoreError,
+        parse_gateway_api_key,
     };
     use time::OffsetDateTime;
     use uuid::Uuid;
@@ -119,6 +142,7 @@ mod tests {
     #[derive(Clone)]
     struct InMemoryKeyRepo {
         key: Option<ApiKeyRecord>,
+        service_account: Option<ServiceAccountRecord>,
     }
 
     #[async_trait]
@@ -136,6 +160,31 @@ mod tests {
         async fn touch_api_key_last_used(&self, _api_key_id: Uuid) -> Result<(), StoreError> {
             Ok(())
         }
+
+        async fn get_service_account_by_id(
+            &self,
+            service_account_id: Uuid,
+        ) -> Result<Option<ServiceAccountRecord>, StoreError> {
+            Ok(self
+                .service_account
+                .clone()
+                .filter(|record| record.service_account_id == service_account_id))
+        }
+    }
+
+    fn service_account(service_account_id: Uuid, team_id: Uuid) -> ServiceAccountRecord {
+        ServiceAccountRecord {
+            service_account_id,
+            team_id,
+            service_account_key: "batch".to_string(),
+            service_account_name: "Batch Jobs".to_string(),
+            status: ServiceAccountStatus::Active,
+            model_access_mode: ModelAccessMode::All,
+            metadata: serde_json::json!({}),
+            created_at: OffsetDateTime::now_utc(),
+            updated_at: OffsetDateTime::now_utc(),
+            disabled_at: None,
+        }
     }
 
     #[tokio::test]
@@ -143,6 +192,8 @@ mod tests {
         let raw = "gwk_dev123.super-secret";
         let parsed = parse_gateway_api_key(raw).expect("parse token");
         let hash = hash_gateway_key_secret(&parsed.secret).expect("hash secret");
+        let team_id = Uuid::new_v4();
+        let service_account_id = Uuid::new_v4();
         let repo = Arc::new(InMemoryKeyRepo {
             key: Some(ApiKeyRecord {
                 id: Uuid::new_v4(),
@@ -150,13 +201,15 @@ mod tests {
                 secret_hash: hash,
                 name: "dev".to_string(),
                 status: ApiKeyStatus::Active,
-                owner_kind: ApiKeyOwnerKind::Team,
+                owner_kind: ApiKeyOwnerKind::ServiceAccount,
                 owner_user_id: None,
-                owner_team_id: Some(Uuid::new_v4()),
+                owner_team_id: Some(team_id),
+                owner_service_account_id: Some(service_account_id),
                 created_at: OffsetDateTime::now_utc(),
                 last_used_at: None,
                 revoked_at: None,
             }),
+            service_account: Some(service_account(service_account_id, team_id)),
         });
 
         let authenticator = Authenticator::new(repo);
@@ -172,6 +225,8 @@ mod tests {
     #[tokio::test]
     async fn rejects_wrong_secret() {
         let hash = hash_gateway_key_secret("correct-secret").expect("hash secret");
+        let team_id = Uuid::new_v4();
+        let service_account_id = Uuid::new_v4();
         let repo = Arc::new(InMemoryKeyRepo {
             key: Some(ApiKeyRecord {
                 id: Uuid::new_v4(),
@@ -179,13 +234,15 @@ mod tests {
                 secret_hash: hash,
                 name: "dev".to_string(),
                 status: ApiKeyStatus::Active,
-                owner_kind: ApiKeyOwnerKind::Team,
+                owner_kind: ApiKeyOwnerKind::ServiceAccount,
                 owner_user_id: None,
-                owner_team_id: Some(Uuid::new_v4()),
+                owner_team_id: Some(team_id),
+                owner_service_account_id: Some(service_account_id),
                 created_at: OffsetDateTime::now_utc(),
                 last_used_at: None,
                 revoked_at: None,
             }),
+            service_account: Some(service_account(service_account_id, team_id)),
         });
 
         let authenticator = Authenticator::new(repo);
@@ -213,10 +270,12 @@ mod tests {
                 owner_kind: ApiKeyOwnerKind::Team,
                 owner_user_id: Some(Uuid::new_v4()),
                 owner_team_id: Some(Uuid::new_v4()),
+                owner_service_account_id: None,
                 created_at: OffsetDateTime::now_utc(),
                 last_used_at: None,
                 revoked_at: None,
             }),
+            service_account: None,
         });
 
         let authenticator = Authenticator::new(repo);

@@ -14,7 +14,7 @@ The gateway uses one `gcp_vertex` provider type for multiple Vertex publisher fa
 
 Vertex routes require Google Cloud authentication with the `https://www.googleapis.com/auth/cloud-platform` scope. The provider supports Application Default Credentials, service-account JSON from a mounted path, and static bearer tokens for constrained environments.
 
-This provider service account is an upstream Google Cloud credential. It is not a gateway service-account-style API key. Gateway clients still authenticate to Oceans LLM with a gateway API key owned by a user, team, or config-seeded system owner.
+The `auth.mode: service_account` examples on this page are upstream Google Cloud credentials used by the gateway when it calls Vertex. They are not gateway service accounts, do not grant callers access to `/v1/*`, and do not participate in gateway team service-account management.
 
 ## Provider
 

@@ -81,6 +81,34 @@ pub struct AdminTeamsPayload {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+pub struct AdminServiceAccountsPayload {
+    pub service_accounts: Vec<AdminServiceAccountView>,
+    pub teams: Vec<AdminTeamView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AdminServiceAccountView {
+    pub id: String,
+    pub key: String,
+    pub name: String,
+    pub status: String,
+    pub team_id: String,
+    pub team_key: String,
+    pub team_name: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CreateServiceAccountRequest {
+    pub team_id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct UpdateServiceAccountRequest {
+    pub name: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
 pub struct AdminTeamManagementView {
     pub id: String,
     pub name: String,
@@ -581,9 +609,24 @@ pub struct SpendBudgetTeamView {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+pub struct SpendBudgetServiceAccountView {
+    pub service_account_id: String,
+    pub service_account_name: String,
+    pub service_account_key: String,
+    pub team_id: String,
+    pub team_name: String,
+    pub team_key: String,
+    pub budget: Option<BudgetSettingsView>,
+    pub current_window_spend_usd_10000: i64,
+    pub alert_email_ready: bool,
+    pub alert_recipient_summary: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
 pub struct SpendBudgetsView {
     pub users: Vec<SpendBudgetUserView>,
     pub teams: Vec<SpendBudgetTeamView>,
+    pub service_accounts: Vec<SpendBudgetServiceAccountView>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -649,6 +692,7 @@ pub struct RequestLogListQuery {
     pub status_code: Option<i64>,
     pub user_id: Option<String>,
     pub team_id: Option<String>,
+    pub service_account_id: Option<String>,
     pub service: Option<String>,
     pub component: Option<String>,
     pub env: Option<String>,
@@ -738,6 +782,7 @@ pub struct RequestLogSummaryView {
     pub api_key_id: String,
     pub user_id: Option<String>,
     pub team_id: Option<String>,
+    pub service_account_id: Option<String>,
     pub model_key: String,
     pub resolved_model_key: String,
     pub model_icon_key: Option<ModelIconKeyView>,
@@ -866,6 +911,10 @@ pub struct RequestLogPayloadView {
         crate::http::identity::add_identity_team_members,
         crate::http::identity::remove_identity_team_member,
         crate::http::identity::transfer_identity_team_member,
+        crate::http::identity::list_identity_service_accounts,
+        crate::http::identity::create_identity_service_account,
+        crate::http::identity::update_identity_service_account,
+        crate::http::identity::disable_identity_service_account,
         crate::http::identity::get_auth_session,
         crate::http::identity::login_with_password,
         crate::http::identity::logout_current_session,
@@ -887,6 +936,8 @@ pub struct RequestLogPayloadView {
         crate::http::spend::deactivate_user_budget,
         crate::http::spend::upsert_team_budget,
         crate::http::spend::deactivate_team_budget,
+        crate::http::spend::upsert_service_account_budget,
+        crate::http::spend::deactivate_service_account_budget,
         crate::http::observability::get_usage_leaderboard,
         crate::http::observability::get_harness_usage,
         crate::http::observability::list_request_logs,

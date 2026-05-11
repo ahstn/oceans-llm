@@ -1011,7 +1011,8 @@ providers:
                 UPDATE api_keys
                 SET owner_kind = 'user',
                     owner_user_id = ?1,
-                    owner_team_id = NULL
+                    owner_team_id = NULL,
+                    owner_service_account_id = NULL
                 WHERE public_id = ?2
                 "#,
                 libsql::params![user_id.to_string(), parsed.public_id],
@@ -1429,6 +1430,7 @@ providers:
             api_key_id,
             user_id,
             team_id,
+            service_account_id: None,
             actor_user_id: None,
             model_id,
             provider_key: "openai-prod".to_string(),
@@ -1868,7 +1870,11 @@ request_logging:
         let ledgers = load_usage_ledger(&db_path).await;
         assert_eq!(ledgers.len(), 1);
         assert_eq!(ledgers[0].request_id, "req-dedupe");
-        assert!(ledgers[0].ownership_scope_key.starts_with("team:"));
+        assert!(
+            ledgers[0]
+                .ownership_scope_key
+                .starts_with("service_account:")
+        );
         assert_eq!(ledgers[0].pricing_status, "priced");
     }
 
@@ -4104,7 +4110,7 @@ request_logging:
                             "name": "Unknown Model",
                             "owner_kind": "team",
                             "owner_user_id": null,
-                            "owner_team_id": gateway_core::SYSTEM_LEGACY_TEAM_ID,
+                            "owner_team_id": gateway_core::CONFIG_SEED_TEAM_ID,
                             "model_keys": ["missing"]
                         })
                         .to_string(),

@@ -1,6 +1,6 @@
 # Identity and Access
 
-`See also`: [Data Relationships](../reference/data-relationships.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [OIDC and SSO Status](oidc-and-sso-status.md), [Admin Control Plane](admin-control-plane.md), [Budgets and Spending](../operations/budgets-and-spending.md), [MCP Invocations](../operations/observability/mcp-invocations.md), [ADR: Admin Identity Lifecycle and Team Member Workflow Hardening](../adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md)
+`See also`: [Data Relationships](../reference/data-relationships.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Service Accounts](service-accounts.md), [OIDC and SSO Status](oidc-and-sso-status.md), [Admin Control Plane](admin-control-plane.md), [Budgets and Spending](../operations/budgets-and-spending.md), [MCP Invocations](../operations/observability/mcp-invocations.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../adr/2026-05-10-team-service-accounts.md), [ADR: Admin Identity Lifecycle and Team Member Workflow Hardening](../adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md)
 
 This page describes the live identity model across the gateway and admin control plane.
 
@@ -15,13 +15,16 @@ This page describes the live identity model across the gateway and admin control
 
 ## Ownership Model
 
-The product uses first-class users, teams, and API-key ownership.
+The product uses first-class users, teams, service accounts, and API-key credentials.
 
-- API keys are either user-owned or team-owned.
-- Teams are durable ownership boundaries for team budgets and future team-owned resources.
+- Users and service accounts are gateway principals.
+- API keys are credentials attached to a user or service account.
+- Teams are durable ownership boundaries for team budgets and team-owned service accounts.
+- Service accounts are first-class team-owned non-human gateway principals.
+- Direct team-owned runtime API keys are not part of the product contract.
 - One user belongs to at most one team in this slice.
 - Users can exist without a team.
-- Seeded system-owned API keys use the reserved `system-legacy` team.
+- There is no reserved `system-legacy` team or system-legacy runtime-key compatibility.
 
 Gateway service-account-style callers are modeled with API keys today, not a distinct owner kind.
 
@@ -83,6 +86,8 @@ Current team-management rules:
 - teams can be created before users exist
 - teams can be created with zero admins
 - the admin UI can add existing teamless users or invite new users directly into a team
+- team owners and admins can manage service accounts for their own team
+- platform admins can manage service accounts across teams
 - non-owner memberships can be transferred between teams
 - `owner` memberships are visible but blocked from casual lifecycle edits
 
@@ -101,6 +106,7 @@ Transfer does not change:
 - historical spend rows
 - existing budgets
 - API-key ownership
+- service-account ownership
 
 That boundary is a policy rule, not a UI shortcut.
 
@@ -119,32 +125,20 @@ Use [oidc-and-sso-status.md](oidc-and-sso-status.md) for the practical boundary 
 
 Effective model access is layered:
 
-1. API key grants
+1. API key grants for the authenticated user or service account credential
 2. team allowlist when the team is `restricted`
 3. user allowlist when the user is `restricted`
 
 This keeps API-key grants as the baseline contract while allowing narrower restrictions above them.
 
-For service-account-style keys, the API-key grant list should be the primary permission boundary. Grant only the gateway models the workload needs, then use team or user model restrictions only as a narrower overlay.
-
-## Budget Ownership for API Keys
-
-Budget enforcement follows the API-key owner:
-
-- user-owned keys spend against the owning user budget
-- team-owned keys spend against the owning team budget
-- config-seeded `system-legacy` keys spend against the reserved team ownership scope
-
-Team budgets are aggregate guardrails for team-owned traffic. They do not identify an individual user for fairness inside the team in this slice. For service-account-style callers, create a dedicated team or an explicit owning team budget when the workload needs its own cap.
-
-[Issue #106](https://github.com/ahstn/oceans-llm/issues/106) tracks the broader budget taxonomy question: whether service accounts become a first-class owner kind, how personal budgets should relate to team aggregate budgets, and how model-specific budgets should fit without replacing the canonical spend ledger.
+For service accounts, the team allowlist applies through the owning team. User allowlists do not apply because service accounts are not users.
 
 ## Request Logging Preference
 
 Request logging policy is partly owned by identity.
 
 - user-owned requests honor `users.request_logging_enabled`
-- team-owned requests always persist request logs
+- service-account requests always persist request-log summary rows
 - the admin identity view exposes the current user preference read-only
 
 MCP invocation logging follows the same ownership vocabulary for audit context. Invocation rows should preserve the API key, user, and team ids available at execution time, but they do not rewrite historical ownership when a user changes teams or an API key is revoked later.
@@ -158,6 +152,20 @@ Config-backed identity is now part of the startup seed path.
 - listed users can reconcile team membership and active budgets
 - new config-seeded users start as `invited`
 - config seeding does not emit invite URLs; admins generate onboarding links from the admin UI when needed
+
+Config seeding no longer creates legacy system-owned runtime API keys. Non-human team access is managed through service accounts.
+
+## Service Accounts
+
+Service accounts are the non-human gateway identity model.
+
+- each service account belongs to exactly one team
+- service accounts cannot sign in to `/admin`
+- service-account credentials can call `/v1/*`
+- deletion is deactivation
+- service-account budget alerts go to active owning-team owners and admins
+
+Team-scoped management rules live in [service-accounts.md](service-accounts.md).
 
 ## Current Gaps
 
@@ -177,3 +185,5 @@ Config-backed identity is now part of the startup seed path.
   - [budgets-and-spending.md](../operations/budgets-and-spending.md)
 - request resolution effects:
   - [model-routing-and-api-behavior.md](../configuration/model-routing-and-api-behavior.md)
+- non-human gateway access:
+  - [service-accounts.md](service-accounts.md)

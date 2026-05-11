@@ -157,6 +157,119 @@ impl PostgresStore {
         rows.iter().map(decode_team_record).collect()
     }
 
+    pub async fn get_service_account_by_id(
+        &self,
+        service_account_id: Uuid,
+    ) -> Result<Option<ServiceAccountRecord>, StoreError> {
+        let row = sqlx::query(
+            r#"
+            SELECT service_account_id, team_id, service_account_key, service_account_name,
+                   status, model_access_mode, metadata_json, created_at, updated_at, disabled_at
+            FROM service_accounts
+            WHERE service_account_id = $1
+            LIMIT 1
+            "#,
+        )
+        .bind(service_account_id.to_string())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+
+        row.as_ref().map(decode_service_account_record).transpose()
+    }
+
+    pub async fn list_active_service_accounts(
+        &self,
+    ) -> Result<Vec<ServiceAccountRecord>, StoreError> {
+        let rows = sqlx::query(
+            r#"
+            SELECT service_account_id, team_id, service_account_key, service_account_name,
+                   status, model_access_mode, metadata_json, created_at, updated_at, disabled_at
+            FROM service_accounts
+            WHERE status = 'active'
+            ORDER BY service_account_name ASC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+
+        rows.iter().map(decode_service_account_record).collect()
+    }
+
+    pub async fn create_service_account(
+        &self,
+        team_id: Uuid,
+        service_account_key: &str,
+        service_account_name: &str,
+        created_at: OffsetDateTime,
+    ) -> Result<ServiceAccountRecord, StoreError> {
+        let service_account_id = Uuid::new_v4();
+        let created_at = created_at.unix_timestamp();
+        sqlx::query(
+            r#"
+            INSERT INTO service_accounts (
+                service_account_id, team_id, service_account_key, service_account_name,
+                status, model_access_mode, metadata_json, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, 'active', 'all', '{}', $5, $5)
+            "#,
+        )
+        .bind(service_account_id.to_string())
+        .bind(team_id.to_string())
+        .bind(service_account_key)
+        .bind(service_account_name)
+        .bind(created_at)
+        .execute(&self.pool)
+        .await
+        .map_err(to_write_error)?;
+
+        self.get_service_account_by_id(service_account_id)
+            .await?
+            .ok_or_else(|| StoreError::NotFound("created service account missing".to_string()))
+    }
+
+    pub async fn update_service_account_name(
+        &self,
+        service_account_id: Uuid,
+        service_account_name: &str,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        sqlx::query(
+            r#"
+            UPDATE service_accounts
+            SET service_account_name = $1, updated_at = $2
+            WHERE service_account_id = $3 AND status = 'active'
+            "#,
+        )
+        .bind(service_account_name)
+        .bind(updated_at.unix_timestamp())
+        .bind(service_account_id.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn disable_service_account(
+        &self,
+        service_account_id: Uuid,
+        disabled_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        let result = sqlx::query(
+            r#"
+            UPDATE service_accounts
+            SET status = 'disabled', updated_at = $1, disabled_at = $1
+            WHERE service_account_id = $2 AND status = 'active'
+            "#,
+        )
+        .bind(disabled_at.unix_timestamp())
+        .bind(service_account_id.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(to_write_error)?;
+        Ok(result.rows_affected() > 0)
+    }
+
     pub async fn list_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
         let rows = sqlx::query(
             r#"
@@ -1172,6 +1285,13 @@ impl IdentityRepository for PostgresStore {
         row.as_ref().map(decode_team_record).transpose()
     }
 
+    async fn get_service_account_by_id(
+        &self,
+        service_account_id: Uuid,
+    ) -> Result<Option<ServiceAccountRecord>, StoreError> {
+        Self::get_service_account_by_id(self, service_account_id).await
+    }
+
     async fn get_team_membership_for_user(
         &self,
         user_id: Uuid,
@@ -1224,6 +1344,24 @@ impl IdentityRepository for PostgresStore {
             ORDER BY gm.model_key ASC
             "#,
             team_id.to_string(),
+        )
+        .await
+    }
+
+    async fn list_allowed_model_keys_for_service_account(
+        &self,
+        service_account_id: Uuid,
+    ) -> Result<Vec<String>, StoreError> {
+        list_allowed_model_keys(
+            &self.pool,
+            r#"
+            SELECT gm.model_key
+            FROM service_account_model_allowlist allowlist
+            INNER JOIN gateway_models gm ON gm.id = allowlist.model_id
+            WHERE allowlist.service_account_id = $1
+            ORDER BY gm.model_key ASC
+            "#,
+            service_account_id.to_string(),
         )
         .await
     }

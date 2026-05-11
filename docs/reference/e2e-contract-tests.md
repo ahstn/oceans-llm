@@ -58,7 +58,7 @@ The current suite already covers:
 - admin Models data loading
 - admin UI API-key create, live use, and revoke
 - live spend report API behavior
-- team hard-limit enforcement for team-owned keys
+- team hard-limit enforcement for service-account-owned keys
 - strict `404` behavior for missing request-log detail
 - live identity-user create-and-list API coverage
 

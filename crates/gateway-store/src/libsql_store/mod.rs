@@ -19,19 +19,21 @@ use gateway_core::{
     ApiKeyRepository, ApiKeyStatus, AuthMode, BudgetAlertChannel, BudgetAlertDeliveryRecord,
     BudgetAlertDeliveryStatus, BudgetAlertDispatchTask, BudgetAlertHistoryPage,
     BudgetAlertHistoryQuery, BudgetAlertHistoryRecord, BudgetAlertRecord, BudgetAlertRepository,
-    BudgetCadence, BudgetRepository, GatewayModel, GlobalRole, IdentityRepository,
-    IdentityUserRecord, MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, McpToolInvocationDetail,
-    McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
-    McpToolInvocationRecord, McpToolInvocationRepository, McpToolInvocationStatus,
-    McpToolPolicyResult, MembershipRole, ModelAccessMode, ModelPricingRecord, ModelRepository,
-    ModelRoute, Money4, NewApiKeyRecord, OidcProviderRecord, PasswordInvitationRecord,
-    PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
-    PricingProvenance, ProviderConnection, ProviderRepository, RequestAttemptRecord,
-    RequestAttemptRepository, RequestAttemptStatus, RequestLogDetail, RequestLogPage,
-    RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository,
-    SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY,
-    SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord, StoreError,
-    StoreHealth, TeamBudgetRecord, TeamMembershipRecord, TeamRecord, UsageLeaderboardBucketRecord,
+    BudgetCadence, BudgetRepository, CONFIG_SEED_SERVICE_ACCOUNT_ID,
+    CONFIG_SEED_SERVICE_ACCOUNT_KEY, CONFIG_SEED_TEAM_ID, CONFIG_SEED_TEAM_KEY, GatewayModel,
+    GlobalRole, IdentityRepository, IdentityUserRecord, MembershipRole, ModelAccessMode,
+    MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, McpToolInvocationDetail, McpToolInvocationPage,
+    McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
+    McpToolInvocationRepository, McpToolInvocationStatus, McpToolPolicyResult,
+    ModelPricingRecord, ModelRepository, ModelRoute, Money4, NewApiKeyRecord, OidcProviderRecord,
+    PasswordInvitationRecord, PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits,
+    PricingModalities, PricingProvenance, ProviderConnection, ProviderRepository,
+    RequestAttemptRecord, RequestAttemptRepository, RequestAttemptStatus, RequestLogDetail,
+    RequestLogPage, RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord,
+    RequestLogRepository, SYSTEM_BOOTSTRAP_ADMIN_USER_ID, ServiceAccountBudgetRecord,
+    ServiceAccountRecord, ServiceAccountStatus, SpendDailyAggregateRecord, SpendModelAggregateRecord,
+    SpendOwnerAggregateRecord, StoreError, StoreHealth, TeamBudgetRecord, TeamMembershipRecord,
+    TeamRecord, UsageLeaderboardBucketRecord,
     UsageLeaderboardUserRecord, UsageLedgerRecord, UsagePricingStatus, UserBudgetRecord,
     UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
 };
@@ -117,6 +119,50 @@ impl GatewayStore for LibsqlStore {
 
     async fn list_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
         Self::list_teams(self).await
+    }
+
+    async fn list_active_service_accounts(&self) -> Result<Vec<ServiceAccountRecord>, StoreError> {
+        Self::list_active_service_accounts(self).await
+    }
+
+    async fn create_service_account(
+        &self,
+        team_id: Uuid,
+        service_account_key: &str,
+        service_account_name: &str,
+        created_at: OffsetDateTime,
+    ) -> Result<ServiceAccountRecord, StoreError> {
+        Self::create_service_account(
+            self,
+            team_id,
+            service_account_key,
+            service_account_name,
+            created_at,
+        )
+        .await
+    }
+
+    async fn update_service_account_name(
+        &self,
+        service_account_id: Uuid,
+        service_account_name: &str,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        Self::update_service_account_name(
+            self,
+            service_account_id,
+            service_account_name,
+            updated_at,
+        )
+        .await
+    }
+
+    async fn disable_service_account(
+        &self,
+        service_account_id: Uuid,
+        disabled_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        Self::disable_service_account(self, service_account_id, disabled_at).await
     }
 
     async fn list_enabled_oidc_providers(&self) -> Result<Vec<OidcProviderRecord>, StoreError> {
@@ -483,5 +529,9 @@ impl AdminIdentityRepository for LibsqlStore {
 
     async fn list_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
         Self::list_teams(self).await
+    }
+
+    async fn list_active_service_accounts(&self) -> Result<Vec<ServiceAccountRecord>, StoreError> {
+        Self::list_active_service_accounts(self).await
     }
 }

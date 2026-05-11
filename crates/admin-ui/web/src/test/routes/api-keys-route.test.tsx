@@ -52,6 +52,9 @@ const basePayload: ApiKeysPayload = {
       owner_name: 'Jane Admin',
       owner_email: 'jane@example.com',
       owner_team_key: null,
+      owner_service_account_key: null,
+      owner_service_account_team_id: null,
+      owner_service_account_team_key: null,
       model_keys: ['fast'],
       created_at: '2026-03-14T12:00:00Z',
       last_used_at: '2026-03-18T09:15:00Z',
@@ -70,6 +73,16 @@ const basePayload: ApiKeysPayload = {
       id: 'team_1',
       name: 'Core Platform',
       key: 'core-platform',
+    },
+  ],
+  service_accounts: [
+    {
+      id: 'service_account_1',
+      name: 'Deploy Bot',
+      key: 'deploy-bot',
+      team_id: 'team_1',
+      team_key: 'core-platform',
+      team_name: 'Core Platform',
     },
   ],
   models: [
@@ -145,6 +158,9 @@ describe('ApiKeysPage', () => {
           owner_name: 'Jane Admin',
           owner_email: 'jane@example.com',
           owner_team_key: null,
+          owner_service_account_key: null,
+          owner_service_account_team_id: null,
+          owner_service_account_team_key: null,
           model_keys: ['fast'],
           created_at: '2026-03-20T09:00:00Z',
           last_used_at: null,
@@ -176,6 +192,7 @@ describe('ApiKeysPage', () => {
         owner_kind: 'user',
         owner_user_id: 'user_1',
         owner_team_id: null,
+        owner_service_account_id: null,
         model_keys: ['fast'],
       },
     })
@@ -185,6 +202,61 @@ describe('ApiKeysPage', () => {
       ),
     )
     expect(routerMock.invalidate).toHaveBeenCalledTimes(1)
+  })
+
+  it('creates service-account-owned API keys with the selected service account owner', async () => {
+    createGatewayApiKeyMock.mockResolvedValue({
+      data: {
+        api_key: {
+          id: 'api_key_2',
+          name: 'Deploy Worker',
+          prefix: 'gwk_deploy_live_987654321',
+          status: 'active',
+          owner_kind: 'service_account',
+          owner_id: 'service_account_1',
+          owner_name: 'Deploy Bot',
+          owner_email: null,
+          owner_team_key: 'core-platform',
+          owner_service_account_key: 'deploy-bot',
+          owner_service_account_team_id: 'team_1',
+          owner_service_account_team_key: 'core-platform',
+          model_keys: ['fast'],
+          created_at: '2026-03-20T09:00:00Z',
+          last_used_at: null,
+          revoked_at: null,
+        },
+        raw_key: 'gwk_deploy_2.secret-value',
+      },
+    })
+
+    const { ApiKeysPage } = await import('@/routes/api-keys')
+
+    render(<ApiKeysPage />)
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Create API key' })[0])
+    const dialog = screen.getByRole('dialog', { name: 'Create API key' })
+    fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Deploy Worker' } })
+    fireEvent.click(within(dialog).getByRole('combobox', { name: 'Owner type' }))
+    fireEvent.click(screen.getByRole('option', { name: 'Service account' }))
+    fireEvent.click(within(dialog).getByRole('combobox', { name: 'Owner service account' }))
+    fireEvent.click(screen.getByRole('option', { name: /Deploy Bot/ }))
+    await toggleModelSelection(dialog, 'fast')
+
+    const submitButton = within(dialog).getByRole('button', { name: 'Create API key' })
+    await waitFor(() => expect(submitButton).toBeEnabled())
+    fireEvent.click(submitButton)
+
+    await waitFor(() => expect(createGatewayApiKeyMock).toHaveBeenCalledTimes(1))
+    expect(createGatewayApiKeyMock).toHaveBeenCalledWith({
+      data: {
+        name: 'Deploy Worker',
+        owner_kind: 'service_account',
+        owner_user_id: null,
+        owner_team_id: 'team_1',
+        owner_service_account_id: 'service_account_1',
+        model_keys: ['fast'],
+      },
+    })
   })
 
   it('keeps create actions disabled until the mutation resolves', async () => {
@@ -225,6 +297,9 @@ describe('ApiKeysPage', () => {
           owner_name: 'Jane Admin',
           owner_email: 'jane@example.com',
           owner_team_key: null,
+          owner_service_account_key: null,
+          owner_service_account_team_id: null,
+          owner_service_account_team_key: null,
           model_keys: ['fast'],
           created_at: '2026-03-20T09:00:00Z',
           last_used_at: null,
@@ -316,6 +391,8 @@ describe('ApiKeysPage', () => {
 })
 
 async function toggleModelSelection(dialog: HTMLElement, modelKey: string) {
-  fireEvent.click(within(dialog).getByRole('button', { name: /Select models|models selected|fast|reasoning/i }))
+  fireEvent.click(
+    within(dialog).getByRole('button', { name: /Select models|models selected|fast|reasoning/i }),
+  )
   fireEvent.click(await screen.findByRole('option', { name: new RegExp(modelKey, 'i') }))
 }

@@ -472,6 +472,7 @@ where
             api_key_id: auth.id,
             user_id: auth.owner_user_id,
             team_id: auth.owner_team_id,
+            service_account_id: auth.owner_service_account_id,
             actor_user_id: None,
             model_id: Some(model.id),
             provider_key: route.provider_key.clone(),
@@ -613,11 +614,14 @@ fn ownership_scope_key(
             Ok(format!("user:{user_id}"))
         }
         ApiKeyOwnerKind::Team => {
-            let team_id = auth.owner_team_id.ok_or(AuthError::ApiKeyOwnerInvalid)?;
-            let actor_segment = actor_user_id
-                .map(|value| value.to_string())
-                .unwrap_or_else(|| "none".to_string());
-            Ok(format!("team:{team_id}:actor:{actor_segment}"))
+            let _ = actor_user_id;
+            Err(AuthError::ApiKeyOwnerInvalid.into())
+        }
+        ApiKeyOwnerKind::ServiceAccount => {
+            let service_account_id = auth
+                .owner_service_account_id
+                .ok_or(AuthError::ApiKeyOwnerInvalid)?;
+            Ok(format!("service_account:{service_account_id}"))
         }
     }
 }
@@ -1051,6 +1055,7 @@ mod tests {
             owner_kind: ApiKeyOwnerKind::User,
             owner_user_id: None,
             owner_team_id: None,
+            owner_service_account_id: None,
         }
     }
 

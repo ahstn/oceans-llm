@@ -153,7 +153,7 @@ test('admin spend report endpoint and usage costs page reflect live usage ledger
   await expect(page.getByText('fast').first()).toBeVisible()
 })
 
-test('team budget update triggers hard-limit enforcement for team-owned keys', async ({
+test('team budget update triggers hard-limit enforcement for service-account keys', async ({
   request,
   page,
   baseURL,
@@ -173,9 +173,7 @@ test('team budget update triggers hard-limit enforcement for team-owned keys', a
     }
   }
   expect(budgetsBody.data.teams.length).toBeGreaterThanOrEqual(1)
-  const legacyTeam = budgetsBody.data.teams.find((team) => team.team_key === 'system-legacy')
-  expect(legacyTeam).toBeTruthy()
-  const teamId = legacyTeam?.team_id ?? budgetsBody.data.teams[0].team_id
+  const teamId = budgetsBody.data.teams[0].team_id
 
   const upsertBudgetResponse = await request.put(
     `${root}/api/v1/admin/spend/budgets/teams/${teamId}`,
@@ -336,9 +334,9 @@ test('admin ui can create, manage, and revoke an api key that gates live gateway
   await page.getByRole('button', { name: 'Create API key' }).click()
   await page.getByLabel('Name').fill(keyName)
   await page.getByRole('combobox', { name: 'Owner type' }).click()
-  await page.getByRole('option', { name: 'Team' }).click()
-  await page.getByRole('combobox', { name: 'Owner team' }).click()
-  await page.getByRole('option', { name: /System Legacy/ }).click()
+  await page.getByRole('option', { name: 'Service account' }).click()
+  await page.getByRole('combobox', { name: 'Owner service account' }).click()
+  await page.getByRole('option', { name: /Seed API Keys/ }).click()
   await page.getByRole('button', { name: /Select models/ }).click()
   await page.locator('[data-slot="command-item"]').filter({ hasText: /fast/ }).click()
   await page.keyboard.press('Escape')
@@ -365,7 +363,7 @@ test('admin ui can create, manage, and revoke an api key that gates live gateway
   const row = page.locator('tr', { hasText: keyName }).first()
   await expect(row).toBeVisible()
   await expect(row).toContainText(maskedPrefix ?? '')
-  await expect(row).toContainText('System Legacy')
+  await expect(row).toContainText('Seed API Keys')
   await expect(row).not.toContainText('system-legacy')
   await expect(row).toContainText(/\d{4}-\d{2}-\d{2}/)
 
@@ -373,7 +371,7 @@ test('admin ui can create, manage, and revoke an api key that gates live gateway
 
   const dialog = page.getByRole('dialog', { name: 'Manage API key' })
   await expect(dialog.getByText(maskedPrefix ?? '')).toBeVisible()
-  await expect(dialog.getByText('System Legacy')).toBeVisible()
+  await expect(dialog.getByText('Seed API Keys')).toBeVisible()
   await expect(dialog).not.toContainText('system-legacy')
   await expect(dialog).toContainText('Never')
 

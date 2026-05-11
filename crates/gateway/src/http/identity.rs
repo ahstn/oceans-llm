@@ -8,8 +8,8 @@ use axum::{
 };
 use gateway_core::{
     AuthError, AuthMode, GatewayError, GlobalRole, IdentityRepository, IdentityUserRecord,
-    MembershipRole, OidcProviderRecord, PasswordInvitationRecord, UserRecord, UserSessionRecord,
-    UserStatus,
+    MembershipRole, OidcProviderRecord, PasswordInvitationRecord, ServiceAccountRecord, TeamRecord,
+    UserRecord, UserSessionRecord, UserStatus,
 };
 use gateway_store::{AnyStore, GatewayStore};
 use sha2::{Digest, Sha256};
@@ -21,12 +21,14 @@ use crate::http::{
     admin_auth::{require_authenticated_session, require_platform_admin},
     admin_contract::{
         AddTeamMembersRequest, AdminIdentityPayload, AdminOidcProviderView,
-        AdminTeamManagementView, AdminTeamView, AdminTeamsPayload, AuthSessionUserView,
-        AuthSessionView, ChangePasswordRequest, CompleteInvitationRequest,
-        CompleteInvitationResponse, CreateTeamRequest, CreateUserRequest, CreateUserResponse,
+        AdminServiceAccountView, AdminServiceAccountsPayload, AdminTeamManagementView,
+        AdminTeamView, AdminTeamsPayload, AuthSessionUserView, AuthSessionView,
+        ChangePasswordRequest, CompleteInvitationRequest, CompleteInvitationResponse,
+        CreateServiceAccountRequest, CreateTeamRequest, CreateUserRequest, CreateUserResponse,
         Envelope, IdentityActionStatus, InvitationView, OidcCallbackQuery, OidcStartQuery,
-        PasswordInviteResponse, PasswordLoginRequest, TransferTeamMemberRequest, UpdateTeamRequest,
-        UpdateUserRequest, envelope, format_timestamp,
+        PasswordInviteResponse, PasswordLoginRequest, TransferTeamMemberRequest,
+        UpdateServiceAccountRequest, UpdateTeamRequest, UpdateUserRequest, envelope,
+        format_timestamp,
     },
     error::AppError,
     identity_lifecycle::{
@@ -127,6 +129,180 @@ pub async fn list_identity_teams(
             })
             .collect(),
     })))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/identity/service-accounts",
+    responses((status = 200, body = Envelope<AdminServiceAccountsPayload>)),
+    security(("session_cookie" = []))
+)]
+pub async fn list_identity_service_accounts(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Envelope<AdminServiceAccountsPayload>>, AppError> {
+    let actor = require_active_admin_or_team_manager(&state, &headers, None).await?;
+    let teams = state.store.list_active_teams().await?;
+    let mut service_accounts = state.store.list_active_service_accounts().await?;
+
+    if actor.global_role != GlobalRole::PlatformAdmin {
+        let membership = state
+            .store
+            .get_team_membership_for_user(actor.user_id)
+            .await?
+            .ok_or(AppError(GatewayError::Auth(
+                AuthError::InsufficientPrivileges,
+            )))?;
+        service_accounts.retain(|account| account.team_id == membership.team_id);
+    }
+
+    Ok(Json(envelope(AdminServiceAccountsPayload {
+        service_accounts: build_service_account_views(&service_accounts, &teams)?,
+        teams: teams
+            .into_iter()
+            .map(|team| AdminTeamView {
+                id: team.team_id.to_string(),
+                name: team.team_name,
+            })
+            .collect(),
+    })))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/admin/identity/service-accounts",
+    request_body = CreateServiceAccountRequest,
+    responses((status = 200, body = Envelope<AdminServiceAccountView>)),
+    security(("session_cookie" = []))
+)]
+pub async fn create_identity_service_account(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<CreateServiceAccountRequest>,
+) -> Result<Json<Envelope<AdminServiceAccountView>>, AppError> {
+    let team_id = parse_uuid(&request.team_id)?;
+    require_active_admin_or_team_manager(&state, &headers, Some(team_id)).await?;
+
+    let name = request.name.trim();
+    if name.is_empty() {
+        return Err(AppError(GatewayError::InvalidRequest(
+            "name cannot be empty".to_string(),
+        )));
+    }
+    let team = state
+        .store
+        .get_team_by_id(team_id)
+        .await?
+        .ok_or_else(|| AppError(GatewayError::InvalidRequest("team not found".to_string())))?;
+    if team.status != "active" {
+        return Err(AppError(GatewayError::InvalidRequest(
+            "service accounts can only be created for active teams".to_string(),
+        )));
+    }
+
+    let key = generate_unique_service_account_key(&state.store, team_id, name).await?;
+    let account = state
+        .store
+        .create_service_account(team_id, &key, name, OffsetDateTime::now_utc())
+        .await?;
+    Ok(Json(envelope(service_account_view(&account, &team))))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/v1/admin/identity/service-accounts/{service_account_id}",
+    request_body = UpdateServiceAccountRequest,
+    params(("service_account_id" = String, Path, description = "Service account identifier")),
+    responses((status = 200, body = Envelope<AdminServiceAccountView>)),
+    security(("session_cookie" = []))
+)]
+pub async fn update_identity_service_account(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(service_account_id): Path<String>,
+    Json(request): Json<UpdateServiceAccountRequest>,
+) -> Result<Json<Envelope<AdminServiceAccountView>>, AppError> {
+    let service_account_id = parse_uuid(&service_account_id)?;
+    let account = state
+        .store
+        .get_service_account_by_id(service_account_id)
+        .await?
+        .ok_or_else(|| {
+            AppError(GatewayError::InvalidRequest(
+                "service account not found".to_string(),
+            ))
+        })?;
+    require_active_admin_or_team_manager(&state, &headers, Some(account.team_id)).await?;
+
+    let name = request.name.trim();
+    if name.is_empty() {
+        return Err(AppError(GatewayError::InvalidRequest(
+            "name cannot be empty".to_string(),
+        )));
+    }
+    state
+        .store
+        .update_service_account_name(service_account_id, name, OffsetDateTime::now_utc())
+        .await?;
+    let account = state
+        .store
+        .get_service_account_by_id(service_account_id)
+        .await?
+        .ok_or_else(|| {
+            AppError(GatewayError::InvalidRequest(
+                "service account not found".to_string(),
+            ))
+        })?;
+    let team = state
+        .store
+        .get_team_by_id(account.team_id)
+        .await?
+        .ok_or_else(|| AppError(GatewayError::InvalidRequest("team not found".to_string())))?;
+    Ok(Json(envelope(service_account_view(&account, &team))))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/v1/admin/identity/service-accounts/{service_account_id}",
+    params(("service_account_id" = String, Path, description = "Service account identifier")),
+    responses((status = 200, body = Envelope<AdminServiceAccountView>)),
+    security(("session_cookie" = []))
+)]
+pub async fn disable_identity_service_account(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(service_account_id): Path<String>,
+) -> Result<Json<Envelope<AdminServiceAccountView>>, AppError> {
+    let service_account_id = parse_uuid(&service_account_id)?;
+    let account = state
+        .store
+        .get_service_account_by_id(service_account_id)
+        .await?
+        .ok_or_else(|| {
+            AppError(GatewayError::InvalidRequest(
+                "service account not found".to_string(),
+            ))
+        })?;
+    require_active_admin_or_team_manager(&state, &headers, Some(account.team_id)).await?;
+    state
+        .store
+        .disable_service_account(service_account_id, OffsetDateTime::now_utc())
+        .await?;
+    let account = state
+        .store
+        .get_service_account_by_id(service_account_id)
+        .await?
+        .ok_or_else(|| {
+            AppError(GatewayError::InvalidRequest(
+                "service account not found".to_string(),
+            ))
+        })?;
+    let team = state
+        .store
+        .get_team_by_id(account.team_id)
+        .await?
+        .ok_or_else(|| AppError(GatewayError::InvalidRequest("team not found".to_string())))?;
+    Ok(Json(envelope(service_account_view(&account, &team))))
 }
 
 #[utoipa::path(
@@ -1134,6 +1310,102 @@ async fn generate_unique_team_key(store: &AnyStore, name: &str) -> Result<String
     }
 
     Ok(candidate)
+}
+
+async fn generate_unique_service_account_key(
+    store: &AnyStore,
+    team_id: Uuid,
+    name: &str,
+) -> Result<String, AppError> {
+    let base = slugify_team_name(name);
+    let existing = store.list_active_service_accounts().await?;
+    let mut candidate = base.clone();
+    let mut suffix = 2_u32;
+
+    while existing
+        .iter()
+        .any(|account| account.team_id == team_id && account.service_account_key == candidate)
+    {
+        candidate = format!("{base}-{suffix}");
+        suffix += 1;
+    }
+
+    Ok(candidate)
+}
+
+async fn require_active_admin_or_team_manager(
+    state: &AppState,
+    headers: &HeaderMap,
+    team_scope: Option<Uuid>,
+) -> Result<UserRecord, AppError> {
+    let actor = require_authenticated_session(state, headers).await?;
+    if actor.status != UserStatus::Active {
+        return Err(AppError(GatewayError::InvalidRequest(
+            "only active users can manage service accounts".to_string(),
+        )));
+    }
+    if actor.global_role == GlobalRole::PlatformAdmin {
+        return Ok(actor);
+    }
+
+    let membership = state
+        .store
+        .get_team_membership_for_user(actor.user_id)
+        .await?
+        .ok_or(AppError(GatewayError::Auth(
+            AuthError::InsufficientPrivileges,
+        )))?;
+    if !matches!(
+        membership.role,
+        MembershipRole::Owner | MembershipRole::Admin
+    ) {
+        return Err(AppError(GatewayError::Auth(
+            AuthError::InsufficientPrivileges,
+        )));
+    }
+    if team_scope.is_some_and(|team_id| team_id != membership.team_id) {
+        return Err(AppError(GatewayError::Auth(
+            AuthError::InsufficientPrivileges,
+        )));
+    }
+
+    Ok(actor)
+}
+
+fn build_service_account_views(
+    service_accounts: &[ServiceAccountRecord],
+    teams: &[TeamRecord],
+) -> Result<Vec<AdminServiceAccountView>, AppError> {
+    service_accounts
+        .iter()
+        .map(|account| {
+            let team = teams
+                .iter()
+                .find(|team| team.team_id == account.team_id)
+                .ok_or_else(|| {
+                    AppError(GatewayError::InvalidRequest(format!(
+                        "service account `{}` references missing team",
+                        account.service_account_id
+                    )))
+                })?;
+            Ok(service_account_view(account, team))
+        })
+        .collect()
+}
+
+fn service_account_view(
+    account: &ServiceAccountRecord,
+    team: &TeamRecord,
+) -> AdminServiceAccountView {
+    AdminServiceAccountView {
+        id: account.service_account_id.to_string(),
+        key: account.service_account_key.clone(),
+        name: account.service_account_name.clone(),
+        status: account.status.as_str().to_string(),
+        team_id: team.team_id.to_string(),
+        team_key: team.team_key.clone(),
+        team_name: team.team_name.clone(),
+    }
 }
 
 fn slugify_team_name(name: &str) -> String {

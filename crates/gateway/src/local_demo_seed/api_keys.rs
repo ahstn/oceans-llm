@@ -23,10 +23,10 @@ pub(super) const LOCAL_DEMO_API_KEYS: &[LocalDemoApiKeyFixture] = &[
         model_keys: &["openai-fast", "claude-sonnet"],
     },
     LocalDemoApiKeyFixture {
-        name: "Platform Team Key",
+        name: "Platform Automation Key",
         public_id: "locdemoplatform1",
         secret: "platform-demo-secret",
-        owner: LocalDemoOwnerFixture::Team("platform"),
+        owner: LocalDemoOwnerFixture::User("ben@platform.local"),
         model_keys: &["openai-fast-v2", "gemini-fast"],
     },
     LocalDemoApiKeyFixture {

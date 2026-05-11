@@ -279,8 +279,8 @@ export function SpendControlsPage() {
         <CardHeader>
           <CardTitle>Team Budgets</CardTitle>
           <CardDescription>
-            Team hard limits for team-owned API key spend. Alerts go to active team owners and
-            admins only.
+            Team hard limits for team-scoped spend. Service-account budget controls need a backend
+            contract before they can be configured here.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -384,7 +384,8 @@ export function SpendControlsPage() {
                       {alert.owner_name}
                     </p>
                     <p className="truncate text-xs text-[var(--color-text-soft)]">
-                      {alert.owner_kind} • {new Date(alert.created_at).toLocaleString()}
+                      {formatOwnerKind(alert.owner_kind)} •{' '}
+                      {new Date(alert.created_at).toLocaleString()}
                     </p>
                   </div>
                   <span className="px-3 py-3 text-sm text-[var(--color-text-muted)]">
@@ -547,4 +548,12 @@ function badgeVariantForAlert(
 
 function formatThreshold(alert: BudgetAlertHistoryItemView) {
   return `${alert.threshold_bps / 100}%`
+}
+
+function formatOwnerKind(ownerKind: string) {
+  if (ownerKind === 'service_account') {
+    return 'service account'
+  }
+
+  return ownerKind
 }

@@ -61,6 +61,27 @@ pub trait GatewayStore:
     ) -> Result<Option<IdentityUserRecord>, StoreError>;
     async fn list_active_teams(&self) -> Result<Vec<TeamRecord>, StoreError>;
     async fn list_teams(&self) -> Result<Vec<TeamRecord>, StoreError>;
+    async fn list_active_service_accounts(
+        &self,
+    ) -> Result<Vec<gateway_core::ServiceAccountRecord>, StoreError>;
+    async fn create_service_account(
+        &self,
+        team_id: Uuid,
+        service_account_key: &str,
+        service_account_name: &str,
+        created_at: OffsetDateTime,
+    ) -> Result<gateway_core::ServiceAccountRecord, StoreError>;
+    async fn update_service_account_name(
+        &self,
+        service_account_id: Uuid,
+        service_account_name: &str,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError>;
+    async fn disable_service_account(
+        &self,
+        service_account_id: Uuid,
+        disabled_at: OffsetDateTime,
+    ) -> Result<bool, StoreError>;
     async fn list_enabled_oidc_providers(&self) -> Result<Vec<OidcProviderRecord>, StoreError>;
     async fn get_enabled_oidc_provider_by_key(
         &self,
@@ -316,6 +337,13 @@ impl ApiKeyRepository for AnyStore {
     async fn touch_api_key_last_used(&self, api_key_id: Uuid) -> Result<(), StoreError> {
         dispatch_store!(self, touch_api_key_last_used(api_key_id))
     }
+
+    async fn get_service_account_by_id(
+        &self,
+        service_account_id: Uuid,
+    ) -> Result<Option<gateway_core::ServiceAccountRecord>, StoreError> {
+        dispatch_store!(self, get_service_account_by_id(service_account_id))
+    }
 }
 
 #[async_trait]
@@ -418,6 +446,13 @@ impl IdentityRepository for AnyStore {
         dispatch_store!(self, get_team_by_id(team_id))
     }
 
+    async fn get_service_account_by_id(
+        &self,
+        service_account_id: Uuid,
+    ) -> Result<Option<gateway_core::ServiceAccountRecord>, StoreError> {
+        dispatch_store!(self, get_service_account_by_id(service_account_id))
+    }
+
     async fn get_team_membership_for_user(
         &self,
         user_id: Uuid,
@@ -437,6 +472,16 @@ impl IdentityRepository for AnyStore {
         team_id: Uuid,
     ) -> Result<Vec<String>, StoreError> {
         dispatch_store!(self, list_allowed_model_keys_for_team(team_id))
+    }
+
+    async fn list_allowed_model_keys_for_service_account(
+        &self,
+        service_account_id: Uuid,
+    ) -> Result<Vec<String>, StoreError> {
+        dispatch_store!(
+            self,
+            list_allowed_model_keys_for_service_account(service_account_id)
+        )
     }
 
     async fn list_team_memberships(
@@ -460,6 +505,12 @@ impl AdminIdentityRepository for AnyStore {
     async fn list_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
         dispatch_store!(self, list_teams())
     }
+
+    async fn list_active_service_accounts(
+        &self,
+    ) -> Result<Vec<gateway_core::ServiceAccountRecord>, StoreError> {
+        dispatch_store!(self, list_active_service_accounts())
+    }
 }
 
 #[async_trait]
@@ -476,6 +527,16 @@ impl BudgetRepository for AnyStore {
         team_id: Uuid,
     ) -> Result<Option<gateway_core::TeamBudgetRecord>, StoreError> {
         dispatch_store!(self, get_active_budget_for_team(team_id))
+    }
+
+    async fn get_active_budget_for_service_account(
+        &self,
+        service_account_id: Uuid,
+    ) -> Result<Option<gateway_core::ServiceAccountBudgetRecord>, StoreError> {
+        dispatch_store!(
+            self,
+            get_active_budget_for_service_account(service_account_id)
+        )
     }
 
     async fn upsert_active_budget_for_user(
@@ -528,6 +589,39 @@ impl BudgetRepository for AnyStore {
         dispatch_store!(self, deactivate_active_budget_for_team(team_id, updated_at))
     }
 
+    async fn upsert_active_budget_for_service_account(
+        &self,
+        service_account_id: Uuid,
+        cadence: gateway_core::BudgetCadence,
+        amount_usd: gateway_core::Money4,
+        hard_limit: bool,
+        timezone: &str,
+        updated_at: OffsetDateTime,
+    ) -> Result<gateway_core::ServiceAccountBudgetRecord, StoreError> {
+        dispatch_store!(
+            self,
+            upsert_active_budget_for_service_account(
+                service_account_id,
+                cadence,
+                amount_usd,
+                hard_limit,
+                timezone,
+                updated_at
+            )
+        )
+    }
+
+    async fn deactivate_active_budget_for_service_account(
+        &self,
+        service_account_id: Uuid,
+        updated_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        dispatch_store!(
+            self,
+            deactivate_active_budget_for_service_account(service_account_id, updated_at)
+        )
+    }
+
     async fn get_usage_ledger_by_request_and_scope(
         &self,
         request_id: &str,
@@ -560,6 +654,22 @@ impl BudgetRepository for AnyStore {
         dispatch_store!(
             self,
             sum_usage_cost_for_team_in_window(team_id, window_start, window_end)
+        )
+    }
+
+    async fn sum_usage_cost_for_service_account_in_window(
+        &self,
+        service_account_id: Uuid,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+    ) -> Result<gateway_core::Money4, StoreError> {
+        dispatch_store!(
+            self,
+            sum_usage_cost_for_service_account_in_window(
+                service_account_id,
+                window_start,
+                window_end
+            )
         )
     }
 
@@ -897,6 +1007,12 @@ impl GatewayStore for AnyStore {
         dispatch_store!(self, list_teams())
     }
 
+    async fn list_active_service_accounts(
+        &self,
+    ) -> Result<Vec<gateway_core::ServiceAccountRecord>, StoreError> {
+        dispatch_store!(self, list_active_service_accounts())
+    }
+
     async fn list_enabled_oidc_providers(&self) -> Result<Vec<OidcProviderRecord>, StoreError> {
         dispatch_store!(self, list_enabled_oidc_providers())
     }
@@ -930,6 +1046,47 @@ impl GatewayStore for AnyStore {
         updated_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
         dispatch_store!(self, update_team_name(team_id, team_name, updated_at))
+    }
+
+    async fn create_service_account(
+        &self,
+        team_id: Uuid,
+        service_account_key: &str,
+        service_account_name: &str,
+        created_at: OffsetDateTime,
+    ) -> Result<gateway_core::ServiceAccountRecord, StoreError> {
+        dispatch_store!(
+            self,
+            create_service_account(
+                team_id,
+                service_account_key,
+                service_account_name,
+                created_at
+            )
+        )
+    }
+
+    async fn update_service_account_name(
+        &self,
+        service_account_id: Uuid,
+        service_account_name: &str,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(
+            self,
+            update_service_account_name(service_account_id, service_account_name, updated_at)
+        )
+    }
+
+    async fn disable_service_account(
+        &self,
+        service_account_id: Uuid,
+        disabled_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        dispatch_store!(
+            self,
+            disable_service_account(service_account_id, disabled_at)
+        )
     }
 
     async fn create_identity_user(

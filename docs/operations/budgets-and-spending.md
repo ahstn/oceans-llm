@@ -1,6 +1,6 @@
 # Budgets and Spending
 
-`See also`: [Data Relationships](../reference/data-relationships.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Identity and Access](../access/identity-and-access.md), [Admin Control Plane](../access/admin-control-plane.md), [ADR: Spend Control Plane Reporting and Team Hard-Limit Enforcement](../adr/2026-03-15-spend-control-plane-reporting-and-team-hard-limits.md)
+`See also`: [Data Relationships](../reference/data-relationships.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Identity and Access](../access/identity-and-access.md), [Service Accounts](../access/service-accounts.md), [Admin Control Plane](../access/admin-control-plane.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../adr/2026-05-10-team-service-accounts.md), [ADR: Spend Control Plane Reporting and Team Hard-Limit Enforcement](../adr/2026-03-15-spend-control-plane-reporting-and-team-hard-limits.md)
 
 This page describes the live spend contract in the gateway.
 
@@ -42,7 +42,9 @@ Pre-provider hard-limit checks run on the live request path for:
 Budgets are enforced by owner scope:
 
 - user-owned API keys use the active user budget
-- team-owned API keys use the active team budget
+- service-account credentials use the active service-account budget when configured
+- service-account credentials also remain attributable to the owning team for team-level reporting
+- direct team-owned runtime API keys are not supported
 
 Hard-limit behavior:
 
@@ -65,10 +67,10 @@ Ownership scope keys:
 
 - user:
   - `user:<user_id>`
-- team:
-  - `team:<team_id>:actor:none`
+- service account:
+  - `service_account:<service_account_id>`
 
-`actor:none` is the current team attribution contract. Acting-user attribution is still deferred.
+Team attribution for service-account spend comes from the owning service account. Acting-user attribution is not used for non-human service-account calls.
 
 ## Ledger Write Semantics
 
@@ -83,6 +85,7 @@ Use [request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-
 
 - `user_budgets` stores active and inactive user budgets
 - `team_budgets` stores active and inactive team budgets
+- `service_account_budgets` stores active and inactive service-account budgets
 - each table enforces one active budget per owner
 
 Budget fields:
@@ -103,6 +106,8 @@ Active user and team budgets can also come from config-backed seed inputs.
 - `users[*].budget` reconciles the listed user's active budget
 - removing a listed owner's `budget` block deactivates that active budget
 - historical budget rows remain historical; config only owns the active row
+
+Service-account budgets are managed through the service-account control-plane workflows. Config seeding does not recreate the removed legacy system-key path.
 
 ## Budget Threshold Alerts
 
@@ -130,6 +135,7 @@ Recipient readiness:
 
 - user budgets notify the user email
 - team budgets notify active team owners or admins with emails
+- service-account budgets notify active owners or admins of the owning team
 
 That means email readiness is part of the practical identity setup for alerting.
 
@@ -184,7 +190,7 @@ Only `priced` and `legacy_estimated` rows count toward spend totals. `unpriced` 
 ## Current Gaps
 
 - provider breakdown is not part of spend reporting v1
-- acting-user attribution for team-owned keys remains `actor:none`
+- acting-user attribution for service-account keys remains the service account principal; user attribution is intentionally absent for non-human callers
 - timezone-aware budget windows are still deferred
 - hardened declarative SSO-backed identity matching remains deferred
   - [issue #65](https://github.com/ahstn/oceans-llm/issues/65)

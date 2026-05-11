@@ -52,6 +52,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/identity/service-accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_identity_service_accounts"];
+        put?: never;
+        post: operations["create_identity_service_account"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/identity/service-accounts/{service_account_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["disable_identity_service_account"];
+        options?: never;
+        head?: never;
+        patch: operations["update_identity_service_account"];
+        trace?: never;
+    };
     "/api/v1/admin/identity/teams": {
         parameters: {
             query?: never;
@@ -372,6 +404,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/spend/budgets/service-accounts/{service_account_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["upsert_service_account_budget"];
+        post?: never;
+        delete: operations["deactivate_service_account_budget"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/spend/budgets/teams/{team_id}": {
         parameters: {
             query?: never;
@@ -561,6 +609,14 @@ export interface components {
             key: string;
             tags: string[];
         };
+        AdminApiKeyServiceAccountOwnerView: {
+            id: string;
+            key: string;
+            name: string;
+            team_id: string;
+            team_key: string;
+            team_name: string;
+        };
         AdminApiKeyTeamOwnerView: {
             id: string;
             key: string;
@@ -581,6 +637,9 @@ export interface components {
             owner_id: string;
             owner_kind: string;
             owner_name: string;
+            owner_service_account_key?: string | null;
+            owner_service_account_team_id?: string | null;
+            owner_service_account_team_key?: string | null;
             owner_team_key?: string | null;
             prefix: string;
             revoked_at?: string | null;
@@ -589,6 +648,7 @@ export interface components {
         AdminApiKeysPayload: {
             items: components["schemas"]["AdminApiKeyView"][];
             models: components["schemas"]["AdminApiKeyModelView"][];
+            service_accounts: components["schemas"]["AdminApiKeyServiceAccountOwnerView"][];
             teams: components["schemas"]["AdminApiKeyTeamOwnerView"][];
             users: components["schemas"]["AdminApiKeyUserOwnerView"][];
         };
@@ -676,6 +736,19 @@ export interface components {
             provider_key: string;
             provider_label: string;
             sign_in_url: string;
+        };
+        AdminServiceAccountView: {
+            id: string;
+            key: string;
+            name: string;
+            status: string;
+            team_id: string;
+            team_key: string;
+            team_name: string;
+        };
+        AdminServiceAccountsPayload: {
+            service_accounts: components["schemas"]["AdminServiceAccountView"][];
+            teams: components["schemas"]["AdminTeamView"][];
         };
         AdminTeamAdminView: {
             email: string;
@@ -782,12 +855,17 @@ export interface components {
             model_keys: string[];
             name: string;
             owner_kind: string;
+            owner_service_account_id?: string | null;
             owner_team_id?: string | null;
             owner_user_id?: string | null;
         };
         CreateApiKeyResponse: {
             api_key: components["schemas"]["AdminApiKeyView"];
             raw_key: string;
+        };
+        CreateServiceAccountRequest: {
+            name: string;
+            team_id: string;
         };
         CreateTeamRequest: {
             admin_user_ids: string[];
@@ -824,6 +902,7 @@ export interface components {
             data: {
                 items: components["schemas"]["AdminApiKeyView"][];
                 models: components["schemas"]["AdminApiKeyModelView"][];
+                service_accounts: components["schemas"]["AdminApiKeyServiceAccountOwnerView"][];
                 teams: components["schemas"]["AdminApiKeyTeamOwnerView"][];
                 users: components["schemas"]["AdminApiKeyUserOwnerView"][];
             };
@@ -846,6 +925,25 @@ export interface components {
                 page_size: number;
                 /** Format: int64 */
                 total: number;
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_AdminServiceAccountView: {
+            data: {
+                id: string;
+                key: string;
+                name: string;
+                status: string;
+                team_id: string;
+                team_key: string;
+                team_name: string;
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_AdminServiceAccountsPayload: {
+            data: {
+                service_accounts: components["schemas"]["AdminServiceAccountView"][];
+                teams: components["schemas"]["AdminTeamView"][];
             };
             meta: components["schemas"]["ResponseMeta"];
         };
@@ -1029,6 +1127,7 @@ export interface components {
         };
         Envelope_SpendBudgetsView: {
             data: {
+                service_accounts: components["schemas"]["SpendBudgetServiceAccountView"][];
                 teams: components["schemas"]["SpendBudgetTeamView"][];
                 users: components["schemas"]["SpendBudgetUserView"][];
             };
@@ -1302,6 +1401,7 @@ export interface components {
             request_tags: components["schemas"]["RequestTagsView"];
             resolved_model_key: string;
             response_payload_truncated: boolean;
+            service_account_id?: string | null;
             /** Format: int64 */
             status_code?: number | null;
             team_id?: string | null;
@@ -1346,6 +1446,19 @@ export interface components {
         RevokeApiKeyResponse: {
             api_key: components["schemas"]["AdminApiKeyView"];
         };
+        SpendBudgetServiceAccountView: {
+            alert_email_ready: boolean;
+            alert_recipient_summary: string;
+            budget?: null | components["schemas"]["BudgetSettingsView"];
+            /** Format: int64 */
+            current_window_spend_usd_10000: number;
+            service_account_id: string;
+            service_account_key: string;
+            service_account_name: string;
+            team_id: string;
+            team_key: string;
+            team_name: string;
+        };
         SpendBudgetTeamView: {
             alert_email_ready: boolean;
             alert_recipient_summary: string;
@@ -1369,6 +1482,7 @@ export interface components {
             user_id: string;
         };
         SpendBudgetsView: {
+            service_accounts: components["schemas"]["SpendBudgetServiceAccountView"][];
             teams: components["schemas"]["SpendBudgetTeamView"][];
             users: components["schemas"]["SpendBudgetUserView"][];
         };
@@ -1437,6 +1551,9 @@ export interface components {
         };
         UpdateApiKeyResponse: {
             api_key: components["schemas"]["AdminApiKeyView"];
+        };
+        UpdateServiceAccountRequest: {
+            name: string;
         };
         UpdateTeamRequest: {
             admin_user_ids: string[];
@@ -1557,6 +1674,96 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_RevokeApiKeyResponse"];
+                };
+            };
+        };
+    };
+    list_identity_service_accounts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_AdminServiceAccountsPayload"];
+                };
+            };
+        };
+    };
+    create_identity_service_account: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateServiceAccountRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_AdminServiceAccountView"];
+                };
+            };
+        };
+    };
+    disable_identity_service_account: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Service account identifier */
+                service_account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_AdminServiceAccountView"];
+                };
+            };
+        };
+    };
+    update_identity_service_account: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Service account identifier */
+                service_account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateServiceAccountRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_AdminServiceAccountView"];
                 };
             };
         };
@@ -2003,6 +2210,7 @@ export interface operations {
                 status_code?: number | null;
                 user_id?: string | null;
                 team_id?: string | null;
+                service_account_id?: string | null;
                 service?: string | null;
                 component?: string | null;
                 env?: string | null;
@@ -2096,6 +2304,54 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_SpendBudgetsView"];
+                };
+            };
+        };
+    };
+    upsert_service_account_budget: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Service account identifier */
+                service_account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpsertBudgetRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_UpsertBudgetResultView"];
+                };
+            };
+        };
+    };
+    deactivate_service_account_budget: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Service account identifier */
+                service_account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_DeactivateBudgetResultView"];
                 };
             };
         };

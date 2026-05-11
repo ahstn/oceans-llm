@@ -8,7 +8,7 @@ impl AdminApiKeyRepository for LibsqlStore {
             .query(
                 r#"
                 SELECT id, public_id, secret_hash, name, status,
-                       owner_kind, owner_user_id, owner_team_id,
+                       owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
                        created_at, last_used_at, revoked_at
                 FROM api_keys
                 ORDER BY created_at DESC, public_id ASC
@@ -39,7 +39,7 @@ impl AdminApiKeyRepository for LibsqlStore {
             .query(
                 r#"
                 SELECT id, public_id, secret_hash, name, status,
-                       owner_kind, owner_user_id, owner_team_id,
+                       owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
                        created_at, last_used_at, revoked_at
                 FROM api_keys
                 WHERE id = ?1
@@ -68,9 +68,9 @@ impl AdminApiKeyRepository for LibsqlStore {
                 r#"
                 INSERT INTO api_keys (
                     id, public_id, secret_hash, name, status,
-                    owner_kind, owner_user_id, owner_team_id,
+                    owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
                     created_at, last_used_at, revoked_at
-                ) VALUES (?1, ?2, ?3, ?4, 'active', ?5, ?6, ?7, ?8, NULL, NULL)
+                ) VALUES (?1, ?2, ?3, ?4, 'active', ?5, ?6, ?7, ?8, ?9, NULL, NULL)
                 "#,
                 libsql::params![
                     api_key_id.to_string(),
@@ -80,6 +80,9 @@ impl AdminApiKeyRepository for LibsqlStore {
                     api_key.owner_kind.as_str(),
                     api_key.owner_user_id.map(|value| value.to_string()),
                     api_key.owner_team_id.map(|value| value.to_string()),
+                    api_key
+                        .owner_service_account_id
+                        .map(|value| value.to_string()),
                     api_key.created_at.unix_timestamp(),
                 ],
             )
@@ -154,7 +157,7 @@ impl ApiKeyRepository for LibsqlStore {
             .query(
                 r#"
                 SELECT id, public_id, secret_hash, name, status,
-                       owner_kind, owner_user_id, owner_team_id,
+                       owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
                        created_at, last_used_at, revoked_at
                 FROM api_keys
                 WHERE public_id = ?1
@@ -186,5 +189,12 @@ impl ApiKeyRepository for LibsqlStore {
             .await
             .map_err(|error| StoreError::Query(error.to_string()))?;
         Ok(())
+    }
+
+    async fn get_service_account_by_id(
+        &self,
+        service_account_id: Uuid,
+    ) -> Result<Option<ServiceAccountRecord>, StoreError> {
+        Self::get_service_account_by_id(self, service_account_id).await
     }
 }

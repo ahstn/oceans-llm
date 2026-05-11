@@ -1,6 +1,6 @@
 # Data Relationships
 
-`See also`: [Identity and Access](../access/identity-and-access.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](provider-api-compatibility.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../operations/observability/mcp-invocations.md), [ADR: Identity Foundation for Users, Teams, and API Key Ownership](../adr/2026-03-05-identity-foundation.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md), [ADR: MCP Tool Cardinality Observability](../adr/2026-04-28-mcp-tool-cardinality-observability.md)
+`See also`: [Identity and Access](../access/identity-and-access.md), [Service Accounts](../access/service-accounts.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](provider-api-compatibility.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../operations/observability/mcp-invocations.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../adr/2026-05-10-team-service-accounts.md), [ADR: Identity Foundation for Users, Teams, and API Key Ownership](../adr/2026-03-05-identity-foundation.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md), [ADR: MCP Tool Cardinality Observability](../adr/2026-04-28-mcp-tool-cardinality-observability.md)
 
 This document is schema-oriented. It describes the persistent relationships that are hard to infer from a single file, but it does not try to restate every runtime rule owned by neighboring docs.
 
@@ -20,14 +20,15 @@ This document is schema-oriented. It describes the persistent relationships that
 
 ## Core Entity Graph
 
-1. `teams` 1..N `team_memberships`
+1. `teams` 0..N `team_memberships`
 2. `users` 0..1 `team_memberships`
-3. `api_keys` belongs to exactly one owner
+3. `teams` 0..N `service_accounts`
+4. `api_keys` belongs to exactly one principal owner: user or service account
 4. `api_keys` N..N `gateway_models` through `api_key_model_grants`
 5. Optional restriction overlays:
    - `user_model_allowlist`
    - `team_model_allowlist`
-6. `user_budgets` and `team_budgets` each allow one active budget per owner
+6. `user_budgets`, `team_budgets`, and `service_account_budgets` each allow one active budget per owner
 7. `usage_cost_events` records request ownership, model attribution, pricing status, and computed cost
 8. `request_logs` records the final user-visible request outcome
 9. `request_log_payloads` stores sanitized request and response bodies separately from the summary row
@@ -68,6 +69,9 @@ Compatibility metadata is not a provider config fallback and is not an `extra_bo
 - `team_memberships`
   - Key columns: `team_id`, `user_id`, `role`
   - Notes: one-team-per-user is enforced by a unique `user_id`
+- `service_accounts`
+  - Key columns: `service_account_id`, `team_id`, `name`, `status`, `created_by_user_id`, `deactivated_at`
+  - Notes: service accounts are team-owned non-human principals; deletion is deactivation
 - `oidc_providers`
   - Key columns: `oidc_provider_id`, `provider_key`, `provider_type`, `issuer_url`, `client_id`, `enabled`
   - Notes: the current schema supports `okta|generic_oidc`
@@ -91,16 +95,18 @@ Compatibility metadata is not a provider config fallback and is not an `extra_bo
 ### Ownership, Accounting, and Logging Tables
 
 - `api_keys`
-  - Key columns: `id`, `public_id`, `secret_hash`, `owner_kind`, `owner_user_id`, `owner_team_id`
+  - Key columns: `id`, `public_id`, `secret_hash`, `owner_kind`, `owner_user_id`, `owner_service_account_id`
   - Constraint: exactly one owner column must be set consistently with `owner_kind`
-  - Reserved ownership: seeded system-owned keys use the reserved `system-legacy` team
-  - Notes: gateway service-account-style callers are currently represented as team-owned or config-seeded API keys; provider service-account credentials live in provider config, not this table
+  - Notes: direct team-owned runtime keys and `system-legacy` ownership are not supported
 - `user_budgets`
   - Key columns: `user_budget_id`, `user_id`, `cadence`, `amount_10000`, `hard_limit`, `timezone`, `is_active`
   - Constraint: one active user budget per user
 - `team_budgets`
   - Key columns: `team_budget_id`, `team_id`, `cadence`, `amount_10000`, `hard_limit`, `timezone`, `is_active`
   - Constraint: one active team budget per team
+- `service_account_budgets`
+  - Key columns: `service_account_budget_id`, `service_account_id`, `cadence`, `amount_10000`, `hard_limit`, `timezone`, `is_active`
+  - Constraint: one active service-account budget per service account
 - `usage_cost_events`
   - Key columns: `usage_event_id`, `request_id`, `ownership_scope_key`, `api_key_id`, `user_id`, `team_id`, `actor_user_id`, `model_id`, `provider_key`, `upstream_model`, `pricing_status`, `unpriced_reason`, `pricing_row_id`, `pricing_provider_id`, `computed_cost_10000`, `provider_usage`, `occurred_at`
   - Notes: this is the canonical spend ledger used for enforcement and reporting
@@ -146,6 +152,8 @@ Effective model access is the intersection of:
 
 If neither the team nor the user is restricted, grants remain unchanged.
 
+Service-account credentials use API-key grants plus the owning team's allowlist. User allowlists do not apply to service accounts.
+
 ## Budget and Pricing Notes
 
 - Pricing lookup comes from the internal pricing catalog layer, not from provider `/v1/models` responses
@@ -162,9 +170,8 @@ If neither the team nor the user is restricted, grants remain unchanged.
   - Monthly windows start at the first day of the month at `00:00:00 UTC`
   - `Sunday 23:59:59 UTC` remains in the previous weekly window
 - Budget threshold alerts persist audit rows plus per-recipient delivery rows and currently deliver owner-only email alerts when remaining budget crosses to `20%` or less
-- Team attribution remains `actor:none` today:
-  - team key + acting user context attribution is still deferred
-  - team key without acting user context is attributed to team only
+- Service-account budget alerts are delivered to active owners and admins of the owning team
+- Service-account spend remains attributable to the service account and its owning team
 
 ## Requested vs Resolved Model Identity
 
@@ -189,13 +196,12 @@ Those rules are owned by [configuration-reference.md](../configuration/configura
 
 ## Ownership Notes
 
-- User-owned and team-owned API keys share the same `api_keys` table
-- Team-owned usage and request logs can exist without an acting user
-- Current team spend attribution remains `actor:none` at the ownership-scope level
-- Service callers should use explicit team-owned keys with narrow model grants and team budgets until service-account owners become first-class
-- Provider service-account credentials such as Vertex service-account JSON authorize the gateway to call a provider and do not create a gateway caller owner
+- User-owned and service-account-owned API keys share the same `api_keys` table
+- Service-account usage and request logs exist without an acting user
+- Direct team-owned runtime API keys are removed from the schema contract
+- There is no reserved `system-legacy` ownership path
 
-That ownership model is explained operationally in [identity-and-access.md](../access/identity-and-access.md) and [budgets-and-spending.md](../operations/budgets-and-spending.md).
+That ownership model is explained operationally in [identity-and-access.md](../access/identity-and-access.md), [service-accounts.md](../access/service-accounts.md), and [budgets-and-spending.md](../operations/budgets-and-spending.md).
 
 ## PostgreSQL and libsql Parity
 

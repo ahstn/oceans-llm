@@ -57,10 +57,10 @@ impl LibsqlStore {
                 r#"
                 INSERT INTO teams (
                     team_id, team_key, team_name, status, model_access_mode, created_at, updated_at
-                ) VALUES (?1, ?2, 'System Legacy', 'active', 'all', ?3, ?3)
+                ) VALUES (?1, ?2, 'Config Seed', 'active', 'all', ?3, ?3)
                 ON CONFLICT(team_id) DO NOTHING
                 "#,
-                libsql::params![SYSTEM_LEGACY_TEAM_ID, SYSTEM_LEGACY_TEAM_KEY, now_unix],
+                libsql::params![CONFIG_SEED_TEAM_ID, CONFIG_SEED_TEAM_KEY, now_unix],
             )
             .await
             .map_err(to_query_error)?;
@@ -230,23 +230,49 @@ impl LibsqlStore {
             self.connection
                 .execute(
                     r#"
+                    INSERT INTO service_accounts (
+                        service_account_id, team_id, service_account_key, service_account_name,
+                        status, model_access_mode, metadata_json, created_at, updated_at, disabled_at
+                    ) VALUES (?1, ?2, ?3, 'Seed API Keys', 'active', 'all', '{}', ?4, ?4, NULL)
+                    ON CONFLICT(service_account_id) DO UPDATE SET
+                        service_account_name = excluded.service_account_name,
+                        status = excluded.status,
+                        metadata_json = excluded.metadata_json,
+                        updated_at = excluded.updated_at,
+                        disabled_at = NULL
+                    "#,
+                    libsql::params![
+                        CONFIG_SEED_SERVICE_ACCOUNT_ID,
+                        CONFIG_SEED_TEAM_ID,
+                        CONFIG_SEED_SERVICE_ACCOUNT_KEY,
+                        now_unix
+                    ],
+                )
+                .await
+                .map_err(to_query_error)?;
+
+            self.connection
+                .execute(
+                    r#"
                     INSERT INTO api_keys (
                         id, public_id, secret_hash, name, status,
-                        owner_kind, owner_user_id, owner_team_id, created_at
-                    ) VALUES (?1, ?2, ?3, ?4, 'active', 'team', NULL, ?5, ?6)
+                        owner_kind, owner_user_id, owner_team_id, owner_service_account_id, created_at
+                    ) VALUES (?1, ?2, ?3, ?4, 'active', 'service_account', NULL, ?5, ?6, ?7)
                     ON CONFLICT(public_id) DO UPDATE SET
                         secret_hash = excluded.secret_hash,
                         name = excluded.name,
                         owner_kind = excluded.owner_kind,
                         owner_user_id = excluded.owner_user_id,
-                        owner_team_id = excluded.owner_team_id
+                        owner_team_id = excluded.owner_team_id,
+                        owner_service_account_id = excluded.owner_service_account_id
                     "#,
                     libsql::params![
                         key_id.to_string(),
                         api_key.public_id.as_str(),
                         api_key.secret_hash.as_str(),
                         api_key.name.as_str(),
-                        SYSTEM_LEGACY_TEAM_ID,
+                        CONFIG_SEED_TEAM_ID,
+                        CONFIG_SEED_SERVICE_ACCOUNT_ID,
                         now_unix
                     ],
                 )

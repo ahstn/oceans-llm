@@ -149,6 +149,144 @@
         ]
       }
     },
+    "/api/v1/admin/identity/service-accounts": {
+      "get": {
+        "tags": [
+          "crate::http::identity"
+        ],
+        "operationId": "list_identity_service_accounts",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_AdminServiceAccountsPayload"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "crate::http::identity"
+        ],
+        "operationId": "create_identity_service_account",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateServiceAccountRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_AdminServiceAccountView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/identity/service-accounts/{service_account_id}": {
+      "delete": {
+        "tags": [
+          "crate::http::identity"
+        ],
+        "operationId": "disable_identity_service_account",
+        "parameters": [
+          {
+            "name": "service_account_id",
+            "in": "path",
+            "description": "Service account identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_AdminServiceAccountView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "crate::http::identity"
+        ],
+        "operationId": "update_identity_service_account",
+        "parameters": [
+          {
+            "name": "service_account_id",
+            "in": "path",
+            "description": "Service account identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateServiceAccountRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_AdminServiceAccountView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/identity/teams": {
       "get": {
         "tags": [
@@ -1102,6 +1240,17 @@
             }
           },
           {
+            "name": "service_account_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
             "name": "service",
             "in": "query",
             "required": false,
@@ -1321,6 +1470,86 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope_SpendBudgetsView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/spend/budgets/service-accounts/{service_account_id}": {
+      "put": {
+        "tags": [
+          "crate::http::spend"
+        ],
+        "operationId": "upsert_service_account_budget",
+        "parameters": [
+          {
+            "name": "service_account_id",
+            "in": "path",
+            "description": "Service account identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertBudgetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_UpsertBudgetResultView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "crate::http::spend"
+        ],
+        "operationId": "deactivate_service_account_budget",
+        "parameters": [
+          {
+            "name": "service_account_id",
+            "in": "path",
+            "description": "Service account identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_DeactivateBudgetResultView"
                 }
               }
             }
@@ -1866,6 +2095,37 @@
           }
         }
       },
+      "AdminApiKeyServiceAccountOwnerView": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "key",
+          "team_id",
+          "team_key",
+          "team_name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "team_id": {
+            "type": "string"
+          },
+          "team_key": {
+            "type": "string"
+          },
+          "team_name": {
+            "type": "string"
+          }
+        }
+      },
       "AdminApiKeyTeamOwnerView": {
         "type": "object",
         "required": [
@@ -1954,6 +2214,24 @@
           "owner_name": {
             "type": "string"
           },
+          "owner_service_account_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "owner_service_account_team_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "owner_service_account_team_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "owner_team_key": {
             "type": [
               "string",
@@ -1980,6 +2258,7 @@
           "items",
           "users",
           "teams",
+          "service_accounts",
           "models"
         ],
         "properties": {
@@ -1993,6 +2272,12 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/AdminApiKeyModelView"
+            }
+          },
+          "service_accounts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminApiKeyServiceAccountOwnerView"
             }
           },
           "teams": {
@@ -2402,6 +2687,62 @@
             }
           }
         ]
+      },
+      "AdminServiceAccountView": {
+        "type": "object",
+        "required": [
+          "id",
+          "key",
+          "name",
+          "status",
+          "team_id",
+          "team_key",
+          "team_name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "team_id": {
+            "type": "string"
+          },
+          "team_key": {
+            "type": "string"
+          },
+          "team_name": {
+            "type": "string"
+          }
+        }
+      },
+      "AdminServiceAccountsPayload": {
+        "type": "object",
+        "required": [
+          "service_accounts",
+          "teams"
+        ],
+        "properties": {
+          "service_accounts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminServiceAccountView"
+            }
+          },
+          "teams": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminTeamView"
+            }
+          }
+        }
       },
       "AdminTeamAdminView": {
         "type": "object",
@@ -2823,6 +3164,12 @@
           "owner_kind": {
             "type": "string"
           },
+          "owner_service_account_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "owner_team_id": {
             "type": [
               "string",
@@ -2848,6 +3195,21 @@
             "$ref": "#/components/schemas/AdminApiKeyView"
           },
           "raw_key": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateServiceAccountRequest": {
+        "type": "object",
+        "required": [
+          "team_id",
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "team_id": {
             "type": "string"
           }
         }
@@ -2999,6 +3361,7 @@
               "items",
               "users",
               "teams",
+              "service_accounts",
               "models"
             ],
             "properties": {
@@ -3012,6 +3375,12 @@
                 "type": "array",
                 "items": {
                   "$ref": "#/components/schemas/AdminApiKeyModelView"
+                }
+              },
+              "service_accounts": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AdminApiKeyServiceAccountOwnerView"
                 }
               },
               "teams": {
@@ -3109,6 +3478,86 @@
                 "type": "integer",
                 "format": "int64",
                 "minimum": 0
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_AdminServiceAccountView": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "id",
+              "key",
+              "name",
+              "status",
+              "team_id",
+              "team_key",
+              "team_name"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "key": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "team_id": {
+                "type": "string"
+              },
+              "team_key": {
+                "type": "string"
+              },
+              "team_name": {
+                "type": "string"
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_AdminServiceAccountsPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "service_accounts",
+              "teams"
+            ],
+            "properties": {
+              "service_accounts": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AdminServiceAccountView"
+                }
+              },
+              "teams": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AdminTeamView"
+                }
               }
             }
           },
@@ -3877,9 +4326,16 @@
             "type": "object",
             "required": [
               "users",
-              "teams"
+              "teams",
+              "service_accounts"
             ],
             "properties": {
+              "service_accounts": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/SpendBudgetServiceAccountView"
+                }
+              },
               "teams": {
                 "type": "array",
                 "items": {
@@ -4957,6 +5413,12 @@
           "response_payload_truncated": {
             "type": "boolean"
           },
+          "service_account_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "status_code": {
             "type": [
               "integer",
@@ -5123,6 +5585,60 @@
           }
         }
       },
+      "SpendBudgetServiceAccountView": {
+        "type": "object",
+        "required": [
+          "service_account_id",
+          "service_account_name",
+          "service_account_key",
+          "team_id",
+          "team_name",
+          "team_key",
+          "current_window_spend_usd_10000",
+          "alert_email_ready",
+          "alert_recipient_summary"
+        ],
+        "properties": {
+          "alert_email_ready": {
+            "type": "boolean"
+          },
+          "alert_recipient_summary": {
+            "type": "string"
+          },
+          "budget": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BudgetSettingsView"
+              }
+            ]
+          },
+          "current_window_spend_usd_10000": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "service_account_id": {
+            "type": "string"
+          },
+          "service_account_key": {
+            "type": "string"
+          },
+          "service_account_name": {
+            "type": "string"
+          },
+          "team_id": {
+            "type": "string"
+          },
+          "team_key": {
+            "type": "string"
+          },
+          "team_name": {
+            "type": "string"
+          }
+        }
+      },
       "SpendBudgetTeamView": {
         "type": "object",
         "required": [
@@ -5223,9 +5739,16 @@
         "type": "object",
         "required": [
           "users",
-          "teams"
+          "teams",
+          "service_accounts"
         ],
         "properties": {
+          "service_accounts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpendBudgetServiceAccountView"
+            }
+          },
           "teams": {
             "type": "array",
             "items": {
@@ -5455,6 +5978,17 @@
         "properties": {
           "api_key": {
             "$ref": "#/components/schemas/AdminApiKeyView"
+          }
+        }
+      },
+      "UpdateServiceAccountRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
           }
         }
       },

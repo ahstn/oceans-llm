@@ -19,6 +19,7 @@ const initialForm: CreateApiKeyInput = {
   owner_kind: 'user',
   owner_user_id: null,
   owner_team_id: null,
+  owner_service_account_id: null,
   model_keys: [],
 }
 
@@ -31,8 +32,8 @@ export type ManageDialogState = { mode: 'closed' } | { mode: 'open'; apiKeyId: s
 export function useApiKeysPageState({
   items,
   users,
-  teams,
-}: Pick<ApiKeysPayload, 'items' | 'users' | 'teams'>) {
+  service_accounts,
+}: Pick<ApiKeysPayload, 'items' | 'users' | 'service_accounts'>) {
   const router = useRouter()
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [form, setForm] = useState<CreateApiKeyInput>(initialForm)
@@ -44,7 +45,8 @@ export function useApiKeysPageState({
   const selectedOwnerLabel =
     form.owner_kind === 'user'
       ? (users.find((user) => user.id === form.owner_user_id)?.name ?? 'Select a user')
-      : (teams.find((team) => team.id === form.owner_team_id)?.name ?? 'Select a team')
+      : (service_accounts.find((account) => account.id === form.owner_service_account_id)?.name ??
+        'Select a service account')
 
   const manageTarget =
     manageDialog.mode === 'open'
@@ -55,7 +57,7 @@ export function useApiKeysPageState({
     isMutating ||
     form.name.trim().length === 0 ||
     form.model_keys.length === 0 ||
-    (form.owner_kind === 'user' ? !form.owner_user_id : !form.owner_team_id)
+    (form.owner_kind === 'user' ? !form.owner_user_id : !form.owner_service_account_id)
 
   const isManageDisabled =
     isMutating ||
@@ -96,7 +98,13 @@ export function useApiKeysPageState({
       ...current,
       owner_kind: ownerKind,
       owner_user_id: ownerKind === 'user' ? current.owner_user_id : null,
-      owner_team_id: ownerKind === 'team' ? current.owner_team_id : null,
+      owner_team_id:
+        ownerKind === 'service_account'
+          ? (service_accounts.find((account) => account.id === current.owner_service_account_id)
+              ?.team_id ?? null)
+          : null,
+      owner_service_account_id:
+        ownerKind === 'service_account' ? current.owner_service_account_id : null,
     }))
   }
 
@@ -108,10 +116,13 @@ export function useApiKeysPageState({
   }
 
   function updateOwnerSelection(value: string) {
+    const serviceAccount = service_accounts.find((account) => account.id === value)
     setForm((current) => ({
       ...current,
       owner_user_id: current.owner_kind === 'user' ? value : null,
-      owner_team_id: current.owner_kind === 'team' ? value : null,
+      owner_team_id:
+        current.owner_kind === 'service_account' ? (serviceAccount?.team_id ?? null) : null,
+      owner_service_account_id: current.owner_kind === 'service_account' ? value : null,
     }))
   }
 

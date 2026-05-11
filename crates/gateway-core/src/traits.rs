@@ -10,16 +10,16 @@ use uuid::Uuid;
 use crate::{
     domain::{
         ApiKeyRecord, BudgetAlertDeliveryRecord, BudgetAlertDispatchTask, BudgetAlertHistoryPage,
-        BudgetAlertHistoryQuery, BudgetAlertRecord, GatewayModel, HarnessUsageBucketRecord,
-        HarnessUsageLeaderRecord, McpToolInvocationDetail, McpToolInvocationPage,
-        McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
-        ModelPricingRecord, ModelRoute, Money4, NewApiKeyRecord, PricingCatalogCacheRecord,
+        BudgetAlertHistoryQuery, BudgetAlertRecord, GatewayModel, ModelPricingRecord, ModelRoute,
+        HarnessUsageBucketRecord, HarnessUsageLeaderRecord, McpToolInvocationDetail,
+        McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
+        McpToolInvocationRecord, Money4, NewApiKeyRecord, PricingCatalogCacheRecord,
         ProviderCapabilities, ProviderConnection, ProviderRequestContext, RequestAttemptRecord,
         RequestLogDetail, RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult,
-        RequestLogQuery, RequestLogRecord, SpendDailyAggregateRecord, SpendModelAggregateRecord,
-        SpendOwnerAggregateRecord, TeamBudgetRecord, TeamMembershipRecord, TeamRecord,
-        UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord, UsageLedgerRecord,
-        UserBudgetRecord, UserRecord,
+        RequestLogQuery, RequestLogRecord, ServiceAccountBudgetRecord, ServiceAccountRecord,
+        SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord,
+        TeamBudgetRecord, TeamMembershipRecord, TeamRecord, UsageLeaderboardBucketRecord,
+        UsageLeaderboardUserRecord, UsageLedgerRecord, UserBudgetRecord, UserRecord,
     },
     error::{ProviderError, RouteError, StoreError},
     protocol::core::{ChatRequest, EmbeddingsRequest, ResponsesRequest},
@@ -33,6 +33,16 @@ pub trait ApiKeyRepository: Send + Sync {
     ) -> Result<Option<ApiKeyRecord>, StoreError>;
 
     async fn touch_api_key_last_used(&self, api_key_id: Uuid) -> Result<(), StoreError>;
+
+    async fn get_service_account_by_id(
+        &self,
+        service_account_id: Uuid,
+    ) -> Result<Option<ServiceAccountRecord>, StoreError> {
+        let _ = service_account_id;
+        Err(StoreError::Unexpected(
+            "service accounts are not implemented for this repository".to_string(),
+        ))
+    }
 }
 
 #[async_trait]
@@ -104,6 +114,15 @@ pub trait ProviderRepository: Send + Sync {
 pub trait IdentityRepository: Send + Sync {
     async fn get_user_by_id(&self, user_id: Uuid) -> Result<Option<UserRecord>, StoreError>;
     async fn get_team_by_id(&self, team_id: Uuid) -> Result<Option<TeamRecord>, StoreError>;
+    async fn get_service_account_by_id(
+        &self,
+        service_account_id: Uuid,
+    ) -> Result<Option<ServiceAccountRecord>, StoreError> {
+        let _ = service_account_id;
+        Err(StoreError::Unexpected(
+            "service accounts are not implemented for this repository".to_string(),
+        ))
+    }
     async fn get_team_membership_for_user(
         &self,
         user_id: Uuid,
@@ -116,6 +135,15 @@ pub trait IdentityRepository: Send + Sync {
         &self,
         team_id: Uuid,
     ) -> Result<Vec<String>, StoreError>;
+    async fn list_allowed_model_keys_for_service_account(
+        &self,
+        service_account_id: Uuid,
+    ) -> Result<Vec<String>, StoreError> {
+        let _ = service_account_id;
+        Err(StoreError::Unexpected(
+            "service account model allowlists are not implemented for this repository".to_string(),
+        ))
+    }
     async fn list_team_memberships(
         &self,
         team_id: Uuid,
@@ -132,6 +160,11 @@ pub trait AdminIdentityRepository: Send + Sync {
     async fn list_identity_users(&self) -> Result<Vec<crate::IdentityUserRecord>, StoreError>;
     async fn list_active_teams(&self) -> Result<Vec<TeamRecord>, StoreError>;
     async fn list_teams(&self) -> Result<Vec<TeamRecord>, StoreError>;
+    async fn list_active_service_accounts(&self) -> Result<Vec<ServiceAccountRecord>, StoreError> {
+        Err(StoreError::Unexpected(
+            "list_active_service_accounts is not implemented for this repository".to_string(),
+        ))
+    }
 }
 
 #[async_trait]
@@ -147,6 +180,15 @@ pub trait BudgetRepository: Send + Sync {
         let _ = team_id;
         Err(StoreError::Unexpected(
             "team budgets are not implemented for this repository".to_string(),
+        ))
+    }
+    async fn get_active_budget_for_service_account(
+        &self,
+        service_account_id: Uuid,
+    ) -> Result<Option<ServiceAccountBudgetRecord>, StoreError> {
+        let _ = service_account_id;
+        Err(StoreError::Unexpected(
+            "service account budgets are not implemented for this repository".to_string(),
         ))
     }
     async fn upsert_active_budget_for_user(
@@ -201,6 +243,39 @@ pub trait BudgetRepository: Send + Sync {
             "deactivate_active_budget_for_team is not implemented for this repository".to_string(),
         ))
     }
+    async fn upsert_active_budget_for_service_account(
+        &self,
+        service_account_id: Uuid,
+        cadence: crate::BudgetCadence,
+        amount_usd: Money4,
+        hard_limit: bool,
+        timezone: &str,
+        updated_at: OffsetDateTime,
+    ) -> Result<ServiceAccountBudgetRecord, StoreError> {
+        let _ = (
+            service_account_id,
+            cadence,
+            amount_usd,
+            hard_limit,
+            timezone,
+            updated_at,
+        );
+        Err(StoreError::Unexpected(
+            "upsert_active_budget_for_service_account is not implemented for this repository"
+                .to_string(),
+        ))
+    }
+    async fn deactivate_active_budget_for_service_account(
+        &self,
+        service_account_id: Uuid,
+        updated_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        let _ = (service_account_id, updated_at);
+        Err(StoreError::Unexpected(
+            "deactivate_active_budget_for_service_account is not implemented for this repository"
+                .to_string(),
+        ))
+    }
     async fn get_usage_ledger_by_request_and_scope(
         &self,
         request_id: &str,
@@ -221,6 +296,18 @@ pub trait BudgetRepository: Send + Sync {
         let _ = (team_id, window_start, window_end);
         Err(StoreError::Unexpected(
             "sum_usage_cost_for_team_in_window is not implemented for this repository".to_string(),
+        ))
+    }
+    async fn sum_usage_cost_for_service_account_in_window(
+        &self,
+        service_account_id: Uuid,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+    ) -> Result<Money4, StoreError> {
+        let _ = (service_account_id, window_start, window_end);
+        Err(StoreError::Unexpected(
+            "sum_usage_cost_for_service_account_in_window is not implemented for this repository"
+                .to_string(),
         ))
     }
     async fn list_usage_daily_aggregates(

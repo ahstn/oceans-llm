@@ -45,6 +45,29 @@ impl BudgetRepository for PostgresStore {
         row.as_ref().map(decode_team_budget_record).transpose()
     }
 
+    async fn get_active_budget_for_service_account(
+        &self,
+        service_account_id: Uuid,
+    ) -> Result<Option<ServiceAccountBudgetRecord>, StoreError> {
+        let row = sqlx::query(
+            r#"
+            SELECT service_account_budget_id, service_account_id, cadence, amount_10000,
+                   hard_limit, timezone, is_active, created_at, updated_at
+            FROM service_account_budgets
+            WHERE service_account_id = $1 AND is_active = 1
+            LIMIT 1
+            "#,
+        )
+        .bind(service_account_id.to_string())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+
+        row.as_ref()
+            .map(decode_service_account_budget_record)
+            .transpose()
+    }
+
     async fn upsert_active_budget_for_user(
         &self,
         user_id: Uuid,
@@ -218,6 +241,92 @@ impl BudgetRepository for PostgresStore {
         Ok(updated > 0)
     }
 
+    async fn upsert_active_budget_for_service_account(
+        &self,
+        service_account_id: Uuid,
+        cadence: BudgetCadence,
+        amount_usd: Money4,
+        hard_limit: bool,
+        timezone: &str,
+        updated_at: OffsetDateTime,
+    ) -> Result<ServiceAccountBudgetRecord, StoreError> {
+        let updated = sqlx::query(
+            r#"
+            UPDATE service_account_budgets
+            SET cadence = $1,
+                amount_10000 = $2,
+                hard_limit = $3,
+                timezone = $4,
+                updated_at = $5
+            WHERE service_account_id = $6
+              AND is_active = 1
+            "#,
+        )
+        .bind(cadence.as_str())
+        .bind(amount_usd.as_scaled_i64())
+        .bind(if hard_limit { 1_i64 } else { 0_i64 })
+        .bind(timezone)
+        .bind(updated_at.unix_timestamp())
+        .bind(service_account_id.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(to_query_error)?
+        .rows_affected();
+
+        if updated == 0 {
+            sqlx::query(
+                r#"
+                INSERT INTO service_account_budgets (
+                    service_account_budget_id, service_account_id, cadence, amount_10000,
+                    hard_limit, timezone, is_active, created_at, updated_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8)
+                "#,
+            )
+            .bind(Uuid::new_v4().to_string())
+            .bind(service_account_id.to_string())
+            .bind(cadence.as_str())
+            .bind(amount_usd.as_scaled_i64())
+            .bind(if hard_limit { 1_i64 } else { 0_i64 })
+            .bind(timezone)
+            .bind(updated_at.unix_timestamp())
+            .bind(updated_at.unix_timestamp())
+            .execute(&self.pool)
+            .await
+            .map_err(to_query_error)?;
+        }
+
+        self.get_active_budget_for_service_account(service_account_id)
+            .await?
+            .ok_or_else(|| {
+                StoreError::Unexpected(
+                    "active service account budget missing after successful upsert".to_string(),
+                )
+            })
+    }
+
+    async fn deactivate_active_budget_for_service_account(
+        &self,
+        service_account_id: Uuid,
+        updated_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        let updated = sqlx::query(
+            r#"
+            UPDATE service_account_budgets
+            SET is_active = 0,
+                updated_at = $1
+            WHERE service_account_id = $2
+              AND is_active = 1
+            "#,
+        )
+        .bind(updated_at.unix_timestamp())
+        .bind(service_account_id.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(to_query_error)?
+        .rows_affected();
+        Ok(updated > 0)
+    }
+
     async fn get_usage_ledger_by_request_and_scope(
         &self,
         request_id: &str,
@@ -227,7 +336,7 @@ impl BudgetRepository for PostgresStore {
             r#"
             SELECT
                 usage_event_id, request_id, ownership_scope_key, api_key_id, user_id,
-                team_id, actor_user_id, model_id, provider_key, upstream_model,
+                team_id, service_account_id, actor_user_id, model_id, provider_key, upstream_model,
                 prompt_tokens, completion_tokens, total_tokens, provider_usage_json,
                 pricing_status, unpriced_reason, pricing_row_id, pricing_provider_id,
                 pricing_model_id, pricing_source, pricing_source_etag,
@@ -267,6 +376,22 @@ impl BudgetRepository for PostgresStore {
     ) -> Result<Money4, StoreError> {
         sum_usage_cost_for_owner_in_window(&self.pool, "team_id", team_id, window_start, window_end)
             .await
+    }
+
+    async fn sum_usage_cost_for_service_account_in_window(
+        &self,
+        service_account_id: Uuid,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+    ) -> Result<Money4, StoreError> {
+        sum_usage_cost_for_owner_in_window(
+            &self.pool,
+            "service_account_id",
+            service_account_id,
+            window_start,
+            window_end,
+        )
+        .await
     }
 
     async fn list_usage_daily_aggregates(
@@ -312,6 +437,26 @@ impl BudgetRepository for PostgresStore {
                 WHERE occurred_at >= $1
                   AND occurred_at < $2
                   AND team_id IS NOT NULL
+                GROUP BY day_start
+                ORDER BY day_start ASC
+                "#
+            }
+            Some(ApiKeyOwnerKind::ServiceAccount) => {
+                r#"
+                SELECT
+                    (occurred_at / 86400) * 86400 AS day_start,
+                    COALESCE(SUM(CASE WHEN pricing_status IN ('priced', 'legacy_estimated')
+                        THEN computed_cost_10000 ELSE 0 END), 0)::BIGINT AS priced_cost_10000,
+                    SUM(CASE WHEN pricing_status IN ('priced', 'legacy_estimated') THEN 1 ELSE 0 END)::BIGINT
+                        AS priced_request_count,
+                    SUM(CASE WHEN pricing_status = 'unpriced' THEN 1 ELSE 0 END)::BIGINT
+                        AS unpriced_request_count,
+                    SUM(CASE WHEN pricing_status = 'usage_missing' THEN 1 ELSE 0 END)::BIGINT
+                        AS usage_missing_request_count
+                FROM usage_cost_events
+                WHERE occurred_at >= $1
+                  AND occurred_at < $2
+                  AND service_account_id IS NOT NULL
                 GROUP BY day_start
                 ORDER BY day_start ASC
                 "#
@@ -413,6 +558,29 @@ impl BudgetRepository for PostgresStore {
                 ORDER BY priced_cost_10000 DESC, owner_name ASC
                 "#
             }
+            Some(ApiKeyOwnerKind::ServiceAccount) => {
+                r#"
+                SELECT
+                    'service_account' AS owner_kind,
+                    u.service_account_id AS owner_id,
+                    service_accounts.service_account_name AS owner_name,
+                    COALESCE(SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated')
+                        THEN u.computed_cost_10000 ELSE 0 END), 0)::BIGINT AS priced_cost_10000,
+                    SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated') THEN 1 ELSE 0 END)::BIGINT
+                        AS priced_request_count,
+                    SUM(CASE WHEN u.pricing_status = 'unpriced' THEN 1 ELSE 0 END)::BIGINT
+                        AS unpriced_request_count,
+                    SUM(CASE WHEN u.pricing_status = 'usage_missing' THEN 1 ELSE 0 END)::BIGINT
+                        AS usage_missing_request_count
+                FROM usage_cost_events u
+                INNER JOIN service_accounts ON service_accounts.service_account_id = u.service_account_id
+                WHERE u.occurred_at >= $1
+                  AND u.occurred_at < $2
+                  AND u.service_account_id IS NOT NULL
+                GROUP BY u.service_account_id, service_accounts.service_account_name
+                ORDER BY priced_cost_10000 DESC, owner_name ASC
+                "#
+            }
             None => {
                 r#"
                 SELECT * FROM (
@@ -453,6 +621,25 @@ impl BudgetRepository for PostgresStore {
                       AND u.occurred_at < $2
                       AND u.team_id IS NOT NULL
                     GROUP BY u.team_id, teams.team_name
+                    UNION ALL
+                    SELECT
+                        'service_account' AS owner_kind,
+                        u.service_account_id AS owner_id,
+                        service_accounts.service_account_name AS owner_name,
+                        COALESCE(SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated')
+                            THEN u.computed_cost_10000 ELSE 0 END), 0)::BIGINT AS priced_cost_10000,
+                        SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated') THEN 1 ELSE 0 END)::BIGINT
+                            AS priced_request_count,
+                        SUM(CASE WHEN u.pricing_status = 'unpriced' THEN 1 ELSE 0 END)::BIGINT
+                            AS unpriced_request_count,
+                        SUM(CASE WHEN u.pricing_status = 'usage_missing' THEN 1 ELSE 0 END)::BIGINT
+                            AS usage_missing_request_count
+                    FROM usage_cost_events u
+                    INNER JOIN service_accounts ON service_accounts.service_account_id = u.service_account_id
+                    WHERE u.occurred_at >= $1
+                      AND u.occurred_at < $2
+                      AND u.service_account_id IS NOT NULL
+                    GROUP BY u.service_account_id, service_accounts.service_account_name
                 ) owner_rollup
                 ORDER BY priced_cost_10000 DESC, owner_name ASC
                 "#
@@ -532,6 +719,27 @@ impl BudgetRepository for PostgresStore {
                 WHERE u.occurred_at >= $1
                   AND u.occurred_at < $2
                   AND u.team_id IS NOT NULL
+                GROUP BY COALESCE(g.model_key, u.upstream_model)
+                ORDER BY priced_cost_10000 DESC, model_key ASC
+                "#
+            }
+            Some(ApiKeyOwnerKind::ServiceAccount) => {
+                r#"
+                SELECT
+                    COALESCE(g.model_key, u.upstream_model) AS model_key,
+                    COALESCE(SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated')
+                        THEN u.computed_cost_10000 ELSE 0 END), 0)::BIGINT AS priced_cost_10000,
+                    SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated') THEN 1 ELSE 0 END)::BIGINT
+                        AS priced_request_count,
+                    SUM(CASE WHEN u.pricing_status = 'unpriced' THEN 1 ELSE 0 END)::BIGINT
+                        AS unpriced_request_count,
+                    SUM(CASE WHEN u.pricing_status = 'usage_missing' THEN 1 ELSE 0 END)::BIGINT
+                        AS usage_missing_request_count
+                FROM usage_cost_events u
+                LEFT JOIN gateway_models g ON g.id = u.model_id
+                WHERE u.occurred_at >= $1
+                  AND u.occurred_at < $2
+                  AND u.service_account_id IS NOT NULL
                 GROUP BY COALESCE(g.model_key, u.upstream_model)
                 ORDER BY priced_cost_10000 DESC, model_key ASC
                 "#
@@ -767,7 +975,7 @@ impl BudgetRepository for PostgresStore {
             r#"
             INSERT INTO usage_cost_events (
                 usage_event_id, request_id, ownership_scope_key, api_key_id, user_id,
-                team_id, actor_user_id, model_id, provider_key, upstream_model,
+                team_id, service_account_id, actor_user_id, model_id, provider_key, upstream_model,
                 prompt_tokens, completion_tokens, total_tokens, provider_usage_json,
                 pricing_status, unpriced_reason, pricing_row_id, pricing_provider_id,
                 pricing_model_id, pricing_source, pricing_source_etag,
@@ -776,7 +984,7 @@ impl BudgetRepository for PostgresStore {
                 output_cost_per_million_tokens_10000, computed_cost_10000, occurred_at
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-                $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27
+                $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28
             )
             ON CONFLICT (request_id, ownership_scope_key) DO NOTHING
             "#,
@@ -787,6 +995,7 @@ impl BudgetRepository for PostgresStore {
         .bind(event.api_key_id.to_string())
         .bind(event.user_id.map(|value| value.to_string()))
         .bind(event.team_id.map(|value| value.to_string()))
+        .bind(event.service_account_id.map(|value| value.to_string()))
         .bind(event.actor_user_id.map(|value| value.to_string()))
         .bind(event.model_id.map(|value| value.to_string()))
         .bind(event.provider_key.as_str())

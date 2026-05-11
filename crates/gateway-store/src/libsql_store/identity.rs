@@ -177,6 +177,135 @@ impl LibsqlStore {
         Ok(teams)
     }
 
+    pub async fn get_service_account_by_id(
+        &self,
+        service_account_id: Uuid,
+    ) -> Result<Option<ServiceAccountRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT service_account_id, team_id, service_account_key, service_account_name,
+                       status, model_access_mode, metadata_json, created_at, updated_at, disabled_at
+                FROM service_accounts
+                WHERE service_account_id = ?1
+                LIMIT 1
+                "#,
+                [service_account_id.to_string()],
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let Some(row) = rows.next().await.map_err(to_query_error)? else {
+            return Ok(None);
+        };
+
+        decode_service_account_record(&row).map(Some)
+    }
+
+    pub async fn list_active_service_accounts(
+        &self,
+    ) -> Result<Vec<ServiceAccountRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT service_account_id, team_id, service_account_key, service_account_name,
+                       status, model_access_mode, metadata_json, created_at, updated_at, disabled_at
+                FROM service_accounts
+                WHERE status = 'active'
+                ORDER BY service_account_name ASC
+                "#,
+                (),
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let mut service_accounts = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            service_accounts.push(decode_service_account_record(&row)?);
+        }
+
+        Ok(service_accounts)
+    }
+
+    pub async fn create_service_account(
+        &self,
+        team_id: Uuid,
+        service_account_key: &str,
+        service_account_name: &str,
+        created_at: OffsetDateTime,
+    ) -> Result<ServiceAccountRecord, StoreError> {
+        let service_account_id = Uuid::new_v4();
+        let created_at = created_at.unix_timestamp();
+        self.connection
+            .execute(
+                r#"
+                INSERT INTO service_accounts (
+                    service_account_id, team_id, service_account_key, service_account_name,
+                    status, model_access_mode, metadata_json, created_at, updated_at
+                ) VALUES (?1, ?2, ?3, ?4, 'active', 'all', '{}', ?5, ?5)
+                "#,
+                libsql::params![
+                    service_account_id.to_string(),
+                    team_id.to_string(),
+                    service_account_key,
+                    service_account_name,
+                    created_at,
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+
+        self.get_service_account_by_id(service_account_id)
+            .await?
+            .ok_or_else(|| StoreError::NotFound("created service account missing".to_string()))
+    }
+
+    pub async fn update_service_account_name(
+        &self,
+        service_account_id: Uuid,
+        service_account_name: &str,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        self.connection
+            .execute(
+                r#"
+                UPDATE service_accounts
+                SET service_account_name = ?1, updated_at = ?2
+                WHERE service_account_id = ?3 AND status = 'active'
+                "#,
+                libsql::params![
+                    service_account_name,
+                    updated_at.unix_timestamp(),
+                    service_account_id.to_string(),
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn disable_service_account(
+        &self,
+        service_account_id: Uuid,
+        disabled_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        let result = self
+            .connection
+            .execute(
+                r#"
+                UPDATE service_accounts
+                SET status = 'disabled', updated_at = ?1, disabled_at = ?1
+                WHERE service_account_id = ?2 AND status = 'active'
+                "#,
+                libsql::params![disabled_at.unix_timestamp(), service_account_id.to_string()],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(result > 0)
+    }
+
     pub async fn list_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
         let mut rows = self
             .connection
@@ -1296,6 +1425,13 @@ impl IdentityRepository for LibsqlStore {
         decode_team_record(&row).map(Some)
     }
 
+    async fn get_service_account_by_id(
+        &self,
+        service_account_id: Uuid,
+    ) -> Result<Option<ServiceAccountRecord>, StoreError> {
+        Self::get_service_account_by_id(self, service_account_id).await
+    }
+
     async fn get_team_membership_for_user(
         &self,
         user_id: Uuid,
@@ -1357,6 +1493,24 @@ impl IdentityRepository for LibsqlStore {
             ORDER BY gm.model_key ASC
             "#,
             team_id.to_string(),
+        )
+        .await
+    }
+
+    async fn list_allowed_model_keys_for_service_account(
+        &self,
+        service_account_id: Uuid,
+    ) -> Result<Vec<String>, StoreError> {
+        list_allowed_model_keys(
+            &self.connection,
+            r#"
+            SELECT gm.model_key
+            FROM service_account_model_allowlist allowlist
+            INNER JOIN gateway_models gm ON gm.id = allowlist.model_id
+            WHERE allowlist.service_account_id = ?1
+            ORDER BY gm.model_key ASC
+            "#,
+            service_account_id.to_string(),
         )
         .await
     }

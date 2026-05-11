@@ -16,10 +16,10 @@ use crate::http::{
     admin_auth::require_platform_admin,
     admin_contract::{
         BudgetAlertHistoryItemView, BudgetAlertHistoryRequestQuery, BudgetAlertHistoryView,
-        BudgetSettingsView, DeactivateBudgetResultView, Envelope, SpendBudgetTeamView,
-        SpendBudgetUserView, SpendBudgetsView, SpendDailyPointView, SpendModelBreakdownView,
-        SpendOwnerBreakdownView, SpendReportQuery, SpendReportView, SpendTotalsView,
-        UpsertBudgetRequest, UpsertBudgetResultView, envelope, format_timestamp,
+        BudgetSettingsView, DeactivateBudgetResultView, Envelope, SpendBudgetServiceAccountView,
+        SpendBudgetTeamView, SpendBudgetUserView, SpendBudgetsView, SpendDailyPointView,
+        SpendModelBreakdownView, SpendOwnerBreakdownView, SpendReportQuery, SpendReportView,
+        SpendTotalsView, UpsertBudgetRequest, UpsertBudgetResultView, envelope, format_timestamp,
     },
     error::AppError,
     state::AppState,
@@ -149,6 +149,7 @@ pub async fn list_spend_budgets(
 
     let users = state.store.list_identity_users().await?;
     let teams = state.store.list_teams().await?;
+    let service_accounts = state.store.list_active_service_accounts().await?;
 
     let mut user_views = Vec::with_capacity(users.len());
     for user in users {
@@ -210,9 +211,60 @@ pub async fn list_spend_budgets(
         });
     }
 
+    let teams = state.store.list_teams().await?;
+    let team_map = teams
+        .iter()
+        .map(|team| (team.team_id, team))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut service_account_views = Vec::with_capacity(service_accounts.len());
+    for account in service_accounts {
+        let budget = state
+            .store
+            .get_active_budget_for_service_account(account.service_account_id)
+            .await?;
+        let current_window_spend = if let Some(ref active_budget) = budget {
+            let (window_start, window_end) = budget_window_bounds_utc(active_budget.cadence, now)?;
+            state
+                .store
+                .sum_usage_cost_for_service_account_in_window(
+                    account.service_account_id,
+                    window_start,
+                    window_end,
+                )
+                .await?
+        } else {
+            Money4::ZERO
+        };
+        let recipients =
+            active_team_budget_recipients(state.store.as_ref(), account.team_id).await?;
+        let team = team_map.get(&account.team_id).ok_or_else(|| {
+            AppError(GatewayError::InvalidRequest(format!(
+                "service account `{}` references missing team",
+                account.service_account_id
+            )))
+        })?;
+        service_account_views.push(SpendBudgetServiceAccountView {
+            service_account_id: account.service_account_id.to_string(),
+            service_account_name: account.service_account_name,
+            service_account_key: account.service_account_key,
+            team_id: team.team_id.to_string(),
+            team_name: team.team_name.clone(),
+            team_key: team.team_key.clone(),
+            budget: budget.map(service_account_budget_to_view),
+            current_window_spend_usd_10000: current_window_spend.as_scaled_i64(),
+            alert_email_ready: !recipients.is_empty(),
+            alert_recipient_summary: if recipients.is_empty() {
+                "No active team owners/admins with email addresses".to_string()
+            } else {
+                recipients.join(", ")
+            },
+        });
+    }
+
     Ok(Json(envelope(SpendBudgetsView {
         users: user_views,
         teams: team_views,
+        service_accounts: service_account_views,
     })))
 }
 
@@ -391,6 +443,97 @@ pub async fn deactivate_team_budget(
 }
 
 #[utoipa::path(
+    put,
+    path = "/api/v1/admin/spend/budgets/service-accounts/{service_account_id}",
+    request_body = UpsertBudgetRequest,
+    params(("service_account_id" = String, Path, description = "Service account identifier")),
+    responses((status = 200, body = Envelope<UpsertBudgetResultView>)),
+    security(("session_cookie" = []))
+)]
+pub async fn upsert_service_account_budget(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(service_account_id): Path<String>,
+    Json(request): Json<UpsertBudgetRequest>,
+) -> Result<Json<Envelope<UpsertBudgetResultView>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+    let service_account_id = parse_uuid(&service_account_id)?;
+    state
+        .store
+        .get_service_account_by_id(service_account_id)
+        .await?
+        .ok_or_else(|| {
+            AppError(GatewayError::InvalidRequest(
+                "service account not found".to_string(),
+            ))
+        })?;
+
+    let cadence = parse_budget_cadence(&request.cadence)?;
+    let amount_usd = parse_budget_amount(&request.amount_usd)?;
+    let timezone = parse_timezone(request.timezone.as_deref())?;
+    let now = OffsetDateTime::now_utc();
+
+    let budget = state
+        .store
+        .upsert_active_budget_for_service_account(
+            service_account_id,
+            cadence,
+            amount_usd,
+            request.hard_limit,
+            &timezone,
+            now,
+        )
+        .await?;
+    let (window_start, window_end) = budget_window_bounds_utc(budget.cadence, now)?;
+    let current_window_spend = state
+        .store
+        .sum_usage_cost_for_service_account_in_window(service_account_id, window_start, window_end)
+        .await?;
+
+    Ok(Json(envelope(UpsertBudgetResultView {
+        owner_kind: "service_account".to_string(),
+        owner_id: service_account_id.to_string(),
+        budget: service_account_budget_to_view(budget),
+        current_window_spend_usd_10000: current_window_spend.as_scaled_i64(),
+    })))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/v1/admin/spend/budgets/service-accounts/{service_account_id}",
+    params(("service_account_id" = String, Path, description = "Service account identifier")),
+    responses((status = 200, body = Envelope<DeactivateBudgetResultView>)),
+    security(("session_cookie" = []))
+)]
+pub async fn deactivate_service_account_budget(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(service_account_id): Path<String>,
+) -> Result<Json<Envelope<DeactivateBudgetResultView>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+    let service_account_id = parse_uuid(&service_account_id)?;
+    state
+        .store
+        .get_service_account_by_id(service_account_id)
+        .await?
+        .ok_or_else(|| {
+            AppError(GatewayError::InvalidRequest(
+                "service account not found".to_string(),
+            ))
+        })?;
+
+    let deactivated = state
+        .store
+        .deactivate_active_budget_for_service_account(service_account_id, OffsetDateTime::now_utc())
+        .await?;
+    Ok(Json(envelope(DeactivateBudgetResultView {
+        owner_kind: "service_account".to_string(),
+        owner_id: service_account_id.to_string(),
+        deactivated,
+    })))
+}
+
+#[utoipa::path(
     get,
     path = "/api/v1/admin/spend/budget-alerts",
     params(BudgetAlertHistoryRequestQuery),
@@ -457,6 +600,18 @@ fn user_budget_to_view(record: gateway_core::UserBudgetRecord) -> BudgetSettings
 }
 
 fn team_budget_to_view(record: gateway_core::TeamBudgetRecord) -> BudgetSettingsView {
+    BudgetSettingsView {
+        cadence: record.cadence.as_str().to_string(),
+        amount_usd: record.amount_usd.to_string(),
+        amount_usd_10000: record.amount_usd.as_scaled_i64(),
+        hard_limit: record.hard_limit,
+        timezone: record.timezone,
+    }
+}
+
+fn service_account_budget_to_view(
+    record: gateway_core::ServiceAccountBudgetRecord,
+) -> BudgetSettingsView {
     BudgetSettingsView {
         cadence: record.cadence.as_str().to_string(),
         amount_usd: record.amount_usd.to_string(),
@@ -537,6 +692,7 @@ fn parse_owner_kind(value: Option<&str>) -> Result<Option<ApiKeyOwnerKind>, AppE
         "all" => Ok(None),
         "user" => Ok(Some(ApiKeyOwnerKind::User)),
         "team" => Ok(Some(ApiKeyOwnerKind::Team)),
+        "service_account" => Ok(Some(ApiKeyOwnerKind::ServiceAccount)),
         other => Err(AppError(GatewayError::InvalidRequest(format!(
             "invalid owner_kind `{other}`"
         )))),

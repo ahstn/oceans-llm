@@ -5,8 +5,8 @@ use axum::{
 };
 use gateway_core::GatewayError;
 use gateway_service::{
-    AdminApiKeyModelOption, AdminApiKeyService, AdminApiKeySummary, AdminApiKeyTeamOwner,
-    AdminApiKeyUserOwner, AdminApiKeysPayload as ServiceAdminApiKeysPayload,
+    AdminApiKeyModelOption, AdminApiKeyService, AdminApiKeyServiceAccountOwner, AdminApiKeySummary,
+    AdminApiKeyTeamOwner, AdminApiKeyUserOwner, AdminApiKeysPayload as ServiceAdminApiKeysPayload,
     CreateAdminApiKeyInput, CreateAdminApiKeyResult, UpdateAdminApiKeyInput,
 };
 use serde::{Deserialize, Serialize};
@@ -25,6 +25,7 @@ pub struct AdminApiKeysPayload {
     items: Vec<AdminApiKeyView>,
     users: Vec<AdminApiKeyUserOwnerView>,
     teams: Vec<AdminApiKeyTeamOwnerView>,
+    service_accounts: Vec<AdminApiKeyServiceAccountOwnerView>,
     models: Vec<AdminApiKeyModelView>,
 }
 
@@ -39,6 +40,9 @@ pub struct AdminApiKeyView {
     owner_name: String,
     owner_email: Option<String>,
     owner_team_key: Option<String>,
+    owner_service_account_key: Option<String>,
+    owner_service_account_team_id: Option<String>,
+    owner_service_account_team_key: Option<String>,
     model_keys: Vec<String>,
     created_at: String,
     last_used_at: Option<String>,
@@ -60,6 +64,16 @@ pub struct AdminApiKeyTeamOwnerView {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+pub struct AdminApiKeyServiceAccountOwnerView {
+    id: String,
+    name: String,
+    key: String,
+    team_id: String,
+    team_key: String,
+    team_name: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
 pub struct AdminApiKeyModelView {
     id: String,
     key: String,
@@ -73,6 +87,7 @@ pub struct CreateApiKeyRequest {
     owner_kind: String,
     owner_user_id: Option<String>,
     owner_team_id: Option<String>,
+    owner_service_account_id: Option<String>,
     model_keys: Vec<String>,
 }
 
@@ -135,6 +150,7 @@ pub async fn create_api_key(
             owner_kind: request.owner_kind,
             owner_user_id: request.owner_user_id,
             owner_team_id: request.owner_team_id,
+            owner_service_account_id: request.owner_service_account_id,
             model_keys: request.model_keys,
         })
         .await?;
@@ -202,6 +218,11 @@ fn map_payload(payload: ServiceAdminApiKeysPayload) -> AdminApiKeysPayload {
         items: payload.items.into_iter().map(map_api_key_summary).collect(),
         users: payload.users.into_iter().map(map_user_owner).collect(),
         teams: payload.teams.into_iter().map(map_team_owner).collect(),
+        service_accounts: payload
+            .service_accounts
+            .into_iter()
+            .map(map_service_account_owner)
+            .collect(),
         models: payload.models.into_iter().map(map_model_option).collect(),
     }
 }
@@ -224,10 +245,28 @@ fn map_api_key_summary(api_key: AdminApiKeySummary) -> AdminApiKeyView {
         owner_name: api_key.owner_name,
         owner_email: api_key.owner_email,
         owner_team_key: api_key.owner_team_key,
+        owner_service_account_key: api_key.owner_service_account_key,
+        owner_service_account_team_id: api_key
+            .owner_service_account_team_id
+            .map(|value| value.to_string()),
+        owner_service_account_team_key: api_key.owner_service_account_team_key,
         model_keys: api_key.model_keys,
         created_at: format_timestamp(api_key.created_at),
         last_used_at: api_key.last_used_at.map(format_timestamp),
         revoked_at: api_key.revoked_at.map(format_timestamp),
+    }
+}
+
+fn map_service_account_owner(
+    service_account: AdminApiKeyServiceAccountOwner,
+) -> AdminApiKeyServiceAccountOwnerView {
+    AdminApiKeyServiceAccountOwnerView {
+        id: service_account.id.to_string(),
+        name: service_account.name,
+        key: service_account.key,
+        team_id: service_account.team_id.to_string(),
+        team_key: service_account.team_key,
+        team_name: service_account.team_name,
     }
 }
 

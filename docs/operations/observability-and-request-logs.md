@@ -1,6 +1,6 @@
 # Observability and Request Logs
 
-`See also`: [Request Logs](observability/request-logs.md), [MCP Invocations](observability/mcp-invocations.md), [Agent Harness Usage](agent-harness-usage.md), [Data Relationships](../reference/data-relationships.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Admin Control Plane](../access/admin-control-plane.md), [Deploy and Operations](../setup/deploy-and-operations.md), [ADR: OTLP-First Observability and Payload-Backed Request Logs](../adr/2026-03-15-otlp-observability-and-request-log-payloads.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md), [ADR: MCP Tool Cardinality Observability](../adr/2026-04-28-mcp-tool-cardinality-observability.md)
+`See also`: [Request Logs](observability/request-logs.md), [MCP Invocations](observability/mcp-invocations.md), [Agent Harness Usage](agent-harness-usage.md), [Data Relationships](../reference/data-relationships.md), [Service Accounts](../access/service-accounts.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Admin Control Plane](../access/admin-control-plane.md), [Deploy and Operations](../setup/deploy-and-operations.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../adr/2026-05-10-team-service-accounts.md), [ADR: OTLP-First Observability and Payload-Backed Request Logs](../adr/2026-03-15-otlp-observability-and-request-log-payloads.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md), [ADR: MCP Tool Cardinality Observability](../adr/2026-04-28-mcp-tool-cardinality-observability.md)
 
 This document describes the live observability contract for the gateway.
 
@@ -146,6 +146,7 @@ The summary row stores:
 
 - request identity
 - owner identity
+- service-account identity for non-human callers
 - requested and resolved model identity
 - provider key
 - universal caller tags
@@ -257,9 +258,9 @@ The policy is read from YAML only. The admin UI displays the policy used for eac
 Owner behavior also matters:
 
 - user-owned API keys honor `users.request_logging_enabled`
-- team-owned API keys always persist request-log summary rows
+- service-account credentials always persist request-log summary rows
 
-This is why a user-owned request can be absent from request logs while a team-owned request with the same payload policy is still visible.
+This is why a user-owned request can be absent from request logs while a service-account request with the same payload policy is still visible.
 
 Validation rules:
 

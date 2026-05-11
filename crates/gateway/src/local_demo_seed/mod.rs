@@ -25,7 +25,6 @@ struct LocalDemoUserFixture {
 #[derive(Debug, Clone, Copy)]
 enum LocalDemoOwnerFixture {
     User(&'static str),
-    Team(&'static str),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -137,15 +136,7 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
                         .ok_or_else(|| anyhow::anyhow!("missing demo user `{email}`"))?,
                 ),
                 None,
-            ),
-            LocalDemoOwnerFixture::Team(team_key) => (
-                ApiKeyOwnerKind::Team,
                 None,
-                Some(
-                    *team_ids
-                        .get(team_key)
-                        .ok_or_else(|| anyhow::anyhow!("missing demo team `{team_key}`"))?,
-                ),
             ),
         };
         let model_grants = fixture
@@ -174,6 +165,7 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
                 if existing.owner_kind != owner.0
                     || existing.owner_user_id != owner.1
                     || existing.owner_team_id != owner.2
+                    || existing.owner_service_account_id != owner.3
                 {
                     anyhow::bail!(
                         "demo api key `{}` already exists with a different owner; reset the local database and reseed",
@@ -199,6 +191,7 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
                         owner_kind: owner.0,
                         owner_user_id: owner.1,
                         owner_team_id: owner.2,
+                        owner_service_account_id: owner.3,
                         created_at: now,
                     })
                     .await
@@ -231,11 +224,14 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
                     .owner_user_id
                     .ok_or_else(|| anyhow::anyhow!("user-owned demo key missing owner_user_id"))?
             ),
-            ApiKeyOwnerKind::Team => format!(
-                "team:{}:actor:none",
-                api_key
-                    .owner_team_id
-                    .ok_or_else(|| anyhow::anyhow!("team-owned demo key missing owner_team_id"))?
+            ApiKeyOwnerKind::Team => "unsupported-team-owned-demo-key".to_string(),
+            ApiKeyOwnerKind::ServiceAccount => format!(
+                "service_account:{}",
+                api_key.owner_service_account_id.ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "service-account-owned demo key missing owner_service_account_id"
+                    )
+                })?
             ),
         };
         if store
@@ -253,9 +249,8 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
                 let owner_email = api_keys::LOCAL_DEMO_API_KEYS
                     .iter()
                     .find(|candidate| candidate.public_id == fixture.api_key_public_id)
-                    .and_then(|candidate| match candidate.owner {
-                        LocalDemoOwnerFixture::User(email) => Some(email),
-                        LocalDemoOwnerFixture::Team(_) => None,
+                    .map(|candidate| match candidate.owner {
+                        LocalDemoOwnerFixture::User(email) => email,
                     })
                     .ok_or_else(|| {
                         anyhow::anyhow!(
@@ -265,7 +260,7 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
                     })?;
                 user_team_ids.get(owner_email).copied().flatten()
             }
-            ApiKeyOwnerKind::Team => api_key.owner_team_id,
+            ApiKeyOwnerKind::Team | ApiKeyOwnerKind::ServiceAccount => api_key.owner_team_id,
         };
 
         let total_tokens = fixture
@@ -308,6 +303,7 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
             api_key_id: api_key.id,
             user_id,
             team_id,
+            service_account_id: api_key.owner_service_account_id,
             model_key: fixture.model_key.to_string(),
             resolved_model_key: fixture.resolved_model_key.to_string(),
             provider_key: fixture.provider_key.to_string(),
@@ -385,6 +381,7 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
             api_key_id: api_key.id,
             user_id,
             team_id,
+            service_account_id: api_key.owner_service_account_id,
             actor_user_id: None,
             model_id: Some(model_id),
             provider_key: fixture.provider_key.to_string(),

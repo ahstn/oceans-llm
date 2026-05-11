@@ -24,16 +24,16 @@ mod tests {
     use gateway_core::{
         ApiKeyOwnerKind, ApiKeyRepository, AuthMode, BudgetAlertChannel, BudgetAlertDeliveryRecord,
         BudgetAlertDeliveryStatus, BudgetAlertHistoryQuery, BudgetAlertRecord,
-        BudgetAlertRepository, BudgetCadence, BudgetRepository, GlobalRole, IdentityRepository,
-        McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
-        McpToolInvocationRepository, McpToolInvocationStatus, McpToolPolicyResult, MembershipRole,
-        ModelPricingRecord, ModelRepository, Money4, OpenAiCompatDeveloperRole,
-        OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
-        PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
-        PricingProvenance, ProviderCapabilities, RequestAttemptRecord, RequestAttemptStatus,
-        RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository,
-        RequestTag, RequestTags, RequestToolCardinality, RouteCompatibility, SYSTEM_LEGACY_TEAM_ID,
-        SeedApiKey, SeedBudget, SeedModel, SeedModelRoute, SeedProvider, SeedTeam, SeedUser,
+        BudgetAlertRepository, BudgetCadence, BudgetRepository, CONFIG_SEED_SERVICE_ACCOUNT_ID,
+        CONFIG_SEED_TEAM_ID, GlobalRole, IdentityRepository, MembershipRole, ModelPricingRecord,
+        McpToolInvocationRepository, McpToolInvocationStatus, McpToolPolicyResult,
+        ModelRepository, Money4, OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField,
+        OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility, PricingCatalogCacheRecord,
+        PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
+        ProviderCapabilities, RequestAttemptRecord, RequestAttemptStatus, RequestLogPayloadRecord,
+        RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestTag, RequestTags,
+        RequestToolCardinality, RouteCompatibility, SeedApiKey, SeedBudget, SeedModel,
+        SeedModelRoute, SeedProvider, SeedTeam, SeedUser,
         SeedUserMembership, StoreError, StoreHealth, UsageLedgerRecord, UsagePricingStatus,
         UserStatus,
     };
@@ -77,6 +77,7 @@ mod tests {
             api_key_id,
             user_id,
             team_id,
+            service_account_id: None,
             actor_user_id: None,
             model_id,
             provider_key: "openai-prod".to_string(),
@@ -513,6 +514,7 @@ mod tests {
                 api_key_id: api_key.id,
                 user_id: Some(ada.user_id),
                 team_id: None,
+                service_account_id: None,
                 model_key: "fast".to_string(),
                 resolved_model_key: "fast".to_string(),
                 provider_key: "openai-prod".to_string(),
@@ -544,6 +546,7 @@ mod tests {
                 api_key_id: api_key.id,
                 user_id: Some(ada.user_id),
                 team_id: None,
+                service_account_id: None,
                 model_key: "fast".to_string(),
                 resolved_model_key: "fast".to_string(),
                 provider_key: "openai-prod".to_string(),
@@ -575,6 +578,7 @@ mod tests {
                 api_key_id: api_key.id,
                 user_id: Some(ada.user_id),
                 team_id: None,
+                service_account_id: None,
                 model_key: "fast".to_string(),
                 resolved_model_key: "fast".to_string(),
                 provider_key: "openai-prod".to_string(),
@@ -1308,10 +1312,14 @@ mod tests {
             .await
             .expect("query key")
             .expect("api key should exist");
-        assert_eq!(api_key.owner_kind, ApiKeyOwnerKind::Team);
+        let seed_team_id = Uuid::parse_str(CONFIG_SEED_TEAM_ID).expect("seed team uuid");
+        let seed_service_account_id =
+            Uuid::parse_str(CONFIG_SEED_SERVICE_ACCOUNT_ID).expect("seed service account uuid");
+        assert_eq!(api_key.owner_kind, ApiKeyOwnerKind::ServiceAccount);
+        assert_eq!(api_key.owner_team_id, Some(seed_team_id));
         assert_eq!(
-            api_key.owner_team_id,
-            Some(Uuid::parse_str(SYSTEM_LEGACY_TEAM_ID).expect("legacy team uuid"))
+            api_key.owner_service_account_id,
+            Some(seed_service_account_id)
         );
         assert_eq!(api_key.owner_user_id, None);
 
@@ -1356,6 +1364,7 @@ mod tests {
             api_key_id: api_key.id,
             user_id: None,
             team_id: api_key.owner_team_id,
+            service_account_id: None,
             model_key: "fast".to_string(),
             resolved_model_key: "fast".to_string(),
             provider_key: "openai-prod".to_string(),
@@ -1419,6 +1428,7 @@ mod tests {
                 status_code: None,
                 user_id: None,
                 team_id: None,
+                service_account_id: None,
                 service: None,
                 component: None,
                 env: None,
@@ -4029,11 +4039,12 @@ mod tests {
             .await
             .expect("get key")
             .expect("api key exists");
-        assert_eq!(key.owner_kind, ApiKeyOwnerKind::Team);
-        assert_eq!(
-            key.owner_team_id.expect("team owner").to_string(),
-            SYSTEM_LEGACY_TEAM_ID
-        );
+        let seed_team_id = Uuid::parse_str(CONFIG_SEED_TEAM_ID).expect("seed team uuid");
+        let seed_service_account_id =
+            Uuid::parse_str(CONFIG_SEED_SERVICE_ACCOUNT_ID).expect("seed service account uuid");
+        assert_eq!(key.owner_kind, ApiKeyOwnerKind::ServiceAccount);
+        assert_eq!(key.owner_team_id, Some(seed_team_id));
+        assert_eq!(key.owner_service_account_id, Some(seed_service_account_id));
         assert!(
             store
                 .list_models_for_api_key(key.id)
@@ -4194,6 +4205,7 @@ mod tests {
             api_key_id: key.id,
             user_id: Some(member.user_id),
             team_id: Some(team.team_id),
+            service_account_id: None,
             actor_user_id: None,
             model_id: None,
             provider_key: "openai-prod".to_string(),
@@ -4223,6 +4235,7 @@ mod tests {
             api_key_id: key.id,
             user_id: Some(member.user_id),
             team_id: Some(team.team_id),
+            service_account_id: None,
             actor_user_id: None,
             model_id: None,
             provider_key: "openai-prod".to_string(),
@@ -4291,6 +4304,7 @@ mod tests {
             api_key_id: key.id,
             user_id: Some(member.user_id),
             team_id: Some(team.team_id),
+            service_account_id: None,
             model_key: "fast".to_string(),
             resolved_model_key: "fast-v2".to_string(),
             provider_key: "openai-prod".to_string(),

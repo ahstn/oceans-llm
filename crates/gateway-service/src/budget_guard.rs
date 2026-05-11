@@ -61,8 +61,34 @@ where
                     }
                 }
             }
-            ApiKeyOwnerKind::Team => {
+            ApiKeyOwnerKind::ServiceAccount => {
+                let service_account_id = api_key
+                    .owner_service_account_id
+                    .ok_or(AuthError::ApiKeyOwnerInvalid)?;
                 let team_id = api_key.owner_team_id.ok_or(AuthError::ApiKeyOwnerInvalid)?;
+                if let Some(budget) = self
+                    .repo
+                    .get_active_budget_for_service_account(service_account_id)
+                    .await?
+                {
+                    let (window_start, window_end) =
+                        budget_window_bounds_utc(budget.cadence, occurred_at)?;
+                    let spent = self
+                        .repo
+                        .sum_usage_cost_for_service_account_in_window(
+                            service_account_id,
+                            window_start,
+                            window_end,
+                        )
+                        .await?;
+                    if budget.hard_limit && spent >= budget.amount_usd {
+                        return Err(GatewayError::BudgetExceeded {
+                            ownership_scope: format!("service_account:{service_account_id}"),
+                            projected_cost_usd: spent,
+                            limit_usd: budget.amount_usd,
+                        });
+                    }
+                }
                 if let Some(budget) = self.repo.get_active_budget_for_team(team_id).await? {
                     let (window_start, window_end) =
                         budget_window_bounds_utc(budget.cadence, occurred_at)?;
@@ -72,13 +98,14 @@ where
                         .await?;
                     if budget.hard_limit && spent >= budget.amount_usd {
                         return Err(GatewayError::BudgetExceeded {
-                            ownership_scope: format!("team:{team_id}:actor:none"),
+                            ownership_scope: format!("team:{team_id}"),
                             projected_cost_usd: spent,
                             limit_usd: budget.amount_usd,
                         });
                     }
                 }
             }
+            ApiKeyOwnerKind::Team => return Err(AuthError::ApiKeyOwnerInvalid.into()),
         }
 
         Ok(())
@@ -128,8 +155,38 @@ where
                         }
                     }
                 }
-                ApiKeyOwnerKind::Team => {
+                ApiKeyOwnerKind::ServiceAccount => {
+                    let service_account_id = api_key
+                        .owner_service_account_id
+                        .ok_or(AuthError::ApiKeyOwnerInvalid)?;
                     let team_id = api_key.owner_team_id.ok_or(AuthError::ApiKeyOwnerInvalid)?;
+                    if let Some(budget) = self
+                        .repo
+                        .get_active_budget_for_service_account(service_account_id)
+                        .await?
+                    {
+                        let (window_start, window_end) =
+                            budget_window_bounds_utc(budget.cadence, ledger.occurred_at)?;
+                        let spent = self
+                            .repo
+                            .sum_usage_cost_for_service_account_in_window(
+                                service_account_id,
+                                window_start,
+                                window_end,
+                            )
+                            .await?;
+                        let projected =
+                            spent.checked_add(ledger.computed_cost_usd).ok_or_else(|| {
+                                GatewayError::Internal("budget projection overflow".to_string())
+                            })?;
+                        if budget.hard_limit && projected > budget.amount_usd {
+                            return Err(GatewayError::BudgetExceeded {
+                                ownership_scope: format!("service_account:{service_account_id}"),
+                                projected_cost_usd: projected,
+                                limit_usd: budget.amount_usd,
+                            });
+                        }
+                    }
                     if let Some(budget) = self.repo.get_active_budget_for_team(team_id).await? {
                         let (window_start, window_end) =
                             budget_window_bounds_utc(budget.cadence, ledger.occurred_at)?;
@@ -143,13 +200,14 @@ where
                             })?;
                         if budget.hard_limit && projected > budget.amount_usd {
                             return Err(GatewayError::BudgetExceeded {
-                                ownership_scope: format!("team:{team_id}:actor:none"),
+                                ownership_scope: format!("team:{team_id}"),
                                 projected_cost_usd: projected,
                                 limit_usd: budget.amount_usd,
                             });
                         }
                     }
                 }
+                ApiKeyOwnerKind::Team => return Err(AuthError::ApiKeyOwnerInvalid.into()),
             }
         }
 
@@ -175,9 +233,12 @@ fn ownership_scope_key(api_key: &AuthenticatedApiKey) -> Result<String, AuthErro
             let user_id = api_key.owner_user_id.ok_or(AuthError::ApiKeyOwnerInvalid)?;
             Ok(format!("user:{user_id}"))
         }
-        ApiKeyOwnerKind::Team => {
-            let team_id = api_key.owner_team_id.ok_or(AuthError::ApiKeyOwnerInvalid)?;
-            Ok(format!("team:{team_id}:actor:none"))
+        ApiKeyOwnerKind::Team => Err(AuthError::ApiKeyOwnerInvalid),
+        ApiKeyOwnerKind::ServiceAccount => {
+            let service_account_id = api_key
+                .owner_service_account_id
+                .ok_or(AuthError::ApiKeyOwnerInvalid)?;
+            Ok(format!("service_account:{service_account_id}"))
         }
     }
 }
@@ -188,8 +249,9 @@ mod tests {
 
     use async_trait::async_trait;
     use gateway_core::{
-        ApiKeyOwnerKind, AuthenticatedApiKey, BudgetCadence, BudgetRepository, Money4, StoreError,
-        TeamBudgetRecord, UsageLedgerRecord, UsagePricingStatus, UserBudgetRecord,
+        ApiKeyOwnerKind, AuthenticatedApiKey, BudgetCadence, BudgetRepository, Money4,
+        ServiceAccountBudgetRecord, StoreError, TeamBudgetRecord, UsageLedgerRecord,
+        UsagePricingStatus, UserBudgetRecord,
     };
     use serde_json::json;
     use time::{Date, Month, OffsetDateTime};
@@ -203,6 +265,8 @@ mod tests {
         current_spend: Money4,
         active_team_budget: Option<TeamBudgetRecord>,
         current_team_spend: Money4,
+        active_service_account_budget: Option<ServiceAccountBudgetRecord>,
+        current_service_account_spend: Money4,
         inserted_events: Arc<Mutex<Vec<UsageLedgerRecord>>>,
     }
 
@@ -220,6 +284,13 @@ mod tests {
             _team_id: Uuid,
         ) -> Result<Option<TeamBudgetRecord>, StoreError> {
             Ok(self.active_team_budget.clone())
+        }
+
+        async fn get_active_budget_for_service_account(
+            &self,
+            _service_account_id: Uuid,
+        ) -> Result<Option<ServiceAccountBudgetRecord>, StoreError> {
+            Ok(self.active_service_account_budget.clone())
         }
 
         async fn get_usage_ledger_by_request_and_scope(
@@ -257,6 +328,15 @@ mod tests {
             Ok(self.current_team_spend)
         }
 
+        async fn sum_usage_cost_for_service_account_in_window(
+            &self,
+            _service_account_id: Uuid,
+            _window_start: OffsetDateTime,
+            _window_end: OffsetDateTime,
+        ) -> Result<Money4, StoreError> {
+            Ok(self.current_service_account_spend)
+        }
+
         async fn insert_usage_ledger_if_absent(
             &self,
             event: &UsageLedgerRecord,
@@ -282,17 +362,19 @@ mod tests {
             owner_kind: ApiKeyOwnerKind::User,
             owner_user_id: Some(user_id),
             owner_team_id: None,
+            owner_service_account_id: None,
         }
     }
 
-    fn team_auth(team_id: Uuid) -> AuthenticatedApiKey {
+    fn service_account_auth(team_id: Uuid) -> AuthenticatedApiKey {
         AuthenticatedApiKey {
             id: Uuid::new_v4(),
             public_id: "dev123".to_string(),
             name: "dev".to_string(),
-            owner_kind: ApiKeyOwnerKind::Team,
+            owner_kind: ApiKeyOwnerKind::ServiceAccount,
             owner_user_id: None,
             owner_team_id: Some(team_id),
+            owner_service_account_id: Some(Uuid::new_v4()),
         }
     }
 
@@ -310,9 +392,13 @@ mod tests {
                     api_key.owner_user_id.expect("user owner").simple()
                 )
             }
-            ApiKeyOwnerKind::Team => format!(
-                "team:{}:actor:none",
-                api_key.owner_team_id.expect("team owner").simple()
+            ApiKeyOwnerKind::Team => panic!("team-owned api keys are unsupported"),
+            ApiKeyOwnerKind::ServiceAccount => format!(
+                "service_account:{}",
+                api_key
+                    .owner_service_account_id
+                    .expect("service account owner")
+                    .simple()
             ),
         };
 
@@ -323,6 +409,7 @@ mod tests {
             api_key_id: api_key.id,
             user_id: api_key.owner_user_id,
             team_id: api_key.owner_team_id,
+            service_account_id: None,
             actor_user_id: None,
             model_id: None,
             provider_key: "openai-prod".to_string(),
@@ -365,6 +452,8 @@ mod tests {
             current_spend: Money4::from_scaled(95_000),
             active_team_budget: None,
             current_team_spend: Money4::ZERO,
+            active_service_account_budget: None,
+            current_service_account_spend: Money4::ZERO,
             inserted_events: Arc::new(Mutex::new(Vec::new())),
         });
 
@@ -404,6 +493,8 @@ mod tests {
             current_spend: Money4::from_scaled(100_000),
             active_team_budget: None,
             current_team_spend: Money4::ZERO,
+            active_service_account_budget: None,
+            current_service_account_spend: Money4::ZERO,
             inserted_events: Arc::new(Mutex::new(Vec::new())),
         });
 
@@ -418,18 +509,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn team_owned_keys_bypass_user_budget_check() {
+    async fn service_account_keys_bypass_user_budget_check() {
         let team_id = Uuid::new_v4();
         let repo = Arc::new(InMemoryBudgetRepo {
             active_budget: None,
             current_spend: Money4::ZERO,
             active_team_budget: None,
             current_team_spend: Money4::ZERO,
+            active_service_account_budget: None,
+            current_service_account_spend: Money4::ZERO,
             inserted_events: Arc::new(Mutex::new(Vec::new())),
         });
 
         let guard = BudgetGuard::new(repo.clone());
-        let auth = team_auth(team_id);
+        let auth = service_account_auth(team_id);
         let outcome = guard
             .enforce_and_record_usage(
                 &auth,
@@ -442,7 +535,7 @@ mod tests {
                 ),
             )
             .await
-            .expect("team-owned keys should not be blocked by user budget policy");
+            .expect("service-account keys should not be blocked by user budget policy");
 
         assert_eq!(outcome, BudgetGuardDisposition::Inserted);
         assert_eq!(repo.inserted_events.lock().expect("events lock").len(), 1);
@@ -466,11 +559,13 @@ mod tests {
                 updated_at: OffsetDateTime::now_utc(),
             }),
             current_team_spend: Money4::from_scaled(79_500),
+            active_service_account_budget: None,
+            current_service_account_spend: Money4::ZERO,
             inserted_events: Arc::new(Mutex::new(Vec::new())),
         });
 
         let guard = BudgetGuard::new(repo.clone());
-        let auth = team_auth(team_id);
+        let auth = service_account_auth(team_id);
         let error = guard
             .enforce_and_record_usage(
                 &auth,
@@ -507,11 +602,13 @@ mod tests {
                 updated_at: OffsetDateTime::now_utc(),
             }),
             current_team_spend: Money4::from_scaled(80_000),
+            active_service_account_budget: None,
+            current_service_account_spend: Money4::ZERO,
             inserted_events: Arc::new(Mutex::new(Vec::new())),
         });
 
         let guard = BudgetGuard::new(repo);
-        let auth = team_auth(team_id);
+        let auth = service_account_auth(team_id);
         let error = guard
             .enforce_pre_provider_budget(&auth, "req_pre_team", OffsetDateTime::now_utc())
             .await
@@ -538,11 +635,13 @@ mod tests {
                 updated_at: OffsetDateTime::now_utc(),
             }),
             current_team_spend: Money4::from_scaled(100_000),
+            active_service_account_budget: None,
+            current_service_account_spend: Money4::ZERO,
             inserted_events: Arc::new(Mutex::new(Vec::new())),
         });
 
         let guard = BudgetGuard::new(repo.clone());
-        let auth = team_auth(team_id);
+        let auth = service_account_auth(team_id);
         let outcome = guard
             .enforce_and_record_usage(
                 &auth,
@@ -569,6 +668,8 @@ mod tests {
             current_spend: Money4::ZERO,
             active_team_budget: None,
             current_team_spend: Money4::ZERO,
+            active_service_account_budget: None,
+            current_service_account_spend: Money4::ZERO,
             inserted_events: Arc::new(Mutex::new(Vec::new())),
         });
         let guard = BudgetGuard::new(repo.clone());
@@ -622,6 +723,8 @@ mod tests {
             current_spend: Money4::from_scaled(200_000),
             active_team_budget: None,
             current_team_spend: Money4::ZERO,
+            active_service_account_budget: None,
+            current_service_account_spend: Money4::ZERO,
             inserted_events: Arc::new(Mutex::new(vec![existing])),
         });
 

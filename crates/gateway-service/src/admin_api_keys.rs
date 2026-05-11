@@ -5,13 +5,15 @@ use std::{
 
 use gateway_core::{
     AdminApiKeyRepository, AdminIdentityRepository, ApiKeyOwnerKind, ApiKeyRecord, ApiKeyStatus,
-    GatewayError, GatewayModel, IdentityUserRecord, ModelRepository, NewApiKeyRecord, StoreError,
-    TeamRecord, UserStatus,
+    GatewayError, GatewayModel, IdentityUserRecord, ModelRepository, NewApiKeyRecord,
+    ServiceAccountRecord, StoreError, TeamRecord, UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::hash_gateway_key_secret;
+
+type ApiKeyOwnerIds = (Option<Uuid>, Option<Uuid>, Option<Uuid>);
 
 #[derive(Debug, Clone)]
 pub struct AdminApiKeyService<R> {
@@ -23,6 +25,7 @@ pub struct AdminApiKeysPayload {
     pub items: Vec<AdminApiKeySummary>,
     pub users: Vec<AdminApiKeyUserOwner>,
     pub teams: Vec<AdminApiKeyTeamOwner>,
+    pub service_accounts: Vec<AdminApiKeyServiceAccountOwner>,
     pub models: Vec<AdminApiKeyModelOption>,
 }
 
@@ -37,6 +40,9 @@ pub struct AdminApiKeySummary {
     pub owner_name: String,
     pub owner_email: Option<String>,
     pub owner_team_key: Option<String>,
+    pub owner_service_account_key: Option<String>,
+    pub owner_service_account_team_id: Option<Uuid>,
+    pub owner_service_account_team_key: Option<String>,
     pub model_keys: Vec<String>,
     pub created_at: OffsetDateTime,
     pub last_used_at: Option<OffsetDateTime>,
@@ -58,6 +64,16 @@ pub struct AdminApiKeyTeamOwner {
 }
 
 #[derive(Debug, Clone)]
+pub struct AdminApiKeyServiceAccountOwner {
+    pub id: Uuid,
+    pub name: String,
+    pub key: String,
+    pub team_id: Uuid,
+    pub team_key: String,
+    pub team_name: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct AdminApiKeyModelOption {
     pub id: Uuid,
     pub key: String,
@@ -71,6 +87,7 @@ pub struct CreateAdminApiKeyInput {
     pub owner_kind: String,
     pub owner_user_id: Option<String>,
     pub owner_team_id: Option<String>,
+    pub owner_service_account_id: Option<String>,
     pub model_keys: Vec<String>,
 }
 
@@ -99,7 +116,10 @@ where
         let users = self.repo.list_identity_users().await?;
         let active_teams = self.repo.list_active_teams().await?;
         let teams = self.repo.list_teams().await?;
+        let service_accounts = self.repo.list_active_service_accounts().await?;
         let models = self.repo.list_models().await?;
+        let service_account_owners =
+            build_service_account_owner_options(&service_accounts, &teams)?;
 
         let mut items = Vec::with_capacity(api_keys.len());
         for api_key in api_keys {
@@ -108,6 +128,7 @@ where
                 &api_key,
                 &users,
                 &teams,
+                &service_accounts,
                 &granted_models,
             )?);
         }
@@ -131,6 +152,7 @@ where
                     key: team.team_key.clone(),
                 })
                 .collect(),
+            service_accounts: service_account_owners,
             models: models
                 .into_iter()
                 .map(|model| AdminApiKeyModelOption {
@@ -150,6 +172,7 @@ where
         let users = self.repo.list_identity_users().await?;
         let active_teams = self.repo.list_active_teams().await?;
         let teams = self.repo.list_teams().await?;
+        let service_accounts = self.repo.list_active_service_accounts().await?;
         let models = self.repo.list_models().await?;
 
         let name = request.name.trim();
@@ -160,10 +183,17 @@ where
         }
 
         let owner_kind = ApiKeyOwnerKind::from_db(request.owner_kind.trim()).ok_or_else(|| {
-            GatewayError::InvalidRequest("owner_kind must be `user` or `team`".to_string())
+            GatewayError::InvalidRequest(
+                "owner_kind must be `user` or `service_account`".to_string(),
+            )
         })?;
-        let (owner_user_id, owner_team_id) =
-            validate_owner(&request, owner_kind, &users, &active_teams)?;
+        let (owner_user_id, owner_team_id, owner_service_account_id) = validate_owner(
+            &request,
+            owner_kind,
+            &users,
+            &active_teams,
+            &service_accounts,
+        )?;
         let granted_models = select_granted_models(&request.model_keys, &models)?;
 
         let public_id = Uuid::new_v4().simple().to_string();
@@ -182,6 +212,7 @@ where
                 owner_kind,
                 owner_user_id,
                 owner_team_id,
+                owner_service_account_id,
                 created_at: now,
             })
             .await?;
@@ -194,7 +225,8 @@ where
             .await?;
 
         let granted_models = self.repo.list_models_for_api_key(api_key.id).await?;
-        let api_key = build_api_key_summary(&api_key, &users, &teams, &granted_models)?;
+        let api_key =
+            build_api_key_summary(&api_key, &users, &teams, &service_accounts, &granted_models)?;
 
         Ok(CreateAdminApiKeyResult { api_key, raw_key })
     }
@@ -214,6 +246,7 @@ where
 
         let users = self.repo.list_identity_users().await?;
         let teams = self.repo.list_teams().await?;
+        let service_accounts = self.repo.list_active_service_accounts().await?;
         let api_key = self
             .repo
             .get_api_key_by_id(api_key_id)
@@ -223,7 +256,7 @@ where
             })?;
         let granted_models = self.repo.list_models_for_api_key(api_key.id).await?;
 
-        build_api_key_summary(&api_key, &users, &teams, &granted_models)
+        build_api_key_summary(&api_key, &users, &teams, &service_accounts, &granted_models)
     }
 
     pub async fn update_api_key(
@@ -233,6 +266,7 @@ where
     ) -> Result<AdminApiKeySummary, GatewayError> {
         let users = self.repo.list_identity_users().await?;
         let teams = self.repo.list_teams().await?;
+        let service_accounts = self.repo.list_active_service_accounts().await?;
         let models = self.repo.list_models().await?;
         let api_key = self
             .repo
@@ -256,7 +290,7 @@ where
             .await?;
 
         let granted_models = self.repo.list_models_for_api_key(api_key.id).await?;
-        build_api_key_summary(&api_key, &users, &teams, &granted_models)
+        build_api_key_summary(&api_key, &users, &teams, &service_accounts, &granted_models)
     }
 }
 
@@ -264,6 +298,7 @@ fn build_api_key_summary(
     api_key: &ApiKeyRecord,
     users: &[IdentityUserRecord],
     teams: &[TeamRecord],
+    service_accounts: &[ServiceAccountRecord],
     granted_models: &[GatewayModel],
 ) -> Result<AdminApiKeySummary, GatewayError> {
     let user_map = users
@@ -274,8 +309,20 @@ fn build_api_key_summary(
         .iter()
         .map(|team| (team.team_id, team))
         .collect::<HashMap<_, _>>();
+    let service_account_map = service_accounts
+        .iter()
+        .map(|service_account| (service_account.service_account_id, service_account))
+        .collect::<HashMap<_, _>>();
 
-    let (owner_id, owner_name, owner_email, owner_team_key) = match api_key.owner_kind {
+    let (
+        owner_id,
+        owner_name,
+        owner_email,
+        owner_team_key,
+        owner_service_account_key,
+        owner_service_account_team_id,
+        owner_service_account_team_key,
+    ) = match api_key.owner_kind {
         ApiKeyOwnerKind::User => {
             let owner_id = api_key.owner_user_id.ok_or_else(|| {
                 GatewayError::Internal(format!("api key `{}` is missing owner_user_id", api_key.id))
@@ -291,24 +338,44 @@ fn build_api_key_summary(
                 owner.user.name.clone(),
                 Some(owner.user.email.clone()),
                 None,
+                None,
+                None,
+                None,
             )
         }
-        ApiKeyOwnerKind::Team => {
-            let owner_id = api_key.owner_team_id.ok_or_else(|| {
-                GatewayError::Internal(format!("api key `{}` is missing owner_team_id", api_key.id))
-            })?;
-            let owner = team_map.get(&owner_id).ok_or_else(|| {
+        ApiKeyOwnerKind::ServiceAccount => {
+            let owner_id = api_key.owner_service_account_id.ok_or_else(|| {
                 GatewayError::Internal(format!(
-                    "api key `{}` references missing team `{owner_id}`",
+                    "api key `{}` is missing owner_service_account_id",
                     api_key.id
+                ))
+            })?;
+            let owner = service_account_map.get(&owner_id).ok_or_else(|| {
+                GatewayError::Internal(format!(
+                    "api key `{}` references missing service account `{owner_id}`",
+                    api_key.id
+                ))
+            })?;
+            let team = team_map.get(&owner.team_id).ok_or_else(|| {
+                GatewayError::Internal(format!(
+                    "service account `{owner_id}` references missing team `{}`",
+                    owner.team_id
                 ))
             })?;
             (
                 owner_id,
-                owner.team_name.clone(),
+                owner.service_account_name.clone(),
                 None,
-                Some(owner.team_key.clone()),
+                Some(team.team_key.clone()),
+                Some(owner.service_account_key.clone()),
+                Some(owner.team_id),
+                Some(team.team_key.clone()),
             )
+        }
+        ApiKeyOwnerKind::Team => {
+            return Err(GatewayError::InvalidRequest(
+                "team-owned api keys are no longer supported".to_string(),
+            ));
         }
     };
 
@@ -322,6 +389,9 @@ fn build_api_key_summary(
         owner_name,
         owner_email,
         owner_team_key,
+        owner_service_account_key,
+        owner_service_account_team_id,
+        owner_service_account_team_key,
         model_keys: granted_models
             .iter()
             .map(|model| model.model_key.clone())
@@ -337,12 +407,14 @@ fn validate_owner(
     owner_kind: ApiKeyOwnerKind,
     users: &[IdentityUserRecord],
     teams: &[TeamRecord],
-) -> Result<(Option<Uuid>, Option<Uuid>), GatewayError> {
+    service_accounts: &[ServiceAccountRecord],
+) -> Result<ApiKeyOwnerIds, GatewayError> {
     match owner_kind {
         ApiKeyOwnerKind::User => {
-            if request.owner_team_id.is_some() {
+            if request.owner_team_id.is_some() || request.owner_service_account_id.is_some() {
                 return Err(GatewayError::InvalidRequest(
-                    "user-owned api keys cannot include owner_team_id".to_string(),
+                    "user-owned api keys cannot include service account or team owner fields"
+                        .to_string(),
                 ));
             }
             let user_id = request
@@ -363,35 +435,87 @@ fn validate_owner(
                     "user-owned api keys require an active user".to_string(),
                 ));
             }
-            Ok((Some(user_id), None))
+            Ok((Some(user_id), None, None))
         }
-        ApiKeyOwnerKind::Team => {
+        ApiKeyOwnerKind::ServiceAccount => {
             if request.owner_user_id.is_some() {
                 return Err(GatewayError::InvalidRequest(
-                    "team-owned api keys cannot include owner_user_id".to_string(),
+                    "service-account-owned api keys cannot include owner_user_id".to_string(),
                 ));
             }
-            let team_id = request
-                .owner_team_id
+            let service_account_id = request
+                .owner_service_account_id
                 .as_deref()
                 .ok_or_else(|| {
                     GatewayError::InvalidRequest(
-                        "owner_team_id is required for team-owned api keys".to_string(),
+                        "owner_service_account_id is required for service-account-owned api keys"
+                            .to_string(),
                     )
                 })
-                .and_then(|value| parse_uuid(value, "owner_team_id"))?;
+                .and_then(|value| parse_uuid(value, "owner_service_account_id"))?;
+            let service_account = service_accounts
+                .iter()
+                .find(|service_account| service_account.service_account_id == service_account_id)
+                .ok_or_else(|| {
+                    StoreError::NotFound(format!("service account `{service_account_id}`"))
+                })?;
+            let team_id = service_account.team_id;
+            if let Some(request_team_id) = request
+                .owner_team_id
+                .as_deref()
+                .map(|value| parse_uuid(value, "owner_team_id"))
+                .transpose()?
+                && request_team_id != team_id
+            {
+                return Err(GatewayError::InvalidRequest(
+                    "owner_team_id must match the service account team".to_string(),
+                ));
+            }
             let team = teams
                 .iter()
                 .find(|team| team.team_id == team_id)
                 .ok_or_else(|| StoreError::NotFound(format!("team `{team_id}`")))?;
             if team.status != "active" {
                 return Err(GatewayError::InvalidRequest(
-                    "team-owned api keys require an active team".to_string(),
+                    "service-account-owned api keys require an active team".to_string(),
                 ));
             }
-            Ok((None, Some(team_id)))
+            Ok((None, Some(team_id), Some(service_account_id)))
         }
+        ApiKeyOwnerKind::Team => Err(GatewayError::InvalidRequest(
+            "team-owned api keys are no longer supported".to_string(),
+        )),
     }
+}
+
+fn build_service_account_owner_options(
+    service_accounts: &[ServiceAccountRecord],
+    teams: &[TeamRecord],
+) -> Result<Vec<AdminApiKeyServiceAccountOwner>, GatewayError> {
+    let team_map = teams
+        .iter()
+        .map(|team| (team.team_id, team))
+        .collect::<HashMap<_, _>>();
+
+    service_accounts
+        .iter()
+        .map(|service_account| {
+            let team = team_map.get(&service_account.team_id).ok_or_else(|| {
+                GatewayError::Internal(format!(
+                    "service account `{}` references missing team `{}`",
+                    service_account.service_account_id, service_account.team_id
+                ))
+            })?;
+            Ok(AdminApiKeyServiceAccountOwner {
+                id: service_account.service_account_id,
+                name: service_account.service_account_name.clone(),
+                key: service_account.service_account_key.clone(),
+                team_id: team.team_id,
+                team_key: team.team_key.clone(),
+                team_name: team.team_name.clone(),
+            })
+        })
+        .collect()
 }
 
 fn select_granted_models(
@@ -438,7 +562,8 @@ mod tests {
     use async_trait::async_trait;
     use gateway_core::{
         AdminIdentityRepository, ApiKeyOwnerKind, AuthMode, GlobalRole, IdentityRepository,
-        ModelAccessMode, ModelRoute, StoreError, TeamMembershipRecord, UserRecord,
+        ModelAccessMode, ModelRoute, ServiceAccountStatus, StoreError, TeamMembershipRecord,
+        UserRecord,
     };
 
     use super::*;
@@ -450,6 +575,7 @@ mod tests {
         grants: Arc<std::sync::Mutex<HashMap<Uuid, Vec<Uuid>>>>,
         users: Vec<IdentityUserRecord>,
         teams: Vec<TeamRecord>,
+        service_accounts: Vec<ServiceAccountRecord>,
     }
 
     #[async_trait]
@@ -489,6 +615,7 @@ mod tests {
                 owner_kind: api_key.owner_kind,
                 owner_user_id: api_key.owner_user_id,
                 owner_team_id: api_key.owner_team_id,
+                owner_service_account_id: api_key.owner_service_account_id,
                 created_at: api_key.created_at,
                 last_used_at: None,
                 revoked_at: None,
@@ -547,6 +674,17 @@ mod tests {
 
         async fn list_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
             Ok(self.teams.clone())
+        }
+
+        async fn list_active_service_accounts(
+            &self,
+        ) -> Result<Vec<ServiceAccountRecord>, StoreError> {
+            Ok(self
+                .service_accounts
+                .iter()
+                .filter(|service_account| service_account.status == ServiceAccountStatus::Active)
+                .cloned()
+                .collect())
         }
     }
 
@@ -669,11 +807,27 @@ mod tests {
         }
     }
 
+    fn service_account(service_account_id: Uuid, team_id: Uuid) -> ServiceAccountRecord {
+        ServiceAccountRecord {
+            service_account_id,
+            team_id,
+            service_account_key: "batch".to_string(),
+            service_account_name: "Batch Jobs".to_string(),
+            status: ServiceAccountStatus::Active,
+            model_access_mode: ModelAccessMode::All,
+            metadata: serde_json::json!({}),
+            created_at: OffsetDateTime::now_utc(),
+            updated_at: OffsetDateTime::now_utc(),
+            disabled_at: None,
+        }
+    }
+
     fn repo_with_defaults() -> InMemoryRepo {
         let fast = model("fast");
         let reasoning = model("reasoning");
         let user_id = Uuid::new_v4();
         let team_id = Uuid::new_v4();
+        let service_account_id = Uuid::new_v4();
 
         InMemoryRepo {
             api_keys: Arc::new(std::sync::Mutex::new(HashMap::new())),
@@ -684,6 +838,7 @@ mod tests {
             grants: Arc::new(std::sync::Mutex::new(HashMap::new())),
             users: vec![user(user_id, UserStatus::Active)],
             teams: vec![team(team_id, "active")],
+            service_accounts: vec![service_account(service_account_id, team_id)],
         }
     }
 
@@ -699,6 +854,7 @@ mod tests {
                 owner_kind: "user".to_string(),
                 owner_user_id: Some(user_id.to_string()),
                 owner_team_id: None,
+                owner_service_account_id: None,
                 model_keys: vec!["fast".to_string()],
             })
             .await
@@ -711,24 +867,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn creates_team_owned_keys() {
+    async fn creates_service_account_owned_keys() {
         let repo = repo_with_defaults();
-        let team_id = repo.teams[0].team_id;
+        let service_account_id = repo.service_accounts[0].service_account_id;
+        let team_id = repo.service_accounts[0].team_id;
         let service = AdminApiKeyService::new(Arc::new(repo.clone()));
 
         let result = service
             .create_api_key(CreateAdminApiKeyInput {
                 name: "Batch Jobs".to_string(),
-                owner_kind: "team".to_string(),
+                owner_kind: "service_account".to_string(),
                 owner_user_id: None,
                 owner_team_id: Some(team_id.to_string()),
+                owner_service_account_id: Some(service_account_id.to_string()),
                 model_keys: vec!["reasoning".to_string()],
             })
             .await
             .expect("create api key");
 
-        assert_eq!(result.api_key.owner_kind, ApiKeyOwnerKind::Team);
-        assert_eq!(result.api_key.owner_id, team_id);
+        assert_eq!(result.api_key.owner_kind, ApiKeyOwnerKind::ServiceAccount);
+        assert_eq!(result.api_key.owner_id, service_account_id);
         assert_eq!(result.api_key.model_keys, vec!["reasoning".to_string()]);
     }
 
@@ -744,6 +902,7 @@ mod tests {
                 owner_kind: "user".to_string(),
                 owner_user_id: Some(user_id.to_string()),
                 owner_team_id: None,
+                owner_service_account_id: None,
                 model_keys: vec!["fast".to_string()],
             })
             .await
@@ -764,6 +923,7 @@ mod tests {
                 owner_kind: "system".to_string(),
                 owner_user_id: None,
                 owner_team_id: None,
+                owner_service_account_id: None,
                 model_keys: vec!["fast".to_string()],
             })
             .await
@@ -786,6 +946,7 @@ mod tests {
                 owner_kind: "user".to_string(),
                 owner_user_id: Some(user_id.to_string()),
                 owner_team_id: None,
+                owner_service_account_id: None,
                 model_keys: vec!["fast".to_string()],
             })
             .await
@@ -798,6 +959,7 @@ mod tests {
                 owner_kind: "user".to_string(),
                 owner_user_id: Some(Uuid::new_v4().to_string()),
                 owner_team_id: None,
+                owner_service_account_id: None,
                 model_keys: vec!["fast".to_string()],
             })
             .await
@@ -817,6 +979,7 @@ mod tests {
                 owner_kind: "user".to_string(),
                 owner_user_id: Some(user_id.to_string()),
                 owner_team_id: None,
+                owner_service_account_id: None,
                 model_keys: vec!["missing".to_string()],
             })
             .await
@@ -829,6 +992,7 @@ mod tests {
                 owner_kind: "user".to_string(),
                 owner_user_id: Some(user_id.to_string()),
                 owner_team_id: None,
+                owner_service_account_id: None,
                 model_keys: vec!["   ".to_string()],
             })
             .await
@@ -847,6 +1011,7 @@ mod tests {
                 owner_kind: "user".to_string(),
                 owner_user_id: Some(user_id.to_string()),
                 owner_team_id: None,
+                owner_service_account_id: None,
                 model_keys: vec!["fast".to_string()],
             })
             .await
@@ -872,6 +1037,7 @@ mod tests {
                 owner_kind: "user".to_string(),
                 owner_user_id: Some(user_id.to_string()),
                 owner_team_id: None,
+                owner_service_account_id: None,
                 model_keys: vec!["fast".to_string()],
             })
             .await
@@ -904,6 +1070,7 @@ mod tests {
                 owner_kind: "user".to_string(),
                 owner_user_id: Some(user_id.to_string()),
                 owner_team_id: None,
+                owner_service_account_id: None,
                 model_keys: vec!["fast".to_string()],
             })
             .await
@@ -929,21 +1096,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn lists_and_revokes_keys_for_inactive_team_owners() {
+    async fn lists_and_revokes_keys_for_service_accounts_on_inactive_teams() {
         let mut repo = repo_with_defaults();
         let team_id = repo.teams[0].team_id;
+        let service_account_id = repo.service_accounts[0].service_account_id;
         repo.teams = vec![team(team_id, "inactive")];
         let repo = Arc::new(repo);
         let service = AdminApiKeyService::new(repo.clone());
         let now = OffsetDateTime::now_utc();
         let api_key = repo
             .create_api_key(&NewApiKeyRecord {
-                name: "Dormant Team".to_string(),
+                name: "Dormant Service Account".to_string(),
                 public_id: Uuid::new_v4().simple().to_string(),
                 secret_hash: "secret-hash".to_string(),
-                owner_kind: ApiKeyOwnerKind::Team,
+                owner_kind: ApiKeyOwnerKind::ServiceAccount,
                 owner_user_id: None,
                 owner_team_id: Some(team_id),
+                owner_service_account_id: Some(service_account_id),
                 created_at: now,
             })
             .await
@@ -955,14 +1124,14 @@ mod tests {
 
         let listed = service.list_api_keys().await.expect("list api keys");
         assert_eq!(listed.items.len(), 1);
-        assert_eq!(listed.items[0].owner_id, team_id);
+        assert_eq!(listed.items[0].owner_id, service_account_id);
         assert!(listed.teams.is_empty());
 
         let revoked = service
             .revoke_api_key(api_key.id)
             .await
             .expect("revoke api key");
-        assert_eq!(revoked.owner_id, team_id);
+        assert_eq!(revoked.owner_id, service_account_id);
         assert_eq!(revoked.status, ApiKeyStatus::Revoked);
     }
 
@@ -977,6 +1146,7 @@ mod tests {
                 owner_kind: "user".to_string(),
                 owner_user_id: Some(user_id.to_string()),
                 owner_team_id: None,
+                owner_service_account_id: None,
                 model_keys: vec!["fast".to_string(), "reasoning".to_string()],
             })
             .await

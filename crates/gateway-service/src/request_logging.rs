@@ -614,7 +614,8 @@ where
         api_key: &AuthenticatedApiKey,
     ) -> Result<bool, GatewayError> {
         match api_key.owner_kind {
-            ApiKeyOwnerKind::Team => Ok(true),
+            ApiKeyOwnerKind::ServiceAccount => Ok(true),
+            ApiKeyOwnerKind::Team => Err(AuthError::ApiKeyOwnerInvalid.into()),
             ApiKeyOwnerKind::User => {
                 let user_id = api_key.owner_user_id.ok_or(AuthError::ApiKeyOwnerInvalid)?;
                 let user = self
@@ -842,6 +843,7 @@ where
             api_key_id: api_key.id,
             user_id: api_key.owner_user_id,
             team_id: api_key.owner_team_id,
+            service_account_id: api_key.owner_service_account_id,
             model_key: context.requested_model_key.clone(),
             resolved_model_key: context.resolved_model_key.clone(),
             provider_key: summary.provider_key,
@@ -1471,17 +1473,19 @@ mod tests {
             owner_kind: ApiKeyOwnerKind::User,
             owner_user_id: Some(user_id),
             owner_team_id: None,
+            owner_service_account_id: None,
         }
     }
 
-    fn sample_team_auth() -> AuthenticatedApiKey {
+    fn sample_service_account_auth() -> AuthenticatedApiKey {
         AuthenticatedApiKey {
             id: Uuid::new_v4(),
             public_id: "dev123".to_string(),
             name: "dev".to_string(),
-            owner_kind: ApiKeyOwnerKind::Team,
+            owner_kind: ApiKeyOwnerKind::ServiceAccount,
             owner_user_id: None,
             owner_team_id: Some(Uuid::new_v4()),
+            owner_service_account_id: Some(Uuid::new_v4()),
         }
     }
 
@@ -1664,17 +1668,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn logs_team_owned_requests_with_payload_and_redaction() {
+    async fn logs_service_account_requests_with_payload_and_redaction() {
         let team_id = Uuid::new_v4();
+        let service_account_id = Uuid::new_v4();
         let repo = Arc::new(InMemoryRepo::default());
         let logging = RequestLogging::new(repo.clone());
         let auth = AuthenticatedApiKey {
             id: Uuid::new_v4(),
             public_id: "dev123".to_string(),
             name: "dev".to_string(),
-            owner_kind: ApiKeyOwnerKind::Team,
+            owner_kind: ApiKeyOwnerKind::ServiceAccount,
             owner_user_id: None,
             owner_team_id: Some(team_id),
+            owner_service_account_id: Some(service_account_id),
         };
         let mut headers = BTreeMap::new();
         headers.insert("authorization".to_string(), "secret".to_string());
@@ -1747,7 +1753,7 @@ mod tests {
             repo.clone(),
             policy(RequestLogPayloadCaptureMode::Disabled, 1024, 1024, 4),
         );
-        let auth = sample_team_auth();
+        let auth = sample_service_account_auth();
         let context = logging.begin_chat_request(
             "req_1",
             "fast",
@@ -1783,7 +1789,7 @@ mod tests {
             repo.clone(),
             policy(RequestLogPayloadCaptureMode::SummaryOnly, 1024, 1024, 4),
         );
-        let auth = sample_team_auth();
+        let auth = sample_service_account_auth();
         let context = logging.begin_chat_request(
             "req_1",
             "fast",
@@ -1827,7 +1833,7 @@ mod tests {
             repo.clone(),
             policy(RequestLogPayloadCaptureMode::RedactedPayloads, 4096, 80, 4),
         );
-        let auth = sample_team_auth();
+        let auth = sample_service_account_auth();
         let context = logging.begin_chat_request(
             "req_1",
             "fast",
@@ -1869,7 +1875,7 @@ mod tests {
             repo.clone(),
             policy_with_redaction_paths(&["body.choices.*.message.content"]),
         );
-        let auth = sample_team_auth();
+        let auth = sample_service_account_auth();
         let context = logging.begin_chat_request(
             "req_1",
             "fast",
@@ -1911,9 +1917,10 @@ mod tests {
             id: Uuid::new_v4(),
             public_id: "dev123".to_string(),
             name: "dev".to_string(),
-            owner_kind: ApiKeyOwnerKind::Team,
+            owner_kind: ApiKeyOwnerKind::ServiceAccount,
             owner_user_id: None,
             owner_team_id: Some(Uuid::new_v4()),
+            owner_service_account_id: Some(Uuid::new_v4()),
         };
         let context = logging.begin_chat_request(
             "req_1",
@@ -1982,7 +1989,7 @@ mod tests {
                 1,
             ),
         );
-        let auth = sample_team_auth();
+        let auth = sample_service_account_auth();
         let context = logging.begin_chat_request(
             "req_1",
             "fast",
@@ -2033,7 +2040,7 @@ data: {"usage":{"prompt_tokens":4,"completion_tokens":5,"total_tokens":9}}
             repo.clone(),
             policy_with_redaction_paths(&["events.*.choices.*.delta.content"]),
         );
-        let auth = sample_team_auth();
+        let auth = sample_service_account_auth();
         let context = logging.begin_chat_request(
             "req_1",
             "fast",

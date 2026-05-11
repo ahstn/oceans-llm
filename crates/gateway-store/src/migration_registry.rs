@@ -65,6 +65,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V22__mcp_tool_invocations.sql"),
         postgres_sql: include_str!("../migrations/postgres/V22__mcp_tool_invocations.sql"),
     },
+    MigrationManifest {
+        version: 23,
+        name: "service_accounts",
+        checksum: "V23__service_accounts.sql",
+        libsql_sql: include_str!("../migrations/V23__service_accounts.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V23__service_accounts.sql"),
+    },
 ];
 
 #[cfg(test)]

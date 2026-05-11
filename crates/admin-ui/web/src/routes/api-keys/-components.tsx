@@ -43,7 +43,7 @@ import {
 } from '@/components/ui/select'
 import type {
   ApiKeyModelOptionView,
-  ApiKeyOwnerTeamView,
+  ApiKeyOwnerServiceAccountView,
   ApiKeyOwnerUserView,
   ApiKeyView,
   CreateApiKeyInput,
@@ -72,8 +72,8 @@ export function CreatedApiKeyAlert({
       <AlertTitle>Copy the new key now</AlertTitle>
       <div className="mt-1 flex flex-col gap-3 text-sm text-[var(--color-text-muted)]">
         <p>
-          The raw secret is shown once. It is not stored in the control plane and cannot be
-          revealed again later.
+          The raw secret is shown once. It is not stored in the control plane and cannot be revealed
+          again later.
         </p>
         <div className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-3">
           <p
@@ -259,7 +259,7 @@ export function CreateApiKeyDialog({
   modelOptions,
   open,
   ownerLabel,
-  teamOptions,
+  serviceAccountOptions,
   userOptions,
   submitDisabled,
   onModelToggle,
@@ -274,7 +274,7 @@ export function CreateApiKeyDialog({
   modelOptions: ApiKeyModelOptionView[]
   open: boolean
   ownerLabel: string
-  teamOptions: ApiKeyOwnerTeamView[]
+  serviceAccountOptions: ApiKeyOwnerServiceAccountView[]
   userOptions: ApiKeyOwnerUserView[]
   submitDisabled: boolean
   onModelToggle: (modelKey: string, checked: boolean) => void
@@ -321,22 +321,26 @@ export function CreateApiKeyDialog({
                   <SelectContent>
                     <SelectGroup>
                       <SelectItem value="user">User</SelectItem>
-                      <SelectItem value="team">Team</SelectItem>
+                      <SelectItem value="service_account">Service account</SelectItem>
                     </SelectGroup>
                   </SelectContent>
                 </Select>
               </Field>
 
               <Field>
-                <FieldLabel>{form.owner_kind === 'user' ? 'Owner user' : 'Owner team'}</FieldLabel>
+                <FieldLabel>
+                  {form.owner_kind === 'user' ? 'Owner user' : 'Owner service account'}
+                </FieldLabel>
                 <Select
                   value={
-                    form.owner_kind === 'user' ? (form.owner_user_id ?? '') : (form.owner_team_id ?? '')
+                    form.owner_kind === 'user'
+                      ? (form.owner_user_id ?? '')
+                      : (form.owner_service_account_id ?? '')
                   }
                   onValueChange={onOwnerSelectionChange}
                 >
                   <SelectTrigger
-                    aria-label={form.owner_kind === 'user' ? 'Owner user' : 'Owner team'}
+                    aria-label={form.owner_kind === 'user' ? 'Owner user' : 'Owner service account'}
                   >
                     <SelectValue placeholder={ownerLabel} />
                   </SelectTrigger>
@@ -348,14 +352,19 @@ export function CreateApiKeyDialog({
                               {user.name} ({user.email})
                             </SelectItem>
                           ))
-                        : teamOptions.map((team) => (
-                            <SelectItem key={team.id} value={team.id}>
-                              {team.name} ({team.key})
+                        : serviceAccountOptions.map((account) => (
+                            <SelectItem key={account.id} value={account.id}>
+                              {account.name} ({account.key}, {account.team_name})
                             </SelectItem>
                           ))}
                     </SelectGroup>
                   </SelectContent>
                 </Select>
+                {form.owner_kind === 'service_account' && serviceAccountOptions.length === 0 ? (
+                  <FieldDescription>
+                    No active service accounts are available for API key ownership.
+                  </FieldDescription>
+                ) : null}
               </Field>
             </FieldGroup>
 
@@ -441,7 +450,9 @@ export function ManageApiKeyDialog({
                   </div>
                   <div className="flex flex-col gap-1">
                     <dt className="text-[var(--color-text-soft)]">Created</dt>
-                    <dd className="text-[var(--color-text)]">{formatCreatedAt(target.created_at)}</dd>
+                    <dd className="text-[var(--color-text)]">
+                      {formatCreatedAt(target.created_at)}
+                    </dd>
                   </div>
                   <div className="flex flex-col gap-1">
                     <dt className="text-[var(--color-text-soft)]">Last used</dt>
@@ -643,6 +654,14 @@ function summarizeSelectedModels(
 }
 
 function formatOwner(item: ApiKeyView) {
+  if (item.owner_kind === 'service_account') {
+    const key = item.owner_service_account_key ? ` (${item.owner_service_account_key})` : ''
+    const team = item.owner_service_account_team_key
+      ? ` - ${item.owner_service_account_team_key}`
+      : ''
+    return `${item.owner_name}${key}${team}`
+  }
+
   return item.owner_name
 }
 
