@@ -146,6 +146,8 @@ Important defaults from config parsing and domain deserialization:
 - `request_logging.payloads.request_max_bytes` defaults to `65536`
 - `request_logging.payloads.response_max_bytes` defaults to `65536`
 - `request_logging.payloads.stream_max_events` defaults to `128`
+- `request_logging.purge.enabled` defaults to `false`
+- `request_logging.purge.retention` defaults to `7d`
 
 The startup meaning of bootstrap-admin and seeded API keys lives in [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md).
 
@@ -173,6 +175,10 @@ request_logging:
     response_max_bytes: 65536
     stream_max_events: 128
     redaction_paths: []
+  purge:
+    enabled: false
+    retention: 7d
+    schedule: "0 0 * * *"
 ```
 
 Important fields:
@@ -186,14 +192,29 @@ Important fields:
 - `stream_max_events`: maximum stored stream events; stream usage and error parsing still sees later frames
 - `redaction_paths`: additive admin-configured redaction paths anchored from the wrapped payload root
 
+Purge fields:
+
+- `purge.enabled`
+  - defaults to `false`
+  - when `true`, the gateway starts a recurring request-log purge worker
+- `purge.retention`
+  - defaults to `7d`
+  - valid values are `1d`, `3d`, and `7d`
+- `purge.schedule`
+  - standard 5-field cron expression for the recurring purge worker
+  - defaults to `0 0 * * *`
+  - must describe a daily or less frequent schedule
+
 Validation rules:
 
 - byte limits must be greater than zero
 - `stream_max_events` must be greater than zero
 - `redaction_paths` use dot-separated object keys plus `*` as a full-segment wildcard
 - malformed paths such as `body..messages` or indexed paths such as `body.messages[0]` are rejected at config parse time
+- purge retention windows outside `1d`, `3d`, and `7d` are rejected
+- recurring purge schedules more frequent than daily are rejected, and the runtime guard also prevents more than one purge per day
 
-The runtime redaction/truncation policy and admin display behavior are owned by [observability-and-request-logs.md](../operations/observability-and-request-logs.md).
+The runtime redaction/truncation policy, purge command, and admin display behavior are owned by [observability-and-request-logs.md](../operations/observability-and-request-logs.md).
 
 ## `database`
 
@@ -234,6 +255,28 @@ Important distinctions:
 - `bootstrap_admin` creates control-plane access
 - `bootstrap_admin.require_password_change` changes first-login behavior
 - `bootstrap_admin.password` must be `literal.*` or `env.*`
+
+Seeded API keys are gateway caller credentials. They are useful for bootstrap automation and service-account-style workloads, but they are not upstream cloud provider service-account credentials. Config-seeded keys are owned by the reserved `system-legacy` team; keys created in the admin UI can be owned by an explicit user or team.
+
+Example seeded gateway key:
+
+```yaml
+auth:
+  seed_api_keys:
+    - name: ci-indexer
+      value: env.CI_INDEXER_GATEWAY_API_KEY
+      allowed_models:
+        - gpt-4o-mini
+        - gemini-fast
+```
+
+Operational guidance:
+
+- store gateway API-key values in the deployment secret manager, not in YAML
+- grant only the gateway models the workload needs
+- prefer team-owned keys for service callers until first-class gateway service-account owners exist
+- attach a team budget to the owning team when service-account-style traffic must be capped
+- rotate by creating or seeding a replacement key, moving the caller, then revoking or removing the old key
 
 For startup behavior and first access after boot, use [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md).
 
@@ -342,6 +385,8 @@ Supported provider types in the checked-in configs:
 | `gcp_vertex` | `auth.mode: adc` | ADC available in the runtime environment |
 | `gcp_vertex` | `auth.mode: service_account` | `credentials_path` pointing at service-account JSON or an equivalent mounted secret path |
 | `aws_bedrock` | `auth.mode: bearer` | Bedrock bearer token, often `env.AWS_BEARER_TOKEN_BEDROCK` |
+
+Provider auth config controls how the gateway authenticates to upstream providers. It is separate from gateway API keys, which authenticate callers to the gateway.
 
 ### `openai_compat`
 

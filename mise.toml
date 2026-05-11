@@ -114,6 +114,24 @@ run = "cargo run -p gateway --bin gateway -- bootstrap-admin"
 description = "Run local `gateway seed-config` against `gateway.yaml`"
 run = "cargo run -p gateway --bin gateway -- seed-config"
 
+[tasks.gateway-purge-request-logs-dry-run]
+description = "Preview request-log purge against `gateway.yaml`; override retention with RETENTION=1d|3d|7d"
+run = 'cargo run -p gateway --bin gateway -- purge-request-logs --retention "${RETENTION:-7d}" --dry-run'
+
+[tasks.gateway-purge-request-logs]
+description = "Purge old request logs against `gateway.yaml`; override retention with RETENTION=1d|3d|7d"
+run = 'cargo run -p gateway --bin gateway -- purge-request-logs --retention "${RETENTION:-7d}"'
+
+[tasks.gateway-purge-request-logs-dry-run-prod]
+description = "Preview request-log purge against `gateway.prod.yaml`; override retention with RETENTION=1d|3d|7d"
+env = { POSTGRES_URL = { required = true } }
+run = 'cargo run -p gateway --bin gateway -- --config gateway.prod.yaml purge-request-logs --retention "${RETENTION:-7d}" --dry-run'
+
+[tasks.gateway-purge-request-logs-prod]
+description = "Purge old request logs against `gateway.prod.yaml`; override retention with RETENTION=1d|3d|7d"
+env = { POSTGRES_URL = { required = true } }
+run = 'cargo run -p gateway --bin gateway -- --config gateway.prod.yaml purge-request-logs --retention "${RETENTION:-7d}"'
+
 [tasks.gateway-seed-local-demo]
 description = "Seed the local-only demo dataset (teams, users, budgets, api keys, request history) against `gateway.yaml`"
 run = "cargo run -p gateway --bin gateway -- seed-local-demo"

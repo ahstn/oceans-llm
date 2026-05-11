@@ -33,9 +33,10 @@ This document is schema-oriented. It describes the persistent relationships that
 9. `request_log_payloads` stores sanitized request and response bodies separately from the summary row
 10. `request_log_attempts` stores ordered upstream provider execution attempts for a request log
 11. `mcp_tool_invocations` stores individual tool-call audit rows correlated by `request_id`
-12. `pricing_catalog_cache` stores normalized pricing snapshots used by runtime pricing resolution
-13. `model_pricing` stores effective-dated pricing rows used for historical charging
-14. `usage_cost_event_duplicates_archive` preserves duplicate-ledger migration/archive context
+12. Request-log purge removes old request-log parents and their payload, tag, and attempt children without touching spend ledger rows
+13. `pricing_catalog_cache` stores normalized pricing snapshots used by runtime pricing resolution
+14. `model_pricing` stores effective-dated pricing rows used for historical charging
+15. `usage_cost_event_duplicates_archive` preserves duplicate-ledger migration/archive context
 
 ## Table Catalog
 
@@ -93,6 +94,7 @@ Compatibility metadata is not a provider config fallback and is not an `extra_bo
   - Key columns: `id`, `public_id`, `secret_hash`, `owner_kind`, `owner_user_id`, `owner_team_id`
   - Constraint: exactly one owner column must be set consistently with `owner_kind`
   - Reserved ownership: seeded system-owned keys use the reserved `system-legacy` team
+  - Notes: gateway service-account-style callers are currently represented as team-owned or config-seeded API keys; provider service-account credentials live in provider config, not this table
 - `user_budgets`
   - Key columns: `user_budget_id`, `user_id`, `cadence`, `amount_10000`, `hard_limit`, `timezone`, `is_active`
   - Constraint: one active user budget per user
@@ -120,6 +122,8 @@ Compatibility metadata is not a provider config fallback and is not an `extra_bo
 - `mcp_tool_invocation_payloads`
   - Key columns: `mcp_tool_invocation_id`, `arguments_json`, `result_json`
   - Notes: payload rows exist only when MCP invocation payload policy captures sanitized payloads; summary rows are still recorded when payload capture is disabled.
+
+Request-log purge treats `request_logs` as the parent retention boundary. Purging a parent row also removes matching `request_log_payloads`, `request_log_tags`, and `request_log_attempts` rows. The purge does not remove `usage_cost_events`; spend reporting and budget enforcement stay tied to the ledger.
 
 ### Pricing Catalog Cache
 
@@ -188,6 +192,8 @@ Those rules are owned by [configuration-reference.md](../configuration/configura
 - User-owned and team-owned API keys share the same `api_keys` table
 - Team-owned usage and request logs can exist without an acting user
 - Current team spend attribution remains `actor:none` at the ownership-scope level
+- Service callers should use explicit team-owned keys with narrow model grants and team budgets until service-account owners become first-class
+- Provider service-account credentials such as Vertex service-account JSON authorize the gateway to call a provider and do not create a gateway caller owner
 
 That ownership model is explained operationally in [identity-and-access.md](../access/identity-and-access.md) and [budgets-and-spending.md](../operations/budgets-and-spending.md).
 

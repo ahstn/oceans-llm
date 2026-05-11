@@ -15,8 +15,8 @@ use crate::{
         McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
         ModelPricingRecord, ModelRoute, Money4, NewApiKeyRecord, PricingCatalogCacheRecord,
         ProviderCapabilities, ProviderConnection, ProviderRequestContext, RequestAttemptRecord,
-        RequestLogDetail, RequestLogPage, RequestLogPayloadRecord, RequestLogQuery,
-        RequestLogRecord, SpendDailyAggregateRecord, SpendModelAggregateRecord,
+        RequestLogDetail, RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult,
+        RequestLogQuery, RequestLogRecord, SpendDailyAggregateRecord, SpendModelAggregateRecord,
         SpendOwnerAggregateRecord, TeamBudgetRecord, TeamMembershipRecord, TeamRecord,
         UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord, UsageLedgerRecord,
         UserBudgetRecord, UserRecord,
@@ -397,6 +397,12 @@ pub trait RequestLogRepository: Send + Sync {
                 .to_string(),
         ))
     }
+
+    async fn purge_request_logs_older_than(
+        &self,
+        cutoff: OffsetDateTime,
+        dry_run: bool,
+    ) -> Result<RequestLogPurgeResult, StoreError>;
 }
 
 #[async_trait]

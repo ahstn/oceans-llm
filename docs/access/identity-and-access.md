@@ -23,6 +23,13 @@ The product uses first-class users, teams, and API-key ownership.
 - Users can exist without a team.
 - Seeded system-owned API keys use the reserved `system-legacy` team.
 
+Gateway service-account-style callers are modeled with API keys today, not a distinct owner kind.
+
+- Use a team-owned API key for shared automation or service workloads.
+- Use a user-owned API key only for traffic that should spend against one user.
+- Use config-seeded keys for bootstrap or deployment-managed callers, knowing they are owned by `system-legacy`.
+- Keep provider service-account credentials out of this identity model; they belong to provider config.
+
 ## User Lifecycle
 
 User status is typed, not free-form text.
@@ -117,6 +124,20 @@ Effective model access is layered:
 3. user allowlist when the user is `restricted`
 
 This keeps API-key grants as the baseline contract while allowing narrower restrictions above them.
+
+For service-account-style keys, the API-key grant list should be the primary permission boundary. Grant only the gateway models the workload needs, then use team or user model restrictions only as a narrower overlay.
+
+## Budget Ownership for API Keys
+
+Budget enforcement follows the API-key owner:
+
+- user-owned keys spend against the owning user budget
+- team-owned keys spend against the owning team budget
+- config-seeded `system-legacy` keys spend against the reserved team ownership scope
+
+Team budgets are aggregate guardrails for team-owned traffic. They do not identify an individual user for fairness inside the team in this slice. For service-account-style callers, create a dedicated team or an explicit owning team budget when the workload needs its own cap.
+
+[Issue #106](https://github.com/ahstn/oceans-llm/issues/106) tracks the broader budget taxonomy question: whether service accounts become a first-class owner kind, how personal budgets should relate to team aggregate budgets, and how model-specific budgets should fit without replacing the canonical spend ledger.
 
 ## Request Logging Preference
 

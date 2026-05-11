@@ -33,7 +33,7 @@ features:
     link: /configuration/configuration-reference
     linkText: Configure
   - title: Govern access
-    details: Understand admin control-plane roles, SSO state, team boundaries, and API-key ownership.
+    details: Understand admin control-plane roles, SSO state, team boundaries, API-key ownership, and service-account-style callers.
     link: /access/identity-and-access
     linkText: Review access
   - title: Control spend
@@ -41,7 +41,7 @@ features:
     link: /operations/budgets-and-spending
     linkText: Manage budgets
   - title: Trace requests
-    details: Follow request logs, MCP invocation records, observability payloads, failure modes, and provider compatibility edges.
+    details: Follow request logs, retention purge, MCP invocation records, observability payloads, failure modes, and provider compatibility edges.
     link: /operations/observability/request-logs
     linkText: Inspect observability
 ---

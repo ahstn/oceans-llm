@@ -23,6 +23,7 @@ use gateway_store::{
 use tokio::net::TcpListener;
 
 mod local_demo_seed;
+mod request_log_purge;
 
 use local_demo_seed::{LOCAL_DEMO_USER_PASSWORD, seed_local_demo_data};
 
@@ -36,6 +37,7 @@ async fn main() -> anyhow::Result<()> {
     let result = match cli.command.unwrap_or(Command::Serve(ServeArgs::default())) {
         Command::Serve(args) => run_serve(&config, observability.metrics.clone(), args).await,
         Command::Migrate(args) => run_migrate(&config, args.action()?).await,
+        Command::PurgeRequestLogs(args) => request_log_purge::run_command(&config, args).await,
         Command::BootstrapAdmin => run_bootstrap_admin_command(&config).await,
         Command::SeedConfig => run_seed_config_command(&config).await,
         Command::SeedLocalDemo => run_seed_local_demo_command(&config).await,
@@ -159,25 +161,13 @@ async fn run_serve_with_store(
         seed_config(store.as_ref(), config).await?;
     }
 
-    let planner = Arc::new(WeightedRoutePlanner::default());
-    let budget_alert_sender = build_budget_alert_sender(&config.budget_alerts.email)
-        .context("failed to build budget alert email sender")?;
-    let payload_policy = config
-        .request_log_payload_policy()
-        .context("failed to build request log payload policy")?;
-    let service = Arc::new(
-        GatewayService::new_with_budget_alert_sender_and_payload_policy(
-            store,
-            planner,
-            budget_alert_sender,
-            payload_policy,
-        ),
-    );
+    let service = build_gateway_service(config, store)?;
     if let Err(error) = service.refresh_pricing_catalog_if_stale().await {
         tracing::warn!(error = %error, "initial pricing catalog refresh failed");
     }
     spawn_pricing_catalog_refresh_loop(service.clone());
     spawn_budget_alert_delivery_loop(service.clone(), &config.budget_alerts.email);
+    request_log_purge::spawn_loop(service.clone(), &config.request_logging.purge);
     let providers = build_provider_registry(config)?;
 
     let bind_address: SocketAddr = config
@@ -397,6 +387,26 @@ fn spawn_budget_alert_delivery_loop(
             }
         }
     });
+}
+
+fn build_gateway_service(
+    config: &GatewayConfig,
+    store: Arc<AnyStore>,
+) -> anyhow::Result<Arc<GatewayService<AnyStore, WeightedRoutePlanner>>> {
+    let planner = Arc::new(WeightedRoutePlanner::default());
+    let budget_alert_sender = build_budget_alert_sender(&config.budget_alerts.email)
+        .context("failed to build budget alert email sender")?;
+    let payload_policy = config
+        .request_log_payload_policy()
+        .context("failed to build request log payload policy")?;
+    Ok(Arc::new(
+        GatewayService::new_with_budget_alert_sender_and_payload_policy(
+            store,
+            planner,
+            budget_alert_sender,
+            payload_policy,
+        ),
+    ))
 }
 
 fn pricing_catalog_refresh_interval() -> Duration {

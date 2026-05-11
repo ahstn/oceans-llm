@@ -14,6 +14,8 @@ The gateway uses one `gcp_vertex` provider type for multiple Vertex publisher fa
 
 Vertex routes require Google Cloud authentication with the `https://www.googleapis.com/auth/cloud-platform` scope. The provider supports Application Default Credentials, service-account JSON from a mounted path, and static bearer tokens for constrained environments.
 
+This provider service account is an upstream Google Cloud credential. It is not a gateway service-account-style API key. Gateway clients still authenticate to Oceans LLM with a gateway API key owned by a user, team, or config-seeded system owner.
+
 ## Provider
 
 ```yaml
@@ -53,6 +55,15 @@ providers:
       mode: bearer
       token: env.GCP_VERTEX_ACCESS_TOKEN
 ```
+
+For service-account JSON:
+
+- provision the Google service account in the target project
+- grant the least-privilege Vertex AI permissions needed for the configured models
+- mount the JSON as a file and point `credentials_path` at that mounted path
+- rotate the JSON or move to ADC/workload identity outside the gateway, then restart or reload the gateway path that reads it
+
+Do not put the JSON document itself in `gateway.yaml`. Use a mounted secret path or a runtime identity mechanism such as ADC.
 
 ## Model Identity
 

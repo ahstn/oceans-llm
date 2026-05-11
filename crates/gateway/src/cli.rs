@@ -1,4 +1,5 @@
 use clap::{ArgAction, Args, Parser, Subcommand};
+use gateway_core::RequestLogRetentionWindow;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -22,6 +23,7 @@ pub struct Cli {
 pub enum Command {
     Serve(ServeArgs),
     Migrate(MigrateArgs),
+    PurgeRequestLogs(PurgeRequestLogsArgs),
     BootstrapAdmin,
     SeedConfig,
     SeedLocalDemo,
@@ -76,6 +78,24 @@ pub struct MigrateArgs {
     pub status: bool,
 }
 
+#[derive(Debug, Clone, Args)]
+pub struct PurgeRequestLogsArgs {
+    #[arg(long, value_parser = parse_request_log_retention_window)]
+    pub retention: RequestLogRetentionWindow,
+
+    #[arg(long, action = ArgAction::SetTrue)]
+    pub dry_run: bool,
+}
+
+fn parse_request_log_retention_window(value: &str) -> Result<RequestLogRetentionWindow, String> {
+    match value {
+        "1d" => Ok(RequestLogRetentionWindow::OneDay),
+        "3d" => Ok(RequestLogRetentionWindow::ThreeDays),
+        "7d" => Ok(RequestLogRetentionWindow::SevenDays),
+        _ => Err("expected one of: 1d, 3d, 7d".to_string()),
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MigrateAction {
     Check,
@@ -107,6 +127,8 @@ impl MigrateArgs {
 #[cfg(test)]
 mod tests {
     use clap::Parser;
+
+    use gateway_core::RequestLogRetentionWindow;
 
     use super::{Cli, Command, MigrateAction};
 
@@ -141,5 +163,29 @@ mod tests {
     fn parses_seed_local_demo_command() {
         let cli = Cli::parse_from(["gateway", "seed-local-demo"]);
         assert!(matches!(cli.command, Some(Command::SeedLocalDemo)));
+    }
+
+    #[test]
+    fn parses_purge_request_logs_command() {
+        let cli = Cli::parse_from([
+            "gateway",
+            "purge-request-logs",
+            "--retention",
+            "3d",
+            "--dry-run",
+        ]);
+        let Command::PurgeRequestLogs(args) = cli.command.expect("command") else {
+            panic!("expected purge-request-logs command");
+        };
+        assert_eq!(args.retention, RequestLogRetentionWindow::ThreeDays);
+        assert!(args.dry_run);
+    }
+
+    #[test]
+    fn rejects_unsupported_purge_retention() {
+        let error = Cli::try_parse_from(["gateway", "purge-request-logs", "--retention", "14d"])
+            .expect_err("retention should be rejected");
+
+        assert!(error.to_string().contains("invalid value '14d'"));
     }
 }

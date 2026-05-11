@@ -6,9 +6,10 @@ use gateway_core::{
     McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationQuery,
     McpToolInvocationRepository, ModelRepository, ModelRoute, Money4, PricingCatalogRepository,
     PricingResolution, PricingUnpricedReason, ProviderRepository, RequestLogDetail, RequestLogPage,
-    RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestTags, ResolvedModelPricing,
-    ResponsesRequest, RouteError, RoutePlanner, StoreHealth, TeamBudgetRecord, UsageLedgerRecord,
-    UsagePricingStatus, UserBudgetRecord,
+    RequestLogPurgeResult, RequestLogQuery, RequestLogRecord, RequestLogRepository,
+    RequestLogRetentionWindow, RequestTags, ResolvedModelPricing, ResponsesRequest, RouteError,
+    RoutePlanner, StoreHealth, TeamBudgetRecord, UsageLedgerRecord, UsagePricingStatus,
+    UserBudgetRecord,
 };
 use serde_json::{Value, json};
 use time::OffsetDateTime;
@@ -379,6 +380,16 @@ where
             .await
     }
 
+    pub async fn purge_request_logs(
+        &self,
+        retention_window: RequestLogRetentionWindow,
+        dry_run: bool,
+    ) -> Result<RequestLogPurgeResult, GatewayError> {
+        self.request_logging
+            .purge_request_logs(retention_window, dry_run)
+            .await
+    }
+
     pub async fn refresh_pricing_catalog_if_stale(&self) -> Result<(), GatewayError> {
         self.pricing_catalog.refresh_if_stale().await
     }
@@ -721,6 +732,7 @@ mod tests {
     };
 
     use async_trait::async_trait;
+    use gateway_core::RequestLogPurgeResult;
     use gateway_core::{
         ApiKeyOwnerKind, ApiKeyRepository, AuthenticatedApiKey, BudgetRepository, GatewayModel,
         McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationPayloadRecord,
@@ -949,6 +961,14 @@ mod tests {
             &self,
             _request_log_id: Uuid,
         ) -> Result<RequestLogDetail, StoreError> {
+            unreachable!("not used in resolve_request test")
+        }
+
+        async fn purge_request_logs_older_than(
+            &self,
+            _cutoff: OffsetDateTime,
+            _dry_run: bool,
+        ) -> Result<RequestLogPurgeResult, StoreError> {
             unreachable!("not used in resolve_request test")
         }
     }

@@ -61,6 +61,13 @@ Admins can:
 - replace model grants for an active key
 - revoke a key so runtime auth rejects it immediately
 
+For service workloads, create a team-owned API key for the workload or owning platform team. Treat the key as a gateway service-account-style credential:
+
+- give it a workload-specific name
+- grant only the gateway models the workload needs
+- put the owning team under the appropriate team budget
+- rotate by creating a replacement key, updating the caller secret, then revoking the old key
+
 Current limits:
 
 - no rename flow
@@ -138,17 +145,17 @@ Current limits:
 - request-log filtering ergonomics still have follow-up work
 - MCP invocation persistence and API behavior are still hardening in the backend MCP observability slice
 
-## Non-Human Callers Today
+## Service Callers Today
 
-The gateway does not yet have first-class gateway service accounts.
+The gateway does not yet have a separate `service_account` API-key owner kind. Current service-account-style caller choices are:
 
-Current choices are:
-
-- user-owned API keys
-- team-owned API keys
+- team-owned API keys created in the admin UI
 - config-seeded keys owned by the reserved `system-legacy` team
+- user-owned keys only when the key genuinely acts on behalf of one user
 
-Do not confuse this with provider credential auth such as Vertex `auth.mode: service_account`. Gateway service-account semantics are tracked in [issue #107](https://github.com/ahstn/oceans-llm/issues/107).
+Prefer team-owned keys for automation, CI jobs, batch workers, and shared services. Team ownership gives admins an explicit budget and reporting boundary even though the current team ownership scope is still `actor:none`.
+
+Do not confuse gateway service-account-style API keys with provider credential auth such as Vertex `auth.mode: service_account`. Gateway API keys authenticate clients to Oceans LLM. Provider service-account credentials authenticate Oceans LLM to an upstream cloud provider.
 
 ## Current Gaps
 
