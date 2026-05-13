@@ -110,13 +110,13 @@ describe('TeamsPage', () => {
 
     const showMembersButtons = screen.getAllByRole('button', { name: 'Show 1 member' })
     expect(showMembersButtons[0]).toHaveAttribute('aria-expanded', 'false')
+    expect(showMembersButtons[0].querySelector('[data-icon="inline-start"]')).toBeInTheDocument()
 
     fireEvent.click(showMembersButtons[0])
 
-    expect(screen.getAllByRole('button', { name: 'Hide 1 member' })[0]).toHaveAttribute(
-      'aria-expanded',
-      'true',
-    )
+    const hideMembersButton = screen.getAllByRole('button', { name: 'Hide 1 member' })[0]
+    expect(hideMembersButton).toHaveAttribute('aria-expanded', 'true')
+    expect(hideMembersButton.querySelector('[data-icon="inline-start"]')).toBeInTheDocument()
     expect(
       screen.getAllByText('Owner memberships cannot be removed or transferred in this slice.')
         .length,

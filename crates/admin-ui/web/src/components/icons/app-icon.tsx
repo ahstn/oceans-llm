@@ -10,6 +10,8 @@ interface AppIconProps {
   stroke?: AppIconStroke
   color?: string
   className?: string
+  'aria-hidden'?: boolean
+  'data-icon'?: 'inline-start' | 'inline-end'
 }
 
 export function AppIcon({
@@ -18,6 +20,8 @@ export function AppIcon({
   stroke = 1.2,
   color = 'currentColor',
   className,
+  'aria-hidden': ariaHidden,
+  'data-icon': dataIcon,
 }: AppIconProps) {
   return (
     <HugeiconsIcon
@@ -26,6 +30,8 @@ export function AppIcon({
       strokeWidth={stroke}
       color={color}
       className={className}
+      aria-hidden={ariaHidden}
+      data-icon={dataIcon}
     />
   )
 }

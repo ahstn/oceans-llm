@@ -1,5 +1,5 @@
 import { Fragment, useMemo, useState, useTransition, type FormEvent } from 'react'
-import { UserIcon } from '@hugeicons/core-free-icons'
+import { UnfoldMoreDownIcon, UnfoldMoreUpIcon, UserIcon } from '@hugeicons/core-free-icons'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
@@ -478,7 +478,10 @@ export function TeamsPage() {
                           aria-controls={membersRegionId}
                           onClick={() => toggleTeamMembers(team.id)}
                         >
-                          {isExpanded ? 'Hide' : 'Show'} {formatMemberCount(team.member_count)}
+                          <TeamMembersToggleLabel
+                            isExpanded={isExpanded}
+                            memberCount={team.member_count}
+                          />
                         </Button>
                         <Button
                           type="button"
@@ -561,8 +564,10 @@ export function TeamsPage() {
                                 aria-controls={membersRegionId}
                                 onClick={() => toggleTeamMembers(team.id)}
                               >
-                                {isExpanded ? 'Hide' : 'Show'}{' '}
-                                {formatMemberCount(team.member_count)}
+                                <TeamMembersToggleLabel
+                                  isExpanded={isExpanded}
+                                  memberCount={team.member_count}
+                                />
                               </Button>
                             </TableCell>
                             <TableCell className="px-3 py-3">
@@ -1299,8 +1304,28 @@ function isInviteOidcDisabled(
   return form.auth_mode === 'oidc' && (providers.length === 0 || !form.oidc_provider_key)
 }
 
-function formatMemberCount(count: number) {
-  return `${count} ${count === 1 ? 'member' : 'members'}`
+function TeamMembersToggleLabel({
+  isExpanded,
+  memberCount,
+}: {
+  isExpanded: boolean
+  memberCount: number
+}) {
+  return (
+    <>
+      <AppIcon
+        icon={isExpanded ? UnfoldMoreUpIcon : UnfoldMoreDownIcon}
+        stroke={1.5}
+        aria-hidden
+        data-icon="inline-start"
+        className="transition-transform duration-200 ease-out"
+      />
+      <span>
+        {isExpanded ? 'Hide' : 'Show'} <span className="tabular-nums">{memberCount}</span>{' '}
+        {memberCount === 1 ? 'member' : 'members'}
+      </span>
+    </>
+  )
 }
 
 function getErrorMessage(error: unknown) {
