@@ -11,6 +11,7 @@ use gateway_core::{
     ProviderRepository,
 };
 use time::OffsetDateTime;
+use tracing::warn;
 
 use crate::pricing_catalog::{PricingCatalog, exact_pricing_target_for_route};
 use crate::{ModelIconKey, ProviderIconKey, resolve_model_icon_key, resolve_provider_display};
@@ -73,9 +74,15 @@ where
     }
 
     pub async fn list_models(&self) -> Result<Vec<AdminModelSummary>, GatewayError> {
-        PricingCatalog::new(self.repo.clone())
+        if let Err(error) = PricingCatalog::new(self.repo.clone())
             .sync_current_snapshot()
-            .await?;
+            .await
+        {
+            warn!(
+                error = %error,
+                "pricing catalog sync failed while listing admin models; continuing with existing pricing rows"
+            );
+        }
 
         let pricing_time = OffsetDateTime::now_utc();
         let models = self.repo.list_models().await?;
@@ -428,7 +435,7 @@ mod tests {
         collections::HashMap,
         sync::{
             Arc,
-            atomic::{AtomicUsize, Ordering},
+            atomic::{AtomicBool, AtomicUsize, Ordering},
         },
     };
 
@@ -455,6 +462,7 @@ mod tests {
         list_routes_for_models_calls: AtomicUsize,
         get_provider_by_key_calls: AtomicUsize,
         list_providers_by_keys_calls: AtomicUsize,
+        fail_pricing_sync: AtomicBool,
     }
 
     #[async_trait]
@@ -566,6 +574,9 @@ mod tests {
         }
 
         async fn list_active_model_pricing(&self) -> Result<Vec<ModelPricingRecord>, StoreError> {
+            if self.fail_pricing_sync.load(Ordering::SeqCst) {
+                return Err(StoreError::Unavailable("pricing sync failed".to_string()));
+            }
             Ok(self.pricing_by_key.values().cloned().collect())
         }
 
@@ -889,6 +900,30 @@ mod tests {
         assert_eq!(items[0].supports_structured_output, Some(true));
         assert_eq!(items[0].supports_attachments, Some(false));
         assert!(items[0].client_configurations.is_empty());
+    }
+
+    #[tokio::test]
+    async fn list_models_continues_when_pricing_sync_fails() {
+        let model_id = Uuid::new_v4();
+        let repo = Arc::new(CountingRepo {
+            models: vec![GatewayModel {
+                id: model_id,
+                model_key: "gpt-4.1".to_string(),
+                alias_target_model_key: None,
+                description: None,
+                tags: Vec::new(),
+                rank: 1,
+            }],
+            fail_pricing_sync: AtomicBool::new(true),
+            ..Default::default()
+        });
+
+        let service = AdminModelsService::new(repo);
+        let items = service.list_models().await.expect("admin models");
+
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].id, "gpt-4.1");
+        assert_eq!(items[0].input_cost_per_million_tokens_usd_10000, None);
     }
 
     #[tokio::test]

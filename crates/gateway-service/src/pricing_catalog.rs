@@ -17,7 +17,7 @@ use tracing::warn;
 use uuid::Uuid;
 
 pub const DEFAULT_PRICING_CATALOG_SOURCE_URL: &str = "https://models.dev/api.json";
-pub const PRICING_CATALOG_CACHE_KEY: &str = "models_dev_supported_v1";
+pub const PRICING_CATALOG_CACHE_KEY: &str = "models_dev_supported_v2";
 pub const DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL: Duration = Duration::from_secs(15 * 60);
 pub const SUPPORTED_PRICING_PROVIDER_IDS: [&str; 4] = [
     AMAZON_BEDROCK_PRICING_PROVIDER_ID,
@@ -201,6 +201,8 @@ where
     pub async fn sync_current_snapshot(&self) -> Result<(), GatewayError> {
         if let Err(error) = self.refresh_if_stale().await {
             warn!(
+                catalog_key = %self.catalog_key,
+                source_url = %self.source_url,
                 error = %error,
                 "pricing catalog refresh failed; falling back to cached snapshot"
             );
@@ -254,6 +256,10 @@ where
         snapshot: &PricingCatalogSnapshot,
     ) -> Result<(), GatewayError> {
         let active_rows = self.repo.list_active_model_pricing().await?;
+        if snapshot_is_already_synced(&active_rows, snapshot) {
+            return Ok(());
+        }
+
         let active_by_target = active_rows
             .into_iter()
             .map(|record| {
@@ -482,16 +488,7 @@ fn strip_bedrock_default_version_suffix(model_id: &str) -> Option<&str> {
     }
 
     let (base, version) = model_id.rsplit_once("-v")?;
-    let (major, minor) = version.split_once(':')?;
-    if !major.is_empty()
-        && !minor.is_empty()
-        && major.bytes().all(|byte| byte.is_ascii_digit())
-        && minor.bytes().all(|byte| byte.is_ascii_digit())
-    {
-        Some(base)
-    } else {
-        None
-    }
+    if version == "1:0" { Some(base) } else { None }
 }
 
 fn unsupported_billing_modifier(route: &ModelRoute) -> Option<PricingUnpricedReason> {
@@ -586,6 +583,26 @@ fn pricing_record_matches(existing: &ModelPricingRecord, desired: &ModelPricingR
         && existing.last_updated == desired.last_updated
         && existing.limits == desired.limits
         && existing.modalities == desired.modalities
+}
+
+fn snapshot_is_already_synced(
+    active_rows: &[ModelPricingRecord],
+    snapshot: &PricingCatalogSnapshot,
+) -> bool {
+    let snapshot_model_count = snapshot
+        .document
+        .providers
+        .values()
+        .map(|provider| provider.models.len())
+        .sum::<usize>();
+    snapshot_model_count > 0
+        && active_rows
+            .iter()
+            .filter(|row| row.provenance.source == snapshot.metadata.source)
+            .filter(|row| row.provenance.etag == snapshot.metadata.etag)
+            .filter(|row| row.provenance.fetched_at == snapshot.metadata.fetched_at)
+            .count()
+            >= snapshot_model_count
 }
 
 fn parse_money(value: Option<&str>) -> Result<Option<Money4>, GatewayError> {
@@ -856,7 +873,8 @@ mod tests {
         PRICING_CATALOG_CACHE_KEY, PricingCatalog, PricingCatalogCostDocument,
         PricingCatalogDocument, PricingCatalogLimitDocument, PricingCatalogModalitiesDocument,
         PricingCatalogModelDocument, PricingCatalogProviderDocument, PricingCatalogSnapshot,
-        PricingCatalogSnapshotMetadata, REMOTE_SOURCE, VENDORED_SOURCE, normalize_models_dev_money,
+        PricingCatalogSnapshotMetadata, REMOTE_SOURCE, VENDORED_SOURCE,
+        normalize_bedrock_pricing_model_id, normalize_models_dev_money,
     };
 
     #[derive(Clone, Default)]
@@ -1302,6 +1320,18 @@ mod tests {
             }
             other => panic!("unexpected gpt oss resolution: {other:?}"),
         }
+    }
+
+    #[test]
+    fn bedrock_default_version_normalization_is_conservative() {
+        assert_eq!(
+            normalize_bedrock_pricing_model_id("us.anthropic.claude-sonnet-4-6-v1:0"),
+            "us.anthropic.claude-sonnet-4-6"
+        );
+        assert_eq!(
+            normalize_bedrock_pricing_model_id("us.anthropic.claude-sonnet-4-6-v2:0"),
+            "us.anthropic.claude-sonnet-4-6-v2:0"
+        );
     }
 
     #[test]
