@@ -61,7 +61,7 @@ describe('TeamsPage', () => {
     ).toBeInTheDocument()
   })
 
-  it('shows member roster actions and blocks owner transfers', async () => {
+  it('keeps member rosters collapsed until a team is expanded', async () => {
     routeMock.useLoaderData.mockReturnValue({
       data: {
         teams: [
@@ -103,6 +103,20 @@ describe('TeamsPage', () => {
     render(<TeamsPage />)
 
     expect(screen.getAllByText('Jane Admin').length).toBeGreaterThan(0)
+    expect(
+      screen.queryByText('Owner memberships cannot be removed or transferred in this slice.'),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Transfer' })).not.toBeInTheDocument()
+
+    const showMembersButtons = screen.getAllByRole('button', { name: 'Show 1 member' })
+    expect(showMembersButtons[0]).toHaveAttribute('aria-expanded', 'false')
+
+    fireEvent.click(showMembersButtons[0])
+
+    expect(screen.getAllByRole('button', { name: 'Hide 1 member' })[0]).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
     expect(
       screen.getAllByText('Owner memberships cannot be removed or transferred in this slice.')
         .length,
