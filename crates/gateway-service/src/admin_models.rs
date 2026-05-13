@@ -12,7 +12,7 @@ use gateway_core::{
 };
 use time::OffsetDateTime;
 
-use crate::pricing_catalog::exact_pricing_target_for_route;
+use crate::pricing_catalog::{PricingCatalog, exact_pricing_target_for_route};
 use crate::{ModelIconKey, ProviderIconKey, resolve_model_icon_key, resolve_provider_display};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,6 +73,10 @@ where
     }
 
     pub async fn list_models(&self) -> Result<Vec<AdminModelSummary>, GatewayError> {
+        PricingCatalog::new(self.repo.clone())
+            .sync_current_snapshot()
+            .await?;
+
         let pricing_time = OffsetDateTime::now_utc();
         let models = self.repo.list_models().await?;
         let by_key = models
@@ -955,7 +959,7 @@ mod tests {
         let route_id = Uuid::new_v4();
         let mut pricing = pricing_record(
             "google-vertex-anthropic",
-            "claude-sonnet-4-6",
+            "claude-sonnet-4-6@default",
             "3.0000",
             "15.0000",
             (Some(200_000), None, Some(64_000)),
@@ -1006,7 +1010,7 @@ mod tests {
             pricing_by_key: HashMap::from([(
                 (
                     "google-vertex-anthropic".to_string(),
-                    "claude-sonnet-4-6".to_string(),
+                    "claude-sonnet-4-6@default".to_string(),
                 ),
                 pricing,
             )]),
