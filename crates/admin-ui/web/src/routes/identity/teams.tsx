@@ -73,6 +73,7 @@ export const Route = createFileRoute('/identity/teams')({
 const initialTeamForm: CreateTeamInput = {
   name: '',
   admin_user_ids: [],
+  tags: [],
 }
 
 const initialInviteForm: CreateUserInput = {
@@ -83,6 +84,7 @@ const initialInviteForm: CreateUserInput = {
   team_id: null,
   team_role: 'member',
   oidc_provider_key: null,
+  tags: [],
 }
 
 type TeamDialogState = { mode: 'closed' } | { mode: 'create' } | { mode: 'edit'; teamId: string }
@@ -178,6 +180,7 @@ export function TeamsPage() {
     setTeamForm({
       name: team.name,
       admin_user_ids: team.admins.map((admin) => admin.id),
+      tags: team.tags,
     })
     setTeamDialog({ mode: 'edit', teamId: team.id })
   }
@@ -431,6 +434,10 @@ export function TeamsPage() {
                     </dl>
 
                     <div className="mt-4 flex flex-wrap gap-2">
+                      <EntityTagBadges tags={team.tags} />
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-2">
                       {team.admins.length > 0 ? (
                         team.admins.map((admin) => <Badge key={admin.id}>{admin.name}</Badge>)
                       ) : (
@@ -547,6 +554,7 @@ export function TeamsPage() {
                           <div className="flex flex-col gap-1">
                             <p className="text-[var(--color-text)]">{team.name}</p>
                             <p className="text-xs text-[var(--color-text-soft)]">{team.key}</p>
+                            <EntityTagBadges tags={team.tags} />
                           </div>
                         </td>
                         <td className="px-3 py-3">
@@ -688,6 +696,12 @@ export function TeamsPage() {
                 }
                 emptyTitle="No assignable admins yet"
                 emptyDescription="Create the team now and return later once users exist."
+              />
+
+              <EntityTagsField
+                label="Tags"
+                tags={teamForm.tags}
+                onChange={(tags) => setTeamForm((current) => ({ ...current, tags }))}
               />
             </FieldGroup>
 
@@ -1212,7 +1226,84 @@ function sanitizeTeamForm(form: CreateTeamInput): CreateTeamInput {
   return {
     name: form.name.trim(),
     admin_user_ids: Array.from(new Set(form.admin_user_ids)),
+    tags: sanitizeEntityTags(form.tags),
   }
+}
+
+function EntityTagsField({
+  label,
+  tags,
+  onChange,
+}: {
+  label: string
+  tags: CreateTeamInput['tags']
+  onChange: (tags: CreateTeamInput['tags']) => void
+}) {
+  function updateTag(index: number, field: 'key' | 'value', value: string) {
+    onChange(tags.map((tag, tagIndex) => (tagIndex === index ? { ...tag, [field]: value } : tag)))
+  }
+
+  return (
+    <Field>
+      <FieldLabel>{label}</FieldLabel>
+      <div className="flex flex-col gap-2">
+        {tags.map((tag, index) => (
+          <div key={index} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+            <Input
+              value={tag.key}
+              onChange={(event) => updateTag(index, 'key', event.target.value)}
+              placeholder="cost-center"
+            />
+            <Input
+              value={tag.value}
+              onChange={(event) => updateTag(index, 'value', event.target.value)}
+              placeholder="platform"
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => onChange(tags.filter((_, tagIndex) => tagIndex !== index))}
+            >
+              Remove
+            </Button>
+          </div>
+        ))}
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => onChange([...tags, { key: '', value: '' }])}
+          disabled={tags.length >= 5}
+        >
+          Add tag
+        </Button>
+      </div>
+      <FieldDescription>
+        Up to five lowercase key/value tags. Keys may use letters, digits, dot, underscore, or dash.
+      </FieldDescription>
+    </Field>
+  )
+}
+
+function EntityTagBadges({ tags }: { tags: TeamManagementView['tags'] }) {
+  if (tags.length === 0) {
+    return <span className="text-xs text-[var(--color-text-soft)]">No tags</span>
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {tags.map((tag) => (
+        <Badge key={tag.key} variant="secondary">
+          {tag.key}:{tag.value}
+        </Badge>
+      ))}
+    </div>
+  )
+}
+
+function sanitizeEntityTags(tags: CreateTeamInput['tags']) {
+  return tags
+    .map((tag) => ({ key: tag.key.trim(), value: tag.value.trim() }))
+    .filter((tag) => tag.key.length > 0 || tag.value.length > 0)
 }
 
 function sanitizeInviteForm(
@@ -1230,6 +1321,7 @@ function sanitizeInviteForm(
       form.auth_mode === 'oidc'
         ? (form.oidc_provider_key ?? (oidcProviders.length === 1 ? oidcProviders[0].key : null))
         : null,
+    tags: sanitizeEntityTags(form.tags),
   }
 }
 

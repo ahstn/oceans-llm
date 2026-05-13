@@ -30,7 +30,7 @@ use gateway_core::{
     PricingModalities, PricingProvenance, ProviderConnection, ProviderRepository,
     RequestAttemptRecord, RequestAttemptRepository, RequestAttemptStatus, RequestLogDetail,
     RequestLogPage, RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord,
-    RequestLogRepository, SYSTEM_BOOTSTRAP_ADMIN_USER_ID, ServiceAccountBudgetRecord,
+    RequestLogRepository, RequestTag, SYSTEM_BOOTSTRAP_ADMIN_USER_ID, ServiceAccountBudgetRecord,
     ServiceAccountRecord, ServiceAccountStatus, SpendDailyAggregateRecord,
     SpendModelAggregateRecord, SpendOwnerAggregateRecord, StoreError, StoreHealth,
     TeamBudgetRecord, TeamMembershipRecord, TeamRecord, UsageLeaderboardBucketRecord,
@@ -204,6 +204,15 @@ impl GatewayStore for LibsqlStore {
         Self::update_team_name(self, team_id, team_name, updated_at).await
     }
 
+    async fn update_team_tags(
+        &self,
+        team_id: Uuid,
+        tags: &[RequestTag],
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        Self::update_team_tags(self, team_id, tags, updated_at).await
+    }
+
     async fn create_identity_user(
         &self,
         name: &str,
@@ -233,6 +242,15 @@ impl GatewayStore for LibsqlStore {
         updated_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
         Self::update_identity_user(self, user_id, global_role, auth_mode, updated_at).await
+    }
+
+    async fn update_user_tags(
+        &self,
+        user_id: Uuid,
+        tags: &[RequestTag],
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        Self::update_user_tags(self, user_id, tags, updated_at).await
     }
 
     async fn deactivate_identity_user(

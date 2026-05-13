@@ -64,6 +64,7 @@ pub struct AdminIdentityUserView {
     pub team_name: Option<String>,
     pub team_role: Option<String>,
     pub status: String,
+    pub tags: Vec<AdminEntityTagView>,
     pub onboarding: Option<AdminOnboardingActionView>,
 }
 
@@ -114,9 +115,16 @@ pub struct AdminTeamManagementView {
     pub name: String,
     pub key: String,
     pub status: String,
+    pub tags: Vec<AdminEntityTagView>,
     pub member_count: usize,
     pub admins: Vec<AdminTeamAdminView>,
     pub members: Vec<AdminTeamMemberView>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct AdminEntityTagView {
+    pub key: String,
+    pub value: String,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -304,18 +312,23 @@ pub struct CreateUserRequest {
     pub team_id: Option<String>,
     pub team_role: Option<String>,
     pub oidc_provider_key: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<AdminEntityTagView>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateTeamRequest {
     pub name: String,
     pub admin_user_ids: Vec<String>,
+    #[serde(default)]
+    pub tags: Vec<AdminEntityTagView>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateTeamRequest {
     pub name: String,
     pub admin_user_ids: Vec<String>,
+    pub tags: Option<Vec<AdminEntityTagView>>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -330,6 +343,7 @@ pub struct UpdateUserRequest {
     pub team_id: Option<String>,
     pub team_role: Option<String>,
     pub oidc_provider_key: Option<String>,
+    pub tags: Option<Vec<AdminEntityTagView>>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

@@ -32,6 +32,41 @@ pub fn build_bespoke_tag_filter(key: &str, value: &str) -> Result<RequestTag, Ga
     })
 }
 
+pub fn validate_entity_tags(
+    tags: &[RequestTag],
+    context: &str,
+) -> Result<Vec<RequestTag>, GatewayError> {
+    let mut seen = BTreeSet::new();
+    let mut normalized = Vec::with_capacity(tags.len());
+    for tag in tags {
+        let tag = RequestTag {
+            key: validate_tag_key(&tag.key, context)?,
+            value: validate_tag_value(&tag.value, context)?,
+        };
+        if matches!(tag.key.as_str(), "service" | "component" | "env") {
+            return Err(GatewayError::InvalidRequest(format!(
+                "{context} may not redefine reserved tag key `{}`",
+                tag.key
+            )));
+        }
+        if !seen.insert(tag.key.clone()) {
+            return Err(GatewayError::InvalidRequest(format!(
+                "{context} contains duplicate tag key `{}`",
+                tag.key
+            )));
+        }
+        normalized.push(tag);
+    }
+
+    if normalized.len() > MAX_BESPOKE_TAGS {
+        return Err(GatewayError::InvalidRequest(format!(
+            "{context} supports at most {MAX_BESPOKE_TAGS} tags"
+        )));
+    }
+
+    Ok(normalized)
+}
+
 fn extract_single_header_value(
     headers: &HeaderMap,
     header_name: &str,

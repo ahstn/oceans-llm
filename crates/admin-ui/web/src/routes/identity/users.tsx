@@ -68,6 +68,7 @@ const initialForm: CreateUserInput = {
   team_id: null,
   team_role: null,
   oidc_provider_key: null,
+  tags: [],
 }
 
 const initialUpdateForm: UpdateUserInput = {
@@ -76,6 +77,7 @@ const initialUpdateForm: UpdateUserInput = {
   team_role: null,
   auth_mode: 'password',
   oidc_provider_key: null,
+  tags: [],
 }
 
 type UserDialogState = { mode: 'closed' } | { mode: 'edit'; userId: string }
@@ -142,6 +144,7 @@ export function UsersPage() {
       auth_mode: user.auth_mode,
       oidc_provider_key:
         user.onboarding?.kind === 'oidc_sign_in' ? user.onboarding.provider_key : null,
+      tags: user.tags,
     })
     setOnboardingResult(null)
   }
@@ -556,6 +559,12 @@ export function UsersPage() {
                         </Select>
                       </Field>
                     ) : null}
+
+                    <EntityTagsField
+                      label="Tags"
+                      tags={form.tags}
+                      onChange={(tags) => setForm((current) => ({ ...current, tags }))}
+                    />
                   </FieldGroup>
 
                   <DialogFooter>
@@ -778,6 +787,9 @@ export function UsersPage() {
                 <p className="mt-1 text-sm text-[var(--color-text-muted)]">
                   Request logging: {selectedUser.request_logging_enabled ? 'enabled' : 'disabled'}
                 </p>
+                <div className="mt-3">
+                  <EntityTagBadges tags={selectedUser.tags} />
+                </div>
                 <p className="mt-2 text-xs text-[var(--color-text-soft)]">
                   {selectedUser.status === 'invited'
                     ? 'Auth mode can only be changed while the user is still invited.'
@@ -931,6 +943,12 @@ export function UsersPage() {
                       </Field>
                     </>
                   ) : null}
+
+                  <EntityTagsField
+                    label="Tags"
+                    tags={updateForm.tags}
+                    onChange={(tags) => setUpdateForm((current) => ({ ...current, tags }))}
+                  />
                 </FieldGroup>
 
                 <section className="flex flex-col gap-3 rounded-lg border border-[color:var(--color-border)] p-4">
@@ -1063,6 +1081,7 @@ function sanitizeForm(form: CreateUserInput): CreateUserInput {
           ? 'member'
           : null,
     oidc_provider_key: form.auth_mode === 'oidc' ? (form.oidc_provider_key ?? null) : null,
+    tags: sanitizeEntityTags(form.tags),
   }
 }
 
@@ -1073,6 +1092,7 @@ function sanitizeUpdateForm(
 ): UpdateUserInput {
   const update: UpdateUserInput = {
     global_role: form.global_role,
+    tags: sanitizeEntityTags(form.tags),
   }
 
   if (user.team_role !== 'owner') {
@@ -1093,6 +1113,82 @@ function sanitizeUpdateForm(
   }
 
   return update
+}
+
+function EntityTagsField({
+  label,
+  tags,
+  onChange,
+}: {
+  label: string
+  tags: CreateUserInput['tags']
+  onChange: (tags: CreateUserInput['tags']) => void
+}) {
+  function updateTag(index: number, field: 'key' | 'value', value: string) {
+    onChange(tags.map((tag, tagIndex) => (tagIndex === index ? { ...tag, [field]: value } : tag)))
+  }
+
+  return (
+    <Field>
+      <FieldLabel>{label}</FieldLabel>
+      <div className="flex flex-col gap-2">
+        {tags.map((tag, index) => (
+          <div key={index} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+            <Input
+              value={tag.key}
+              onChange={(event) => updateTag(index, 'key', event.target.value)}
+              placeholder="cost-center"
+            />
+            <Input
+              value={tag.value}
+              onChange={(event) => updateTag(index, 'value', event.target.value)}
+              placeholder="platform"
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => onChange(tags.filter((_, tagIndex) => tagIndex !== index))}
+            >
+              Remove
+            </Button>
+          </div>
+        ))}
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => onChange([...tags, { key: '', value: '' }])}
+          disabled={tags.length >= 5}
+        >
+          Add tag
+        </Button>
+      </div>
+      <FieldDescription>
+        Up to five lowercase key/value tags. Keys may use letters, digits, dot, underscore, or dash.
+      </FieldDescription>
+    </Field>
+  )
+}
+
+function EntityTagBadges({ tags }: { tags: UserView['tags'] }) {
+  if (tags.length === 0) {
+    return <span className="text-xs text-[var(--color-text-soft)]">No tags</span>
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {tags.map((tag) => (
+        <Badge key={tag.key} variant="secondary">
+          {tag.key}:{tag.value}
+        </Badge>
+      ))}
+    </div>
+  )
+}
+
+function sanitizeEntityTags(tags: CreateUserInput['tags']) {
+  return tags
+    .map((tag) => ({ key: tag.key.trim(), value: tag.value.trim() }))
+    .filter((tag) => tag.key.length > 0 || tag.value.length > 0)
 }
 
 function isOidcDisabled(form: CreateUserInput, providers: IdentityUsersPayload['oidc_providers']) {

@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::http::{
     admin_contract::{
-        AdminIdentityUserView, AdminOnboardingActionView, AdminTeamAdminView,
+        AdminEntityTagView, AdminIdentityUserView, AdminOnboardingActionView, AdminTeamAdminView,
         AdminTeamAssignableUserView, AdminTeamManagementView, AdminTeamMemberView,
         format_timestamp,
     },
@@ -56,6 +56,7 @@ pub(crate) async fn build_admin_identity_user_view(
         team_name: user.team_name,
         team_role: user.membership_role.map(|value| value.as_str().to_string()),
         status: format_user_status(user.user.status),
+        tags: entity_tag_views(&user.user.tags),
         onboarding,
     })
 }
@@ -136,6 +137,7 @@ pub(crate) fn build_admin_team_views(
                 name: team.team_name.clone(),
                 key: team.team_key.clone(),
                 status: team.status.clone(),
+                tags: entity_tag_views(&team.tags),
                 member_count,
                 admins,
                 members,
@@ -173,4 +175,13 @@ pub(crate) async fn reload_identity_user(
 
 pub(crate) fn format_user_status(status: UserStatus) -> String {
     status.as_str().to_string()
+}
+
+fn entity_tag_views(tags: &[gateway_core::RequestTag]) -> Vec<AdminEntityTagView> {
+    tags.iter()
+        .map(|tag| AdminEntityTagView {
+            key: tag.key.clone(),
+            value: tag.value.clone(),
+        })
+        .collect()
 }

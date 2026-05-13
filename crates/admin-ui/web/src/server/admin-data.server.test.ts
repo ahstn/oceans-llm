@@ -220,6 +220,8 @@ describe('server-side admin data wrappers', () => {
                   team_name: 'Core Platform',
                   team_role: 'owner',
                   status: 'invited',
+                  request_logging_enabled: true,
+                  tags: [],
                   onboarding: {
                     kind: 'password_invite',
                     invite_url: 'http://localhost:8080/admin/invite/test',
@@ -247,6 +249,7 @@ describe('server-side admin data wrappers', () => {
                   name: 'Core Platform',
                   key: 'core-platform',
                   status: 'active',
+                  tags: [],
                   member_count: 2,
                   admins: [
                     {
@@ -667,7 +670,9 @@ describe('server-side admin data wrappers', () => {
                 team_id: 'team_1',
                 team_name: 'Core Platform',
                 team_role: 'owner',
+                request_logging_enabled: true,
                 status: 'invited',
+                tags: [],
                 onboarding: null,
               },
               invite_url: 'http://localhost:8080/admin/invite/test',

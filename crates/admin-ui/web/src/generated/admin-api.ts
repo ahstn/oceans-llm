@@ -652,6 +652,10 @@ export interface components {
             teams: components["schemas"]["AdminApiKeyTeamOwnerView"][];
             users: components["schemas"]["AdminApiKeyUserOwnerView"][];
         };
+        AdminEntityTagView: {
+            key: string;
+            value: string;
+        };
         AdminIdentityPayload: {
             oidc_providers: components["schemas"]["AdminOidcProviderView"][];
             teams: components["schemas"]["AdminTeamView"][];
@@ -666,6 +670,7 @@ export interface components {
             onboarding?: null | components["schemas"]["AdminOnboardingActionView"];
             request_logging_enabled: boolean;
             status: string;
+            tags: components["schemas"]["AdminEntityTagView"][];
             team_id?: string | null;
             team_name?: string | null;
             team_role?: string | null;
@@ -773,6 +778,7 @@ export interface components {
             members: components["schemas"]["AdminTeamMemberView"][];
             name: string;
             status: string;
+            tags: components["schemas"]["AdminEntityTagView"][];
         };
         AdminTeamMemberView: {
             email: string;
@@ -870,6 +876,7 @@ export interface components {
         CreateTeamRequest: {
             admin_user_ids: string[];
             name: string;
+            tags?: components["schemas"]["AdminEntityTagView"][];
         };
         CreateUserRequest: {
             auth_mode: string;
@@ -877,6 +884,7 @@ export interface components {
             global_role: string;
             name: string;
             oidc_provider_key?: string | null;
+            tags?: components["schemas"]["AdminEntityTagView"][];
             team_id?: string | null;
             team_role?: string | null;
         };
@@ -956,6 +964,7 @@ export interface components {
                 members: components["schemas"]["AdminTeamMemberView"][];
                 name: string;
                 status: string;
+                tags: components["schemas"]["AdminEntityTagView"][];
             };
             meta: components["schemas"]["ResponseMeta"];
         };
@@ -1558,11 +1567,13 @@ export interface components {
         UpdateTeamRequest: {
             admin_user_ids: string[];
             name: string;
+            tags?: components["schemas"]["AdminEntityTagView"][] | null;
         };
         UpdateUserRequest: {
             auth_mode?: string | null;
             global_role: string;
             oidc_provider_key?: string | null;
+            tags?: components["schemas"]["AdminEntityTagView"][] | null;
             team_id?: string | null;
             team_role?: string | null;
         };

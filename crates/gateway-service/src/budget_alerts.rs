@@ -814,6 +814,7 @@ mod tests {
             must_change_password: false,
             request_logging_enabled: true,
             model_access_mode: ModelAccessMode::All,
+            tags: Vec::new(),
             created_at: OffsetDateTime::now_utc(),
             updated_at: OffsetDateTime::now_utc(),
         }
@@ -949,6 +950,7 @@ mod tests {
                 team_name: "Platform".to_string(),
                 status: "active".to_string(),
                 model_access_mode: ModelAccessMode::All,
+                tags: Vec::new(),
                 created_at: now,
                 updated_at: now,
             }),
@@ -1111,6 +1113,7 @@ mod tests {
                 team_name: "Platform".to_string(),
                 status: "active".to_string(),
                 model_access_mode: ModelAccessMode::All,
+                tags: Vec::new(),
                 created_at: now,
                 updated_at: now,
             }),

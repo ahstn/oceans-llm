@@ -6,7 +6,7 @@ use gateway_core::{
     BudgetAlertRepository, BudgetRepository, GlobalRole, IdentityRepository, IdentityUserRecord,
     McpToolInvocationRepository, MembershipRole, ModelRepository, OidcProviderRecord,
     PasswordInvitationRecord, PricingCatalogRepository, ProviderRepository, RequestLogRepository,
-    SeedApiKey, SeedModel, SeedProvider, SeedTeam, SeedUser, StoreError, StoreHealth,
+    RequestTag, SeedApiKey, SeedModel, SeedProvider, SeedTeam, SeedUser, StoreError, StoreHealth,
     TeamMembershipRecord, TeamRecord, UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord,
     UserSessionRecord, UserStatus,
 };
@@ -102,6 +102,12 @@ pub trait GatewayStore:
         team_name: &str,
         updated_at: OffsetDateTime,
     ) -> Result<(), StoreError>;
+    async fn update_team_tags(
+        &self,
+        team_id: Uuid,
+        tags: &[RequestTag],
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError>;
     async fn create_identity_user(
         &self,
         name: &str,
@@ -116,6 +122,12 @@ pub trait GatewayStore:
         user_id: Uuid,
         global_role: GlobalRole,
         auth_mode: AuthMode,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError>;
+    async fn update_user_tags(
+        &self,
+        user_id: Uuid,
+        tags: &[RequestTag],
         updated_at: OffsetDateTime,
     ) -> Result<(), StoreError>;
     async fn deactivate_identity_user(
@@ -1063,6 +1075,15 @@ impl GatewayStore for AnyStore {
         dispatch_store!(self, update_team_name(team_id, team_name, updated_at))
     }
 
+    async fn update_team_tags(
+        &self,
+        team_id: Uuid,
+        tags: &[RequestTag],
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(self, update_team_tags(team_id, tags, updated_at))
+    }
+
     async fn create_service_account(
         &self,
         team_id: Uuid,
@@ -1137,6 +1158,15 @@ impl GatewayStore for AnyStore {
             self,
             update_identity_user(user_id, global_role, auth_mode, updated_at)
         )
+    }
+
+    async fn update_user_tags(
+        &self,
+        user_id: Uuid,
+        tags: &[RequestTag],
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(self, update_user_tags(user_id, tags, updated_at))
     }
 
     async fn deactivate_identity_user(

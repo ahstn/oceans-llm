@@ -484,6 +484,8 @@ pub struct TeamRecord {
     pub team_name: String,
     pub status: String,
     pub model_access_mode: ModelAccessMode,
+    #[serde(default)]
+    pub tags: Vec<RequestTag>,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
 }
@@ -514,6 +516,8 @@ pub struct UserRecord {
     pub must_change_password: bool,
     pub request_logging_enabled: bool,
     pub model_access_mode: ModelAccessMode,
+    #[serde(default)]
+    pub tags: Vec<RequestTag>,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
 }
@@ -887,7 +891,7 @@ impl UsagePricingStatus {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RequestTag {
     pub key: String,
     pub value: String,
