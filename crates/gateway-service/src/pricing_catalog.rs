@@ -17,14 +17,24 @@ use tracing::warn;
 use uuid::Uuid;
 
 pub const DEFAULT_PRICING_CATALOG_SOURCE_URL: &str = "https://models.dev/api.json";
-pub const PRICING_CATALOG_CACHE_KEY: &str = "models_dev_supported_v1";
+pub const PRICING_CATALOG_CACHE_KEY: &str = "models_dev_supported_v2";
 pub const DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL: Duration = Duration::from_secs(15 * 60);
-pub const SUPPORTED_PRICING_PROVIDER_IDS: [&str; 3] =
-    ["google-vertex", "google-vertex-anthropic", "openai"];
+pub const SUPPORTED_PRICING_PROVIDER_IDS: [&str; 4] = [
+    AMAZON_BEDROCK_PRICING_PROVIDER_ID,
+    GOOGLE_VERTEX_PRICING_PROVIDER_ID,
+    GOOGLE_VERTEX_ANTHROPIC_PRICING_PROVIDER_ID,
+    OPENAI_PRICING_PROVIDER_ID,
+];
 
+const AMAZON_BEDROCK_PRICING_PROVIDER_ID: &str = "amazon-bedrock";
+const GOOGLE_VERTEX_PRICING_PROVIDER_ID: &str = "google-vertex";
+const GOOGLE_VERTEX_ANTHROPIC_PRICING_PROVIDER_ID: &str = "google-vertex-anthropic";
+const OPENAI_PRICING_PROVIDER_ID: &str = "openai";
 const REMOTE_SOURCE: &str = "models_dev_api";
 const VENDORED_SOURCE: &str = "vendored_models_dev";
 const VENDORED_FALLBACK_JSON: &str = include_str!("../data/pricing_catalog_fallback.json");
+const BEDROCK_GPT_OSS_120B_PRICING_MODEL_ID: &str = "openai.gpt-oss-120b-1:0";
+const BEDROCK_GPT_OSS_20B_PRICING_MODEL_ID: &str = "openai.gpt-oss-20b-1:0";
 
 #[derive(Clone)]
 pub struct PricingCatalog<R> {
@@ -162,17 +172,7 @@ where
         route: &ModelRoute,
         occurred_at: OffsetDateTime,
     ) -> Result<PricingResolution, GatewayError> {
-        if let Err(error) = self.refresh_if_stale().await {
-            warn!(
-                provider_key = %provider.provider_key,
-                provider_type = %provider.provider_type,
-                error = %error,
-                "pricing catalog refresh failed; falling back to cached snapshot"
-            );
-        }
-
-        let snapshot = self.load_snapshot_from_store_or_fallback().await?;
-        self.sync_model_pricing_snapshot(&snapshot).await?;
+        self.sync_current_snapshot().await?;
         let (pricing_provider_id, model_id) = match pricing_target_for_route(provider, route) {
             PricingTarget::Exact {
                 pricing_provider_id,
@@ -196,6 +196,21 @@ where
         Ok(PricingResolution::Exact {
             pricing: Box::new(resolved_model_pricing(&record)),
         })
+    }
+
+    pub async fn sync_current_snapshot(&self) -> Result<(), GatewayError> {
+        if let Err(error) = self.refresh_if_stale().await {
+            warn!(
+                catalog_key = %self.catalog_key,
+                source_url = %self.source_url,
+                error = %error,
+                "pricing catalog refresh failed; falling back to cached snapshot"
+            );
+        }
+
+        let snapshot = self.load_snapshot_from_store_or_fallback().await?;
+        self.sync_model_pricing_snapshot(&snapshot).await?;
+        Ok(())
     }
 
     async fn load_snapshot_from_store_or_fallback(
@@ -241,6 +256,10 @@ where
         snapshot: &PricingCatalogSnapshot,
     ) -> Result<(), GatewayError> {
         let active_rows = self.repo.list_active_model_pricing().await?;
+        if snapshot_is_already_synced(&active_rows, snapshot) {
+            return Ok(());
+        }
+
         let active_by_target = active_rows
             .into_iter()
             .map(|record| {
@@ -379,8 +398,8 @@ fn pricing_target_for_route(provider: &ProviderConnection, route: &ModelRoute) -
             }
 
             let pricing_provider_id = match publisher {
-                "google" => "google-vertex",
-                "anthropic" => "google-vertex-anthropic",
+                "google" => GOOGLE_VERTEX_PRICING_PROVIDER_ID,
+                "anthropic" => GOOGLE_VERTEX_ANTHROPIC_PRICING_PROVIDER_ID,
                 other => {
                     return PricingTarget::Unpriced(
                         PricingUnpricedReason::UnsupportedVertexPublisher(other.to_string()),
@@ -388,7 +407,7 @@ fn pricing_target_for_route(provider: &ProviderConnection, route: &ModelRoute) -
                 }
             };
 
-            if pricing_provider_id == "google-vertex-anthropic" {
+            if pricing_provider_id == GOOGLE_VERTEX_ANTHROPIC_PRICING_PROVIDER_ID {
                 let location = provider
                     .config
                     .get("location")
@@ -403,9 +422,13 @@ fn pricing_target_for_route(provider: &ProviderConnection, route: &ModelRoute) -
 
             PricingTarget::Exact {
                 pricing_provider_id: pricing_provider_id.to_string(),
-                model_id: model_id.to_string(),
+                model_id: normalize_vertex_pricing_model_id(pricing_provider_id, model_id),
             }
         }
+        "aws_bedrock" => PricingTarget::Exact {
+            pricing_provider_id: AMAZON_BEDROCK_PRICING_PROVIDER_ID.to_string(),
+            model_id: normalize_bedrock_pricing_model_id(&route.upstream_model),
+        },
         other => PricingTarget::Unpriced(PricingUnpricedReason::UnsupportedPricingProviderId(
             other.to_string(),
         )),
@@ -423,6 +446,49 @@ pub(crate) fn exact_pricing_target_for_route(
         } => Some((pricing_provider_id, model_id)),
         PricingTarget::Unpriced(_) => None,
     }
+}
+
+fn normalize_vertex_pricing_model_id(pricing_provider_id: &str, model_id: &str) -> String {
+    if pricing_provider_id == GOOGLE_VERTEX_ANTHROPIC_PRICING_PROVIDER_ID
+        && !model_id.contains('@')
+        && matches!(
+            model_id,
+            "claude-sonnet-4-6" | "claude-opus-4-6" | "claude-opus-4-7"
+        )
+    {
+        return format!("{model_id}@default");
+    }
+
+    model_id.to_string()
+}
+
+fn normalize_bedrock_pricing_model_id(upstream_model: &str) -> String {
+    let model_id = upstream_model
+        .strip_prefix("arn:")
+        .and_then(|_| upstream_model.rsplit('/').next())
+        .unwrap_or(upstream_model);
+
+    match model_id {
+        "gpt-oss-120b" => return BEDROCK_GPT_OSS_120B_PRICING_MODEL_ID.to_string(),
+        "gpt-oss-20b" => return BEDROCK_GPT_OSS_20B_PRICING_MODEL_ID.to_string(),
+        _ => {}
+    }
+
+    strip_bedrock_default_version_suffix(model_id)
+        .unwrap_or(model_id)
+        .to_string()
+}
+
+fn strip_bedrock_default_version_suffix(model_id: &str) -> Option<&str> {
+    if !(model_id.contains("claude-sonnet-4-6")
+        || model_id.contains("claude-opus-4-6")
+        || model_id.contains("claude-opus-4-7"))
+    {
+        return None;
+    }
+
+    let (base, version) = model_id.rsplit_once("-v")?;
+    if version == "1:0" { Some(base) } else { None }
 }
 
 fn unsupported_billing_modifier(route: &ModelRoute) -> Option<PricingUnpricedReason> {
@@ -519,6 +585,26 @@ fn pricing_record_matches(existing: &ModelPricingRecord, desired: &ModelPricingR
         && existing.modalities == desired.modalities
 }
 
+fn snapshot_is_already_synced(
+    active_rows: &[ModelPricingRecord],
+    snapshot: &PricingCatalogSnapshot,
+) -> bool {
+    let snapshot_model_count = snapshot
+        .document
+        .providers
+        .values()
+        .map(|provider| provider.models.len())
+        .sum::<usize>();
+    snapshot_model_count > 0
+        && active_rows
+            .iter()
+            .filter(|row| row.provenance.source == snapshot.metadata.source)
+            .filter(|row| row.provenance.etag == snapshot.metadata.etag)
+            .filter(|row| row.provenance.fetched_at == snapshot.metadata.fetched_at)
+            .count()
+            >= snapshot_model_count
+}
+
 fn parse_money(value: Option<&str>) -> Result<Option<Money4>, GatewayError> {
     value
         .map(|raw| {
@@ -605,18 +691,28 @@ fn project_models_dev_snapshot(
 }
 
 fn project_models_dev_cost(value: Option<&Number>) -> Result<Option<String>, GatewayError> {
-    value
-        .map(|number| {
-            let raw = number.to_string();
-            Money4::from_decimal_str(&raw)
-                .map(|money| money.format_4dp())
-                .map_err(|error| {
-                    GatewayError::Internal(format!(
-                        "failed normalizing models.dev cost `{raw}`: {error}"
-                    ))
-                })
-        })
-        .transpose()
+    value.map(normalize_models_dev_money).transpose()
+}
+
+fn normalize_models_dev_money(number: &Number) -> Result<String, GatewayError> {
+    let raw = number.to_string();
+    if let Ok(money) = Money4::from_decimal_str(&raw) {
+        return Ok(money.format_4dp());
+    }
+
+    let value = number.as_f64().ok_or_else(|| {
+        GatewayError::Internal(format!(
+            "failed normalizing models.dev cost `{raw}`: not finite"
+        ))
+    })?;
+    let scaled = (value * Money4::SCALE as f64).round();
+    if scaled < i64::MIN as f64 || scaled > i64::MAX as f64 {
+        return Err(GatewayError::Internal(format!(
+            "failed normalizing models.dev cost `{raw}`: rounded value overflowed"
+        )));
+    }
+
+    Ok(Money4::from_scaled(scaled as i64).format_4dp())
 }
 
 fn load_vendored_fallback_snapshot() -> PricingCatalogSnapshot {
@@ -768,7 +864,7 @@ mod tests {
         PricingCatalogRepository, PricingResolution, PricingUnpricedReason, ProviderCapabilities,
         ProviderConnection, StoreError,
     };
-    use serde_json::{json, to_string_pretty};
+    use serde_json::{Number, json, to_string_pretty};
     use time::OffsetDateTime;
     use tokio::net::TcpListener;
     use uuid::Uuid;
@@ -778,6 +874,7 @@ mod tests {
         PricingCatalogDocument, PricingCatalogLimitDocument, PricingCatalogModalitiesDocument,
         PricingCatalogModelDocument, PricingCatalogProviderDocument, PricingCatalogSnapshot,
         PricingCatalogSnapshotMetadata, REMOTE_SOURCE, VENDORED_SOURCE,
+        normalize_bedrock_pricing_model_id, normalize_models_dev_money,
     };
 
     #[derive(Clone, Default)]
@@ -910,6 +1007,18 @@ mod tests {
         }
     }
 
+    fn bedrock_provider() -> ProviderConnection {
+        ProviderConnection {
+            provider_key: "bedrock-prod".to_string(),
+            provider_type: "aws_bedrock".to_string(),
+            config: json!({
+                "region": "us-east-1",
+                "endpoint_url": "https://bedrock-runtime.us-east-1.amazonaws.com"
+            }),
+            secrets: None,
+        }
+    }
+
     fn route(provider_key: &str, upstream_model: &str) -> ModelRoute {
         ModelRoute {
             id: Uuid::new_v4(),
@@ -935,6 +1044,70 @@ mod tests {
             },
             document: PricingCatalogDocument {
                 providers: BTreeMap::from([
+                    (
+                        "amazon-bedrock".to_string(),
+                        PricingCatalogProviderDocument {
+                            display_name: "Amazon Bedrock".to_string(),
+                            models: BTreeMap::from([
+                                (
+                                    "us.anthropic.claude-sonnet-4-6".to_string(),
+                                    PricingCatalogModelDocument {
+                                        id: "us.anthropic.claude-sonnet-4-6".to_string(),
+                                        display_name: "Claude Sonnet 4.6 (US)".to_string(),
+                                        release_date: "2026-02-17".to_string(),
+                                        last_updated: "2026-03-13".to_string(),
+                                        cost: PricingCatalogCostDocument {
+                                            input: Some("3.0000".to_string()),
+                                            output: Some("15.0000".to_string()),
+                                            cache_read: Some("0.3000".to_string()),
+                                            cache_write: Some("3.7500".to_string()),
+                                            input_audio: None,
+                                            output_audio: None,
+                                        },
+                                        limit: PricingCatalogLimitDocument {
+                                            context: Some(1_000_000),
+                                            input: None,
+                                            output: Some(64_000),
+                                        },
+                                        modalities: PricingCatalogModalitiesDocument {
+                                            input: vec![
+                                                "text".to_string(),
+                                                "image".to_string(),
+                                                "pdf".to_string(),
+                                            ],
+                                            output: vec!["text".to_string()],
+                                        },
+                                    },
+                                ),
+                                (
+                                    "openai.gpt-oss-120b-1:0".to_string(),
+                                    PricingCatalogModelDocument {
+                                        id: "openai.gpt-oss-120b-1:0".to_string(),
+                                        display_name: "gpt-oss-120b".to_string(),
+                                        release_date: "2024-12-01".to_string(),
+                                        last_updated: "2024-12-01".to_string(),
+                                        cost: PricingCatalogCostDocument {
+                                            input: Some("0.1500".to_string()),
+                                            output: Some("0.6000".to_string()),
+                                            cache_read: None,
+                                            cache_write: None,
+                                            input_audio: None,
+                                            output_audio: None,
+                                        },
+                                        limit: PricingCatalogLimitDocument {
+                                            context: Some(128_000),
+                                            input: None,
+                                            output: Some(4_096),
+                                        },
+                                        modalities: PricingCatalogModalitiesDocument {
+                                            input: vec!["text".to_string()],
+                                            output: vec!["text".to_string()],
+                                        },
+                                    },
+                                ),
+                            ]),
+                        },
+                    ),
                     (
                         "openai".to_string(),
                         PricingCatalogProviderDocument {
@@ -1010,12 +1183,12 @@ mod tests {
                         PricingCatalogProviderDocument {
                             display_name: "Vertex (Anthropic)".to_string(),
                             models: BTreeMap::from([(
-                                "claude-sonnet-4-5@20250929".to_string(),
+                                "claude-sonnet-4-6@default".to_string(),
                                 PricingCatalogModelDocument {
-                                    id: "claude-sonnet-4-5@20250929".to_string(),
-                                    display_name: "Claude Sonnet 4.5".to_string(),
-                                    release_date: "2025-09-29".to_string(),
-                                    last_updated: "2025-09-29".to_string(),
+                                    id: "claude-sonnet-4-6@default".to_string(),
+                                    display_name: "Claude Sonnet 4.6".to_string(),
+                                    release_date: "2026-02-17".to_string(),
+                                    last_updated: "2026-03-13".to_string(),
                                     cost: PricingCatalogCostDocument {
                                         input: Some("3.0000".to_string()),
                                         output: Some("15.0000".to_string()),
@@ -1083,7 +1256,7 @@ mod tests {
         let anthropic = catalog
             .resolve_for_provider_connection(
                 &vertex_provider("global"),
-                &route("vertex-prod", "anthropic/claude-sonnet-4-5@20250929"),
+                &route("vertex-prod", "anthropic/claude-sonnet-4-6"),
                 test_time(),
             )
             .await
@@ -1099,10 +1272,76 @@ mod tests {
         match anthropic {
             PricingResolution::Exact { pricing } => {
                 assert_eq!(pricing.pricing_provider_id, "google-vertex-anthropic");
-                assert_eq!(pricing.model_id, "claude-sonnet-4-5@20250929");
+                assert_eq!(pricing.model_id, "claude-sonnet-4-6@default");
             }
             other => panic!("unexpected anthropic resolution: {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn aws_bedrock_maps_supported_model_ids() {
+        let catalog = empty_catalog(
+            Arc::new(InMemoryRepo::default()),
+            "http://127.0.0.1:9/api.json".to_string(),
+        );
+
+        let claude = catalog
+            .resolve_for_provider_connection(
+                &bedrock_provider(),
+                &route("bedrock-prod", "us.anthropic.claude-sonnet-4-6-v1:0"),
+                test_time(),
+            )
+            .await
+            .expect("resolve claude");
+        let gpt_oss = catalog
+            .resolve_for_provider_connection(
+                &bedrock_provider(),
+                &route("bedrock-prod", "gpt-oss-120b"),
+                test_time(),
+            )
+            .await
+            .expect("resolve gpt oss");
+
+        match claude {
+            PricingResolution::Exact { pricing } => {
+                assert_eq!(pricing.pricing_provider_id, "amazon-bedrock");
+                assert_eq!(pricing.model_id, "us.anthropic.claude-sonnet-4-6");
+                assert_eq!(
+                    pricing.input_cost_per_million_tokens,
+                    Some(Money4::from_decimal_str("3.0000").expect("money"))
+                );
+            }
+            other => panic!("unexpected claude resolution: {other:?}"),
+        }
+        match gpt_oss {
+            PricingResolution::Exact { pricing } => {
+                assert_eq!(pricing.pricing_provider_id, "amazon-bedrock");
+                assert_eq!(pricing.model_id, "openai.gpt-oss-120b-1:0");
+            }
+            other => panic!("unexpected gpt oss resolution: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bedrock_default_version_normalization_is_conservative() {
+        assert_eq!(
+            normalize_bedrock_pricing_model_id("us.anthropic.claude-sonnet-4-6-v1:0"),
+            "us.anthropic.claude-sonnet-4-6"
+        );
+        assert_eq!(
+            normalize_bedrock_pricing_model_id("us.anthropic.claude-sonnet-4-6-v2:0"),
+            "us.anthropic.claude-sonnet-4-6-v2:0"
+        );
+    }
+
+    #[test]
+    fn models_dev_money_normalization_rounds_extra_precision() {
+        let cost = Number::from_f64(0.00875).expect("number");
+
+        assert_eq!(
+            normalize_models_dev_money(&cost).expect("normalized cost"),
+            "0.0088"
+        );
     }
 
     #[tokio::test]
