@@ -116,8 +116,9 @@ pub(super) fn decode_user_record(row: &PgRow) -> Result<UserRecord, StoreError> 
     let must_change_password: i64 = row.try_get(7).map_err(to_query_error)?;
     let request_logging_enabled: i64 = row.try_get(8).map_err(to_query_error)?;
     let model_access_mode: String = row.try_get(9).map_err(to_query_error)?;
-    let created_at: i64 = row.try_get(10).map_err(to_query_error)?;
-    let updated_at: i64 = row.try_get(11).map_err(to_query_error)?;
+    let tags_json: String = row.try_get(10).map_err(to_query_error)?;
+    let created_at: i64 = row.try_get(11).map_err(to_query_error)?;
+    let updated_at: i64 = row.try_get(12).map_err(to_query_error)?;
 
     Ok(UserRecord {
         user_id: parse_uuid(&row.try_get::<String, _>(0).map_err(to_query_error)?)?,
@@ -136,14 +137,16 @@ pub(super) fn decode_user_record(row: &PgRow) -> Result<UserRecord, StoreError> 
         model_access_mode: ModelAccessMode::from_db(&model_access_mode).ok_or_else(|| {
             StoreError::Serialization(format!("unknown model access mode `{model_access_mode}`"))
         })?,
+        tags: serde_json::from_str(&tags_json)
+            .map_err(|error| StoreError::Serialization(error.to_string()))?,
         created_at: unix_to_datetime(created_at)?,
         updated_at: unix_to_datetime(updated_at)?,
     })
 }
 
 pub(super) fn decode_identity_user_record(row: &PgRow) -> Result<IdentityUserRecord, StoreError> {
-    let team_id: Option<String> = row.try_get(12).map_err(to_query_error)?;
-    let membership_role_raw: Option<String> = row.try_get(14).map_err(to_query_error)?;
+    let team_id: Option<String> = row.try_get(13).map_err(to_query_error)?;
+    let membership_role_raw: Option<String> = row.try_get(15).map_err(to_query_error)?;
     let membership_role = membership_role_raw
         .as_deref()
         .map(|role| {
@@ -156,10 +159,10 @@ pub(super) fn decode_identity_user_record(row: &PgRow) -> Result<IdentityUserRec
     Ok(IdentityUserRecord {
         user: decode_user_record(row)?,
         team_id: team_id.as_deref().map(parse_uuid).transpose()?,
-        team_name: row.try_get(13).map_err(to_query_error)?,
+        team_name: row.try_get(14).map_err(to_query_error)?,
         membership_role,
-        oidc_provider_id: row.try_get(15).map_err(to_query_error)?,
-        oidc_provider_key: row.try_get(16).map_err(to_query_error)?,
+        oidc_provider_id: row.try_get(16).map_err(to_query_error)?,
+        oidc_provider_key: row.try_get(17).map_err(to_query_error)?,
     })
 }
 
@@ -176,8 +179,9 @@ pub(super) fn decode_user_password_auth_record(
 
 pub(super) fn decode_team_record(row: &PgRow) -> Result<TeamRecord, StoreError> {
     let model_access_mode: String = row.try_get(4).map_err(to_query_error)?;
-    let created_at: i64 = row.try_get(5).map_err(to_query_error)?;
-    let updated_at: i64 = row.try_get(6).map_err(to_query_error)?;
+    let tags_json: String = row.try_get(5).map_err(to_query_error)?;
+    let created_at: i64 = row.try_get(6).map_err(to_query_error)?;
+    let updated_at: i64 = row.try_get(7).map_err(to_query_error)?;
 
     Ok(TeamRecord {
         team_id: parse_uuid(&row.try_get::<String, _>(0).map_err(to_query_error)?)?,
@@ -187,6 +191,8 @@ pub(super) fn decode_team_record(row: &PgRow) -> Result<TeamRecord, StoreError> 
         model_access_mode: ModelAccessMode::from_db(&model_access_mode).ok_or_else(|| {
             StoreError::Serialization(format!("unknown model access mode `{model_access_mode}`"))
         })?,
+        tags: serde_json::from_str(&tags_json)
+            .map_err(|error| StoreError::Serialization(error.to_string()))?,
         created_at: unix_to_datetime(created_at)?,
         updated_at: unix_to_datetime(updated_at)?,
     })

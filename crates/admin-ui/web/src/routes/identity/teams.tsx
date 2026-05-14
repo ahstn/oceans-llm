@@ -54,6 +54,7 @@ import {
   transferIdentityTeamMember,
   updateIdentityTeam,
 } from '@/server/admin-data.functions'
+import { EntityTagBadges, EntityTagsField, sanitizeEntityTags } from '@/routes/identity/-entity-tags'
 import type {
   CreateTeamInput,
   CreateUserInput,
@@ -73,6 +74,7 @@ export const Route = createFileRoute('/identity/teams')({
 const initialTeamForm: CreateTeamInput = {
   name: '',
   admin_user_ids: [],
+  tags: [],
 }
 
 const initialInviteForm: CreateUserInput = {
@@ -83,6 +85,7 @@ const initialInviteForm: CreateUserInput = {
   team_id: null,
   team_role: 'member',
   oidc_provider_key: null,
+  tags: [],
 }
 
 type TeamDialogState = { mode: 'closed' } | { mode: 'create' } | { mode: 'edit'; teamId: string }
@@ -178,6 +181,7 @@ export function TeamsPage() {
     setTeamForm({
       name: team.name,
       admin_user_ids: team.admins.map((admin) => admin.id),
+      tags: team.tags,
     })
     setTeamDialog({ mode: 'edit', teamId: team.id })
   }
@@ -431,6 +435,10 @@ export function TeamsPage() {
                     </dl>
 
                     <div className="mt-4 flex flex-wrap gap-2">
+                      <EntityTagBadges tags={team.tags} />
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-2">
                       {team.admins.length > 0 ? (
                         team.admins.map((admin) => <Badge key={admin.id}>{admin.name}</Badge>)
                       ) : (
@@ -547,6 +555,7 @@ export function TeamsPage() {
                           <div className="flex flex-col gap-1">
                             <p className="text-[var(--color-text)]">{team.name}</p>
                             <p className="text-xs text-[var(--color-text-soft)]">{team.key}</p>
+                            <EntityTagBadges tags={team.tags} />
                           </div>
                         </td>
                         <td className="px-3 py-3">
@@ -688,6 +697,12 @@ export function TeamsPage() {
                 }
                 emptyTitle="No assignable admins yet"
                 emptyDescription="Create the team now and return later once users exist."
+              />
+
+              <EntityTagsField
+                label="Tags"
+                tags={teamForm.tags}
+                onChange={(tags) => setTeamForm((current) => ({ ...current, tags }))}
               />
             </FieldGroup>
 
@@ -1212,6 +1227,7 @@ function sanitizeTeamForm(form: CreateTeamInput): CreateTeamInput {
   return {
     name: form.name.trim(),
     admin_user_ids: Array.from(new Set(form.admin_user_ids)),
+    tags: sanitizeEntityTags(form.tags),
   }
 }
 
@@ -1230,6 +1246,7 @@ function sanitizeInviteForm(
       form.auth_mode === 'oidc'
         ? (form.oidc_provider_key ?? (oidcProviders.length === 1 ? oidcProviders[0].key : null))
         : null,
+    tags: sanitizeEntityTags(form.tags),
   }
 }
 

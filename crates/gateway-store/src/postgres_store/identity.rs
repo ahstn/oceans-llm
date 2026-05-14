@@ -74,6 +74,7 @@ impl PostgresStore {
                 users.must_change_password,
                 users.request_logging_enabled,
                 users.model_access_mode,
+                users.tags_json,
                 users.created_at,
                 users.updated_at,
                 teams.team_id,
@@ -115,6 +116,7 @@ impl PostgresStore {
                 users.must_change_password,
                 users.request_logging_enabled,
                 users.model_access_mode,
+                users.tags_json,
                 users.created_at,
                 users.updated_at,
                 teams.team_id,
@@ -144,7 +146,7 @@ impl PostgresStore {
     pub async fn list_active_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
         let rows = sqlx::query(
             r#"
-            SELECT team_id, team_key, team_name, status, model_access_mode, created_at, updated_at
+            SELECT team_id, team_key, team_name, status, model_access_mode, tags_json, created_at, updated_at
             FROM teams
             WHERE status = 'active'
             ORDER BY team_name ASC
@@ -295,7 +297,7 @@ impl PostgresStore {
     pub async fn list_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
         let rows = sqlx::query(
             r#"
-            SELECT team_id, team_key, team_name, status, model_access_mode, created_at, updated_at
+            SELECT team_id, team_key, team_name, status, model_access_mode, tags_json, created_at, updated_at
             FROM teams
             ORDER BY team_name ASC
             "#,
@@ -352,7 +354,7 @@ impl PostgresStore {
         let row = sqlx::query(
             r#"
             SELECT user_id, name, email, email_normalized, global_role, auth_mode, status,
-                   must_change_password, request_logging_enabled, model_access_mode, created_at, updated_at
+                   must_change_password, request_logging_enabled, model_access_mode, tags_json, created_at, updated_at
             FROM users
             WHERE email_normalized = $1
             LIMIT 1
@@ -369,7 +371,7 @@ impl PostgresStore {
     pub async fn get_team_by_key(&self, team_key: &str) -> Result<Option<TeamRecord>, StoreError> {
         let row = sqlx::query(
             r#"
-            SELECT team_id, team_key, team_name, status, model_access_mode, created_at, updated_at
+            SELECT team_id, team_key, team_name, status, model_access_mode, tags_json, created_at, updated_at
             FROM teams
             WHERE team_key = $1
             LIMIT 1
@@ -426,6 +428,30 @@ impl PostgresStore {
             "#,
         )
         .bind(team_name)
+        .bind(updated_at.unix_timestamp())
+        .bind(team_id.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn update_team_tags(
+        &self,
+        team_id: Uuid,
+        tags: &[RequestTag],
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        let tags_json = crate::shared::serialize_json(tags)?;
+        sqlx::query(
+            r#"
+            UPDATE teams
+            SET tags_json = $1,
+                updated_at = $2
+            WHERE team_id = $3
+            "#,
+        )
+        .bind(tags_json)
         .bind(updated_at.unix_timestamp())
         .bind(team_id.to_string())
         .execute(&self.pool)
@@ -563,6 +589,30 @@ impl PostgresStore {
         .await
         .map_err(to_write_error)?;
         tx.commit().await.map_err(to_query_error)?;
+        Ok(())
+    }
+
+    pub async fn update_user_tags(
+        &self,
+        user_id: Uuid,
+        tags: &[RequestTag],
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        let tags_json = crate::shared::serialize_json(tags)?;
+        sqlx::query(
+            r#"
+            UPDATE users
+            SET tags_json = $1,
+                updated_at = $2
+            WHERE user_id = $3
+            "#,
+        )
+        .bind(tags_json)
+        .bind(updated_at.unix_timestamp())
+        .bind(user_id.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(to_write_error)?;
         Ok(())
     }
 
@@ -1246,6 +1296,7 @@ impl PostgresStore {
             SELECT users.user_id, users.name, users.email, users.email_normalized,
                    users.global_role, users.auth_mode, users.status,
                    users.must_change_password, users.request_logging_enabled, users.model_access_mode,
+                   users.tags_json,
                    users.created_at, users.updated_at
             FROM users
             INNER JOIN user_oidc_links ON user_oidc_links.user_id = users.user_id
@@ -1276,7 +1327,7 @@ impl IdentityRepository for PostgresStore {
         let row = sqlx::query(
             r#"
             SELECT user_id, name, email, email_normalized, global_role, auth_mode, status,
-                   must_change_password, request_logging_enabled, model_access_mode, created_at, updated_at
+                   must_change_password, request_logging_enabled, model_access_mode, tags_json, created_at, updated_at
             FROM users
             WHERE user_id = $1
             LIMIT 1
@@ -1293,7 +1344,7 @@ impl IdentityRepository for PostgresStore {
     async fn get_team_by_id(&self, team_id: Uuid) -> Result<Option<TeamRecord>, StoreError> {
         let row = sqlx::query(
             r#"
-            SELECT team_id, team_key, team_name, status, model_access_mode, created_at, updated_at
+            SELECT team_id, team_key, team_name, status, model_access_mode, tags_json, created_at, updated_at
             FROM teams
             WHERE team_id = $1
             LIMIT 1

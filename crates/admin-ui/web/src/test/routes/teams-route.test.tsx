@@ -70,6 +70,7 @@ describe('TeamsPage', () => {
             name: 'Core Platform',
             key: 'core-platform',
             status: 'active',
+            tags: [],
             member_count: 1,
             admins: [
               {
@@ -79,6 +80,7 @@ describe('TeamsPage', () => {
                 status: 'active',
               },
             ],
+            members: [],
           },
         ],
         users: [

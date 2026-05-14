@@ -46,6 +46,7 @@ import {
   resendIdentityUserPasswordInvite,
   updateIdentityUser,
 } from '@/server/admin-data.functions'
+import { EntityTagBadges, EntityTagsField, sanitizeEntityTags } from '@/routes/identity/-entity-tags'
 import type {
   CreateUserInput,
   CreateUserResult,
@@ -68,6 +69,7 @@ const initialForm: CreateUserInput = {
   team_id: null,
   team_role: null,
   oidc_provider_key: null,
+  tags: [],
 }
 
 const initialUpdateForm: UpdateUserInput = {
@@ -76,6 +78,7 @@ const initialUpdateForm: UpdateUserInput = {
   team_role: null,
   auth_mode: 'password',
   oidc_provider_key: null,
+  tags: [],
 }
 
 type UserDialogState = { mode: 'closed' } | { mode: 'edit'; userId: string }
@@ -142,6 +145,7 @@ export function UsersPage() {
       auth_mode: user.auth_mode,
       oidc_provider_key:
         user.onboarding?.kind === 'oidc_sign_in' ? user.onboarding.provider_key : null,
+      tags: user.tags,
     })
     setOnboardingResult(null)
   }
@@ -556,6 +560,12 @@ export function UsersPage() {
                         </Select>
                       </Field>
                     ) : null}
+
+                    <EntityTagsField
+                      label="Tags"
+                      tags={form.tags}
+                      onChange={(tags) => setForm((current) => ({ ...current, tags }))}
+                    />
                   </FieldGroup>
 
                   <DialogFooter>
@@ -778,6 +788,9 @@ export function UsersPage() {
                 <p className="mt-1 text-sm text-[var(--color-text-muted)]">
                   Request logging: {selectedUser.request_logging_enabled ? 'enabled' : 'disabled'}
                 </p>
+                <div className="mt-3">
+                  <EntityTagBadges tags={selectedUser.tags} />
+                </div>
                 <p className="mt-2 text-xs text-[var(--color-text-soft)]">
                   {selectedUser.status === 'invited'
                     ? 'Auth mode can only be changed while the user is still invited.'
@@ -931,6 +944,12 @@ export function UsersPage() {
                       </Field>
                     </>
                   ) : null}
+
+                  <EntityTagsField
+                    label="Tags"
+                    tags={updateForm.tags}
+                    onChange={(tags) => setUpdateForm((current) => ({ ...current, tags }))}
+                  />
                 </FieldGroup>
 
                 <section className="flex flex-col gap-3 rounded-lg border border-[color:var(--color-border)] p-4">
@@ -1063,6 +1082,7 @@ function sanitizeForm(form: CreateUserInput): CreateUserInput {
           ? 'member'
           : null,
     oidc_provider_key: form.auth_mode === 'oidc' ? (form.oidc_provider_key ?? null) : null,
+    tags: sanitizeEntityTags(form.tags),
   }
 }
 
@@ -1073,6 +1093,7 @@ function sanitizeUpdateForm(
 ): UpdateUserInput {
   const update: UpdateUserInput = {
     global_role: form.global_role,
+    tags: sanitizeEntityTags(form.tags),
   }
 
   if (user.team_role !== 'owner') {

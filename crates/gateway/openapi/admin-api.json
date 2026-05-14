@@ -2294,6 +2294,21 @@
           }
         }
       },
+      "AdminEntityTagView": {
+        "type": "object",
+        "required": [
+          "key",
+          "value"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
       "AdminIdentityPayload": {
         "type": "object",
         "required": [
@@ -2331,7 +2346,8 @@
           "auth_mode",
           "global_role",
           "request_logging_enabled",
-          "status"
+          "status",
+          "tags"
         ],
         "properties": {
           "auth_mode": {
@@ -2364,6 +2380,12 @@
           },
           "status": {
             "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminEntityTagView"
+            }
           },
           "team_id": {
             "type": [
@@ -2815,6 +2837,7 @@
           "name",
           "key",
           "status",
+          "tags",
           "member_count",
           "admins",
           "members"
@@ -2847,6 +2870,12 @@
           },
           "status": {
             "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminEntityTagView"
+            }
           }
         }
       },
@@ -3229,6 +3258,12 @@
           },
           "name": {
             "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminEntityTagView"
+            }
           }
         }
       },
@@ -3258,6 +3293,12 @@
               "string",
               "null"
             ]
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminEntityTagView"
+            }
           },
           "team_id": {
             "type": [
@@ -3580,6 +3621,7 @@
               "name",
               "key",
               "status",
+              "tags",
               "member_count",
               "admins",
               "members"
@@ -3612,6 +3654,12 @@
               },
               "status": {
                 "type": "string"
+              },
+              "tags": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AdminEntityTagView"
+                }
               }
             }
           },
@@ -6007,6 +6055,15 @@
           },
           "name": {
             "type": "string"
+          },
+          "tags": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/AdminEntityTagView"
+            }
           }
         }
       },
@@ -6030,6 +6087,15 @@
               "string",
               "null"
             ]
+          },
+          "tags": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/AdminEntityTagView"
+            }
           },
           "team_id": {
             "type": [

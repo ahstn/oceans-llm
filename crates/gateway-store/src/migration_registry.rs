@@ -72,6 +72,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V23__service_accounts.sql"),
         postgres_sql: include_str!("../migrations/postgres/V23__service_accounts.sql"),
     },
+    MigrationManifest {
+        version: 24,
+        name: "identity_entity_tags",
+        checksum: "V24__identity_entity_tags.sql",
+        libsql_sql: include_str!("../migrations/V24__identity_entity_tags.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V24__identity_entity_tags.sql"),
+    },
 ];
 
 #[cfg(test)]

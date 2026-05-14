@@ -85,6 +85,7 @@ export default defineConfig({
             text: "Budgets and Spending",
             link: "/operations/budgets-and-spending",
           },
+          { text: "Tagging", link: "/operations/tagging" },
           {
             text: "Observability and Request Logs",
             link: "/operations/observability-and-request-logs",

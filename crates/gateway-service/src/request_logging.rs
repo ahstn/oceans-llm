@@ -1460,6 +1460,7 @@ mod tests {
             must_change_password: false,
             request_logging_enabled,
             model_access_mode: ModelAccessMode::All,
+            tags: Vec::new(),
             created_at: OffsetDateTime::now_utc(),
             updated_at: OffsetDateTime::now_utc(),
         }

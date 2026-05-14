@@ -20,7 +20,7 @@ use uuid::Uuid;
 use crate::http::{
     admin_auth::{require_authenticated_session, require_platform_admin},
     admin_contract::{
-        AddTeamMembersRequest, AdminIdentityPayload, AdminOidcProviderView,
+        AddTeamMembersRequest, AdminEntityTagView, AdminIdentityPayload, AdminOidcProviderView,
         AdminServiceAccountView, AdminServiceAccountsPayload, AdminTeamManagementView,
         AdminTeamView, AdminTeamsPayload, AuthSessionUserView, AuthSessionView,
         ChangePasswordRequest, CompleteInvitationRequest, CompleteInvitationResponse,
@@ -41,6 +41,7 @@ use crate::http::{
         build_admin_identity_user_view, build_admin_team_views, build_assignable_user_views,
         reload_identity_user, reload_team_view,
     },
+    request_tags::validate_entity_tags,
     state::AppState,
 };
 
@@ -330,9 +331,14 @@ pub async fn create_identity_team(
     let users = state.store.list_identity_users().await?;
     let selected_admin_ids = parse_uuid_list(&request.admin_user_ids)?;
     validate_team_admin_assignments(&users, None, &selected_admin_ids)?;
+    let tags = parse_entity_tag_views(&request.tags, "team tags")?;
 
     let team_key = generate_unique_team_key(&state.store, name).await?;
     let team = state.store.create_team(&team_key, name).await?;
+    state
+        .store
+        .update_team_tags(team.team_id, &tags, OffsetDateTime::now_utc())
+        .await?;
     for user_id in selected_admin_ids {
         state
             .store
@@ -362,7 +368,7 @@ pub async fn update_identity_team(
     require_platform_admin(&state, &headers).await?;
 
     let team_id = parse_uuid(&team_id)?;
-    state
+    let existing_team = state
         .store
         .get_team_by_id(team_id)
         .await?
@@ -378,9 +384,14 @@ pub async fn update_identity_team(
     let users = state.store.list_identity_users().await?;
     let selected_admin_ids = parse_uuid_list(&request.admin_user_ids)?;
     validate_team_admin_assignments(&users, Some(team_id), &selected_admin_ids)?;
+    let tags = match request.tags.as_ref() {
+        Some(tags) => parse_entity_tag_views(tags, "team tags")?,
+        None => existing_team.tags,
+    };
 
     let now = OffsetDateTime::now_utc();
     state.store.update_team_name(team_id, name, now).await?;
+    state.store.update_team_tags(team_id, &tags, now).await?;
     sync_team_admins(&state.store, team_id, &selected_admin_ids, now).await?;
 
     Ok(Json(envelope(
@@ -643,6 +654,7 @@ pub async fn create_identity_user(
     let email_normalized = normalize_email(email)?;
     let auth_mode = parse_auth_mode(&request.auth_mode)?;
     let global_role = parse_global_role(&request.global_role)?;
+    let tags = parse_entity_tag_views(&request.tags, "user tags")?;
 
     if name.is_empty() {
         return Err(AppError(GatewayError::InvalidRequest(
@@ -679,6 +691,10 @@ pub async fn create_identity_user(
         )
         .await?;
     let created_at = OffsetDateTime::now_utc();
+    state
+        .store
+        .update_user_tags(user.user_id, &tags, created_at)
+        .await?;
 
     if let Some((team_id, role)) = membership {
         state
@@ -731,6 +747,10 @@ pub async fn update_identity_user(
         .unwrap_or(identity_user.user.auth_mode);
     let requested_membership =
         parse_requested_membership(request.team_id.as_deref(), request.team_role.as_deref())?;
+    let tags = match request.tags.as_ref() {
+        Some(tags) => parse_entity_tag_views(tags, "user tags")?,
+        None => identity_user.user.tags.clone(),
+    };
     let oidc_provider = resolve_requested_oidc_provider(
         &state.store,
         next_auth_mode,
@@ -762,6 +782,7 @@ pub async fn update_identity_user(
         .store
         .update_identity_user(user_id, next_global_role, next_auth_mode, now)
         .await?;
+    state.store.update_user_tags(user_id, &tags, now).await?;
     sync_identity_user_auth_mode(
         &state.store,
         &identity_user,
@@ -1442,6 +1463,20 @@ fn parse_uuid_list(raw_values: &[String]) -> Result<Vec<Uuid>, AppError> {
         }
     }
     Ok(values)
+}
+
+fn parse_entity_tag_views(
+    tags: &[AdminEntityTagView],
+    context: &str,
+) -> Result<Vec<gateway_core::RequestTag>, AppError> {
+    let tags = tags
+        .iter()
+        .map(|tag| gateway_core::RequestTag {
+            key: tag.key.clone(),
+            value: tag.value.clone(),
+        })
+        .collect::<Vec<_>>();
+    validate_entity_tags(&tags, context).map_err(AppError)
 }
 
 fn validate_team_admin_assignments(

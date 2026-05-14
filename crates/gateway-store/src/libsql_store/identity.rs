@@ -79,6 +79,7 @@ impl LibsqlStore {
                     users.must_change_password,
                     users.request_logging_enabled,
                     users.model_access_mode,
+                    users.tags_json,
                     users.created_at,
                     users.updated_at,
                     teams.team_id,
@@ -126,6 +127,7 @@ impl LibsqlStore {
                     users.must_change_password,
                     users.request_logging_enabled,
                     users.model_access_mode,
+                    users.tags_json,
                     users.created_at,
                     users.updated_at,
                     teams.team_id,
@@ -159,7 +161,7 @@ impl LibsqlStore {
             .connection
             .query(
                 r#"
-                SELECT team_id, team_key, team_name, status, model_access_mode, created_at, updated_at
+                SELECT team_id, team_key, team_name, status, model_access_mode, tags_json, created_at, updated_at
                 FROM teams
                 WHERE status = 'active'
                 ORDER BY team_name ASC
@@ -340,7 +342,7 @@ impl LibsqlStore {
             .connection
             .query(
                 r#"
-                SELECT team_id, team_key, team_name, status, model_access_mode, created_at, updated_at
+                SELECT team_id, team_key, team_name, status, model_access_mode, tags_json, created_at, updated_at
                 FROM teams
                 ORDER BY team_name ASC
                 "#,
@@ -416,7 +418,7 @@ impl LibsqlStore {
             .query(
                 r#"
                 SELECT user_id, name, email, email_normalized, global_role, auth_mode, status,
-                       must_change_password, request_logging_enabled, model_access_mode, created_at, updated_at
+                       must_change_password, request_logging_enabled, model_access_mode, tags_json, created_at, updated_at
                 FROM users
                 WHERE email_normalized = ?1
                 LIMIT 1
@@ -438,7 +440,7 @@ impl LibsqlStore {
             .connection
             .query(
                 r#"
-                SELECT team_id, team_key, team_name, status, model_access_mode, created_at, updated_at
+                SELECT team_id, team_key, team_name, status, model_access_mode, tags_json, created_at, updated_at
                 FROM teams
                 WHERE team_key = ?1
                 LIMIT 1
@@ -495,6 +497,28 @@ impl LibsqlStore {
                 WHERE team_id = ?3
                 "#,
                 libsql::params![team_name, updated_at.unix_timestamp(), team_id.to_string()],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn update_team_tags(
+        &self,
+        team_id: Uuid,
+        tags: &[RequestTag],
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        let tags_json = crate::shared::serialize_json(tags)?;
+        self.connection
+            .execute(
+                r#"
+                UPDATE teams
+                SET tags_json = ?1,
+                    updated_at = ?2
+                WHERE team_id = ?3
+                "#,
+                libsql::params![tags_json, updated_at.unix_timestamp(), team_id.to_string()],
             )
             .await
             .map_err(to_write_error)?;
@@ -636,6 +660,28 @@ impl LibsqlStore {
         .await
         .map_err(to_write_error)?;
         tx.commit().await.map_err(to_query_error)?;
+        Ok(())
+    }
+
+    pub async fn update_user_tags(
+        &self,
+        user_id: Uuid,
+        tags: &[RequestTag],
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        let tags_json = crate::shared::serialize_json(tags)?;
+        self.connection
+            .execute(
+                r#"
+                UPDATE users
+                SET tags_json = ?1,
+                    updated_at = ?2
+                WHERE user_id = ?3
+                "#,
+                libsql::params![tags_json, updated_at.unix_timestamp(), user_id.to_string()],
+            )
+            .await
+            .map_err(to_write_error)?;
         Ok(())
     }
 
@@ -1373,6 +1419,7 @@ impl LibsqlStore {
                 SELECT users.user_id, users.name, users.email, users.email_normalized,
                        users.global_role, users.auth_mode, users.status,
                        users.must_change_password, users.request_logging_enabled, users.model_access_mode,
+                       users.tags_json,
                        users.created_at, users.updated_at
                 FROM users
                 INNER JOIN user_oidc_links ON user_oidc_links.user_id = users.user_id
@@ -1407,7 +1454,7 @@ impl IdentityRepository for LibsqlStore {
             .query(
                 r#"
                 SELECT user_id, name, email, email_normalized, global_role, auth_mode, status,
-                       must_change_password, request_logging_enabled, model_access_mode, created_at, updated_at
+                       must_change_password, request_logging_enabled, model_access_mode, tags_json, created_at, updated_at
                 FROM users
                 WHERE user_id = ?1
                 LIMIT 1
@@ -1433,7 +1480,7 @@ impl IdentityRepository for LibsqlStore {
             .connection
             .query(
                 r#"
-                SELECT team_id, team_key, team_name, status, model_access_mode, created_at, updated_at
+                SELECT team_id, team_key, team_name, status, model_access_mode, tags_json, created_at, updated_at
                 FROM teams
                 WHERE team_id = ?1
                 LIMIT 1
