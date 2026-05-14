@@ -45,9 +45,9 @@ Tag rules are intentionally strict.
 - Tag values are capped at 64 characters.
 - Keys and values cannot be empty after trimming.
 - Keys must start with a lowercase ASCII letter.
-- Keys may contain lowercase ASCII letters, digits, `.`, `_`, and `-`.
+- After the first letter, keys may contain lowercase ASCII letters, digits, `.`, `_`, and `-`.
 - Values must contain lowercase ASCII letters, digits, `.`, `_`, `-`, `/`, or `:`.
-- Keys must be unique within the same tag set.
+- Each key must be unique within the same tag set.
 - Reserved keys `service`, `component`, and `env` cannot be used as bespoke tag keys.
 
 The reserved keys are owned by the universal request-tag headers. Use those headers for request service, component, and environment. Use different names such as `app`, `workload`, `tenant`, or `deployment` for bespoke dimensions.

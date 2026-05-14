@@ -1419,8 +1419,8 @@ impl LibsqlStore {
                 SELECT users.user_id, users.name, users.email, users.email_normalized,
                        users.global_role, users.auth_mode, users.status,
                        users.must_change_password, users.request_logging_enabled, users.model_access_mode,
-                    users.tags_json,
-                    users.created_at, users.updated_at
+                       users.tags_json,
+                       users.created_at, users.updated_at
                 FROM users
                 INNER JOIN user_oidc_links ON user_oidc_links.user_id = users.user_id
                 LEFT JOIN user_oidc_auth ON
