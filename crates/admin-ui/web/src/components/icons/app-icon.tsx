@@ -1,27 +1,27 @@
-import { HugeiconsIcon } from '@hugeicons/react'
+import { HugeiconsIcon } from "@hugeicons/react";
 
-type IconLike = unknown
+type IconLike = unknown;
 
-export type AppIconStroke = 1 | 1.2 | 1.5
+export type AppIconStroke = 1 | 1.2 | 1.5;
 
 interface AppIconProps {
-  icon: IconLike
-  size?: number
-  stroke?: AppIconStroke
-  color?: string
-  className?: string
-  'aria-hidden'?: boolean
-  'data-icon'?: 'inline-start' | 'inline-end'
+  icon: IconLike;
+  size?: number;
+  stroke?: AppIconStroke;
+  color?: string;
+  className?: string;
+  "aria-hidden"?: boolean;
+  "data-icon"?: "inline-start" | "inline-end";
 }
 
 export function AppIcon({
   icon,
-  size = 16,
-  stroke = 1.2,
-  color = 'currentColor',
+  size = 22,
+  stroke = 1.5,
+  color = "currentColor",
   className,
-  'aria-hidden': ariaHidden,
-  'data-icon': dataIcon,
+  "aria-hidden": ariaHidden,
+  "data-icon": dataIcon,
 }: AppIconProps) {
   return (
     <HugeiconsIcon
@@ -33,5 +33,5 @@ export function AppIcon({
       aria-hidden={ariaHidden}
       data-icon={dataIcon}
     />
-  )
+  );
 }
