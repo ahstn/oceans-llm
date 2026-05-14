@@ -1,6 +1,6 @@
 # Identity and Access
 
-`See also`: [Data Relationships](../reference/data-relationships.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Service Accounts](service-accounts.md), [OIDC and SSO Status](oidc-and-sso-status.md), [Admin Control Plane](admin-control-plane.md), [Budgets and Spending](../operations/budgets-and-spending.md), [MCP Invocations](../operations/observability/mcp-invocations.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../adr/2026-05-10-team-service-accounts.md), [ADR: Admin Identity Lifecycle and Team Member Workflow Hardening](../adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md)
+`See also`: [Data Relationships](../reference/data-relationships.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Service Accounts](service-accounts.md), [OIDC and SSO Status](oidc-and-sso-status.md), [Admin Control Plane](admin-control-plane.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Tagging](../operations/tagging.md), [MCP Invocations](../operations/observability/mcp-invocations.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../adr/2026-05-10-team-service-accounts.md), [ADR: Admin Identity Lifecycle and Team Member Workflow Hardening](../adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md)
 
 This page describes the live identity model across the gateway and admin control plane.
 
@@ -109,6 +109,12 @@ Transfer does not change:
 - service-account ownership
 
 That boundary is a policy rule, not a UI shortcut.
+
+## Identity Tags
+
+Admins can attach bounded key/value tags to users and teams from the admin identity UI. These tags are displayed in the user and team detail dialogs and are intended for attribution, export, and reconciliation with external systems.
+
+Identity tags do not change runtime access, budget checks, request routing, request-log filtering, or historical ownership. The tag rules and usage guidance live in [Tagging](../operations/tagging.md).
 
 ## OIDC Boundary
 

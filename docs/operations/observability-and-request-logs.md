@@ -1,6 +1,6 @@
 # Observability and Request Logs
 
-`See also`: [Request Logs](observability/request-logs.md), [MCP Invocations](observability/mcp-invocations.md), [Agent Harness Usage](agent-harness-usage.md), [Data Relationships](../reference/data-relationships.md), [Service Accounts](../access/service-accounts.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Admin Control Plane](../access/admin-control-plane.md), [Deploy and Operations](../setup/deploy-and-operations.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../adr/2026-05-10-team-service-accounts.md), [ADR: OTLP-First Observability and Payload-Backed Request Logs](../adr/2026-03-15-otlp-observability-and-request-log-payloads.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md), [ADR: MCP Tool Cardinality Observability](../adr/2026-04-28-mcp-tool-cardinality-observability.md)
+`See also`: [Request Logs](observability/request-logs.md), [MCP Invocations](observability/mcp-invocations.md), [Tagging](tagging.md), [Agent Harness Usage](agent-harness-usage.md), [Data Relationships](../reference/data-relationships.md), [Service Accounts](../access/service-accounts.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Admin Control Plane](../access/admin-control-plane.md), [Deploy and Operations](../setup/deploy-and-operations.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../adr/2026-05-10-team-service-accounts.md), [ADR: OTLP-First Observability and Payload-Backed Request Logs](../adr/2026-03-15-otlp-observability-and-request-log-payloads.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md), [ADR: MCP Tool Cardinality Observability](../adr/2026-04-28-mcp-tool-cardinality-observability.md)
 
 This document describes the live observability contract for the gateway.
 
@@ -100,7 +100,7 @@ The runtime emits bounded request-level signals for:
 - priced spend metric totals
 - usage-record totals by pricing status
 - request tool-cardinality histograms
-- caller request tags for filtering and attribution
+- caller request tags for filtering and attribution; see [Tagging](tagging.md)
 
 Request correlation is anchored on `x-request-id`. The HTTP middleware boundary owns request-id generation and propagation: caller-provided values are preserved, and missing values are generated once before handlers run.
 
@@ -110,24 +110,11 @@ Request outcomes are emitted once per request with bounded labels. Important exa
 - `invalid_request` for capability mismatch
 - `upstream_error` for upstream execution or stream failure
 
-## Request Tagging Contract
+## Tagging and Attribution
 
-Callers can attach bounded attribution metadata with:
+The request-log surface records caller-supplied request tags for filtering and attribution. The tag header contract, validation rules, examples, and identity tag guidance live in [Tagging](tagging.md).
 
-- `x-oceans-service`
-- `x-oceans-component`
-- `x-oceans-env`
-- `x-oceans-tags`
-
-`x-oceans-tags` uses `key=value; key2=value2` formatting.
-
-Validation rules:
-
-- the universal headers may only be sent once each
-- `x-oceans-tags` may only be sent once
-- bespoke tags are capped at 5 entries
-- bespoke keys must be unique
-- reserved universal names cannot be reused as bespoke keys
+Request tags are request-scoped. User and team tags are durable identity metadata managed by admins. Keep those two surfaces distinct when exporting or reconciling observability data.
 
 ## Request Log Storage Shape
 
