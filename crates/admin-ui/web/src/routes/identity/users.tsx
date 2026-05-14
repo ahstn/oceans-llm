@@ -1,5 +1,12 @@
 import { useEffect, useState, useTransition, type CSSProperties, type FormEvent } from 'react'
-import { UserIcon } from '@hugeicons/core-free-icons'
+import {
+  Cancel01Icon,
+  ChartLineData01Icon,
+  Configuration01Icon,
+  ShieldKeyIcon,
+  UserIcon,
+  UserCircleIcon,
+} from '@hugeicons/core-free-icons'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
@@ -10,6 +17,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -54,7 +62,6 @@ import {
   getUsers,
   reactivateIdentityUser,
   resetIdentityUserOnboarding,
-  resendIdentityUserPasswordInvite,
   updateIdentityUser,
 } from '@/server/admin-data.functions'
 import {
@@ -98,10 +105,10 @@ const initialUpdateForm: UpdateUserInput = {
 }
 
 const userDetailsSections = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'configuration', label: 'Configuration' },
-  { id: 'auth', label: 'Auth & onboarding' },
-  { id: 'usage', label: 'Usage' },
+  { id: 'overview', label: 'Overview', icon: UserCircleIcon },
+  { id: 'configuration', label: 'Configuration', icon: Configuration01Icon },
+  { id: 'auth', label: 'Auth & onboarding', icon: ShieldKeyIcon },
+  { id: 'usage', label: 'Usage', icon: ChartLineData01Icon },
 ] as const
 
 type UserDetailsSection = (typeof userDetailsSections)[number]['id']
@@ -309,61 +316,6 @@ export function UsersPage() {
     } catch {
       toast.error('Clipboard access failed')
     }
-  }
-
-  function handleResend(user: UserView) {
-    startTransition(async () => {
-      try {
-        const response = await resendIdentityUserPasswordInvite({ data: { userId: user.id } })
-        await handleCopy(response.data.invite_url, 'Invite URL copied')
-        await refreshUsers()
-      } catch (error) {
-        toast.error(getErrorMessage(error))
-      }
-    })
-  }
-
-  function renderOnboardingActions(user: UserView) {
-    if (user.onboarding?.kind === 'password_invite') {
-      return (
-        <>
-          {user.onboarding.invite_url ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              onClick={() => handleCopy(user.onboarding?.invite_url ?? '', 'Invite URL copied')}
-            >
-              Copy invite
-            </Button>
-          ) : null}
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            onClick={() => handleResend(user)}
-            disabled={isPending}
-          >
-            Resend invite
-          </Button>
-        </>
-      )
-    }
-
-    if (user.onboarding?.kind === 'oidc_sign_in') {
-      return (
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          onClick={() => handleCopy(user.onboarding?.sign_in_url ?? '', 'Sign-in URL copied')}
-        >
-          Copy sign-in URL
-        </Button>
-      )
-    }
-
-    return <span className="text-xs text-[var(--color-text-soft)]">No action available</span>
   }
 
   return (
@@ -691,12 +643,6 @@ export function UsersPage() {
                     <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                       <div>
                         <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
-                          Auth
-                        </dt>
-                        <dd className="text-[var(--color-text-muted)]">{user.auth_mode}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
                           Global role
                         </dt>
                         <dd className="text-[var(--color-text-muted)]">{user.global_role}</dd>
@@ -707,20 +653,6 @@ export function UsersPage() {
                         </dt>
                         <dd className="text-[var(--color-text-muted)]">
                           {user.team_name ?? 'No team'}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
-                          Team role
-                        </dt>
-                        <dd className="text-[var(--color-text-muted)]">{user.team_role ?? '—'}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
-                          Logs
-                        </dt>
-                        <dd className="text-[var(--color-text-muted)]">
-                          {user.request_logging_enabled ? 'Enabled' : 'Disabled'}
                         </dd>
                       </div>
                     </dl>
@@ -734,7 +666,6 @@ export function UsersPage() {
                       >
                         Manage
                       </Button>
-                      {renderOnboardingActions(user)}
                     </div>
                   </article>
                 ))}
@@ -746,13 +677,9 @@ export function UsersPage() {
                     <tr>
                       <th className="px-3 py-2 font-semibold">Name</th>
                       <th className="px-3 py-2 font-semibold">Email</th>
-                      <th className="px-3 py-2 font-semibold">Auth</th>
                       <th className="px-3 py-2 font-semibold">Global role</th>
-                      <th className="px-3 py-2 font-semibold">Logs</th>
                       <th className="px-3 py-2 font-semibold">Team</th>
-                      <th className="px-3 py-2 font-semibold">Team role</th>
                       <th className="px-3 py-2 font-semibold">Status</th>
-                      <th className="px-3 py-2 font-semibold">Onboarding</th>
                       <th className="px-3 py-2 font-semibold">Actions</th>
                     </tr>
                   </thead>
@@ -770,19 +697,10 @@ export function UsersPage() {
                         </td>
                         <td className="px-3 py-3 text-[var(--color-text-muted)]">{user.email}</td>
                         <td className="px-3 py-3 text-[var(--color-text-muted)]">
-                          {user.auth_mode}
-                        </td>
-                        <td className="px-3 py-3 text-[var(--color-text-muted)]">
                           {user.global_role}
                         </td>
                         <td className="px-3 py-3 text-[var(--color-text-muted)]">
-                          {user.request_logging_enabled ? 'Enabled' : 'Disabled'}
-                        </td>
-                        <td className="px-3 py-3 text-[var(--color-text-muted)]">
                           {user.team_name ?? '—'}
-                        </td>
-                        <td className="px-3 py-3 text-[var(--color-text-muted)]">
-                          {user.team_role ?? '—'}
                         </td>
                         <td className="px-3 py-3">
                           <Badge
@@ -796,11 +714,6 @@ export function UsersPage() {
                           >
                             {user.status}
                           </Badge>
-                        </td>
-                        <td className="px-3 py-3">
-                          <div className="flex flex-wrap gap-2">
-                            {renderOnboardingActions(user)}
-                          </div>
                         </td>
                         <td className="px-3 py-3">
                           <Button
@@ -830,7 +743,10 @@ export function UsersPage() {
           }
         }}
       >
-        <DialogContent className="overflow-hidden p-0 md:max-h-[680px] md:max-w-[920px]">
+        <DialogContent
+          showCloseButton={false}
+          className="overflow-hidden p-0 md:max-h-[680px] md:max-w-[920px]"
+        >
           <DialogTitle className="sr-only">Manage user</DialogTitle>
           <DialogDescription className="sr-only">
             Review user status, configuration, auth settings, and usage.
@@ -839,23 +755,25 @@ export function UsersPage() {
           {selectedUser ? (
             <SidebarProvider
               className="min-h-0 items-start"
-              style={{ '--sidebar-width': '13.5rem' } as CSSProperties}
+              style={{ '--sidebar-width': '14rem' } as CSSProperties}
             >
               <Sidebar
                 collapsible="none"
                 className="hidden border-r border-[color:var(--color-border)] md:flex"
               >
-                <SidebarContent>
-                  <SidebarGroup>
+                <SidebarContent className="p-3">
+                  <SidebarGroup className="px-0 py-0">
                     <SidebarGroupContent>
-                      <SidebarMenu>
+                      <SidebarMenu className="gap-1">
                         {userDetailsSections.map((section) => (
                           <SidebarMenuItem key={section.id}>
                             <SidebarMenuButton
                               type="button"
+                              className="h-10 px-3 py-2"
                               isActive={selectedUserSection === section.id}
                               onClick={() => setSelectedUserSection(section.id)}
                             >
+                              <AppIcon icon={section.icon} stroke={1.5} aria-hidden />
                               <span>{section.label}</span>
                             </SidebarMenuButton>
                           </SidebarMenuItem>
@@ -867,36 +785,42 @@ export function UsersPage() {
               </Sidebar>
 
               <main className="flex max-h-[680px] min-h-[520px] flex-1 flex-col overflow-hidden">
-                <header className="flex shrink-0 flex-col gap-3 border-b border-[color:var(--color-border)] px-5 py-4">
-                  <div className="flex items-center gap-3">
+                <header className="flex shrink-0 flex-col gap-4 border-b border-[color:var(--color-border)] px-6 py-5">
+                  <div className="flex items-start gap-3">
                     <GeneratedAvatar
                       kind="user"
                       name={selectedUser.name || selectedUser.email}
                       size={44}
                     />
-                    <div className="min-w-0">
-                      <h2 className="truncate text-lg font-semibold text-[var(--color-text)]">
+                    <div className="min-w-0 flex-1 pt-0.5">
+                      <h2 className="truncate text-lg leading-tight font-semibold text-[var(--color-text)]">
                         {selectedUser.name}
                       </h2>
-                      <p className="truncate text-sm text-[var(--color-text-muted)]">
+                      <p className="mt-1 truncate text-sm text-[var(--color-text-muted)]">
                         {selectedUser.email}
                       </p>
                       <div className="mt-2 flex flex-wrap gap-2">
                         <EntityTagBadges tags={selectedUser.tags} />
                       </div>
                     </div>
-                    <Badge
-                      className="ml-auto"
-                      variant={
-                        selectedUser.status === 'active'
-                          ? 'success'
-                          : selectedUser.status === 'invited'
-                            ? 'warning'
-                            : 'default'
-                      }
-                    >
-                      {selectedUser.status}
-                    </Badge>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Badge
+                        variant={
+                          selectedUser.status === 'active'
+                            ? 'success'
+                            : selectedUser.status === 'invited'
+                              ? 'warning'
+                              : 'default'
+                        }
+                      >
+                        {selectedUser.status}
+                      </Badge>
+                      <DialogClose asChild>
+                        <Button type="button" variant="ghost" size="icon-sm" aria-label="Close">
+                          <AppIcon icon={Cancel01Icon} stroke={1.5} aria-hidden />
+                        </Button>
+                      </DialogClose>
+                    </div>
                   </div>
 
                   <div className="flex gap-2 overflow-x-auto md:hidden">
@@ -908,6 +832,12 @@ export function UsersPage() {
                         variant={selectedUserSection === section.id ? 'secondary' : 'ghost'}
                         onClick={() => setSelectedUserSection(section.id)}
                       >
+                        <AppIcon
+                          icon={section.icon}
+                          stroke={1.5}
+                          aria-hidden
+                          data-icon="inline-start"
+                        />
                         {section.label}
                       </Button>
                     ))}
@@ -915,66 +845,24 @@ export function UsersPage() {
                 </header>
 
                 <form className="flex min-h-0 flex-1 flex-col" onSubmit={handleUpdateUser}>
-                  <div className="flex-1 overflow-y-auto p-5">
+                  <div className="flex-1 overflow-y-auto p-6">
                     {selectedUserSection === 'overview' ? (
-                      <div className="grid gap-4 lg:grid-cols-3">
-                        <section className="rounded-lg border border-[color:var(--color-border)] p-4 lg:col-span-2">
-                          <h3 className="text-sm font-semibold text-[var(--color-text)]">
-                            Profile
-                          </h3>
-                          <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
-                            <UserDetailRow
-                              label="Global role"
-                              value={formatRole(selectedUser.global_role)}
-                            />
-                            <UserDetailRow
-                              label="Team"
-                              value={selectedUser.team_name ?? 'No team'}
-                            />
-                            <UserDetailRow
-                              label="Team role"
-                              value={selectedUser.team_role ?? '—'}
-                            />
-                            <UserDetailRow label="Auth method" value={selectedUser.auth_mode} />
-                            <UserDetailRow
-                              label="Request logging"
-                              value={selectedUser.request_logging_enabled ? 'Enabled' : 'Disabled'}
-                            />
-                            <UserDetailRow label="Status" value={selectedUser.status} />
-                          </dl>
-                        </section>
-
-                        <section className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4">
-                          <h3 className="text-sm font-semibold text-[var(--color-text)]">
-                            Next actions
-                          </h3>
-                          <div className="mt-3 flex flex-col gap-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="secondary"
-                              onClick={() => setSelectedUserSection('configuration')}
-                            >
-                              Edit configuration
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => setSelectedUserSection('auth')}
-                            >
-                              Manage auth
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => setSelectedUserSection('usage')}
-                            >
-                              View usage
-                            </Button>
-                          </div>
-                        </section>
+                      <div>
+                        <h3 className="text-sm font-semibold text-[var(--color-text)]">Profile</h3>
+                        <dl className="mt-5 grid gap-x-8 gap-y-6 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                          <UserDetailRow
+                            label="Global role"
+                            value={formatRole(selectedUser.global_role)}
+                          />
+                          <UserDetailRow label="Team" value={selectedUser.team_name ?? 'No team'} />
+                          <UserDetailRow label="Team role" value={selectedUser.team_role ?? '—'} />
+                          <UserDetailRow label="Auth method" value={selectedUser.auth_mode} />
+                          <UserDetailRow
+                            label="Request logging"
+                            value={selectedUser.request_logging_enabled ? 'Enabled' : 'Disabled'}
+                          />
+                          <UserDetailRow label="Status" value={selectedUser.status} />
+                        </dl>
                       </div>
                     ) : null}
 
@@ -1295,7 +1183,7 @@ export function UsersPage() {
                     ) : null}
                   </div>
 
-                  <DialogFooter className="border-t border-[color:var(--color-border)] px-5 py-4">
+                  <DialogFooter className="mx-0 mb-0 rounded-none border-t border-[color:var(--color-border)] px-6 py-4">
                     <Button type="button" variant="secondary" onClick={resetUserDialog}>
                       Close
                     </Button>
