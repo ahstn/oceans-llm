@@ -1,3 +1,4 @@
+import type * as React from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -13,6 +14,16 @@ const routerMock = {
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
+  Link: ({
+    children,
+    search: _search,
+    to,
+    ...props
+  }: React.ComponentProps<'a'> & { search?: unknown; to?: string }) => (
+    <a href={to} {...props}>
+      {children}
+    </a>
+  ),
   useRouter: () => routerMock,
 }))
 
@@ -61,7 +72,7 @@ describe('TeamsPage', () => {
     ).toBeInTheDocument()
   })
 
-  it('shows member roster actions and blocks owner transfers', async () => {
+  it('keeps member rosters collapsed until a team is expanded', async () => {
     routeMock.useLoaderData.mockReturnValue({
       data: {
         teams: [
@@ -102,11 +113,27 @@ describe('TeamsPage', () => {
 
     render(<TeamsPage />)
 
+    expect(screen.getAllByLabelText('Team avatar for Core Platform').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Jane Admin').length).toBeGreaterThan(0)
+    expect(
+      screen.queryByText('Owner memberships cannot be removed or transferred in this slice.'),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Transfer' })).not.toBeInTheDocument()
+
+    const showMembersButtons = screen.getAllByRole('button', { name: 'Show 1 member' })
+    expect(showMembersButtons[0]).toHaveAttribute('aria-expanded', 'false')
+    expect(showMembersButtons[0].querySelector('[data-icon="inline-start"]')).toBeInTheDocument()
+
+    fireEvent.click(showMembersButtons[0])
+
+    const hideMembersButton = screen.getAllByRole('button', { name: 'Hide 1 member' })[0]
+    expect(hideMembersButton).toHaveAttribute('aria-expanded', 'true')
+    expect(hideMembersButton.querySelector('[data-icon="inline-start"]')).toBeInTheDocument()
     expect(
       screen.getAllByText('Owner memberships cannot be removed or transferred in this slice.')
         .length,
     ).toBeGreaterThan(0)
+    expect(screen.getAllByLabelText('User avatar for Jane Admin').length).toBeGreaterThan(0)
     expect(screen.getAllByRole('button', { name: 'Transfer' })[0]).toBeDisabled()
     expect(screen.getAllByRole('button', { name: 'Remove' })[0]).toBeDisabled()
   })

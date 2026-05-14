@@ -1,6 +1,6 @@
-import { useMemo, useState, useTransition, type FormEvent } from 'react'
-import { UserIcon } from '@hugeicons/core-free-icons'
-import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { Fragment, useMemo, useState, useTransition, type FormEvent } from 'react'
+import { UnfoldMoreDownIcon, UnfoldMoreUpIcon, UserIcon } from '@hugeicons/core-free-icons'
+import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
 import { AppIcon } from '@/components/icons/app-icon'
@@ -33,6 +33,7 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty'
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { GeneratedAvatar } from '@/components/ui/generated-avatar'
 import { Input } from '@/components/ui/input'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -46,6 +47,14 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import {
   addIdentityTeamMembers,
   createIdentityTeam,
   createIdentityUser,
@@ -54,7 +63,11 @@ import {
   transferIdentityTeamMember,
   updateIdentityTeam,
 } from '@/server/admin-data.functions'
-import { EntityTagBadges, EntityTagsField, sanitizeEntityTags } from '@/routes/identity/-entity-tags'
+import {
+  EntityTagBadges,
+  EntityTagsField,
+  sanitizeEntityTags,
+} from '@/routes/identity/-entity-tags'
 import type {
   CreateTeamInput,
   CreateUserInput,
@@ -109,6 +122,7 @@ export function TeamsPage() {
   const [inviteForm, setInviteForm] = useState<CreateUserInput>(initialInviteForm)
   const [inviteResult, setInviteResult] = useState<CreateUserResult | null>(null)
   const [memberDialog, setMemberDialog] = useState<TeamMemberDialogState>({ mode: 'closed' })
+  const [expandedTeamIds, setExpandedTeamIds] = useState<string[]>([])
   const [transferForm, setTransferForm] = useState<TransferTeamMemberInput>({
     destination_team_id: '',
     destination_role: 'member',
@@ -227,6 +241,12 @@ export function TeamsPage() {
       destination_team_id: '',
       destination_role: 'member',
     })
+  }
+
+  function toggleTeamMembers(teamId: string) {
+    setExpandedTeamIds((current) =>
+      current.includes(teamId) ? current.filter((id) => id !== teamId) : [...current, teamId],
+    )
   }
 
   function setInviteAuthMode(authMode: CreateUserInput['auth_mode']) {
@@ -400,257 +420,216 @@ export function TeamsPage() {
           ) : (
             <div className="flex flex-col gap-4">
               <div className="grid gap-3 md:hidden">
-                {teamMembersByTeam.map(({ team, members }) => (
-                  <article
-                    key={team.id}
-                    className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate font-semibold text-[var(--color-text)]">
-                          {team.name}
-                        </p>
-                        <p className="truncate text-xs text-[var(--color-text-soft)]">{team.key}</p>
-                      </div>
-                      <Badge variant={team.status === 'active' ? 'success' : 'warning'}>
-                        {team.status}
-                      </Badge>
-                    </div>
+                {teamMembersByTeam.map(({ team, members }) => {
+                  const isExpanded = expandedTeamIds.includes(team.id)
+                  const membersRegionId = `team-members-mobile-${team.id}`
 
-                    <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                      <div>
-                        <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
-                          Members
-                        </dt>
-                        <dd className="text-[var(--color-text-muted)]">{team.member_count}</dd>
+                  return (
+                    <article
+                      key={team.id}
+                      className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <GeneratedAvatar kind="team" name={team.name} size={40} />
+                          <div className="min-w-0">
+                            <p className="truncate font-semibold text-[var(--color-text)]">
+                              {team.name}
+                            </p>
+                            <p className="truncate text-xs text-[var(--color-text-soft)]">
+                              {team.key}
+                            </p>
+                          </div>
+                        </div>
+                        <Badge variant={team.status === 'active' ? 'success' : 'warning'}>
+                          {team.status}
+                        </Badge>
                       </div>
-                      <div>
-                        <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
-                          Admins
-                        </dt>
-                        <dd className="text-[var(--color-text-muted)]">
-                          {team.admins.length > 0 ? team.admins.length : 'None'}
-                        </dd>
+
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <EntityTagBadges tags={team.tags} />
                       </div>
-                    </dl>
 
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      <EntityTagBadges tags={team.tags} />
-                    </div>
+                      <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                        <div>
+                          <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                            Members
+                          </dt>
+                          <dd className="text-[var(--color-text-muted)]">{team.member_count}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                            Admins
+                          </dt>
+                          <dd className="text-[var(--color-text-muted)]">
+                            {team.admins.length > 0 ? team.admins.length : 'None'}
+                          </dd>
+                        </div>
+                      </dl>
 
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {team.admins.length > 0 ? (
-                        team.admins.map((admin) => <Badge key={admin.id}>{admin.name}</Badge>)
-                      ) : (
-                        <span className="text-xs text-[var(--color-text-soft)]">
-                          No admins assigned
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="mt-4 flex flex-col gap-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <h3 className="text-sm font-semibold text-[var(--color-text)]">Members</h3>
-                        <span className="text-xs text-[var(--color-text-soft)]">
-                          {members.length} total
-                        </span>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {team.admins.length > 0 ? (
+                          team.admins.map((admin) => <UserEntityLink key={admin.id} user={admin} />)
+                        ) : (
+                          <span className="text-xs text-[var(--color-text-soft)]">
+                            No admins assigned
+                          </span>
+                        )}
                       </div>
-                      {members.length > 0 ? (
-                        <div className="flex flex-col gap-2">
-                          {members.map((member) => (
-                            <div
-                              key={member.id}
-                              className="rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-bg)] p-3"
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                  <p className="truncate text-sm font-semibold text-[var(--color-text)]">
-                                    {member.name}
-                                  </p>
+
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          aria-expanded={isExpanded}
+                          aria-controls={membersRegionId}
+                          onClick={() => toggleTeamMembers(team.id)}
+                        >
+                          <TeamMembersToggleLabel
+                            isExpanded={isExpanded}
+                            memberCount={team.member_count}
+                          />
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => openEditTeamDialog(team)}
+                        >
+                          Edit team
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => openMembersDialog(team)}
+                        >
+                          Add members
+                        </Button>
+                      </div>
+
+                      {isExpanded ? (
+                        <div id={membersRegionId} className="mt-4">
+                          <TeamMemberRoster
+                            teamId={team.id}
+                            members={members}
+                            onTransferMember={openTransferMemberDialog}
+                            onRemoveMember={openRemoveMemberDialog}
+                          />
+                        </div>
+                      ) : null}
+                    </article>
+                  )
+                })}
+              </div>
+
+              <div className="hidden overflow-hidden rounded-md border border-[color:var(--color-border)] md:block">
+                <Table className="text-left">
+                  <TableHeader className="bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
+                    <TableRow>
+                      <TableHead className="px-3 py-2 font-semibold">Team</TableHead>
+                      <TableHead className="px-3 py-2 font-semibold">Admins</TableHead>
+                      <TableHead className="px-3 py-2 font-semibold">Members</TableHead>
+                      <TableHead className="px-3 py-2 font-semibold">Status</TableHead>
+                      <TableHead className="px-3 py-2 font-semibold">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {teamMembersByTeam.map(({ team, members }) => {
+                      const isExpanded = expandedTeamIds.includes(team.id)
+                      const membersRegionId = `team-members-desktop-${team.id}`
+
+                      return (
+                        <Fragment key={team.id}>
+                          <TableRow aria-expanded={isExpanded}>
+                            <TableCell className="px-3 py-3">
+                              <div className="flex min-w-0 items-center gap-3">
+                                <GeneratedAvatar kind="team" name={team.name} size={32} />
+                                <div className="flex min-w-0 flex-col gap-1">
+                                  <p className="truncate text-[var(--color-text)]">{team.name}</p>
                                   <p className="truncate text-xs text-[var(--color-text-soft)]">
-                                    {member.email}
+                                    {team.key}
                                   </p>
+                                  <EntityTagBadges tags={team.tags} />
                                 </div>
-                                <Badge
-                                  variant={member.team_role === 'owner' ? 'warning' : 'default'}
-                                >
-                                  {member.team_role ?? 'member'}
-                                </Badge>
                               </div>
-                              <div className="mt-3 flex flex-wrap gap-2">
+                            </TableCell>
+                            <TableCell className="px-3 py-3">
+                              {team.admins.length > 0 ? (
+                                <div className="flex flex-wrap gap-2">
+                                  {team.admins.map((admin) => (
+                                    <UserEntityLink key={admin.id} user={admin} compact />
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-xs text-[var(--color-text-soft)]">
+                                  No admins
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell className="px-3 py-3">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                aria-expanded={isExpanded}
+                                aria-controls={membersRegionId}
+                                onClick={() => toggleTeamMembers(team.id)}
+                              >
+                                <TeamMembersToggleLabel
+                                  isExpanded={isExpanded}
+                                  memberCount={team.member_count}
+                                />
+                              </Button>
+                            </TableCell>
+                            <TableCell className="px-3 py-3">
+                              <Badge variant={team.status === 'active' ? 'success' : 'warning'}>
+                                {team.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="px-3 py-3">
+                              <div className="flex flex-wrap gap-2">
                                 <Button
                                   type="button"
                                   size="sm"
                                   variant="secondary"
-                                  onClick={() => openTransferMemberDialog(team.id, member.id)}
-                                  disabled={member.team_role === 'owner'}
+                                  onClick={() => openEditTeamDialog(team)}
                                 >
-                                  Transfer
+                                  Edit team
                                 </Button>
                                 <Button
                                   type="button"
                                   size="sm"
                                   variant="ghost"
-                                  onClick={() => openRemoveMemberDialog(team.id, member.id)}
-                                  disabled={member.team_role === 'owner'}
+                                  onClick={() => openMembersDialog(team)}
                                 >
-                                  Remove
+                                  Add members
                                 </Button>
                               </div>
-                              {member.team_role === 'owner' ? (
-                                <p className="mt-2 text-xs text-[var(--color-text-soft)]">
-                                  Owner memberships cannot be removed or transferred in this slice.
-                                </p>
-                              ) : null}
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-sm text-[var(--color-text-soft)]">
-                          No members assigned yet.
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => openEditTeamDialog(team)}
-                      >
-                        Edit team
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => openMembersDialog(team)}
-                      >
-                        Add members
-                      </Button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-
-              <div className="hidden overflow-hidden rounded-md border border-[color:var(--color-border)] md:block">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
-                    <tr>
-                      <th className="px-3 py-2 font-semibold">Team</th>
-                      <th className="px-3 py-2 font-semibold">Admins</th>
-                      <th className="px-3 py-2 font-semibold">Members</th>
-                      <th className="px-3 py-2 font-semibold">Status</th>
-                      <th className="px-3 py-2 font-semibold">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {teamMembersByTeam.map(({ team, members }) => (
-                      <tr
-                        key={team.id}
-                        className="border-t border-[color:var(--color-border)] align-top"
-                      >
-                        <td className="px-3 py-3">
-                          <div className="flex flex-col gap-1">
-                            <p className="text-[var(--color-text)]">{team.name}</p>
-                            <p className="text-xs text-[var(--color-text-soft)]">{team.key}</p>
-                            <EntityTagBadges tags={team.tags} />
-                          </div>
-                        </td>
-                        <td className="px-3 py-3">
-                          {team.admins.length > 0 ? (
-                            <div className="flex flex-wrap gap-2">
-                              {team.admins.map((admin) => (
-                                <Badge key={admin.id}>{admin.name}</Badge>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="text-xs text-[var(--color-text-soft)]">No admins</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-3">
-                          <div className="flex flex-col gap-2">
-                            <div className="text-sm text-[var(--color-text-muted)]">
-                              {team.member_count} members
-                            </div>
-                            {members.length > 0 ? (
-                              <div className="flex flex-col gap-2">
-                                {members.map((member) => (
-                                  <div
-                                    key={member.id}
-                                    className="flex flex-wrap items-center gap-2 rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] px-2 py-2"
-                                  >
-                                    <div className="min-w-0 flex-1">
-                                      <p className="truncate text-[var(--color-text)]">
-                                        {member.name}
-                                      </p>
-                                      <p className="truncate text-xs text-[var(--color-text-soft)]">
-                                        {member.email}
-                                      </p>
-                                    </div>
-                                    <Badge
-                                      variant={member.team_role === 'owner' ? 'warning' : 'default'}
-                                    >
-                                      {member.team_role ?? 'member'}
-                                    </Badge>
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="secondary"
-                                      onClick={() => openTransferMemberDialog(team.id, member.id)}
-                                      disabled={member.team_role === 'owner'}
-                                    >
-                                      Transfer
-                                    </Button>
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="ghost"
-                                      onClick={() => openRemoveMemberDialog(team.id, member.id)}
-                                      disabled={member.team_role === 'owner'}
-                                    >
-                                      Remove
-                                    </Button>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <span className="text-sm text-[var(--color-text-soft)]">
-                                No members assigned yet
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-3 py-3">
-                          <Badge variant={team.status === 'active' ? 'success' : 'warning'}>
-                            {team.status}
-                          </Badge>
-                        </td>
-                        <td className="px-3 py-3">
-                          <div className="flex flex-wrap gap-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="secondary"
-                              onClick={() => openEditTeamDialog(team)}
-                            >
-                              Edit team
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => openMembersDialog(team)}
-                            >
-                              Add members
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                            </TableCell>
+                          </TableRow>
+                          {isExpanded ? (
+                            <TableRow>
+                              <TableCell
+                                id={membersRegionId}
+                                colSpan={5}
+                                className="bg-[color:var(--color-surface-muted)] px-3 py-4 whitespace-normal"
+                              >
+                                <TeamMemberRoster
+                                  teamId={team.id}
+                                  members={members}
+                                  onTransferMember={openTransferMemberDialog}
+                                  onRemoveMember={openRemoveMemberDialog}
+                                />
+                              </TableCell>
+                            </TableRow>
+                          ) : null}
+                        </Fragment>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
               </div>
             </div>
           )}
@@ -1113,6 +1092,99 @@ export function TeamsPage() {
   )
 }
 
+function UserEntityLink({
+  user,
+  compact = false,
+}: {
+  user: { id: string; name: string; email: string; status?: string }
+  compact?: boolean
+}) {
+  return (
+    <Button asChild type="button" size="sm" variant="secondary" className="h-auto px-2 py-1">
+      <Link
+        to="/identity/users"
+        search={{ user_id: user.id, user_section: 'overview' }}
+        aria-label={`Open ${user.name}`}
+      >
+        <GeneratedAvatar kind="user" name={user.name || user.email} size={compact ? 20 : 24} />
+        <span className="truncate">{user.name}</span>
+        {!compact && user.status ? (
+          <span className="text-xs text-[var(--color-text-soft)]">{user.status}</span>
+        ) : null}
+      </Link>
+    </Button>
+  )
+}
+
+function TeamMemberRoster({
+  teamId,
+  members,
+  onTransferMember,
+  onRemoveMember,
+}: {
+  teamId: string
+  members: TeamAssignableUserView[]
+  onTransferMember: (teamId: string, userId: string) => void
+  onRemoveMember: (teamId: string, userId: string) => void
+}) {
+  if (members.length === 0) {
+    return (
+      <div className="rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-bg)] p-4 text-sm text-[var(--color-text-soft)]">
+        No members assigned yet.
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-[var(--color-text)]">Members</h3>
+        <span className="text-xs text-[var(--color-text-soft)]">{members.length} total</span>
+      </div>
+      <div className="grid gap-2">
+        {members.map((member) => (
+          <div
+            key={member.id}
+            className="flex flex-wrap items-center gap-2 rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-bg)] px-3 py-2"
+          >
+            <GeneratedAvatar kind="user" name={member.name || member.email} size={32} />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-[var(--color-text)]">{member.name}</p>
+              <p className="truncate text-xs text-[var(--color-text-soft)]">{member.email}</p>
+            </div>
+            <Badge variant={member.team_role === 'owner' ? 'warning' : 'default'}>
+              {member.team_role ?? 'member'}
+            </Badge>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => onTransferMember(teamId, member.id)}
+              disabled={member.team_role === 'owner'}
+            >
+              Transfer
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => onRemoveMember(teamId, member.id)}
+              disabled={member.team_role === 'owner'}
+            >
+              Remove
+            </Button>
+            {member.team_role === 'owner' ? (
+              <p className="basis-full text-xs text-[var(--color-text-soft)]">
+                Owner memberships cannot be removed or transferred in this slice.
+              </p>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function UserMultiSelectField({
   label,
   description,
@@ -1188,6 +1260,7 @@ function UserMultiSelectField({
                     <span className="w-4 text-[var(--color-text-soft)]">
                       {selectedUserIds.includes(user.id) ? '✓' : ''}
                     </span>
+                    <GeneratedAvatar kind="user" name={user.name || user.email} size={28} />
                     <div className="flex min-w-0 flex-1 flex-col gap-1">
                       <span className="truncate">{user.name}</span>
                       <span className="truncate text-xs text-[var(--color-text-soft)]">
@@ -1268,6 +1341,30 @@ function isInviteOidcDisabled(
   providers: IdentityTeamsPayload['oidc_providers'],
 ) {
   return form.auth_mode === 'oidc' && (providers.length === 0 || !form.oidc_provider_key)
+}
+
+function TeamMembersToggleLabel({
+  isExpanded,
+  memberCount,
+}: {
+  isExpanded: boolean
+  memberCount: number
+}) {
+  return (
+    <>
+      <AppIcon
+        icon={isExpanded ? UnfoldMoreUpIcon : UnfoldMoreDownIcon}
+        stroke={1.5}
+        aria-hidden
+        data-icon="inline-start"
+        className="transition-transform duration-200 ease-out"
+      />
+      <span>
+        {isExpanded ? 'Hide' : 'Show'} <span className="tabular-nums">{memberCount}</span>{' '}
+        {memberCount === 1 ? 'member' : 'members'}
+      </span>
+    </>
+  )
 }
 
 function getErrorMessage(error: unknown) {

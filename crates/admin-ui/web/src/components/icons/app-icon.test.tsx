@@ -16,8 +16,8 @@ describe('AppIcon', () => {
     const node = container.querySelector('[data-testid="huge-icon"]')
     const props = JSON.parse(node?.getAttribute('data-props') ?? '{}')
 
-    expect(props.size).toBe(16)
-    expect(props.strokeWidth).toBe(1.2)
+    expect(props.size).toBe(22)
+    expect(props.strokeWidth).toBe(1.5)
   })
 
   it('allows supported stroke variants', () => {
