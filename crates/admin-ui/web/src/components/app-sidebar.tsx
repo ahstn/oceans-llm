@@ -3,7 +3,7 @@ import { Link } from '@tanstack/react-router'
 
 import { AppIcon } from '@/components/icons/app-icon'
 import { adminNavSections, matchesAdminPath } from '@/components/layout/admin-nav'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { GeneratedAvatar } from '@/components/ui/generated-avatar'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,7 +43,7 @@ export function AppSidebar({ currentPath, session, signOutPending, onSignOut }: 
             <SidebarMenuButton
               asChild
               size="lg"
-              className="h-auto cursor-default rounded-lg px-1 py-1 opacity-100 hover:bg-transparent hover:text-sidebar-foreground active:bg-transparent active:text-sidebar-foreground"
+              className="hover:text-sidebar-foreground active:text-sidebar-foreground h-auto cursor-default rounded-lg px-1 py-1 opacity-100 hover:bg-transparent active:bg-transparent"
             >
               <div>
                 <span className="bg-sidebar-primary text-sidebar-primary-foreground flex size-8 items-center justify-center rounded-lg">
@@ -100,11 +100,13 @@ export function AppSidebar({ currentPath, session, signOutPending, onSignOut }: 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <SidebarMenuButton size="lg" className="h-auto rounded-lg px-2 py-2">
-                  <Avatar className="size-8 rounded-lg">
-                    <AvatarFallback className="bg-sidebar-primary/15 text-sidebar-primary rounded-lg">
-                      {getInitials(session.user.name)}
-                    </AvatarFallback>
-                  </Avatar>
+                  <GeneratedAvatar
+                    kind="user"
+                    name={session.user.name || session.user.email}
+                    className="size-8 rounded-lg"
+                    size={32}
+                    square
+                  />
                   <div className="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
                     <span className="truncate font-medium">{session.user.name}</span>
                     <span className="text-sidebar-foreground/70 truncate text-xs">
@@ -152,15 +154,6 @@ export function AppSidebar({ currentPath, session, signOutPending, onSignOut }: 
       <SidebarRail />
     </Sidebar>
   )
-}
-
-function getInitials(name: string) {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? '')
-    .join('')
 }
 
 function formatRole(role: string) {

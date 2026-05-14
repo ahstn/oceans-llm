@@ -1,4 +1,4 @@
-import { useState, useTransition, type FormEvent } from 'react'
+import { useEffect, useState, useTransition, type CSSProperties, type FormEvent } from 'react'
 import { UserIcon } from '@hugeicons/core-free-icons'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/empty'
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { GeneratedAvatar } from '@/components/ui/generated-avatar'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group'
 import { requireAdminSession } from '@/routes/-admin-guard'
 import {
@@ -38,6 +39,16 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+} from '@/components/ui/sidebar'
+import {
   deactivateIdentityUser,
   createIdentityUser,
   getUsers,
@@ -46,7 +57,11 @@ import {
   resendIdentityUserPasswordInvite,
   updateIdentityUser,
 } from '@/server/admin-data.functions'
-import { EntityTagBadges, EntityTagsField, sanitizeEntityTags } from '@/routes/identity/-entity-tags'
+import {
+  EntityTagBadges,
+  EntityTagsField,
+  sanitizeEntityTags,
+} from '@/routes/identity/-entity-tags'
 import type {
   CreateUserInput,
   CreateUserResult,
@@ -57,6 +72,7 @@ import type {
 
 export const Route = createFileRoute('/identity/users')({
   beforeLoad: ({ location }) => requireAdminSession(location),
+  validateSearch: (search: Record<string, unknown>) => normalizeUserSearch(search),
   loader: () => getUsers(),
   component: UsersPage,
 })
@@ -81,7 +97,14 @@ const initialUpdateForm: UpdateUserInput = {
   tags: [],
 }
 
-type UserDialogState = { mode: 'closed' } | { mode: 'edit'; userId: string }
+const userDetailsSections = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'configuration', label: 'Configuration' },
+  { id: 'auth', label: 'Auth & onboarding' },
+  { id: 'usage', label: 'Usage' },
+] as const
+
+type UserDetailsSection = (typeof userDetailsSections)[number]['id']
 
 export function UsersPage() {
   const router = useRouter()
@@ -91,14 +114,35 @@ export function UsersPage() {
   const [isOpen, setIsOpen] = useState(false)
   const [form, setForm] = useState<CreateUserInput>(initialForm)
   const [result, setResult] = useState<CreateUserResult | null>(null)
-  const [userDialog, setUserDialog] = useState<UserDialogState>({ mode: 'closed' })
+  const search = Route.useSearch()
   const [updateForm, setUpdateForm] = useState<UpdateUserInput>(initialUpdateForm)
   const [onboardingResult, setOnboardingResult] = useState<CreateUserResult | null>(null)
   const [isPending, startTransition] = useTransition()
-  const selectedUser =
-    userDialog.mode === 'edit'
-      ? (users.find((user) => user.id === userDialog.userId) ?? null)
-      : null
+  const selectedUser = search.user_id
+    ? (users.find((user) => user.id === search.user_id) ?? null)
+    : null
+  const selectedUserSection = search.user_section
+
+  useEffect(() => {
+    if (!selectedUser) {
+      setUpdateForm(initialUpdateForm)
+      setOnboardingResult(null)
+      return
+    }
+
+    setUpdateForm({
+      global_role: selectedUser.global_role,
+      team_id: selectedUser.team_id,
+      team_role: selectedUser.team_role === 'owner' ? null : selectedUser.team_role,
+      auth_mode: selectedUser.auth_mode,
+      oidc_provider_key:
+        selectedUser.onboarding?.kind === 'oidc_sign_in'
+          ? selectedUser.onboarding.provider_key
+          : null,
+      tags: selectedUser.tags,
+    })
+    setOnboardingResult(null)
+  }, [selectedUser])
 
   function resetDialog() {
     setForm(initialForm)
@@ -107,7 +151,10 @@ export function UsersPage() {
   }
 
   function resetUserDialog() {
-    setUserDialog({ mode: 'closed' })
+    void router.navigate({
+      to: '/identity/users',
+      search: {},
+    })
     setUpdateForm(initialUpdateForm)
     setOnboardingResult(null)
   }
@@ -136,18 +183,22 @@ export function UsersPage() {
     }))
   }
 
-  function openUserDialog(user: UserView) {
-    setUserDialog({ mode: 'edit', userId: user.id })
-    setUpdateForm({
-      global_role: user.global_role,
-      team_id: user.team_id,
-      team_role: user.team_role === 'owner' ? null : user.team_role,
-      auth_mode: user.auth_mode,
-      oidc_provider_key:
-        user.onboarding?.kind === 'oidc_sign_in' ? user.onboarding.provider_key : null,
-      tags: user.tags,
+  function openUserDialog(user: UserView, section: UserDetailsSection = 'overview') {
+    void router.navigate({
+      to: '/identity/users',
+      search: { user_id: user.id, user_section: section },
     })
-    setOnboardingResult(null)
+  }
+
+  function setSelectedUserSection(section: UserDetailsSection) {
+    if (!selectedUser) {
+      return
+    }
+
+    void router.navigate({
+      to: '/identity/users',
+      search: { user_id: selectedUser.id, user_section: section },
+    })
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -175,7 +226,7 @@ export function UsersPage() {
 
   async function handleUpdateUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (userDialog.mode !== 'edit' || !selectedUser) {
+    if (!selectedUser) {
       return
     }
 
@@ -197,7 +248,7 @@ export function UsersPage() {
   }
 
   async function handleDeactivateUser() {
-    if (userDialog.mode !== 'edit' || !selectedUser) {
+    if (!selectedUser) {
       return
     }
 
@@ -214,7 +265,7 @@ export function UsersPage() {
   }
 
   async function handleReactivateUser() {
-    if (userDialog.mode !== 'edit' || !selectedUser) {
+    if (!selectedUser) {
       return
     }
 
@@ -231,7 +282,7 @@ export function UsersPage() {
   }
 
   async function handleResetUserOnboarding() {
-    if (userDialog.mode !== 'edit' || !selectedUser) {
+    if (!selectedUser) {
       return
     }
 
@@ -613,13 +664,16 @@ export function UsersPage() {
                     className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4"
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate font-semibold text-[var(--color-text)]">
-                          {user.name}
-                        </p>
-                        <p className="truncate text-sm text-[var(--color-text-muted)]">
-                          {user.email}
-                        </p>
+                      <div className="flex min-w-0 items-center gap-3">
+                        <GeneratedAvatar kind="user" name={user.name || user.email} size={40} />
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold text-[var(--color-text)]">
+                            {user.name}
+                          </p>
+                          <p className="truncate text-sm text-[var(--color-text-muted)]">
+                            {user.email}
+                          </p>
+                        </div>
                       </div>
                       <Badge
                         variant={
@@ -708,7 +762,12 @@ export function UsersPage() {
                         key={user.id}
                         className="border-t border-[color:var(--color-border)] align-top"
                       >
-                        <td className="px-3 py-3 text-[var(--color-text)]">{user.name}</td>
+                        <td className="px-3 py-3 text-[var(--color-text)]">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <GeneratedAvatar kind="user" name={user.name || user.email} size={32} />
+                            <span className="truncate">{user.name}</span>
+                          </div>
+                        </td>
                         <td className="px-3 py-3 text-[var(--color-text-muted)]">{user.email}</td>
                         <td className="px-3 py-3 text-[var(--color-text-muted)]">
                           {user.auth_mode}
@@ -764,309 +823,534 @@ export function UsersPage() {
       </Card>
 
       <Dialog
-        open={userDialog.mode === 'edit'}
+        open={Boolean(selectedUser)}
         onOpenChange={(open) => {
           if (!open) {
             resetUserDialog()
           }
         }}
       >
-        <DialogContent className="w-[min(760px,calc(100vw-32px))]">
-          <DialogHeader>
-            <DialogTitle>Manage user</DialogTitle>
-            <DialogDescription>
-              Update role and membership fields, then use the lifecycle actions to deactivate,
-              reactivate, or reset onboarding.
-            </DialogDescription>
-          </DialogHeader>
+        <DialogContent className="overflow-hidden p-0 md:max-h-[680px] md:max-w-[920px]">
+          <DialogTitle className="sr-only">Manage user</DialogTitle>
+          <DialogDescription className="sr-only">
+            Review user status, configuration, auth settings, and usage.
+          </DialogDescription>
 
           {selectedUser ? (
-            <div className="flex flex-col gap-5">
-              <div className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4">
-                <p className="font-semibold text-[var(--color-text)]">{selectedUser.name}</p>
-                <p className="text-sm text-[var(--color-text-muted)]">{selectedUser.email}</p>
-                <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                  Request logging: {selectedUser.request_logging_enabled ? 'enabled' : 'disabled'}
-                </p>
-                <div className="mt-3">
-                  <EntityTagBadges tags={selectedUser.tags} />
-                </div>
-                <p className="mt-2 text-xs text-[var(--color-text-soft)]">
-                  {selectedUser.status === 'invited'
-                    ? 'Auth mode can only be changed while the user is still invited.'
-                    : 'Auth mode is locked after activation; use reset onboarding to reissue credentials.'}
-                </p>
-                {selectedUser.team_role === 'owner' ? (
-                  <Alert className="mt-3">
-                    <AlertTitle>Owner membership is locked</AlertTitle>
-                    <AlertDescription>
-                      This user is an owner on their current team. In this slice, owner memberships
-                      cannot be moved or changed through the admin UI.
-                    </AlertDescription>
-                  </Alert>
-                ) : null}
-              </div>
+            <SidebarProvider
+              className="min-h-0 items-start"
+              style={{ '--sidebar-width': '13.5rem' } as CSSProperties}
+            >
+              <Sidebar
+                collapsible="none"
+                className="hidden border-r border-[color:var(--color-border)] md:flex"
+              >
+                <SidebarContent>
+                  <SidebarGroup>
+                    <SidebarGroupContent>
+                      <SidebarMenu>
+                        {userDetailsSections.map((section) => (
+                          <SidebarMenuItem key={section.id}>
+                            <SidebarMenuButton
+                              type="button"
+                              isActive={selectedUserSection === section.id}
+                              onClick={() => setSelectedUserSection(section.id)}
+                            >
+                              <span>{section.label}</span>
+                            </SidebarMenuButton>
+                          </SidebarMenuItem>
+                        ))}
+                      </SidebarMenu>
+                    </SidebarGroupContent>
+                  </SidebarGroup>
+                </SidebarContent>
+              </Sidebar>
 
-              <form className="flex flex-col gap-5" onSubmit={handleUpdateUser}>
-                <FieldGroup>
-                  <Field>
-                    <FieldLabel htmlFor="manage-global-role">Global role</FieldLabel>
-                    <Select
-                      value={updateForm.global_role}
-                      onValueChange={(value: UpdateUserInput['global_role']) =>
-                        setUpdateForm((current) => ({ ...current, global_role: value }))
+              <main className="flex max-h-[680px] min-h-[520px] flex-1 flex-col overflow-hidden">
+                <header className="flex shrink-0 flex-col gap-3 border-b border-[color:var(--color-border)] px-5 py-4">
+                  <div className="flex items-center gap-3">
+                    <GeneratedAvatar
+                      kind="user"
+                      name={selectedUser.name || selectedUser.email}
+                      size={44}
+                    />
+                    <div className="min-w-0">
+                      <h2 className="truncate text-lg font-semibold text-[var(--color-text)]">
+                        {selectedUser.name}
+                      </h2>
+                      <p className="truncate text-sm text-[var(--color-text-muted)]">
+                        {selectedUser.email}
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <EntityTagBadges tags={selectedUser.tags} />
+                      </div>
+                    </div>
+                    <Badge
+                      className="ml-auto"
+                      variant={
+                        selectedUser.status === 'active'
+                          ? 'success'
+                          : selectedUser.status === 'invited'
+                            ? 'warning'
+                            : 'default'
                       }
                     >
-                      <SelectTrigger id="manage-global-role">
-                        <SelectValue placeholder="Select role" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectItem value="user">User</SelectItem>
-                          <SelectItem value="platform_admin">Platform admin</SelectItem>
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </Field>
+                      {selectedUser.status}
+                    </Badge>
+                  </div>
 
-                  <Field>
-                    <FieldLabel htmlFor="manage-team">Team</FieldLabel>
-                    <Select
-                      value={updateForm.team_id ?? 'none'}
-                      onValueChange={(value) =>
-                        setUpdateForm((current) => ({
-                          ...current,
-                          team_id: value === 'none' ? null : value,
-                          team_role: value === 'none' ? null : (current.team_role ?? 'member'),
-                        }))
-                      }
-                      disabled={selectedUser.team_role === 'owner'}
-                    >
-                      <SelectTrigger id="manage-team">
-                        <SelectValue placeholder="No team" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectItem value="none">No team</SelectItem>
-                          {teams.map((team) => (
-                            <SelectItem key={team.id} value={team.id}>
-                              {team.name}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-
-                  {updateForm.team_id ? (
-                    <Field>
-                      <FieldLabel htmlFor="manage-team-role">Team role</FieldLabel>
-                      <Select
-                        value={updateForm.team_role ?? 'member'}
-                        onValueChange={(value: NonNullable<UpdateUserInput['team_role']>) =>
-                          setUpdateForm((current) => ({ ...current, team_role: value }))
-                        }
-                        disabled={selectedUser.team_role === 'owner'}
+                  <div className="flex gap-2 overflow-x-auto md:hidden">
+                    {userDetailsSections.map((section) => (
+                      <Button
+                        key={section.id}
+                        type="button"
+                        size="sm"
+                        variant={selectedUserSection === section.id ? 'secondary' : 'ghost'}
+                        onClick={() => setSelectedUserSection(section.id)}
                       >
-                        <SelectTrigger id="manage-team-role">
-                          <SelectValue placeholder="Select team role" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectGroup>
-                            <SelectItem value="member">Member</SelectItem>
-                            <SelectItem value="admin">Admin</SelectItem>
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                  ) : null}
+                        {section.label}
+                      </Button>
+                    ))}
+                  </div>
+                </header>
 
-                  <Field>
-                    <FieldLabel htmlFor="manage-auth-mode">Auth method</FieldLabel>
-                    <Select
-                      value={updateForm.auth_mode}
-                      onValueChange={setUpdateAuthMode}
-                      disabled={selectedUser.status !== 'invited'}
-                    >
-                      <SelectTrigger id="manage-auth-mode">
-                        <SelectValue placeholder="Select auth method" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectItem value="password">Password</SelectItem>
-                          <SelectItem value="oidc">SSO (OIDC)</SelectItem>
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                    <FieldDescription>
-                      {selectedUser.status === 'invited'
-                        ? 'You can switch onboarding mode before the user completes setup.'
-                        : 'Auth mode is read-only after activation.'}
-                    </FieldDescription>
-                  </Field>
+                <form className="flex min-h-0 flex-1 flex-col" onSubmit={handleUpdateUser}>
+                  <div className="flex-1 overflow-y-auto p-5">
+                    {selectedUserSection === 'overview' ? (
+                      <div className="grid gap-4 lg:grid-cols-3">
+                        <section className="rounded-lg border border-[color:var(--color-border)] p-4 lg:col-span-2">
+                          <h3 className="text-sm font-semibold text-[var(--color-text)]">
+                            Profile
+                          </h3>
+                          <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                            <UserDetailRow
+                              label="Global role"
+                              value={formatRole(selectedUser.global_role)}
+                            />
+                            <UserDetailRow
+                              label="Team"
+                              value={selectedUser.team_name ?? 'No team'}
+                            />
+                            <UserDetailRow
+                              label="Team role"
+                              value={selectedUser.team_role ?? '—'}
+                            />
+                            <UserDetailRow label="Auth method" value={selectedUser.auth_mode} />
+                            <UserDetailRow
+                              label="Request logging"
+                              value={selectedUser.request_logging_enabled ? 'Enabled' : 'Disabled'}
+                            />
+                            <UserDetailRow label="Status" value={selectedUser.status} />
+                          </dl>
+                        </section>
 
-                  {updateForm.auth_mode === 'oidc' ? (
-                    <>
-                      {oidcProviders.length === 0 ? (
+                        <section className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4">
+                          <h3 className="text-sm font-semibold text-[var(--color-text)]">
+                            Next actions
+                          </h3>
+                          <div className="mt-3 flex flex-col gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => setSelectedUserSection('configuration')}
+                            >
+                              Edit configuration
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setSelectedUserSection('auth')}
+                            >
+                              Manage auth
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setSelectedUserSection('usage')}
+                            >
+                              View usage
+                            </Button>
+                          </div>
+                        </section>
+                      </div>
+                    ) : null}
+
+                    {selectedUserSection === 'configuration' ? (
+                      <div className="flex flex-col gap-4">
+                        {selectedUser.team_role === 'owner' ? (
+                          <Alert>
+                            <AlertTitle>Owner membership is locked</AlertTitle>
+                            <AlertDescription>
+                              This user is an owner on their current team. In this slice, owner
+                              memberships cannot be moved or changed through the admin UI.
+                            </AlertDescription>
+                          </Alert>
+                        ) : null}
+
+                        <FieldGroup>
+                          <Field>
+                            <FieldLabel htmlFor="manage-global-role">Global role</FieldLabel>
+                            <Select
+                              value={updateForm.global_role}
+                              onValueChange={(value: UpdateUserInput['global_role']) =>
+                                setUpdateForm((current) => ({ ...current, global_role: value }))
+                              }
+                            >
+                              <SelectTrigger id="manage-global-role">
+                                <SelectValue placeholder="Select role" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectGroup>
+                                  <SelectItem value="user">User</SelectItem>
+                                  <SelectItem value="platform_admin">Platform admin</SelectItem>
+                                </SelectGroup>
+                              </SelectContent>
+                            </Select>
+                          </Field>
+
+                          <Field>
+                            <FieldLabel htmlFor="manage-team">Team</FieldLabel>
+                            <Select
+                              value={updateForm.team_id ?? 'none'}
+                              onValueChange={(value) =>
+                                setUpdateForm((current) => ({
+                                  ...current,
+                                  team_id: value === 'none' ? null : value,
+                                  team_role:
+                                    value === 'none' ? null : (current.team_role ?? 'member'),
+                                }))
+                              }
+                              disabled={selectedUser.team_role === 'owner'}
+                            >
+                              <SelectTrigger id="manage-team">
+                                <SelectValue placeholder="No team" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectGroup>
+                                  <SelectItem value="none">No team</SelectItem>
+                                  {teams.map((team) => (
+                                    <SelectItem key={team.id} value={team.id}>
+                                      {team.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectGroup>
+                              </SelectContent>
+                            </Select>
+                          </Field>
+
+                          {updateForm.team_id ? (
+                            <Field>
+                              <FieldLabel htmlFor="manage-team-role">Team role</FieldLabel>
+                              <Select
+                                value={updateForm.team_role ?? 'member'}
+                                onValueChange={(value: NonNullable<UpdateUserInput['team_role']>) =>
+                                  setUpdateForm((current) => ({ ...current, team_role: value }))
+                                }
+                                disabled={selectedUser.team_role === 'owner'}
+                              >
+                                <SelectTrigger id="manage-team-role">
+                                  <SelectValue placeholder="Select team role" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectGroup>
+                                    <SelectItem value="member">Member</SelectItem>
+                                    <SelectItem value="admin">Admin</SelectItem>
+                                  </SelectGroup>
+                                </SelectContent>
+                              </Select>
+                            </Field>
+                          ) : null}
+                        </FieldGroup>
+
+                        <EntityTagsField
+                          label="Tags"
+                          tags={updateForm.tags}
+                          onChange={(tags) => setUpdateForm((current) => ({ ...current, tags }))}
+                        />
+                      </div>
+                    ) : null}
+
+                    {selectedUserSection === 'auth' ? (
+                      <div className="flex flex-col gap-4">
                         <Alert>
-                          <AlertTitle>No SSO providers configured</AlertTitle>
+                          <AlertTitle>
+                            {selectedUser.status === 'invited'
+                              ? 'Auth mode can still be changed'
+                              : 'Auth mode is locked after activation'}
+                          </AlertTitle>
                           <AlertDescription>
-                            Add an OIDC provider in the gateway before switching a user to SSO.
+                            {selectedUser.status === 'invited'
+                              ? 'You can switch onboarding mode before the user completes setup.'
+                              : 'Use reset onboarding to reissue credentials for invited or disabled users.'}
                           </AlertDescription>
                         </Alert>
-                      ) : null}
 
-                      <Field>
-                        <FieldLabel htmlFor="manage-oidc-provider">OIDC provider</FieldLabel>
-                        <Select
-                          value={updateForm.oidc_provider_key ?? undefined}
-                          onValueChange={(value) =>
-                            setUpdateForm((current) => ({
-                              ...current,
-                              oidc_provider_key: value,
-                            }))
-                          }
-                          disabled={selectedUser.status !== 'invited'}
-                        >
-                          <SelectTrigger id="manage-oidc-provider">
-                            <SelectValue placeholder="Select provider" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectGroup>
-                              {oidcProviders.map((provider) => (
-                                <SelectItem key={provider.key} value={provider.key}>
-                                  {provider.label}
-                                </SelectItem>
-                              ))}
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
-                      </Field>
-                    </>
-                  ) : null}
+                        <FieldGroup>
+                          <Field>
+                            <FieldLabel htmlFor="manage-auth-mode">Auth method</FieldLabel>
+                            <Select
+                              value={updateForm.auth_mode}
+                              onValueChange={setUpdateAuthMode}
+                              disabled={selectedUser.status !== 'invited'}
+                            >
+                              <SelectTrigger id="manage-auth-mode">
+                                <SelectValue placeholder="Select auth method" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectGroup>
+                                  <SelectItem value="password">Password</SelectItem>
+                                  <SelectItem value="oidc">SSO (OIDC)</SelectItem>
+                                </SelectGroup>
+                              </SelectContent>
+                            </Select>
+                            <FieldDescription>
+                              {selectedUser.status === 'invited'
+                                ? 'You can switch onboarding mode before the user completes setup.'
+                                : 'Auth mode is read-only after activation.'}
+                            </FieldDescription>
+                          </Field>
 
-                  <EntityTagsField
-                    label="Tags"
-                    tags={updateForm.tags}
-                    onChange={(tags) => setUpdateForm((current) => ({ ...current, tags }))}
-                  />
-                </FieldGroup>
+                          {updateForm.auth_mode === 'oidc' ? (
+                            <>
+                              {oidcProviders.length === 0 ? (
+                                <Alert>
+                                  <AlertTitle>No SSO providers configured</AlertTitle>
+                                  <AlertDescription>
+                                    Add an OIDC provider in the gateway before switching a user to
+                                    SSO.
+                                  </AlertDescription>
+                                </Alert>
+                              ) : null}
 
-                <section className="flex flex-col gap-3 rounded-lg border border-[color:var(--color-border)] p-4">
-                  <div className="flex flex-col gap-1">
-                    <h3 className="text-sm font-semibold text-[var(--color-text)]">
-                      Lifecycle actions
-                    </h3>
-                    <p className="text-sm text-[var(--color-text-muted)]">
-                      These operations take effect immediately and the list will refresh from the
-                      gateway after each action.
-                    </p>
-                  </div>
+                              <Field>
+                                <FieldLabel htmlFor="manage-oidc-provider">
+                                  OIDC provider
+                                </FieldLabel>
+                                <Select
+                                  value={updateForm.oidc_provider_key ?? undefined}
+                                  onValueChange={(value) =>
+                                    setUpdateForm((current) => ({
+                                      ...current,
+                                      oidc_provider_key: value,
+                                    }))
+                                  }
+                                  disabled={selectedUser.status !== 'invited'}
+                                >
+                                  <SelectTrigger id="manage-oidc-provider">
+                                    <SelectValue placeholder="Select provider" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectGroup>
+                                      {oidcProviders.map((provider) => (
+                                        <SelectItem key={provider.key} value={provider.key}>
+                                          {provider.label}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectGroup>
+                                  </SelectContent>
+                                </Select>
+                              </Field>
+                            </>
+                          ) : null}
+                        </FieldGroup>
 
-                  <div className="flex flex-wrap gap-2">
-                    {selectedUser.status !== 'disabled' ? (
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        onClick={handleDeactivateUser}
-                        disabled={isPending}
-                      >
-                        Deactivate
-                      </Button>
-                    ) : (
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={handleReactivateUser}
-                        disabled={isPending}
-                      >
-                        Reactivate
-                      </Button>
-                    )}
+                        <section className="flex flex-col gap-3 rounded-lg border border-[color:var(--color-border)] p-4">
+                          <div className="flex flex-col gap-1">
+                            <h3 className="text-sm font-semibold text-[var(--color-text)]">
+                              Lifecycle actions
+                            </h3>
+                            <p className="text-sm text-[var(--color-text-muted)]">
+                              These operations take effect immediately and the list will refresh
+                              from the gateway after each action.
+                            </p>
+                          </div>
 
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={handleResetUserOnboarding}
-                      disabled={
-                        isPending ||
-                        (selectedUser.status !== 'invited' && selectedUser.status !== 'disabled')
-                      }
-                    >
-                      Reset onboarding
-                    </Button>
-                  </div>
+                          <div className="flex flex-wrap gap-2">
+                            {selectedUser.status !== 'disabled' ? (
+                              <Button
+                                type="button"
+                                variant="destructive"
+                                onClick={handleDeactivateUser}
+                                disabled={isPending}
+                              >
+                                Deactivate
+                              </Button>
+                            ) : (
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                onClick={handleReactivateUser}
+                                disabled={isPending}
+                              >
+                                Reactivate
+                              </Button>
+                            )}
 
-                  {onboardingResult ? (
-                    <Alert>
-                      <AlertTitle>
-                        {onboardingResult.kind === 'password_invite'
-                          ? 'Password invite ready'
-                          : 'SSO sign-in URL ready'}
-                      </AlertTitle>
-                      <AlertDescription>
-                        {onboardingResult.kind === 'password_invite'
-                          ? `Share this invite before ${onboardingResult.expires_at}.`
-                          : `Share this URL with ${onboardingResult.user.email} so they can finish SSO onboarding.`}
-                      </AlertDescription>
-
-                      <Field className="mt-3">
-                        <FieldLabel htmlFor="reset-onboarding-url">Generated URL</FieldLabel>
-                        <InputGroup>
-                          <InputGroupInput
-                            id="reset-onboarding-url"
-                            readOnly
-                            value={
-                              onboardingResult.kind === 'password_invite'
-                                ? onboardingResult.invite_url
-                                : onboardingResult.sign_in_url
-                            }
-                          />
-                          <InputGroupAddon align="inline-end">
                             <Button
                               type="button"
                               variant="ghost"
-                              size="sm"
-                              onClick={() =>
-                                handleCopy(
-                                  onboardingResult.kind === 'password_invite'
-                                    ? onboardingResult.invite_url
-                                    : onboardingResult.sign_in_url,
-                                  'URL copied',
-                                )
+                              onClick={handleResetUserOnboarding}
+                              disabled={
+                                isPending ||
+                                (selectedUser.status !== 'invited' &&
+                                  selectedUser.status !== 'disabled')
                               }
                             >
-                              Copy
+                              Reset onboarding
                             </Button>
-                          </InputGroupAddon>
-                        </InputGroup>
-                      </Field>
-                    </Alert>
-                  ) : null}
-                </section>
+                          </div>
 
-                <DialogFooter>
-                  <Button type="button" variant="secondary" onClick={resetUserDialog}>
-                    Cancel
-                  </Button>
-                  <Button
-                    type="submit"
-                    disabled={
-                      isPending ||
-                      (updateForm.auth_mode === 'oidc' &&
-                        (oidcProviders.length === 0 || !updateForm.oidc_provider_key))
-                    }
-                  >
-                    {isPending ? 'Saving…' : 'Save changes'}
-                  </Button>
-                </DialogFooter>
-              </form>
-            </div>
+                          {onboardingResult ? (
+                            <Alert>
+                              <AlertTitle>
+                                {onboardingResult.kind === 'password_invite'
+                                  ? 'Password invite ready'
+                                  : 'SSO sign-in URL ready'}
+                              </AlertTitle>
+                              <AlertDescription>
+                                {onboardingResult.kind === 'password_invite'
+                                  ? `Share this invite before ${onboardingResult.expires_at}.`
+                                  : `Share this URL with ${onboardingResult.user.email} so they can finish SSO onboarding.`}
+                              </AlertDescription>
+
+                              <Field className="mt-3">
+                                <FieldLabel htmlFor="reset-onboarding-url">
+                                  Generated URL
+                                </FieldLabel>
+                                <InputGroup>
+                                  <InputGroupInput
+                                    id="reset-onboarding-url"
+                                    readOnly
+                                    value={
+                                      onboardingResult.kind === 'password_invite'
+                                        ? onboardingResult.invite_url
+                                        : onboardingResult.sign_in_url
+                                    }
+                                  />
+                                  <InputGroupAddon align="inline-end">
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() =>
+                                        handleCopy(
+                                          onboardingResult.kind === 'password_invite'
+                                            ? onboardingResult.invite_url
+                                            : onboardingResult.sign_in_url,
+                                          'URL copied',
+                                        )
+                                      }
+                                    >
+                                      Copy
+                                    </Button>
+                                  </InputGroupAddon>
+                                </InputGroup>
+                              </Field>
+                            </Alert>
+                          ) : null}
+                        </section>
+                      </div>
+                    ) : null}
+
+                    {selectedUserSection === 'usage' ? (
+                      <div className="grid gap-4 md:grid-cols-3">
+                        <section className="rounded-lg border border-[color:var(--color-border)] p-4">
+                          <p className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                            Favourite model
+                          </p>
+                          <p className="mt-2 text-lg font-semibold text-[var(--color-text)]">
+                            Not enough data
+                          </p>
+                          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                            Wire this to model-level usage once the backend exposes per-user
+                            aggregates.
+                          </p>
+                        </section>
+                        <section className="rounded-lg border border-[color:var(--color-border)] p-4">
+                          <p className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                            Weekly usage
+                          </p>
+                          <p className="mt-2 text-lg font-semibold text-[var(--color-text)]">
+                            Pending
+                          </p>
+                          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                            Planned: spend, tokens, and request counts over the last seven days.
+                          </p>
+                        </section>
+                        <section className="rounded-lg border border-[color:var(--color-border)] p-4">
+                          <p className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                            Recent activity
+                          </p>
+                          <p className="mt-2 text-lg font-semibold text-[var(--color-text)]">
+                            Pending
+                          </p>
+                          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                            Planned: latest requests and policy outcomes for this user.
+                          </p>
+                        </section>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <DialogFooter className="border-t border-[color:var(--color-border)] px-5 py-4">
+                    <Button type="button" variant="secondary" onClick={resetUserDialog}>
+                      Close
+                    </Button>
+                    <Button
+                      type="submit"
+                      disabled={
+                        isPending ||
+                        (updateForm.auth_mode === 'oidc' &&
+                          (oidcProviders.length === 0 || !updateForm.oidc_provider_key))
+                      }
+                    >
+                      {isPending ? 'Saving…' : 'Save changes'}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </main>
+            </SidebarProvider>
           ) : null}
         </DialogContent>
       </Dialog>
     </div>
   )
+}
+
+function UserDetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+        {label}
+      </dt>
+      <dd className="mt-1 text-[var(--color-text-muted)]">{value}</dd>
+    </div>
+  )
+}
+
+function normalizeUserSearch(search: Record<string, unknown>) {
+  const section = typeof search.user_section === 'string' ? search.user_section : 'overview'
+
+  return {
+    user_id:
+      typeof search.user_id === 'string' && search.user_id.length > 0 ? search.user_id : undefined,
+    user_section: isUserDetailsSection(section) ? section : 'overview',
+  }
+}
+
+function isUserDetailsSection(value: string): value is UserDetailsSection {
+  return userDetailsSections.some((section) => section.id === value)
+}
+
+function formatRole(role: string) {
+  return role
+    .split('_')
+    .filter(Boolean)
+    .map((part) => part[0]?.toUpperCase() + part.slice(1))
+    .join(' ')
 }
 
 function sanitizeForm(form: CreateUserInput): CreateUserInput {

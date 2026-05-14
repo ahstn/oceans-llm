@@ -5,6 +5,7 @@ import type { IdentityUsersPayload } from '@/types/api'
 
 const routeMock = {
   useLoaderData: vi.fn(),
+  useSearch: vi.fn(),
 }
 
 const routerMock = {
@@ -45,6 +46,7 @@ const basePayload: IdentityUsersPayload = {
 describe('UsersPage', () => {
   beforeEach(() => {
     routeMock.useLoaderData.mockReset()
+    routeMock.useSearch.mockReturnValue({ user_id: undefined, user_section: 'overview' })
     routerMock.invalidate.mockClear()
     createIdentityUserMock.mockReset()
     resendInviteMock.mockReset()
@@ -137,19 +139,21 @@ describe('UsersPage', () => {
       } satisfies IdentityUsersPayload,
     })
 
+    routeMock.useSearch.mockReturnValue({ user_id: 'user_1', user_section: 'configuration' })
+
     const { UsersPage } = await import('@/routes/identity/users')
 
-    render(<UsersPage />)
+    const { rerender } = render(<UsersPage />)
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Manage' })[0])
-
+    expect(screen.getAllByLabelText('User avatar for Jane Admin').length).toBeGreaterThan(0)
     expect(screen.getByText('Owner membership is locked')).toBeInTheDocument()
-    expect(
-      screen.getByText(
-        'Auth mode is locked after activation; use reset onboarding to reissue credentials.',
-      ),
-    ).toBeInTheDocument()
+
+    routeMock.useSearch.mockReturnValue({ user_id: 'user_1', user_section: 'auth' })
+    rerender(<UsersPage />)
+
+    expect(screen.getByText('Auth mode is locked after activation')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Reset onboarding' })).toBeDisabled()
-    expect(screen.getAllByLabelText('Auth method')[1]).toBeDisabled()
+    const authMethodControls = screen.getAllByLabelText('Auth method')
+    expect(authMethodControls[authMethodControls.length - 1]).toBeDisabled()
   })
 })

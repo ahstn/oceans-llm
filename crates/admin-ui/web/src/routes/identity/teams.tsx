@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState, useTransition, type FormEvent } from 'react'
 import { UnfoldMoreDownIcon, UnfoldMoreUpIcon, UserIcon } from '@hugeicons/core-free-icons'
-import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
 import { AppIcon } from '@/components/icons/app-icon'
@@ -33,6 +33,7 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty'
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { GeneratedAvatar } from '@/components/ui/generated-avatar'
 import { Input } from '@/components/ui/input'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -62,7 +63,11 @@ import {
   transferIdentityTeamMember,
   updateIdentityTeam,
 } from '@/server/admin-data.functions'
-import { EntityTagBadges, EntityTagsField, sanitizeEntityTags } from '@/routes/identity/-entity-tags'
+import {
+  EntityTagBadges,
+  EntityTagsField,
+  sanitizeEntityTags,
+} from '@/routes/identity/-entity-tags'
 import type {
   CreateTeamInput,
   CreateUserInput,
@@ -425,13 +430,16 @@ export function TeamsPage() {
                       className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4"
                     >
                       <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate font-semibold text-[var(--color-text)]">
-                            {team.name}
-                          </p>
-                          <p className="truncate text-xs text-[var(--color-text-soft)]">
-                            {team.key}
-                          </p>
+                        <div className="flex min-w-0 items-center gap-3">
+                          <GeneratedAvatar kind="team" name={team.name} size={40} />
+                          <div className="min-w-0">
+                            <p className="truncate font-semibold text-[var(--color-text)]">
+                              {team.name}
+                            </p>
+                            <p className="truncate text-xs text-[var(--color-text-soft)]">
+                              {team.key}
+                            </p>
+                          </div>
                         </div>
                         <Badge variant={team.status === 'active' ? 'success' : 'warning'}>
                           {team.status}
@@ -461,7 +469,7 @@ export function TeamsPage() {
 
                       <div className="mt-4 flex flex-wrap gap-2">
                         {team.admins.length > 0 ? (
-                          team.admins.map((admin) => <Badge key={admin.id}>{admin.name}</Badge>)
+                          team.admins.map((admin) => <UserEntityLink key={admin.id} user={admin} />)
                         ) : (
                           <span className="text-xs text-[var(--color-text-soft)]">
                             No admins assigned
@@ -536,17 +544,22 @@ export function TeamsPage() {
                         <Fragment key={team.id}>
                           <TableRow aria-expanded={isExpanded}>
                             <TableCell className="px-3 py-3">
-                              <div className="flex flex-col gap-1">
-                                <p className="text-[var(--color-text)]">{team.name}</p>
-                                <p className="text-xs text-[var(--color-text-soft)]">{team.key}</p>
-                                <EntityTagBadges tags={team.tags} />
+                              <div className="flex min-w-0 items-center gap-3">
+                                <GeneratedAvatar kind="team" name={team.name} size={32} />
+                                <div className="flex min-w-0 flex-col gap-1">
+                                  <p className="truncate text-[var(--color-text)]">{team.name}</p>
+                                  <p className="truncate text-xs text-[var(--color-text-soft)]">
+                                    {team.key}
+                                  </p>
+                                  <EntityTagBadges tags={team.tags} />
+                                </div>
                               </div>
                             </TableCell>
                             <TableCell className="px-3 py-3">
                               {team.admins.length > 0 ? (
                                 <div className="flex flex-wrap gap-2">
                                   {team.admins.map((admin) => (
-                                    <Badge key={admin.id}>{admin.name}</Badge>
+                                    <UserEntityLink key={admin.id} user={admin} compact />
                                   ))}
                                 </div>
                               ) : (
@@ -1079,6 +1092,30 @@ export function TeamsPage() {
   )
 }
 
+function UserEntityLink({
+  user,
+  compact = false,
+}: {
+  user: { id: string; name: string; email: string; status?: string }
+  compact?: boolean
+}) {
+  return (
+    <Button asChild type="button" size="sm" variant="secondary" className="h-auto px-2 py-1">
+      <Link
+        to="/identity/users"
+        search={{ user_id: user.id, user_section: 'overview' }}
+        aria-label={`Open ${user.name}`}
+      >
+        <GeneratedAvatar kind="user" name={user.name || user.email} size={compact ? 20 : 24} />
+        <span className="truncate">{user.name}</span>
+        {!compact && user.status ? (
+          <span className="text-xs text-[var(--color-text-soft)]">{user.status}</span>
+        ) : null}
+      </Link>
+    </Button>
+  )
+}
+
 function TeamMemberRoster({
   teamId,
   members,
@@ -1110,6 +1147,7 @@ function TeamMemberRoster({
             key={member.id}
             className="flex flex-wrap items-center gap-2 rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-bg)] px-3 py-2"
           >
+            <GeneratedAvatar kind="user" name={member.name || member.email} size={32} />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium text-[var(--color-text)]">{member.name}</p>
               <p className="truncate text-xs text-[var(--color-text-soft)]">{member.email}</p>
@@ -1222,6 +1260,7 @@ function UserMultiSelectField({
                     <span className="w-4 text-[var(--color-text-soft)]">
                       {selectedUserIds.includes(user.id) ? '✓' : ''}
                     </span>
+                    <GeneratedAvatar kind="user" name={user.name || user.email} size={28} />
                     <div className="flex min-w-0 flex-1 flex-col gap-1">
                       <span className="truncate">{user.name}</span>
                       <span className="truncate text-xs text-[var(--color-text-soft)]">

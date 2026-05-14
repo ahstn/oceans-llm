@@ -1,3 +1,4 @@
+import type * as React from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -13,6 +14,16 @@ const routerMock = {
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
+  Link: ({
+    children,
+    search: _search,
+    to,
+    ...props
+  }: React.ComponentProps<'a'> & { search?: unknown; to?: string }) => (
+    <a href={to} {...props}>
+      {children}
+    </a>
+  ),
   useRouter: () => routerMock,
 }))
 
@@ -102,6 +113,7 @@ describe('TeamsPage', () => {
 
     render(<TeamsPage />)
 
+    expect(screen.getAllByLabelText('Team avatar for Core Platform').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Jane Admin').length).toBeGreaterThan(0)
     expect(
       screen.queryByText('Owner memberships cannot be removed or transferred in this slice.'),
@@ -121,6 +133,7 @@ describe('TeamsPage', () => {
       screen.getAllByText('Owner memberships cannot be removed or transferred in this slice.')
         .length,
     ).toBeGreaterThan(0)
+    expect(screen.getAllByLabelText('User avatar for Jane Admin').length).toBeGreaterThan(0)
     expect(screen.getAllByRole('button', { name: 'Transfer' })[0]).toBeDisabled()
     expect(screen.getAllByRole('button', { name: 'Remove' })[0]).toBeDisabled()
   })
