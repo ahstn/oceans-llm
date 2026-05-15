@@ -1275,6 +1275,9 @@ pub async fn oidc_callback(
     let Some(email_claim) = claims.email().map(|email| email.as_str().to_string()) else {
         return Ok(oidc_error_redirect("unmatched_identity"));
     };
+    if claims.email_verified() != Some(true) {
+        return Ok(oidc_error_redirect("unmatched_identity"));
+    }
     let email = normalize_email(&email_claim)?;
 
     let user = if let Some(oidc_auth) = state
@@ -1389,6 +1392,22 @@ async fn create_jit_oidc_user(
     now: OffsetDateTime,
 ) -> Result<UserRecord, AppError> {
     let name = email.split('@').next().unwrap_or(email);
+    let jit_team = if let Some(membership) = provider.jit.membership.as_ref() {
+        Some((
+            state
+                .store
+                .get_team_by_key(&membership.team_key)
+                .await?
+                .ok_or_else(|| {
+                    AppError(GatewayError::InvalidRequest(
+                        "jit team not found".to_string(),
+                    ))
+                })?,
+            membership.role,
+        ))
+    } else {
+        None
+    };
     let user = state
         .store
         .create_identity_user(
@@ -1411,6 +1430,14 @@ async fn create_jit_oidc_user(
             now,
         )
         .await?;
+
+    if let Some((team, role)) = jit_team {
+        state
+            .store
+            .assign_team_membership(user.user_id, team.team_id, role)
+            .await?;
+    }
+
     state
         .store
         .create_user_oidc_auth(
@@ -1425,22 +1452,6 @@ async fn create_jit_oidc_user(
         .store
         .set_user_oidc_link(user.user_id, &provider.oidc_provider_id, now)
         .await?;
-
-    if let Some(membership) = provider.jit.membership.as_ref() {
-        let team = state
-            .store
-            .get_team_by_key(&membership.team_key)
-            .await?
-            .ok_or_else(|| {
-                AppError(GatewayError::InvalidRequest(
-                    "jit team not found".to_string(),
-                ))
-            })?;
-        state
-            .store
-            .assign_team_membership(user.user_id, team.team_id, membership.role)
-            .await?;
-    }
 
     state
         .store

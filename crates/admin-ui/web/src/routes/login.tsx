@@ -1,4 +1,4 @@
-import { useMemo, useState, useTransition, type FormEvent } from 'react'
+import { useState, useTransition, type FormEvent } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
@@ -26,18 +26,6 @@ function LoginPage() {
   const [password, setPassword] = useState('admin')
   const [isPending, startTransition] = useTransition()
   const ssoError = ssoErrorMessage(search.sso_error)
-  const ssoStartUrls = useMemo(() => {
-    const redirectTarget = search.redirect ?? '/admin'
-    return new Map(
-      oidcProviders.data.providers.map((provider) => [
-        provider.key,
-        `/api/v1/auth/oidc/start?${new URLSearchParams({
-          provider_key: provider.key,
-          redirect_to: redirectTarget,
-        }).toString()}`,
-      ]),
-    )
-  }, [oidcProviders.data.providers, search.redirect])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -109,13 +97,22 @@ function LoginPage() {
         <div className="flex flex-col gap-3 border-t pt-6">
           {oidcProviders.data.providers.map((provider) => (
             <Button asChild key={provider.key} variant="outline">
-              <a href={ssoStartUrls.get(provider.key)}>Sign in with {provider.label}</a>
+              <a href={oidcStartUrl(provider.key, search.redirect)}>
+                Sign in with {provider.label}
+              </a>
             </Button>
           ))}
         </div>
       ) : null}
     </AuthLayout>
   )
+}
+
+function oidcStartUrl(providerKey: string, redirect: string | undefined) {
+  return `/api/v1/auth/oidc/start?${new URLSearchParams({
+    provider_key: providerKey,
+    redirect_to: redirect ?? '/admin',
+  }).toString()}`
 }
 
 function ssoErrorMessage(code: string | undefined) {

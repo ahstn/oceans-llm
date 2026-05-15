@@ -320,6 +320,7 @@ impl GatewayConfig {
             normalize_config_email(&self.auth.bootstrap_admin.email)
                 .context("bootstrap_admin.email must be a valid email address")?;
 
+        let oidc_provider_keys = self.auth.oidc.provider_keys()?;
         let mut user_emails = std::collections::BTreeSet::new();
         for user in &self.users {
             if user.name.trim().is_empty() {
@@ -347,7 +348,7 @@ impl GatewayConfig {
                     };
                     let provider_key = normalize_config_oidc_provider_key(provider_key)
                         .with_context(|| format!("user `{}` oidc_provider_key", user.email))?;
-                    if !self.auth.oidc.provider_keys()?.contains(&provider_key) {
+                    if !oidc_provider_keys.contains(&provider_key) {
                         bail!(
                             "user `{}` references unknown oidc provider `{provider_key}`",
                             user.email
