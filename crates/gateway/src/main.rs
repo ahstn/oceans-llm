@@ -115,6 +115,7 @@ where
     let providers_seed = config.seed_providers()?;
     let models_seed = config.seed_models()?;
     let api_keys_seed = config.seed_api_keys()?;
+    let oidc_providers_seed = config.seed_oidc_providers()?;
     let teams_seed = config.seed_teams()?;
     let users_seed = config.seed_users()?;
 
@@ -123,6 +124,7 @@ where
             &providers_seed,
             &models_seed,
             &api_keys_seed,
+            &oidc_providers_seed,
             &teams_seed,
             &users_seed,
         )
@@ -1089,7 +1091,7 @@ providers:
         }];
 
         store
-            .seed_from_inputs(&seed_providers, &models, &api_keys, &[], &[])
+            .seed_from_inputs(&seed_providers, &models, &api_keys, &[], &[], &[])
             .await
             .expect("seed data");
 
@@ -1152,7 +1154,7 @@ providers:
         }];
 
         store
-            .seed_from_inputs(&seed_providers, &models, &api_keys, &[], &[])
+            .seed_from_inputs(&seed_providers, &models, &api_keys, &[], &[], &[])
             .await
             .expect("seed data");
 
@@ -1335,7 +1337,7 @@ providers:
         }];
 
         store
-            .seed_from_inputs(&seed_providers, &models, &api_keys, &[], &[])
+            .seed_from_inputs(&seed_providers, &models, &api_keys, &[], &[], &[])
             .await
             .expect("seed");
 
@@ -3823,7 +3825,7 @@ request_logging:
             },
         ];
         store
-            .seed_from_inputs(&providers, &models, &[], &[], &[])
+            .seed_from_inputs(&providers, &models, &[], &[], &[], &[])
             .await
             .expect("seed models");
 
@@ -4066,7 +4068,7 @@ request_logging:
             }],
         }];
         store
-            .seed_from_inputs(&providers, &models, &[], &[], &[])
+            .seed_from_inputs(&providers, &models, &[], &[], &[], &[])
             .await
             .expect("seed models");
 
@@ -4161,7 +4163,7 @@ request_logging:
             }],
         }];
         store
-            .seed_from_inputs(&providers, &models, &[], &[], &[])
+            .seed_from_inputs(&providers, &models, &[], &[], &[], &[])
             .await
             .expect("seed models");
 
@@ -4869,7 +4871,7 @@ request_logging:
             allowed_models: vec!["fast".to_string()],
         }];
         store
-            .seed_from_inputs(&providers, &models, &api_keys, &[], &[])
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[])
             .await
             .expect("seed");
         let api_key = store
@@ -5115,7 +5117,7 @@ request_logging:
             allowed_models: vec!["fast".to_string(), "reasoning".to_string()],
         }];
         store
-            .seed_from_inputs(&providers, &models, &api_keys, &[], &[])
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[])
             .await
             .expect("seed");
         let api_key = store

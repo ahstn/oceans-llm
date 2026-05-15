@@ -2,11 +2,11 @@ use std::{collections::BTreeMap, env, fs, path::Path};
 
 use anyhow::{Context, bail};
 use gateway_core::{
-    AuthMode, BudgetCadence, GlobalRole, MembershipRole, Money4, OpenAiCompatDeveloperRole,
-    OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
-    ProviderCapabilities, RequestLogRetentionWindow, RouteCompatibility, SeedApiKey, SeedBudget,
-    SeedModel, SeedModelRoute, SeedProvider, SeedTeam, SeedUser, SeedUserMembership,
-    parse_gateway_api_key,
+    AuthMode, BudgetCadence, GlobalRole, MembershipRole, Money4, OidcJitMembership, OidcJitPolicy,
+    OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
+    OpenAiCompatRouteCompatibility, ProviderCapabilities, RequestLogRetentionWindow,
+    RouteCompatibility, SeedApiKey, SeedBudget, SeedModel, SeedModelRoute, SeedOidcProvider,
+    SeedProvider, SeedTeam, SeedUser, SeedUserMembership, parse_gateway_api_key,
 };
 use gateway_providers::{
     BedrockAuthConfig, BedrockProviderConfig, OpenAiCompatConfig, VertexAuthConfig,
@@ -64,6 +64,7 @@ impl GatewayConfig {
         let _ = self.database.connection_options()?;
         self.budget_alerts.validate()?;
         self.request_logging.validate()?;
+        self.auth.oidc.validate(&self.teams)?;
 
         let provider_by_id = self
             .providers
@@ -344,8 +345,14 @@ impl GatewayConfig {
                             user.email
                         );
                     };
-                    normalize_config_oidc_provider_key(provider_key)
+                    let provider_key = normalize_config_oidc_provider_key(provider_key)
                         .with_context(|| format!("user `{}` oidc_provider_key", user.email))?;
+                    if !self.auth.oidc.provider_keys()?.contains(&provider_key) {
+                        bail!(
+                            "user `{}` references unknown oidc provider `{provider_key}`",
+                            user.email
+                        );
+                    }
                 }
                 AuthMode::Password => {
                     if user.oidc_provider_key.is_some() {
@@ -576,6 +583,15 @@ impl GatewayConfig {
         }
 
         Ok(api_keys)
+    }
+
+    pub fn seed_oidc_providers(&self) -> anyhow::Result<Vec<SeedOidcProvider>> {
+        self.auth
+            .oidc
+            .providers
+            .iter()
+            .map(|provider| provider.seed_provider())
+            .collect()
     }
 
     pub fn seed_teams(&self) -> anyhow::Result<Vec<SeedTeam>> {
@@ -844,6 +860,168 @@ pub struct AuthConfig {
     pub seed_api_keys: Vec<SeedApiKeyConfig>,
     #[serde(default)]
     pub bootstrap_admin: BootstrapAdminConfig,
+    #[serde(default)]
+    pub oidc: AuthOidcConfig,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct AuthOidcConfig {
+    #[serde(default)]
+    pub providers: Vec<OidcProviderConfig>,
+}
+
+impl AuthOidcConfig {
+    fn provider_keys(&self) -> anyhow::Result<std::collections::BTreeSet<String>> {
+        self.providers
+            .iter()
+            .map(|provider| normalize_config_oidc_provider_key(&provider.key))
+            .collect()
+    }
+
+    fn validate(&self, teams: &[TeamConfig]) -> anyhow::Result<()> {
+        let mut provider_keys = std::collections::BTreeSet::new();
+        let team_keys = teams
+            .iter()
+            .map(|team| normalize_config_team_key(&team.key))
+            .collect::<anyhow::Result<std::collections::BTreeSet<_>>>()?;
+
+        for provider in &self.providers {
+            let provider_key = normalize_config_oidc_provider_key(&provider.key)
+                .context("auth.oidc.providers[].key")?;
+            if !provider_keys.insert(provider_key.clone()) {
+                bail!("duplicate oidc provider key `{provider_key}`");
+            }
+            if provider.label.trim().is_empty() {
+                bail!("oidc provider `{provider_key}` label cannot be empty");
+            }
+            let parsed_issuer = url::Url::parse(provider.issuer_url.trim())
+                .with_context(|| format!("oidc provider `{provider_key}` issuer_url is invalid"))?;
+            match parsed_issuer.scheme() {
+                "http" | "https" => {}
+                scheme => bail!(
+                    "oidc provider `{provider_key}` issuer_url scheme `{scheme}` is not supported"
+                ),
+            }
+            if provider.client_id.trim().is_empty() {
+                bail!("oidc provider `{provider_key}` client_id cannot be empty");
+            }
+            let client_secret = resolve_secret_reference(&provider.client_secret)
+                .with_context(|| format!("oidc provider `{provider_key}` client_secret"))?;
+            if client_secret.trim().is_empty() {
+                bail!("oidc provider `{provider_key}` client_secret cannot be empty");
+            }
+            if provider.scopes.is_empty() {
+                bail!("oidc provider `{provider_key}` scopes cannot be empty");
+            }
+            if !provider.scopes.iter().any(|scope| scope == "openid") {
+                bail!("oidc provider `{provider_key}` scopes must include `openid`");
+            }
+            for scope in &provider.scopes {
+                if scope.trim().is_empty() || scope.chars().any(char::is_whitespace) {
+                    bail!("oidc provider `{provider_key}` has invalid scope `{scope}`");
+                }
+            }
+            if let Some(membership) = provider.jit.membership.as_ref() {
+                let team_key = normalize_config_team_key(&membership.team)
+                    .with_context(|| format!("oidc provider `{provider_key}` jit team"))?;
+                if !team_keys.contains(&team_key) {
+                    bail!(
+                        "oidc provider `{provider_key}` jit references unknown team `{team_key}`"
+                    );
+                }
+                if membership.role == MembershipRole::Owner {
+                    bail!("oidc provider `{provider_key}` jit cannot assign role `owner`");
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct OidcProviderConfig {
+    pub key: String,
+    #[serde(default)]
+    pub label: String,
+    pub issuer_url: String,
+    pub client_id: String,
+    pub client_secret: String,
+    #[serde(default = "default_oidc_scopes")]
+    pub scopes: Vec<String>,
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub jit: OidcJitConfig,
+}
+
+impl OidcProviderConfig {
+    fn seed_provider(&self) -> anyhow::Result<SeedOidcProvider> {
+        let provider_key = normalize_config_oidc_provider_key(&self.key)?;
+        Ok(SeedOidcProvider {
+            provider_type: "generic_oidc".to_string(),
+            label: if self.label.trim().is_empty() {
+                provider_key.clone()
+            } else {
+                self.label.trim().to_string()
+            },
+            provider_key,
+            issuer_url: self.issuer_url.trim().to_string(),
+            client_id: self.client_id.trim().to_string(),
+            client_secret_ref: self.client_secret.clone(),
+            scopes: self.scopes.clone(),
+            enabled: self.enabled,
+            jit: self.jit.seed_policy()?,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct OidcJitConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_user_global_role")]
+    pub global_role: GlobalRole,
+    #[serde(default)]
+    pub membership: Option<OidcJitMembershipConfig>,
+    #[serde(default = "default_request_logging_enabled")]
+    pub request_logging_enabled: bool,
+}
+
+impl Default for OidcJitConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            global_role: GlobalRole::User,
+            membership: None,
+            request_logging_enabled: true,
+        }
+    }
+}
+
+impl OidcJitConfig {
+    fn seed_policy(&self) -> anyhow::Result<OidcJitPolicy> {
+        Ok(OidcJitPolicy {
+            enabled: self.enabled,
+            global_role: self.global_role,
+            membership: self
+                .membership
+                .as_ref()
+                .map(|membership| {
+                    Ok::<OidcJitMembership, anyhow::Error>(OidcJitMembership {
+                        team_key: normalize_config_team_key(&membership.team)?,
+                        role: membership.role,
+                    })
+                })
+                .transpose()?,
+            request_logging_enabled: self.request_logging_enabled,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct OidcJitMembershipConfig {
+    pub team: String,
+    pub role: MembershipRole,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -1582,6 +1760,14 @@ const fn default_enabled() -> bool {
 
 const fn default_request_logging_enabled() -> bool {
     true
+}
+
+fn default_oidc_scopes() -> Vec<String> {
+    vec![
+        "openid".to_string(),
+        "email".to_string(),
+        "profile".to_string(),
+    ]
 }
 
 const fn default_request_log_request_max_bytes() -> usize {
@@ -2614,6 +2800,14 @@ models:
         write_config(
             &config_path,
             r#"
+auth:
+  oidc:
+    providers:
+      - key: okta
+        label: Okta
+        issuer_url: https://id.example.com
+        client_id: oceans
+        client_secret: literal.secret
 teams:
   - key: " platform "
     name: Platform
@@ -2642,7 +2836,13 @@ users:
 
         let config = GatewayConfig::from_path(&config_path).expect("config should parse");
         let teams = config.seed_teams().expect("seed teams");
+        let oidc_providers = config.seed_oidc_providers().expect("seed oidc providers");
         let users = config.seed_users().expect("seed users");
+
+        assert_eq!(oidc_providers.len(), 1);
+        assert_eq!(oidc_providers[0].provider_key, "okta");
+        assert_eq!(oidc_providers[0].scopes, ["openid", "email", "profile"]);
+        assert!(!oidc_providers[0].jit.enabled);
 
         assert_eq!(teams.len(), 1);
         assert_eq!(teams[0].team_key, "platform");
@@ -2667,6 +2867,60 @@ users:
         assert_eq!(user_budget.amount_usd, Money4::from_scaled(750_000));
         assert!(!user_budget.hard_limit);
         assert_eq!(user_budget.timezone, "Europe/London");
+    }
+
+    #[test]
+    fn rejects_duplicate_oidc_provider_keys() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+auth:
+  oidc:
+    providers:
+      - key: okta
+        label: Okta
+        issuer_url: https://id.example.com
+        client_id: oceans
+        client_secret: literal.secret
+      - key: " okta "
+        label: Okta Duplicate
+        issuer_url: https://id2.example.com
+        client_id: oceans
+        client_secret: literal.secret
+"#,
+        );
+
+        GatewayConfig::from_path(&config_path).expect_err("config should fail");
+    }
+
+    #[test]
+    fn rejects_oidc_jit_unknown_team() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+auth:
+  oidc:
+    providers:
+      - key: authentik
+        label: Authentik
+        issuer_url: https://id.example.com
+        client_id: oceans
+        client_secret: literal.secret
+        jit:
+          enabled: true
+          membership:
+            team: missing
+            role: admin
+"#,
+        );
+
+        GatewayConfig::from_path(&config_path).expect_err("config should fail");
     }
 
     #[test]

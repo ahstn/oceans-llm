@@ -365,7 +365,9 @@ impl LibsqlStore {
             .query(
                 r#"
                 SELECT oidc_provider_id, provider_key, provider_type, issuer_url, client_id,
-                       scopes_json, enabled, created_at, updated_at
+                       scopes_json, enabled, label, client_secret_ref, jit_enabled,
+                       jit_global_role, jit_team_key, jit_team_role,
+                       jit_request_logging_enabled, created_at, updated_at
                 FROM oidc_providers
                 WHERE enabled = 1
                 ORDER BY provider_key ASC
@@ -392,7 +394,9 @@ impl LibsqlStore {
             .query(
                 r#"
                 SELECT oidc_provider_id, provider_key, provider_type, issuer_url, client_id,
-                       scopes_json, enabled, created_at, updated_at
+                       scopes_json, enabled, label, client_secret_ref, jit_enabled,
+                       jit_global_role, jit_team_key, jit_team_role,
+                       jit_request_logging_enabled, created_at, updated_at
                 FROM oidc_providers
                 WHERE provider_key = ?1 AND enabled = 1
                 LIMIT 1
@@ -407,6 +411,78 @@ impl LibsqlStore {
         };
 
         decode_oidc_provider_record(&row).map(Some)
+    }
+
+    pub async fn create_oidc_login_state(
+        &self,
+        state: &OidcLoginStateRecord,
+    ) -> Result<(), StoreError> {
+        self.connection
+            .execute(
+                r#"
+                INSERT INTO oidc_login_states (
+                    state_hash, oidc_provider_id, nonce, pkce_verifier, redirect_to, login_hint,
+                    expires_at, consumed_at, created_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                "#,
+                libsql::params![
+                    state.state_hash.as_str(),
+                    state.oidc_provider_id.as_str(),
+                    state.nonce.as_str(),
+                    state.pkce_verifier.as_str(),
+                    state.redirect_to.as_str(),
+                    state.login_hint.clone(),
+                    state.expires_at.unix_timestamp(),
+                    state
+                        .consumed_at
+                        .map(|value: OffsetDateTime| value.unix_timestamp()),
+                    state.created_at.unix_timestamp(),
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn consume_oidc_login_state(
+        &self,
+        state_hash: &str,
+        consumed_at: OffsetDateTime,
+    ) -> Result<Option<OidcLoginStateRecord>, StoreError> {
+        let updated = self
+            .connection
+            .execute(
+                r#"
+                UPDATE oidc_login_states
+                SET consumed_at = ?1
+                WHERE state_hash = ?2 AND consumed_at IS NULL
+                "#,
+                libsql::params![consumed_at.unix_timestamp(), state_hash],
+            )
+            .await
+            .map_err(to_write_error)?;
+        if updated == 0 {
+            return Ok(None);
+        }
+
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT state_hash, oidc_provider_id, nonce, pkce_verifier, redirect_to,
+                       login_hint, expires_at, consumed_at, created_at
+                FROM oidc_login_states
+                WHERE state_hash = ?1
+                LIMIT 1
+                "#,
+                [state_hash],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let Some(row) = rows.next().await.map_err(to_query_error)? else {
+            return Ok(None);
+        };
+        decode_oidc_login_state_record(&row).map(Some)
     }
 
     pub async fn get_user_by_email_normalized(

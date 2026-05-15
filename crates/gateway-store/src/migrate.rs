@@ -54,6 +54,7 @@ const ACTIVE_APPLICATION_TABLES: &[&str] = &[
     "users",
     "team_memberships",
     "oidc_providers",
+    "oidc_login_states",
     "user_password_auth",
     "user_oidc_auth",
     "user_oauth_auth",

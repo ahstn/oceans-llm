@@ -15,6 +15,25 @@ auth:
   seed_api_keys:
     - name: default
       value: env.GATEWAY_API_KEY
+  oidc:
+    providers:
+      - key: authentik
+        label: Authentik
+        issuer_url: http://authentik.localhost:9000/application/o/oceans-llm/
+        client_id: oceans-llm
+        client_secret: env.AUTHENTIK_OCEANS_LLM_CLIENT_SECRET
+        scopes:
+          - openid
+          - email
+          - profile
+        enabled: true
+        jit:
+          enabled: true
+          global_role: platform_admin
+          request_logging_enabled: true
+          membership:
+            team: platform
+            role: admin
 
 request_logging:
   payloads:

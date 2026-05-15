@@ -248,20 +248,66 @@ pub(super) fn decode_team_membership_record(
 pub(super) fn decode_oidc_provider_record(row: &PgRow) -> Result<OidcProviderRecord, StoreError> {
     let scopes_json: String = row.try_get(5).map_err(to_query_error)?;
     let enabled: i64 = row.try_get(6).map_err(to_query_error)?;
-    let created_at: i64 = row.try_get(7).map_err(to_query_error)?;
-    let updated_at: i64 = row.try_get(8).map_err(to_query_error)?;
+    let jit_enabled: i64 = row.try_get(9).map_err(to_query_error)?;
+    let jit_global_role: String = row.try_get(10).map_err(to_query_error)?;
+    let jit_team_key: Option<String> = row.try_get(11).map_err(to_query_error)?;
+    let jit_team_role: Option<String> = row.try_get(12).map_err(to_query_error)?;
+    let jit_request_logging_enabled: i64 = row.try_get(13).map_err(to_query_error)?;
+    let created_at: i64 = row.try_get(14).map_err(to_query_error)?;
+    let updated_at: i64 = row.try_get(15).map_err(to_query_error)?;
+    let provider_key: String = row.try_get(1).map_err(to_query_error)?;
+    let label: Option<String> = row.try_get(7).map_err(to_query_error)?;
 
     Ok(OidcProviderRecord {
         oidc_provider_id: row.try_get(0).map_err(to_query_error)?,
-        provider_key: row.try_get(1).map_err(to_query_error)?,
+        provider_key: provider_key.clone(),
         provider_type: row.try_get(2).map_err(to_query_error)?,
+        label: label
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| provider_key.clone()),
         issuer_url: row.try_get(3).map_err(to_query_error)?,
         client_id: row.try_get(4).map_err(to_query_error)?,
+        client_secret_ref: row.try_get(8).map_err(to_query_error)?,
         scopes: serde_json::from_str(&scopes_json)
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
         enabled: enabled == 1,
+        jit: OidcJitPolicy {
+            enabled: jit_enabled == 1,
+            global_role: GlobalRole::from_db(&jit_global_role).ok_or_else(|| {
+                StoreError::Serialization(format!("unknown global role `{jit_global_role}`"))
+            })?,
+            membership: match (jit_team_key, jit_team_role) {
+                (Some(team_key), Some(role)) => Some(OidcJitMembership {
+                    team_key,
+                    role: MembershipRole::from_db(&role).ok_or_else(|| {
+                        StoreError::Serialization(format!("unknown membership role `{role}`"))
+                    })?,
+                }),
+                _ => None,
+            },
+            request_logging_enabled: jit_request_logging_enabled == 1,
+        },
         created_at: unix_to_datetime(created_at)?,
         updated_at: unix_to_datetime(updated_at)?,
+    })
+}
+
+pub(super) fn decode_oidc_login_state_record(
+    row: &PgRow,
+) -> Result<OidcLoginStateRecord, StoreError> {
+    let expires_at: i64 = row.try_get(6).map_err(to_query_error)?;
+    let consumed_at: Option<i64> = row.try_get(7).map_err(to_query_error)?;
+    let created_at: i64 = row.try_get(8).map_err(to_query_error)?;
+    Ok(OidcLoginStateRecord {
+        state_hash: row.try_get(0).map_err(to_query_error)?,
+        oidc_provider_id: row.try_get(1).map_err(to_query_error)?,
+        nonce: row.try_get(2).map_err(to_query_error)?,
+        pkce_verifier: row.try_get(3).map_err(to_query_error)?,
+        redirect_to: row.try_get(4).map_err(to_query_error)?,
+        login_hint: row.try_get(5).map_err(to_query_error)?,
+        expires_at: unix_to_datetime(expires_at)?,
+        consumed_at: consumed_at.map(unix_to_datetime).transpose()?,
+        created_at: unix_to_datetime(created_at)?,
     })
 }
 

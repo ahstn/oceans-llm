@@ -162,6 +162,17 @@ pub struct AdminOidcProviderView {
     pub label: String,
 }
 
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PublicOidcProvidersPayload {
+    pub providers: Vec<PublicOidcProviderView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PublicOidcProviderView {
+    pub key: String,
+    pub label: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum AdminModelStatusView {
@@ -412,16 +423,15 @@ pub struct CompleteInvitationResponse {
 #[derive(Debug, Deserialize, IntoParams)]
 pub struct OidcStartQuery {
     pub provider_key: String,
-    pub login_hint: String,
+    pub login_hint: Option<String>,
     pub redirect_to: Option<String>,
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
 pub struct OidcCallbackQuery {
-    pub provider_key: String,
-    pub email: String,
-    pub subject: Option<String>,
-    pub redirect_to: Option<String>,
+    pub code: Option<String>,
+    pub state: Option<String>,
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
@@ -941,6 +951,7 @@ pub struct RequestLogPayloadView {
         crate::http::identity::regenerate_password_invite,
         crate::http::identity::validate_password_invitation,
         crate::http::identity::complete_password_invitation,
+        crate::http::identity::list_public_oidc_providers,
         crate::http::identity::oidc_start,
         crate::http::identity::oidc_callback,
         crate::http::spend::get_spend_report,

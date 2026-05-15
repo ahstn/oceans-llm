@@ -1908,23 +1908,7 @@
         "operationId": "oidc_callback",
         "parameters": [
           {
-            "name": "provider_key",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "email",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "subject",
+            "name": "code",
             "in": "query",
             "required": false,
             "schema": {
@@ -1935,7 +1919,18 @@
             }
           },
           {
-            "name": "redirect_to",
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "error",
             "in": "query",
             "required": false,
             "schema": {
@@ -1949,6 +1944,26 @@
         "responses": {
           "302": {
             "description": "Redirect back into the admin UI after OIDC sign-in"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/oidc/providers": {
+      "get": {
+        "tags": [
+          "crate::http::identity"
+        ],
+        "operationId": "list_public_oidc_providers",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_PublicOidcProvidersPayload"
+                }
+              }
+            }
           }
         }
       }
@@ -1971,9 +1986,12 @@
           {
             "name": "login_hint",
             "in": "query",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": "string"
+              "type": [
+                "string",
+                "null"
+              ]
             }
           },
           {
@@ -1990,7 +2008,7 @@
         ],
         "responses": {
           "302": {
-            "description": "Redirect to the same-origin OIDC callback"
+            "description": "Redirect to the OIDC provider"
           }
         }
       }
@@ -4250,6 +4268,32 @@
           }
         }
       },
+      "Envelope_PublicOidcProvidersPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "providers"
+            ],
+            "properties": {
+              "providers": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PublicOidcProviderView"
+                }
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
       "Envelope_RequestLogDetailView": {
         "type": "object",
         "required": [
@@ -5127,6 +5171,35 @@
           "openrouter",
           "vertexai"
         ]
+      },
+      "PublicOidcProviderView": {
+        "type": "object",
+        "required": [
+          "key",
+          "label"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      },
+      "PublicOidcProvidersPayload": {
+        "type": "object",
+        "required": [
+          "providers"
+        ],
+        "properties": {
+          "providers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicOidcProviderView"
+            }
+          }
+        }
       },
       "RequestAttemptView": {
         "type": "object",

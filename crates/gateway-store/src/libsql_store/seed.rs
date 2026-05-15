@@ -46,6 +46,7 @@ impl LibsqlStore {
         providers: &[gateway_core::SeedProvider],
         models: &[gateway_core::SeedModel],
         api_keys: &[gateway_core::SeedApiKey],
+        oidc_providers: &[gateway_core::SeedOidcProvider],
         teams: &[gateway_core::SeedTeam],
         users: &[gateway_core::SeedUser],
     ) -> Result<(), StoreError> {
@@ -87,6 +88,67 @@ impl LibsqlStore {
                         config_json,
                         secrets_json,
                         now_unix
+                    ],
+                )
+                .await
+                .map_err(to_query_error)?;
+        }
+
+        for provider in oidc_providers {
+            let scopes_json = serialize_json(&provider.scopes)?;
+            let oidc_provider_id = crate::seed::oidc_provider_uuid(&provider.provider_key);
+            self.connection
+                .execute(
+                    r#"
+                    INSERT INTO oidc_providers (
+                        oidc_provider_id, provider_key, provider_type, issuer_url, client_id,
+                        scopes_json, enabled, label, client_secret_ref, jit_enabled,
+                        jit_global_role, jit_team_key, jit_team_role,
+                        jit_request_logging_enabled, created_at, updated_at
+                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?15)
+                    ON CONFLICT(provider_key) DO UPDATE SET
+                        provider_type = excluded.provider_type,
+                        issuer_url = excluded.issuer_url,
+                        client_id = excluded.client_id,
+                        scopes_json = excluded.scopes_json,
+                        enabled = excluded.enabled,
+                        label = excluded.label,
+                        client_secret_ref = excluded.client_secret_ref,
+                        jit_enabled = excluded.jit_enabled,
+                        jit_global_role = excluded.jit_global_role,
+                        jit_team_key = excluded.jit_team_key,
+                        jit_team_role = excluded.jit_team_role,
+                        jit_request_logging_enabled = excluded.jit_request_logging_enabled,
+                        updated_at = excluded.updated_at
+                    "#,
+                    libsql::params![
+                        oidc_provider_id,
+                        provider.provider_key.as_str(),
+                        provider.provider_type.as_str(),
+                        provider.issuer_url.as_str(),
+                        provider.client_id.as_str(),
+                        scopes_json,
+                        if provider.enabled { 1_i64 } else { 0_i64 },
+                        provider.label.as_str(),
+                        provider.client_secret_ref.as_str(),
+                        if provider.jit.enabled { 1_i64 } else { 0_i64 },
+                        provider.jit.global_role.as_str(),
+                        provider
+                            .jit
+                            .membership
+                            .as_ref()
+                            .map(|membership| membership.team_key.clone()),
+                        provider
+                            .jit
+                            .membership
+                            .as_ref()
+                            .map(|membership| membership.role.as_str().to_string()),
+                        if provider.jit.request_logging_enabled {
+                            1_i64
+                        } else {
+                            0_i64
+                        },
+                        now_unix,
                     ],
                 )
                 .await

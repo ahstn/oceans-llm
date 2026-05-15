@@ -26,6 +26,7 @@ import {
   listSpendBudgets,
   listTeams,
   listUsers,
+  listOidcProviders,
   loginWithPassword,
   logoutCurrentSession,
   removeTeamMember,
@@ -258,6 +259,10 @@ export const transferIdentityTeamMember = createServerFn({ method: 'POST' }).han
 
 export const getUsers = createServerFn({ method: 'GET' }).handler(async () => {
   return listUsers()
+})
+
+export const getOidcProviders = createServerFn({ method: 'GET' }).handler(async () => {
+  return listOidcProviders()
 })
 
 export const createIdentityUser = createServerFn({ method: 'POST' }).handler(

@@ -23,17 +23,18 @@ use gateway_core::{
     McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationPayloadRecord,
     McpToolInvocationQuery, McpToolInvocationRecord, McpToolInvocationRepository,
     McpToolInvocationStatus, McpToolPolicyResult, MembershipRole, ModelAccessMode,
-    ModelPricingRecord, ModelRepository, ModelRoute, Money4, NewApiKeyRecord, OidcProviderRecord,
-    PasswordInvitationRecord, PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits,
-    PricingModalities, PricingProvenance, ProviderConnection, ProviderRepository,
-    RequestAttemptRecord, RequestAttemptRepository, RequestAttemptStatus, RequestLogDetail,
-    RequestLogPage, RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord,
-    RequestLogRepository, RequestTag, SYSTEM_BOOTSTRAP_ADMIN_USER_ID, ServiceAccountBudgetRecord,
-    ServiceAccountRecord, ServiceAccountStatus, SpendDailyAggregateRecord,
-    SpendModelAggregateRecord, SpendOwnerAggregateRecord, StoreError, StoreHealth,
-    TeamBudgetRecord, TeamMembershipRecord, TeamRecord, UsageLeaderboardBucketRecord,
-    UsageLeaderboardUserRecord, UsageLedgerRecord, UsagePricingStatus, UserBudgetRecord,
-    UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
+    ModelPricingRecord, ModelRepository, ModelRoute, Money4, NewApiKeyRecord, OidcJitMembership,
+    OidcJitPolicy, OidcLoginStateRecord, OidcProviderRecord, PasswordInvitationRecord,
+    PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
+    PricingProvenance, ProviderConnection, ProviderRepository, RequestAttemptRecord,
+    RequestAttemptRepository, RequestAttemptStatus, RequestLogDetail, RequestLogPage,
+    RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestTag,
+    SYSTEM_BOOTSTRAP_ADMIN_USER_ID, ServiceAccountBudgetRecord, ServiceAccountRecord,
+    ServiceAccountStatus, SpendDailyAggregateRecord, SpendModelAggregateRecord,
+    SpendOwnerAggregateRecord, StoreError, StoreHealth, TeamBudgetRecord, TeamMembershipRecord,
+    TeamRecord, UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord, UsageLedgerRecord,
+    UsagePricingStatus, UserBudgetRecord, UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord,
+    UserSessionRecord, UserStatus,
 };
 use sqlx::{
     PgPool, Row,
@@ -173,6 +174,21 @@ impl GatewayStore for PostgresStore {
         provider_key: &str,
     ) -> Result<Option<OidcProviderRecord>, StoreError> {
         Self::get_enabled_oidc_provider_by_key(self, provider_key).await
+    }
+
+    async fn create_oidc_login_state(
+        &self,
+        state: &gateway_core::OidcLoginStateRecord,
+    ) -> Result<(), StoreError> {
+        Self::create_oidc_login_state(self, state).await
+    }
+
+    async fn consume_oidc_login_state(
+        &self,
+        state_hash: &str,
+        consumed_at: OffsetDateTime,
+    ) -> Result<Option<gateway_core::OidcLoginStateRecord>, StoreError> {
+        Self::consume_oidc_login_state(self, state_hash, consumed_at).await
     }
 
     async fn get_user_by_email_normalized(
@@ -526,10 +542,11 @@ impl GatewayStore for PostgresStore {
         providers: &[gateway_core::SeedProvider],
         models: &[gateway_core::SeedModel],
         api_keys: &[gateway_core::SeedApiKey],
+        oidc_providers: &[gateway_core::SeedOidcProvider],
         teams: &[gateway_core::SeedTeam],
         users: &[gateway_core::SeedUser],
     ) -> Result<(), StoreError> {
-        self.seed_from_inputs(providers, models, api_keys, teams, users)
+        self.seed_from_inputs(providers, models, api_keys, oidc_providers, teams, users)
             .await
     }
 }

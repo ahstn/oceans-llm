@@ -313,7 +313,9 @@ impl PostgresStore {
         let rows = sqlx::query(
             r#"
             SELECT oidc_provider_id, provider_key, provider_type, issuer_url, client_id,
-                   scopes_json, enabled, created_at, updated_at
+                   scopes_json, enabled, label, client_secret_ref, jit_enabled,
+                   jit_global_role, jit_team_key, jit_team_role,
+                   jit_request_logging_enabled, created_at, updated_at
             FROM oidc_providers
             WHERE enabled = 1
             ORDER BY provider_key ASC
@@ -333,7 +335,9 @@ impl PostgresStore {
         let row = sqlx::query(
             r#"
             SELECT oidc_provider_id, provider_key, provider_type, issuer_url, client_id,
-                   scopes_json, enabled, created_at, updated_at
+                   scopes_json, enabled, label, client_secret_ref, jit_enabled,
+                   jit_global_role, jit_team_key, jit_team_role,
+                   jit_request_logging_enabled, created_at, updated_at
             FROM oidc_providers
             WHERE provider_key = $1 AND enabled = 1
             LIMIT 1
@@ -345,6 +349,74 @@ impl PostgresStore {
         .map_err(to_query_error)?;
 
         row.as_ref().map(decode_oidc_provider_record).transpose()
+    }
+
+    pub async fn create_oidc_login_state(
+        &self,
+        state: &OidcLoginStateRecord,
+    ) -> Result<(), StoreError> {
+        sqlx::query(
+            r#"
+            INSERT INTO oidc_login_states (
+                state_hash, oidc_provider_id, nonce, pkce_verifier, redirect_to, login_hint,
+                expires_at, consumed_at, created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            "#,
+        )
+        .bind(state.state_hash.as_str())
+        .bind(state.oidc_provider_id.as_str())
+        .bind(state.nonce.as_str())
+        .bind(state.pkce_verifier.as_str())
+        .bind(state.redirect_to.as_str())
+        .bind(state.login_hint.as_deref())
+        .bind(state.expires_at.unix_timestamp())
+        .bind(
+            state
+                .consumed_at
+                .map(|value: OffsetDateTime| value.unix_timestamp()),
+        )
+        .bind(state.created_at.unix_timestamp())
+        .execute(&self.pool)
+        .await
+        .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn consume_oidc_login_state(
+        &self,
+        state_hash: &str,
+        consumed_at: OffsetDateTime,
+    ) -> Result<Option<OidcLoginStateRecord>, StoreError> {
+        let result = sqlx::query(
+            r#"
+            UPDATE oidc_login_states
+            SET consumed_at = $1
+            WHERE state_hash = $2 AND consumed_at IS NULL
+            "#,
+        )
+        .bind(consumed_at.unix_timestamp())
+        .bind(state_hash)
+        .execute(&self.pool)
+        .await
+        .map_err(to_write_error)?;
+        if result.rows_affected() == 0 {
+            return Ok(None);
+        }
+
+        let row = sqlx::query(
+            r#"
+            SELECT state_hash, oidc_provider_id, nonce, pkce_verifier, redirect_to,
+                   login_hint, expires_at, consumed_at, created_at
+            FROM oidc_login_states
+            WHERE state_hash = $1
+            LIMIT 1
+            "#,
+        )
+        .bind(state_hash)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+        row.as_ref().map(decode_oidc_login_state_record).transpose()
     }
 
     pub async fn get_user_by_email_normalized(

@@ -34,6 +34,14 @@ pub(crate) fn api_key_uuid(public_id: &str) -> Uuid {
     )
 }
 
+pub(crate) fn oidc_provider_uuid(provider_key: &str) -> String {
+    Uuid::new_v5(
+        &Uuid::NAMESPACE_OID,
+        format!("oidc_provider:{provider_key}").as_bytes(),
+    )
+    .to_string()
+}
+
 pub(crate) async fn reconcile_seed_teams<S>(
     store: &S,
     teams: &[SeedTeam],

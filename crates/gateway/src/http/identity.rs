@@ -8,47 +8,57 @@ use axum::{
 };
 use gateway_core::{
     AuthError, AuthMode, GatewayError, GlobalRole, IdentityRepository, IdentityUserRecord,
-    MembershipRole, OidcProviderRecord, PasswordInvitationRecord, ServiceAccountRecord, TeamRecord,
-    UserRecord, UserSessionRecord, UserStatus,
+    MembershipRole, OidcLoginStateRecord, OidcProviderRecord, PasswordInvitationRecord,
+    ServiceAccountRecord, TeamRecord, UserRecord, UserSessionRecord, UserStatus,
 };
 use gateway_store::{AnyStore, GatewayStore};
+use openidconnect::{
+    AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce, PkceCodeChallenge,
+    PkceCodeVerifier, RedirectUrl, Scope, TokenResponse,
+    core::{CoreAuthenticationFlow, CoreClient, CoreProviderMetadata},
+    reqwest,
+};
 use sha2::{Digest, Sha256};
 use time::{Duration, OffsetDateTime};
 use url::form_urlencoded;
 use uuid::Uuid;
 
-use crate::http::{
-    admin_auth::{require_authenticated_session, require_platform_admin},
-    admin_contract::{
-        AddTeamMembersRequest, AdminEntityTagView, AdminIdentityPayload, AdminOidcProviderView,
-        AdminServiceAccountView, AdminServiceAccountsPayload, AdminTeamManagementView,
-        AdminTeamView, AdminTeamsPayload, AuthSessionUserView, AuthSessionView,
-        ChangePasswordRequest, CompleteInvitationRequest, CompleteInvitationResponse,
-        CreateServiceAccountRequest, CreateTeamRequest, CreateUserRequest, CreateUserResponse,
-        Envelope, IdentityActionStatus, InvitationView, OidcCallbackQuery, OidcStartQuery,
-        PasswordInviteResponse, PasswordLoginRequest, TransferTeamMemberRequest,
-        UpdateServiceAccountRequest, UpdateTeamRequest, UpdateUserRequest, envelope,
-        format_timestamp,
+use crate::{
+    config::resolve_secret_reference,
+    http::{
+        admin_auth::{require_authenticated_session, require_platform_admin},
+        admin_contract::{
+            AddTeamMembersRequest, AdminEntityTagView, AdminIdentityPayload, AdminOidcProviderView,
+            AdminServiceAccountView, AdminServiceAccountsPayload, AdminTeamManagementView,
+            AdminTeamView, AdminTeamsPayload, AuthSessionUserView, AuthSessionView,
+            ChangePasswordRequest, CompleteInvitationRequest, CompleteInvitationResponse,
+            CreateServiceAccountRequest, CreateTeamRequest, CreateUserRequest, CreateUserResponse,
+            Envelope, IdentityActionStatus, InvitationView, OidcCallbackQuery, OidcStartQuery,
+            PasswordInviteResponse, PasswordLoginRequest, PublicOidcProviderView,
+            PublicOidcProvidersPayload, TransferTeamMemberRequest, UpdateServiceAccountRequest,
+            UpdateTeamRequest, UpdateUserRequest, envelope, format_timestamp,
+        },
+        error::AppError,
+        identity_lifecycle::{
+            ensure_assignable_membership_role, ensure_auth_mode_edit_allowed,
+            ensure_deactivation_allowed, ensure_manageable_user, ensure_mutable_membership,
+            ensure_not_self_deactivating, ensure_not_self_demoting, ensure_reactivation_allowed,
+            ensure_reset_onboarding_allowed, reactivation_status,
+        },
+        identity_views::{
+            build_admin_identity_user_view, build_admin_team_views, build_assignable_user_views,
+            reload_identity_user, reload_team_view,
+        },
+        request_tags::validate_entity_tags,
+        state::AppState,
     },
-    error::AppError,
-    identity_lifecycle::{
-        ensure_assignable_membership_role, ensure_auth_mode_edit_allowed,
-        ensure_deactivation_allowed, ensure_manageable_user, ensure_mutable_membership,
-        ensure_not_self_deactivating, ensure_not_self_demoting, ensure_reactivation_allowed,
-        ensure_reset_onboarding_allowed, reactivation_status,
-    },
-    identity_views::{
-        build_admin_identity_user_view, build_admin_team_views, build_assignable_user_views,
-        reload_identity_user, reload_team_view,
-    },
-    request_tags::validate_entity_tags,
-    state::AppState,
 };
 
 const SESSION_COOKIE_NAME: &str = "ogw_session";
 const INVITE_TTL_DAYS: i64 = 7;
 const SESSION_TTL_DAYS: i64 = 30;
 const SESSION_TTL_SECONDS: i64 = SESSION_TTL_DAYS * 24 * 60 * 60;
+const OIDC_STATE_TTL_MINUTES: i64 = 10;
 
 #[utoipa::path(
     get,
@@ -1123,7 +1133,7 @@ pub async fn complete_password_invitation(
     get,
     path = "/api/v1/auth/oidc/start",
     params(OidcStartQuery),
-    responses((status = 302, description = "Redirect to the same-origin OIDC callback"))
+    responses((status = 302, description = "Redirect to the OIDC provider"))
 )]
 pub async fn oidc_start(
     State(state): State<AppState>,
@@ -1132,21 +1142,55 @@ pub async fn oidc_start(
 ) -> Result<Redirect, AppError> {
     let provider = load_enabled_oidc_provider(&state.store, &query.provider_key).await?;
     let origin = request_origin(&headers);
-    let email = normalize_email(&query.login_hint)?;
-    let subject = oidc_subject(&provider, &email);
-    let redirect_to = query
-        .redirect_to
-        .unwrap_or_else(|| "/admin/account-ready?mode=oidc".to_string());
+    let login_hint = query
+        .login_hint
+        .as_deref()
+        .map(normalize_email)
+        .transpose()?;
+    let redirect_to = normalize_oidc_redirect(
+        query.redirect_to.as_deref(),
+        "/admin/account-ready?mode=oidc",
+    );
+    let provider_metadata = oidc_provider_metadata(&provider).await?;
+    let client = CoreClient::from_provider_metadata(
+        provider_metadata,
+        ClientId::new(provider.client_id.clone()),
+        Some(ClientSecret::new(oidc_client_secret(&provider)?)),
+    )
+    .set_redirect_uri(
+        RedirectUrl::new(format!("{origin}/api/v1/auth/oidc/callback"))
+            .map_err(|error| AppError(GatewayError::InvalidRequest(error.to_string())))?,
+    );
+    let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
+    let mut auth_request = client
+        .authorize_url(
+            CoreAuthenticationFlow::AuthorizationCode,
+            CsrfToken::new_random,
+            Nonce::new_random,
+        )
+        .set_pkce_challenge(pkce_challenge);
+    for scope in &provider.scopes {
+        auth_request = auth_request.add_scope(Scope::new(scope.clone()));
+    }
+    if let Some(login_hint) = login_hint.as_deref() {
+        auth_request = auth_request.add_extra_param("login_hint", login_hint);
+    }
+    let (authorize_url, csrf_state, nonce) = auth_request.url();
+    let now = OffsetDateTime::now_utc();
+    let state_record = OidcLoginStateRecord {
+        state_hash: token_hash(csrf_state.secret()),
+        oidc_provider_id: provider.oidc_provider_id,
+        nonce: nonce.secret().to_string(),
+        pkce_verifier: pkce_verifier.secret().to_string(),
+        redirect_to,
+        login_hint,
+        expires_at: now + Duration::minutes(OIDC_STATE_TTL_MINUTES),
+        consumed_at: None,
+        created_at: now,
+    };
+    state.store.create_oidc_login_state(&state_record).await?;
 
-    let query = form_urlencoded::Serializer::new(String::new())
-        .append_pair("provider_key", &provider.provider_key)
-        .append_pair("email", &email)
-        .append_pair("subject", &subject)
-        .append_pair("redirect_to", &redirect_to)
-        .finish();
-    let callback = format!("{origin}/api/v1/auth/oidc/callback?{query}");
-
-    Ok(Redirect::temporary(&callback))
+    Ok(Redirect::temporary(authorize_url.as_str()))
 }
 
 #[utoipa::path(
@@ -1160,12 +1204,78 @@ pub async fn oidc_callback(
     headers: HeaderMap,
     Query(query): Query<OidcCallbackQuery>,
 ) -> Result<Response, AppError> {
-    let provider = load_enabled_oidc_provider(&state.store, &query.provider_key).await?;
-    let email = normalize_email(&query.email)?;
-    let subject = query
-        .subject
-        .unwrap_or_else(|| oidc_subject(&provider, &email));
+    if query.error.is_some() {
+        return Ok(oidc_error_redirect("access_denied"));
+    }
+    let Some(state_token) = query.state.as_deref() else {
+        return Ok(oidc_error_redirect("state_invalid"));
+    };
+    let Some(code) = query.code else {
+        return Ok(oidc_error_redirect("provider_failure"));
+    };
     let now = OffsetDateTime::now_utc();
+    let Some(login_state) = state
+        .store
+        .consume_oidc_login_state(&token_hash(state_token), now)
+        .await?
+    else {
+        return Ok(oidc_error_redirect("state_invalid"));
+    };
+    if login_state.expires_at < now {
+        return Ok(oidc_error_redirect("state_expired"));
+    }
+    let provider = state
+        .store
+        .list_enabled_oidc_providers()
+        .await?
+        .into_iter()
+        .find(|provider| provider.oidc_provider_id == login_state.oidc_provider_id)
+        .ok_or_else(|| {
+            AppError(GatewayError::InvalidRequest(
+                "oidc provider not found".to_string(),
+            ))
+        })?;
+    let origin = request_origin(&headers);
+    let provider_metadata = oidc_provider_metadata(&provider).await?;
+    let client = CoreClient::from_provider_metadata(
+        provider_metadata,
+        ClientId::new(provider.client_id.clone()),
+        Some(ClientSecret::new(oidc_client_secret(&provider)?)),
+    )
+    .set_redirect_uri(
+        RedirectUrl::new(format!("{origin}/api/v1/auth/oidc/callback"))
+            .map_err(|error| AppError(GatewayError::InvalidRequest(error.to_string())))?,
+    );
+    let token_response = match client
+        .exchange_code(AuthorizationCode::new(code))
+        .map_err(|error| AppError(GatewayError::Internal(error.to_string())))?
+        .set_pkce_verifier(PkceCodeVerifier::new(login_state.pkce_verifier.clone()))
+        .request_async(&oidc_http_client()?)
+        .await
+    {
+        Ok(response) => response,
+        Err(error) => {
+            tracing::warn!(error = %error, "oidc token exchange failed");
+            return Ok(oidc_error_redirect("provider_failure"));
+        }
+    };
+    let id_token = match token_response.id_token() {
+        Some(id_token) => id_token,
+        None => return Ok(oidc_error_redirect("provider_failure")),
+    };
+    let id_token_verifier = client.id_token_verifier();
+    let claims = match id_token.claims(&id_token_verifier, &Nonce::new(login_state.nonce.clone())) {
+        Ok(claims) => claims,
+        Err(error) => {
+            tracing::warn!(error = %error, "oidc id token verification failed");
+            return Ok(oidc_error_redirect("provider_failure"));
+        }
+    };
+    let subject = claims.subject().as_str().to_string();
+    let Some(email_claim) = claims.email().map(|email| email.as_str().to_string()) else {
+        return Ok(oidc_error_redirect("unmatched_identity"));
+    };
+    let email = normalize_email(&email_claim)?;
 
     let user = if let Some(oidc_auth) = state
         .store
@@ -1178,9 +1288,7 @@ pub async fn oidc_callback(
             .await?
             .ok_or_else(|| AppError(GatewayError::InvalidRequest("user not found".to_string())))?;
         if user.status == UserStatus::Disabled {
-            return Err(AppError(GatewayError::InvalidRequest(
-                "disabled users cannot sign in".to_string(),
-            )));
+            return Ok(oidc_error_redirect("denied"));
         }
         if user.status == UserStatus::Invited {
             state
@@ -1189,23 +1297,14 @@ pub async fn oidc_callback(
                 .await?;
         }
         user
-    } else {
-        let user = state
-            .store
-            .find_invited_oidc_user(&email, &provider.oidc_provider_id)
-            .await?
-            .ok_or_else(|| {
-                AppError(GatewayError::InvalidRequest(
-                    "no invited oidc user matches this login".to_string(),
-                ))
-            })?;
-
+    } else if let Some(user) = state
+        .store
+        .find_invited_oidc_user(&email, &provider.oidc_provider_id)
+        .await?
+    {
         if user.status == UserStatus::Disabled {
-            return Err(AppError(GatewayError::InvalidRequest(
-                "disabled users cannot sign in".to_string(),
-            )));
+            return Ok(oidc_error_redirect("denied"));
         }
-
         state
             .store
             .create_user_oidc_auth(
@@ -1221,20 +1320,133 @@ pub async fn oidc_callback(
             .update_user_status(user.user_id, UserStatus::Active, now)
             .await?;
         user
+    } else if state
+        .store
+        .get_user_by_email_normalized(&email)
+        .await?
+        .is_some()
+    {
+        return Ok(oidc_error_redirect("identity_conflict"));
+    } else if provider.jit.enabled {
+        create_jit_oidc_user(&state, &provider, &subject, &email, now).await?
+    } else {
+        return Ok(oidc_error_redirect("unmatched_identity"));
     };
 
     let session_cookie =
         issue_session_cookie(&state, user.user_id, now, session_cookie_secure(&headers)).await?;
-    let redirect_to = query.redirect_to.unwrap_or_else(|| {
-        let query = form_urlencoded::Serializer::new(String::new())
-            .append_pair("mode", "oidc")
-            .append_pair("email", &user.email)
-            .finish();
-        format!("/admin/account-ready?{query}")
-    });
-    let mut response = Redirect::temporary(&redirect_to).into_response();
+    let mut response = Redirect::temporary(&login_state.redirect_to).into_response();
     response.headers_mut().append(SET_COOKIE, session_cookie);
     Ok(response)
+}
+
+fn oidc_error_redirect(code: &'static str) -> Response {
+    let redirect_to = format!("/admin/login?sso_error={code}");
+    Redirect::temporary(&redirect_to).into_response()
+}
+
+fn normalize_oidc_redirect(value: Option<&str>, default: &str) -> String {
+    let Some(value) = value else {
+        return default.to_string();
+    };
+    if value.starts_with("/admin") && !value.starts_with("//") && !value.contains('\\') {
+        value.to_string()
+    } else {
+        default.to_string()
+    }
+}
+
+fn oidc_http_client() -> Result<reqwest::Client, AppError> {
+    reqwest::ClientBuilder::new()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|error| AppError(GatewayError::Internal(error.to_string())))
+}
+
+fn oidc_client_secret(provider: &OidcProviderRecord) -> Result<String, AppError> {
+    resolve_secret_reference(&provider.client_secret_ref)
+        .map_err(|error| AppError(GatewayError::InvalidRequest(error.to_string())))
+}
+
+async fn oidc_provider_metadata(
+    provider: &OidcProviderRecord,
+) -> Result<CoreProviderMetadata, AppError> {
+    let http_client = oidc_http_client()?;
+    CoreProviderMetadata::discover_async(
+        IssuerUrl::new(provider.issuer_url.clone())
+            .map_err(|error| AppError(GatewayError::InvalidRequest(error.to_string())))?,
+        &http_client,
+    )
+    .await
+    .map_err(|error| AppError(GatewayError::InvalidRequest(error.to_string())))
+}
+
+async fn create_jit_oidc_user(
+    state: &AppState,
+    provider: &OidcProviderRecord,
+    subject: &str,
+    email: &str,
+    now: OffsetDateTime,
+) -> Result<UserRecord, AppError> {
+    let name = email.split('@').next().unwrap_or(email);
+    let user = state
+        .store
+        .create_identity_user(
+            name,
+            email,
+            email,
+            provider.jit.global_role,
+            AuthMode::Oidc,
+            UserStatus::Active,
+        )
+        .await?;
+    state
+        .store
+        .seed_update_identity_user_profile(
+            user.user_id,
+            name,
+            email,
+            email,
+            provider.jit.request_logging_enabled,
+            now,
+        )
+        .await?;
+    state
+        .store
+        .create_user_oidc_auth(
+            user.user_id,
+            &provider.oidc_provider_id,
+            subject,
+            Some(email),
+            now,
+        )
+        .await?;
+    state
+        .store
+        .set_user_oidc_link(user.user_id, &provider.oidc_provider_id, now)
+        .await?;
+
+    if let Some(membership) = provider.jit.membership.as_ref() {
+        let team = state
+            .store
+            .get_team_by_key(&membership.team_key)
+            .await?
+            .ok_or_else(|| {
+                AppError(GatewayError::InvalidRequest(
+                    "jit team not found".to_string(),
+                ))
+            })?;
+        state
+            .store
+            .assign_team_membership(user.user_id, team.team_id, membership.role)
+            .await?;
+    }
+
+    state
+        .store
+        .get_user_by_id(user.user_id)
+        .await?
+        .ok_or_else(|| AppError(GatewayError::InvalidRequest("user not found".to_string())))
 }
 
 fn request_origin(headers: &HeaderMap) -> String {
@@ -2075,10 +2287,6 @@ fn parse_uuid(raw: &str) -> Result<Uuid, AppError> {
     Uuid::parse_str(raw).map_err(|error| AppError(GatewayError::InvalidRequest(error.to_string())))
 }
 
-fn oidc_subject(provider: &OidcProviderRecord, email: &str) -> String {
-    format!("mock:{}:{email}", provider.provider_key)
-}
-
 fn header_value(headers: &HeaderMap, name: &str) -> Option<String> {
     headers
         .get(name)
@@ -2096,4 +2304,24 @@ fn cookie_value(headers: &HeaderMap, key: &str) -> Option<String> {
             None
         }
     })
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/auth/oidc/providers",
+    responses((status = 200, body = Envelope<PublicOidcProvidersPayload>))
+)]
+pub async fn list_public_oidc_providers(
+    State(state): State<AppState>,
+) -> Result<Json<Envelope<PublicOidcProvidersPayload>>, AppError> {
+    let providers = state.store.list_enabled_oidc_providers().await?;
+    Ok(Json(envelope(PublicOidcProvidersPayload {
+        providers: providers
+            .into_iter()
+            .map(|provider| PublicOidcProviderView {
+                key: provider.provider_key,
+                label: provider.label,
+            })
+            .collect(),
+    })))
 }

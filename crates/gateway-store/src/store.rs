@@ -4,11 +4,11 @@ use async_trait::async_trait;
 use gateway_core::{
     AdminApiKeyRepository, AdminIdentityRepository, ApiKeyRepository, AuthMode,
     BudgetAlertRepository, BudgetRepository, GlobalRole, IdentityRepository, IdentityUserRecord,
-    McpToolInvocationRepository, MembershipRole, ModelRepository, OidcProviderRecord,
-    PasswordInvitationRecord, PricingCatalogRepository, ProviderRepository, RequestLogRepository,
-    RequestTag, SeedApiKey, SeedModel, SeedProvider, SeedTeam, SeedUser, StoreError, StoreHealth,
-    TeamMembershipRecord, TeamRecord, UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord,
-    UserSessionRecord, UserStatus,
+    McpToolInvocationRepository, MembershipRole, ModelRepository, OidcLoginStateRecord,
+    OidcProviderRecord, PasswordInvitationRecord, PricingCatalogRepository, ProviderRepository,
+    RequestLogRepository, RequestTag, SeedApiKey, SeedModel, SeedOidcProvider, SeedProvider,
+    SeedTeam, SeedUser, StoreError, StoreHealth, TeamMembershipRecord, TeamRecord,
+    UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -90,6 +90,13 @@ pub trait GatewayStore:
         &self,
         provider_key: &str,
     ) -> Result<Option<OidcProviderRecord>, StoreError>;
+    async fn create_oidc_login_state(&self, state: &OidcLoginStateRecord)
+    -> Result<(), StoreError>;
+    async fn consume_oidc_login_state(
+        &self,
+        state_hash: &str,
+        consumed_at: OffsetDateTime,
+    ) -> Result<Option<OidcLoginStateRecord>, StoreError>;
     async fn get_user_by_email_normalized(
         &self,
         email_normalized: &str,
@@ -291,6 +298,7 @@ pub trait GatewayStore:
         providers: &[SeedProvider],
         models: &[SeedModel],
         api_keys: &[SeedApiKey],
+        oidc_providers: &[SeedOidcProvider],
         teams: &[SeedTeam],
         users: &[SeedUser],
     ) -> Result<(), StoreError>;
@@ -1051,6 +1059,21 @@ impl GatewayStore for AnyStore {
         dispatch_store!(self, get_enabled_oidc_provider_by_key(provider_key))
     }
 
+    async fn create_oidc_login_state(
+        &self,
+        state: &OidcLoginStateRecord,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(self, create_oidc_login_state(state))
+    }
+
+    async fn consume_oidc_login_state(
+        &self,
+        state_hash: &str,
+        consumed_at: OffsetDateTime,
+    ) -> Result<Option<OidcLoginStateRecord>, StoreError> {
+        dispatch_store!(self, consume_oidc_login_state(state_hash, consumed_at))
+    }
+
     async fn get_user_by_email_normalized(
         &self,
         email_normalized: &str,
@@ -1460,12 +1483,13 @@ impl GatewayStore for AnyStore {
         providers: &[SeedProvider],
         models: &[SeedModel],
         api_keys: &[SeedApiKey],
+        oidc_providers: &[SeedOidcProvider],
         teams: &[SeedTeam],
         users: &[SeedUser],
     ) -> Result<(), StoreError> {
         dispatch_store!(
             self,
-            seed_from_inputs(providers, models, api_keys, teams, users)
+            seed_from_inputs(providers, models, api_keys, oidc_providers, teams, users)
         )
     }
 }

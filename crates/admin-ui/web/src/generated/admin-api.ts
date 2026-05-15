@@ -548,6 +548,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/oidc/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_public_oidc_providers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/oidc/start": {
         parameters: {
             query?: never;
@@ -1107,6 +1123,12 @@ export interface components {
             };
             meta: components["schemas"]["ResponseMeta"];
         };
+        Envelope_PublicOidcProvidersPayload: {
+            data: {
+                providers: components["schemas"]["PublicOidcProviderView"][];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
         Envelope_RequestLogDetailView: {
             data: {
                 attempts: components["schemas"]["RequestAttemptView"][];
@@ -1325,6 +1347,13 @@ export interface components {
         };
         /** @enum {string} */
         ProviderIconKeyView: "anthropic" | "aws" | "openai" | "openrouter" | "vertexai";
+        PublicOidcProviderView: {
+            key: string;
+            label: string;
+        };
+        PublicOidcProvidersPayload: {
+            providers: components["schemas"]["PublicOidcProviderView"][];
+        };
         RequestAttemptView: {
             /** Format: int64 */
             attempt_number: number;
@@ -2577,11 +2606,10 @@ export interface operations {
     };
     oidc_callback: {
         parameters: {
-            query: {
-                provider_key: string;
-                email: string;
-                subject?: string | null;
-                redirect_to?: string | null;
+            query?: {
+                code?: string | null;
+                state?: string | null;
+                error?: string | null;
             };
             header?: never;
             path?: never;
@@ -2598,11 +2626,30 @@ export interface operations {
             };
         };
     };
+    list_public_oidc_providers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_PublicOidcProvidersPayload"];
+                };
+            };
+        };
+    };
     oidc_start: {
         parameters: {
             query: {
                 provider_key: string;
-                login_hint: string;
+                login_hint?: string | null;
                 redirect_to?: string | null;
             };
             header?: never;
@@ -2611,7 +2658,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Redirect to the same-origin OIDC callback */
+            /** @description Redirect to the OIDC provider */
             302: {
                 headers: {
                     [name: string]: unknown;

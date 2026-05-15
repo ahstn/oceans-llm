@@ -1,0 +1,68 @@
+version: 1
+metadata:
+  name: Oceans LLM local SSO test fixture
+  labels:
+    blueprints.goauthentik.io/instantiate: "true"
+entries:
+  - id: oceans-llm-test-user
+    model: authentik_core.user
+    identifiers:
+      username: sso-user
+    attrs:
+      name: SSO Test User
+      email: sso-user@example.com
+      path: users
+      type: internal
+      is_active: true
+      password: sso-user-password
+
+  - id: oceans-llm-oauth-provider
+    model: authentik_providers_oauth2.oauth2provider
+    identifiers:
+      name: oceans-llm
+    attrs:
+      name: oceans-llm
+      authentication_flow: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
+      authorization_flow: !Find [
+          authentik_flows.flow,
+          [slug, default-provider-authorization-explicit-consent],
+        ]
+      invalidation_flow: !Find [
+          authentik_flows.flow,
+          [slug, default-provider-invalidation-flow],
+        ]
+      client_type: confidential
+      client_id: oceans-llm
+      client_secret: oceans-llm-local-secret
+      include_claims_in_id_token: true
+      issuer_mode: per_provider
+      redirect_uris:
+        - matching_mode: strict
+          url: http://localhost:8080/api/v1/auth/oidc/callback
+      signing_key: !Find [
+          authentik_crypto.certificatekeypair,
+          [name, authentik Self-signed Certificate],
+        ]
+      sub_mode: hashed_user_id
+      property_mappings:
+        - !Find [
+            authentik_providers_oauth2.scopemapping,
+            [managed, goauthentik.io/providers/oauth2/scope-openid],
+          ]
+        - !Find [
+            authentik_providers_oauth2.scopemapping,
+            [managed, goauthentik.io/providers/oauth2/scope-email],
+          ]
+        - !Find [
+            authentik_providers_oauth2.scopemapping,
+            [managed, goauthentik.io/providers/oauth2/scope-profile],
+          ]
+
+  - model: authentik_core.application
+    identifiers:
+      slug: oceans-llm
+    attrs:
+      name: Oceans LLM
+      slug: oceans-llm
+      provider: !KeyOf oceans-llm-oauth-provider
+      policy_engine_mode: any

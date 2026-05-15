@@ -14,11 +14,97 @@ services:
       OPENAI_API_KEY_SECONDARY: ${OPENAI_API_KEY_SECONDARY:-}
       GATEWAY_API_KEY: ${GATEWAY_API_KEY:-gwk_deploy.replace-me}
       GATEWAY_BOOTSTRAP_ADMIN_PASSWORD: ${GATEWAY_BOOTSTRAP_ADMIN_PASSWORD:-change-me-admin}
+      AUTHENTIK_OCEANS_LLM_CLIENT_SECRET: ${AUTHENTIK_OCEANS_LLM_CLIENT_SECRET:-oceans-llm-local-secret}
       POSTGRES_URL: postgres://${POSTGRES_USER:-oceans}:${POSTGRES_PASSWORD:-oceans}@postgres:5432/${POSTGRES_DB:-oceans_llm}
+    extra_hosts:
+      - "authentik.localhost:host-gateway"
     ports:
       - "${GATEWAY_PORT:-8080}:8080"
     volumes:
       - ./config/gateway.yaml:/app/gateway.yaml:ro
+    restart: unless-stopped
+
+  authentik-server:
+    image: ghcr.io/goauthentik/server:${AUTHENTIK_TAG:-2025.4.4}
+    profiles: ["sso"]
+    command: server
+    depends_on:
+      authentik-postgres:
+        condition: service_healthy
+      authentik-redis:
+        condition: service_healthy
+    environment:
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-local-authentik-secret-key-change-me}
+      AUTHENTIK_REDIS__HOST: authentik-redis
+      AUTHENTIK_POSTGRESQL__HOST: authentik-postgres
+      AUTHENTIK_POSTGRESQL__USER: ${AUTHENTIK_POSTGRES_USER:-authentik}
+      AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_POSTGRES_DB:-authentik}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_POSTGRES_PASSWORD:-authentik}
+    ports:
+      - "${AUTHENTIK_HTTP_PORT:-9000}:9000"
+      - "${AUTHENTIK_HTTPS_PORT:-9443}:9443"
+    volumes:
+      - authentik-media:/media
+      - authentik-templates:/templates
+    restart: unless-stopped
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:${AUTHENTIK_TAG:-2025.4.4}
+    profiles: ["sso"]
+    command: worker
+    depends_on:
+      authentik-postgres:
+        condition: service_healthy
+      authentik-redis:
+        condition: service_healthy
+    environment:
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-local-authentik-secret-key-change-me}
+      AUTHENTIK_REDIS__HOST: authentik-redis
+      AUTHENTIK_POSTGRESQL__HOST: authentik-postgres
+      AUTHENTIK_POSTGRESQL__USER: ${AUTHENTIK_POSTGRES_USER:-authentik}
+      AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_POSTGRES_DB:-authentik}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_POSTGRES_PASSWORD:-authentik}
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:-akadmin-password}
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN:-akadmin-bootstrap-token}
+      AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL:-akadmin@example.com}
+    volumes:
+      - ./authentik/oceans-llm-blueprint.yaml:/blueprints/oceans-llm.yaml:ro
+      - authentik-media:/media
+      - authentik-certs:/certs
+      - authentik-templates:/templates
+    restart: unless-stopped
+
+  authentik-postgres:
+    image: postgres:17-alpine
+    profiles: ["sso"]
+    environment:
+      POSTGRES_DB: ${AUTHENTIK_POSTGRES_DB:-authentik}
+      POSTGRES_USER: ${AUTHENTIK_POSTGRES_USER:-authentik}
+      POSTGRES_PASSWORD: ${AUTHENTIK_POSTGRES_PASSWORD:-authentik}
+    volumes:
+      - authentik-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  authentik-redis:
+    image: redis:alpine
+    profiles: ["sso"]
+    command: --save 60 1 --loglevel warning
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - redis-cli ping | grep PONG
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - authentik-redis-data:/data
     restart: unless-stopped
 
   admin-ui:
@@ -48,4 +134,9 @@ services:
     restart: unless-stopped
 
 volumes:
+  authentik-certs:
+  authentik-media:
+  authentik-postgres-data:
+  authentik-redis-data:
+  authentik-templates:
   postgres-data:

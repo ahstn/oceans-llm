@@ -1,8 +1,8 @@
 # OIDC and SSO Status
 
-`See also`: [Identity and Access](identity-and-access.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Configuration Reference](../configuration/configuration-reference.md), [Deploy and Operations](../setup/deploy-and-operations.md), [Admin Control Plane](admin-control-plane.md), [ADR: Identity Foundation for Users, Teams, and API Key Ownership](../adr/2026-03-05-identity-foundation.md)
+`See also`: [Identity and Access](identity-and-access.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Configuration Reference](../configuration/configuration-reference.md), [Deploy and Operations](../setup/deploy-and-operations.md), [Admin Control Plane](admin-control-plane.md), [ADR: Identity Foundation for Users, Teams, and API Key Ownership](../adr/2026-03-05-identity-foundation.md), [ADR: Authentik Local SSO Test IdP](../adr/2026-05-15-authentik-local-sso-test-idp.md)
 
-This page exists because the current OIDC story is easy to overread. OIDC exists in the product, but it is not hardened production-grade SSO yet.
+This page tracks the OIDC/SSO implementation boundary. Oceans LLM now supports a real OIDC authorization-code login path and an Authentik local fixture, with explicit provider-configured JIT defaults.
 
 ## Current State
 
@@ -10,67 +10,79 @@ The live product supports pre-provisioned OIDC users and OIDC-flavored onboardin
 
 What exists today:
 
-- OIDC providers can be configured
-- admins can pre-provision invited OIDC users
-- config can pre-provision invited OIDC users by provider key
-- first successful callback activates the invited user
-- durable user and provider-link records are stored
+- `auth.oidc.providers` in `gateway.yaml` seeds enabled OIDC providers
+- `/api/v1/auth/oidc/providers` exposes enabled SSO providers for `/admin/login`
+- `/api/v1/auth/oidc/start` performs provider discovery and redirects to the IdP with state, nonce, and PKCE
+- `/api/v1/auth/oidc/callback` consumes one-time state, exchanges the authorization code, verifies the ID token and nonce, and issues the existing `ogw_session` cookie
+- invited/config-declared OIDC users activate on first successful provider login
+- provider-specific JIT user creation can assign explicit global role, team membership, and request logging defaults
+- local Authentik compose profiles provide a repeatable manual IdP fixture
 
-What does not exist yet:
+## Security Boundary
 
-- a hardened standards-complete login flow
-- a finished self-hosted local test-IdP story
-- hardened declarative SSO-backed identity matching and claims policy
+The current flow preserves the same-origin admin session cookie model. Successful SSO creates the existing HttpOnly `ogw_session` cookie and redirects back into `/admin`.
 
-## Development-Style Boundary
+Account linking is intentionally conservative:
 
-The current flow is intentionally development-style.
-
-Today the implementation still:
-
-- redirects `oidc_start` into the callback path directly
-- accepts callback identity through query parameters
-- synthesizes a provider subject when one is not supplied
-
-That is enough for slice-level testing and UI wiring. It is not enough to describe as finished enterprise SSO.
+- existing `(provider, sub)` links win
+- invited/config-declared OIDC users with matching normalized email and provider link are activated and linked
+- unmatched identities use the provider's explicit JIT policy
+- existing password/local users with the same email are rejected instead of auto-linked
 
 ## Practical Admin Impact
 
 Admins should assume these boundaries:
 
-- OIDC is usable for controlled environments and development-style testing
-- OIDC is not the hardened final story for production sign-in policy
-- local testing still lacks a checked-in IdP recommendation and workflow
-- deploy docs should not imply that SSO-first bootstrap is solved
+- password login remains available unless operators remove or disable those users
+- JIT defaults are provider policy, not provider claims mapping
+- no user becomes `platform_admin` unless the provider config explicitly says so
+- email-only matching never links an existing password user to SSO
 
-## Planned Direction
+## Local Test IdP
 
-The current forward path is visible in repo history.
+The repo now ships an opt-in Authentik fixture for local/manual SSO testing:
 
-- Pick and document a self-hosted test IdP story:
-  - [issue #46](https://github.com/ahstn/oceans-llm/issues/46)
-- Extend declarative config once hardened identity matching exists:
-  - [issue #65](https://github.com/ahstn/oceans-llm/issues/65)
-- Reopen or replace the standards-complete OIDC tracking issue before describing this as production-grade SSO:
-  - [issue #29](https://github.com/ahstn/oceans-llm/issues/29) is closed, but the current code still carries development-style callback behavior
+- [../../compose.local.yaml](../../compose.local.yaml) includes the `sso` profile for source-built local runs.
+- [../../deploy/compose.yaml](../../deploy/compose.yaml) includes the same `sso` profile for image-based deploy runs.
+- [../../deploy/authentik/oceans-llm-blueprint.yaml](../../deploy/authentik/oceans-llm-blueprint.yaml) creates the `Oceans LLM` OIDC application and the `sso-user@example.com` test user.
 
-That sequence matters. Declarative SSO-backed users depend on the hardened identity contract, not the other way around.
+Run it with:
 
-## Local Test-IdP Gap
+```shell
+docker compose --profile sso -f compose.local.yaml up
+```
 
-The repo does not yet ship a recommended local IdP stack for realistic OIDC testing.
+The fixture defaults are:
 
-That means:
+- Authentik URL: `http://localhost:9000`
+- Authentik admin: `akadmin@example.com` / `akadmin-password`
+- SSO test user: `sso-user@example.com` / `sso-user-password`
+- OIDC client id: `oceans-llm`
+- OIDC client secret: `oceans-llm-local-secret`
 
-- local validation remains ad hoc
-- the current OIDC path is easier to demo than to validate against real provider quirks
-- manual test guidance should stay conservative until the IdP choice is made
+The checked-in deploy config seeds an Authentik provider:
+
+- provider key: `authentik`
+- issuer URL: `http://authentik.localhost:9000/application/o/oceans-llm/`
+- callback URL: `http://localhost:8080/api/v1/auth/oidc/callback`
+- client id: `oceans-llm`
+- client secret env ref: `AUTHENTIK_OCEANS_LLM_CLIENT_SECRET`, default `oceans-llm-local-secret`
+- JIT: enabled, explicitly `platform_admin`, team `platform` / `admin` for local manual validation
+
+Manual validation:
+
+1. Start the stack: `docker compose --profile sso -f compose.local.yaml up`.
+2. Run migrations and seed config if the gateway did not do so during startup.
+3. Open `http://localhost:8080/admin/login`.
+4. Choose `Sign in with Authentik`.
+5. Log in as `sso-user@example.com` / `sso-user-password`.
 
 ## Current Gaps
 
-- Self-hosted test-IdP research: [issue #46](https://github.com/ahstn/oceans-llm/issues/46)
-- Declarative SSO-backed identity config: [issue #65](https://github.com/ahstn/oceans-llm/issues/65)
-- Standards-complete OIDC tracking needs a reopened or successor issue because [issue #29](https://github.com/ahstn/oceans-llm/issues/29) is closed while the docs still describe a development-style boundary
+- claim/group-to-role mapping is not implemented
+- Okta validation remains a manual follow-up benchmark
+- discovery and JWKS metadata are fetched on login; a runtime cache can be added later
+- automated end-to-end browser coverage against Authentik is still manual-first
 
 ## What This Page Does Not Own
 

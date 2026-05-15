@@ -151,6 +151,10 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
             "/api/v1/auth/invitations/{token}/password",
             post(complete_password_invitation),
         )
+        .route(
+            "/api/v1/auth/oidc/providers",
+            get(list_public_oidc_providers),
+        )
         .route("/api/v1/auth/oidc/start", get(oidc_start))
         .route("/api/v1/auth/oidc/callback", get(oidc_callback))
         .route("/v1/models", get(v1_models))

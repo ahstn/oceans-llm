@@ -28,14 +28,15 @@ mod tests {
         CONFIG_SEED_TEAM_ID, GlobalRole, IdentityRepository, McpToolInvocationPayloadRecord,
         McpToolInvocationQuery, McpToolInvocationRecord, McpToolInvocationRepository,
         McpToolInvocationStatus, McpToolPolicyResult, MembershipRole, ModelPricingRecord,
-        ModelRepository, Money4, OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField,
-        OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility, PricingCatalogCacheRecord,
-        PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
-        ProviderCapabilities, RequestAttemptRecord, RequestAttemptStatus, RequestLogPayloadRecord,
-        RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestTag, RequestTags,
-        RequestToolCardinality, RouteCompatibility, SeedApiKey, SeedBudget, SeedModel,
-        SeedModelRoute, SeedProvider, SeedTeam, SeedUser, SeedUserMembership, StoreError,
-        StoreHealth, UsageLedgerRecord, UsagePricingStatus, UserStatus,
+        ModelRepository, Money4, OidcLoginStateRecord, OpenAiCompatDeveloperRole,
+        OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
+        PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
+        PricingProvenance, ProviderCapabilities, RequestAttemptRecord, RequestAttemptStatus,
+        RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository,
+        RequestTag, RequestTags, RequestToolCardinality, RouteCompatibility, SeedApiKey,
+        SeedBudget, SeedModel, SeedModelRoute, SeedProvider, SeedTeam, SeedUser,
+        SeedUserMembership, StoreError, StoreHealth, UsageLedgerRecord, UsagePricingStatus,
+        UserStatus,
     };
     use serde_json::{Map, json};
     use serial_test::serial;
@@ -182,7 +183,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&providers, &models, &api_keys, &[], &[])
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[])
             .await
             .expect("seed");
         let api_key = store
@@ -336,7 +337,7 @@ mod tests {
             allowed_models: vec!["fast".to_string(), "reasoning".to_string()],
         }];
         store
-            .seed_from_inputs(&providers, &models, &api_keys, &[], &[])
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[])
             .await
             .expect("seed");
 
@@ -723,6 +724,50 @@ mod tests {
         .await
         .expect("insert oidc provider");
         provider_id
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_oidc_login_state_consumes_once() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+        let provider_id = insert_libsql_oidc_provider(&store, "authentik").await;
+        let now = OffsetDateTime::now_utc();
+        let state = OidcLoginStateRecord {
+            state_hash: "state-hash".to_string(),
+            oidc_provider_id: provider_id.clone(),
+            nonce: "nonce".to_string(),
+            pkce_verifier: "verifier".to_string(),
+            redirect_to: "/admin".to_string(),
+            login_hint: Some("sso-user@example.com".to_string()),
+            expires_at: now + Duration::minutes(10),
+            consumed_at: None,
+            created_at: now,
+        };
+
+        store
+            .create_oidc_login_state(&state)
+            .await
+            .expect("create login state");
+
+        let consumed = store
+            .consume_oidc_login_state("state-hash", now + Duration::seconds(1))
+            .await
+            .expect("consume state")
+            .expect("state exists");
+        assert_eq!(consumed.oidc_provider_id, provider_id);
+        assert_eq!(consumed.redirect_to, "/admin");
+        assert!(consumed.consumed_at.is_some());
+
+        let reused = store
+            .consume_oidc_login_state("state-hash", now + Duration::seconds(2))
+            .await
+            .expect("consume reused state");
+        assert!(reused.is_none());
     }
 
     async fn exercise_budget_alert_repository<R>(repo: &R)
@@ -1299,12 +1344,12 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&providers, &models, &api_keys, &[], &[])
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[])
             .await
             .expect("seed #1");
 
         store
-            .seed_from_inputs(&providers, &models, &api_keys, &[], &[])
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[])
             .await
             .expect("seed #2 idempotent");
 
@@ -1540,6 +1585,7 @@ mod tests {
                 }],
                 &[],
                 &[],
+                &[],
             )
             .await
             .expect("seed");
@@ -1734,6 +1780,7 @@ mod tests {
                     secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
                     allowed_models: vec!["fast".to_string()],
                 }],
+                &[],
                 &[],
                 &[],
             )
@@ -1940,7 +1987,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&providers, &models, &api_keys, &[], &[])
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[])
             .await
             .expect("seed");
 
@@ -3003,7 +3050,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &initial_teams, &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &initial_teams, &initial_users)
             .await
             .expect("initial seed");
 
@@ -3081,11 +3128,11 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &updated_teams, &updated_users)
+            .seed_from_inputs(&[], &[], &[], &[], &updated_teams, &updated_users)
             .await
             .expect("updated seed");
         store
-            .seed_from_inputs(&[], &[], &[], &updated_teams, &updated_users)
+            .seed_from_inputs(&[], &[], &[], &[], &updated_teams, &updated_users)
             .await
             .expect("updated seed idempotent");
 
@@ -3194,7 +3241,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &initial_teams, &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &initial_teams, &initial_users)
             .await
             .expect("initial seed");
 
@@ -3234,7 +3281,7 @@ mod tests {
         }];
 
         let error = store
-            .seed_from_inputs(&[], &[], &[], &invalid_teams, &invalid_users)
+            .seed_from_inputs(&[], &[], &[], &[], &invalid_teams, &invalid_users)
             .await
             .expect_err("seed should fail");
         assert!(
@@ -3293,7 +3340,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &initial_users)
             .await
             .expect("initial seed");
 
@@ -3330,7 +3377,7 @@ mod tests {
         }];
 
         let error = store
-            .seed_from_inputs(&[], &[], &[], &[], &invalid_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &invalid_users)
             .await
             .expect_err("seed should fail");
         assert!(
@@ -3396,7 +3443,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &initial_users)
             .await
             .expect("initial seed");
 
@@ -3423,7 +3470,7 @@ mod tests {
         }];
 
         let error = store
-            .seed_from_inputs(&[], &[], &[], &[], &invalid_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &invalid_users)
             .await
             .expect_err("seed should fail");
         assert!(
@@ -3500,7 +3547,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &initial_teams, &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &initial_teams, &initial_users)
             .await
             .expect("initial seed");
 
@@ -3578,11 +3625,11 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &updated_teams, &updated_users)
+            .seed_from_inputs(&[], &[], &[], &[], &updated_teams, &updated_users)
             .await
             .expect("updated seed");
         store
-            .seed_from_inputs(&[], &[], &[], &updated_teams, &updated_users)
+            .seed_from_inputs(&[], &[], &[], &[], &updated_teams, &updated_users)
             .await
             .expect("updated seed idempotent");
 
@@ -3705,7 +3752,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &initial_teams, &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &initial_teams, &initial_users)
             .await
             .expect("initial seed");
 
@@ -3745,7 +3792,7 @@ mod tests {
         }];
 
         let error = store
-            .seed_from_inputs(&[], &[], &[], &invalid_teams, &invalid_users)
+            .seed_from_inputs(&[], &[], &[], &[], &invalid_teams, &invalid_users)
             .await
             .expect_err("seed should fail");
         assert!(
@@ -3819,7 +3866,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &initial_users)
             .await
             .expect("initial seed");
 
@@ -3856,7 +3903,7 @@ mod tests {
         }];
 
         let error = store
-            .seed_from_inputs(&[], &[], &[], &[], &invalid_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &invalid_users)
             .await
             .expect_err("seed should fail");
         assert!(
@@ -3936,7 +3983,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &initial_users)
             .await
             .expect("initial seed");
 
@@ -3963,7 +4010,7 @@ mod tests {
         }];
 
         let error = store
-            .seed_from_inputs(&[], &[], &[], &[], &invalid_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &invalid_users)
             .await
             .expect_err("seed should fail");
         assert!(
@@ -4028,7 +4075,7 @@ mod tests {
             allowed_models: vec!["fast".to_string()],
         }];
         store
-            .seed_from_inputs(&providers, &models, &api_keys, &[], &[])
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[])
             .await
             .expect("seed");
 
@@ -4296,7 +4343,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&providers, &models, &api_keys, &[], &[])
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[])
             .await
             .expect("seed");
 
@@ -4807,7 +4854,7 @@ mod tests {
             allowed_models: vec!["fast".to_string()],
         }];
         store
-            .seed_from_inputs(&providers, &models, &api_keys, &[], &[])
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[])
             .await
             .expect("seed");
 
@@ -5099,7 +5146,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&providers, &models, &api_keys, &[], &[])
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[])
             .await
             .expect("seed");
 

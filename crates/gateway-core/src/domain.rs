@@ -553,12 +553,53 @@ pub struct OidcProviderRecord {
     pub oidc_provider_id: String,
     pub provider_key: String,
     pub provider_type: String,
+    pub label: String,
     pub issuer_url: String,
     pub client_id: String,
+    pub client_secret_ref: String,
     pub scopes: Vec<String>,
     pub enabled: bool,
+    pub jit: OidcJitPolicy,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OidcJitPolicy {
+    pub enabled: bool,
+    pub global_role: GlobalRole,
+    pub membership: Option<OidcJitMembership>,
+    pub request_logging_enabled: bool,
+}
+
+impl Default for OidcJitPolicy {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            global_role: GlobalRole::User,
+            membership: None,
+            request_logging_enabled: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OidcJitMembership {
+    pub team_key: String,
+    pub role: MembershipRole,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OidcLoginStateRecord {
+    pub state_hash: String,
+    pub oidc_provider_id: String,
+    pub nonce: String,
+    pub pkce_verifier: String,
+    pub redirect_to: String,
+    pub login_hint: Option<String>,
+    pub expires_at: OffsetDateTime,
+    pub consumed_at: Option<OffsetDateTime>,
+    pub created_at: OffsetDateTime,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1591,6 +1632,19 @@ pub struct SeedApiKey {
     pub secret_hash: String,
     #[serde(default)]
     pub allowed_models: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeedOidcProvider {
+    pub provider_key: String,
+    pub provider_type: String,
+    pub label: String,
+    pub issuer_url: String,
+    pub client_id: String,
+    pub client_secret_ref: String,
+    pub scopes: Vec<String>,
+    pub enabled: bool,
+    pub jit: OidcJitPolicy,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
