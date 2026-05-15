@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [Unreleased]
+## [0.8.0] - 2026-05-15
 ### :rocket: New features
 - *(deploy)* Add Helm OCI chart by @ahstn
 - *(deploy)* Add Helm OCI chart by @ahstn in [#120](https://github.com/ahstn/oceans-llm/pull/120)
@@ -21,6 +21,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(admin)* Add Anthropic client config snippets by @ahstn in [#142](https://github.com/ahstn/oceans-llm/pull/142)
 - *(observability)* Add tool cardinality request logs by @ahstn
 - *(observability)* Add tool cardinality request logs by @ahstn in [#123](https://github.com/ahstn/oceans-llm/pull/123)
+- *(observability)* Add agent harness usage by @ahstn
+- *(admin-ui)* Show request operations in logs by @ahstn
+- *(admin-ui)* Show request operations in logs by @ahstn in [#150](https://github.com/ahstn/oceans-llm/pull/150)
+- *(observability)* Add agent harness usage by @ahstn in [#149](https://github.com/ahstn/oceans-llm/pull/149)
+- *(observability)* Add MCP invocation audit logs by @ahstn
+- *(observability)* Add MCP invocation audit logs by @ahstn in [#151](https://github.com/ahstn/oceans-llm/pull/151)
+- *(gateway)* Add request log retention purge by @ahstn
+- *(gateway)* Add request log retention purge by @ahstn in [#153](https://github.com/ahstn/oceans-llm/pull/153)
+- *(gateway)* Add team service accounts by @ahstn
+- *(gateway)* Add team service accounts by @ahstn in [#152](https://github.com/ahstn/oceans-llm/pull/152)
+- *(gateway)* Add identity entity tags by @ahstn
+- *(gateway)* Add identity entity tags by @ahstn in [#155](https://github.com/ahstn/oceans-llm/pull/155)
+- *(admin-ui)* Add expandable team rows by @ahstn
+- Updating icons and sidebar nav by @ahstn
+- *(admin-ui)* Improve identity management UI by @ahstn in [#156](https://github.com/ahstn/oceans-llm/pull/156)
 
 ### :bug: Bug fixes
 - *(deploy)* Address Helm review feedback by @ahstn
@@ -41,11 +56,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(admin-ui)* Harden containers and improve error diagnostics by @ahstn in [#143](https://github.com/ahstn/oceans-llm/pull/143)
 - *(admin-ui)* Address review feedback by @ahstn
 - *(admin-ui)* Polish admin shell by @ahstn in [#144](https://github.com/ahstn/oceans-llm/pull/144)
+- *(observability)* Tighten MCP invocation logging by @ahstn
+- *(observability)* Address PR review findings by @ahstn
+- *(gateway)* Address purge review findings by @ahstn
+- *(gateway)* Reconcile request-log purge rebase by @ahstn
+- *(gateway)* Address service account review findings by @ahstn
+- *(gateway-store)* Address service account review feedback by @ahstn
+- *(gateway)* Integrate service accounts with main by @ahstn
+- *(gateway)* Reconcile service accounts with latest main by @ahstn
+- *(gateway)* Surface models.dev pricing metadata by @ahstn
+- *(gateway)* Address pricing catalog review feedback by @ahstn
+- *(gateway)* Surface models.dev pricing metadata by @ahstn in [#154](https://github.com/ahstn/oceans-llm/pull/154)
+- Address identity tag review comments by @ahstn
 
 ### Build
 - Post release tasks - v0.6.0 by @ahstn
 - Post release tasks - v0.7.0 by @ahstn
 - *(ui)* Updating ui dependencies by @ahstn
+- Post release tasks - v0.7.1 by @ahstn
 
 ### Changed
 - *(deploy)* Split Helm hook jobs by @ahstn
@@ -59,6 +87,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Theme native admin scrollbars by @ahstn
 - Render OpenAI brand icon inline by @ahstn
 - Expand local demo seed data by @ahstn
+- *(gateway)* Split local demo seed fixtures by @ahstn
+- *(gateway)* Split local demo seed fixtures by @ahstn in [#145](https://github.com/ahstn/oceans-llm/pull/145)
+- Address harness usage PR review findings by @ahstn
+- *(admin-ui)* Simplify request operation label rendering by @ahstn
+- Merge branch 'main' into codex/agent-harness-usage by @ahstn
+- Polish teams member toggle by @ahstn
+- Add generated avatars and user detail dialog by @ahstn
+- Polish user details dialog by @ahstn
 
 ### Documentation
 - Various docs updates by @ahstn
@@ -67,6 +103,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(providers)* Split anthropic parity follow-ups by @ahstn
 - Updating favicon and adding images by @ahstn
 - Updating favicon and adding images by @ahstn in [#146](https://github.com/ahstn/oceans-llm/pull/146)
+- Refresh favicon and hero branding by @ahstn
+- Adding reference screenshots page by @ahstn
+- Refresh docs branding and screenshots by @ahstn in [#147](https://github.com/ahstn/oceans-llm/pull/147)
+- Add request log validation note by @ahstn
+- Align audience taxonomy wording by @ahstn
+- Split tagging guidance into dedicated page by @ahstn
+
+### Miscellaneous
+- Consolidate mise monorepo tasks by @ahstn
+- *(version)* V0.8.0
 
 ### Testing
 - *(gateway)* Close request-attempt observability gaps by @ahstn
@@ -335,7 +381,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
-[unreleased]: https://github.com/ahstn/oceans-llm/compare/v0.6.0...HEAD
+[0.8.0]: https://github.com/ahstn/oceans-llm/compare/v0.6.0...v0.8.0
 [0.6.0]: https://github.com/ahstn/oceans-llm/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/ahstn/oceans-llm/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/ahstn/oceans-llm/compare/v0.1.0...v0.4.0
