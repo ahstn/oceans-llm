@@ -16,6 +16,7 @@ auth:
     - name: default
       value: env.GATEWAY_API_KEY
   oidc:
+    public_base_url: env.GATEWAY_PUBLIC_BASE_URL
     providers:
       - key: authentik
         label: Authentik
@@ -26,9 +27,9 @@ auth:
           - openid
           - email
           - profile
-        enabled: true
+        enabled: false
         jit:
-          enabled: true
+          enabled: false
           global_role: platform_admin
           request_logging_enabled: true
           membership:

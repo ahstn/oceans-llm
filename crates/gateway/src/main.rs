@@ -185,6 +185,13 @@ async fn run_serve_with_store(
             providers,
             metrics,
             identity_token_secret: Arc::new(load_identity_token_secret()),
+            oidc_public_base_url: Arc::new(
+                config
+                    .auth
+                    .oidc
+                    .resolved_public_base_url()
+                    .context("failed resolving OIDC public base URL")?,
+            ),
         },
         load_admin_ui_config(),
     );
@@ -1115,6 +1122,7 @@ providers:
                 providers: provider_registry,
                 metrics: Arc::new(gateway::observability::GatewayMetrics::default()),
                 identity_token_secret: Arc::new("local-dev-identity-secret".to_string()),
+                oidc_public_base_url: Arc::new(None),
             },
             AdminUiConfig::default(),
         );
@@ -1171,6 +1179,7 @@ providers:
                 providers: provider_registry,
                 metrics: metrics.clone(),
                 identity_token_secret: Arc::new("local-dev-identity-secret".to_string()),
+                oidc_public_base_url: Arc::new(None),
             },
             AdminUiConfig::default(),
         );
@@ -1278,6 +1287,7 @@ providers:
                 providers,
                 metrics: Arc::new(gateway::observability::GatewayMetrics::default()),
                 identity_token_secret: Arc::new("local-dev-identity-secret".to_string()),
+                oidc_public_base_url: Arc::new(None),
             },
             AdminUiConfig::default(),
         );
@@ -1353,6 +1363,7 @@ providers:
                 providers: provider_registry,
                 metrics: Arc::new(gateway::observability::GatewayMetrics::default()),
                 identity_token_secret: Arc::new("local-dev-identity-secret".to_string()),
+                oidc_public_base_url: Arc::new(None),
             },
             AdminUiConfig::default(),
         );

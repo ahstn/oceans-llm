@@ -54,7 +54,7 @@ Key evidence from current Authentik docs:
 
 ZITADEL and Keycloak remain credible follow-up validation targets. ZITADEL has strong identity-brokering docs and Keycloak is mature and widely deployed, but both add more weight than we need for the first local/manual fixture.
 
-Dex is a useful lightweight federated provider, but it is less representative of the operator-facing IdP administration and app/provider configuration path we want to test.
+Dex is a useful lightweight federated provider, but it is less representative of the admin-facing IdP administration and app/provider configuration path we want to test.
 
 Tinyauth is promising for a very small setup, but it is too narrow as the primary local fixture for enterprise SSO semantics.
 
@@ -88,3 +88,4 @@ JIT behavior:
 2. Add discovery/JWKS caching if login latency or provider rate limits become a practical problem.
 3. Add group/claim-to-role mapping as a separate policy feature.
 4. Validate Okta manually as a benchmark provider after Authentik.
+5. Run `mise //docs:verify` before docs-only handoff, or `mise run lint` when docs ship with code changes.

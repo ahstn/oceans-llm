@@ -287,7 +287,8 @@ pub(super) fn decode_oidc_provider_record(
         provider_key: provider_key.clone(),
         provider_type: row.get(2).map_err(to_query_error)?,
         label: label
-            .filter(|value| !value.trim().is_empty())
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
             .unwrap_or_else(|| provider_key.clone()),
         issuer_url: row.get(3).map_err(to_query_error)?,
         client_id: row.get(4).map_err(to_query_error)?,
@@ -307,7 +308,13 @@ pub(super) fn decode_oidc_provider_record(
                         StoreError::Serialization(format!("unknown membership role `{role}`"))
                     })?,
                 }),
-                _ => None,
+                (None, None) => None,
+                (Some(_), None) | (None, Some(_)) => {
+                    return Err(StoreError::Serialization(
+                        "invalid oidc jit membership: team key and role must both be set"
+                            .to_string(),
+                    ));
+                }
             },
             request_logging_enabled: jit_request_logging_enabled == 1,
         },

@@ -868,6 +868,8 @@ pub struct AuthConfig {
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct AuthOidcConfig {
     #[serde(default)]
+    pub public_base_url: Option<String>,
+    #[serde(default)]
     pub providers: Vec<OidcProviderConfig>,
 }
 
@@ -880,6 +882,7 @@ impl AuthOidcConfig {
     }
 
     fn validate(&self, teams: &[TeamConfig]) -> anyhow::Result<()> {
+        let _ = self.resolved_public_base_url()?;
         let mut provider_keys = std::collections::BTreeSet::new();
         let team_keys = teams
             .iter()
@@ -936,6 +939,28 @@ impl AuthOidcConfig {
             }
         }
         Ok(())
+    }
+
+    pub fn resolved_public_base_url(&self) -> anyhow::Result<Option<String>> {
+        let Some(raw_url) = self.public_base_url.as_deref() else {
+            return Ok(None);
+        };
+        let resolved_url =
+            resolve_secret_reference(raw_url).context("auth.oidc.public_base_url")?;
+        let trimmed = resolved_url.trim().trim_end_matches('/').to_string();
+        if trimmed.is_empty() {
+            bail!("auth.oidc.public_base_url cannot be empty");
+        }
+        let parsed_url =
+            url::Url::parse(&trimmed).context("auth.oidc.public_base_url is invalid")?;
+        match parsed_url.scheme() {
+            "http" | "https" => {}
+            scheme => bail!("auth.oidc.public_base_url scheme `{scheme}` is not supported"),
+        }
+        if parsed_url.host().is_none() {
+            bail!("auth.oidc.public_base_url must include a host");
+        }
+        Ok(Some(trimmed))
     }
 }
 

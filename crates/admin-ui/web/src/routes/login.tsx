@@ -15,7 +15,16 @@ export const Route = createFileRoute('/login')({
     redirect: typeof search.redirect === 'string' ? search.redirect : undefined,
     sso_error: typeof search.sso_error === 'string' ? search.sso_error : undefined,
   }),
-  loader: async () => getOidcProviders(),
+  loader: async () => {
+    try {
+      return await getOidcProviders()
+    } catch {
+      return {
+        data: { providers: [] },
+        meta: { generated_at: new Date().toISOString() },
+      }
+    }
+  },
   component: LoginPage,
 })
 

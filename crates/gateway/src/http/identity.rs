@@ -1141,7 +1141,7 @@ pub async fn oidc_start(
     Query(query): Query<OidcStartQuery>,
 ) -> Result<Redirect, AppError> {
     let provider = load_enabled_oidc_provider(&state.store, &query.provider_key).await?;
-    let origin = request_origin(&headers);
+    let origin = oidc_public_origin(&state, &headers);
     let login_hint = query
         .login_hint
         .as_deref()
@@ -1235,7 +1235,7 @@ pub async fn oidc_callback(
                 "oidc provider not found".to_string(),
             ))
         })?;
-    let origin = request_origin(&headers);
+    let origin = oidc_public_origin(&state, &headers);
     let provider_metadata = oidc_provider_metadata(&provider).await?;
     let client = CoreClient::from_provider_metadata(
         provider_metadata,
@@ -1362,6 +1362,8 @@ fn normalize_oidc_redirect(value: Option<&str>, default: &str) -> String {
 fn oidc_http_client() -> Result<reqwest::Client, AppError> {
     reqwest::ClientBuilder::new()
         .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(std::time::Duration::from_secs(5))
+        .timeout(std::time::Duration::from_secs(15))
         .build()
         .map_err(|error| AppError(GatewayError::Internal(error.to_string())))
 }
@@ -1468,6 +1470,15 @@ fn request_origin(headers: &HeaderMap) -> String {
     let proto = header_value(headers, "x-forwarded-proto").unwrap_or_else(|| "http".to_string());
     let host = header_value(headers, "host").unwrap_or_else(|| "localhost:8080".to_string());
     format!("{proto}://{host}")
+}
+
+fn oidc_public_origin(state: &AppState, headers: &HeaderMap) -> String {
+    state
+        .oidc_public_base_url
+        .as_ref()
+        .as_deref()
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| request_origin(headers))
 }
 
 fn session_cookie_secure(headers: &HeaderMap) -> bool {

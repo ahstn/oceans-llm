@@ -770,6 +770,65 @@ mod tests {
         assert!(reused.is_none());
     }
 
+    #[tokio::test]
+    #[serial]
+    async fn postgres_oidc_login_state_consumes_once() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres oidc login state test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options)
+            .await
+            .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+        let provider_id = insert_postgres_oidc_provider(&store, "authentik").await;
+        let now = OffsetDateTime::now_utc();
+        let state = OidcLoginStateRecord {
+            state_hash: "state-hash".to_string(),
+            oidc_provider_id: provider_id.clone(),
+            nonce: "nonce".to_string(),
+            pkce_verifier: "verifier".to_string(),
+            redirect_to: "/admin".to_string(),
+            login_hint: Some("sso-user@example.com".to_string()),
+            expires_at: now + Duration::minutes(10),
+            consumed_at: None,
+            created_at: now,
+        };
+
+        store
+            .create_oidc_login_state(&state)
+            .await
+            .expect("create login state");
+
+        let consumed = store
+            .consume_oidc_login_state("state-hash", now + Duration::seconds(1))
+            .await
+            .expect("consume state")
+            .expect("state exists");
+        assert_eq!(consumed.oidc_provider_id, provider_id);
+        assert_eq!(consumed.redirect_to, "/admin");
+        assert!(consumed.consumed_at.is_some());
+
+        let reused = store
+            .consume_oidc_login_state("state-hash", now + Duration::seconds(2))
+            .await
+            .expect("consume reused state");
+        assert!(reused.is_none());
+
+        store.pool().close().await;
+        drop_postgres_test_database(&test_db).await;
+    }
+
     async fn exercise_budget_alert_repository<R>(repo: &R)
     where
         R: BudgetAlertRepository + Sync,

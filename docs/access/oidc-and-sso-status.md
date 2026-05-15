@@ -33,7 +33,7 @@ Account linking is intentionally conservative:
 
 Admins should assume these boundaries:
 
-- password login remains available unless operators remove or disable those users
+- password login remains available unless admins remove or disable those users
 - JIT defaults are provider policy, not provider claims mapping
 - no user becomes `platform_admin` unless the provider config explicitly says so
 - email-only matching never links an existing password user to SSO
@@ -60,22 +60,25 @@ The fixture defaults are:
 - OIDC client id: `oceans-llm`
 - OIDC client secret: `oceans-llm-local-secret`
 
-The checked-in deploy config seeds an Authentik provider:
+The checked-in deploy config seeds an Authentik provider, but leaves it disabled until a maintainer opts in for the target environment:
 
 - provider key: `authentik`
 - issuer URL: `http://authentik.localhost:9000/application/o/oceans-llm/`
 - callback URL: `http://localhost:8080/api/v1/auth/oidc/callback`
 - client id: `oceans-llm`
-- client secret env ref: `AUTHENTIK_OCEANS_LLM_CLIENT_SECRET`, default `oceans-llm-local-secret`
-- JIT: enabled, explicitly `platform_admin`, team `platform` / `admin` for local manual validation
+- public base URL env ref: `GATEWAY_PUBLIC_BASE_URL`
+- client secret env ref: `AUTHENTIK_OCEANS_LLM_CLIENT_SECRET`
+- JIT: disabled by default; local manual validation can enable it explicitly with `platform_admin`, team `platform` / `admin`
 
 Manual validation:
 
-1. Start the stack: `docker compose --profile sso -f compose.local.yaml up`.
-2. Run migrations and seed config if the gateway did not do so during startup.
-3. Open `http://localhost:8080/admin/login`.
-4. Choose `Sign in with Authentik`.
-5. Log in as `sso-user@example.com` / `sso-user-password`.
+1. Enable the Authentik provider and its JIT policy in a local config copy when testing JIT sign-in.
+2. Start the stack: `docker compose --profile sso -f compose.local.yaml up`.
+3. Run migrations and seed config if the gateway did not do so during startup.
+4. Open `http://localhost:8080/admin/login`.
+5. Choose `Sign in with Authentik`.
+6. Log in as `sso-user@example.com` / `sso-user-password`.
+7. Before handoff, run `mise //docs:verify` for docs-only changes or `mise run lint` for mixed code/docs validation.
 
 ## Current Gaps
 
