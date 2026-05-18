@@ -200,7 +200,7 @@ That means one environment can have:
 
 ## Authentication Notes
 
-OIDC providers and password users are seeded by config when present in the active gateway config. Local SSO testing uses [../development/authentication-testing.md](../development/authentication-testing.md); production-shaped first access still depends on the active deploy config and supplied secrets.
+OIDC/OAuth providers and password users are seeded by config when present in the active gateway config. Local SSO testing uses [../development/authentication-testing.md](../development/authentication-testing.md); production-shaped first access still depends on the active deploy config and supplied secrets.
 
 ## What This Page Does Not Own
 

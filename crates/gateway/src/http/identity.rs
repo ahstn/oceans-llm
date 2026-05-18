@@ -2591,9 +2591,18 @@ async fn build_onboarding_response(
                 user.clone(),
             )
             .await?;
+            let oauth_origin = state
+                .oauth_public_base_url
+                .as_ref()
+                .as_deref()
+                .unwrap_or(origin);
             Ok(CreateUserResponse::OauthSignIn {
                 user: view,
-                sign_in_url: oauth_sign_in_url(origin, &provider.provider_key, &user.user.email),
+                sign_in_url: oauth_sign_in_url(
+                    oauth_origin,
+                    &provider.provider_key,
+                    &user.user.email,
+                ),
                 provider_label: provider.provider_key,
             })
         }

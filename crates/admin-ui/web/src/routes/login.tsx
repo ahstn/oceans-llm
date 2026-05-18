@@ -136,7 +136,7 @@ function LoginPage() {
 function oidcStartUrl(startOrigin: string, providerKey: string, redirect: string | undefined) {
   const startPath = `/api/v1/auth/oidc/start?${new URLSearchParams({
     provider_key: providerKey,
-    redirect_to: redirect ?? '/admin',
+    redirect_to: ssoRedirectTarget(redirect),
   }).toString()}`
   return startOrigin ? `${startOrigin}${startPath}` : startPath
 }
@@ -144,9 +144,16 @@ function oidcStartUrl(startOrigin: string, providerKey: string, redirect: string
 function oauthStartUrl(startOrigin: string, providerKey: string, redirect: string | undefined) {
   const startPath = `/api/v1/auth/oauth/start?${new URLSearchParams({
     provider_key: providerKey,
-    redirect_to: redirect ?? '/admin',
+    redirect_to: ssoRedirectTarget(redirect),
   }).toString()}`
   return startOrigin ? `${startOrigin}${startPath}` : startPath
+}
+
+function ssoRedirectTarget(redirect: string | undefined) {
+  if (!redirect) return '/admin'
+  if (redirect.startsWith('/admin')) return redirect
+  if (redirect.startsWith('/') && !redirect.startsWith('//')) return `/admin${redirect}`
+  return '/admin'
 }
 
 function ssoErrorMessage(code: string | undefined) {
