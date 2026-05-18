@@ -1,6 +1,6 @@
 # Identity and Access
 
-`See also`: [Data Relationships](../reference/data-relationships.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Service Accounts](service-accounts.md), [OIDC and SSO Status](oidc-and-sso-status.md), [Admin Control Plane](admin-control-plane.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Tagging](../operations/tagging.md), [MCP Invocations](../operations/observability/mcp-invocations.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../adr/2026-05-10-team-service-accounts.md), [ADR: Admin Identity Lifecycle and Team Member Workflow Hardening](../adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md)
+`See also`: [Data Relationships](../reference/data-relationships.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Service Accounts](service-accounts.md), [OIDC and SSO](oidc-and-sso-status.md), [Admin Control Plane](admin-control-plane.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Tagging](../operations/tagging.md), [MCP Invocations](../operations/observability/mcp-invocations.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../adr/2026-05-10-team-service-accounts.md), [ADR: Admin Identity Lifecycle and Team Member Workflow Hardening](../adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md)
 
 This page describes the live identity model across the gateway and admin control plane.
 
@@ -118,14 +118,15 @@ Identity tags do not change runtime access, budget checks, request routing, requ
 
 ## OIDC Boundary
 
-OIDC exists in the product, but it is still development-style in this slice.
+OIDC is part of the admin sign-in contract.
 
-- pre-provisioned OIDC users are supported
-- config-seeded OIDC users can be pre-provisioned by provider key
-- OIDC onboarding links exist
-- hardened production-grade SSO is still a follow-up
+- enabled providers are seeded from `auth.oidc.providers`
+- pre-provisioned OIDC users are supported by provider key
+- invited OIDC users activate on first successful provider login
+- provider-specific JIT can create users with explicit defaults
+- password users are not auto-linked by email
 
-Use [oidc-and-sso-status.md](oidc-and-sso-status.md) for the practical boundary and future direction.
+Use [oidc-and-sso-status.md](oidc-and-sso-status.md) for the practical SSO contract and Authentik fixture details.
 
 ## Model Access Overlays
 
@@ -173,13 +174,11 @@ Service accounts are the non-human gateway identity model.
 
 Team-scoped management rules live in [service-accounts.md](service-accounts.md).
 
-## Current Gaps
+## Current Boundaries
 
-- Self-hosted test-IdP guidance is still pending:
-  - [issue #46](https://github.com/ahstn/oceans-llm/issues/46)
-- Hardened declarative SSO-backed identity matching is still pending:
-  - [issue #65](https://github.com/ahstn/oceans-llm/issues/65)
-- Standards-complete OIDC tracking needs a reopened or successor issue because [issue #29](https://github.com/ahstn/oceans-llm/issues/29) is closed while the current docs still describe development-style OIDC behavior.
+- group or claim-to-role mapping is not part of the current OIDC contract
+- Okta validation is a later benchmark provider, not the local fixture
+- broader session-management UI remains separate from the sign-in flow
 
 ## Where Identity Appears Operationally
 

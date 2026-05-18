@@ -7,6 +7,8 @@
   - [#65](https://github.com/ahstn/oceans-llm/issues/65)
   - [#29](https://github.com/ahstn/oceans-llm/issues/29)
 
+Supersession note: [2026-05-15-local-sso-compose-fixture-and-browser-origin.md](2026-05-15-local-sso-compose-fixture-and-browser-origin.md) records the later local-compose config split and browser-origin fix that made this fixture reliable through both `localhost:8080/admin` and `localhost:3003/admin`.
+
 ## Context
 
 Issue #46 asks for a Docker-friendly SSO/OIDC tool that can serve as a realistic local IdP and eventually broker upstream providers. Issue #65 then depends on the final OIDC identity contract so SSO-backed users, teams, roles, and budgets can be reconciled from `gateway.yaml` without duplicate local identities.
@@ -40,7 +42,7 @@ Authentik bootstrap admin is configured through compose environment:
 
 ## Why Authentik
 
-Authentik is a strong fit for this repo because it has official Docker Compose setup, supports OAuth2/OIDC provider behavior, supports file-based blueprints for repeatable local configuration, and can broker social/federated sources later. That maps well to the manual test workflow needed before hardened OIDC is declared complete.
+Authentik is a strong fit for this repo because it has official Docker Compose setup, supports OAuth2/OIDC provider behavior, supports file-based blueprints for repeatable local configuration, and can broker social/federated sources later. That maps well to the manual test workflow for the gateway's OIDC authorization-code flow.
 
 Key evidence from current Authentik docs:
 
@@ -88,4 +90,4 @@ JIT behavior:
 2. Add discovery/JWKS caching if login latency or provider rate limits become a practical problem.
 3. Add group/claim-to-role mapping as a separate policy feature.
 4. Validate Okta manually as a benchmark provider after Authentik.
-5. Run `mise //docs:verify` before docs-only handoff, or `mise run lint` when docs ship with code changes.
+5. Run the docs check before docs-only handoff, or `mise run lint` when docs ship with code changes.

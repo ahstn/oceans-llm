@@ -18,6 +18,7 @@ pub use domain::{
     McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationPayloadRecord,
     McpToolInvocationQuery, McpToolInvocationRecord, McpToolInvocationStatus, McpToolPolicyResult,
     MembershipRole, ModelAccessMode, ModelPricingRecord, ModelRoute, Money4, NewApiKeyRecord,
+    OauthJitMembership, OauthJitPolicy, OauthLoginStateRecord, OauthProviderRecord,
     OidcJitMembership, OidcJitPolicy, OidcLoginStateRecord, OidcProviderRecord,
     OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
     OpenAiCompatRouteCompatibility, PasswordInvitationRecord, PricingCatalogCacheRecord,
@@ -28,13 +29,13 @@ pub use domain::{
     RequestTag, RequestTags, RequestToolCardinality, RequestToolCardinalityAverages,
     ResolvedModelPricing, RouteCompatibility, SYSTEM_BOOTSTRAP_ADMIN_EMAIL,
     SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SeedApiKey, SeedBudget, SeedModel, SeedModelRoute,
-    SeedOidcProvider, SeedProvider, SeedTeam, SeedUser, SeedUserMembership,
+    SeedOauthProvider, SeedOidcProvider, SeedProvider, SeedTeam, SeedUser, SeedUserMembership,
     ServiceAccountBudgetRecord, ServiceAccountRecord, ServiceAccountStatus,
     SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord,
     TeamBudgetRecord, TeamMembershipRecord, TeamRecord, UsageLeaderboardBucketRecord,
     UsageLeaderboardUserRecord, UsageLedgerRecord, UsagePricingStatus, UserBudgetRecord,
-    UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
-    budget_window_utc,
+    UserOauthAuthRecord, UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord,
+    UserStatus, budget_window_utc,
 };
 pub use error::{AuthError, GatewayError, ProviderError, RouteError, StoreError};
 pub use protocol::core::{

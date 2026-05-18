@@ -50,6 +50,7 @@ pub struct AdminIdentityPayload {
     pub users: Vec<AdminIdentityUserView>,
     pub teams: Vec<AdminTeamView>,
     pub oidc_providers: Vec<AdminOidcProviderView>,
+    pub oauth_providers: Vec<AdminOauthProviderView>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -79,6 +80,7 @@ pub struct AdminTeamsPayload {
     pub teams: Vec<AdminTeamManagementView>,
     pub users: Vec<AdminTeamAssignableUserView>,
     pub oidc_providers: Vec<AdminOidcProviderView>,
+    pub oauth_providers: Vec<AdminOauthProviderView>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -163,12 +165,30 @@ pub struct AdminOidcProviderView {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+pub struct AdminOauthProviderView {
+    pub id: String,
+    pub key: String,
+    pub label: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
 pub struct PublicOidcProvidersPayload {
     pub providers: Vec<PublicOidcProviderView>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct PublicOidcProviderView {
+    pub key: String,
+    pub label: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PublicOauthProvidersPayload {
+    pub providers: Vec<PublicOauthProviderView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PublicOauthProviderView {
     pub key: String,
     pub label: String,
 }
@@ -312,6 +332,11 @@ pub enum AdminOnboardingActionView {
         provider_key: String,
         provider_label: String,
     },
+    OauthSignIn {
+        sign_in_url: String,
+        provider_key: String,
+        provider_label: String,
+    },
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -323,6 +348,7 @@ pub struct CreateUserRequest {
     pub team_id: Option<String>,
     pub team_role: Option<String>,
     pub oidc_provider_key: Option<String>,
+    pub oauth_provider_key: Option<String>,
     #[serde(default)]
     pub tags: Vec<AdminEntityTagView>,
 }
@@ -354,6 +380,7 @@ pub struct UpdateUserRequest {
     pub team_id: Option<String>,
     pub team_role: Option<String>,
     pub oidc_provider_key: Option<String>,
+    pub oauth_provider_key: Option<String>,
     pub tags: Option<Vec<AdminEntityTagView>>,
 }
 
@@ -372,6 +399,11 @@ pub enum CreateUserResponse {
         expires_at: String,
     },
     OidcSignIn {
+        user: AdminIdentityUserView,
+        sign_in_url: String,
+        provider_label: String,
+    },
+    OauthSignIn {
         user: AdminIdentityUserView,
         sign_in_url: String,
         provider_label: String,
@@ -429,6 +461,20 @@ pub struct OidcStartQuery {
 
 #[derive(Debug, Deserialize, IntoParams)]
 pub struct OidcCallbackQuery {
+    pub code: Option<String>,
+    pub state: Option<String>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct OauthStartQuery {
+    pub provider_key: String,
+    pub login_hint: Option<String>,
+    pub redirect_to: Option<String>,
+}
+
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct OauthCallbackQuery {
     pub code: Option<String>,
     pub state: Option<String>,
     pub error: Option<String>,
@@ -954,6 +1000,9 @@ pub struct RequestLogPayloadView {
         crate::http::identity::list_public_oidc_providers,
         crate::http::identity::oidc_start,
         crate::http::identity::oidc_callback,
+        crate::http::identity::list_public_oauth_providers,
+        crate::http::identity::oauth_start,
+        crate::http::identity::oauth_callback_github,
         crate::http::spend::get_spend_report,
         crate::http::spend::list_spend_budgets,
         crate::http::spend::list_budget_alert_history,

@@ -27,9 +27,9 @@ auth:
           - openid
           - email
           - profile
-        enabled: false
+        enabled: true
         jit:
-          enabled: false
+          enabled: true
           global_role: platform_admin
           request_logging_enabled: true
           membership:

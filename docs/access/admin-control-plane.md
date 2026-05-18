@@ -1,6 +1,6 @@
 # Admin Control Plane
 
-`See also`: [Identity and Access](identity-and-access.md), [Service Accounts](service-accounts.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../operations/observability/mcp-invocations.md), [Agent Harness Usage](../operations/agent-harness-usage.md), [Admin API Contract Workflow](../reference/admin-api-contract-workflow.md), [End-to-End Contract Tests](../reference/e2e-contract-tests.md), [OIDC and SSO Status](oidc-and-sso-status.md)
+`See also`: [Identity and Access](identity-and-access.md), [Service Accounts](service-accounts.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../operations/observability/mcp-invocations.md), [Agent Harness Usage](../operations/agent-harness-usage.md), [Admin API Contract Workflow](../reference/admin-api-contract-workflow.md), [End-to-End Contract Tests](../reference/e2e-contract-tests.md), [OIDC and SSO](oidc-and-sso-status.md)
 
 This page describes what admins can actually do in the admin UI today.
 
@@ -101,7 +101,7 @@ Current limits:
 
 - owner memberships stay blocked from removal or transfer in this slice
 - auth-mode switching is limited to invited users
-- OIDC is still development-style
+- OIDC group or claim-to-role mapping is not part of the current admin contract
 
 ## Admin Auth and Session Behavior
 
@@ -165,7 +165,7 @@ Do not confuse this with provider credential auth such as Vertex `auth.mode: ser
 
 ## Current Gaps
 
-- OIDC still development-style:
+- OIDC claim mapping is outside the current admin contract:
   - [oidc-and-sso-status.md](oidc-and-sso-status.md)
 - Models capability detail still maturing:
   - [issue #27](https://github.com/ahstn/oceans-llm/issues/27)

@@ -39,12 +39,14 @@ impl PostgresStore {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn seed_from_inputs(
         &self,
         providers: &[gateway_core::SeedProvider],
         models: &[gateway_core::SeedModel],
         api_keys: &[gateway_core::SeedApiKey],
         oidc_providers: &[gateway_core::SeedOidcProvider],
+        oauth_providers: &[gateway_core::SeedOauthProvider],
         teams: &[gateway_core::SeedTeam],
         users: &[gateway_core::SeedUser],
     ) -> Result<(), StoreError> {
@@ -143,6 +145,67 @@ impl PostgresStore {
                     .membership
                     .as_ref()
                     .map(|membership| membership.role.as_str()),
+            )
+            .bind(if provider.jit.request_logging_enabled {
+                1_i64
+            } else {
+                0_i64
+            })
+            .bind(now_unix)
+            .execute(&self.pool)
+            .await
+            .map_err(to_query_error)?;
+        }
+
+        for provider in oauth_providers {
+            let scopes_json = serialize_json(&provider.scopes)?;
+            let oauth_provider_id = crate::seed::oauth_provider_uuid(&provider.provider_key);
+            sqlx::query(
+                r#"
+                INSERT INTO oauth_providers (
+                    oauth_provider_id, provider_key, provider_type, client_id,
+                    scopes_json, enabled, label, client_secret_ref, jit_enabled,
+                    jit_global_role, jit_team_key, jit_team_role,
+                    jit_request_logging_enabled, created_at, updated_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $14)
+                ON CONFLICT(provider_key) DO UPDATE SET
+                    provider_type = excluded.provider_type,
+                    client_id = excluded.client_id,
+                    scopes_json = excluded.scopes_json,
+                    enabled = excluded.enabled,
+                    label = excluded.label,
+                    client_secret_ref = excluded.client_secret_ref,
+                    jit_enabled = excluded.jit_enabled,
+                    jit_global_role = excluded.jit_global_role,
+                    jit_team_key = excluded.jit_team_key,
+                    jit_team_role = excluded.jit_team_role,
+                    jit_request_logging_enabled = excluded.jit_request_logging_enabled,
+                    updated_at = excluded.updated_at
+                "#,
+            )
+            .bind(oauth_provider_id)
+            .bind(provider.provider_key.as_str())
+            .bind(provider.provider_type.as_str())
+            .bind(provider.client_id.as_str())
+            .bind(scopes_json)
+            .bind(if provider.enabled { 1_i64 } else { 0_i64 })
+            .bind(provider.label.as_str())
+            .bind(provider.client_secret_ref.as_str())
+            .bind(if provider.jit.enabled { 1_i64 } else { 0_i64 })
+            .bind(provider.jit.global_role.as_str())
+            .bind(
+                provider
+                    .jit
+                    .membership
+                    .as_ref()
+                    .map(|membership| membership.team_key.clone()),
+            )
+            .bind(
+                provider
+                    .jit
+                    .membership
+                    .as_ref()
+                    .map(|membership| membership.role.as_str().to_string()),
             )
             .bind(if provider.jit.request_logging_enabled {
                 1_i64

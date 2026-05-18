@@ -532,6 +532,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/oauth/callback/github": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["oauth_callback_github"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/oauth/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_public_oauth_providers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/oauth/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["oauth_start"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/oidc/callback": {
         parameters: {
             query?: never;
@@ -673,6 +721,7 @@ export interface components {
             value: string;
         };
         AdminIdentityPayload: {
+            oauth_providers: components["schemas"]["AdminOauthProviderView"][];
             oidc_providers: components["schemas"]["AdminOidcProviderView"][];
             teams: components["schemas"]["AdminTeamView"][];
             users: components["schemas"]["AdminIdentityUserView"][];
@@ -740,6 +789,11 @@ export interface components {
             tags: string[];
             upstream_model?: string | null;
         };
+        AdminOauthProviderView: {
+            id: string;
+            key: string;
+            label: string;
+        };
         AdminOidcProviderView: {
             id: string;
             key: string;
@@ -754,6 +808,12 @@ export interface components {
         } | {
             /** @enum {string} */
             kind: "oidc_sign_in";
+            provider_key: string;
+            provider_label: string;
+            sign_in_url: string;
+        } | {
+            /** @enum {string} */
+            kind: "oauth_sign_in";
             provider_key: string;
             provider_label: string;
             sign_in_url: string;
@@ -808,6 +868,7 @@ export interface components {
             name: string;
         };
         AdminTeamsPayload: {
+            oauth_providers: components["schemas"]["AdminOauthProviderView"][];
             oidc_providers: components["schemas"]["AdminOidcProviderView"][];
             teams: components["schemas"]["AdminTeamManagementView"][];
             users: components["schemas"]["AdminTeamAssignableUserView"][];
@@ -899,6 +960,7 @@ export interface components {
             email: string;
             global_role: string;
             name: string;
+            oauth_provider_key?: string | null;
             oidc_provider_key?: string | null;
             tags?: components["schemas"]["AdminEntityTagView"][];
             team_id?: string | null;
@@ -913,6 +975,12 @@ export interface components {
         } | {
             /** @enum {string} */
             kind: "oidc_sign_in";
+            provider_label: string;
+            sign_in_url: string;
+            user: components["schemas"]["AdminIdentityUserView"];
+        } | {
+            /** @enum {string} */
+            kind: "oauth_sign_in";
             provider_label: string;
             sign_in_url: string;
             user: components["schemas"]["AdminIdentityUserView"];
@@ -934,6 +1002,7 @@ export interface components {
         };
         Envelope_AdminIdentityPayload: {
             data: {
+                oauth_providers: components["schemas"]["AdminOauthProviderView"][];
                 oidc_providers: components["schemas"]["AdminOidcProviderView"][];
                 teams: components["schemas"]["AdminTeamView"][];
                 users: components["schemas"]["AdminIdentityUserView"][];
@@ -986,6 +1055,7 @@ export interface components {
         };
         Envelope_AdminTeamsPayload: {
             data: {
+                oauth_providers: components["schemas"]["AdminOauthProviderView"][];
                 oidc_providers: components["schemas"]["AdminOidcProviderView"][];
                 teams: components["schemas"]["AdminTeamManagementView"][];
                 users: components["schemas"]["AdminTeamAssignableUserView"][];
@@ -1034,6 +1104,12 @@ export interface components {
             } | {
                 /** @enum {string} */
                 kind: "oidc_sign_in";
+                provider_label: string;
+                sign_in_url: string;
+                user: components["schemas"]["AdminIdentityUserView"];
+            } | {
+                /** @enum {string} */
+                kind: "oauth_sign_in";
                 provider_label: string;
                 sign_in_url: string;
                 user: components["schemas"]["AdminIdentityUserView"];
@@ -1120,6 +1196,12 @@ export interface components {
                 expires_at: string;
                 invite_url: string;
                 user_id: string;
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_PublicOauthProvidersPayload: {
+            data: {
+                providers: components["schemas"]["PublicOauthProviderView"][];
             };
             meta: components["schemas"]["ResponseMeta"];
         };
@@ -1347,6 +1429,13 @@ export interface components {
         };
         /** @enum {string} */
         ProviderIconKeyView: "anthropic" | "aws" | "openai" | "openrouter" | "vertexai";
+        PublicOauthProviderView: {
+            key: string;
+            label: string;
+        };
+        PublicOauthProvidersPayload: {
+            providers: components["schemas"]["PublicOauthProviderView"][];
+        };
         PublicOidcProviderView: {
             key: string;
             label: string;
@@ -1601,6 +1690,7 @@ export interface components {
         UpdateUserRequest: {
             auth_mode?: string | null;
             global_role: string;
+            oauth_provider_key?: string | null;
             oidc_provider_key?: string | null;
             tags?: components["schemas"]["AdminEntityTagView"][] | null;
             team_id?: string | null;
@@ -2601,6 +2691,69 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Envelope_IdentityActionStatus"];
                 };
+            };
+        };
+    };
+    oauth_callback_github: {
+        parameters: {
+            query?: {
+                code?: string | null;
+                state?: string | null;
+                error?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirect back into the admin UI after OAuth sign-in */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_public_oauth_providers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_PublicOauthProvidersPayload"];
+                };
+            };
+        };
+    };
+    oauth_start: {
+        parameters: {
+            query: {
+                provider_key: string;
+                login_hint?: string | null;
+                redirect_to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirect to the OAuth provider */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

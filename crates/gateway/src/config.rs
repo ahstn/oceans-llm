@@ -2,11 +2,12 @@ use std::{collections::BTreeMap, env, fs, path::Path};
 
 use anyhow::{Context, bail};
 use gateway_core::{
-    AuthMode, BudgetCadence, GlobalRole, MembershipRole, Money4, OidcJitMembership, OidcJitPolicy,
-    OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
-    OpenAiCompatRouteCompatibility, ProviderCapabilities, RequestLogRetentionWindow,
-    RouteCompatibility, SeedApiKey, SeedBudget, SeedModel, SeedModelRoute, SeedOidcProvider,
-    SeedProvider, SeedTeam, SeedUser, SeedUserMembership, parse_gateway_api_key,
+    AuthMode, BudgetCadence, GlobalRole, MembershipRole, Money4, OauthJitMembership,
+    OauthJitPolicy, OidcJitMembership, OidcJitPolicy, OpenAiCompatDeveloperRole,
+    OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
+    ProviderCapabilities, RequestLogRetentionWindow, RouteCompatibility, SeedApiKey, SeedBudget,
+    SeedModel, SeedModelRoute, SeedOauthProvider, SeedOidcProvider, SeedProvider, SeedTeam,
+    SeedUser, SeedUserMembership, parse_gateway_api_key,
 };
 use gateway_providers::{
     BedrockAuthConfig, BedrockProviderConfig, OpenAiCompatConfig, VertexAuthConfig,
@@ -65,6 +66,7 @@ impl GatewayConfig {
         self.budget_alerts.validate()?;
         self.request_logging.validate()?;
         self.auth.oidc.validate(&self.teams)?;
+        self.auth.oauth.validate(&self.teams)?;
 
         let provider_by_id = self
             .providers
@@ -321,6 +323,7 @@ impl GatewayConfig {
                 .context("bootstrap_admin.email must be a valid email address")?;
 
         let oidc_provider_keys = self.auth.oidc.provider_keys()?;
+        let oauth_provider_keys = self.auth.oauth.provider_keys()?;
         let mut user_emails = std::collections::BTreeSet::new();
         for user in &self.users {
             if user.name.trim().is_empty() {
@@ -334,9 +337,6 @@ impl GatewayConfig {
             }
             if !user_emails.insert(email_normalized.clone()) {
                 bail!("duplicate user email `{email_normalized}`");
-            }
-            if user.auth_mode == AuthMode::Oauth {
-                bail!("users config does not support auth_mode `oauth`");
             }
             match user.auth_mode {
                 AuthMode::Oidc => {
@@ -354,6 +354,12 @@ impl GatewayConfig {
                             user.email
                         );
                     }
+                    if user.oauth_provider_key.is_some() {
+                        bail!(
+                            "user `{}` cannot set oauth_provider_key unless auth_mode is `oauth`",
+                            user.email
+                        );
+                    }
                 }
                 AuthMode::Password => {
                     if user.oidc_provider_key.is_some() {
@@ -362,8 +368,35 @@ impl GatewayConfig {
                             user.email
                         );
                     }
+                    if user.oauth_provider_key.is_some() {
+                        bail!(
+                            "user `{}` cannot set oauth_provider_key unless auth_mode is `oauth`",
+                            user.email
+                        );
+                    }
                 }
-                AuthMode::Oauth => unreachable!(),
+                AuthMode::Oauth => {
+                    let Some(provider_key) = user.oauth_provider_key.as_deref() else {
+                        bail!(
+                            "user `{}` with auth_mode `oauth` requires oauth_provider_key",
+                            user.email
+                        );
+                    };
+                    let provider_key = normalize_config_oauth_provider_key(provider_key)
+                        .with_context(|| format!("user `{}` oauth_provider_key", user.email))?;
+                    if !oauth_provider_keys.contains(&provider_key) {
+                        bail!(
+                            "user `{}` references unknown oauth provider `{provider_key}`",
+                            user.email
+                        );
+                    }
+                    if user.oidc_provider_key.is_some() {
+                        bail!(
+                            "user `{}` cannot set oidc_provider_key unless auth_mode is `oidc`",
+                            user.email
+                        );
+                    }
+                }
             }
             if let Some(membership) = &user.membership {
                 let membership_team = normalize_config_team_key(&membership.team)
@@ -595,6 +628,15 @@ impl GatewayConfig {
             .collect()
     }
 
+    pub fn seed_oauth_providers(&self) -> anyhow::Result<Vec<SeedOauthProvider>> {
+        self.auth
+            .oauth
+            .providers
+            .iter()
+            .map(|provider| provider.seed_provider())
+            .collect()
+    }
+
     pub fn seed_teams(&self) -> anyhow::Result<Vec<SeedTeam>> {
         self.teams
             .iter()
@@ -627,6 +669,11 @@ impl GatewayConfig {
                         .oidc_provider_key
                         .as_deref()
                         .map(normalize_config_oidc_provider_key)
+                        .transpose()?,
+                    oauth_provider_key: user
+                        .oauth_provider_key
+                        .as_deref()
+                        .map(normalize_config_oauth_provider_key)
                         .transpose()?,
                     membership: match user.membership.as_ref() {
                         Some(membership) => Some(SeedUserMembership {
@@ -863,6 +910,8 @@ pub struct AuthConfig {
     pub bootstrap_admin: BootstrapAdminConfig,
     #[serde(default)]
     pub oidc: AuthOidcConfig,
+    #[serde(default)]
+    pub oauth: AuthOauthConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -871,6 +920,14 @@ pub struct AuthOidcConfig {
     pub public_base_url: Option<String>,
     #[serde(default)]
     pub providers: Vec<OidcProviderConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct AuthOauthConfig {
+    #[serde(default)]
+    pub public_base_url: Option<String>,
+    #[serde(default)]
+    pub providers: Vec<OauthProviderConfig>,
 }
 
 impl AuthOidcConfig {
@@ -964,6 +1021,106 @@ impl AuthOidcConfig {
     }
 }
 
+impl AuthOauthConfig {
+    fn provider_keys(&self) -> anyhow::Result<std::collections::BTreeSet<String>> {
+        self.providers
+            .iter()
+            .map(|provider| normalize_config_oauth_provider_key(&provider.key))
+            .collect()
+    }
+
+    fn validate(&self, teams: &[TeamConfig]) -> anyhow::Result<()> {
+        let _ = self.resolved_public_base_url()?;
+        let mut provider_keys = std::collections::BTreeSet::new();
+        let team_keys = teams
+            .iter()
+            .map(|team| normalize_config_team_key(&team.key))
+            .collect::<anyhow::Result<std::collections::BTreeSet<_>>>()?;
+
+        for provider in &self.providers {
+            let provider_key = normalize_config_oauth_provider_key(&provider.key)
+                .context("auth.oauth.providers[].key")?;
+            if !provider_keys.insert(provider_key.clone()) {
+                bail!("duplicate oauth provider key `{provider_key}`");
+            }
+            if provider.label.trim().is_empty() {
+                bail!("oauth provider `{provider_key}` label cannot be empty");
+            }
+            if provider.provider_type != "github" {
+                bail!(
+                    "oauth provider `{provider_key}` has unsupported provider_type `{}`",
+                    provider.provider_type
+                );
+            }
+            let client_id = if provider.enabled {
+                resolve_path_reference(&provider.client_id)
+                    .with_context(|| format!("oauth provider `{provider_key}` client_id"))?
+            } else {
+                provider.client_id.clone()
+            };
+            if client_id.trim().is_empty() {
+                bail!("oauth provider `{provider_key}` client_id cannot be empty");
+            }
+            let client_secret = if provider.enabled {
+                resolve_secret_reference(&provider.client_secret)
+                    .with_context(|| format!("oauth provider `{provider_key}` client_secret"))?
+            } else {
+                provider.client_secret.clone()
+            };
+            if client_secret.trim().is_empty() {
+                bail!("oauth provider `{provider_key}` client_secret cannot be empty");
+            }
+            if provider.scopes.is_empty() {
+                bail!("oauth provider `{provider_key}` scopes cannot be empty");
+            }
+            for scope in &provider.scopes {
+                if scope.trim().is_empty() || scope.chars().any(char::is_whitespace) {
+                    bail!("oauth provider `{provider_key}` has invalid scope `{scope}`");
+                }
+            }
+            if !provider.scopes.iter().any(|scope| scope == "user:email") {
+                bail!("oauth provider `{provider_key}` scopes must include `user:email`");
+            }
+            if let Some(membership) = provider.jit.membership.as_ref() {
+                let team_key = normalize_config_team_key(&membership.team)
+                    .with_context(|| format!("oauth provider `{provider_key}` jit team"))?;
+                if !team_keys.contains(&team_key) {
+                    bail!(
+                        "oauth provider `{provider_key}` jit references unknown team `{team_key}`"
+                    );
+                }
+                if membership.role == MembershipRole::Owner {
+                    bail!("oauth provider `{provider_key}` jit cannot assign role `owner`");
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn resolved_public_base_url(&self) -> anyhow::Result<Option<String>> {
+        let Some(raw_url) = self.public_base_url.as_deref() else {
+            return Ok(None);
+        };
+        let resolved_url =
+            resolve_secret_reference(raw_url).context("auth.oauth.public_base_url")?;
+        let trimmed = resolved_url.trim().trim_end_matches('/').to_string();
+        if trimmed.is_empty() {
+            bail!("auth.oauth.public_base_url cannot be empty");
+        }
+        let parsed_url =
+            url::Url::parse(&trimmed).context("auth.oauth.public_base_url is invalid")?;
+        match parsed_url.scheme() {
+            "http" | "https" => {}
+            scheme => bail!("auth.oauth.public_base_url scheme `{scheme}` is not supported"),
+        }
+        if parsed_url.host().is_none() {
+            bail!("auth.oauth.public_base_url must include a host");
+        }
+        Ok(Some(trimmed))
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct OidcProviderConfig {
     pub key: String,
@@ -993,6 +1150,47 @@ impl OidcProviderConfig {
             provider_key,
             issuer_url: self.issuer_url.trim().to_string(),
             client_id: self.client_id.trim().to_string(),
+            client_secret_ref: self.client_secret.clone(),
+            scopes: self.scopes.clone(),
+            enabled: self.enabled,
+            jit: self.jit.seed_policy()?,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct OauthProviderConfig {
+    pub key: String,
+    #[serde(default)]
+    pub label: String,
+    #[serde(default = "default_oauth_provider_type")]
+    pub provider_type: String,
+    pub client_id: String,
+    pub client_secret: String,
+    #[serde(default = "default_github_oauth_scopes")]
+    pub scopes: Vec<String>,
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub jit: OauthJitConfig,
+}
+
+impl OauthProviderConfig {
+    fn seed_provider(&self) -> anyhow::Result<SeedOauthProvider> {
+        let provider_key = normalize_config_oauth_provider_key(&self.key)?;
+        Ok(SeedOauthProvider {
+            provider_type: self.provider_type.trim().to_string(),
+            label: if self.label.trim().is_empty() {
+                provider_key.clone()
+            } else {
+                self.label.trim().to_string()
+            },
+            provider_key,
+            client_id: if self.enabled {
+                resolve_path_reference(&self.client_id)?.trim().to_string()
+            } else {
+                self.client_id.trim().to_string()
+            },
             client_secret_ref: self.client_secret.clone(),
             scopes: self.scopes.clone(),
             enabled: self.enabled,
@@ -1046,6 +1244,55 @@ impl OidcJitConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct OidcJitMembershipConfig {
+    pub team: String,
+    pub role: MembershipRole,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct OauthJitConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_user_global_role")]
+    pub global_role: GlobalRole,
+    #[serde(default)]
+    pub membership: Option<OauthJitMembershipConfig>,
+    #[serde(default = "default_request_logging_enabled")]
+    pub request_logging_enabled: bool,
+}
+
+impl Default for OauthJitConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            global_role: GlobalRole::User,
+            membership: None,
+            request_logging_enabled: true,
+        }
+    }
+}
+
+impl OauthJitConfig {
+    fn seed_policy(&self) -> anyhow::Result<OauthJitPolicy> {
+        Ok(OauthJitPolicy {
+            enabled: self.enabled,
+            global_role: self.global_role,
+            membership: self
+                .membership
+                .as_ref()
+                .map(|membership| {
+                    Ok::<OauthJitMembership, anyhow::Error>(OauthJitMembership {
+                        team_key: normalize_config_team_key(&membership.team)?,
+                        role: membership.role,
+                    })
+                })
+                .transpose()?,
+            request_logging_enabled: self.request_logging_enabled,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct OauthJitMembershipConfig {
     pub team: String,
     pub role: MembershipRole,
 }
@@ -1329,6 +1576,8 @@ pub struct UserConfig {
     pub request_logging_enabled: bool,
     #[serde(default)]
     pub oidc_provider_key: Option<String>,
+    #[serde(default)]
+    pub oauth_provider_key: Option<String>,
     #[serde(default)]
     pub membership: Option<UserMembershipConfig>,
     #[serde(default)]
@@ -1717,6 +1966,14 @@ fn normalize_config_oidc_provider_key(provider_key: &str) -> anyhow::Result<Stri
     Ok(normalized)
 }
 
+fn normalize_config_oauth_provider_key(provider_key: &str) -> anyhow::Result<String> {
+    let normalized = provider_key.trim().to_string();
+    if normalized.is_empty() {
+        bail!("cannot be empty");
+    }
+    Ok(normalized)
+}
+
 fn validate_provider_display_config(
     provider_id: &str,
     display: Option<&ProviderDisplayConfig>,
@@ -1794,6 +2051,14 @@ fn default_oidc_scopes() -> Vec<String> {
         "email".to_string(),
         "profile".to_string(),
     ]
+}
+
+fn default_oauth_provider_type() -> String {
+    "github".to_string()
+}
+
+fn default_github_oauth_scopes() -> Vec<String> {
+    vec!["read:user".to_string(), "user:email".to_string()]
 }
 
 const fn default_request_log_request_max_bytes() -> usize {
@@ -2947,6 +3212,90 @@ auth:
         );
 
         GatewayConfig::from_path(&config_path).expect_err("config should fail");
+    }
+
+    #[test]
+    fn resolves_enabled_oauth_client_id_env_reference() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        unsafe {
+            env::set_var("OCEANS_TEST_GITHUB_CLIENT_ID", "github-client-id");
+        }
+
+        write_config(
+            &config_path,
+            r#"
+auth:
+  oauth:
+    providers:
+      - key: github
+        label: GitHub
+        provider_type: github
+        client_id: env.OCEANS_TEST_GITHUB_CLIENT_ID
+        client_secret: literal.secret
+        scopes: [read:user, user:email]
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let oauth_providers = config.seed_oauth_providers().expect("seed oauth providers");
+        assert_eq!(oauth_providers[0].client_id, "github-client-id");
+    }
+
+    #[test]
+    fn disabled_oauth_provider_allows_unset_secret_references() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        unsafe {
+            env::remove_var("OCEANS_TEST_MISSING_GITHUB_CLIENT_ID");
+            env::remove_var("OCEANS_TEST_MISSING_GITHUB_CLIENT_SECRET");
+        }
+
+        write_config(
+            &config_path,
+            r#"
+auth:
+  oauth:
+    providers:
+      - key: github
+        label: GitHub
+        provider_type: github
+        client_id: env.OCEANS_TEST_MISSING_GITHUB_CLIENT_ID
+        client_secret: env.OCEANS_TEST_MISSING_GITHUB_CLIENT_SECRET
+        scopes: [read:user, user:email]
+        enabled: false
+"#,
+        );
+
+        GatewayConfig::from_path(&config_path).expect("disabled provider should parse");
+    }
+
+    #[test]
+    fn rejects_github_oauth_provider_without_email_scope() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+auth:
+  oauth:
+    providers:
+      - key: github
+        label: GitHub
+        provider_type: github
+        client_id: github-client-id
+        client_secret: literal.secret
+        scopes: [read:user]
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("must include `user:email`"),
+            "unexpected error: {error_text}"
+        );
     }
 
     #[test]

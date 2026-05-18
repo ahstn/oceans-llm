@@ -178,6 +178,8 @@ pub(super) fn decode_identity_user_record(
         membership_role,
         oidc_provider_id: row.get(16).map_err(to_query_error)?,
         oidc_provider_key: row.get(17).map_err(to_query_error)?,
+        oauth_provider_id: row.get(18).map_err(to_query_error)?,
+        oauth_provider_key: row.get(19).map_err(to_query_error)?,
     })
 }
 
@@ -323,6 +325,61 @@ pub(super) fn decode_oidc_provider_record(
     })
 }
 
+pub(super) fn decode_oauth_provider_record(
+    row: &libsql::Row,
+) -> Result<OauthProviderRecord, StoreError> {
+    let scopes_json: String = row.get(4).map_err(to_query_error)?;
+    let enabled: i64 = row.get(5).map_err(to_query_error)?;
+    let jit_enabled: i64 = row.get(8).map_err(to_query_error)?;
+    let jit_global_role: String = row.get(9).map_err(to_query_error)?;
+    let jit_team_key: Option<String> = row.get(10).map_err(to_query_error)?;
+    let jit_team_role: Option<String> = row.get(11).map_err(to_query_error)?;
+    let jit_request_logging_enabled: i64 = row.get(12).map_err(to_query_error)?;
+    let created_at: i64 = row.get(13).map_err(to_query_error)?;
+    let updated_at: i64 = row.get(14).map_err(to_query_error)?;
+    let provider_key: String = row.get(1).map_err(to_query_error)?;
+    let label: Option<String> = row.get(6).map_err(to_query_error)?;
+
+    Ok(OauthProviderRecord {
+        oauth_provider_id: row.get(0).map_err(to_query_error)?,
+        provider_key: provider_key.clone(),
+        provider_type: row.get(2).map_err(to_query_error)?,
+        label: label
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| provider_key.clone()),
+        client_id: row.get(3).map_err(to_query_error)?,
+        client_secret_ref: row.get(7).map_err(to_query_error)?,
+        scopes: serde_json::from_str(&scopes_json)
+            .map_err(|error| StoreError::Serialization(error.to_string()))?,
+        enabled: enabled == 1,
+        jit: OauthJitPolicy {
+            enabled: jit_enabled == 1,
+            global_role: GlobalRole::from_db(&jit_global_role).ok_or_else(|| {
+                StoreError::Serialization(format!("unknown global role `{jit_global_role}`"))
+            })?,
+            membership: match (jit_team_key, jit_team_role) {
+                (Some(team_key), Some(role)) => Some(OauthJitMembership {
+                    team_key,
+                    role: MembershipRole::from_db(&role).ok_or_else(|| {
+                        StoreError::Serialization(format!("unknown membership role `{role}`"))
+                    })?,
+                }),
+                (None, None) => None,
+                (Some(_), None) | (None, Some(_)) => {
+                    return Err(StoreError::Serialization(
+                        "invalid oauth jit membership: team key and role must both be set"
+                            .to_string(),
+                    ));
+                }
+            },
+            request_logging_enabled: jit_request_logging_enabled == 1,
+        },
+        created_at: unix_to_datetime(created_at)?,
+        updated_at: unix_to_datetime(updated_at)?,
+    })
+}
+
 pub(super) fn decode_oidc_login_state_record(
     row: &libsql::Row,
 ) -> Result<OidcLoginStateRecord, StoreError> {
@@ -336,6 +393,24 @@ pub(super) fn decode_oidc_login_state_record(
         pkce_verifier: row.get(3).map_err(to_query_error)?,
         redirect_to: row.get(4).map_err(to_query_error)?,
         login_hint: row.get(5).map_err(to_query_error)?,
+        expires_at: unix_to_datetime(expires_at)?,
+        consumed_at: consumed_at.map(unix_to_datetime).transpose()?,
+        created_at: unix_to_datetime(created_at)?,
+    })
+}
+
+pub(super) fn decode_oauth_login_state_record(
+    row: &libsql::Row,
+) -> Result<OauthLoginStateRecord, StoreError> {
+    let expires_at: i64 = row.get(5).map_err(to_query_error)?;
+    let consumed_at: Option<i64> = row.get(6).map_err(to_query_error)?;
+    let created_at: i64 = row.get(7).map_err(to_query_error)?;
+    Ok(OauthLoginStateRecord {
+        state_hash: row.get(0).map_err(to_query_error)?,
+        oauth_provider_id: row.get(1).map_err(to_query_error)?,
+        pkce_verifier: row.get(2).map_err(to_query_error)?,
+        redirect_to: row.get(3).map_err(to_query_error)?,
+        login_hint: row.get(4).map_err(to_query_error)?,
         expires_at: unix_to_datetime(expires_at)?,
         consumed_at: consumed_at.map(unix_to_datetime).transpose()?,
         created_at: unix_to_datetime(created_at)?,
@@ -393,6 +468,21 @@ pub(super) fn decode_user_oidc_auth_record(
     Ok(UserOidcAuthRecord {
         user_id: parse_uuid(&user_id)?,
         oidc_provider_id: row.get(1).map_err(to_query_error)?,
+        subject: row.get(2).map_err(to_query_error)?,
+        email_claim: row.get(3).map_err(to_query_error)?,
+        created_at: unix_to_datetime(created_at)?,
+    })
+}
+
+pub(super) fn decode_user_oauth_auth_record(
+    row: &libsql::Row,
+) -> Result<UserOauthAuthRecord, StoreError> {
+    let user_id: String = row.get(0).map_err(to_query_error)?;
+    let created_at: i64 = row.get(4).map_err(to_query_error)?;
+
+    Ok(UserOauthAuthRecord {
+        user_id: parse_uuid(&user_id)?,
+        oauth_provider_id: row.get(1).map_err(to_query_error)?,
         subject: row.get(2).map_err(to_query_error)?,
         email_claim: row.get(3).map_err(to_query_error)?,
         created_at: unix_to_datetime(created_at)?,

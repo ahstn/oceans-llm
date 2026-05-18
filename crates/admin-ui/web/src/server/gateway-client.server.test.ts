@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   forwardRequestHeadersFromRequest,
+  resolveBrowserGatewayOriginFromRequest,
   resolveGatewayOriginFromRequest,
 } from '@/server/gateway-client.server'
 
@@ -31,6 +32,24 @@ describe('resolveGatewayOriginFromRequest', () => {
     })
 
     expect(resolveGatewayOriginFromRequest(request)).toBe('http://127.0.0.1:8080')
+  })
+})
+
+describe('resolveBrowserGatewayOriginFromRequest', () => {
+  it('targets the gateway port when the UI is accessed through the Docker admin port', () => {
+    const request = new Request('http://localhost:3003/admin/login', {
+      headers: { host: 'localhost:3003' },
+    })
+
+    expect(resolveBrowserGatewayOriginFromRequest(request)).toBe('http://localhost:8080')
+  })
+
+  it('keeps the gateway origin when the UI is accessed through the gateway proxy', () => {
+    const request = new Request('http://localhost:8080/admin/login', {
+      headers: { host: 'localhost:8080' },
+    })
+
+    expect(resolveBrowserGatewayOriginFromRequest(request)).toBe('http://localhost:8080')
   })
 })
 

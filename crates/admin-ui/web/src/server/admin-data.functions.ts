@@ -26,6 +26,7 @@ import {
   listSpendBudgets,
   listTeams,
   listUsers,
+  listOauthProviders,
   listOidcProviders,
   loginWithPassword,
   logoutCurrentSession,
@@ -40,6 +41,7 @@ import {
   updateTeam,
   updateUser,
 } from '@/server/admin-data.server'
+import { resolveBrowserGatewayOrigin } from '@/server/gateway-client.server'
 
 export const getApiKeys = createServerFn({ method: 'GET' }).handler(async () => {
   return listApiKeys()
@@ -263,6 +265,18 @@ export const getUsers = createServerFn({ method: 'GET' }).handler(async () => {
 
 export const getOidcProviders = createServerFn({ method: 'GET' }).handler(async () => {
   return listOidcProviders()
+})
+
+export const getOauthProviders = createServerFn({ method: 'GET' }).handler(async () => {
+  return listOauthProviders()
+})
+
+export const getOidcLoginOptions = createServerFn({ method: 'GET' }).handler(async () => {
+  return {
+    oidcProviders: await listOidcProviders(),
+    oauthProviders: await listOauthProviders(),
+    startOrigin: resolveBrowserGatewayOrigin(),
+  }
 })
 
 export const createIdentityUser = createServerFn({ method: 'POST' }).handler(

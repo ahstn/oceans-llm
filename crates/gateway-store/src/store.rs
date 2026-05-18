@@ -4,11 +4,12 @@ use async_trait::async_trait;
 use gateway_core::{
     AdminApiKeyRepository, AdminIdentityRepository, ApiKeyRepository, AuthMode,
     BudgetAlertRepository, BudgetRepository, GlobalRole, IdentityRepository, IdentityUserRecord,
-    McpToolInvocationRepository, MembershipRole, ModelRepository, OidcLoginStateRecord,
-    OidcProviderRecord, PasswordInvitationRecord, PricingCatalogRepository, ProviderRepository,
-    RequestLogRepository, RequestTag, SeedApiKey, SeedModel, SeedOidcProvider, SeedProvider,
-    SeedTeam, SeedUser, StoreError, StoreHealth, TeamMembershipRecord, TeamRecord,
-    UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
+    McpToolInvocationRepository, MembershipRole, ModelRepository, OauthLoginStateRecord,
+    OauthProviderRecord, OidcLoginStateRecord, OidcProviderRecord, PasswordInvitationRecord,
+    PricingCatalogRepository, ProviderRepository, RequestLogRepository, RequestTag, SeedApiKey,
+    SeedModel, SeedOauthProvider, SeedOidcProvider, SeedProvider, SeedTeam, SeedUser, StoreError,
+    StoreHealth, TeamMembershipRecord, TeamRecord, UserOauthAuthRecord, UserOidcAuthRecord,
+    UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -31,6 +32,7 @@ impl StoreConnectionOptions {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 #[async_trait]
 pub trait GatewayStore:
     ApiKeyRepository
@@ -97,6 +99,20 @@ pub trait GatewayStore:
         state_hash: &str,
         consumed_at: OffsetDateTime,
     ) -> Result<Option<OidcLoginStateRecord>, StoreError>;
+    async fn list_enabled_oauth_providers(&self) -> Result<Vec<OauthProviderRecord>, StoreError>;
+    async fn get_enabled_oauth_provider_by_key(
+        &self,
+        provider_key: &str,
+    ) -> Result<Option<OauthProviderRecord>, StoreError>;
+    async fn create_oauth_login_state(
+        &self,
+        state: &OauthLoginStateRecord,
+    ) -> Result<(), StoreError>;
+    async fn consume_oauth_login_state(
+        &self,
+        state_hash: &str,
+        consumed_at: OffsetDateTime,
+    ) -> Result<Option<OauthLoginStateRecord>, StoreError>;
     async fn get_user_by_email_normalized(
         &self,
         email_normalized: &str,
@@ -273,16 +289,51 @@ pub trait GatewayStore:
         created_at: OffsetDateTime,
     ) -> Result<(), StoreError>;
     async fn clear_user_oidc_link(&self, user_id: Uuid) -> Result<(), StoreError>;
+    async fn get_user_oauth_auth(
+        &self,
+        oauth_provider_id: &str,
+        subject: &str,
+    ) -> Result<Option<UserOauthAuthRecord>, StoreError>;
+    async fn get_user_oauth_auth_by_user(
+        &self,
+        user_id: Uuid,
+        oauth_provider_id: &str,
+    ) -> Result<Option<UserOauthAuthRecord>, StoreError>;
+    async fn create_user_oauth_auth(
+        &self,
+        user_id: Uuid,
+        oauth_provider_id: &str,
+        subject: &str,
+        email_claim: Option<&str>,
+        created_at: OffsetDateTime,
+    ) -> Result<(), StoreError>;
+    async fn set_user_oauth_link(
+        &self,
+        user_id: Uuid,
+        oauth_provider_id: &str,
+        created_at: OffsetDateTime,
+    ) -> Result<(), StoreError>;
+    async fn clear_user_oauth_link(&self, user_id: Uuid) -> Result<(), StoreError>;
     async fn delete_user_password_auth(&self, user_id: Uuid) -> Result<(), StoreError>;
     async fn delete_user_oidc_auth(
         &self,
         user_id: Uuid,
         oidc_provider_id: &str,
     ) -> Result<(), StoreError>;
+    async fn delete_user_oauth_auth(
+        &self,
+        user_id: Uuid,
+        oauth_provider_id: &str,
+    ) -> Result<(), StoreError>;
     async fn find_invited_oidc_user(
         &self,
         email_normalized: &str,
         oidc_provider_id: &str,
+    ) -> Result<Option<UserRecord>, StoreError>;
+    async fn find_invited_oauth_user(
+        &self,
+        email_normalized: &str,
+        oauth_provider_id: &str,
     ) -> Result<Option<UserRecord>, StoreError>;
     async fn seed_update_identity_user_profile(
         &self,
@@ -299,6 +350,7 @@ pub trait GatewayStore:
         models: &[SeedModel],
         api_keys: &[SeedApiKey],
         oidc_providers: &[SeedOidcProvider],
+        oauth_providers: &[SeedOauthProvider],
         teams: &[SeedTeam],
         users: &[SeedUser],
     ) -> Result<(), StoreError>;
@@ -1074,6 +1126,32 @@ impl GatewayStore for AnyStore {
         dispatch_store!(self, consume_oidc_login_state(state_hash, consumed_at))
     }
 
+    async fn list_enabled_oauth_providers(&self) -> Result<Vec<OauthProviderRecord>, StoreError> {
+        dispatch_store!(self, list_enabled_oauth_providers())
+    }
+
+    async fn get_enabled_oauth_provider_by_key(
+        &self,
+        provider_key: &str,
+    ) -> Result<Option<OauthProviderRecord>, StoreError> {
+        dispatch_store!(self, get_enabled_oauth_provider_by_key(provider_key))
+    }
+
+    async fn create_oauth_login_state(
+        &self,
+        state: &OauthLoginStateRecord,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(self, create_oauth_login_state(state))
+    }
+
+    async fn consume_oauth_login_state(
+        &self,
+        state_hash: &str,
+        consumed_at: OffsetDateTime,
+    ) -> Result<Option<OauthLoginStateRecord>, StoreError> {
+        dispatch_store!(self, consume_oauth_login_state(state_hash, consumed_at))
+    }
+
     async fn get_user_by_email_normalized(
         &self,
         email_normalized: &str,
@@ -1433,6 +1511,55 @@ impl GatewayStore for AnyStore {
         dispatch_store!(self, clear_user_oidc_link(user_id))
     }
 
+    async fn get_user_oauth_auth(
+        &self,
+        oauth_provider_id: &str,
+        subject: &str,
+    ) -> Result<Option<UserOauthAuthRecord>, StoreError> {
+        dispatch_store!(self, get_user_oauth_auth(oauth_provider_id, subject))
+    }
+
+    async fn get_user_oauth_auth_by_user(
+        &self,
+        user_id: Uuid,
+        oauth_provider_id: &str,
+    ) -> Result<Option<UserOauthAuthRecord>, StoreError> {
+        dispatch_store!(
+            self,
+            get_user_oauth_auth_by_user(user_id, oauth_provider_id)
+        )
+    }
+
+    async fn create_user_oauth_auth(
+        &self,
+        user_id: Uuid,
+        oauth_provider_id: &str,
+        subject: &str,
+        email_claim: Option<&str>,
+        created_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(
+            self,
+            create_user_oauth_auth(user_id, oauth_provider_id, subject, email_claim, created_at)
+        )
+    }
+
+    async fn set_user_oauth_link(
+        &self,
+        user_id: Uuid,
+        oauth_provider_id: &str,
+        created_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(
+            self,
+            set_user_oauth_link(user_id, oauth_provider_id, created_at)
+        )
+    }
+
+    async fn clear_user_oauth_link(&self, user_id: Uuid) -> Result<(), StoreError> {
+        dispatch_store!(self, clear_user_oauth_link(user_id))
+    }
+
     async fn delete_user_password_auth(&self, user_id: Uuid) -> Result<(), StoreError> {
         dispatch_store!(self, delete_user_password_auth(user_id))
     }
@@ -1445,6 +1572,14 @@ impl GatewayStore for AnyStore {
         dispatch_store!(self, delete_user_oidc_auth(user_id, oidc_provider_id))
     }
 
+    async fn delete_user_oauth_auth(
+        &self,
+        user_id: Uuid,
+        oauth_provider_id: &str,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(self, delete_user_oauth_auth(user_id, oauth_provider_id))
+    }
+
     async fn find_invited_oidc_user(
         &self,
         email_normalized: &str,
@@ -1453,6 +1588,17 @@ impl GatewayStore for AnyStore {
         dispatch_store!(
             self,
             find_invited_oidc_user(email_normalized, oidc_provider_id)
+        )
+    }
+
+    async fn find_invited_oauth_user(
+        &self,
+        email_normalized: &str,
+        oauth_provider_id: &str,
+    ) -> Result<Option<UserRecord>, StoreError> {
+        dispatch_store!(
+            self,
+            find_invited_oauth_user(email_normalized, oauth_provider_id)
         )
     }
 
@@ -1484,12 +1630,21 @@ impl GatewayStore for AnyStore {
         models: &[SeedModel],
         api_keys: &[SeedApiKey],
         oidc_providers: &[SeedOidcProvider],
+        oauth_providers: &[SeedOauthProvider],
         teams: &[SeedTeam],
         users: &[SeedUser],
     ) -> Result<(), StoreError> {
         dispatch_store!(
             self,
-            seed_from_inputs(providers, models, api_keys, oidc_providers, teams, users)
+            seed_from_inputs(
+                providers,
+                models,
+                api_keys,
+                oidc_providers,
+                oauth_providers,
+                teams,
+                users
+            )
         )
     }
 }

@@ -183,7 +183,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[])
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[], &[])
             .await
             .expect("seed");
         let api_key = store
@@ -337,7 +337,7 @@ mod tests {
             allowed_models: vec!["fast".to_string(), "reasoning".to_string()],
         }];
         store
-            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[])
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[], &[])
             .await
             .expect("seed");
 
@@ -1403,12 +1403,12 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[])
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[], &[])
             .await
             .expect("seed #1");
 
         store
-            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[])
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[], &[])
             .await
             .expect("seed #2 idempotent");
 
@@ -1621,31 +1621,24 @@ mod tests {
             .await
             .expect("store");
         store
-            .seed_from_inputs(
-                &[SeedProvider {
+            .seed_from_inputs(&[SeedProvider {
                     provider_key: "openai-prod".to_string(),
                     provider_type: "openai_compat".to_string(),
                     config: json!({}),
                     secrets: None,
-                }],
-                &[SeedModel {
+                }], &[SeedModel {
                     model_key: "fast".to_string(),
                     alias_target_model_key: None,
                     description: None,
                     tags: Vec::new(),
                     rank: 10,
                     routes: Vec::new(),
-                }],
-                &[SeedApiKey {
+                }], &[SeedApiKey {
                     name: "dev".to_string(),
                     public_id: "dev123".to_string(),
                     secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
                     allowed_models: vec!["fast".to_string()],
-                }],
-                &[],
-                &[],
-                &[],
-            )
+                }], &[], &[], &[], &[])
             .await
             .expect("seed");
         let api_key = store
@@ -1818,31 +1811,24 @@ mod tests {
             .await
             .expect("postgres store");
         store
-            .seed_from_inputs(
-                &[SeedProvider {
+            .seed_from_inputs(&[SeedProvider {
                     provider_key: "openai-prod".to_string(),
                     provider_type: "openai_compat".to_string(),
                     config: json!({}),
                     secrets: None,
-                }],
-                &[SeedModel {
+                }], &[SeedModel {
                     model_key: "fast".to_string(),
                     alias_target_model_key: None,
                     description: None,
                     tags: Vec::new(),
                     rank: 10,
                     routes: Vec::new(),
-                }],
-                &[SeedApiKey {
+                }], &[SeedApiKey {
                     name: "dev".to_string(),
                     public_id: "dev123".to_string(),
                     secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
                     allowed_models: vec!["fast".to_string()],
-                }],
-                &[],
-                &[],
-                &[],
-            )
+                }], &[], &[], &[], &[])
             .await
             .expect("seed");
         let api_key = store
@@ -2046,7 +2032,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[])
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[], &[])
             .await
             .expect("seed");
 
@@ -3096,6 +3082,7 @@ mod tests {
             auth_mode: AuthMode::Password,
             request_logging_enabled: false,
             oidc_provider_key: None,
+            oauth_provider_key: None,
             membership: Some(SeedUserMembership {
                 team_key: "platform".to_string(),
                 role: MembershipRole::Admin,
@@ -3109,7 +3096,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &initial_teams, &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &initial_teams, &initial_users)
             .await
             .expect("initial seed");
 
@@ -3179,6 +3166,7 @@ mod tests {
             auth_mode: AuthMode::Oidc,
             request_logging_enabled: true,
             oidc_provider_key: Some("okta".to_string()),
+            oauth_provider_key: None,
             membership: Some(SeedUserMembership {
                 team_key: "ops".to_string(),
                 role: MembershipRole::Member,
@@ -3187,11 +3175,11 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &updated_teams, &updated_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &updated_teams, &updated_users)
             .await
             .expect("updated seed");
         store
-            .seed_from_inputs(&[], &[], &[], &[], &updated_teams, &updated_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &updated_teams, &updated_users)
             .await
             .expect("updated seed idempotent");
 
@@ -3295,12 +3283,13 @@ mod tests {
             auth_mode: AuthMode::Password,
             request_logging_enabled: false,
             oidc_provider_key: None,
+            oauth_provider_key: None,
             membership: None,
             budget: None,
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &initial_teams, &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &initial_teams, &initial_users)
             .await
             .expect("initial seed");
 
@@ -3330,6 +3319,7 @@ mod tests {
             auth_mode: AuthMode::Oidc,
             request_logging_enabled: true,
             oidc_provider_key: Some("okta".to_string()),
+            oauth_provider_key: None,
             membership: None,
             budget: None,
         }];
@@ -3340,7 +3330,7 @@ mod tests {
         }];
 
         let error = store
-            .seed_from_inputs(&[], &[], &[], &[], &invalid_teams, &invalid_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &invalid_teams, &invalid_users)
             .await
             .expect_err("seed should fail");
         assert!(
@@ -3394,12 +3384,13 @@ mod tests {
             auth_mode: AuthMode::Oidc,
             request_logging_enabled: false,
             oidc_provider_key: Some("okta".to_string()),
+            oauth_provider_key: None,
             membership: None,
             budget: None,
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &initial_users)
             .await
             .expect("initial seed");
 
@@ -3431,12 +3422,13 @@ mod tests {
             auth_mode: AuthMode::Oidc,
             request_logging_enabled: true,
             oidc_provider_key: Some("auth0".to_string()),
+            oauth_provider_key: None,
             membership: None,
             budget: None,
         }];
 
         let error = store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &invalid_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &invalid_users)
             .await
             .expect_err("seed should fail");
         assert!(
@@ -3497,12 +3489,13 @@ mod tests {
             auth_mode: AuthMode::Password,
             request_logging_enabled: false,
             oidc_provider_key: None,
+            oauth_provider_key: None,
             membership: None,
             budget: None,
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &initial_users)
             .await
             .expect("initial seed");
 
@@ -3524,12 +3517,13 @@ mod tests {
             auth_mode: AuthMode::Password,
             request_logging_enabled: true,
             oidc_provider_key: None,
+            oauth_provider_key: None,
             membership: None,
             budget: None,
         }];
 
         let error = store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &invalid_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &invalid_users)
             .await
             .expect_err("seed should fail");
         assert!(
@@ -3593,6 +3587,7 @@ mod tests {
             auth_mode: AuthMode::Password,
             request_logging_enabled: false,
             oidc_provider_key: None,
+            oauth_provider_key: None,
             membership: Some(SeedUserMembership {
                 team_key: "platform".to_string(),
                 role: MembershipRole::Admin,
@@ -3606,7 +3601,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &initial_teams, &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &initial_teams, &initial_users)
             .await
             .expect("initial seed");
 
@@ -3676,6 +3671,7 @@ mod tests {
             auth_mode: AuthMode::Oidc,
             request_logging_enabled: true,
             oidc_provider_key: Some("okta".to_string()),
+            oauth_provider_key: None,
             membership: Some(SeedUserMembership {
                 team_key: "ops".to_string(),
                 role: MembershipRole::Member,
@@ -3684,11 +3680,11 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &updated_teams, &updated_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &updated_teams, &updated_users)
             .await
             .expect("updated seed");
         store
-            .seed_from_inputs(&[], &[], &[], &[], &updated_teams, &updated_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &updated_teams, &updated_users)
             .await
             .expect("updated seed idempotent");
 
@@ -3806,12 +3802,13 @@ mod tests {
             auth_mode: AuthMode::Password,
             request_logging_enabled: false,
             oidc_provider_key: None,
+            oauth_provider_key: None,
             membership: None,
             budget: None,
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &initial_teams, &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &initial_teams, &initial_users)
             .await
             .expect("initial seed");
 
@@ -3841,6 +3838,7 @@ mod tests {
             auth_mode: AuthMode::Oidc,
             request_logging_enabled: true,
             oidc_provider_key: Some("okta".to_string()),
+            oauth_provider_key: None,
             membership: None,
             budget: None,
         }];
@@ -3851,7 +3849,7 @@ mod tests {
         }];
 
         let error = store
-            .seed_from_inputs(&[], &[], &[], &[], &invalid_teams, &invalid_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &invalid_teams, &invalid_users)
             .await
             .expect_err("seed should fail");
         assert!(
@@ -3920,12 +3918,13 @@ mod tests {
             auth_mode: AuthMode::Oidc,
             request_logging_enabled: false,
             oidc_provider_key: Some("okta".to_string()),
+            oauth_provider_key: None,
             membership: None,
             budget: None,
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &initial_users)
             .await
             .expect("initial seed");
 
@@ -3957,12 +3956,13 @@ mod tests {
             auth_mode: AuthMode::Oidc,
             request_logging_enabled: true,
             oidc_provider_key: Some("auth0".to_string()),
+            oauth_provider_key: None,
             membership: None,
             budget: None,
         }];
 
         let error = store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &invalid_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &invalid_users)
             .await
             .expect_err("seed should fail");
         assert!(
@@ -4037,12 +4037,13 @@ mod tests {
             auth_mode: AuthMode::Password,
             request_logging_enabled: false,
             oidc_provider_key: None,
+            oauth_provider_key: None,
             membership: None,
             budget: None,
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &initial_users)
             .await
             .expect("initial seed");
 
@@ -4064,12 +4065,13 @@ mod tests {
             auth_mode: AuthMode::Password,
             request_logging_enabled: true,
             oidc_provider_key: None,
+            oauth_provider_key: None,
             membership: None,
             budget: None,
         }];
 
         let error = store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &invalid_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &invalid_users)
             .await
             .expect_err("seed should fail");
         assert!(
@@ -4134,7 +4136,7 @@ mod tests {
             allowed_models: vec!["fast".to_string()],
         }];
         store
-            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[])
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[], &[])
             .await
             .expect("seed");
 
@@ -4402,7 +4404,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[])
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[], &[])
             .await
             .expect("seed");
 
@@ -4913,7 +4915,7 @@ mod tests {
             allowed_models: vec!["fast".to_string()],
         }];
         store
-            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[])
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[], &[])
             .await
             .expect("seed");
 
@@ -5205,7 +5207,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[])
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[], &[])
             .await
             .expect("seed");
 

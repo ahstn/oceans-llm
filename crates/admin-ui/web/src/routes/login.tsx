@@ -7,7 +7,7 @@ import { AuthLayout } from '@/components/layout/auth-layout'
 import { Button } from '@/components/ui/button'
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { getOidcProviders, loginAdminWithPassword } from '@/server/admin-data.functions'
+import { getOidcLoginOptions, loginAdminWithPassword } from '@/server/admin-data.functions'
 import { postLoginAdminHref } from '@/routes/-auth-routing'
 
 export const Route = createFileRoute('/login')({
@@ -17,11 +17,18 @@ export const Route = createFileRoute('/login')({
   }),
   loader: async () => {
     try {
-      return await getOidcProviders()
+      return await getOidcLoginOptions()
     } catch {
       return {
-        data: { providers: [] },
-        meta: { generated_at: new Date().toISOString() },
+        oidcProviders: {
+          data: { providers: [] },
+          meta: { generated_at: new Date().toISOString() },
+        },
+        oauthProviders: {
+          data: { providers: [] },
+          meta: { generated_at: new Date().toISOString() },
+        },
+        startOrigin: '',
       }
     }
   },
@@ -30,7 +37,9 @@ export const Route = createFileRoute('/login')({
 
 function LoginPage() {
   const search = Route.useSearch()
-  const oidcProviders = Route.useLoaderData()
+  const oidcLoginOptions = Route.useLoaderData()
+  const oidcProviders = oidcLoginOptions.oidcProviders
+  const oauthProviders = oidcLoginOptions.oauthProviders
   const [email, setEmail] = useState('admin@local')
   const [password, setPassword] = useState('admin')
   const [isPending, startTransition] = useTransition()
@@ -102,11 +111,18 @@ function LoginPage() {
         </div>
       </form>
 
-      {oidcProviders.data.providers.length > 0 ? (
+      {oidcProviders.data.providers.length > 0 || oauthProviders.data.providers.length > 0 ? (
         <div className="flex flex-col gap-3 border-t pt-6">
           {oidcProviders.data.providers.map((provider) => (
-            <Button asChild key={provider.key} variant="outline">
-              <a href={oidcStartUrl(provider.key, search.redirect)}>
+            <Button asChild key={`oidc-${provider.key}`} variant="outline">
+              <a href={oidcStartUrl(oidcLoginOptions.startOrigin, provider.key, search.redirect)}>
+                Sign in with {provider.label}
+              </a>
+            </Button>
+          ))}
+          {oauthProviders.data.providers.map((provider) => (
+            <Button asChild key={`oauth-${provider.key}`} variant="outline">
+              <a href={oauthStartUrl(oidcLoginOptions.startOrigin, provider.key, search.redirect)}>
                 Sign in with {provider.label}
               </a>
             </Button>
@@ -117,11 +133,20 @@ function LoginPage() {
   )
 }
 
-function oidcStartUrl(providerKey: string, redirect: string | undefined) {
-  return `/api/v1/auth/oidc/start?${new URLSearchParams({
+function oidcStartUrl(startOrigin: string, providerKey: string, redirect: string | undefined) {
+  const startPath = `/api/v1/auth/oidc/start?${new URLSearchParams({
     provider_key: providerKey,
     redirect_to: redirect ?? '/admin',
   }).toString()}`
+  return startOrigin ? `${startOrigin}${startPath}` : startPath
+}
+
+function oauthStartUrl(startOrigin: string, providerKey: string, redirect: string | undefined) {
+  const startPath = `/api/v1/auth/oauth/start?${new URLSearchParams({
+    provider_key: providerKey,
+    redirect_to: redirect ?? '/admin',
+  }).toString()}`
+  return startOrigin ? `${startOrigin}${startPath}` : startPath
 }
 
 function ssoErrorMessage(code: string | undefined) {
