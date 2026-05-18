@@ -1831,7 +1831,7 @@ async fn create_jit_oidc_user(
             email,
             provider.jit.global_role,
             AuthMode::Oidc,
-            UserStatus::Active,
+            UserStatus::Invited,
         )
         .await?;
     state
@@ -1844,6 +1844,11 @@ async fn create_jit_oidc_user(
             provider.jit.request_logging_enabled,
             now,
         )
+        .await?;
+
+    state
+        .store
+        .set_user_oidc_link(user.user_id, &provider.oidc_provider_id, now)
         .await?;
 
     if let Some((team, role)) = jit_team {
@@ -1865,7 +1870,7 @@ async fn create_jit_oidc_user(
         .await?;
     state
         .store
-        .set_user_oidc_link(user.user_id, &provider.oidc_provider_id, now)
+        .update_user_status(user.user_id, UserStatus::Active, now)
         .await?;
 
     state
@@ -1907,7 +1912,7 @@ async fn create_jit_oauth_user(
             email,
             provider.jit.global_role,
             AuthMode::Oauth,
-            UserStatus::Active,
+            UserStatus::Invited,
         )
         .await?;
     state
@@ -1920,6 +1925,11 @@ async fn create_jit_oauth_user(
             provider.jit.request_logging_enabled,
             now,
         )
+        .await?;
+
+    state
+        .store
+        .set_user_oauth_link(user.user_id, &provider.oauth_provider_id, now)
         .await?;
 
     if let Some((team, role)) = jit_team {
@@ -1941,7 +1951,7 @@ async fn create_jit_oauth_user(
         .await?;
     state
         .store
-        .set_user_oauth_link(user.user_id, &provider.oauth_provider_id, now)
+        .update_user_status(user.user_id, UserStatus::Active, now)
         .await?;
 
     state
