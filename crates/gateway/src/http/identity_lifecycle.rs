@@ -100,8 +100,9 @@ pub(crate) fn ensure_reactivation_allowed(user: &UserRecord) -> Result<(), Gatew
 
 pub(crate) fn reactivation_status(auth_mode: AuthMode, has_auth_proof: bool) -> UserStatus {
     match auth_mode {
-        AuthMode::Password | AuthMode::Oidc if has_auth_proof => UserStatus::Active,
-        AuthMode::Password | AuthMode::Oidc => UserStatus::Invited,
-        AuthMode::Oauth => UserStatus::Invited,
+        AuthMode::Password | AuthMode::Oidc | AuthMode::Oauth if has_auth_proof => {
+            UserStatus::Active
+        }
+        AuthMode::Password | AuthMode::Oidc | AuthMode::Oauth => UserStatus::Invited,
     }
 }

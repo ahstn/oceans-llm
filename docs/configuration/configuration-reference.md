@@ -1,6 +1,6 @@
 # Configuration Reference
 
-`See also`: [Oceans LLM Gateway](../../README.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Service Accounts](../access/service-accounts.md), [Model Routing and API Behavior](model-routing-and-api-behavior.md), [Pricing Catalog and Accounting](pricing-catalog-and-accounting.md), [OIDC and SSO Status](../access/oidc-and-sso-status.md)
+`See also`: [Oceans LLM Gateway](../../README.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Service Accounts](../access/service-accounts.md), [Model Routing and API Behavior](model-routing-and-api-behavior.md), [Pricing Catalog and Accounting](pricing-catalog-and-accounting.md), [OIDC and SSO](../access/oidc-and-sso-status.md)
 
 This page owns config syntax and parse-time rules. It does not own the full runtime story after a request starts moving.
 
@@ -244,6 +244,10 @@ If `kind` is omitted, the gateway infers `postgres` when `url` is present and `l
 Important fields:
 
 - `bootstrap_admin`
+- `oidc.public_base_url`
+- `oidc.providers`
+- `oauth.public_base_url`
+- `oauth.providers`
 
 Important distinctions:
 
@@ -274,6 +278,42 @@ Operational guidance:
 - attach a team budget to the owning team when service-account-style traffic must be capped
 - rotate by creating or seeding a replacement key, moving the caller, then revoking or removing the old key
 
+OIDC providers use authorization-code login with provider discovery and ID-token verification:
+
+```yaml
+auth:
+  oidc:
+    public_base_url: env.GATEWAY_PUBLIC_BASE_URL
+    providers:
+      - key: authentik
+        label: Authentik
+        issuer_url: https://auth.example.com/application/o/oceans-llm/
+        client_id: oceans-llm
+        client_secret: env.AUTHENTIK_OCEANS_LLM_CLIENT_SECRET
+        scopes: [openid, email, profile]
+        enabled: true
+```
+
+OAuth providers are separate from OIDC providers. GitHub is the first supported direct OAuth provider:
+
+```yaml
+auth:
+  oauth:
+    public_base_url: env.GATEWAY_PUBLIC_BASE_URL
+    providers:
+      - key: github
+        label: GitHub
+        provider_type: github
+        client_id: env.GITHUB_OAUTH_CLIENT_ID
+        client_secret: env.GITHUB_OAUTH_CLIENT_SECRET
+        scopes: [read:user, user:email]
+        enabled: true
+        jit:
+          enabled: false
+```
+
+For GitHub setup steps and callback URL rules, see [GitHub OAuth SSO Setup for Admins](../access/github-oauth-admin-setup.md).
+
 For startup behavior and first access after boot, use [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md).
 
 ## Declarative Teams And Users
@@ -294,6 +334,7 @@ Important `users` fields:
 - `global_role`
 - `request_logging_enabled`
 - `oidc_provider_key`
+- `oauth_provider_key`
 - `membership.team`
 - `membership.role`
 - `budget`
@@ -304,8 +345,9 @@ Validation rules that matter:
 - `system-legacy` has no reserved meaning and is not a compatibility owner
 - user emails are normalized and must be unique
 - `admin@local` is reserved for the bootstrap admin
-- `users[*].auth_mode` supports `password` and `oidc`
-- `oidc_provider_key` is required for `oidc` users and rejected for `password` users
+- `users[*].auth_mode` supports `password`, `oidc`, and `oauth`
+- `oidc_provider_key` is required for `oidc` users and rejected for `password` and `oauth` users
+- `oauth_provider_key` is required for `oauth` users and rejected for `password` and `oidc` users
 - membership roles can be `admin` or `member`
 - membership role `owner` is rejected
 - budget amounts must be non-negative
@@ -319,7 +361,7 @@ Seed semantics that matter:
 - omitting a `budget` block for a listed user or team deactivates that owner's active budget
 - unlisted teams and users are left untouched
 
-OIDC provider existence is validated at seed time against enabled runtime OIDC providers, not YAML parse time.
+OIDC and OAuth provider existence is validated at seed time against enabled runtime providers, not YAML parse time.
 
 Service accounts are managed by admins. They are not a replacement spelling for `auth.seed_api_keys`.
 
@@ -625,11 +667,11 @@ Later failures are usually runtime problems such as:
 - capability mismatch
 - exact-pricing gaps
 
-## Current Gaps
+## Current Boundaries
 
-- Hardened SSO-backed identity matching is still deferred.
-- Declarative teams, password users, development-style OIDC users, memberships, and active budgets are part of the current seed contract.
-- The remaining SSO-backed reconciliation work is tracked in [issue #65](https://github.com/ahstn/oceans-llm/issues/65).
+- Declarative teams, password users, OIDC users, memberships, active budgets, and OIDC providers are part of the current seed contract.
+- OIDC JIT defaults are provider configuration, not claim or group mapping.
+- Existing password users are not auto-linked to SSO users by email.
 
 ## What This Page Does Not Own
 
@@ -641,5 +683,5 @@ Later failures are usually runtime problems such as:
   - [request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md)
 - spend windows and budget policy:
   - [budgets-and-spending.md](../operations/budgets-and-spending.md)
-- hardened OIDC status:
+- OIDC and SSO behavior:
   - [oidc-and-sso-status.md](../access/oidc-and-sso-status.md)

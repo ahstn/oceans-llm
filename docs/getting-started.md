@@ -66,8 +66,12 @@ This page is the admin, user, and maintainer map for the gateway.
 
 - [Identity and Access](access/identity-and-access.md)
 - [Service Accounts](access/service-accounts.md)
-- [OIDC and SSO Status](access/oidc-and-sso-status.md)
+- [OIDC and SSO](access/oidc-and-sso-status.md)
 - [Admin Control Plane](access/admin-control-plane.md)
+
+### Development
+
+- [Testing Authentication Locally](development/authentication-testing.md)
 
 ### Reference
 

@@ -1900,6 +1900,119 @@
         ]
       }
     },
+    "/api/v1/auth/oauth/callback/github": {
+      "get": {
+        "tags": [
+          "crate::http::identity"
+        ],
+        "operationId": "oauth_callback_github",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "error",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Redirect back into the admin UI after OAuth sign-in"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/oauth/providers": {
+      "get": {
+        "tags": [
+          "crate::http::identity"
+        ],
+        "operationId": "list_public_oauth_providers",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_PublicOauthProvidersPayload"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/oauth/start": {
+      "get": {
+        "tags": [
+          "crate::http::identity"
+        ],
+        "operationId": "oauth_start",
+        "parameters": [
+          {
+            "name": "provider_key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "login_hint",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "redirect_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Redirect to the OAuth provider"
+          }
+        }
+      }
+    },
     "/api/v1/auth/oidc/callback": {
       "get": {
         "tags": [
@@ -2332,9 +2445,16 @@
         "required": [
           "users",
           "teams",
-          "oidc_providers"
+          "oidc_providers",
+          "oauth_providers"
         ],
         "properties": {
+          "oauth_providers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminOauthProviderView"
+            }
+          },
           "oidc_providers": {
             "type": "array",
             "items": {
@@ -2649,6 +2769,25 @@
           }
         }
       },
+      "AdminOauthProviderView": {
+        "type": "object",
+        "required": [
+          "id",
+          "key",
+          "label"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      },
       "AdminOidcProviderView": {
         "type": "object",
         "required": [
@@ -2713,6 +2852,32 @@
                 "type": "string",
                 "enum": [
                   "oidc_sign_in"
+                ]
+              },
+              "provider_key": {
+                "type": "string"
+              },
+              "provider_label": {
+                "type": "string"
+              },
+              "sign_in_url": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "sign_in_url",
+              "provider_key",
+              "provider_label",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "oauth_sign_in"
                 ]
               },
               "provider_key": {
@@ -2944,9 +3109,16 @@
         "required": [
           "teams",
           "users",
-          "oidc_providers"
+          "oidc_providers",
+          "oauth_providers"
         ],
         "properties": {
+          "oauth_providers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminOauthProviderView"
+            }
+          },
           "oidc_providers": {
             "type": "array",
             "items": {
@@ -3306,6 +3478,12 @@
           "name": {
             "type": "string"
           },
+          "oauth_provider_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "oidc_provider_key": {
             "type": [
               "string",
@@ -3373,6 +3551,32 @@
                 "type": "string",
                 "enum": [
                   "oidc_sign_in"
+                ]
+              },
+              "provider_label": {
+                "type": "string"
+              },
+              "sign_in_url": {
+                "type": "string"
+              },
+              "user": {
+                "$ref": "#/components/schemas/AdminIdentityUserView"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "user",
+              "sign_in_url",
+              "provider_label",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "oauth_sign_in"
                 ]
               },
               "provider_label": {
@@ -3473,9 +3677,16 @@
             "required": [
               "users",
               "teams",
-              "oidc_providers"
+              "oidc_providers",
+              "oauth_providers"
             ],
             "properties": {
+              "oauth_providers": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AdminOauthProviderView"
+                }
+              },
               "oidc_providers": {
                 "type": "array",
                 "items": {
@@ -3698,9 +3909,16 @@
             "required": [
               "teams",
               "users",
-              "oidc_providers"
+              "oidc_providers",
+              "oauth_providers"
             ],
             "properties": {
+              "oauth_providers": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AdminOauthProviderView"
+                }
+              },
               "oidc_providers": {
                 "type": "array",
                 "items": {
@@ -3895,6 +4113,32 @@
                     "type": "string",
                     "enum": [
                       "oidc_sign_in"
+                    ]
+                  },
+                  "provider_label": {
+                    "type": "string"
+                  },
+                  "sign_in_url": {
+                    "type": "string"
+                  },
+                  "user": {
+                    "$ref": "#/components/schemas/AdminIdentityUserView"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "required": [
+                  "user",
+                  "sign_in_url",
+                  "provider_label",
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "oauth_sign_in"
                     ]
                   },
                   "provider_label": {
@@ -4260,6 +4504,32 @@
               },
               "user_id": {
                 "type": "string"
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_PublicOauthProvidersPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "providers"
+            ],
+            "properties": {
+              "providers": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PublicOauthProviderView"
+                }
               }
             }
           },
@@ -5171,6 +5441,35 @@
           "openrouter",
           "vertexai"
         ]
+      },
+      "PublicOauthProviderView": {
+        "type": "object",
+        "required": [
+          "key",
+          "label"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      },
+      "PublicOauthProvidersPayload": {
+        "type": "object",
+        "required": [
+          "providers"
+        ],
+        "properties": {
+          "providers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicOauthProviderView"
+            }
+          }
+        }
       },
       "PublicOidcProviderView": {
         "type": "object",
@@ -6154,6 +6453,12 @@
           },
           "global_role": {
             "type": "string"
+          },
+          "oauth_provider_key": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "oidc_provider_key": {
             "type": [

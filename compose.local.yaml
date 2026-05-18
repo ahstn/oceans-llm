@@ -1,6 +1,7 @@
 services:
   gateway:
     image: oceans-llm-gateway:local
+    pull_policy: build
     build:
       context: .
       dockerfile: crates/gateway/Dockerfile
@@ -16,16 +17,18 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_API_KEY_SECONDARY: ${OPENAI_API_KEY_SECONDARY:-}
       GATEWAY_API_KEY: ${GATEWAY_API_KEY:-gwk_localdev.replace-me}
-      GATEWAY_BOOTSTRAP_ADMIN_PASSWORD: ${GATEWAY_BOOTSTRAP_ADMIN_PASSWORD:-change-me-admin}
+      GATEWAY_BOOTSTRAP_ADMIN_PASSWORD: ${GATEWAY_BOOTSTRAP_ADMIN_PASSWORD:-admin}
       GATEWAY_PUBLIC_BASE_URL: ${GATEWAY_PUBLIC_BASE_URL:-http://localhost:8080}
       AUTHENTIK_OCEANS_LLM_CLIENT_SECRET: ${AUTHENTIK_OCEANS_LLM_CLIENT_SECRET:-oceans-llm-local-secret}
+      GITHUB_OAUTH_CLIENT_ID: ${GITHUB_OAUTH_CLIENT_ID:-}
+      GITHUB_OAUTH_CLIENT_SECRET: ${GITHUB_OAUTH_CLIENT_SECRET:-}
       POSTGRES_URL: postgres://${POSTGRES_USER:-oceans}:${POSTGRES_PASSWORD:-oceans}@postgres:5432/${POSTGRES_DB:-oceans_llm}
     extra_hosts:
       - "authentik.localhost:host-gateway"
     ports:
       - "${GATEWAY_PORT:-8080}:8080"
     volumes:
-      - ./deploy/config/gateway.yaml:/app/gateway.yaml:ro
+      - ./deploy/config/gateway.local.yaml:/app/gateway.yaml:ro
     restart: unless-stopped
 
   authentik-server:
@@ -113,12 +116,14 @@ services:
 
   admin-ui:
     image: oceans-llm-admin-ui:local
+    pull_policy: build
     build:
       context: .
       dockerfile: crates/admin-ui/web/Dockerfile
     environment:
       PORT: "3000"
       ADMIN_GATEWAY_ORIGIN: http://gateway:8080
+      ADMIN_GATEWAY_BROWSER_ORIGIN: ${ADMIN_GATEWAY_BROWSER_ORIGIN:-http://localhost:8080}
     ports:
       - "3003:3000"
     restart: unless-stopped

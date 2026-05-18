@@ -1,19 +1,20 @@
-# OIDC and SSO Status
+# OIDC and SSO
 
-`See also`: [Identity and Access](identity-and-access.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Configuration Reference](../configuration/configuration-reference.md), [Deploy and Operations](../setup/deploy-and-operations.md), [Admin Control Plane](admin-control-plane.md), [ADR: Identity Foundation for Users, Teams, and API Key Ownership](../adr/2026-03-05-identity-foundation.md), [ADR: Authentik Local SSO Test IdP](../adr/2026-05-15-authentik-local-sso-test-idp.md)
+`See also`: [Identity and Access](identity-and-access.md), [GitHub OAuth SSO Setup for Admins](github-oauth-admin-setup.md), [Testing Authentication Locally](../development/authentication-testing.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Configuration Reference](../configuration/configuration-reference.md), [Deploy and Operations](../setup/deploy-and-operations.md), [Admin Control Plane](admin-control-plane.md), [ADR: Identity Foundation for Users, Teams, and API Key Ownership](../adr/2026-03-05-identity-foundation.md), [ADR: Authentik Local SSO Test IdP](../adr/2026-05-15-authentik-local-sso-test-idp.md), [ADR: Local SSO Compose Fixture and Browser Origin](../adr/2026-05-15-local-sso-compose-fixture-and-browser-origin.md)
 
-This page tracks the OIDC/SSO implementation boundary. Oceans LLM now supports a real OIDC authorization-code login path and an Authentik local fixture, with explicit provider-configured JIT defaults.
+Oceans LLM supports OIDC and OAuth SSO for the admin control plane. The browser ends each flow with the same `ogw_session` HttpOnly cookie used by password login.
 
-## Current State
+## Runtime Contract
 
-The live product supports pre-provisioned OIDC users and OIDC-flavored onboarding flows in the admin control plane.
-
-What exists today:
+The OIDC/OAuth flow includes:
 
 - `auth.oidc.providers` in `gateway.yaml` seeds enabled OIDC providers
-- `/api/v1/auth/oidc/providers` exposes enabled SSO providers for `/admin/login`
-- `/api/v1/auth/oidc/start` performs provider discovery and redirects to the IdP with state, nonce, and PKCE
+- `/api/v1/auth/oidc/providers` exposes enabled OIDC providers for `/admin/login`
+- `/api/v1/auth/oauth/providers` exposes enabled OAuth providers for `/admin/login`
+- `/api/v1/auth/oidc/start` performs provider discovery and redirects with state, nonce, and PKCE
 - `/api/v1/auth/oidc/callback` consumes one-time state, exchanges the authorization code, verifies the ID token and nonce, and issues the existing `ogw_session` cookie
+- `/api/v1/auth/oauth/start` redirects to the OAuth provider with one-time state and PKCE
+- `/api/v1/auth/oauth/callback/github` consumes one-time state, exchanges the code with GitHub, resolves verified email + numeric subject, and issues `ogw_session`
 - invited/config-declared OIDC users activate on first successful provider login
 - provider-specific JIT user creation can assign explicit global role, team membership, and request logging defaults
 - local Authentik compose profiles provide a repeatable manual IdP fixture
@@ -40,16 +41,18 @@ Admins should assume these boundaries:
 
 ## Local Test IdP
 
-The repo now ships an opt-in Authentik fixture for local/manual SSO testing:
+The repo ships an opt-in Authentik fixture for local/manual SSO testing:
 
 - [../../compose.local.yaml](../../compose.local.yaml) includes the `sso` profile for source-built local runs.
+- [../../deploy/config/gateway.local.yaml](../../deploy/config/gateway.local.yaml) enables the local Authentik provider and JIT policy for that compose path.
 - [../../deploy/compose.yaml](../../deploy/compose.yaml) includes the same `sso` profile for image-based deploy runs.
 - [../../deploy/authentik/oceans-llm-blueprint.yaml](../../deploy/authentik/oceans-llm-blueprint.yaml) creates the `Oceans LLM` OIDC application and the `sso-user@example.com` test user.
+- [../development/authentication-testing.md](../development/authentication-testing.md) owns the local testing procedure, URLs, and fixture passwords.
 
 Run it with:
 
 ```shell
-docker compose --profile sso -f compose.local.yaml up
+docker compose --profile sso -f compose.local.yaml up --build
 ```
 
 The fixture defaults are:
@@ -57,10 +60,44 @@ The fixture defaults are:
 - Authentik URL: `http://localhost:9000`
 - Authentik admin: `akadmin@example.com` / `akadmin-password`
 - SSO test user: `sso-user@example.com` / `sso-user-password`
+- local bootstrap admin on a fresh gateway database: `admin@local` / `admin`
 - OIDC client id: `oceans-llm`
 - OIDC client secret: `oceans-llm-local-secret`
+- tested Authentik version: `2025.4.4`
 
-The checked-in deploy config seeds an Authentik provider, but leaves it disabled until a maintainer opts in for the target environment:
+Existing local Docker volumes keep the bootstrap admin password that was first seeded. If the volume was created before this fixture used `admin`, sign in with the old configured password or recreate the local gateway database volume when it is safe to discard local data.
+
+The local compose config seeds an enabled Authentik provider for manual testing. The checked-in deploy config also defines the provider, but leaves it disabled until a maintainer opts in for the target environment.
+
+## Authentik Provider Shape
+
+The local Authentik provider uses this gateway config shape:
+
+```yaml
+auth:
+  oidc:
+    public_base_url: env.GATEWAY_PUBLIC_BASE_URL
+    providers:
+      - key: authentik
+        label: Authentik
+        issuer_url: http://authentik.localhost:9000/application/o/oceans-llm/
+        client_id: oceans-llm
+        client_secret: env.AUTHENTIK_OCEANS_LLM_CLIENT_SECRET
+        scopes:
+          - openid
+          - email
+          - profile
+        enabled: true
+        jit:
+          enabled: true
+          global_role: platform_admin
+          request_logging_enabled: true
+          membership:
+            team: platform
+            role: admin
+```
+
+The matching local Authentik application must use:
 
 - provider key: `authentik`
 - issuer URL: `http://authentik.localhost:9000/application/o/oceans-llm/`
@@ -68,28 +105,29 @@ The checked-in deploy config seeds an Authentik provider, but leaves it disabled
 - client id: `oceans-llm`
 - public base URL env ref: `GATEWAY_PUBLIC_BASE_URL`
 - client secret env ref: `AUTHENTIK_OCEANS_LLM_CLIENT_SECRET`
-- JIT: disabled by default; local manual validation can enable it explicitly with `platform_admin`, team `platform` / `admin`
+- local JIT: enabled with `platform_admin`, team `platform` / `admin`
+- deploy JIT: disabled by default and must be enabled explicitly per environment
 
-Manual validation:
+## Manual Validation
 
-1. Enable the Authentik provider and its JIT policy in a local config copy when testing JIT sign-in.
-2. Start the stack: `docker compose --profile sso -f compose.local.yaml up`.
-3. Run migrations and seed config if the gateway did not do so during startup.
-4. Open `http://localhost:8080/admin/login`.
-5. Choose `Sign in with Authentik`.
-6. Log in as `sso-user@example.com` / `sso-user-password`.
-7. Before handoff, run `mise //docs:verify` for docs-only changes or `mise run lint` for mixed code/docs validation.
+1. Start the stack: `docker compose --profile sso -f compose.local.yaml up --build`.
+2. Open `http://localhost:8080/admin/login`.
+3. Choose `Sign in with Authentik`.
+4. Log in as `sso-user@example.com` / `sso-user-password`.
+5. Confirm the browser returns to `/admin` with an `ogw_session` cookie.
 
-## Current Gaps
+## Current Boundaries
 
-- claim/group-to-role mapping is not implemented
-- Okta validation remains a manual follow-up benchmark
-- discovery and JWKS metadata are fetched on login; a runtime cache can be added later
-- automated end-to-end browser coverage against Authentik is still manual-first
+- provider policy owns JIT defaults
+- group or claim-to-role mapping is outside the current contract
+- Okta is a later benchmark provider, not the local fixture
+- discovery and JWKS metadata are fetched during login
+- Authentik browser automation is still manual-first
 
 ## What This Page Does Not Own
 
 - user lifecycle and team rules: [identity-and-access.md](identity-and-access.md)
 - config field syntax for providers: [configuration-reference.md](../configuration/configuration-reference.md)
+- local auth test procedure: [authentication-testing.md](../development/authentication-testing.md)
 - admin UI capability map: [admin-control-plane.md](admin-control-plane.md)
 - deploy topology and first-access behavior: [deploy-and-operations.md](../setup/deploy-and-operations.md), [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md)
