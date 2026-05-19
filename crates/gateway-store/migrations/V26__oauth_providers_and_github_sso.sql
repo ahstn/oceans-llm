@@ -64,4 +64,6 @@ JOIN oauth_providers provider
   ON provider.oauth_provider_id = legacy.oauth_provider
   OR provider.provider_key = legacy.oauth_provider;
 
-DROP TABLE user_oauth_auth_legacy;
+-- Keep user_oauth_auth_legacy for deployments that had legacy rows before
+-- configured OAuth providers existed. A follow-up migration can backfill those
+-- rows after admins add matching oauth_providers config.

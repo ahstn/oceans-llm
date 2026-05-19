@@ -4,7 +4,7 @@
 
 Support self-hosted Oceans LLM deployments that authenticate users directly with a GitHub OAuth App, without requiring Authentik or another OIDC broker.
 
-The desired operator flow is:
+The desired admin flow is:
 
 1. Admin creates a GitHub OAuth App for their own exposed Oceans LLM install.
 2. Admin stores the GitHub OAuth app credentials in Oceans gateway config/env.
@@ -23,7 +23,7 @@ Therefore GitHub direct SSO needs a first-class OAuth provider type rather than 
 
 ## Desired self-hosted GitHub setup
 
-Each self-hosted operator creates their own GitHub OAuth App.
+Each self-hosted admin creates their own GitHub OAuth App.
 
 GitHub OAuth App fields:
 
@@ -304,3 +304,14 @@ Provider-specific reminders:
 - Require verified provider email before invite/JIT matching.
 - Default JIT to disabled for public providers like GitHub.
 - Warn admins that JIT with `platform_admin` for GitHub can admit any accepted GitHub account unless additional allowlisting is added.
+
+## Validation before handoff
+
+Run the repo checks that match the final change scope before handing implementation off for review. For this feature, that includes at least:
+
+```shell
+mise run lint
+mise //docs:verify
+```
+
+When migrations, Postgres store behavior, or runtime auth paths change, also run the Postgres-focused checks from the pull request template when credentials are available.

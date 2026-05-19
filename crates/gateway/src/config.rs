@@ -966,8 +966,12 @@ impl AuthOidcConfig {
             if provider.client_id.trim().is_empty() {
                 bail!("oidc provider `{provider_key}` client_id cannot be empty");
             }
-            let client_secret = resolve_secret_reference(&provider.client_secret)
-                .with_context(|| format!("oidc provider `{provider_key}` client_secret"))?;
+            let client_secret = if provider.enabled {
+                resolve_secret_reference(&provider.client_secret)
+                    .with_context(|| format!("oidc provider `{provider_key}` client_secret"))?
+            } else {
+                provider.client_secret.clone()
+            };
             if client_secret.trim().is_empty() {
                 bail!("oidc provider `{provider_key}` client_secret cannot be empty");
             }
@@ -1030,7 +1034,10 @@ impl AuthOauthConfig {
     }
 
     fn validate(&self, teams: &[TeamConfig]) -> anyhow::Result<()> {
-        let _ = self.resolved_public_base_url()?;
+        let public_base_url = self.resolved_public_base_url()?;
+        if public_base_url.is_none() && self.providers.iter().any(|provider| provider.enabled) {
+            bail!("auth.oauth.public_base_url is required when an oauth provider is enabled");
+        }
         let mut provider_keys = std::collections::BTreeSet::new();
         let team_keys = teams
             .iter()
@@ -3227,6 +3234,7 @@ auth:
             r#"
 auth:
   oauth:
+    public_base_url: literal.https://gateway.example.com
     providers:
       - key: github
         label: GitHub
@@ -3240,6 +3248,34 @@ auth:
         let config = GatewayConfig::from_path(&config_path).expect("config should parse");
         let oauth_providers = config.seed_oauth_providers().expect("seed oauth providers");
         assert_eq!(oauth_providers[0].client_id, "github-client-id");
+    }
+
+    #[test]
+    fn rejects_enabled_oauth_provider_without_public_base_url() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+auth:
+  oauth:
+    providers:
+      - key: github
+        label: GitHub
+        provider_type: github
+        client_id: github-client-id
+        client_secret: literal.secret
+        scopes: [read:user, user:email]
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("auth.oauth.public_base_url is required"),
+            "unexpected error: {error_text}"
+        );
     }
 
     #[test]
@@ -3280,6 +3316,7 @@ auth:
             r#"
 auth:
   oauth:
+    public_base_url: literal.https://gateway.example.com
     providers:
       - key: github
         label: GitHub

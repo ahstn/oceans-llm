@@ -20,6 +20,8 @@ services:
       GATEWAY_BOOTSTRAP_ADMIN_PASSWORD: ${GATEWAY_BOOTSTRAP_ADMIN_PASSWORD:-admin}
       GATEWAY_PUBLIC_BASE_URL: ${GATEWAY_PUBLIC_BASE_URL:-http://localhost:8080}
       AUTHENTIK_OCEANS_LLM_CLIENT_SECRET: ${AUTHENTIK_OCEANS_LLM_CLIENT_SECRET:-oceans-llm-local-secret}
+      GITHUB_OAUTH_CLIENT_ID: ${GITHUB_OAUTH_CLIENT_ID:-}
+      GITHUB_OAUTH_CLIENT_SECRET: ${GITHUB_OAUTH_CLIENT_SECRET:-}
       POSTGRES_URL: postgres://${POSTGRES_USER:-oceans}:${POSTGRES_PASSWORD:-oceans}@postgres:5432/${POSTGRES_DB:-oceans_llm}
     extra_hosts:
       - "authentik.localhost:host-gateway"

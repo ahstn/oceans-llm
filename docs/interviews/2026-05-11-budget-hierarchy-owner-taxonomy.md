@@ -1,8 +1,10 @@
 # Budget Hierarchy and Owner Taxonomy Interview
 
-`See also`: [Budgets and Spending](../operations/budgets-and-spending.md), [Data Relationships](../reference/data-relationships.md), [ADR: Spend Control Plane Reporting and Team Hard-Limit Enforcement](../adr/2026-03-15-spend-control-plane-reporting-and-team-hard-limits.md), [GitHub issue #106](https://github.com/ahstn/oceans-llm/issues/106)
+`See also`: [Budgets and Spending](../operations/budgets-and-spending.md), [Data Relationships](../reference/data-relationships.md), [ADR: Spend Control Plane Reporting and Team Hard-Limit Enforcement](../adr/2026-03-15-spend-control-plane-reporting-and-team-hard-limits.md)
 
 Date: 2026-05-11
+
+Related issue: [#106](https://github.com/ahstn/oceans-llm/issues/106)
 
 ## Scope
 

@@ -823,6 +823,13 @@ pub async fn update_identity_user(
 
     ensure_not_self_demoting(&actor, &identity_user.user, next_global_role).map_err(AppError)?;
     ensure_auth_mode_edit_allowed(&identity_user.user, next_auth_mode).map_err(AppError)?;
+    ensure_sso_provider_edit_allowed(
+        &identity_user,
+        next_auth_mode,
+        oidc_provider.as_ref(),
+        oauth_provider.as_ref(),
+    )
+    .map_err(AppError)?;
     if membership_update_requested(&identity_user, requested_membership) {
         ensure_mutable_membership(identity_user.membership_role).map_err(AppError)?;
     }
@@ -1831,7 +1838,7 @@ async fn create_jit_oidc_user(
             email,
             provider.jit.global_role,
             AuthMode::Oidc,
-            UserStatus::Active,
+            UserStatus::Invited,
         )
         .await?;
     state
@@ -1844,6 +1851,11 @@ async fn create_jit_oidc_user(
             provider.jit.request_logging_enabled,
             now,
         )
+        .await?;
+
+    state
+        .store
+        .set_user_oidc_link(user.user_id, &provider.oidc_provider_id, now)
         .await?;
 
     if let Some((team, role)) = jit_team {
@@ -1865,7 +1877,7 @@ async fn create_jit_oidc_user(
         .await?;
     state
         .store
-        .set_user_oidc_link(user.user_id, &provider.oidc_provider_id, now)
+        .update_user_status(user.user_id, UserStatus::Active, now)
         .await?;
 
     state
@@ -1907,7 +1919,7 @@ async fn create_jit_oauth_user(
             email,
             provider.jit.global_role,
             AuthMode::Oauth,
-            UserStatus::Active,
+            UserStatus::Invited,
         )
         .await?;
     state
@@ -1920,6 +1932,11 @@ async fn create_jit_oauth_user(
             provider.jit.request_logging_enabled,
             now,
         )
+        .await?;
+
+    state
+        .store
+        .set_user_oauth_link(user.user_id, &provider.oauth_provider_id, now)
         .await?;
 
     if let Some((team, role)) = jit_team {
@@ -1941,7 +1958,7 @@ async fn create_jit_oauth_user(
         .await?;
     state
         .store
-        .set_user_oauth_link(user.user_id, &provider.oauth_provider_id, now)
+        .update_user_status(user.user_id, UserStatus::Active, now)
         .await?;
 
     state
@@ -2424,6 +2441,37 @@ fn membership_update_requested(
     current_membership(user) != requested_membership
 }
 
+fn ensure_sso_provider_edit_allowed(
+    user: &IdentityUserRecord,
+    next_auth_mode: AuthMode,
+    oidc_provider: Option<&OidcProviderRecord>,
+    oauth_provider: Option<&OauthProviderRecord>,
+) -> Result<(), GatewayError> {
+    if user.user.status == UserStatus::Invited {
+        return Ok(());
+    }
+
+    if user.user.auth_mode == AuthMode::Oidc && next_auth_mode == AuthMode::Oidc {
+        let next_provider_id = oidc_provider.map(|provider| provider.oidc_provider_id.as_str());
+        if user.oidc_provider_id.as_deref() != next_provider_id {
+            return Err(GatewayError::InvalidRequest(
+                "oidc provider can only change while the user is invited".to_string(),
+            ));
+        }
+    }
+
+    if user.user.auth_mode == AuthMode::Oauth && next_auth_mode == AuthMode::Oauth {
+        let next_provider_id = oauth_provider.map(|provider| provider.oauth_provider_id.as_str());
+        if user.oauth_provider_id.as_deref() != next_provider_id {
+            return Err(GatewayError::InvalidRequest(
+                "oauth provider can only change while the user is invited".to_string(),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 fn current_membership(user: &IdentityUserRecord) -> Option<(Uuid, MembershipRole)> {
     match (user.team_id, user.membership_role) {
         (Some(team_id), Some(role)) => Some((team_id, role)),
@@ -2591,9 +2639,18 @@ async fn build_onboarding_response(
                 user.clone(),
             )
             .await?;
+            let oauth_origin = state
+                .oauth_public_base_url
+                .as_ref()
+                .as_deref()
+                .unwrap_or(origin);
             Ok(CreateUserResponse::OauthSignIn {
                 user: view,
-                sign_in_url: oauth_sign_in_url(origin, &provider.provider_key, &user.user.email),
+                sign_in_url: oauth_sign_in_url(
+                    oauth_origin,
+                    &provider.provider_key,
+                    &user.user.email,
+                ),
                 provider_label: provider.provider_key,
             })
         }

@@ -4,16 +4,16 @@ CREATE TABLE IF NOT EXISTS oauth_providers (
     provider_type TEXT NOT NULL CHECK (provider_type IN ('github')),
     client_id TEXT NOT NULL,
     scopes_json TEXT NOT NULL,
-    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    enabled BIGINT NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
     label TEXT,
     client_secret_ref TEXT NOT NULL,
-    jit_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    jit_enabled BIGINT NOT NULL DEFAULT 0 CHECK (jit_enabled IN (0, 1)),
     jit_global_role TEXT NOT NULL DEFAULT 'user',
     jit_team_key TEXT,
     jit_team_role TEXT,
-    jit_request_logging_enabled BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMPTZ NOT NULL,
-    updated_at TIMESTAMPTZ NOT NULL
+    jit_request_logging_enabled BIGINT NOT NULL DEFAULT 1 CHECK (jit_request_logging_enabled IN (0, 1)),
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS oauth_login_states (
@@ -22,28 +22,32 @@ CREATE TABLE IF NOT EXISTS oauth_login_states (
     pkce_verifier TEXT NOT NULL,
     redirect_to TEXT NOT NULL,
     login_hint TEXT,
-    expires_at TIMESTAMPTZ NOT NULL,
-    consumed_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL
+    expires_at BIGINT NOT NULL,
+    consumed_at BIGINT,
+    created_at BIGINT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_oauth_login_states_expires_at
     ON oauth_login_states(expires_at);
 
 CREATE TABLE IF NOT EXISTS user_oauth_links (
-    user_id UUID PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+    user_id TEXT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
     oauth_provider_id TEXT NOT NULL REFERENCES oauth_providers(oauth_provider_id) ON DELETE CASCADE,
-    created_at TIMESTAMPTZ NOT NULL
+    created_at BIGINT NOT NULL
 );
 
 ALTER TABLE user_oauth_auth RENAME TO user_oauth_auth_legacy;
+ALTER TABLE user_oauth_auth_legacy
+  RENAME CONSTRAINT user_oauth_auth_pkey TO user_oauth_auth_legacy_pkey;
+ALTER TABLE user_oauth_auth_legacy
+  RENAME CONSTRAINT user_oauth_auth_oauth_provider_subject_key TO user_oauth_auth_legacy_oauth_provider_subject_key;
 
 CREATE TABLE user_oauth_auth (
-  user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
   oauth_provider_id TEXT NOT NULL REFERENCES oauth_providers(oauth_provider_id) ON DELETE CASCADE,
   subject TEXT NOT NULL,
   email_claim TEXT,
-  created_at TIMESTAMPTZ NOT NULL,
+  created_at BIGINT NOT NULL,
   PRIMARY KEY (user_id, oauth_provider_id),
   UNIQUE (oauth_provider_id, subject)
 );
@@ -59,4 +63,6 @@ JOIN oauth_providers provider
   ON provider.oauth_provider_id = legacy.oauth_provider
   OR provider.provider_key = legacy.oauth_provider;
 
-DROP TABLE user_oauth_auth_legacy;
+-- Keep user_oauth_auth_legacy for deployments that had legacy rows before
+-- configured OAuth providers existed. A follow-up migration can backfill those
+-- rows after admins add matching oauth_providers config.

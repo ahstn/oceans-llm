@@ -20,7 +20,7 @@ This file stays in the repo as a maintainer note for the VitePress source tree.
 What lives where:
 
 - `index.md` and the section folders drive the published docs site.
-- `development/` holds maintainer-facing local workflows.
+- `development/` holds local workflows for maintainers.
 - `adr/` explains why decisions were made.
 - `internal/` holds research and rough notes that should not be treated as live contract.
 - `scripts/docs-check.ts` keeps link, ownership, and nav checks close to the docs package.
