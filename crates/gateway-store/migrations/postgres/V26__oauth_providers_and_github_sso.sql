@@ -37,6 +37,10 @@ CREATE TABLE IF NOT EXISTS user_oauth_links (
 );
 
 ALTER TABLE user_oauth_auth RENAME TO user_oauth_auth_legacy;
+ALTER TABLE user_oauth_auth_legacy
+  RENAME CONSTRAINT user_oauth_auth_pkey TO user_oauth_auth_legacy_pkey;
+ALTER TABLE user_oauth_auth_legacy
+  RENAME CONSTRAINT user_oauth_auth_oauth_provider_subject_key TO user_oauth_auth_legacy_oauth_provider_subject_key;
 
 CREATE TABLE user_oauth_auth (
   user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,

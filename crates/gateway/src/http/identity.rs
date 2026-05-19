@@ -823,6 +823,13 @@ pub async fn update_identity_user(
 
     ensure_not_self_demoting(&actor, &identity_user.user, next_global_role).map_err(AppError)?;
     ensure_auth_mode_edit_allowed(&identity_user.user, next_auth_mode).map_err(AppError)?;
+    ensure_sso_provider_edit_allowed(
+        &identity_user,
+        next_auth_mode,
+        oidc_provider.as_ref(),
+        oauth_provider.as_ref(),
+    )
+    .map_err(AppError)?;
     if membership_update_requested(&identity_user, requested_membership) {
         ensure_mutable_membership(identity_user.membership_role).map_err(AppError)?;
     }
@@ -2432,6 +2439,37 @@ fn membership_update_requested(
     requested_membership: Option<(Uuid, MembershipRole)>,
 ) -> bool {
     current_membership(user) != requested_membership
+}
+
+fn ensure_sso_provider_edit_allowed(
+    user: &IdentityUserRecord,
+    next_auth_mode: AuthMode,
+    oidc_provider: Option<&OidcProviderRecord>,
+    oauth_provider: Option<&OauthProviderRecord>,
+) -> Result<(), GatewayError> {
+    if user.user.status == UserStatus::Invited {
+        return Ok(());
+    }
+
+    if user.user.auth_mode == AuthMode::Oidc && next_auth_mode == AuthMode::Oidc {
+        let next_provider_id = oidc_provider.map(|provider| provider.oidc_provider_id.as_str());
+        if user.oidc_provider_id.as_deref() != next_provider_id {
+            return Err(GatewayError::InvalidRequest(
+                "oidc provider can only change while the user is invited".to_string(),
+            ));
+        }
+    }
+
+    if user.user.auth_mode == AuthMode::Oauth && next_auth_mode == AuthMode::Oauth {
+        let next_provider_id = oauth_provider.map(|provider| provider.oauth_provider_id.as_str());
+        if user.oauth_provider_id.as_deref() != next_provider_id {
+            return Err(GatewayError::InvalidRequest(
+                "oauth provider can only change while the user is invited".to_string(),
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 fn current_membership(user: &IdentityUserRecord) -> Option<(Uuid, MembershipRole)> {
