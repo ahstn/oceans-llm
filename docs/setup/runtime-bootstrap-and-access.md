@@ -198,9 +198,9 @@ That means one environment can have:
 - both
 - neither, if the startup toggles are disabled and the database is empty
 
-## Current Gaps
+## Authentication Notes
 
-- Hardened declarative SSO-backed identity matching is still tracked in [issue #65](https://github.com/ahstn/oceans-llm/issues/65).
+OIDC providers and password users are seeded by config when present in the active gateway config. Local SSO testing uses [../development/authentication-testing.md](../development/authentication-testing.md); production-shaped first access still depends on the active deploy config and supplied secrets.
 
 ## What This Page Does Not Own
 

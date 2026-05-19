@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use gateway_core::{
-    AuthMode, GlobalRole, IdentityUserRecord, MembershipRole, OidcProviderRecord, SeedTeam,
-    SeedUser, StoreError, TeamRecord, UserStatus,
+    AuthMode, GlobalRole, IdentityUserRecord, MembershipRole, OauthProviderRecord,
+    OidcProviderRecord, SeedTeam, SeedUser, StoreError, TeamRecord, UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -32,6 +32,22 @@ pub(crate) fn api_key_uuid(public_id: &str) -> Uuid {
         &Uuid::NAMESPACE_OID,
         format!("api_key:{public_id}").as_bytes(),
     )
+}
+
+pub(crate) fn oidc_provider_uuid(provider_key: &str) -> String {
+    Uuid::new_v5(
+        &Uuid::NAMESPACE_OID,
+        format!("oidc_provider:{provider_key}").as_bytes(),
+    )
+    .to_string()
+}
+
+pub(crate) fn oauth_provider_uuid(provider_key: &str) -> String {
+    Uuid::new_v5(
+        &Uuid::NAMESPACE_OID,
+        format!("oauth_provider:{provider_key}").as_bytes(),
+    )
+    .to_string()
 }
 
 pub(crate) async fn reconcile_seed_teams<S>(
@@ -125,6 +141,7 @@ where
     S: GatewayStore + ?Sized,
 {
     let oidc_provider = resolve_seed_oidc_provider(store, seed_user).await?;
+    let oauth_provider = resolve_seed_oauth_provider(store, seed_user).await?;
     let Some(existing_user) = store
         .get_user_by_email_normalized(&seed_user.email_normalized)
         .await?
@@ -133,7 +150,12 @@ where
     };
 
     let identity_user = load_identity_user(store, existing_user.user_id).await?;
-    ensure_seed_auth_mutation_allowed(&identity_user, seed_user.auth_mode, oidc_provider.as_ref())?;
+    ensure_seed_auth_mutation_allowed(
+        &identity_user,
+        seed_user.auth_mode,
+        oidc_provider.as_ref(),
+        oauth_provider.as_ref(),
+    )?;
     ensure_seed_role_mutation_allowed(identity_users, &identity_user, seed_user.global_role)?;
     ensure_seed_membership_mutation_allowed(&identity_user)?;
     Ok(())
@@ -149,6 +171,7 @@ where
     S: GatewayStore + ?Sized,
 {
     let oidc_provider = resolve_seed_oidc_provider(store, seed_user).await?;
+    let oauth_provider = resolve_seed_oauth_provider(store, seed_user).await?;
 
     let (existing_user, existing_identity_user) = match store
         .get_user_by_email_normalized(&seed_user.email_normalized)
@@ -178,6 +201,7 @@ where
             identity_user,
             seed_user.auth_mode,
             oidc_provider.as_ref(),
+            oauth_provider.as_ref(),
         )?;
         let identity_users = store.list_identity_users().await?;
         ensure_seed_role_mutation_allowed(&identity_users, identity_user, seed_user.global_role)?;
@@ -214,6 +238,7 @@ where
         &identity_user,
         seed_user.auth_mode,
         oidc_provider.as_ref(),
+        oauth_provider.as_ref(),
         now,
     )
     .await?;
@@ -258,6 +283,7 @@ fn ensure_seed_auth_mutation_allowed(
     user: &IdentityUserRecord,
     next_auth_mode: AuthMode,
     oidc_provider: Option<&OidcProviderRecord>,
+    oauth_provider: Option<&OauthProviderRecord>,
 ) -> Result<(), StoreError> {
     if user.user.auth_mode != next_auth_mode && user.user.status != UserStatus::Invited {
         return Err(StoreError::Conflict(
@@ -265,14 +291,25 @@ fn ensure_seed_auth_mutation_allowed(
         ));
     }
 
-    let current_provider_id = user.oidc_provider_id.as_deref();
-    let next_provider_id = oidc_provider.map(|provider| provider.oidc_provider_id.as_str());
+    let current_oidc_provider_id = user.oidc_provider_id.as_deref();
+    let next_oidc_provider_id = oidc_provider.map(|provider| provider.oidc_provider_id.as_str());
     if next_auth_mode == AuthMode::Oidc
-        && current_provider_id != next_provider_id
+        && current_oidc_provider_id != next_oidc_provider_id
         && user.user.status != UserStatus::Invited
     {
         return Err(StoreError::Conflict(
             "oidc provider can only change while the user is invited".to_string(),
+        ));
+    }
+
+    let current_oauth_provider_id = user.oauth_provider_id.as_deref();
+    let next_oauth_provider_id = oauth_provider.map(|provider| provider.oauth_provider_id.as_str());
+    if next_auth_mode == AuthMode::Oauth
+        && current_oauth_provider_id != next_oauth_provider_id
+        && user.user.status != UserStatus::Invited
+    {
+        return Err(StoreError::Conflict(
+            "oauth provider can only change while the user is invited".to_string(),
         ));
     }
 
@@ -340,10 +377,34 @@ where
                     })?,
             ))
         }
-        AuthMode::Password => Ok(None),
-        AuthMode::Oauth => Err(StoreError::Conflict(
-            "users config does not support auth_mode `oauth`".to_string(),
-        )),
+        AuthMode::Password | AuthMode::Oauth => Ok(None),
+    }
+}
+
+async fn resolve_seed_oauth_provider<S>(
+    store: &S,
+    seed_user: &SeedUser,
+) -> Result<Option<OauthProviderRecord>, StoreError>
+where
+    S: GatewayStore + ?Sized,
+{
+    match seed_user.auth_mode {
+        AuthMode::Oauth => {
+            let provider_key = seed_user.oauth_provider_key.as_deref().ok_or_else(|| {
+                StoreError::Conflict("oauth_provider_key is required for oauth users".to_string())
+            })?;
+            Ok(Some(
+                store
+                    .get_enabled_oauth_provider_by_key(provider_key)
+                    .await?
+                    .ok_or_else(|| {
+                        StoreError::NotFound(format!(
+                            "oauth provider `{provider_key}` is not enabled"
+                        ))
+                    })?,
+            ))
+        }
+        AuthMode::Password | AuthMode::Oidc => Ok(None),
     }
 }
 
@@ -352,6 +413,7 @@ async fn sync_seed_user_auth_mode<S>(
     user: &IdentityUserRecord,
     next_auth_mode: AuthMode,
     oidc_provider: Option<&OidcProviderRecord>,
+    oauth_provider: Option<&OauthProviderRecord>,
     now: OffsetDateTime,
 ) -> Result<(), StoreError>
 where
@@ -373,22 +435,37 @@ where
         }
     }
 
+    if let Some(current_provider_id) = user.oauth_provider_id.as_deref() {
+        let next_provider_id = oauth_provider.map(|provider| provider.oauth_provider_id.as_str());
+        if next_auth_mode != AuthMode::Oauth || next_provider_id != Some(current_provider_id) {
+            store
+                .delete_user_oauth_auth(user.user.user_id, current_provider_id)
+                .await?;
+        }
+    }
+
     match next_auth_mode {
         AuthMode::Password => {
             store.clear_user_oidc_link(user.user.user_id).await?;
+            store.clear_user_oauth_link(user.user.user_id).await?;
         }
         AuthMode::Oidc => {
             let provider = oidc_provider.ok_or_else(|| {
                 StoreError::Conflict("oidc provider configuration is required".to_string())
             })?;
+            store.clear_user_oauth_link(user.user.user_id).await?;
             store
                 .set_user_oidc_link(user.user.user_id, &provider.oidc_provider_id, now)
                 .await?;
         }
         AuthMode::Oauth => {
-            return Err(StoreError::Conflict(
-                "users config does not support auth_mode `oauth`".to_string(),
-            ));
+            let provider = oauth_provider.ok_or_else(|| {
+                StoreError::Conflict("oauth provider configuration is required".to_string())
+            })?;
+            store.clear_user_oidc_link(user.user.user_id).await?;
+            store
+                .set_user_oauth_link(user.user.user_id, &provider.oauth_provider_id, now)
+                .await?;
         }
     }
 

@@ -4,6 +4,7 @@ import { getRequest, setResponseHeader } from '@tanstack/react-start/server'
 import type { GatewayPaths } from '@/types/live-api'
 
 const DEFAULT_DEV_UI_PORT = '3001'
+const DEFAULT_DOCKER_UI_PORT = '3003'
 const DEFAULT_GATEWAY_PORT = '8080'
 
 function trimOrigin(value: string) {
@@ -53,6 +54,41 @@ export function resolveGatewayOriginFromRequest(request: Request, explicitOrigin
   }
 
   return trimOrigin(requestTarget.origin)
+}
+
+export function resolveBrowserGatewayOriginFromRequest(
+  request: Request,
+  explicitOrigin?: string,
+) {
+  const explicit = explicitOrigin?.trim()
+  if (explicit) {
+    return trimOrigin(explicit)
+  }
+
+  const forwardedOrigin = request.headers.get('x-forwarded-origin')
+  if (forwardedOrigin) {
+    return trimOrigin(forwardedOrigin)
+  }
+
+  const requestTarget = parseRequestTarget(request)
+  if (
+    requestTarget.port === DEFAULT_DEV_UI_PORT ||
+    requestTarget.port === DEFAULT_DOCKER_UI_PORT
+  ) {
+    const gatewayOrigin = new URL(requestTarget.origin)
+    gatewayOrigin.port = DEFAULT_GATEWAY_PORT
+    return trimOrigin(gatewayOrigin.origin)
+  }
+
+  return trimOrigin(requestTarget.origin)
+}
+
+export function resolveBrowserGatewayOrigin() {
+  const request = getRequest()
+  return resolveBrowserGatewayOriginFromRequest(
+    request,
+    process.env.ADMIN_GATEWAY_BROWSER_ORIGIN,
+  )
 }
 
 function resolveGatewayOrigin() {

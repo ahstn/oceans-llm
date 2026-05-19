@@ -112,8 +112,21 @@ export default defineConfig({
         items: [
           { text: "Identity and Access", link: "/access/identity-and-access" },
           { text: "Service Accounts", link: "/access/service-accounts" },
-          { text: "OIDC and SSO Status", link: "/access/oidc-and-sso-status" },
+          { text: "OIDC and SSO", link: "/access/oidc-and-sso-status" },
+          {
+            text: "GitHub OAuth SSO Setup",
+            link: "/access/github-oauth-admin-setup",
+          },
           { text: "Admin Control Plane", link: "/access/admin-control-plane" },
+        ],
+      },
+      {
+        text: "Development",
+        items: [
+          {
+            text: "Testing Authentication Locally",
+            link: "/development/authentication-testing",
+          },
         ],
       },
       {

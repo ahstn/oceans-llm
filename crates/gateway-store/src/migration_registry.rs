@@ -79,6 +79,22 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V24__identity_entity_tags.sql"),
         postgres_sql: include_str!("../migrations/postgres/V24__identity_entity_tags.sql"),
     },
+    MigrationManifest {
+        version: 25,
+        name: "oidc_sso_hardening",
+        checksum: "V25__oidc_sso_hardening.sql",
+        libsql_sql: include_str!("../migrations/V25__oidc_sso_hardening.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V25__oidc_sso_hardening.sql"),
+    },
+    MigrationManifest {
+        version: 26,
+        name: "oauth_providers_and_github_sso",
+        checksum: "V26__oauth_providers_and_github_sso.sql",
+        libsql_sql: include_str!("../migrations/V26__oauth_providers_and_github_sso.sql"),
+        postgres_sql: include_str!(
+            "../migrations/postgres/V26__oauth_providers_and_github_sso.sql"
+        ),
+    },
 ];
 
 #[cfg(test)]

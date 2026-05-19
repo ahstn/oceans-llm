@@ -798,6 +798,8 @@ mod tests {
             membership_role: None,
             oidc_provider_id: None,
             oidc_provider_key: None,
+            oauth_provider_id: None,
+            oauth_provider_key: None,
         }
     }
 

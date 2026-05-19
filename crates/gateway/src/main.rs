@@ -115,6 +115,8 @@ where
     let providers_seed = config.seed_providers()?;
     let models_seed = config.seed_models()?;
     let api_keys_seed = config.seed_api_keys()?;
+    let oidc_providers_seed = config.seed_oidc_providers()?;
+    let oauth_providers_seed = config.seed_oauth_providers()?;
     let teams_seed = config.seed_teams()?;
     let users_seed = config.seed_users()?;
 
@@ -123,6 +125,8 @@ where
             &providers_seed,
             &models_seed,
             &api_keys_seed,
+            &oidc_providers_seed,
+            &oauth_providers_seed,
             &teams_seed,
             &users_seed,
         )
@@ -183,6 +187,20 @@ async fn run_serve_with_store(
             providers,
             metrics,
             identity_token_secret: Arc::new(load_identity_token_secret()),
+            oidc_public_base_url: Arc::new(
+                config
+                    .auth
+                    .oidc
+                    .resolved_public_base_url()
+                    .context("failed resolving OIDC public base URL")?,
+            ),
+            oauth_public_base_url: Arc::new(
+                config
+                    .auth
+                    .oauth
+                    .resolved_public_base_url()
+                    .context("failed resolving OAuth public base URL")?,
+            ),
         },
         load_admin_ui_config(),
     );
@@ -1089,7 +1107,7 @@ providers:
         }];
 
         store
-            .seed_from_inputs(&seed_providers, &models, &api_keys, &[], &[])
+            .seed_from_inputs(&seed_providers, &models, &api_keys, &[], &[], &[], &[])
             .await
             .expect("seed data");
 
@@ -1113,6 +1131,8 @@ providers:
                 providers: provider_registry,
                 metrics: Arc::new(gateway::observability::GatewayMetrics::default()),
                 identity_token_secret: Arc::new("local-dev-identity-secret".to_string()),
+                oidc_public_base_url: Arc::new(None),
+                oauth_public_base_url: Arc::new(None),
             },
             AdminUiConfig::default(),
         );
@@ -1152,7 +1172,7 @@ providers:
         }];
 
         store
-            .seed_from_inputs(&seed_providers, &models, &api_keys, &[], &[])
+            .seed_from_inputs(&seed_providers, &models, &api_keys, &[], &[], &[], &[])
             .await
             .expect("seed data");
 
@@ -1169,6 +1189,8 @@ providers:
                 providers: provider_registry,
                 metrics: metrics.clone(),
                 identity_token_secret: Arc::new("local-dev-identity-secret".to_string()),
+                oidc_public_base_url: Arc::new(None),
+                oauth_public_base_url: Arc::new(None),
             },
             AdminUiConfig::default(),
         );
@@ -1276,6 +1298,8 @@ providers:
                 providers,
                 metrics: Arc::new(gateway::observability::GatewayMetrics::default()),
                 identity_token_secret: Arc::new("local-dev-identity-secret".to_string()),
+                oidc_public_base_url: Arc::new(None),
+                oauth_public_base_url: Arc::new(None),
             },
             AdminUiConfig::default(),
         );
@@ -1335,7 +1359,7 @@ providers:
         }];
 
         store
-            .seed_from_inputs(&seed_providers, &models, &api_keys, &[], &[])
+            .seed_from_inputs(&seed_providers, &models, &api_keys, &[], &[], &[], &[])
             .await
             .expect("seed");
 
@@ -1351,6 +1375,8 @@ providers:
                 providers: provider_registry,
                 metrics: Arc::new(gateway::observability::GatewayMetrics::default()),
                 identity_token_secret: Arc::new("local-dev-identity-secret".to_string()),
+                oidc_public_base_url: Arc::new(None),
+                oauth_public_base_url: Arc::new(None),
             },
             AdminUiConfig::default(),
         );
@@ -3823,7 +3849,7 @@ request_logging:
             },
         ];
         store
-            .seed_from_inputs(&providers, &models, &[], &[], &[])
+            .seed_from_inputs(&providers, &models, &[], &[], &[], &[], &[])
             .await
             .expect("seed models");
 
@@ -4066,7 +4092,7 @@ request_logging:
             }],
         }];
         store
-            .seed_from_inputs(&providers, &models, &[], &[], &[])
+            .seed_from_inputs(&providers, &models, &[], &[], &[], &[], &[])
             .await
             .expect("seed models");
 
@@ -4161,7 +4187,7 @@ request_logging:
             }],
         }];
         store
-            .seed_from_inputs(&providers, &models, &[], &[], &[])
+            .seed_from_inputs(&providers, &models, &[], &[], &[], &[], &[])
             .await
             .expect("seed models");
 
@@ -4869,7 +4895,7 @@ request_logging:
             allowed_models: vec!["fast".to_string()],
         }];
         store
-            .seed_from_inputs(&providers, &models, &api_keys, &[], &[])
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[], &[])
             .await
             .expect("seed");
         let api_key = store
@@ -5115,7 +5141,7 @@ request_logging:
             allowed_models: vec!["fast".to_string(), "reasoning".to_string()],
         }];
         store
-            .seed_from_inputs(&providers, &models, &api_keys, &[], &[])
+            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[], &[])
             .await
             .expect("seed");
         let api_key = store

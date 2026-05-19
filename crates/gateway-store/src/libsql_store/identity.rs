@@ -86,12 +86,16 @@ impl LibsqlStore {
                     teams.team_name,
                     team_memberships.role,
                     user_oidc_links.oidc_provider_id,
-                    oidc_providers.provider_key
+                    oidc_providers.provider_key,
+                    user_oauth_links.oauth_provider_id,
+                    oauth_providers.provider_key
                 FROM users
                 LEFT JOIN team_memberships ON team_memberships.user_id = users.user_id
                 LEFT JOIN teams ON teams.team_id = team_memberships.team_id
                 LEFT JOIN user_oidc_links ON user_oidc_links.user_id = users.user_id
                 LEFT JOIN oidc_providers ON oidc_providers.oidc_provider_id = user_oidc_links.oidc_provider_id
+                LEFT JOIN user_oauth_links ON user_oauth_links.user_id = users.user_id
+                LEFT JOIN oauth_providers ON oauth_providers.oauth_provider_id = user_oauth_links.oauth_provider_id
                 WHERE users.user_id != ?1
                 ORDER BY users.created_at DESC, users.email_normalized ASC
                 "#,
@@ -134,12 +138,16 @@ impl LibsqlStore {
                     teams.team_name,
                     team_memberships.role,
                     user_oidc_links.oidc_provider_id,
-                    oidc_providers.provider_key
+                    oidc_providers.provider_key,
+                    user_oauth_links.oauth_provider_id,
+                    oauth_providers.provider_key
                 FROM users
                 LEFT JOIN team_memberships ON team_memberships.user_id = users.user_id
                 LEFT JOIN teams ON teams.team_id = team_memberships.team_id
                 LEFT JOIN user_oidc_links ON user_oidc_links.user_id = users.user_id
                 LEFT JOIN oidc_providers ON oidc_providers.oidc_provider_id = user_oidc_links.oidc_provider_id
+                LEFT JOIN user_oauth_links ON user_oauth_links.user_id = users.user_id
+                LEFT JOIN oauth_providers ON oauth_providers.oauth_provider_id = user_oauth_links.oauth_provider_id
                 WHERE users.user_id = ?1
                   AND users.user_id != ?2
                 LIMIT 1
@@ -365,7 +373,9 @@ impl LibsqlStore {
             .query(
                 r#"
                 SELECT oidc_provider_id, provider_key, provider_type, issuer_url, client_id,
-                       scopes_json, enabled, created_at, updated_at
+                       scopes_json, enabled, label, client_secret_ref, jit_enabled,
+                       jit_global_role, jit_team_key, jit_team_role,
+                       jit_request_logging_enabled, created_at, updated_at
                 FROM oidc_providers
                 WHERE enabled = 1
                 ORDER BY provider_key ASC
@@ -392,7 +402,9 @@ impl LibsqlStore {
             .query(
                 r#"
                 SELECT oidc_provider_id, provider_key, provider_type, issuer_url, client_id,
-                       scopes_json, enabled, created_at, updated_at
+                       scopes_json, enabled, label, client_secret_ref, jit_enabled,
+                       jit_global_role, jit_team_key, jit_team_role,
+                       jit_request_logging_enabled, created_at, updated_at
                 FROM oidc_providers
                 WHERE provider_key = ?1 AND enabled = 1
                 LIMIT 1
@@ -407,6 +419,205 @@ impl LibsqlStore {
         };
 
         decode_oidc_provider_record(&row).map(Some)
+    }
+
+    pub async fn create_oidc_login_state(
+        &self,
+        state: &OidcLoginStateRecord,
+    ) -> Result<(), StoreError> {
+        self.connection
+            .execute(
+                r#"
+                INSERT INTO oidc_login_states (
+                    state_hash, oidc_provider_id, nonce, pkce_verifier, redirect_to, login_hint,
+                    expires_at, consumed_at, created_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                "#,
+                libsql::params![
+                    state.state_hash.as_str(),
+                    state.oidc_provider_id.as_str(),
+                    state.nonce.as_str(),
+                    state.pkce_verifier.as_str(),
+                    state.redirect_to.as_str(),
+                    state.login_hint.clone(),
+                    state.expires_at.unix_timestamp(),
+                    state
+                        .consumed_at
+                        .map(|value: OffsetDateTime| value.unix_timestamp()),
+                    state.created_at.unix_timestamp(),
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn consume_oidc_login_state(
+        &self,
+        state_hash: &str,
+        consumed_at: OffsetDateTime,
+    ) -> Result<Option<OidcLoginStateRecord>, StoreError> {
+        let updated = self
+            .connection
+            .execute(
+                r#"
+                UPDATE oidc_login_states
+                SET consumed_at = ?1
+                WHERE state_hash = ?2 AND consumed_at IS NULL
+                "#,
+                libsql::params![consumed_at.unix_timestamp(), state_hash],
+            )
+            .await
+            .map_err(to_write_error)?;
+        if updated == 0 {
+            return Ok(None);
+        }
+
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT state_hash, oidc_provider_id, nonce, pkce_verifier, redirect_to,
+                       login_hint, expires_at, consumed_at, created_at
+                FROM oidc_login_states
+                WHERE state_hash = ?1
+                LIMIT 1
+                "#,
+                [state_hash],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let Some(row) = rows.next().await.map_err(to_query_error)? else {
+            return Ok(None);
+        };
+        decode_oidc_login_state_record(&row).map(Some)
+    }
+
+    pub async fn list_enabled_oauth_providers(
+        &self,
+    ) -> Result<Vec<OauthProviderRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT oauth_provider_id, provider_key, provider_type, client_id,
+                       scopes_json, enabled, label, client_secret_ref, jit_enabled,
+                       jit_global_role, jit_team_key, jit_team_role,
+                       jit_request_logging_enabled, created_at, updated_at
+                FROM oauth_providers
+                WHERE enabled = 1
+                ORDER BY provider_key ASC
+                "#,
+                (),
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let mut providers = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            providers.push(decode_oauth_provider_record(&row)?);
+        }
+
+        Ok(providers)
+    }
+
+    pub async fn get_enabled_oauth_provider_by_key(
+        &self,
+        provider_key: &str,
+    ) -> Result<Option<OauthProviderRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT oauth_provider_id, provider_key, provider_type, client_id,
+                       scopes_json, enabled, label, client_secret_ref, jit_enabled,
+                       jit_global_role, jit_team_key, jit_team_role,
+                       jit_request_logging_enabled, created_at, updated_at
+                FROM oauth_providers
+                WHERE provider_key = ?1 AND enabled = 1
+                LIMIT 1
+                "#,
+                [provider_key],
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let Some(row) = rows.next().await.map_err(to_query_error)? else {
+            return Ok(None);
+        };
+
+        decode_oauth_provider_record(&row).map(Some)
+    }
+
+    pub async fn create_oauth_login_state(
+        &self,
+        state: &OauthLoginStateRecord,
+    ) -> Result<(), StoreError> {
+        self.connection
+            .execute(
+                r#"
+                INSERT INTO oauth_login_states (
+                    state_hash, oauth_provider_id, pkce_verifier, redirect_to, login_hint,
+                    expires_at, consumed_at, created_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                "#,
+                libsql::params![
+                    state.state_hash.as_str(),
+                    state.oauth_provider_id.as_str(),
+                    state.pkce_verifier.as_str(),
+                    state.redirect_to.as_str(),
+                    state.login_hint.clone(),
+                    state.expires_at.unix_timestamp(),
+                    state
+                        .consumed_at
+                        .map(|value: OffsetDateTime| value.unix_timestamp()),
+                    state.created_at.unix_timestamp(),
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn consume_oauth_login_state(
+        &self,
+        state_hash: &str,
+        consumed_at: OffsetDateTime,
+    ) -> Result<Option<OauthLoginStateRecord>, StoreError> {
+        let updated = self
+            .connection
+            .execute(
+                r#"
+                UPDATE oauth_login_states
+                SET consumed_at = ?1
+                WHERE state_hash = ?2 AND consumed_at IS NULL
+                "#,
+                libsql::params![consumed_at.unix_timestamp(), state_hash],
+            )
+            .await
+            .map_err(to_write_error)?;
+        if updated == 0 {
+            return Ok(None);
+        }
+
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT state_hash, oauth_provider_id, pkce_verifier, redirect_to,
+                       login_hint, expires_at, consumed_at, created_at
+                FROM oauth_login_states
+                WHERE state_hash = ?1
+                LIMIT 1
+                "#,
+                [state_hash],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let Some(row) = rows.next().await.map_err(to_query_error)? else {
+            return Ok(None);
+        };
+        decode_oauth_login_state_record(&row).map(Some)
     }
 
     pub async fn get_user_by_email_normalized(
@@ -1377,6 +1588,125 @@ impl LibsqlStore {
         Ok(())
     }
 
+    pub async fn get_user_oauth_auth(
+        &self,
+        oauth_provider_id: &str,
+        subject: &str,
+    ) -> Result<Option<UserOauthAuthRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT user_id, oauth_provider_id, subject, email_claim, created_at
+                FROM user_oauth_auth
+                WHERE oauth_provider_id = ?1
+                  AND subject = ?2
+                LIMIT 1
+                "#,
+                libsql::params![oauth_provider_id, subject],
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let Some(row) = rows.next().await.map_err(to_query_error)? else {
+            return Ok(None);
+        };
+
+        decode_user_oauth_auth_record(&row).map(Some)
+    }
+
+    pub async fn get_user_oauth_auth_by_user(
+        &self,
+        user_id: Uuid,
+        oauth_provider_id: &str,
+    ) -> Result<Option<UserOauthAuthRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT user_id, oauth_provider_id, subject, email_claim, created_at
+                FROM user_oauth_auth
+                WHERE user_id = ?1
+                  AND oauth_provider_id = ?2
+                LIMIT 1
+                "#,
+                libsql::params![user_id.to_string(), oauth_provider_id],
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let Some(row) = rows.next().await.map_err(to_query_error)? else {
+            return Ok(None);
+        };
+
+        decode_user_oauth_auth_record(&row).map(Some)
+    }
+
+    pub async fn create_user_oauth_auth(
+        &self,
+        user_id: Uuid,
+        oauth_provider_id: &str,
+        subject: &str,
+        email_claim: Option<&str>,
+        created_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        self.connection
+            .execute(
+                r#"
+                INSERT INTO user_oauth_auth (
+                    user_id, oauth_provider_id, subject, email_claim, created_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5)
+                "#,
+                libsql::params![
+                    user_id.to_string(),
+                    oauth_provider_id,
+                    subject,
+                    email_claim,
+                    created_at.unix_timestamp(),
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn set_user_oauth_link(
+        &self,
+        user_id: Uuid,
+        oauth_provider_id: &str,
+        created_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        self.connection
+            .execute(
+                r#"
+                INSERT INTO user_oauth_links (user_id, oauth_provider_id, created_at)
+                VALUES (?1, ?2, ?3)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    oauth_provider_id = excluded.oauth_provider_id,
+                    created_at = excluded.created_at
+                "#,
+                libsql::params![
+                    user_id.to_string(),
+                    oauth_provider_id,
+                    created_at.unix_timestamp(),
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn clear_user_oauth_link(&self, user_id: Uuid) -> Result<(), StoreError> {
+        self.connection
+            .execute(
+                "DELETE FROM user_oauth_links WHERE user_id = ?1",
+                [user_id.to_string()],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(())
+    }
+
     pub async fn delete_user_password_auth(&self, user_id: Uuid) -> Result<(), StoreError> {
         self.connection
             .execute(
@@ -1401,6 +1731,25 @@ impl LibsqlStore {
                   AND oidc_provider_id = ?2
                 "#,
                 libsql::params![user_id.to_string(), oidc_provider_id],
+            )
+            .await
+            .map_err(to_write_error)?;
+        Ok(())
+    }
+
+    pub async fn delete_user_oauth_auth(
+        &self,
+        user_id: Uuid,
+        oauth_provider_id: &str,
+    ) -> Result<(), StoreError> {
+        self.connection
+            .execute(
+                r#"
+                DELETE FROM user_oauth_auth
+                WHERE user_id = ?1
+                  AND oauth_provider_id = ?2
+                "#,
+                libsql::params![user_id.to_string(), oauth_provider_id],
             )
             .await
             .map_err(to_write_error)?;
@@ -1434,6 +1783,44 @@ impl LibsqlStore {
                 LIMIT 1
                 "#,
                 libsql::params![email_normalized, oidc_provider_id],
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let Some(row) = rows.next().await.map_err(to_query_error)? else {
+            return Ok(None);
+        };
+
+        decode_user_record(&row).map(Some)
+    }
+
+    pub async fn find_invited_oauth_user(
+        &self,
+        email_normalized: &str,
+        oauth_provider_id: &str,
+    ) -> Result<Option<UserRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT users.user_id, users.name, users.email, users.email_normalized,
+                       users.global_role, users.auth_mode, users.status,
+                       users.must_change_password, users.request_logging_enabled, users.model_access_mode,
+                       users.tags_json,
+                       users.created_at, users.updated_at
+                FROM users
+                INNER JOIN user_oauth_links ON user_oauth_links.user_id = users.user_id
+                LEFT JOIN user_oauth_auth ON
+                    user_oauth_auth.user_id = users.user_id
+                    AND user_oauth_auth.oauth_provider_id = ?2
+                WHERE users.email_normalized = ?1
+                  AND users.auth_mode = 'oauth'
+                  AND users.status = 'invited'
+                  AND user_oauth_links.oauth_provider_id = ?2
+                  AND user_oauth_auth.user_id IS NULL
+                LIMIT 1
+                "#,
+                libsql::params![email_normalized, oauth_provider_id],
             )
             .await
             .map_err(to_query_error)?;

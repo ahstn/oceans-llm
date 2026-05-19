@@ -48,6 +48,20 @@ import {
   unwrapGatewayResponse,
 } from '@/server/gateway-client.server'
 
+export type PublicOidcProvidersPayload = {
+  providers: Array<{
+    key: string
+    label: string
+  }>
+}
+
+export type PublicOauthProvidersPayload = {
+  providers: Array<{
+    key: string
+    label: string
+  }>
+}
+
 export async function listApiKeys(): Promise<ApiEnvelope<ApiKeysPayload>> {
   return fetchGatewayJson<ApiEnvelope<ApiKeysPayload>>('/api/v1/admin/api-keys')
 }
@@ -337,6 +351,18 @@ export async function transferTeamMember(
 export async function getSession(): Promise<ApiEnvelope<AuthSessionView | null>> {
   const client = createGatewayApiClient()
   return unwrapGatewayResponse(await client.GET('/api/v1/auth/session'))
+}
+
+export async function listOidcProviders(): Promise<ApiEnvelope<PublicOidcProvidersPayload>> {
+  return fetchGatewayJson<ApiEnvelope<PublicOidcProvidersPayload>>(
+    '/api/v1/auth/oidc/providers',
+  )
+}
+
+export async function listOauthProviders(): Promise<ApiEnvelope<PublicOauthProvidersPayload>> {
+  return fetchGatewayJson<ApiEnvelope<PublicOauthProvidersPayload>>(
+    '/api/v1/auth/oauth/providers',
+  )
 }
 
 export async function loginWithPassword(

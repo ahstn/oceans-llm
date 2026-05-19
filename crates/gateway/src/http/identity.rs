@@ -8,47 +8,62 @@ use axum::{
 };
 use gateway_core::{
     AuthError, AuthMode, GatewayError, GlobalRole, IdentityRepository, IdentityUserRecord,
-    MembershipRole, OidcProviderRecord, PasswordInvitationRecord, ServiceAccountRecord, TeamRecord,
-    UserRecord, UserSessionRecord, UserStatus,
+    MembershipRole, OauthLoginStateRecord, OauthProviderRecord, OidcLoginStateRecord,
+    OidcProviderRecord, PasswordInvitationRecord, ServiceAccountRecord, TeamRecord, UserRecord,
+    UserSessionRecord, UserStatus,
 };
 use gateway_store::{AnyStore, GatewayStore};
+use openidconnect::{
+    AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce, PkceCodeChallenge,
+    PkceCodeVerifier, RedirectUrl, Scope, TokenResponse,
+    core::{CoreAuthenticationFlow, CoreClient, CoreProviderMetadata},
+    reqwest,
+};
+use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use time::{Duration, OffsetDateTime};
 use url::form_urlencoded;
 use uuid::Uuid;
 
-use crate::http::{
-    admin_auth::{require_authenticated_session, require_platform_admin},
-    admin_contract::{
-        AddTeamMembersRequest, AdminEntityTagView, AdminIdentityPayload, AdminOidcProviderView,
-        AdminServiceAccountView, AdminServiceAccountsPayload, AdminTeamManagementView,
-        AdminTeamView, AdminTeamsPayload, AuthSessionUserView, AuthSessionView,
-        ChangePasswordRequest, CompleteInvitationRequest, CompleteInvitationResponse,
-        CreateServiceAccountRequest, CreateTeamRequest, CreateUserRequest, CreateUserResponse,
-        Envelope, IdentityActionStatus, InvitationView, OidcCallbackQuery, OidcStartQuery,
-        PasswordInviteResponse, PasswordLoginRequest, TransferTeamMemberRequest,
-        UpdateServiceAccountRequest, UpdateTeamRequest, UpdateUserRequest, envelope,
-        format_timestamp,
+use crate::{
+    config::resolve_secret_reference,
+    http::{
+        admin_auth::{require_authenticated_session, require_platform_admin},
+        admin_contract::{
+            AddTeamMembersRequest, AdminEntityTagView, AdminIdentityPayload,
+            AdminOauthProviderView, AdminOidcProviderView, AdminServiceAccountView,
+            AdminServiceAccountsPayload, AdminTeamManagementView, AdminTeamView, AdminTeamsPayload,
+            AuthSessionUserView, AuthSessionView, ChangePasswordRequest, CompleteInvitationRequest,
+            CompleteInvitationResponse, CreateServiceAccountRequest, CreateTeamRequest,
+            CreateUserRequest, CreateUserResponse, Envelope, IdentityActionStatus, InvitationView,
+            OauthCallbackQuery, OauthStartQuery, OidcCallbackQuery, OidcStartQuery,
+            PasswordInviteResponse, PasswordLoginRequest, PublicOauthProviderView,
+            PublicOauthProvidersPayload, PublicOidcProviderView, PublicOidcProvidersPayload,
+            TransferTeamMemberRequest, UpdateServiceAccountRequest, UpdateTeamRequest,
+            UpdateUserRequest, envelope, format_timestamp,
+        },
+        error::AppError,
+        identity_lifecycle::{
+            ensure_assignable_membership_role, ensure_auth_mode_edit_allowed,
+            ensure_deactivation_allowed, ensure_manageable_user, ensure_mutable_membership,
+            ensure_not_self_deactivating, ensure_not_self_demoting, ensure_reactivation_allowed,
+            ensure_reset_onboarding_allowed, reactivation_status,
+        },
+        identity_views::{
+            build_admin_identity_user_view, build_admin_team_views, build_assignable_user_views,
+            reload_identity_user, reload_team_view,
+        },
+        request_tags::validate_entity_tags,
+        state::AppState,
     },
-    error::AppError,
-    identity_lifecycle::{
-        ensure_assignable_membership_role, ensure_auth_mode_edit_allowed,
-        ensure_deactivation_allowed, ensure_manageable_user, ensure_mutable_membership,
-        ensure_not_self_deactivating, ensure_not_self_demoting, ensure_reactivation_allowed,
-        ensure_reset_onboarding_allowed, reactivation_status,
-    },
-    identity_views::{
-        build_admin_identity_user_view, build_admin_team_views, build_assignable_user_views,
-        reload_identity_user, reload_team_view,
-    },
-    request_tags::validate_entity_tags,
-    state::AppState,
 };
 
 const SESSION_COOKIE_NAME: &str = "ogw_session";
 const INVITE_TTL_DAYS: i64 = 7;
 const SESSION_TTL_DAYS: i64 = 30;
 const SESSION_TTL_SECONDS: i64 = SESSION_TTL_DAYS * 24 * 60 * 60;
+const OIDC_STATE_TTL_MINUTES: i64 = 10;
+const OAUTH_STATE_TTL_MINUTES: i64 = 10;
 
 #[utoipa::path(
     get,
@@ -66,6 +81,7 @@ pub async fn list_identity_users(
     let users = state.store.list_identity_users().await?;
     let teams = state.store.list_active_teams().await?;
     let providers = state.store.list_enabled_oidc_providers().await?;
+    let oauth_providers = state.store.list_enabled_oauth_providers().await?;
 
     let now = OffsetDateTime::now_utc();
     let mut user_views = Vec::with_capacity(users.len());
@@ -99,6 +115,14 @@ pub async fn list_identity_users(
                 label: provider.provider_key,
             })
             .collect(),
+        oauth_providers: oauth_providers
+            .into_iter()
+            .map(|provider| AdminOauthProviderView {
+                id: provider.oauth_provider_id,
+                key: provider.provider_key.clone(),
+                label: provider.provider_key,
+            })
+            .collect(),
     })))
 }
 
@@ -117,6 +141,7 @@ pub async fn list_identity_teams(
     let teams = state.store.list_teams().await?;
     let users = state.store.list_identity_users().await?;
     let providers = state.store.list_enabled_oidc_providers().await?;
+    let oauth_providers = state.store.list_enabled_oauth_providers().await?;
 
     Ok(Json(envelope(AdminTeamsPayload {
         teams: build_admin_team_views(&teams, &users),
@@ -125,6 +150,14 @@ pub async fn list_identity_teams(
             .into_iter()
             .map(|provider| AdminOidcProviderView {
                 id: provider.oidc_provider_id,
+                key: provider.provider_key.clone(),
+                label: provider.provider_key,
+            })
+            .collect(),
+        oauth_providers: oauth_providers
+            .into_iter()
+            .map(|provider| AdminOauthProviderView {
+                id: provider.oauth_provider_id,
                 key: provider.provider_key.clone(),
                 label: provider.provider_key,
             })
@@ -670,6 +703,12 @@ pub async fn create_identity_user(
         request.oidc_provider_key.as_deref(),
     )
     .await?;
+    let oauth_provider = resolve_requested_oauth_provider(
+        &state.store,
+        auth_mode,
+        request.oauth_provider_key.as_deref(),
+    )
+    .await?;
 
     if let Some((team_id, _)) = membership {
         state
@@ -707,6 +746,12 @@ pub async fn create_identity_user(
         state
             .store
             .set_user_oidc_link(user.user_id, &provider.oidc_provider_id, created_at)
+            .await?;
+    }
+    if let Some(provider) = oauth_provider.as_ref() {
+        state
+            .store
+            .set_user_oauth_link(user.user_id, &provider.oauth_provider_id, created_at)
             .await?;
     }
 
@@ -763,6 +808,18 @@ pub async fn update_identity_user(
         },
     )
     .await?;
+    let oauth_provider = resolve_requested_oauth_provider(
+        &state.store,
+        next_auth_mode,
+        match next_auth_mode {
+            AuthMode::Oauth => request
+                .oauth_provider_key
+                .as_deref()
+                .or(identity_user.oauth_provider_key.as_deref()),
+            AuthMode::Password | AuthMode::Oidc => request.oauth_provider_key.as_deref(),
+        },
+    )
+    .await?;
 
     ensure_not_self_demoting(&actor, &identity_user.user, next_global_role).map_err(AppError)?;
     ensure_auth_mode_edit_allowed(&identity_user.user, next_auth_mode).map_err(AppError)?;
@@ -788,6 +845,7 @@ pub async fn update_identity_user(
         &identity_user,
         next_auth_mode,
         oidc_provider.as_ref(),
+        oauth_provider.as_ref(),
         now,
     )
     .await?;
@@ -885,6 +943,14 @@ pub async fn reset_identity_user_onboarding(
         })?;
         load_enabled_oidc_provider(&state.store, provider_key).await?;
     }
+    if identity_user.user.auth_mode == AuthMode::Oauth {
+        let provider_key = identity_user.oauth_provider_key.as_deref().ok_or_else(|| {
+            AppError(GatewayError::InvalidRequest(
+                "oauth users must be linked to a provider before resetting onboarding".to_string(),
+            ))
+        })?;
+        load_enabled_oauth_provider(&state.store, provider_key).await?;
+    }
 
     let now = OffsetDateTime::now_utc();
     match identity_user.user.auth_mode {
@@ -908,9 +974,16 @@ pub async fn reset_identity_user_onboarding(
                 .await?;
         }
         AuthMode::Oauth => {
-            return Err(AppError(GatewayError::InvalidRequest(
-                "unsupported auth mode".to_string(),
-            )));
+            let provider_id = identity_user.oauth_provider_id.as_deref().ok_or_else(|| {
+                AppError(GatewayError::InvalidRequest(
+                    "oauth users must be linked to a provider before resetting onboarding"
+                        .to_string(),
+                ))
+            })?;
+            state
+                .store
+                .delete_user_oauth_auth(user_id, provider_id)
+                .await?;
         }
     }
 
@@ -1123,7 +1196,7 @@ pub async fn complete_password_invitation(
     get,
     path = "/api/v1/auth/oidc/start",
     params(OidcStartQuery),
-    responses((status = 302, description = "Redirect to the same-origin OIDC callback"))
+    responses((status = 302, description = "Redirect to the OIDC provider"))
 )]
 pub async fn oidc_start(
     State(state): State<AppState>,
@@ -1131,22 +1204,56 @@ pub async fn oidc_start(
     Query(query): Query<OidcStartQuery>,
 ) -> Result<Redirect, AppError> {
     let provider = load_enabled_oidc_provider(&state.store, &query.provider_key).await?;
-    let origin = request_origin(&headers);
-    let email = normalize_email(&query.login_hint)?;
-    let subject = oidc_subject(&provider, &email);
-    let redirect_to = query
-        .redirect_to
-        .unwrap_or_else(|| "/admin/account-ready?mode=oidc".to_string());
+    let origin = oidc_public_origin(&state, &headers);
+    let login_hint = query
+        .login_hint
+        .as_deref()
+        .map(normalize_email)
+        .transpose()?;
+    let redirect_to = normalize_oidc_redirect(
+        query.redirect_to.as_deref(),
+        "/admin/account-ready?mode=oidc",
+    );
+    let provider_metadata = oidc_provider_metadata(&provider).await?;
+    let client = CoreClient::from_provider_metadata(
+        provider_metadata,
+        ClientId::new(provider.client_id.clone()),
+        Some(ClientSecret::new(oidc_client_secret(&provider)?)),
+    )
+    .set_redirect_uri(
+        RedirectUrl::new(format!("{origin}/api/v1/auth/oidc/callback"))
+            .map_err(|error| AppError(GatewayError::InvalidRequest(error.to_string())))?,
+    );
+    let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
+    let mut auth_request = client
+        .authorize_url(
+            CoreAuthenticationFlow::AuthorizationCode,
+            CsrfToken::new_random,
+            Nonce::new_random,
+        )
+        .set_pkce_challenge(pkce_challenge);
+    for scope in &provider.scopes {
+        auth_request = auth_request.add_scope(Scope::new(scope.clone()));
+    }
+    if let Some(login_hint) = login_hint.as_deref() {
+        auth_request = auth_request.add_extra_param("login_hint", login_hint);
+    }
+    let (authorize_url, csrf_state, nonce) = auth_request.url();
+    let now = OffsetDateTime::now_utc();
+    let state_record = OidcLoginStateRecord {
+        state_hash: token_hash(csrf_state.secret()),
+        oidc_provider_id: provider.oidc_provider_id,
+        nonce: nonce.secret().to_string(),
+        pkce_verifier: pkce_verifier.secret().to_string(),
+        redirect_to,
+        login_hint,
+        expires_at: now + Duration::minutes(OIDC_STATE_TTL_MINUTES),
+        consumed_at: None,
+        created_at: now,
+    };
+    state.store.create_oidc_login_state(&state_record).await?;
 
-    let query = form_urlencoded::Serializer::new(String::new())
-        .append_pair("provider_key", &provider.provider_key)
-        .append_pair("email", &email)
-        .append_pair("subject", &subject)
-        .append_pair("redirect_to", &redirect_to)
-        .finish();
-    let callback = format!("{origin}/api/v1/auth/oidc/callback?{query}");
-
-    Ok(Redirect::temporary(&callback))
+    Ok(Redirect::temporary(authorize_url.as_str()))
 }
 
 #[utoipa::path(
@@ -1160,12 +1267,81 @@ pub async fn oidc_callback(
     headers: HeaderMap,
     Query(query): Query<OidcCallbackQuery>,
 ) -> Result<Response, AppError> {
-    let provider = load_enabled_oidc_provider(&state.store, &query.provider_key).await?;
-    let email = normalize_email(&query.email)?;
-    let subject = query
-        .subject
-        .unwrap_or_else(|| oidc_subject(&provider, &email));
+    if query.error.is_some() {
+        return Ok(oidc_error_redirect("access_denied"));
+    }
+    let Some(state_token) = query.state.as_deref() else {
+        return Ok(oidc_error_redirect("state_invalid"));
+    };
+    let Some(code) = query.code else {
+        return Ok(oidc_error_redirect("provider_failure"));
+    };
     let now = OffsetDateTime::now_utc();
+    let Some(login_state) = state
+        .store
+        .consume_oidc_login_state(&token_hash(state_token), now)
+        .await?
+    else {
+        return Ok(oidc_error_redirect("state_invalid"));
+    };
+    if login_state.expires_at < now {
+        return Ok(oidc_error_redirect("state_expired"));
+    }
+    let provider = state
+        .store
+        .list_enabled_oidc_providers()
+        .await?
+        .into_iter()
+        .find(|provider| provider.oidc_provider_id == login_state.oidc_provider_id)
+        .ok_or_else(|| {
+            AppError(GatewayError::InvalidRequest(
+                "oidc provider not found".to_string(),
+            ))
+        })?;
+    let origin = oidc_public_origin(&state, &headers);
+    let provider_metadata = oidc_provider_metadata(&provider).await?;
+    let client = CoreClient::from_provider_metadata(
+        provider_metadata,
+        ClientId::new(provider.client_id.clone()),
+        Some(ClientSecret::new(oidc_client_secret(&provider)?)),
+    )
+    .set_redirect_uri(
+        RedirectUrl::new(format!("{origin}/api/v1/auth/oidc/callback"))
+            .map_err(|error| AppError(GatewayError::InvalidRequest(error.to_string())))?,
+    );
+    let token_response = match client
+        .exchange_code(AuthorizationCode::new(code))
+        .map_err(|error| AppError(GatewayError::Internal(error.to_string())))?
+        .set_pkce_verifier(PkceCodeVerifier::new(login_state.pkce_verifier.clone()))
+        .request_async(&oidc_http_client()?)
+        .await
+    {
+        Ok(response) => response,
+        Err(error) => {
+            tracing::warn!(error = %error, "oidc token exchange failed");
+            return Ok(oidc_error_redirect("provider_failure"));
+        }
+    };
+    let id_token = match token_response.id_token() {
+        Some(id_token) => id_token,
+        None => return Ok(oidc_error_redirect("provider_failure")),
+    };
+    let id_token_verifier = client.id_token_verifier();
+    let claims = match id_token.claims(&id_token_verifier, &Nonce::new(login_state.nonce.clone())) {
+        Ok(claims) => claims,
+        Err(error) => {
+            tracing::warn!(error = %error, "oidc id token verification failed");
+            return Ok(oidc_error_redirect("provider_failure"));
+        }
+    };
+    let subject = claims.subject().as_str().to_string();
+    let Some(email_claim) = claims.email().map(|email| email.as_str().to_string()) else {
+        return Ok(oidc_error_redirect("unmatched_identity"));
+    };
+    if claims.email_verified() != Some(true) {
+        return Ok(oidc_error_redirect("unmatched_identity"));
+    }
+    let email = normalize_email(&email_claim)?;
 
     let user = if let Some(oidc_auth) = state
         .store
@@ -1178,9 +1354,7 @@ pub async fn oidc_callback(
             .await?
             .ok_or_else(|| AppError(GatewayError::InvalidRequest("user not found".to_string())))?;
         if user.status == UserStatus::Disabled {
-            return Err(AppError(GatewayError::InvalidRequest(
-                "disabled users cannot sign in".to_string(),
-            )));
+            return Ok(oidc_error_redirect("denied"));
         }
         if user.status == UserStatus::Invited {
             state
@@ -1189,23 +1363,14 @@ pub async fn oidc_callback(
                 .await?;
         }
         user
-    } else {
-        let user = state
-            .store
-            .find_invited_oidc_user(&email, &provider.oidc_provider_id)
-            .await?
-            .ok_or_else(|| {
-                AppError(GatewayError::InvalidRequest(
-                    "no invited oidc user matches this login".to_string(),
-                ))
-            })?;
-
+    } else if let Some(user) = state
+        .store
+        .find_invited_oidc_user(&email, &provider.oidc_provider_id)
+        .await?
+    {
         if user.status == UserStatus::Disabled {
-            return Err(AppError(GatewayError::InvalidRequest(
-                "disabled users cannot sign in".to_string(),
-            )));
+            return Ok(oidc_error_redirect("denied"));
         }
-
         state
             .store
             .create_user_oidc_auth(
@@ -1221,20 +1386,569 @@ pub async fn oidc_callback(
             .update_user_status(user.user_id, UserStatus::Active, now)
             .await?;
         user
+    } else if state
+        .store
+        .get_user_by_email_normalized(&email)
+        .await?
+        .is_some()
+    {
+        return Ok(oidc_error_redirect("identity_conflict"));
+    } else if provider.jit.enabled {
+        create_jit_oidc_user(&state, &provider, &subject, &email, now).await?
+    } else {
+        return Ok(oidc_error_redirect("unmatched_identity"));
     };
 
     let session_cookie =
         issue_session_cookie(&state, user.user_id, now, session_cookie_secure(&headers)).await?;
-    let redirect_to = query.redirect_to.unwrap_or_else(|| {
-        let query = form_urlencoded::Serializer::new(String::new())
-            .append_pair("mode", "oidc")
-            .append_pair("email", &user.email)
-            .finish();
-        format!("/admin/account-ready?{query}")
-    });
-    let mut response = Redirect::temporary(&redirect_to).into_response();
+    let mut response = Redirect::temporary(&login_state.redirect_to).into_response();
     response.headers_mut().append(SET_COOKIE, session_cookie);
     Ok(response)
+}
+
+fn oidc_error_redirect(code: &'static str) -> Response {
+    let redirect_to = format!("/admin/login?sso_error={code}");
+    Redirect::temporary(&redirect_to).into_response()
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/auth/oauth/start",
+    params(OauthStartQuery),
+    responses((status = 302, description = "Redirect to the OAuth provider"))
+)]
+pub async fn oauth_start(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<OauthStartQuery>,
+) -> Result<Redirect, AppError> {
+    let provider = load_enabled_oauth_provider(&state.store, &query.provider_key).await?;
+    if provider.provider_type != "github" {
+        return Err(AppError(GatewayError::InvalidRequest(format!(
+            "unsupported oauth provider type `{}`",
+            provider.provider_type
+        ))));
+    }
+
+    let origin = oauth_public_origin(&state, &headers);
+    let login_hint = query
+        .login_hint
+        .as_deref()
+        .map(normalize_email)
+        .transpose()?;
+    let redirect_to = normalize_oidc_redirect(
+        query.redirect_to.as_deref(),
+        "/admin/account-ready?mode=oauth",
+    );
+    let redirect_uri = format!("{origin}/api/v1/auth/oauth/callback/github");
+    let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
+    let csrf_state = CsrfToken::new_random();
+
+    let mut authorize_url =
+        url::Url::parse("https://github.com/login/oauth/authorize").map_err(|error| {
+            AppError(GatewayError::Internal(format!(
+                "failed building github oauth authorize url: {error}"
+            )))
+        })?;
+    {
+        let mut pairs = authorize_url.query_pairs_mut();
+        pairs.append_pair("client_id", &provider.client_id);
+        pairs.append_pair("redirect_uri", &redirect_uri);
+        pairs.append_pair("scope", &provider.scopes.join(" "));
+        pairs.append_pair("state", csrf_state.secret());
+        pairs.append_pair("code_challenge", pkce_challenge.as_str());
+        pairs.append_pair("code_challenge_method", "S256");
+        if let Some(login_hint) = login_hint.as_deref() {
+            pairs.append_pair("login", login_hint);
+        }
+    }
+
+    let now = OffsetDateTime::now_utc();
+    let state_record = OauthLoginStateRecord {
+        state_hash: token_hash(csrf_state.secret()),
+        oauth_provider_id: provider.oauth_provider_id,
+        pkce_verifier: pkce_verifier.secret().to_string(),
+        redirect_to,
+        login_hint,
+        expires_at: now + Duration::minutes(OAUTH_STATE_TTL_MINUTES),
+        consumed_at: None,
+        created_at: now,
+    };
+    state.store.create_oauth_login_state(&state_record).await?;
+
+    Ok(Redirect::temporary(authorize_url.as_str()))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/auth/oauth/callback/github",
+    params(OauthCallbackQuery),
+    responses((status = 302, description = "Redirect back into the admin UI after OAuth sign-in"))
+)]
+pub async fn oauth_callback_github(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<OauthCallbackQuery>,
+) -> Result<Response, AppError> {
+    if query.error.is_some() {
+        return Ok(oidc_error_redirect("access_denied"));
+    }
+    let Some(state_token) = query.state.as_deref() else {
+        return Ok(oidc_error_redirect("state_invalid"));
+    };
+    let Some(code) = query.code else {
+        return Ok(oidc_error_redirect("provider_failure"));
+    };
+
+    let now = OffsetDateTime::now_utc();
+    let Some(login_state) = state
+        .store
+        .consume_oauth_login_state(&token_hash(state_token), now)
+        .await?
+    else {
+        return Ok(oidc_error_redirect("state_invalid"));
+    };
+    if login_state.expires_at < now {
+        return Ok(oidc_error_redirect("state_expired"));
+    }
+
+    let provider = state
+        .store
+        .list_enabled_oauth_providers()
+        .await?
+        .into_iter()
+        .find(|provider| provider.oauth_provider_id == login_state.oauth_provider_id)
+        .ok_or_else(|| {
+            AppError(GatewayError::InvalidRequest(
+                "oauth provider not found".to_string(),
+            ))
+        })?;
+    if provider.provider_type != "github" {
+        return Ok(oidc_error_redirect("provider_failure"));
+    }
+
+    let origin = oauth_public_origin(&state, &headers);
+    let redirect_uri = format!("{origin}/api/v1/auth/oauth/callback/github");
+
+    let access_token = match github_exchange_oauth_code(
+        &provider,
+        &code,
+        state_token,
+        &redirect_uri,
+        &login_state.pkce_verifier,
+    )
+    .await
+    {
+        Ok(token) => token,
+        Err(error) => {
+            tracing::warn!(error = %error.0, "github oauth token exchange failed");
+            return Ok(oidc_error_redirect("provider_failure"));
+        }
+    };
+
+    let subject = match github_user_subject(&access_token).await {
+        Ok(subject) => subject,
+        Err(error) => {
+            tracing::warn!(error = %error.0, "github oauth user lookup failed");
+            return Ok(oidc_error_redirect("provider_failure"));
+        }
+    };
+    let email = match github_primary_verified_email(&access_token).await {
+        Ok(email) => email,
+        Err(error) => {
+            tracing::warn!(error = %error.0, "github oauth email lookup failed");
+            return Ok(oidc_error_redirect("unmatched_identity"));
+        }
+    };
+
+    let user = if let Some(oauth_auth) = state
+        .store
+        .get_user_oauth_auth(&provider.oauth_provider_id, &subject)
+        .await?
+    {
+        let user = state
+            .store
+            .get_user_by_id(oauth_auth.user_id)
+            .await?
+            .ok_or_else(|| AppError(GatewayError::InvalidRequest("user not found".to_string())))?;
+        if user.status == UserStatus::Disabled {
+            return Ok(oidc_error_redirect("denied"));
+        }
+        if user.status == UserStatus::Invited {
+            state
+                .store
+                .update_user_status(user.user_id, UserStatus::Active, now)
+                .await?;
+        }
+        user
+    } else if let Some(user) = state
+        .store
+        .find_invited_oauth_user(&email, &provider.oauth_provider_id)
+        .await?
+    {
+        if user.status == UserStatus::Disabled {
+            return Ok(oidc_error_redirect("denied"));
+        }
+        state
+            .store
+            .create_user_oauth_auth(
+                user.user_id,
+                &provider.oauth_provider_id,
+                &subject,
+                Some(email.as_str()),
+                now,
+            )
+            .await?;
+        state
+            .store
+            .update_user_status(user.user_id, UserStatus::Active, now)
+            .await?;
+        user
+    } else if state
+        .store
+        .get_user_by_email_normalized(&email)
+        .await?
+        .is_some()
+    {
+        return Ok(oidc_error_redirect("identity_conflict"));
+    } else if provider.jit.enabled {
+        create_jit_oauth_user(&state, &provider, &subject, &email, now).await?
+    } else {
+        return Ok(oidc_error_redirect("unmatched_identity"));
+    };
+
+    let session_cookie =
+        issue_session_cookie(&state, user.user_id, now, session_cookie_secure(&headers)).await?;
+    let mut response = Redirect::temporary(&login_state.redirect_to).into_response();
+    response.headers_mut().append(SET_COOKIE, session_cookie);
+    Ok(response)
+}
+
+fn normalize_oidc_redirect(value: Option<&str>, default: &str) -> String {
+    let Some(value) = value else {
+        return default.to_string();
+    };
+    if value.starts_with("/admin") && !value.starts_with("//") && !value.contains('\\') {
+        value.to_string()
+    } else {
+        default.to_string()
+    }
+}
+
+fn oidc_http_client() -> Result<reqwest::Client, AppError> {
+    reqwest::ClientBuilder::new()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(std::time::Duration::from_secs(5))
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|error| AppError(GatewayError::Internal(error.to_string())))
+}
+
+fn oidc_client_secret(provider: &OidcProviderRecord) -> Result<String, AppError> {
+    resolve_secret_reference(&provider.client_secret_ref)
+        .map_err(|error| AppError(GatewayError::InvalidRequest(error.to_string())))
+}
+
+fn oauth_client_secret(provider: &OauthProviderRecord) -> Result<String, AppError> {
+    resolve_secret_reference(&provider.client_secret_ref)
+        .map_err(|error| AppError(GatewayError::InvalidRequest(error.to_string())))
+}
+
+async fn oidc_provider_metadata(
+    provider: &OidcProviderRecord,
+) -> Result<CoreProviderMetadata, AppError> {
+    let http_client = oidc_http_client()?;
+    CoreProviderMetadata::discover_async(
+        IssuerUrl::new(provider.issuer_url.clone())
+            .map_err(|error| AppError(GatewayError::InvalidRequest(error.to_string())))?,
+        &http_client,
+    )
+    .await
+    .map_err(|error| AppError(GatewayError::InvalidRequest(error.to_string())))
+}
+
+#[derive(Debug, Deserialize)]
+struct GithubTokenResponse {
+    access_token: Option<String>,
+    error: Option<String>,
+    error_description: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GithubUserResponse {
+    id: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct GithubEmailResponse {
+    email: String,
+    primary: bool,
+    verified: bool,
+}
+
+async fn github_exchange_oauth_code(
+    provider: &OauthProviderRecord,
+    code: &str,
+    state_token: &str,
+    redirect_uri: &str,
+    pkce_verifier: &str,
+) -> Result<String, AppError> {
+    let client = oidc_http_client()?;
+    let client_secret = oauth_client_secret(provider)?;
+    let response = client
+        .post("https://github.com/login/oauth/access_token")
+        .header("Accept", "application/json")
+        .form(&[
+            ("client_id", provider.client_id.as_str()),
+            ("client_secret", client_secret.as_str()),
+            ("code", code),
+            ("state", state_token),
+            ("redirect_uri", redirect_uri),
+            ("code_verifier", pkce_verifier),
+        ])
+        .send()
+        .await
+        .map_err(|error| AppError(GatewayError::InvalidRequest(error.to_string())))?;
+
+    if !response.status().is_success() {
+        return Err(AppError(GatewayError::InvalidRequest(format!(
+            "github oauth token endpoint returned status {}",
+            response.status()
+        ))));
+    }
+
+    let payload: GithubTokenResponse = response
+        .json()
+        .await
+        .map_err(|error| AppError(GatewayError::InvalidRequest(error.to_string())))?;
+
+    if let Some(error) = payload.error {
+        return Err(AppError(GatewayError::InvalidRequest(
+            payload
+                .error_description
+                .unwrap_or_else(|| format!("github oauth token error: {error}")),
+        )));
+    }
+
+    payload.access_token.ok_or_else(|| {
+        AppError(GatewayError::InvalidRequest(
+            "github oauth token response missing access_token".to_string(),
+        ))
+    })
+}
+
+async fn github_user_subject(access_token: &str) -> Result<String, AppError> {
+    let client = oidc_http_client()?;
+    let user = client
+        .get("https://api.github.com/user")
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("User-Agent", "oceans-llm-gateway")
+        .bearer_auth(access_token)
+        .send()
+        .await
+        .map_err(|error| AppError(GatewayError::InvalidRequest(error.to_string())))?;
+
+    if !user.status().is_success() {
+        return Err(AppError(GatewayError::InvalidRequest(format!(
+            "github user endpoint returned status {}",
+            user.status()
+        ))));
+    }
+
+    let payload: GithubUserResponse = user
+        .json()
+        .await
+        .map_err(|error| AppError(GatewayError::InvalidRequest(error.to_string())))?;
+    Ok(payload.id.to_string())
+}
+
+async fn github_primary_verified_email(access_token: &str) -> Result<String, AppError> {
+    let client = oidc_http_client()?;
+    let response = client
+        .get("https://api.github.com/user/emails")
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("User-Agent", "oceans-llm-gateway")
+        .bearer_auth(access_token)
+        .send()
+        .await
+        .map_err(|error| AppError(GatewayError::InvalidRequest(error.to_string())))?;
+
+    if !response.status().is_success() {
+        return Err(AppError(GatewayError::InvalidRequest(format!(
+            "github emails endpoint returned status {}",
+            response.status()
+        ))));
+    }
+
+    let emails: Vec<GithubEmailResponse> = response
+        .json()
+        .await
+        .map_err(|error| AppError(GatewayError::InvalidRequest(error.to_string())))?;
+
+    let selected = emails
+        .iter()
+        .find(|email| email.primary && email.verified)
+        .ok_or_else(|| {
+            AppError(GatewayError::InvalidRequest(
+                "github account has no primary verified email".to_string(),
+            ))
+        })?;
+
+    normalize_email(&selected.email)
+}
+
+async fn create_jit_oidc_user(
+    state: &AppState,
+    provider: &OidcProviderRecord,
+    subject: &str,
+    email: &str,
+    now: OffsetDateTime,
+) -> Result<UserRecord, AppError> {
+    let name = email.split('@').next().unwrap_or(email);
+    let jit_team = if let Some(membership) = provider.jit.membership.as_ref() {
+        Some((
+            state
+                .store
+                .get_team_by_key(&membership.team_key)
+                .await?
+                .ok_or_else(|| {
+                    AppError(GatewayError::InvalidRequest(
+                        "jit team not found".to_string(),
+                    ))
+                })?,
+            membership.role,
+        ))
+    } else {
+        None
+    };
+    let user = state
+        .store
+        .create_identity_user(
+            name,
+            email,
+            email,
+            provider.jit.global_role,
+            AuthMode::Oidc,
+            UserStatus::Active,
+        )
+        .await?;
+    state
+        .store
+        .seed_update_identity_user_profile(
+            user.user_id,
+            name,
+            email,
+            email,
+            provider.jit.request_logging_enabled,
+            now,
+        )
+        .await?;
+
+    if let Some((team, role)) = jit_team {
+        state
+            .store
+            .assign_team_membership(user.user_id, team.team_id, role)
+            .await?;
+    }
+
+    state
+        .store
+        .create_user_oidc_auth(
+            user.user_id,
+            &provider.oidc_provider_id,
+            subject,
+            Some(email),
+            now,
+        )
+        .await?;
+    state
+        .store
+        .set_user_oidc_link(user.user_id, &provider.oidc_provider_id, now)
+        .await?;
+
+    state
+        .store
+        .get_user_by_id(user.user_id)
+        .await?
+        .ok_or_else(|| AppError(GatewayError::InvalidRequest("user not found".to_string())))
+}
+
+async fn create_jit_oauth_user(
+    state: &AppState,
+    provider: &OauthProviderRecord,
+    subject: &str,
+    email: &str,
+    now: OffsetDateTime,
+) -> Result<UserRecord, AppError> {
+    let name = email.split('@').next().unwrap_or(email);
+    let jit_team = if let Some(membership) = provider.jit.membership.as_ref() {
+        Some((
+            state
+                .store
+                .get_team_by_key(&membership.team_key)
+                .await?
+                .ok_or_else(|| {
+                    AppError(GatewayError::InvalidRequest(
+                        "jit team not found".to_string(),
+                    ))
+                })?,
+            membership.role,
+        ))
+    } else {
+        None
+    };
+    let user = state
+        .store
+        .create_identity_user(
+            name,
+            email,
+            email,
+            provider.jit.global_role,
+            AuthMode::Oauth,
+            UserStatus::Active,
+        )
+        .await?;
+    state
+        .store
+        .seed_update_identity_user_profile(
+            user.user_id,
+            name,
+            email,
+            email,
+            provider.jit.request_logging_enabled,
+            now,
+        )
+        .await?;
+
+    if let Some((team, role)) = jit_team {
+        state
+            .store
+            .assign_team_membership(user.user_id, team.team_id, role)
+            .await?;
+    }
+
+    state
+        .store
+        .create_user_oauth_auth(
+            user.user_id,
+            &provider.oauth_provider_id,
+            subject,
+            Some(email),
+            now,
+        )
+        .await?;
+    state
+        .store
+        .set_user_oauth_link(user.user_id, &provider.oauth_provider_id, now)
+        .await?;
+
+    state
+        .store
+        .get_user_by_id(user.user_id)
+        .await?
+        .ok_or_else(|| AppError(GatewayError::InvalidRequest("user not found".to_string())))
 }
 
 fn request_origin(headers: &HeaderMap) -> String {
@@ -1245,6 +1959,24 @@ fn request_origin(headers: &HeaderMap) -> String {
     let proto = header_value(headers, "x-forwarded-proto").unwrap_or_else(|| "http".to_string());
     let host = header_value(headers, "host").unwrap_or_else(|| "localhost:8080".to_string());
     format!("{proto}://{host}")
+}
+
+fn oidc_public_origin(state: &AppState, headers: &HeaderMap) -> String {
+    state
+        .oidc_public_base_url
+        .as_ref()
+        .as_deref()
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| request_origin(headers))
+}
+
+fn oauth_public_origin(state: &AppState, headers: &HeaderMap) -> String {
+    state
+        .oauth_public_base_url
+        .as_ref()
+        .as_deref()
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| request_origin(headers))
 }
 
 fn session_cookie_secure(headers: &HeaderMap) -> bool {
@@ -1608,6 +2340,33 @@ async fn resolve_requested_oidc_provider(
     }
 }
 
+async fn resolve_requested_oauth_provider(
+    store: &AnyStore,
+    auth_mode: AuthMode,
+    oauth_provider_key: Option<&str>,
+) -> Result<Option<OauthProviderRecord>, AppError> {
+    match auth_mode {
+        AuthMode::Oauth => {
+            let provider_key = oauth_provider_key.ok_or_else(|| {
+                AppError(GatewayError::InvalidRequest(
+                    "oauth_provider_key is required for oauth users".to_string(),
+                ))
+            })?;
+            Ok(Some(
+                load_enabled_oauth_provider(store, provider_key).await?,
+            ))
+        }
+        _ => {
+            if oauth_provider_key.is_some() {
+                return Err(AppError(GatewayError::InvalidRequest(
+                    "oauth_provider_key is only valid for oauth users".to_string(),
+                )));
+            }
+            Ok(None)
+        }
+    }
+}
+
 async fn sync_identity_user_membership(
     store: &AnyStore,
     user: &IdentityUserRecord,
@@ -1677,6 +2436,7 @@ async fn sync_identity_user_auth_mode(
     user: &IdentityUserRecord,
     next_auth_mode: AuthMode,
     oidc_provider: Option<&OidcProviderRecord>,
+    oauth_provider: Option<&OauthProviderRecord>,
     now: OffsetDateTime,
 ) -> Result<(), AppError> {
     if user.user.auth_mode == AuthMode::Password && next_auth_mode != AuthMode::Password {
@@ -1695,9 +2455,19 @@ async fn sync_identity_user_auth_mode(
         }
     }
 
+    if let Some(current_provider_id) = user.oauth_provider_id.as_deref() {
+        let next_provider_id = oauth_provider.map(|provider| provider.oauth_provider_id.as_str());
+        if next_auth_mode != AuthMode::Oauth || next_provider_id != Some(current_provider_id) {
+            store
+                .delete_user_oauth_auth(user.user.user_id, current_provider_id)
+                .await?;
+        }
+    }
+
     match next_auth_mode {
         AuthMode::Password => {
             store.clear_user_oidc_link(user.user.user_id).await?;
+            store.clear_user_oauth_link(user.user.user_id).await?;
         }
         AuthMode::Oidc => {
             let provider = oidc_provider.ok_or_else(|| {
@@ -1705,11 +2475,22 @@ async fn sync_identity_user_auth_mode(
                     "oidc provider configuration is required".to_string(),
                 ))
             })?;
+            store.clear_user_oauth_link(user.user.user_id).await?;
             store
                 .set_user_oidc_link(user.user.user_id, &provider.oidc_provider_id, now)
                 .await?;
         }
-        AuthMode::Oauth => {}
+        AuthMode::Oauth => {
+            let provider = oauth_provider.ok_or_else(|| {
+                AppError(GatewayError::InvalidRequest(
+                    "oauth provider configuration is required".to_string(),
+                ))
+            })?;
+            store.clear_user_oidc_link(user.user.user_id).await?;
+            store
+                .set_user_oauth_link(user.user.user_id, &provider.oauth_provider_id, now)
+                .await?;
+        }
     }
 
     Ok(())
@@ -1733,7 +2514,15 @@ async fn user_has_auth_proof(
                 .await?
                 .is_some())
         }
-        AuthMode::Oauth => Ok(false),
+        AuthMode::Oauth => {
+            let Some(provider_id) = user.oauth_provider_id.as_deref() else {
+                return Ok(false);
+            };
+            Ok(store
+                .get_user_oauth_auth_by_user(user.user.user_id, provider_id)
+                .await?
+                .is_some())
+        }
     }
 }
 
@@ -1787,9 +2576,27 @@ async fn build_onboarding_response(
                 provider_label: provider.provider_key,
             })
         }
-        AuthMode::Oauth => Err(AppError(GatewayError::InvalidRequest(
-            "unsupported auth mode".to_string(),
-        ))),
+        AuthMode::Oauth => {
+            let provider_key = user.oauth_provider_key.clone().ok_or_else(|| {
+                AppError(GatewayError::InvalidRequest(
+                    "oauth provider is required for oauth users".to_string(),
+                ))
+            })?;
+            let provider = load_enabled_oauth_provider(&state.store, &provider_key).await?;
+            let view = build_admin_identity_user_view(
+                &state.store,
+                &state.identity_token_secret,
+                origin,
+                now,
+                user.clone(),
+            )
+            .await?;
+            Ok(CreateUserResponse::OauthSignIn {
+                user: view,
+                sign_in_url: oauth_sign_in_url(origin, &provider.provider_key, &user.user.email),
+                provider_label: provider.provider_key,
+            })
+        }
     }
 }
 
@@ -1986,6 +2793,20 @@ async fn load_enabled_oidc_provider(
         })
 }
 
+async fn load_enabled_oauth_provider(
+    store: &AnyStore,
+    provider_key: &str,
+) -> Result<OauthProviderRecord, AppError> {
+    store
+        .get_enabled_oauth_provider_by_key(provider_key)
+        .await?
+        .ok_or_else(|| {
+            AppError(GatewayError::InvalidRequest(format!(
+                "oauth provider `{provider_key}` is not enabled"
+            )))
+        })
+}
+
 pub(crate) fn oidc_sign_in_url(origin: &str, provider_key: &str, email: &str) -> String {
     let query = form_urlencoded::Serializer::new(String::new())
         .append_pair("provider_key", provider_key)
@@ -1993,6 +2814,15 @@ pub(crate) fn oidc_sign_in_url(origin: &str, provider_key: &str, email: &str) ->
         .append_pair("redirect_to", "/admin/account-ready?mode=oidc")
         .finish();
     format!("{origin}/api/v1/auth/oidc/start?{query}")
+}
+
+pub(crate) fn oauth_sign_in_url(origin: &str, provider_key: &str, email: &str) -> String {
+    let query = form_urlencoded::Serializer::new(String::new())
+        .append_pair("provider_key", provider_key)
+        .append_pair("login_hint", email)
+        .append_pair("redirect_to", "/admin/account-ready?mode=oauth")
+        .finish();
+    format!("{origin}/api/v1/auth/oauth/start?{query}")
 }
 
 pub(crate) fn invitation_url(
@@ -2044,6 +2874,7 @@ fn parse_auth_mode(raw: &str) -> Result<AuthMode, AppError> {
     match raw {
         "password" => Ok(AuthMode::Password),
         "oidc" => Ok(AuthMode::Oidc),
+        "oauth" => Ok(AuthMode::Oauth),
         _ => Err(AppError(GatewayError::InvalidRequest(format!(
             "unsupported auth_mode `{raw}`"
         )))),
@@ -2075,10 +2906,6 @@ fn parse_uuid(raw: &str) -> Result<Uuid, AppError> {
     Uuid::parse_str(raw).map_err(|error| AppError(GatewayError::InvalidRequest(error.to_string())))
 }
 
-fn oidc_subject(provider: &OidcProviderRecord, email: &str) -> String {
-    format!("mock:{}:{email}", provider.provider_key)
-}
-
 fn header_value(headers: &HeaderMap, name: &str) -> Option<String> {
     headers
         .get(name)
@@ -2096,4 +2923,44 @@ fn cookie_value(headers: &HeaderMap, key: &str) -> Option<String> {
             None
         }
     })
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/auth/oidc/providers",
+    responses((status = 200, body = Envelope<PublicOidcProvidersPayload>))
+)]
+pub async fn list_public_oidc_providers(
+    State(state): State<AppState>,
+) -> Result<Json<Envelope<PublicOidcProvidersPayload>>, AppError> {
+    let providers = state.store.list_enabled_oidc_providers().await?;
+    Ok(Json(envelope(PublicOidcProvidersPayload {
+        providers: providers
+            .into_iter()
+            .map(|provider| PublicOidcProviderView {
+                key: provider.provider_key,
+                label: provider.label,
+            })
+            .collect(),
+    })))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/auth/oauth/providers",
+    responses((status = 200, body = Envelope<PublicOauthProvidersPayload>))
+)]
+pub async fn list_public_oauth_providers(
+    State(state): State<AppState>,
+) -> Result<Json<Envelope<PublicOauthProvidersPayload>>, AppError> {
+    let providers = state.store.list_enabled_oauth_providers().await?;
+    Ok(Json(envelope(PublicOauthProvidersPayload {
+        providers: providers
+            .into_iter()
+            .map(|provider| PublicOauthProviderView {
+                key: provider.provider_key,
+                label: provider.label,
+            })
+            .collect(),
+    })))
 }

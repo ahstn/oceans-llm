@@ -537,6 +537,8 @@ pub struct IdentityUserRecord {
     pub membership_role: Option<MembershipRole>,
     pub oidc_provider_id: Option<String>,
     pub oidc_provider_key: Option<String>,
+    pub oauth_provider_id: Option<String>,
+    pub oauth_provider_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -553,18 +555,120 @@ pub struct OidcProviderRecord {
     pub oidc_provider_id: String,
     pub provider_key: String,
     pub provider_type: String,
+    pub label: String,
     pub issuer_url: String,
     pub client_id: String,
+    pub client_secret_ref: String,
     pub scopes: Vec<String>,
     pub enabled: bool,
+    pub jit: OidcJitPolicy,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OauthProviderRecord {
+    pub oauth_provider_id: String,
+    pub provider_key: String,
+    pub provider_type: String,
+    pub label: String,
+    pub client_id: String,
+    pub client_secret_ref: String,
+    pub scopes: Vec<String>,
+    pub enabled: bool,
+    pub jit: OauthJitPolicy,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OidcJitPolicy {
+    pub enabled: bool,
+    pub global_role: GlobalRole,
+    pub membership: Option<OidcJitMembership>,
+    pub request_logging_enabled: bool,
+}
+
+impl Default for OidcJitPolicy {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            global_role: GlobalRole::User,
+            membership: None,
+            request_logging_enabled: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OidcJitMembership {
+    pub team_key: String,
+    pub role: MembershipRole,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OauthJitPolicy {
+    pub enabled: bool,
+    pub global_role: GlobalRole,
+    pub membership: Option<OauthJitMembership>,
+    pub request_logging_enabled: bool,
+}
+
+impl Default for OauthJitPolicy {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            global_role: GlobalRole::User,
+            membership: None,
+            request_logging_enabled: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OauthJitMembership {
+    pub team_key: String,
+    pub role: MembershipRole,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OidcLoginStateRecord {
+    pub state_hash: String,
+    pub oidc_provider_id: String,
+    pub nonce: String,
+    pub pkce_verifier: String,
+    pub redirect_to: String,
+    pub login_hint: Option<String>,
+    pub expires_at: OffsetDateTime,
+    pub consumed_at: Option<OffsetDateTime>,
+    pub created_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OauthLoginStateRecord {
+    pub state_hash: String,
+    pub oauth_provider_id: String,
+    pub pkce_verifier: String,
+    pub redirect_to: String,
+    pub login_hint: Option<String>,
+    pub expires_at: OffsetDateTime,
+    pub consumed_at: Option<OffsetDateTime>,
+    pub created_at: OffsetDateTime,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserOidcAuthRecord {
     pub user_id: Uuid,
     pub oidc_provider_id: String,
+    pub subject: String,
+    pub email_claim: Option<String>,
+    pub created_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserOauthAuthRecord {
+    pub user_id: Uuid,
+    pub oauth_provider_id: String,
     pub subject: String,
     pub email_claim: Option<String>,
     pub created_at: OffsetDateTime,
@@ -1594,6 +1698,31 @@ pub struct SeedApiKey {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeedOidcProvider {
+    pub provider_key: String,
+    pub provider_type: String,
+    pub label: String,
+    pub issuer_url: String,
+    pub client_id: String,
+    pub client_secret_ref: String,
+    pub scopes: Vec<String>,
+    pub enabled: bool,
+    pub jit: OidcJitPolicy,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeedOauthProvider {
+    pub provider_key: String,
+    pub provider_type: String,
+    pub label: String,
+    pub client_id: String,
+    pub client_secret_ref: String,
+    pub scopes: Vec<String>,
+    pub enabled: bool,
+    pub jit: OauthJitPolicy,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SeedBudget {
     pub cadence: BudgetCadence,
     pub amount_usd: Money4,
@@ -1625,6 +1754,8 @@ pub struct SeedUser {
     pub request_logging_enabled: bool,
     #[serde(default)]
     pub oidc_provider_key: Option<String>,
+    #[serde(default)]
+    pub oauth_provider_key: Option<String>,
     #[serde(default)]
     pub membership: Option<SeedUserMembership>,
     #[serde(default)]

@@ -151,8 +151,21 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
             "/api/v1/auth/invitations/{token}/password",
             post(complete_password_invitation),
         )
+        .route(
+            "/api/v1/auth/oidc/providers",
+            get(list_public_oidc_providers),
+        )
         .route("/api/v1/auth/oidc/start", get(oidc_start))
         .route("/api/v1/auth/oidc/callback", get(oidc_callback))
+        .route(
+            "/api/v1/auth/oauth/providers",
+            get(list_public_oauth_providers),
+        )
+        .route("/api/v1/auth/oauth/start", get(oauth_start))
+        .route(
+            "/api/v1/auth/oauth/callback/github",
+            get(oauth_callback_github),
+        )
         .route("/v1/models", get(v1_models))
         .route("/v1/chat/completions", post(v1_chat_completions))
         .route("/v1/responses", post(v1_responses))

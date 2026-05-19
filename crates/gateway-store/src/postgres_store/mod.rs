@@ -23,17 +23,19 @@ use gateway_core::{
     McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationPayloadRecord,
     McpToolInvocationQuery, McpToolInvocationRecord, McpToolInvocationRepository,
     McpToolInvocationStatus, McpToolPolicyResult, MembershipRole, ModelAccessMode,
-    ModelPricingRecord, ModelRepository, ModelRoute, Money4, NewApiKeyRecord, OidcProviderRecord,
-    PasswordInvitationRecord, PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits,
-    PricingModalities, PricingProvenance, ProviderConnection, ProviderRepository,
-    RequestAttemptRecord, RequestAttemptRepository, RequestAttemptStatus, RequestLogDetail,
-    RequestLogPage, RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord,
-    RequestLogRepository, RequestTag, SYSTEM_BOOTSTRAP_ADMIN_USER_ID, ServiceAccountBudgetRecord,
-    ServiceAccountRecord, ServiceAccountStatus, SpendDailyAggregateRecord,
-    SpendModelAggregateRecord, SpendOwnerAggregateRecord, StoreError, StoreHealth,
-    TeamBudgetRecord, TeamMembershipRecord, TeamRecord, UsageLeaderboardBucketRecord,
-    UsageLeaderboardUserRecord, UsageLedgerRecord, UsagePricingStatus, UserBudgetRecord,
-    UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
+    ModelPricingRecord, ModelRepository, ModelRoute, Money4, NewApiKeyRecord, OauthJitMembership,
+    OauthJitPolicy, OauthLoginStateRecord, OauthProviderRecord, OidcJitMembership, OidcJitPolicy,
+    OidcLoginStateRecord, OidcProviderRecord, PasswordInvitationRecord, PricingCatalogCacheRecord,
+    PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
+    ProviderConnection, ProviderRepository, RequestAttemptRecord, RequestAttemptRepository,
+    RequestAttemptStatus, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
+    RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestTag,
+    SYSTEM_BOOTSTRAP_ADMIN_USER_ID, ServiceAccountBudgetRecord, ServiceAccountRecord,
+    ServiceAccountStatus, SpendDailyAggregateRecord, SpendModelAggregateRecord,
+    SpendOwnerAggregateRecord, StoreError, StoreHealth, TeamBudgetRecord, TeamMembershipRecord,
+    TeamRecord, UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord, UsageLedgerRecord,
+    UsagePricingStatus, UserBudgetRecord, UserOauthAuthRecord, UserOidcAuthRecord,
+    UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
 };
 use sqlx::{
     PgPool, Row,
@@ -173,6 +175,47 @@ impl GatewayStore for PostgresStore {
         provider_key: &str,
     ) -> Result<Option<OidcProviderRecord>, StoreError> {
         Self::get_enabled_oidc_provider_by_key(self, provider_key).await
+    }
+
+    async fn create_oidc_login_state(
+        &self,
+        state: &gateway_core::OidcLoginStateRecord,
+    ) -> Result<(), StoreError> {
+        Self::create_oidc_login_state(self, state).await
+    }
+
+    async fn consume_oidc_login_state(
+        &self,
+        state_hash: &str,
+        consumed_at: OffsetDateTime,
+    ) -> Result<Option<gateway_core::OidcLoginStateRecord>, StoreError> {
+        Self::consume_oidc_login_state(self, state_hash, consumed_at).await
+    }
+
+    async fn list_enabled_oauth_providers(&self) -> Result<Vec<OauthProviderRecord>, StoreError> {
+        Self::list_enabled_oauth_providers(self).await
+    }
+
+    async fn get_enabled_oauth_provider_by_key(
+        &self,
+        provider_key: &str,
+    ) -> Result<Option<OauthProviderRecord>, StoreError> {
+        Self::get_enabled_oauth_provider_by_key(self, provider_key).await
+    }
+
+    async fn create_oauth_login_state(
+        &self,
+        state: &gateway_core::OauthLoginStateRecord,
+    ) -> Result<(), StoreError> {
+        Self::create_oauth_login_state(self, state).await
+    }
+
+    async fn consume_oauth_login_state(
+        &self,
+        state_hash: &str,
+        consumed_at: OffsetDateTime,
+    ) -> Result<Option<gateway_core::OauthLoginStateRecord>, StoreError> {
+        Self::consume_oauth_login_state(self, state_hash, consumed_at).await
     }
 
     async fn get_user_by_email_normalized(
@@ -480,6 +523,54 @@ impl GatewayStore for PostgresStore {
         Self::clear_user_oidc_link(self, user_id).await
     }
 
+    async fn get_user_oauth_auth(
+        &self,
+        oauth_provider_id: &str,
+        subject: &str,
+    ) -> Result<Option<UserOauthAuthRecord>, StoreError> {
+        Self::get_user_oauth_auth(self, oauth_provider_id, subject).await
+    }
+
+    async fn get_user_oauth_auth_by_user(
+        &self,
+        user_id: Uuid,
+        oauth_provider_id: &str,
+    ) -> Result<Option<UserOauthAuthRecord>, StoreError> {
+        Self::get_user_oauth_auth_by_user(self, user_id, oauth_provider_id).await
+    }
+
+    async fn create_user_oauth_auth(
+        &self,
+        user_id: Uuid,
+        oauth_provider_id: &str,
+        subject: &str,
+        email_claim: Option<&str>,
+        created_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        Self::create_user_oauth_auth(
+            self,
+            user_id,
+            oauth_provider_id,
+            subject,
+            email_claim,
+            created_at,
+        )
+        .await
+    }
+
+    async fn set_user_oauth_link(
+        &self,
+        user_id: Uuid,
+        oauth_provider_id: &str,
+        created_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        Self::set_user_oauth_link(self, user_id, oauth_provider_id, created_at).await
+    }
+
+    async fn clear_user_oauth_link(&self, user_id: Uuid) -> Result<(), StoreError> {
+        Self::clear_user_oauth_link(self, user_id).await
+    }
+
     async fn delete_user_password_auth(&self, user_id: Uuid) -> Result<(), StoreError> {
         Self::delete_user_password_auth(self, user_id).await
     }
@@ -492,12 +583,28 @@ impl GatewayStore for PostgresStore {
         Self::delete_user_oidc_auth(self, user_id, oidc_provider_id).await
     }
 
+    async fn delete_user_oauth_auth(
+        &self,
+        user_id: Uuid,
+        oauth_provider_id: &str,
+    ) -> Result<(), StoreError> {
+        Self::delete_user_oauth_auth(self, user_id, oauth_provider_id).await
+    }
+
     async fn find_invited_oidc_user(
         &self,
         email_normalized: &str,
         oidc_provider_id: &str,
     ) -> Result<Option<UserRecord>, StoreError> {
         Self::find_invited_oidc_user(self, email_normalized, oidc_provider_id).await
+    }
+
+    async fn find_invited_oauth_user(
+        &self,
+        email_normalized: &str,
+        oauth_provider_id: &str,
+    ) -> Result<Option<UserRecord>, StoreError> {
+        Self::find_invited_oauth_user(self, email_normalized, oauth_provider_id).await
     }
 
     async fn seed_update_identity_user_profile(
@@ -526,11 +633,21 @@ impl GatewayStore for PostgresStore {
         providers: &[gateway_core::SeedProvider],
         models: &[gateway_core::SeedModel],
         api_keys: &[gateway_core::SeedApiKey],
+        oidc_providers: &[gateway_core::SeedOidcProvider],
+        oauth_providers: &[gateway_core::SeedOauthProvider],
         teams: &[gateway_core::SeedTeam],
         users: &[gateway_core::SeedUser],
     ) -> Result<(), StoreError> {
-        self.seed_from_inputs(providers, models, api_keys, teams, users)
-            .await
+        self.seed_from_inputs(
+            providers,
+            models,
+            api_keys,
+            oidc_providers,
+            oauth_providers,
+            teams,
+            users,
+        )
+        .await
     }
 }
 

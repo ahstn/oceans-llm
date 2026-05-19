@@ -92,6 +92,7 @@ const initialForm: CreateUserInput = {
   team_id: null,
   team_role: null,
   oidc_provider_key: null,
+  oauth_provider_key: null,
   tags: [],
 }
 
@@ -101,6 +102,7 @@ const initialUpdateForm: UpdateUserInput = {
   team_role: null,
   auth_mode: 'password',
   oidc_provider_key: null,
+  oauth_provider_key: null,
   tags: [],
 }
 
@@ -116,7 +118,7 @@ type UserDetailsSection = (typeof userDetailsSections)[number]['id']
 export function UsersPage() {
   const router = useRouter()
   const {
-    data: { users, teams, oidc_providers: oidcProviders },
+    data: { users, teams, oidc_providers: oidcProviders, oauth_providers: oauthProviders },
   } = Route.useLoaderData() as { data: IdentityUsersPayload }
   const [isOpen, setIsOpen] = useState(false)
   const [form, setForm] = useState<CreateUserInput>(initialForm)
@@ -144,6 +146,10 @@ export function UsersPage() {
       auth_mode: selectedUser.auth_mode,
       oidc_provider_key:
         selectedUser.onboarding?.kind === 'oidc_sign_in'
+          ? selectedUser.onboarding.provider_key
+          : null,
+      oauth_provider_key:
+        selectedUser.onboarding?.kind === 'oauth_sign_in'
           ? selectedUser.onboarding.provider_key
           : null,
       tags: selectedUser.tags,
@@ -175,6 +181,11 @@ export function UsersPage() {
           ? (current.oidc_provider_key ??
             (oidcProviders.length === 1 ? oidcProviders[0].key : null))
           : null,
+      oauth_provider_key:
+        authMode === 'oauth'
+          ? (current.oauth_provider_key ??
+            (oauthProviders.length === 1 ? oauthProviders[0].key : null))
+          : null,
     }))
   }
 
@@ -186,6 +197,11 @@ export function UsersPage() {
         authMode === 'oidc'
           ? (current.oidc_provider_key ??
             (oidcProviders.length === 1 ? oidcProviders[0].key : null))
+          : null,
+      oauth_provider_key:
+        authMode === 'oauth'
+          ? (current.oauth_provider_key ??
+            (oauthProviders.length === 1 ? oauthProviders[0].key : null))
           : null,
     }))
   }
@@ -242,7 +258,12 @@ export function UsersPage() {
         await updateIdentityUser({
           data: {
             userId: selectedUser.id,
-            input: sanitizeUpdateForm(updateForm, selectedUser, oidcProviders),
+            input: sanitizeUpdateForm(
+              updateForm,
+              selectedUser,
+              oidcProviders,
+              oauthProviders,
+            ),
           },
         })
         toast.success('User updated')
@@ -449,6 +470,7 @@ export function UsersPage() {
                           <SelectGroup>
                             <SelectItem value="password">Password</SelectItem>
                             <SelectItem value="oidc">SSO (OIDC)</SelectItem>
+                            <SelectItem value="oauth">SSO (OAuth)</SelectItem>
                           </SelectGroup>
                         </SelectContent>
                       </Select>
@@ -480,6 +502,46 @@ export function UsersPage() {
                             <SelectContent>
                               <SelectGroup>
                                 {oidcProviders.map((provider) => (
+                                  <SelectItem key={provider.key} value={provider.key}>
+                                    {provider.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
+                            </SelectContent>
+                          </Select>
+                          <FieldDescription>
+                            Activation happens after a successful redirect back from this provider.
+                          </FieldDescription>
+                        </Field>
+                      </>
+                    ) : null}
+
+                    {form.auth_mode === 'oauth' ? (
+                      <>
+                        {oauthProviders.length === 0 ? (
+                          <Alert>
+                            <AlertTitle>No OAuth providers configured</AlertTitle>
+                            <AlertDescription>
+                              Add an OAuth provider in the gateway before inviting users with SSO, or
+                              use password onboarding for now.
+                            </AlertDescription>
+                          </Alert>
+                        ) : null}
+
+                        <Field>
+                          <FieldLabel htmlFor="oauth-provider">OAuth provider</FieldLabel>
+                          <Select
+                            value={form.oauth_provider_key ?? undefined}
+                            onValueChange={(value) =>
+                              setForm((current) => ({ ...current, oauth_provider_key: value }))
+                            }
+                          >
+                            <SelectTrigger id="oauth-provider">
+                              <SelectValue placeholder="Select provider" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectGroup>
+                                {oauthProviders.map((provider) => (
                                   <SelectItem key={provider.key} value={provider.key}>
                                     {provider.label}
                                   </SelectItem>
@@ -577,7 +639,10 @@ export function UsersPage() {
                     </Button>
                     <Button
                       type="submit"
-                      disabled={isPending || isOidcDisabled(form, oidcProviders)}
+                      disabled={
+                        isPending ||
+                        isSsoDisabled(form, oidcProviders, oauthProviders)
+                      }
                     >
                       {isPending ? 'Creating…' : 'Create user'}
                     </Button>
@@ -991,6 +1056,7 @@ export function UsersPage() {
                                 <SelectGroup>
                                   <SelectItem value="password">Password</SelectItem>
                                   <SelectItem value="oidc">SSO (OIDC)</SelectItem>
+                                  <SelectItem value="oauth">SSO (OAuth)</SelectItem>
                                 </SelectGroup>
                               </SelectContent>
                             </Select>
@@ -1033,6 +1099,49 @@ export function UsersPage() {
                                   <SelectContent>
                                     <SelectGroup>
                                       {oidcProviders.map((provider) => (
+                                        <SelectItem key={provider.key} value={provider.key}>
+                                          {provider.label}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectGroup>
+                                  </SelectContent>
+                                </Select>
+                              </Field>
+                            </>
+                          ) : null}
+
+                          {updateForm.auth_mode === 'oauth' ? (
+                            <>
+                              {oauthProviders.length === 0 ? (
+                                <Alert>
+                                  <AlertTitle>No OAuth providers configured</AlertTitle>
+                                  <AlertDescription>
+                                    Add an OAuth provider in the gateway before switching a user to
+                                    SSO.
+                                  </AlertDescription>
+                                </Alert>
+                              ) : null}
+
+                              <Field>
+                                <FieldLabel htmlFor="manage-oauth-provider">
+                                  OAuth provider
+                                </FieldLabel>
+                                <Select
+                                  value={updateForm.oauth_provider_key ?? undefined}
+                                  onValueChange={(value) =>
+                                    setUpdateForm((current) => ({
+                                      ...current,
+                                      oauth_provider_key: value,
+                                    }))
+                                  }
+                                  disabled={selectedUser.status !== 'invited'}
+                                >
+                                  <SelectTrigger id="manage-oauth-provider">
+                                    <SelectValue placeholder="Select provider" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectGroup>
+                                      {oauthProviders.map((provider) => (
                                         <SelectItem key={provider.key} value={provider.key}>
                                           {provider.label}
                                         </SelectItem>
@@ -1192,7 +1301,9 @@ export function UsersPage() {
                       disabled={
                         isPending ||
                         (updateForm.auth_mode === 'oidc' &&
-                          (oidcProviders.length === 0 || !updateForm.oidc_provider_key))
+                          (oidcProviders.length === 0 || !updateForm.oidc_provider_key)) ||
+                        (updateForm.auth_mode === 'oauth' &&
+                          (oauthProviders.length === 0 || !updateForm.oauth_provider_key))
                       }
                     >
                       {isPending ? 'Saving…' : 'Save changes'}
@@ -1254,6 +1365,7 @@ function sanitizeForm(form: CreateUserInput): CreateUserInput {
           ? 'member'
           : null,
     oidc_provider_key: form.auth_mode === 'oidc' ? (form.oidc_provider_key ?? null) : null,
+    oauth_provider_key: form.auth_mode === 'oauth' ? (form.oauth_provider_key ?? null) : null,
     tags: sanitizeEntityTags(form.tags),
   }
 }
@@ -1262,6 +1374,7 @@ function sanitizeUpdateForm(
   form: UpdateUserInput,
   user: UserView,
   oidcProviders: IdentityUsersPayload['oidc_providers'],
+  oauthProviders: IdentityUsersPayload['oauth_providers'],
 ): UpdateUserInput {
   const update: UpdateUserInput = {
     global_role: form.global_role,
@@ -1276,6 +1389,8 @@ function sanitizeUpdateForm(
   if (user.status === 'invited') {
     update.auth_mode = form.auth_mode
     update.oidc_provider_key = form.auth_mode === 'oidc' ? (form.oidc_provider_key ?? null) : null
+    update.oauth_provider_key =
+      form.auth_mode === 'oauth' ? (form.oauth_provider_key ?? null) : null
   }
 
   if (user.status === 'invited' && update.auth_mode === 'oidc') {
@@ -1285,11 +1400,27 @@ function sanitizeUpdateForm(
     update.oidc_provider_key = validProvider ? update.oidc_provider_key : null
   }
 
+  if (user.status === 'invited' && update.auth_mode === 'oauth') {
+    const validProvider = oauthProviders.find(
+      (provider) => provider.key === update.oauth_provider_key,
+    )
+    update.oauth_provider_key = validProvider ? update.oauth_provider_key : null
+  }
+
   return update
 }
 
-function isOidcDisabled(form: CreateUserInput, providers: IdentityUsersPayload['oidc_providers']) {
-  return form.auth_mode === 'oidc' && (providers.length === 0 || !form.oidc_provider_key)
+function isSsoDisabled(
+  form: CreateUserInput,
+  oidcProviders: IdentityUsersPayload['oidc_providers'],
+  oauthProviders: IdentityUsersPayload['oauth_providers'],
+) {
+  return (
+    (form.auth_mode === 'oidc' &&
+      (oidcProviders.length === 0 || !form.oidc_provider_key)) ||
+    (form.auth_mode === 'oauth' &&
+      (oauthProviders.length === 0 || !form.oauth_provider_key))
+  )
 }
 
 function getErrorMessage(error: unknown) {

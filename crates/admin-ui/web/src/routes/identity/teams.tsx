@@ -98,6 +98,7 @@ const initialInviteForm: CreateUserInput = {
   team_id: null,
   team_role: 'member',
   oidc_provider_key: null,
+  oauth_provider_key: null,
   tags: [],
 }
 
@@ -113,7 +114,7 @@ type TeamMemberDialogState =
 export function TeamsPage() {
   const router = useRouter()
   const {
-    data: { teams, users, oidc_providers: oidcProviders },
+    data: { teams, users, oidc_providers: oidcProviders, oauth_providers: oauthProviders },
   } = Route.useLoaderData() as { data: IdentityTeamsPayload }
   const [teamDialog, setTeamDialog] = useState<TeamDialogState>({ mode: 'closed' })
   const [teamForm, setTeamForm] = useState<CreateTeamInput>(initialTeamForm)
@@ -258,6 +259,11 @@ export function TeamsPage() {
           ? (current.oidc_provider_key ??
             (oidcProviders.length === 1 ? oidcProviders[0].key : null))
           : null,
+      oauth_provider_key:
+        authMode === 'oauth'
+          ? (current.oauth_provider_key ??
+            (oauthProviders.length === 1 ? oauthProviders[0].key : null))
+          : null,
     }))
   }
 
@@ -360,7 +366,7 @@ export function TeamsPage() {
     startTransition(async () => {
       try {
         const response = await createIdentityUser({
-          data: sanitizeInviteForm(inviteForm, oidcProviders),
+          data: sanitizeInviteForm(inviteForm, oidcProviders, oauthProviders),
         })
         setInviteResult(response.data)
         toast.success(
@@ -820,6 +826,7 @@ export function TeamsPage() {
                             <SelectGroup>
                               <SelectItem value="password">Password</SelectItem>
                               <SelectItem value="oidc">SSO (OIDC)</SelectItem>
+                              <SelectItem value="oauth">SSO (OAuth)</SelectItem>
                             </SelectGroup>
                           </SelectContent>
                         </Select>
@@ -854,6 +861,50 @@ export function TeamsPage() {
                               <SelectContent>
                                 <SelectGroup>
                                   {oidcProviders.map((provider) => (
+                                    <SelectItem key={provider.id} value={provider.key}>
+                                      {provider.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectGroup>
+                              </SelectContent>
+                            </Select>
+                            <FieldDescription>
+                              Activation happens after a successful redirect back from this
+                              provider.
+                            </FieldDescription>
+                          </Field>
+                        </>
+                      ) : null}
+
+                      {inviteForm.auth_mode === 'oauth' ? (
+                        <>
+                          {oauthProviders.length === 0 ? (
+                            <Alert>
+                              <AlertTitle>No OAuth providers configured</AlertTitle>
+                              <AlertDescription>
+                                Add an OAuth provider in the gateway before inviting members with
+                                SSO, or use password onboarding for now.
+                              </AlertDescription>
+                            </Alert>
+                          ) : null}
+
+                          <Field>
+                            <FieldLabel htmlFor="member-oauth-provider">OAuth provider</FieldLabel>
+                            <Select
+                              value={inviteForm.oauth_provider_key ?? undefined}
+                              onValueChange={(value) =>
+                                setInviteForm((current) => ({
+                                  ...current,
+                                  oauth_provider_key: value,
+                                }))
+                              }
+                            >
+                              <SelectTrigger id="member-oauth-provider">
+                                <SelectValue placeholder="Select provider" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectGroup>
+                                  {oauthProviders.map((provider) => (
                                     <SelectItem key={provider.id} value={provider.key}>
                                       {provider.label}
                                     </SelectItem>
@@ -907,7 +958,10 @@ export function TeamsPage() {
                     <div className="flex justify-end">
                       <Button
                         type="submit"
-                        disabled={isPending || isInviteOidcDisabled(inviteForm, oidcProviders)}
+                        disabled={
+                          isPending ||
+                          isInviteSsoDisabled(inviteForm, oidcProviders, oauthProviders)
+                        }
                       >
                         {isPending ? 'Creating…' : 'Invite member'}
                       </Button>
@@ -1307,6 +1361,7 @@ function sanitizeTeamForm(form: CreateTeamInput): CreateTeamInput {
 function sanitizeInviteForm(
   form: CreateUserInput,
   oidcProviders: IdentityTeamsPayload['oidc_providers'],
+  oauthProviders: IdentityTeamsPayload['oauth_providers'],
 ): CreateUserInput {
   return {
     name: form.name.trim(),
@@ -1318,6 +1373,11 @@ function sanitizeInviteForm(
     oidc_provider_key:
       form.auth_mode === 'oidc'
         ? (form.oidc_provider_key ?? (oidcProviders.length === 1 ? oidcProviders[0].key : null))
+        : null,
+    oauth_provider_key:
+      form.auth_mode === 'oauth'
+        ? (form.oauth_provider_key ??
+          (oauthProviders.length === 1 ? oauthProviders[0].key : null))
         : null,
     tags: sanitizeEntityTags(form.tags),
   }
@@ -1336,11 +1396,17 @@ function sanitizeTransferForm(
   }
 }
 
-function isInviteOidcDisabled(
+function isInviteSsoDisabled(
   form: CreateUserInput,
-  providers: IdentityTeamsPayload['oidc_providers'],
+  oidcProviders: IdentityTeamsPayload['oidc_providers'],
+  oauthProviders: IdentityTeamsPayload['oauth_providers'],
 ) {
-  return form.auth_mode === 'oidc' && (providers.length === 0 || !form.oidc_provider_key)
+  return (
+    (form.auth_mode === 'oidc' &&
+      (oidcProviders.length === 0 || !form.oidc_provider_key)) ||
+    (form.auth_mode === 'oauth' &&
+      (oauthProviders.length === 0 || !form.oauth_provider_key))
+  )
 }
 
 function TeamMembersToggleLabel({

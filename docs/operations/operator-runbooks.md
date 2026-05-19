@@ -158,7 +158,7 @@ mise run gateway-bootstrap-admin
   - production-shaped local config does force password rotation
 - confirm the session is not simply expired or stale
 
-If the environment relies on OIDC, also review [oidc-and-sso-status.md](../access/oidc-and-sso-status.md). The current OIDC flow is still development-style.
+If the environment relies on OIDC, also review [oidc-and-sso-status.md](../access/oidc-and-sso-status.md) and confirm the active provider, public base URL, callback URL, and client secret.
 
 ## Provider Auth Failure
 
