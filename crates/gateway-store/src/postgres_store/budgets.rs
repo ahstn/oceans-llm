@@ -867,7 +867,9 @@ impl BudgetRepository for PostgresStore {
             WHERE ($3 IS NULL OR owner_kind = $3)
               AND ($4 IS NULL OR (owner_kind = 'user' AND owner_id = $4))
             ORDER BY day_start ASC, owner_kind ASC, owner_name ASC, owner_id ASC,
-                     provider_key ASC, upstream_model ASC, pricing_status ASC
+                     provider_key ASC, upstream_model ASC, pricing_status ASC,
+                     model_key ASC, COALESCE(model_id, '') ASC,
+                     COALESCE(pricing_row_id, '') ASC
             "#,
         )
         .bind(window_start.unix_timestamp())

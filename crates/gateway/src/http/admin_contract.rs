@@ -501,6 +501,18 @@ pub struct FocusExportQuery {
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
+pub struct FocusSelfExportQuery {
+    /// Inclusive UTC start date as YYYY-MM-DD. Defaults to the last 30 complete UTC days.
+    pub start: Option<String>,
+    /// Inclusive UTC end date as YYYY-MM-DD. Defaults to yesterday/today window with start.
+    pub end: Option<String>,
+    /// Convenience single-day export date as YYYY-MM-DD. Mutually exclusive with start/end.
+    pub day: Option<String>,
+    /// Explicit export granularity. Only daily is supported in v1.
+    pub granularity: Option<String>,
+}
+
+#[derive(Debug, Deserialize, IntoParams)]
 pub struct LeaderboardQuery {
     #[param(value_type = ObservabilityRangeQueryValue, required = false)]
     pub range: Option<String>,

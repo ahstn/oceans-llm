@@ -323,6 +323,10 @@ function downloadFocusDay(day: string, ownerKind: SpendOwnerKind) {
     toast.error('Choose a day to export')
     return
   }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+    toast.error('Day must be in YYYY-MM-DD format')
+    return
+  }
   const params = new URLSearchParams({
     day,
     granularity: 'daily',

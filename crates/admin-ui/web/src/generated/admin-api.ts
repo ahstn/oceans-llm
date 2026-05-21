@@ -2926,20 +2926,20 @@ export interface operations {
     };
     get_my_focus_export: {
         parameters: {
-            query?: {
-                /** @description Inclusive UTC start date as YYYY-MM-DD. Defaults to the last 30 complete UTC days. */
-                start?: string | null;
-                /** @description Inclusive UTC end date as YYYY-MM-DD. Defaults to yesterday/today window with start. */
-                end?: string | null;
-                /** @description Convenience single-day export date as YYYY-MM-DD. Mutually exclusive with start/end. */
-                day?: string | null;
-                /** @description Admin-only owner filter: all, user, team, or service_account. */
-                owner_kind?: string | null;
-                /** @description Explicit export granularity. Only daily is supported in v1. */
-                granularity?: string | null;
-            };
+            query?: never;
             header?: never;
-            path?: never;
+            path: {
+                /** @description Inclusive UTC start date as YYYY-MM-DD. Defaults to the last 30 complete UTC days. */
+                start: string | null;
+                /** @description Inclusive UTC end date as YYYY-MM-DD. Defaults to yesterday/today window with start. */
+                end: string | null;
+                /** @description Convenience single-day export date as YYYY-MM-DD. Mutually exclusive with start/end. */
+                day: string | null;
+                /** @description Admin-only owner filter: all, user, team, or service_account. */
+                owner_kind: string | null;
+                /** @description Explicit export granularity. Only daily is supported in v1. */
+                granularity: string | null;
+            };
             cookie?: never;
         };
         requestBody?: never;

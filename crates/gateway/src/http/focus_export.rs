@@ -148,6 +148,14 @@ where
 }
 
 fn write_csv_field(body: &mut String, value: &str) {
+    let sanitized;
+    let value = if should_neutralize_spreadsheet_formula(value) {
+        sanitized = format!("'{value}");
+        sanitized.as_str()
+    } else {
+        value
+    };
+
     let must_quote = value.contains(',')
         || value.contains('"')
         || value.contains('\n')
@@ -166,6 +174,27 @@ fn write_csv_field(body: &mut String, value: &str) {
         body.push(ch);
     }
     body.push('"');
+}
+
+fn should_neutralize_spreadsheet_formula(value: &str) -> bool {
+    match value.as_bytes().first().copied() {
+        Some(b'=' | b'+' | b'@') => true,
+        Some(b'-') => !looks_like_negative_number(value),
+        _ => false,
+    }
+}
+
+fn looks_like_negative_number(value: &str) -> bool {
+    let Some(rest) = value.strip_prefix('-') else {
+        return false;
+    };
+    let Some((whole, fractional)) = rest.split_once('.') else {
+        return rest.chars().all(|ch| ch.is_ascii_digit());
+    };
+    !whole.is_empty()
+        && !fractional.is_empty()
+        && whole.chars().all(|ch| ch.is_ascii_digit())
+        && fractional.chars().all(|ch| ch.is_ascii_digit())
 }
 
 fn resource_id(row: &FocusExportAggregateRecord) -> String {
@@ -253,6 +282,24 @@ mod tests {
             Some(Uuid::parse_str("00000000-0000-0000-0000-000000000222").unwrap());
 
         assert_ne!(resource_id(&first), resource_id(&second));
+    }
+
+    #[test]
+    fn neutralizes_formula_like_csv_fields() {
+        let mut row = sample_row("gpt-test");
+        row.owner_name = "=IMPORTXML(\"https://example.test\")".to_string();
+        row.upstream_model = "-not-a-number".to_string();
+
+        let export = build_focus_csv_export(
+            &[row],
+            FocusExportDiagnosticsRecord::default(),
+            datetime!(2026-05-19 0:00 UTC),
+            datetime!(2026-05-20 0:00 UTC),
+        );
+
+        assert!(export.body.contains("'=IMPORTXML"));
+        assert!(export.body.contains("'-not-a-number"));
+        assert!(!should_neutralize_spreadsheet_formula("-1.2345"));
     }
 
     fn sample_row(model_key: &str) -> FocusExportAggregateRecord {

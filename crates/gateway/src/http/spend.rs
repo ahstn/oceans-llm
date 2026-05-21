@@ -18,10 +18,10 @@ use crate::http::{
     admin_contract::{
         BudgetAlertHistoryItemView, BudgetAlertHistoryRequestQuery, BudgetAlertHistoryView,
         BudgetSettingsView, DeactivateBudgetResultView, Envelope, FocusExportQuery,
-        SpendBudgetServiceAccountView, SpendBudgetTeamView, SpendBudgetUserView, SpendBudgetsView,
-        SpendDailyPointView, SpendModelBreakdownView, SpendOwnerBreakdownView, SpendReportQuery,
-        SpendReportView, SpendTotalsView, UpsertBudgetRequest, UpsertBudgetResultView, envelope,
-        format_timestamp,
+        FocusSelfExportQuery, SpendBudgetServiceAccountView, SpendBudgetTeamView,
+        SpendBudgetUserView, SpendBudgetsView, SpendDailyPointView, SpendModelBreakdownView,
+        SpendOwnerBreakdownView, SpendReportQuery, SpendReportView, SpendTotalsView,
+        UpsertBudgetRequest, UpsertBudgetResultView, envelope, format_timestamp,
     },
     error::AppError,
     focus_export::{FocusCsvExport, build_focus_csv_export},
@@ -180,7 +180,7 @@ pub async fn get_admin_focus_export(
 pub async fn get_my_focus_export(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Query(query): Query<FocusExportQuery>,
+    Query(query): Query<FocusSelfExportQuery>,
 ) -> Result<Response, AppError> {
     let current_user = require_authenticated_session(&state, &headers).await?;
     if current_user.status != UserStatus::Active {
@@ -188,12 +188,7 @@ pub async fn get_my_focus_export(
             "only active users can export spend".to_string(),
         )));
     }
-    if query.owner_kind.is_some() {
-        return Err(AppError(GatewayError::InvalidRequest(
-            "owner_kind is not supported for self exports".to_string(),
-        )));
-    }
-    let (window_start, window_end) = focus_export_window_bounds_utc(&query)?;
+    let (window_start, window_end) = focus_self_export_window_bounds_utc(&query)?;
 
     let rows = state
         .store
@@ -798,33 +793,54 @@ fn parse_owner_kind(value: Option<&str>) -> Result<Option<ApiKeyOwnerKind>, AppE
 fn focus_export_window_bounds_utc(
     query: &FocusExportQuery,
 ) -> Result<(OffsetDateTime, OffsetDateTime), AppError> {
-    if !matches!(query.granularity.as_deref(), None | Some("daily")) {
+    focus_window_bounds_from_parts(
+        query.start.as_deref(),
+        query.end.as_deref(),
+        query.day.as_deref(),
+        query.granularity.as_deref(),
+    )
+}
+
+fn focus_self_export_window_bounds_utc(
+    query: &FocusSelfExportQuery,
+) -> Result<(OffsetDateTime, OffsetDateTime), AppError> {
+    focus_window_bounds_from_parts(
+        query.start.as_deref(),
+        query.end.as_deref(),
+        query.day.as_deref(),
+        query.granularity.as_deref(),
+    )
+}
+
+fn focus_window_bounds_from_parts(
+    start: Option<&str>,
+    end: Option<&str>,
+    day: Option<&str>,
+    granularity: Option<&str>,
+) -> Result<(OffsetDateTime, OffsetDateTime), AppError> {
+    if !matches!(granularity, None | Some("daily")) {
         return Err(AppError(GatewayError::InvalidRequest(
             "granularity must be daily".to_string(),
         )));
     }
-    if query.day.is_some() && (query.start.is_some() || query.end.is_some()) {
+    if day.is_some() && (start.is_some() || end.is_some()) {
         return Err(AppError(GatewayError::InvalidRequest(
             "day is mutually exclusive with start and end".to_string(),
         )));
     }
 
-    let (start_date, end_date) = if let Some(day) = query.day.as_deref() {
+    let (start_date, end_date) = if let Some(day) = day {
         let day = parse_utc_date(day, "day")?;
         (day, day)
-    } else if query.start.is_some() || query.end.is_some() {
-        let start = query
-            .start
-            .as_deref()
+    } else if start.is_some() || end.is_some() {
+        let start = start
             .ok_or_else(|| {
                 AppError(GatewayError::InvalidRequest(
                     "start is required when end is supplied".to_string(),
                 ))
             })
             .and_then(|value| parse_utc_date(value, "start"))?;
-        let end = query
-            .end
-            .as_deref()
+        let end = end
             .ok_or_else(|| {
                 AppError(GatewayError::InvalidRequest(
                     "end is required when start is supplied".to_string(),
