@@ -54,8 +54,9 @@ GET /api/v1/me/spend/focus.csv?day=2026-05-19&granularity=daily
 
 Export ranges use inclusive UTC dates at the API boundary and are converted to
 exclusive timestamp windows internally. `day=YYYY-MM-DD` is a convenience for a
-single UTC day. Synchronous exports are limited to 90 days and currently support
-only daily granularity.
+single UTC day. When no date parameters are supplied, the default export covers
+the last 30 complete UTC days and excludes the in-progress UTC day. Synchronous
+exports are limited to 90 days and currently support only daily granularity.
 
 The CSV includes one row per UTC day, owner scope, upstream provider/model, and
 pricing status for `priced` and `legacy_estimated` ledger rows. `unpriced` and

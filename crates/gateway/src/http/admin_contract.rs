@@ -488,9 +488,9 @@ pub struct SpendReportQuery {
 
 #[derive(Debug, Deserialize, IntoParams)]
 pub struct FocusExportQuery {
-    /// Inclusive UTC start date as YYYY-MM-DD. Defaults to the last 30 complete UTC days.
+    /// Inclusive UTC start date as YYYY-MM-DD. If present, end must also be supplied.
     pub start: Option<String>,
-    /// Inclusive UTC end date as YYYY-MM-DD. Defaults to yesterday/today window with start.
+    /// Inclusive UTC end date as YYYY-MM-DD. If present, start must also be supplied.
     pub end: Option<String>,
     /// Convenience single-day export date as YYYY-MM-DD. Mutually exclusive with start/end.
     pub day: Option<String>,
@@ -502,9 +502,9 @@ pub struct FocusExportQuery {
 
 #[derive(Debug, Deserialize, IntoParams)]
 pub struct FocusSelfExportQuery {
-    /// Inclusive UTC start date as YYYY-MM-DD. Defaults to the last 30 complete UTC days.
+    /// Inclusive UTC start date as YYYY-MM-DD. If present, end must also be supplied.
     pub start: Option<String>,
-    /// Inclusive UTC end date as YYYY-MM-DD. Defaults to yesterday/today window with start.
+    /// Inclusive UTC end date as YYYY-MM-DD. If present, start must also be supplied.
     pub end: Option<String>,
     /// Convenience single-day export date as YYYY-MM-DD. Mutually exclusive with start/end.
     pub day: Option<String>,

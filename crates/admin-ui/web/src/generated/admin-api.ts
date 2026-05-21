@@ -2617,9 +2617,9 @@ export interface operations {
     get_admin_focus_export: {
         parameters: {
             query?: {
-                /** @description Inclusive UTC start date as YYYY-MM-DD. Defaults to the last 30 complete UTC days. */
+                /** @description Inclusive UTC start date as YYYY-MM-DD. If present, end must also be supplied. */
                 start?: string | null;
-                /** @description Inclusive UTC end date as YYYY-MM-DD. Defaults to yesterday/today window with start. */
+                /** @description Inclusive UTC end date as YYYY-MM-DD. If present, start must also be supplied. */
                 end?: string | null;
                 /** @description Convenience single-day export date as YYYY-MM-DD. Mutually exclusive with start/end. */
                 day?: string | null;
@@ -2926,20 +2926,18 @@ export interface operations {
     };
     get_my_focus_export: {
         parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Inclusive UTC start date as YYYY-MM-DD. Defaults to the last 30 complete UTC days. */
-                start: string | null;
-                /** @description Inclusive UTC end date as YYYY-MM-DD. Defaults to yesterday/today window with start. */
-                end: string | null;
+            query?: {
+                /** @description Inclusive UTC start date as YYYY-MM-DD. If present, end must also be supplied. */
+                start?: string | null;
+                /** @description Inclusive UTC end date as YYYY-MM-DD. If present, start must also be supplied. */
+                end?: string | null;
                 /** @description Convenience single-day export date as YYYY-MM-DD. Mutually exclusive with start/end. */
-                day: string | null;
-                /** @description Admin-only owner filter: all, user, team, or service_account. */
-                owner_kind: string | null;
+                day?: string | null;
                 /** @description Explicit export granularity. Only daily is supported in v1. */
-                granularity: string | null;
+                granularity?: string | null;
             };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;

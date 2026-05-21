@@ -84,7 +84,7 @@ and API-token automation are deferred.
 ### Date ranges
 
 The export accepts explicit inclusive `start` and `end` dates, defaults to the
-last 30 days, and rejects synchronous exports longer than 90 days. All
+last 30 complete UTC days excluding the in-progress UTC day, and rejects synchronous exports longer than 90 days. All
 aggregation boundaries are UTC.
 
 Daily exports are supported through the same daily row grain by passing

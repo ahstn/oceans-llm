@@ -54,6 +54,19 @@ mod tests {
         status_migrations_with_options,
     };
 
+    fn focus_export_owner_tags() -> (Vec<RequestTag>, Vec<RequestTag>) {
+        (
+            vec![RequestTag {
+                key: "cost_center".to_string(),
+                value: "eng".to_string(),
+            }],
+            vec![RequestTag {
+                key: "team".to_string(),
+                value: "platform".to_string(),
+            }],
+        )
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn build_usage_ledger_record(
         request_id: &str,
@@ -4251,26 +4264,13 @@ mod tests {
             )
             .await
             .expect("create user");
+        let (user_tags, team_tags) = focus_export_owner_tags();
         store
-            .update_user_tags(
-                user.user_id,
-                &[RequestTag {
-                    key: "cost_center".to_string(),
-                    value: "eng".to_string(),
-                }],
-                OffsetDateTime::now_utc(),
-            )
+            .update_user_tags(user.user_id, &user_tags, OffsetDateTime::now_utc())
             .await
             .expect("update user tags");
         store
-            .update_team_tags(
-                team.team_id,
-                &[RequestTag {
-                    key: "team".to_string(),
-                    value: "platform".to_string(),
-                }],
-                OffsetDateTime::now_utc(),
-            )
+            .update_team_tags(team.team_id, &team_tags, OffsetDateTime::now_utc())
             .await
             .expect("update team tags");
 
@@ -5061,26 +5061,13 @@ mod tests {
             )
             .await
             .expect("create user");
+        let (user_tags, team_tags) = focus_export_owner_tags();
         store
-            .update_user_tags(
-                user.user_id,
-                &[RequestTag {
-                    key: "cost_center".to_string(),
-                    value: "eng".to_string(),
-                }],
-                OffsetDateTime::now_utc(),
-            )
+            .update_user_tags(user.user_id, &user_tags, OffsetDateTime::now_utc())
             .await
             .expect("update user tags");
         store
-            .update_team_tags(
-                team.team_id,
-                &[RequestTag {
-                    key: "team".to_string(),
-                    value: "platform".to_string(),
-                }],
-                OffsetDateTime::now_utc(),
-            )
+            .update_team_tags(team.team_id, &team_tags, OffsetDateTime::now_utc())
             .await
             .expect("update team tags");
 

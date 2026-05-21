@@ -1732,7 +1732,7 @@
           {
             "name": "start",
             "in": "query",
-            "description": "Inclusive UTC start date as YYYY-MM-DD. Defaults to the last 30 complete UTC days.",
+            "description": "Inclusive UTC start date as YYYY-MM-DD. If present, end must also be supplied.",
             "required": false,
             "schema": {
               "type": [
@@ -1744,7 +1744,7 @@
           {
             "name": "end",
             "in": "query",
-            "description": "Inclusive UTC end date as YYYY-MM-DD. Defaults to yesterday/today window with start.",
+            "description": "Inclusive UTC end date as YYYY-MM-DD. If present, start must also be supplied.",
             "required": false,
             "schema": {
               "type": [
@@ -2277,9 +2277,9 @@
         "parameters": [
           {
             "name": "start",
-            "in": "path",
-            "description": "Inclusive UTC start date as YYYY-MM-DD. Defaults to the last 30 complete UTC days.",
-            "required": true,
+            "in": "query",
+            "description": "Inclusive UTC start date as YYYY-MM-DD. If present, end must also be supplied.",
+            "required": false,
             "schema": {
               "type": [
                 "string",
@@ -2289,9 +2289,9 @@
           },
           {
             "name": "end",
-            "in": "path",
-            "description": "Inclusive UTC end date as YYYY-MM-DD. Defaults to yesterday/today window with start.",
-            "required": true,
+            "in": "query",
+            "description": "Inclusive UTC end date as YYYY-MM-DD. If present, start must also be supplied.",
+            "required": false,
             "schema": {
               "type": [
                 "string",
@@ -2301,21 +2301,9 @@
           },
           {
             "name": "day",
-            "in": "path",
+            "in": "query",
             "description": "Convenience single-day export date as YYYY-MM-DD. Mutually exclusive with start/end.",
-            "required": true,
-            "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          },
-          {
-            "name": "owner_kind",
-            "in": "path",
-            "description": "Admin-only owner filter: all, user, team, or service_account.",
-            "required": true,
+            "required": false,
             "schema": {
               "type": [
                 "string",
@@ -2325,9 +2313,9 @@
           },
           {
             "name": "granularity",
-            "in": "path",
+            "in": "query",
             "description": "Explicit export granularity. Only daily is supported in v1.",
-            "required": true,
+            "required": false,
             "schema": {
               "type": [
                 "string",

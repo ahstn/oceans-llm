@@ -192,9 +192,10 @@ fn write_csv_field(body: &mut String, value: &str) {
 }
 
 fn should_neutralize_spreadsheet_formula(value: &str) -> bool {
-    match value.as_bytes().first().copied() {
+    let trimmed = value.trim_start_matches([' ', '\t', '\r', '\n']);
+    match trimmed.as_bytes().first().copied() {
         Some(b'=' | b'+' | b'@') => true,
-        Some(b'-') => !looks_like_negative_number(value),
+        Some(b'-') => !looks_like_negative_number(trimmed),
         _ => false,
     }
 }
@@ -342,6 +343,9 @@ mod tests {
 
         assert!(export.body.contains("'=IMPORTXML"));
         assert!(export.body.contains("'-not-a-number"));
+        assert!(should_neutralize_spreadsheet_formula("\t=1+1"));
+        assert!(should_neutralize_spreadsheet_formula("\r+SUM(A1:A2)"));
+        assert!(should_neutralize_spreadsheet_formula(" =IMPORTXML"));
         assert!(!should_neutralize_spreadsheet_formula("-1.2345"));
     }
 

@@ -173,7 +173,7 @@ pub async fn get_admin_focus_export(
 #[utoipa::path(
     get,
     path = "/api/v1/me/spend/focus.csv",
-    params(FocusExportQuery),
+    params(FocusSelfExportQuery),
     responses((status = 200, content_type = "text/csv", body = String)),
     security(("session_cookie" = []))
 )]
@@ -812,6 +812,13 @@ fn focus_self_export_window_bounds_utc(
     )
 }
 
+fn focus_default_window_bounds_utc() -> Result<(OffsetDateTime, OffsetDateTime), AppError> {
+    let now_utc = OffsetDateTime::now_utc().to_offset(UtcOffset::UTC);
+    let window_end = date_start_utc(now_utc.date())?;
+    let window_start = window_end - Duration::days(30);
+    Ok((window_start, window_end))
+}
+
 fn focus_window_bounds_from_parts(
     start: Option<&str>,
     end: Option<&str>,
@@ -849,8 +856,7 @@ fn focus_window_bounds_from_parts(
             .and_then(|value| parse_utc_date(value, "end"))?;
         (start, end)
     } else {
-        let (window_start, window_end) = report_window_bounds_utc(30)?;
-        return Ok((window_start, window_end));
+        return focus_default_window_bounds_utc();
     };
 
     if end_date < start_date {
