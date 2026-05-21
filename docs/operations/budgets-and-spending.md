@@ -33,6 +33,9 @@ Only `priced` and `legacy_estimated` rows count toward spend totals and budget w
 
 ## FOCUS Billing Export
 
+Design rationale and mapping details are captured in
+[ADR: FOCUS Billing Data Export](../adr/2026-05-19-focus-billing-data-export.md).
+
 Admins can download best-effort FOCUS-compatible CSV exports from the Usage Costs
 admin page or directly from the gateway API:
 
@@ -67,6 +70,13 @@ LLM-specific usage details such as prompt tokens, completion tokens, total
 tokens, request count, upstream provider/model, and pricing status. The current
 format is intentionally best-effort FOCUS v1.2-compatible and should not be
 represented as strict FOCUS certification.
+
+When changing this behavior, validate docs and generated contracts with:
+
+```bash
+mise -C docs run check
+mise run admin-contract-check
+```
 
 ## Runtime Enforcement
 

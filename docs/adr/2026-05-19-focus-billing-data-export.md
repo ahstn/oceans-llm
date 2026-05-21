@@ -210,6 +210,10 @@ against the chosen FOCUS v1.2 schema during implementation.
 - Raw admin-only per-request export for audit/reconciliation.
 - Team-admin export once team-admin authorization is defined.
 - Multi-currency support if the ledger ever records non-USD billing data.
+- Move FOCUS export domain records out of `gateway-core/src/domain.rs` into a
+  cohesive domain submodule when the broader domain module is split. They remain
+  colocated with existing spend aggregate records in this slice to preserve the
+  current public API and avoid a mixed feature/refactor change.
 
 This ADR was prepared through collaborative human + AI discovery, including
 FOCUS ecosystem research and guided product decision review.
