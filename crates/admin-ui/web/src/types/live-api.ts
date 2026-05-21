@@ -21,7 +21,7 @@ export type UpdateApiKeyInput = components['schemas']['UpdateApiKeyRequest']
 export type UpdateApiKeyResult = components['schemas']['UpdateApiKeyResponse']
 export type RevokeApiKeyResult = components['schemas']['RevokeApiKeyResponse']
 
-export type SpendOwnerKind = 'all' | 'user' | 'team'
+export type SpendOwnerKind = 'all' | 'user' | 'team' | 'service_account'
 
 export type SpendTotalsView = components['schemas']['SpendTotalsView']
 export type SpendDailyPointView = components['schemas']['SpendDailyPointView']

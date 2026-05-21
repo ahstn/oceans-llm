@@ -790,6 +790,32 @@ impl BudgetRepository for AnyStore {
         )
     }
 
+    async fn list_focus_export_aggregates(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        owner_kind: Option<gateway_core::ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
+    ) -> Result<Vec<gateway_core::FocusExportAggregateRecord>, StoreError> {
+        dispatch_store!(
+            self,
+            list_focus_export_aggregates(window_start, window_end, owner_kind, owner_user_id)
+        )
+    }
+
+    async fn get_focus_export_diagnostics(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        owner_kind: Option<gateway_core::ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
+    ) -> Result<gateway_core::FocusExportDiagnosticsRecord, StoreError> {
+        dispatch_store!(
+            self,
+            get_focus_export_diagnostics(window_start, window_end, owner_kind, owner_user_id)
+        )
+    }
+
     async fn list_usage_user_leaderboard(
         &self,
         window_start: OffsetDateTime,

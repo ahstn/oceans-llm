@@ -1,7 +1,8 @@
 use axum::{
     Json,
     extract::{Path, Query, State},
-    http::HeaderMap,
+    http::{HeaderMap, header},
+    response::{IntoResponse, Response},
 };
 use gateway_core::{
     ApiKeyOwnerKind, BudgetAlertChannel, BudgetAlertDeliveryStatus, BudgetAlertHistoryQuery,
@@ -9,19 +10,21 @@ use gateway_core::{
     MembershipRole, Money4, UserStatus, budget_window_utc,
 };
 use gateway_store::GatewayStore;
-use time::{Duration, OffsetDateTime, UtcOffset};
+use time::{Date, Duration, Month, OffsetDateTime, UtcOffset};
 use uuid::Uuid;
 
 use crate::http::{
-    admin_auth::require_platform_admin,
+    admin_auth::{require_authenticated_session, require_platform_admin},
     admin_contract::{
         BudgetAlertHistoryItemView, BudgetAlertHistoryRequestQuery, BudgetAlertHistoryView,
-        BudgetSettingsView, DeactivateBudgetResultView, Envelope, SpendBudgetServiceAccountView,
-        SpendBudgetTeamView, SpendBudgetUserView, SpendBudgetsView, SpendDailyPointView,
-        SpendModelBreakdownView, SpendOwnerBreakdownView, SpendReportQuery, SpendReportView,
-        SpendTotalsView, UpsertBudgetRequest, UpsertBudgetResultView, envelope, format_timestamp,
+        BudgetSettingsView, DeactivateBudgetResultView, Envelope, FocusExportQuery,
+        FocusSelfExportQuery, SpendBudgetServiceAccountView, SpendBudgetTeamView,
+        SpendBudgetUserView, SpendBudgetsView, SpendDailyPointView, SpendModelBreakdownView,
+        SpendOwnerBreakdownView, SpendReportQuery, SpendReportView, SpendTotalsView,
+        UpsertBudgetRequest, UpsertBudgetResultView, envelope, format_timestamp,
     },
     error::AppError,
+    focus_export::{FocusCsvExport, build_focus_csv_export},
     state::AppState,
 };
 
@@ -132,6 +135,86 @@ pub async fn get_spend_report(
         owners,
         models,
     })))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/spend/focus.csv",
+    params(FocusExportQuery),
+    responses((status = 200, content_type = "text/csv", body = String)),
+    security(("session_cookie" = []))
+)]
+pub async fn get_admin_focus_export(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<FocusExportQuery>,
+) -> Result<Response, AppError> {
+    require_platform_admin(&state, &headers).await?;
+    let owner_kind = parse_owner_kind(query.owner_kind.as_deref())?;
+    let (window_start, window_end) = focus_export_window_bounds_utc(&query)?;
+
+    let rows = state
+        .store
+        .list_focus_export_aggregates(window_start, window_end, owner_kind, None)
+        .await?;
+    let diagnostics = state
+        .store
+        .get_focus_export_diagnostics(window_start, window_end, owner_kind, None)
+        .await?;
+
+    Ok(focus_csv_response(build_focus_csv_export(
+        &rows,
+        diagnostics,
+        window_start,
+        window_end,
+    )))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/me/spend/focus.csv",
+    params(FocusSelfExportQuery),
+    responses((status = 200, content_type = "text/csv", body = String)),
+    security(("session_cookie" = []))
+)]
+pub async fn get_my_focus_export(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<FocusSelfExportQuery>,
+) -> Result<Response, AppError> {
+    let current_user = require_authenticated_session(&state, &headers).await?;
+    if current_user.status != UserStatus::Active {
+        return Err(AppError(GatewayError::InvalidRequest(
+            "only active users can export spend".to_string(),
+        )));
+    }
+    let (window_start, window_end) = focus_self_export_window_bounds_utc(&query)?;
+
+    let rows = state
+        .store
+        .list_focus_export_aggregates(
+            window_start,
+            window_end,
+            Some(ApiKeyOwnerKind::User),
+            Some(current_user.user_id),
+        )
+        .await?;
+    let diagnostics = state
+        .store
+        .get_focus_export_diagnostics(
+            window_start,
+            window_end,
+            Some(ApiKeyOwnerKind::User),
+            Some(current_user.user_id),
+        )
+        .await?;
+
+    Ok(focus_csv_response(build_focus_csv_export(
+        &rows,
+        diagnostics,
+        window_start,
+        window_end,
+    )))
 }
 
 #[utoipa::path(
@@ -705,6 +788,155 @@ fn parse_owner_kind(value: Option<&str>) -> Result<Option<ApiKeyOwnerKind>, AppE
             "invalid owner_kind `{other}`"
         )))),
     }
+}
+
+fn focus_export_window_bounds_utc(
+    query: &FocusExportQuery,
+) -> Result<(OffsetDateTime, OffsetDateTime), AppError> {
+    focus_window_bounds_from_parts(
+        query.start.as_deref(),
+        query.end.as_deref(),
+        query.day.as_deref(),
+        query.granularity.as_deref(),
+    )
+}
+
+fn focus_self_export_window_bounds_utc(
+    query: &FocusSelfExportQuery,
+) -> Result<(OffsetDateTime, OffsetDateTime), AppError> {
+    focus_window_bounds_from_parts(
+        query.start.as_deref(),
+        query.end.as_deref(),
+        query.day.as_deref(),
+        query.granularity.as_deref(),
+    )
+}
+
+fn focus_default_window_bounds_utc() -> Result<(OffsetDateTime, OffsetDateTime), AppError> {
+    let now_utc = OffsetDateTime::now_utc().to_offset(UtcOffset::UTC);
+    let window_end = date_start_utc(now_utc.date())?;
+    let window_start = window_end - Duration::days(30);
+    Ok((window_start, window_end))
+}
+
+fn focus_window_bounds_from_parts(
+    start: Option<&str>,
+    end: Option<&str>,
+    day: Option<&str>,
+    granularity: Option<&str>,
+) -> Result<(OffsetDateTime, OffsetDateTime), AppError> {
+    if !matches!(granularity, None | Some("daily")) {
+        return Err(AppError(GatewayError::InvalidRequest(
+            "granularity must be daily".to_string(),
+        )));
+    }
+    if day.is_some() && (start.is_some() || end.is_some()) {
+        return Err(AppError(GatewayError::InvalidRequest(
+            "day is mutually exclusive with start and end".to_string(),
+        )));
+    }
+
+    let (start_date, end_date) = if let Some(day) = day {
+        let day = parse_utc_date(day, "day")?;
+        (day, day)
+    } else if start.is_some() || end.is_some() {
+        let start = start
+            .ok_or_else(|| {
+                AppError(GatewayError::InvalidRequest(
+                    "start is required when end is supplied".to_string(),
+                ))
+            })
+            .and_then(|value| parse_utc_date(value, "start"))?;
+        let end = end
+            .ok_or_else(|| {
+                AppError(GatewayError::InvalidRequest(
+                    "end is required when start is supplied".to_string(),
+                ))
+            })
+            .and_then(|value| parse_utc_date(value, "end"))?;
+        (start, end)
+    } else {
+        return focus_default_window_bounds_utc();
+    };
+
+    if end_date < start_date {
+        return Err(AppError(GatewayError::InvalidRequest(
+            "end must be on or after start".to_string(),
+        )));
+    }
+    let days = (end_date - start_date).whole_days() + 1;
+    if days > 90 {
+        return Err(AppError(GatewayError::InvalidRequest(
+            "FOCUS exports are limited to 90 days".to_string(),
+        )));
+    }
+
+    Ok((
+        date_start_utc(start_date)?,
+        date_start_utc(end_date)? + Duration::days(1),
+    ))
+}
+
+fn parse_utc_date(value: &str, field: &str) -> Result<Date, AppError> {
+    if value.len() != 10 {
+        return invalid_date(field);
+    }
+    let mut parts = value.split('-');
+    let year = parts.next().and_then(|part| part.parse::<i32>().ok());
+    let month = parts.next().and_then(|part| part.parse::<u8>().ok());
+    let day = parts.next().and_then(|part| part.parse::<u8>().ok());
+    if parts.next().is_some() {
+        return invalid_date(field);
+    }
+    let (Some(year), Some(month), Some(day)) = (year, month, day) else {
+        return invalid_date(field);
+    };
+    let month = Month::try_from(month).map_err(|_| {
+        AppError(GatewayError::InvalidRequest(format!(
+            "{field} must be a valid YYYY-MM-DD date"
+        )))
+    })?;
+    Date::from_calendar_date(year, month, day).map_err(|_| {
+        AppError(GatewayError::InvalidRequest(format!(
+            "{field} must be a valid YYYY-MM-DD date"
+        )))
+    })
+}
+
+fn invalid_date<T>(field: &str) -> Result<T, AppError> {
+    Err(AppError(GatewayError::InvalidRequest(format!(
+        "{field} must be a valid YYYY-MM-DD date"
+    ))))
+}
+
+fn date_start_utc(date: Date) -> Result<OffsetDateTime, AppError> {
+    date.with_hms(0, 0, 0)
+        .map_err(|error| {
+            AppError(GatewayError::Internal(format!(
+                "invalid day start: {error}"
+            )))
+        })
+        .map(|value| value.assume_offset(UtcOffset::UTC))
+}
+
+fn focus_csv_response(export: FocusCsvExport) -> Response {
+    let content_disposition = format!("attachment; filename=\"{}\"", export.filename);
+    (
+        [
+            (header::CONTENT_TYPE, "text/csv; charset=utf-8".to_string()),
+            (header::CONTENT_DISPOSITION, content_disposition),
+            (
+                header::HeaderName::from_static("x-focus-excluded-unpriced-requests"),
+                export.diagnostics.unpriced_request_count.to_string(),
+            ),
+            (
+                header::HeaderName::from_static("x-focus-excluded-usage-missing-requests"),
+                export.diagnostics.usage_missing_request_count.to_string(),
+            ),
+        ],
+        export.body,
+    )
+        .into_response()
 }
 
 fn parse_budget_cadence(value: &str) -> Result<BudgetCadence, AppError> {

@@ -487,6 +487,32 @@ pub struct SpendReportQuery {
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
+pub struct FocusExportQuery {
+    /// Inclusive UTC start date as YYYY-MM-DD. If present, end must also be supplied.
+    pub start: Option<String>,
+    /// Inclusive UTC end date as YYYY-MM-DD. If present, start must also be supplied.
+    pub end: Option<String>,
+    /// Convenience single-day export date as YYYY-MM-DD. Mutually exclusive with start/end.
+    pub day: Option<String>,
+    /// Admin-only owner filter: all, user, team, or service_account.
+    pub owner_kind: Option<String>,
+    /// Explicit export granularity. Only daily is supported in v1.
+    pub granularity: Option<String>,
+}
+
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct FocusSelfExportQuery {
+    /// Inclusive UTC start date as YYYY-MM-DD. If present, end must also be supplied.
+    pub start: Option<String>,
+    /// Inclusive UTC end date as YYYY-MM-DD. If present, start must also be supplied.
+    pub end: Option<String>,
+    /// Convenience single-day export date as YYYY-MM-DD. Mutually exclusive with start/end.
+    pub day: Option<String>,
+    /// Explicit export granularity. Only daily is supported in v1.
+    pub granularity: Option<String>,
+}
+
+#[derive(Debug, Deserialize, IntoParams)]
 pub struct LeaderboardQuery {
     #[param(value_type = ObservabilityRangeQueryValue, required = false)]
     pub range: Option<String>,
@@ -1004,6 +1030,8 @@ pub struct RequestLogPayloadView {
         crate::http::identity::oauth_start,
         crate::http::identity::oauth_callback_github,
         crate::http::spend::get_spend_report,
+        crate::http::spend::get_admin_focus_export,
+        crate::http::spend::get_my_focus_export,
         crate::http::spend::list_spend_budgets,
         crate::http::spend::list_budget_alert_history,
         crate::http::spend::upsert_user_budget,

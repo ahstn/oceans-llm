@@ -825,6 +825,213 @@ impl BudgetRepository for LibsqlStore {
         Ok(output)
     }
 
+    async fn list_focus_export_aggregates(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        owner_kind: Option<ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
+    ) -> Result<Vec<FocusExportAggregateRecord>, StoreError> {
+        let owner_kind_filter = owner_kind.map(|kind| kind.as_str().to_string());
+        let owner_user_filter = owner_user_id.map(|id| id.to_string());
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT * FROM (
+                    SELECT
+                        (u.occurred_at / 86400) * 86400 AS day_start,
+                        'user' AS owner_kind,
+                        u.user_id AS owner_id,
+                        users.name AS owner_name,
+                        users.tags_json AS owner_tags_json,
+                        u.model_id AS model_id,
+                        COALESCE(g.model_key, u.upstream_model) AS model_key,
+                        u.provider_key,
+                        u.upstream_model,
+                        u.pricing_status,
+                        u.pricing_row_id,
+                        COALESCE(SUM(u.prompt_tokens), 0) AS prompt_tokens,
+                        COALESCE(SUM(u.completion_tokens), 0) AS completion_tokens,
+                        COALESCE(SUM(u.total_tokens), 0) AS total_tokens,
+                        COUNT(*) AS request_count,
+                        COALESCE(SUM(u.computed_cost_10000), 0) AS computed_cost_10000
+                    FROM usage_cost_events u
+                    INNER JOIN users ON users.user_id = u.user_id
+                    LEFT JOIN gateway_models g ON g.id = u.model_id
+                    WHERE u.occurred_at >= ?1
+                      AND u.occurred_at < ?2
+                      AND u.user_id IS NOT NULL
+                      AND u.ownership_scope_key LIKE 'user:%'
+                      AND u.pricing_status IN ('priced', 'legacy_estimated')
+                    GROUP BY day_start, u.user_id, users.name, users.tags_json, u.model_id, model_key,
+                             u.provider_key, u.upstream_model, u.pricing_status, u.pricing_row_id
+                    UNION ALL
+                    SELECT
+                        (u.occurred_at / 86400) * 86400 AS day_start,
+                        'team' AS owner_kind,
+                        u.team_id AS owner_id,
+                        teams.team_name AS owner_name,
+                        teams.tags_json AS owner_tags_json,
+                        u.model_id AS model_id,
+                        COALESCE(g.model_key, u.upstream_model) AS model_key,
+                        u.provider_key,
+                        u.upstream_model,
+                        u.pricing_status,
+                        u.pricing_row_id,
+                        COALESCE(SUM(u.prompt_tokens), 0) AS prompt_tokens,
+                        COALESCE(SUM(u.completion_tokens), 0) AS completion_tokens,
+                        COALESCE(SUM(u.total_tokens), 0) AS total_tokens,
+                        COUNT(*) AS request_count,
+                        COALESCE(SUM(u.computed_cost_10000), 0) AS computed_cost_10000
+                    FROM usage_cost_events u
+                    INNER JOIN teams ON teams.team_id = u.team_id
+                    LEFT JOIN gateway_models g ON g.id = u.model_id
+                    WHERE u.occurred_at >= ?1
+                      AND u.occurred_at < ?2
+                      AND u.team_id IS NOT NULL
+                      AND u.ownership_scope_key LIKE 'team:%'
+                      AND u.pricing_status IN ('priced', 'legacy_estimated')
+                    GROUP BY day_start, u.team_id, teams.team_name, teams.tags_json, u.model_id, model_key,
+                             u.provider_key, u.upstream_model, u.pricing_status, u.pricing_row_id
+                    UNION ALL
+                    SELECT
+                        (u.occurred_at / 86400) * 86400 AS day_start,
+                        'service_account' AS owner_kind,
+                        u.service_account_id AS owner_id,
+                        service_accounts.service_account_name AS owner_name,
+                        teams.tags_json AS owner_tags_json,
+                        u.model_id AS model_id,
+                        COALESCE(g.model_key, u.upstream_model) AS model_key,
+                        u.provider_key,
+                        u.upstream_model,
+                        u.pricing_status,
+                        u.pricing_row_id,
+                        COALESCE(SUM(u.prompt_tokens), 0) AS prompt_tokens,
+                        COALESCE(SUM(u.completion_tokens), 0) AS completion_tokens,
+                        COALESCE(SUM(u.total_tokens), 0) AS total_tokens,
+                        COUNT(*) AS request_count,
+                        COALESCE(SUM(u.computed_cost_10000), 0) AS computed_cost_10000
+                    FROM usage_cost_events u
+                    INNER JOIN service_accounts ON service_accounts.service_account_id = u.service_account_id
+                    INNER JOIN teams ON teams.team_id = service_accounts.team_id
+                    LEFT JOIN gateway_models g ON g.id = u.model_id
+                    WHERE u.occurred_at >= ?1
+                      AND u.occurred_at < ?2
+                      AND u.service_account_id IS NOT NULL
+                      AND u.ownership_scope_key LIKE 'service_account:%'
+                      AND u.pricing_status IN ('priced', 'legacy_estimated')
+                    GROUP BY day_start, u.service_account_id, service_accounts.service_account_name,
+                             teams.tags_json, u.model_id, model_key, u.provider_key, u.upstream_model,
+                             u.pricing_status, u.pricing_row_id
+                ) focus_rows
+                WHERE (?3 IS NULL OR owner_kind = ?3)
+                  AND (?4 IS NULL OR (owner_kind = 'user' AND owner_id = ?4))
+                ORDER BY day_start ASC, owner_kind ASC, owner_name ASC, owner_id ASC,
+                         provider_key ASC, upstream_model ASC, pricing_status ASC,
+                         model_key ASC, COALESCE(model_id, '') ASC,
+                         COALESCE(pricing_row_id, '') ASC
+                "#,
+                libsql::params![
+                    window_start.unix_timestamp(),
+                    window_end.unix_timestamp(),
+                    owner_kind_filter,
+                    owner_user_filter,
+                ],
+            )
+            .await
+            .map_err(to_query_error)?;
+
+        let mut output = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            let owner_kind: String = row.get(1).map_err(to_query_error)?;
+            let owner_id: String = row.get(2).map_err(to_query_error)?;
+            let owner_tags_json: String = row.get(4).map_err(to_query_error)?;
+            let model_id: Option<String> = row.get(5).map_err(to_query_error)?;
+            let pricing_status: String = row.get(9).map_err(to_query_error)?;
+            let pricing_row_id: Option<String> = row.get(10).map_err(to_query_error)?;
+            let computed_cost_10000: i64 = row.get(15).map_err(to_query_error)?;
+            output.push(FocusExportAggregateRecord {
+                day_start: unix_to_datetime(row.get(0).map_err(to_query_error)?)?,
+                owner_kind: ApiKeyOwnerKind::from_db(&owner_kind).ok_or_else(|| {
+                    StoreError::Serialization(format!("unknown owner kind `{owner_kind}`"))
+                })?,
+                owner_id: parse_uuid(&owner_id)?,
+                owner_name: row.get(3).map_err(to_query_error)?,
+                owner_tags: serde_json::from_str(&owner_tags_json).map_err(|error| {
+                    StoreError::Serialization(format!("invalid owner tags json: {error}"))
+                })?,
+                model_id: model_id.as_deref().map(parse_uuid).transpose()?,
+                model_key: row.get(6).map_err(to_query_error)?,
+                provider_key: row.get(7).map_err(to_query_error)?,
+                upstream_model: row.get(8).map_err(to_query_error)?,
+                pricing_status: UsagePricingStatus::from_db(&pricing_status).ok_or_else(|| {
+                    StoreError::Serialization(format!("unknown pricing status `{pricing_status}`"))
+                })?,
+                pricing_row_id: pricing_row_id.as_deref().map(parse_uuid).transpose()?,
+                prompt_tokens: row.get(11).map_err(to_query_error)?,
+                completion_tokens: row.get(12).map_err(to_query_error)?,
+                total_tokens: row.get(13).map_err(to_query_error)?,
+                request_count: row.get(14).map_err(to_query_error)?,
+                computed_cost_usd: Money4::from_scaled(computed_cost_10000),
+            });
+        }
+        Ok(output)
+    }
+
+    async fn get_focus_export_diagnostics(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        owner_kind: Option<ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
+    ) -> Result<FocusExportDiagnosticsRecord, StoreError> {
+        let owner_kind_filter = owner_kind.map(|kind| kind.as_str().to_string());
+        let owner_user_filter = owner_user_id.map(|id| id.to_string());
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT
+                    COALESCE(SUM(CASE WHEN pricing_status = 'unpriced' THEN 1 ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN pricing_status = 'usage_missing' THEN 1 ELSE 0 END), 0)
+                FROM (
+                    SELECT 'user' AS owner_kind, user_id AS owner_id, pricing_status
+                    FROM usage_cost_events
+                    WHERE occurred_at >= ?1 AND occurred_at < ?2 AND user_id IS NOT NULL
+                      AND ownership_scope_key LIKE 'user:%'
+                    UNION ALL
+                    SELECT 'team' AS owner_kind, team_id AS owner_id, pricing_status
+                    FROM usage_cost_events
+                    WHERE occurred_at >= ?1 AND occurred_at < ?2 AND team_id IS NOT NULL
+                      AND ownership_scope_key LIKE 'team:%'
+                    UNION ALL
+                    SELECT 'service_account' AS owner_kind, service_account_id AS owner_id, pricing_status
+                    FROM usage_cost_events
+                    WHERE occurred_at >= ?1 AND occurred_at < ?2 AND service_account_id IS NOT NULL
+                      AND ownership_scope_key LIKE 'service_account:%'
+                ) focus_diagnostics
+                WHERE (?3 IS NULL OR owner_kind = ?3)
+                  AND (?4 IS NULL OR (owner_kind = 'user' AND owner_id = ?4))
+                "#,
+                libsql::params![
+                    window_start.unix_timestamp(),
+                    window_end.unix_timestamp(),
+                    owner_kind_filter,
+                    owner_user_filter,
+                ],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let Some(row) = rows.next().await.map_err(to_query_error)? else {
+            return Ok(FocusExportDiagnosticsRecord::default());
+        };
+        Ok(FocusExportDiagnosticsRecord {
+            unpriced_request_count: row.get(0).map_err(to_query_error)?,
+            usage_missing_request_count: row.get(1).map_err(to_query_error)?,
+        })
+    }
+
     async fn list_usage_user_leaderboard(
         &self,
         window_start: OffsetDateTime,
