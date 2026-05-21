@@ -896,6 +896,31 @@ pub struct SpendModelAggregateRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FocusExportAggregateRecord {
+    pub day_start: OffsetDateTime,
+    pub owner_kind: ApiKeyOwnerKind,
+    pub owner_id: Uuid,
+    pub owner_name: String,
+    pub model_id: Option<Uuid>,
+    pub model_key: String,
+    pub provider_key: String,
+    pub upstream_model: String,
+    pub pricing_status: UsagePricingStatus,
+    pub pricing_row_id: Option<Uuid>,
+    pub prompt_tokens: i64,
+    pub completion_tokens: i64,
+    pub total_tokens: i64,
+    pub request_count: i64,
+    pub computed_cost_usd: Money4,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct FocusExportDiagnosticsRecord {
+    pub unpriced_request_count: i64,
+    pub usage_missing_request_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsageLeaderboardUserRecord {
     pub user_id: Uuid,
     pub user_name: String,

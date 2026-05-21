@@ -31,6 +31,43 @@ Pricing states are explicit:
 
 Only `priced` and `legacy_estimated` rows count toward spend totals and budget windows.
 
+## FOCUS Billing Export
+
+Admins can download best-effort FOCUS-compatible CSV exports from the Usage Costs
+admin page or directly from the gateway API:
+
+```text
+GET /api/v1/admin/spend/focus.csv?start=2026-05-01&end=2026-05-31&owner_kind=all&granularity=daily
+GET /api/v1/admin/spend/focus.csv?day=2026-05-19&owner_kind=team&granularity=daily
+```
+
+Authenticated non-admin users can export only direct user-owned spend attributed
+to themselves:
+
+```text
+GET /api/v1/me/spend/focus.csv?start=2026-05-01&end=2026-05-31&granularity=daily
+GET /api/v1/me/spend/focus.csv?day=2026-05-19&granularity=daily
+```
+
+Export ranges use inclusive UTC dates at the API boundary and are converted to
+exclusive timestamp windows internally. `day=YYYY-MM-DD` is a convenience for a
+single UTC day. Synchronous exports are limited to 90 days and currently support
+only daily granularity.
+
+The CSV includes one row per UTC day, owner scope, upstream provider/model, and
+pricing status for `priced` and `legacy_estimated` ledger rows. `unpriced` and
+`usage_missing` rows are excluded from charge rows and reported through response
+headers:
+
+- `x-focus-excluded-unpriced-requests`
+- `x-focus-excluded-usage-missing-requests`
+
+The export uses standard FOCUS-style columns first and `x_` custom columns for
+LLM-specific usage details such as prompt tokens, completion tokens, total
+tokens, request count, upstream provider/model, and pricing status. The current
+format is intentionally best-effort FOCUS v1.2-compatible and should not be
+represented as strict FOCUS certification.
+
 ## Runtime Enforcement
 
 Pre-provider hard-limit checks run on the live request path for:

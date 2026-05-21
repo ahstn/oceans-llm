@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -35,6 +36,7 @@ export function UsageCostsPage() {
   const [report, setReport] = useState<SpendReportView>(loaderData.data)
   const [windowDays, setWindowDays] = useState<7 | 30>((loaderData.data.window_days as 7 | 30) ?? 7)
   const [ownerKind, setOwnerKind] = useState<SpendOwnerKind>(loaderData.data.owner_kind ?? 'all')
+  const [exportDay, setExportDay] = useState(() => formatUtcDate(new Date()))
   const [isPending, startTransition] = useTransition()
 
   const maxDaily = useMemo(() => {
@@ -95,6 +97,7 @@ export function UsageCostsPage() {
                   <SelectItem value="all">All owners</SelectItem>
                   <SelectItem value="user">User owners</SelectItem>
                   <SelectItem value="team">Team scopes</SelectItem>
+                  <SelectItem value="service_account">Service accounts</SelectItem>
                 </SelectGroup>
               </SelectContent>
             </Select>
@@ -104,6 +107,34 @@ export function UsageCostsPage() {
           </div>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3 rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-3 md:flex-row md:items-end md:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-[var(--color-text)]">FOCUS billing export</p>
+              <p className="text-xs text-[var(--color-text-soft)]">
+                Downloads best-effort FOCUS CSV rows aggregated by UTC day. Unpriced and
+                usage-missing requests are excluded from charge rows and reported in response
+                diagnostics; current-window gaps are shown in the metrics below.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+              <Button type="button" variant="outline" onClick={() => downloadFocusRange(windowDays, ownerKind)}>
+                Export {windowDays}d CSV
+              </Button>
+              <label className="flex flex-col gap-1 text-xs font-medium text-[var(--color-text-soft)]">
+                Daily export
+                <Input
+                  type="date"
+                  value={exportDay}
+                  onChange={(event) => setExportDay(event.target.value)}
+                  className="h-9 w-[150px]"
+                />
+              </label>
+              <Button type="button" onClick={() => downloadFocusDay(exportDay, ownerKind)}>
+                Export day
+              </Button>
+            </div>
+          </div>
+
           <div className="grid gap-3 md:grid-cols-4">
             <MetricCard
               label="Priced spend"
@@ -271,4 +302,46 @@ function formatOwnerKind(ownerKind: string) {
   }
 
   return ownerKind
+}
+
+function downloadFocusRange(windowDays: 7 | 30, ownerKind: SpendOwnerKind) {
+  const end = utcDateAtDayOffset(0)
+  const start = utcDateAtDayOffset(-(windowDays - 1))
+  const params = new URLSearchParams({
+    start,
+    end,
+    granularity: 'daily',
+  })
+  if (ownerKind !== 'all') {
+    params.set('owner_kind', ownerKind)
+  }
+  window.location.assign(`/api/v1/admin/spend/focus.csv?${params.toString()}`)
+}
+
+function downloadFocusDay(day: string, ownerKind: SpendOwnerKind) {
+  if (!day) {
+    toast.error('Choose a day to export')
+    return
+  }
+  const params = new URLSearchParams({
+    day,
+    granularity: 'daily',
+  })
+  if (ownerKind !== 'all') {
+    params.set('owner_kind', ownerKind)
+  }
+  window.location.assign(`/api/v1/admin/spend/focus.csv?${params.toString()}`)
+}
+
+function utcDateAtDayOffset(dayOffset: number) {
+  const date = new Date()
+  date.setUTCDate(date.getUTCDate() + dayOffset)
+  return formatUtcDate(date)
+}
+
+function formatUtcDate(date: Date) {
+  const year = date.getUTCFullYear()
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(date.getUTCDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }

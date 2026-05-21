@@ -452,6 +452,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/spend/focus.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_admin_focus_export"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/spend/report": {
         parameters: {
             query?: never;
@@ -652,6 +668,22 @@ export interface paths {
             cookie?: never;
         };
         get: operations["get_auth_session"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/spend/focus.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_my_focus_export"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2582,6 +2614,36 @@ export interface operations {
             };
         };
     };
+    get_admin_focus_export: {
+        parameters: {
+            query?: {
+                /** @description Inclusive UTC start date as YYYY-MM-DD. Defaults to the last 30 complete UTC days. */
+                start?: string | null;
+                /** @description Inclusive UTC end date as YYYY-MM-DD. Defaults to yesterday/today window with start. */
+                end?: string | null;
+                /** @description Convenience single-day export date as YYYY-MM-DD. Mutually exclusive with start/end. */
+                day?: string | null;
+                /** @description Admin-only owner filter: all, user, team, or service_account. */
+                owner_kind?: string | null;
+                /** @description Explicit export granularity. Only daily is supported in v1. */
+                granularity?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": string;
+                };
+            };
+        };
+    };
     get_spend_report: {
         parameters: {
             query?: {
@@ -2858,6 +2920,36 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_Option_AuthSessionView"];
+                };
+            };
+        };
+    };
+    get_my_focus_export: {
+        parameters: {
+            query?: {
+                /** @description Inclusive UTC start date as YYYY-MM-DD. Defaults to the last 30 complete UTC days. */
+                start?: string | null;
+                /** @description Inclusive UTC end date as YYYY-MM-DD. Defaults to yesterday/today window with start. */
+                end?: string | null;
+                /** @description Convenience single-day export date as YYYY-MM-DD. Mutually exclusive with start/end. */
+                day?: string | null;
+                /** @description Admin-only owner filter: all, user, team, or service_account. */
+                owner_kind?: string | null;
+                /** @description Explicit export granularity. Only daily is supported in v1. */
+                granularity?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": string;
                 };
             };
         };

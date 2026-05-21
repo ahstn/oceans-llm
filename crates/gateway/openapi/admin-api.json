@@ -1722,6 +1722,93 @@
         ]
       }
     },
+    "/api/v1/admin/spend/focus.csv": {
+      "get": {
+        "tags": [
+          "crate::http::spend"
+        ],
+        "operationId": "get_admin_focus_export",
+        "parameters": [
+          {
+            "name": "start",
+            "in": "query",
+            "description": "Inclusive UTC start date as YYYY-MM-DD. Defaults to the last 30 complete UTC days.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "end",
+            "in": "query",
+            "description": "Inclusive UTC end date as YYYY-MM-DD. Defaults to yesterday/today window with start.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "day",
+            "in": "query",
+            "description": "Convenience single-day export date as YYYY-MM-DD. Mutually exclusive with start/end.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "owner_kind",
+            "in": "query",
+            "description": "Admin-only owner filter: all, user, team, or service_account.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "granularity",
+            "in": "query",
+            "description": "Explicit export granularity. Only daily is supported in v1.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/spend/report": {
       "get": {
         "tags": [
@@ -2179,6 +2266,93 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/me/spend/focus.csv": {
+      "get": {
+        "tags": [
+          "crate::http::spend"
+        ],
+        "operationId": "get_my_focus_export",
+        "parameters": [
+          {
+            "name": "start",
+            "in": "query",
+            "description": "Inclusive UTC start date as YYYY-MM-DD. Defaults to the last 30 complete UTC days.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "end",
+            "in": "query",
+            "description": "Inclusive UTC end date as YYYY-MM-DD. Defaults to yesterday/today window with start.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "day",
+            "in": "query",
+            "description": "Convenience single-day export date as YYYY-MM-DD. Mutually exclusive with start/end.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "owner_kind",
+            "in": "query",
+            "description": "Admin-only owner filter: all, user, team, or service_account.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "granularity",
+            "in": "query",
+            "description": "Explicit export granularity. Only daily is supported in v1.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
       }
     }
   },

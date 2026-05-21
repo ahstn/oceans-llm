@@ -108,6 +108,78 @@ mod tests {
         }
     }
 
+    async fn assert_focus_export_aggregates<S>(
+        store: &S,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        user_id: Uuid,
+        team_id: Uuid,
+    ) where
+        S: BudgetRepository,
+    {
+        let rows = store
+            .list_focus_export_aggregates(window_start, window_end, None, None)
+            .await
+            .expect("focus export aggregates");
+        assert_eq!(rows.len(), 2);
+        assert!(
+            rows.iter()
+                .all(|row| row.pricing_status.counts_toward_spend())
+        );
+
+        let user_row = rows
+            .iter()
+            .find(|row| row.owner_kind == ApiKeyOwnerKind::User)
+            .expect("user focus row");
+        assert_eq!(user_row.owner_id, user_id);
+        assert_eq!(user_row.model_key, "fast");
+        assert_eq!(user_row.computed_cost_usd, Money4::from_scaled(11_000));
+        assert_eq!(user_row.request_count, 1);
+        assert_eq!(user_row.prompt_tokens, 100);
+        assert_eq!(user_row.completion_tokens, 50);
+        assert_eq!(user_row.total_tokens, 150);
+
+        let team_row = rows
+            .iter()
+            .find(|row| row.owner_kind == ApiKeyOwnerKind::Team)
+            .expect("team focus row");
+        assert_eq!(team_row.owner_id, team_id);
+        assert_eq!(team_row.model_key, "claude-3-5-sonnet");
+        assert_eq!(team_row.computed_cost_usd, Money4::from_scaled(22_000));
+        assert_eq!(team_row.pricing_status, UsagePricingStatus::LegacyEstimated);
+
+        let diagnostics = store
+            .get_focus_export_diagnostics(window_start, window_end, None, None)
+            .await
+            .expect("focus diagnostics");
+        assert_eq!(diagnostics.unpriced_request_count, 2);
+        assert_eq!(diagnostics.usage_missing_request_count, 1);
+
+        let user_rows = store
+            .list_focus_export_aggregates(
+                window_start,
+                window_end,
+                Some(ApiKeyOwnerKind::User),
+                Some(user_id),
+            )
+            .await
+            .expect("self focus rows");
+        assert_eq!(user_rows.len(), 1);
+        assert_eq!(user_rows[0].owner_id, user_id);
+
+        let daily_rows = store
+            .list_focus_export_aggregates(
+                user_row.day_start,
+                user_row.day_start + Duration::days(1),
+                None,
+                None,
+            )
+            .await
+            .expect("daily focus rows");
+        assert_eq!(daily_rows.len(), 1);
+        assert_eq!(daily_rows[0].owner_id, user_id);
+    }
+
     fn build_mcp_tool_invocation(
         request_id: &str,
         api_key_id: Option<Uuid>,
@@ -4330,6 +4402,15 @@ mod tests {
         assert_eq!(upstream_model.priced_request_count, 1);
         assert_eq!(upstream_model.unpriced_request_count, 1);
         assert_eq!(upstream_model.usage_missing_request_count, 1);
+
+        assert_focus_export_aggregates(
+            &store,
+            window_start,
+            window_end,
+            user.user_id,
+            team.team_id,
+        )
+        .await;
     }
 
     #[tokio::test]
@@ -5109,6 +5190,15 @@ mod tests {
         assert_eq!(upstream_model.priced_request_count, 1);
         assert_eq!(upstream_model.unpriced_request_count, 1);
         assert_eq!(upstream_model.usage_missing_request_count, 1);
+
+        assert_focus_export_aggregates(
+            &store,
+            window_start,
+            window_end,
+            user.user_id,
+            team.team_id,
+        )
+        .await;
 
         drop(store);
         drop_postgres_test_database(&test_db).await;

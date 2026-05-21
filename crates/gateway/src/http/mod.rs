@@ -2,6 +2,7 @@ pub mod admin_auth;
 pub mod admin_contract;
 pub mod api_keys;
 pub mod error;
+mod focus_export;
 pub mod handlers;
 pub mod identity;
 pub mod identity_lifecycle;
@@ -97,6 +98,8 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
             post(regenerate_password_invite),
         )
         .route("/api/v1/admin/spend/report", get(get_spend_report))
+        .route("/api/v1/admin/spend/focus.csv", get(get_admin_focus_export))
+        .route("/api/v1/me/spend/focus.csv", get(get_my_focus_export))
         .route("/api/v1/admin/spend/budgets", get(list_spend_budgets))
         .route(
             "/api/v1/admin/spend/budget-alerts",

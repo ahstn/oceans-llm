@@ -10,7 +10,8 @@ use uuid::Uuid;
 use crate::{
     domain::{
         ApiKeyRecord, BudgetAlertDeliveryRecord, BudgetAlertDispatchTask, BudgetAlertHistoryPage,
-        BudgetAlertHistoryQuery, BudgetAlertRecord, GatewayModel, HarnessUsageBucketRecord,
+        BudgetAlertHistoryQuery, BudgetAlertRecord, FocusExportAggregateRecord,
+        FocusExportDiagnosticsRecord, GatewayModel, HarnessUsageBucketRecord,
         HarnessUsageLeaderRecord, McpToolInvocationDetail, McpToolInvocationPage,
         McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
         ModelPricingRecord, ModelRoute, Money4, NewApiKeyRecord, PricingCatalogCacheRecord,
@@ -346,6 +347,30 @@ pub trait BudgetRepository: Send + Sync {
         let _ = (window_start, window_end, owner_kind);
         Err(StoreError::Unexpected(
             "list_usage_model_aggregates is not implemented for this repository".to_string(),
+        ))
+    }
+    async fn list_focus_export_aggregates(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        owner_kind: Option<crate::ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
+    ) -> Result<Vec<FocusExportAggregateRecord>, StoreError> {
+        let _ = (window_start, window_end, owner_kind, owner_user_id);
+        Err(StoreError::Unexpected(
+            "list_focus_export_aggregates is not implemented for this repository".to_string(),
+        ))
+    }
+    async fn get_focus_export_diagnostics(
+        &self,
+        window_start: OffsetDateTime,
+        window_end: OffsetDateTime,
+        owner_kind: Option<crate::ApiKeyOwnerKind>,
+        owner_user_id: Option<Uuid>,
+    ) -> Result<FocusExportDiagnosticsRecord, StoreError> {
+        let _ = (window_start, window_end, owner_kind, owner_user_id);
+        Err(StoreError::Unexpected(
+            "get_focus_export_diagnostics is not implemented for this repository".to_string(),
         ))
     }
     async fn list_usage_user_leaderboard(
