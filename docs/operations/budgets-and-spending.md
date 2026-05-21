@@ -67,9 +67,15 @@ headers:
 
 The export uses standard FOCUS-style columns first and `x_` custom columns for
 LLM-specific usage details such as prompt tokens, completion tokens, total
-tokens, request count, upstream provider/model, and pricing status. The current
-format is intentionally best-effort FOCUS v1.2-compatible and should not be
-represented as strict FOCUS certification.
+tokens, request count, upstream provider/model, and pricing status. The standard
+`Tags` column contains owner tags as a JSON object when present: user rows use
+user tags, team rows use team tags, and service-account rows inherit the owning
+team's tags because service accounts do not have direct tags. Request tags are
+not exported in FOCUS rows because the v1 row grain aggregates many requests and
+there is no finalized single value per request tag key for the aggregate.
+
+The current format is intentionally best-effort FOCUS v1.2-compatible and should
+not be represented as strict FOCUS certification.
 
 When changing this behavior, validate docs and generated contracts with:
 

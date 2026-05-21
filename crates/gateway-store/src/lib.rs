@@ -138,6 +138,13 @@ mod tests {
         assert_eq!(user_row.prompt_tokens, 100);
         assert_eq!(user_row.completion_tokens, 50);
         assert_eq!(user_row.total_tokens, 150);
+        assert_eq!(
+            user_row.owner_tags,
+            vec![RequestTag {
+                key: "cost_center".to_string(),
+                value: "eng".to_string(),
+            }]
+        );
 
         let team_row = rows
             .iter()
@@ -147,6 +154,13 @@ mod tests {
         assert_eq!(team_row.model_key, "claude-3-5-sonnet");
         assert_eq!(team_row.computed_cost_usd, Money4::from_scaled(22_000));
         assert_eq!(team_row.pricing_status, UsagePricingStatus::LegacyEstimated);
+        assert_eq!(
+            team_row.owner_tags,
+            vec![RequestTag {
+                key: "team".to_string(),
+                value: "platform".to_string(),
+            }]
+        );
 
         let diagnostics = store
             .get_focus_export_diagnostics(window_start, window_end, None, None)
@@ -4237,6 +4251,28 @@ mod tests {
             )
             .await
             .expect("create user");
+        store
+            .update_user_tags(
+                user.user_id,
+                &[RequestTag {
+                    key: "cost_center".to_string(),
+                    value: "eng".to_string(),
+                }],
+                OffsetDateTime::now_utc(),
+            )
+            .await
+            .expect("update user tags");
+        store
+            .update_team_tags(
+                team.team_id,
+                &[RequestTag {
+                    key: "team".to_string(),
+                    value: "platform".to_string(),
+                }],
+                OffsetDateTime::now_utc(),
+            )
+            .await
+            .expect("update team tags");
 
         let now = OffsetDateTime::from_unix_timestamp(1_773_484_800).expect("timestamp");
         let budget = store
@@ -5025,6 +5061,28 @@ mod tests {
             )
             .await
             .expect("create user");
+        store
+            .update_user_tags(
+                user.user_id,
+                &[RequestTag {
+                    key: "cost_center".to_string(),
+                    value: "eng".to_string(),
+                }],
+                OffsetDateTime::now_utc(),
+            )
+            .await
+            .expect("update user tags");
+        store
+            .update_team_tags(
+                team.team_id,
+                &[RequestTag {
+                    key: "team".to_string(),
+                    value: "platform".to_string(),
+                }],
+                OffsetDateTime::now_utc(),
+            )
+            .await
+            .expect("update team tags");
 
         let now = OffsetDateTime::from_unix_timestamp(1_773_484_800).expect("timestamp");
         let budget = store

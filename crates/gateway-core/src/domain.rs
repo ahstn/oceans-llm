@@ -901,6 +901,7 @@ pub struct FocusExportAggregateRecord {
     pub owner_kind: ApiKeyOwnerKind,
     pub owner_id: Uuid,
     pub owner_name: String,
+    pub owner_tags: Vec<RequestTag>,
     pub model_id: Option<Uuid>,
     pub model_key: String,
     pub provider_key: String,

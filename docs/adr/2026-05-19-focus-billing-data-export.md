@@ -134,6 +134,7 @@ against the chosen FOCUS v1.2 schema during implementation.
 | `RegionName` | empty/null | LLM usage is not currently region-attributed. |
 | `ResourceId` | deterministic aggregate id | Derived from date + owner + model + pricing status. |
 | `ResourceName` | owner/model summary | Human-readable aggregate resource. |
+| `Tags` | owner tags JSON object | User/team tags when present; service-account rows inherit owning team tags because service accounts do not have direct tags. |
 | `x_owner_kind` | `user` / `team` / `service_account` | Custom allocation detail. |
 | `x_owner_id` | owner UUID | Custom allocation detail. |
 | `x_owner_name` | owner display name | Custom allocation detail. |
@@ -178,6 +179,7 @@ against the chosen FOCUS v1.2 schema during implementation.
   - header order,
   - CSV escaping,
   - money formatting precision,
+  - FOCUS `Tags` JSON rendering from owner/team tags,
   - UTC date boundaries,
   - exclusion of unpriced rows,
   - deterministic aggregate resource ids.

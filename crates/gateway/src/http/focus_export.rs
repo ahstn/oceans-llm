@@ -1,4 +1,6 @@
-use gateway_core::{FocusExportAggregateRecord, FocusExportDiagnosticsRecord, Money4};
+use std::collections::BTreeMap;
+
+use gateway_core::{FocusExportAggregateRecord, FocusExportDiagnosticsRecord, Money4, RequestTag};
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
@@ -36,6 +38,7 @@ const FOCUS_HEADERS: &[&str] = &[
     "RegionName",
     "ResourceId",
     "ResourceName",
+    "Tags",
 ];
 
 const CUSTOM_HEADERS: &[&str] = &[
@@ -118,6 +121,7 @@ fn focus_row_values(row: &FocusExportAggregateRecord) -> Vec<String> {
         String::new(),
         resource_id,
         resource_name,
+        focus_tags(&row.owner_tags),
         row.owner_kind.as_str().to_string(),
         row.owner_id.to_string(),
         row.owner_name.clone(),
@@ -130,6 +134,17 @@ fn focus_row_values(row: &FocusExportAggregateRecord) -> Vec<String> {
         row.request_count.to_string(),
         row.pricing_status.as_str().to_string(),
     ]
+}
+
+fn focus_tags(tags: &[RequestTag]) -> String {
+    if tags.is_empty() {
+        return String::new();
+    }
+    let tag_map = tags
+        .iter()
+        .map(|tag| (tag.key.clone(), tag.value.clone()))
+        .collect::<BTreeMap<_, _>>();
+    serde_json::to_string(&tag_map).unwrap_or_default()
 }
 
 fn write_record<S>(body: &mut String, values: impl IntoIterator<Item = S>)
@@ -255,7 +270,7 @@ mod tests {
 
         let header = export.body.lines().next().expect("header");
         assert!(header.starts_with("ProviderName,PublisherName"));
-        assert!(header.contains(",ResourceName,x_owner_kind,"));
+        assert!(header.contains(",ResourceName,Tags,x_owner_kind,"));
     }
 
     #[test]
@@ -272,6 +287,34 @@ mod tests {
         assert!(export.body.contains("1.2345"));
         assert!(export.body.contains("\"A, \"\"quoted\"\" user\""));
         assert!(export.body.contains(",0.000003,"));
+    }
+
+    #[test]
+    fn renders_owner_tags_as_focus_tags_json() {
+        let mut row = sample_row("gpt-test");
+        row.owner_tags = vec![
+            RequestTag {
+                key: "team".to_string(),
+                value: "platform".to_string(),
+            },
+            RequestTag {
+                key: "env".to_string(),
+                value: "prod".to_string(),
+            },
+        ];
+
+        let export = build_focus_csv_export(
+            &[row],
+            FocusExportDiagnosticsRecord::default(),
+            datetime!(2026-05-19 0:00 UTC),
+            datetime!(2026-05-20 0:00 UTC),
+        );
+
+        assert!(
+            export
+                .body
+                .contains(r#""{""env"":""prod"",""team"":""platform""}""#)
+        );
     }
 
     #[test]
@@ -308,6 +351,7 @@ mod tests {
             owner_kind: ApiKeyOwnerKind::User,
             owner_id: Uuid::parse_str("00000000-0000-0000-0000-000000000111").unwrap(),
             owner_name: "A, \"quoted\" user".to_string(),
+            owner_tags: Vec::new(),
             model_id: None,
             model_key: model_key.to_string(),
             provider_key: "openai".to_string(),

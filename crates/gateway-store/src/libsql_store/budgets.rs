@@ -844,6 +844,7 @@ impl BudgetRepository for LibsqlStore {
                         'user' AS owner_kind,
                         u.user_id AS owner_id,
                         users.name AS owner_name,
+                        users.tags_json AS owner_tags_json,
                         u.model_id AS model_id,
                         COALESCE(g.model_key, u.upstream_model) AS model_key,
                         u.provider_key,
@@ -863,7 +864,7 @@ impl BudgetRepository for LibsqlStore {
                       AND u.user_id IS NOT NULL
                       AND u.ownership_scope_key LIKE 'user:%'
                       AND u.pricing_status IN ('priced', 'legacy_estimated')
-                    GROUP BY day_start, u.user_id, users.name, u.model_id, model_key,
+                    GROUP BY day_start, u.user_id, users.name, users.tags_json, u.model_id, model_key,
                              u.provider_key, u.upstream_model, u.pricing_status, u.pricing_row_id
                     UNION ALL
                     SELECT
@@ -871,6 +872,7 @@ impl BudgetRepository for LibsqlStore {
                         'team' AS owner_kind,
                         u.team_id AS owner_id,
                         teams.team_name AS owner_name,
+                        teams.tags_json AS owner_tags_json,
                         u.model_id AS model_id,
                         COALESCE(g.model_key, u.upstream_model) AS model_key,
                         u.provider_key,
@@ -890,7 +892,7 @@ impl BudgetRepository for LibsqlStore {
                       AND u.team_id IS NOT NULL
                       AND u.ownership_scope_key LIKE 'team:%'
                       AND u.pricing_status IN ('priced', 'legacy_estimated')
-                    GROUP BY day_start, u.team_id, teams.team_name, u.model_id, model_key,
+                    GROUP BY day_start, u.team_id, teams.team_name, teams.tags_json, u.model_id, model_key,
                              u.provider_key, u.upstream_model, u.pricing_status, u.pricing_row_id
                     UNION ALL
                     SELECT
@@ -898,6 +900,7 @@ impl BudgetRepository for LibsqlStore {
                         'service_account' AS owner_kind,
                         u.service_account_id AS owner_id,
                         service_accounts.service_account_name AS owner_name,
+                        teams.tags_json AS owner_tags_json,
                         u.model_id AS model_id,
                         COALESCE(g.model_key, u.upstream_model) AS model_key,
                         u.provider_key,
@@ -911,6 +914,7 @@ impl BudgetRepository for LibsqlStore {
                         COALESCE(SUM(u.computed_cost_10000), 0) AS computed_cost_10000
                     FROM usage_cost_events u
                     INNER JOIN service_accounts ON service_accounts.service_account_id = u.service_account_id
+                    INNER JOIN teams ON teams.team_id = service_accounts.team_id
                     LEFT JOIN gateway_models g ON g.id = u.model_id
                     WHERE u.occurred_at >= ?1
                       AND u.occurred_at < ?2
@@ -918,7 +922,7 @@ impl BudgetRepository for LibsqlStore {
                       AND u.ownership_scope_key LIKE 'service_account:%'
                       AND u.pricing_status IN ('priced', 'legacy_estimated')
                     GROUP BY day_start, u.service_account_id, service_accounts.service_account_name,
-                             u.model_id, model_key, u.provider_key, u.upstream_model,
+                             teams.tags_json, u.model_id, model_key, u.provider_key, u.upstream_model,
                              u.pricing_status, u.pricing_row_id
                 ) focus_rows
                 WHERE (?3 IS NULL OR owner_kind = ?3)
@@ -942,10 +946,11 @@ impl BudgetRepository for LibsqlStore {
         while let Some(row) = rows.next().await.map_err(to_query_error)? {
             let owner_kind: String = row.get(1).map_err(to_query_error)?;
             let owner_id: String = row.get(2).map_err(to_query_error)?;
-            let model_id: Option<String> = row.get(4).map_err(to_query_error)?;
-            let pricing_status: String = row.get(8).map_err(to_query_error)?;
-            let pricing_row_id: Option<String> = row.get(9).map_err(to_query_error)?;
-            let computed_cost_10000: i64 = row.get(14).map_err(to_query_error)?;
+            let owner_tags_json: String = row.get(4).map_err(to_query_error)?;
+            let model_id: Option<String> = row.get(5).map_err(to_query_error)?;
+            let pricing_status: String = row.get(9).map_err(to_query_error)?;
+            let pricing_row_id: Option<String> = row.get(10).map_err(to_query_error)?;
+            let computed_cost_10000: i64 = row.get(15).map_err(to_query_error)?;
             output.push(FocusExportAggregateRecord {
                 day_start: unix_to_datetime(row.get(0).map_err(to_query_error)?)?,
                 owner_kind: ApiKeyOwnerKind::from_db(&owner_kind).ok_or_else(|| {
@@ -953,18 +958,21 @@ impl BudgetRepository for LibsqlStore {
                 })?,
                 owner_id: parse_uuid(&owner_id)?,
                 owner_name: row.get(3).map_err(to_query_error)?,
+                owner_tags: serde_json::from_str(&owner_tags_json).map_err(|error| {
+                    StoreError::Serialization(format!("invalid owner tags json: {error}"))
+                })?,
                 model_id: model_id.as_deref().map(parse_uuid).transpose()?,
-                model_key: row.get(5).map_err(to_query_error)?,
-                provider_key: row.get(6).map_err(to_query_error)?,
-                upstream_model: row.get(7).map_err(to_query_error)?,
+                model_key: row.get(6).map_err(to_query_error)?,
+                provider_key: row.get(7).map_err(to_query_error)?,
+                upstream_model: row.get(8).map_err(to_query_error)?,
                 pricing_status: UsagePricingStatus::from_db(&pricing_status).ok_or_else(|| {
                     StoreError::Serialization(format!("unknown pricing status `{pricing_status}`"))
                 })?,
                 pricing_row_id: pricing_row_id.as_deref().map(parse_uuid).transpose()?,
-                prompt_tokens: row.get(10).map_err(to_query_error)?,
-                completion_tokens: row.get(11).map_err(to_query_error)?,
-                total_tokens: row.get(12).map_err(to_query_error)?,
-                request_count: row.get(13).map_err(to_query_error)?,
+                prompt_tokens: row.get(11).map_err(to_query_error)?,
+                completion_tokens: row.get(12).map_err(to_query_error)?,
+                total_tokens: row.get(13).map_err(to_query_error)?,
+                request_count: row.get(14).map_err(to_query_error)?,
                 computed_cost_usd: Money4::from_scaled(computed_cost_10000),
             });
         }
