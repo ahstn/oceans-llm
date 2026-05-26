@@ -785,6 +785,301 @@
         ]
       }
     },
+    "/api/v1/admin/mcp/recommended-servers": {
+      "get": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "list_recommended_mcp_servers",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_RecommendedMcpServersPayload"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/servers": {
+      "get": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "list_mcp_servers",
+        "parameters": [
+          {
+            "name": "include_disabled",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpServersPayload"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "create_mcp_server",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMcpServerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpServerPayload"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/servers/{server_id}": {
+      "patch": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "update_mcp_server",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "External MCP server identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMcpServerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpServerPayload"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/servers/{server_id}/disable": {
+      "post": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "disable_mcp_server",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "External MCP server identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpServerPayload"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/servers/{server_id}/discovery-refresh": {
+      "post": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "refresh_mcp_server_discovery",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "External MCP server identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpDiscoveryRefreshPayload"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/servers/{server_id}/tools": {
+      "get": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "list_mcp_server_tools",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "External MCP server identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "include_inactive",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpToolsPayload"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/models": {
       "get": {
         "tags": [
@@ -3580,6 +3875,64 @@
           }
         }
       },
+      "CreateMcpServerRequest": {
+        "type": "object",
+        "properties": {
+          "auth_config": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "auth_mode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recommended_catalog_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "server_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "server_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timeout_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "transport": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "CreateServiceAccountRequest": {
         "type": "object",
         "required": [
@@ -4532,6 +4885,95 @@
           }
         }
       },
+      "Envelope_McpDiscoveryRefreshPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "server",
+              "status",
+              "tools"
+            ],
+            "properties": {
+              "error_summary": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "server": {
+                "$ref": "#/components/schemas/McpServerView"
+              },
+              "status": {
+                "type": "string"
+              },
+              "tools": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/McpToolView"
+                }
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_McpServerPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "server"
+            ],
+            "properties": {
+              "server": {
+                "$ref": "#/components/schemas/McpServerView"
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_McpServersPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/McpServerView"
+                }
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
       "Envelope_McpToolInvocationDetailView": {
         "type": "object",
         "required": [
@@ -4601,6 +5043,32 @@
                 "type": "integer",
                 "format": "int64",
                 "minimum": 0
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_McpToolsPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/McpToolView"
+                }
               }
             }
           },
@@ -4717,6 +5185,32 @@
                 "type": "array",
                 "items": {
                   "$ref": "#/components/schemas/PublicOidcProviderView"
+                }
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_RecommendedMcpServersPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/RecommendedMcpServerView"
                 }
               }
             }
@@ -5319,6 +5813,155 @@
           }
         }
       },
+      "McpDiscoveryRefreshPayload": {
+        "type": "object",
+        "required": [
+          "server",
+          "status",
+          "tools"
+        ],
+        "properties": {
+          "error_summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "server": {
+            "$ref": "#/components/schemas/McpServerView"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/McpToolView"
+            }
+          }
+        }
+      },
+      "McpServerPayload": {
+        "type": "object",
+        "required": [
+          "server"
+        ],
+        "properties": {
+          "server": {
+            "$ref": "#/components/schemas/McpServerView"
+          }
+        }
+      },
+      "McpServerView": {
+        "type": "object",
+        "required": [
+          "id",
+          "server_key",
+          "display_name",
+          "transport",
+          "server_url",
+          "auth_mode",
+          "auth_config",
+          "timeout_ms",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "auth_config": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "auth_mode": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "disabled_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "last_discovery_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_discovery_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_error_summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_successful_discovery_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_tool_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "server_key": {
+            "type": "string"
+          },
+          "server_url": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "transport": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "McpServersPayload": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/McpServerView"
+            }
+          }
+        }
+      },
       "McpToolInvocationDetailView": {
         "type": "object",
         "required": [
@@ -5504,6 +6147,78 @@
           }
         }
       },
+      "McpToolView": {
+        "type": "object",
+        "required": [
+          "id",
+          "server_id",
+          "upstream_name",
+          "display_name",
+          "input_schema",
+          "schema_hash",
+          "schema_version",
+          "is_active",
+          "first_discovered_at",
+          "last_discovered_at"
+        ],
+        "properties": {
+          "deactivated_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "first_discovered_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "input_schema": {},
+          "is_active": {
+            "type": "boolean"
+          },
+          "last_discovered_at": {
+            "type": "string"
+          },
+          "schema_hash": {
+            "type": "string"
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "upstream_name": {
+            "type": "string"
+          }
+        }
+      },
+      "McpToolsPayload": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/McpToolView"
+            }
+          }
+        }
+      },
       "ModelIconKeyView": {
         "type": "string",
         "enum": [
@@ -5658,6 +6373,71 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/PublicOidcProviderView"
+            }
+          }
+        }
+      },
+      "RecommendedMcpServerView": {
+        "type": "object",
+        "required": [
+          "catalog_key",
+          "display_name",
+          "transport",
+          "server_url",
+          "auth_mode",
+          "auth_config",
+          "tags"
+        ],
+        "properties": {
+          "auth_config": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "auth_mode": {
+            "type": "string"
+          },
+          "catalog_key": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "documentation_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "server_url": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "transport": {
+            "type": "string"
+          }
+        }
+      },
+      "RecommendedMcpServersPayload": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecommendedMcpServerView"
             }
           }
         }
@@ -6560,6 +7340,42 @@
         "properties": {
           "api_key": {
             "$ref": "#/components/schemas/AdminApiKeyView"
+          }
+        }
+      },
+      "UpdateMcpServerRequest": {
+        "type": "object",
+        "required": [
+          "display_name",
+          "server_url",
+          "auth_mode"
+        ],
+        "properties": {
+          "auth_config": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "auth_mode": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "server_url": {
+            "type": "string"
+          },
+          "timeout_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
           }
         }
       },

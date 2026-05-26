@@ -4,12 +4,12 @@ use async_trait::async_trait;
 use gateway_core::{
     AdminApiKeyRepository, AdminIdentityRepository, ApiKeyRepository, AuthMode,
     BudgetAlertRepository, BudgetRepository, GlobalRole, IdentityRepository, IdentityUserRecord,
-    McpToolInvocationRepository, MembershipRole, ModelRepository, OauthLoginStateRecord,
-    OauthProviderRecord, OidcLoginStateRecord, OidcProviderRecord, PasswordInvitationRecord,
-    PricingCatalogRepository, ProviderRepository, RequestLogRepository, RequestTag, SeedApiKey,
-    SeedModel, SeedOauthProvider, SeedOidcProvider, SeedProvider, SeedTeam, SeedUser, StoreError,
-    StoreHealth, TeamMembershipRecord, TeamRecord, UserOauthAuthRecord, UserOidcAuthRecord,
-    UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
+    McpRegistryRepository, McpToolInvocationRepository, MembershipRole, ModelRepository,
+    OauthLoginStateRecord, OauthProviderRecord, OidcLoginStateRecord, OidcProviderRecord,
+    PasswordInvitationRecord, PricingCatalogRepository, ProviderRepository, RequestLogRepository,
+    RequestTag, SeedApiKey, SeedModel, SeedOauthProvider, SeedOidcProvider, SeedProvider, SeedTeam,
+    SeedUser, StoreError, StoreHealth, TeamMembershipRecord, TeamRecord, UserOauthAuthRecord,
+    UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -43,6 +43,7 @@ pub trait GatewayStore:
     + BudgetRepository
     + BudgetAlertRepository
     + RequestLogRepository
+    + McpRegistryRepository
     + McpToolInvocationRepository
     + PricingCatalogRepository
     + StoreHealth
@@ -1009,6 +1010,81 @@ impl gateway_core::McpToolInvocationRepository for AnyStore {
         mcp_tool_invocation_id: Uuid,
     ) -> Result<gateway_core::McpToolInvocationDetail, StoreError> {
         dispatch_store!(self, get_mcp_tool_invocation_detail(mcp_tool_invocation_id))
+    }
+}
+
+#[async_trait]
+impl gateway_core::McpRegistryRepository for AnyStore {
+    async fn list_external_mcp_servers(
+        &self,
+        include_disabled: bool,
+    ) -> Result<Vec<gateway_core::ExternalMcpServerRecord>, StoreError> {
+        dispatch_store!(self, list_external_mcp_servers(include_disabled))
+    }
+
+    async fn get_external_mcp_server(
+        &self,
+        mcp_server_id: Uuid,
+    ) -> Result<Option<gateway_core::ExternalMcpServerRecord>, StoreError> {
+        dispatch_store!(self, get_external_mcp_server(mcp_server_id))
+    }
+
+    async fn get_external_mcp_server_by_key(
+        &self,
+        server_key: &str,
+    ) -> Result<Option<gateway_core::ExternalMcpServerRecord>, StoreError> {
+        dispatch_store!(self, get_external_mcp_server_by_key(server_key))
+    }
+
+    async fn create_external_mcp_server(
+        &self,
+        input: &gateway_core::NewExternalMcpServerRecord,
+    ) -> Result<gateway_core::ExternalMcpServerRecord, StoreError> {
+        dispatch_store!(self, create_external_mcp_server(input))
+    }
+
+    async fn update_external_mcp_server(
+        &self,
+        input: &gateway_core::UpdateExternalMcpServerRecord,
+    ) -> Result<gateway_core::ExternalMcpServerRecord, StoreError> {
+        dispatch_store!(self, update_external_mcp_server(input))
+    }
+
+    async fn disable_external_mcp_server(
+        &self,
+        mcp_server_id: Uuid,
+        disabled_at: OffsetDateTime,
+    ) -> Result<gateway_core::ExternalMcpServerRecord, StoreError> {
+        dispatch_store!(
+            self,
+            disable_external_mcp_server(mcp_server_id, disabled_at)
+        )
+    }
+
+    async fn list_external_mcp_tools(
+        &self,
+        mcp_server_id: Uuid,
+        include_inactive: bool,
+    ) -> Result<Vec<gateway_core::ExternalMcpToolRecord>, StoreError> {
+        dispatch_store!(
+            self,
+            list_external_mcp_tools(mcp_server_id, include_inactive)
+        )
+    }
+
+    async fn record_external_mcp_discovery_success(
+        &self,
+        run: &gateway_core::ExternalMcpDiscoveryRunRecord,
+        tools: &[gateway_core::UpsertExternalMcpToolRecord],
+    ) -> Result<Vec<gateway_core::ExternalMcpToolRecord>, StoreError> {
+        dispatch_store!(self, record_external_mcp_discovery_success(run, tools))
+    }
+
+    async fn record_external_mcp_discovery_failure(
+        &self,
+        run: &gateway_core::ExternalMcpDiscoveryRunRecord,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(self, record_external_mcp_discovery_failure(run))
     }
 }
 

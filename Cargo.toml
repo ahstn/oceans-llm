@@ -4,6 +4,7 @@ members = [
     "crates/gateway-client-config",
     "crates/gateway",
     "crates/gateway-core",
+    "crates/gateway-mcp",
     "crates/gateway-providers",
     "crates/gateway-service",
     "crates/gateway-store",
@@ -14,6 +15,7 @@ resolver = "2"
 admin-ui = { path = "crates/admin-ui" }
 gateway-core = { path = "crates/gateway-core" }
 gateway-client-config = { path = "crates/gateway-client-config" }
+gateway-mcp = { path = "crates/gateway-mcp" }
 gateway-providers = { path = "crates/gateway-providers" }
 gateway-service = { path = "crates/gateway-service" }
 gateway-store = { path = "crates/gateway-store" }

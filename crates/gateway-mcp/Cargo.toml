@@ -1,0 +1,15 @@
+[package]
+name = "gateway-mcp"
+version = "0.8.0"
+edition = "2024"
+
+[dependencies]
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

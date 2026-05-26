@@ -1,6 +1,6 @@
 # Observability and Request Logs
 
-`See also`: [Request Logs](observability/request-logs.md), [MCP Invocations](observability/mcp-invocations.md), [Tagging](tagging.md), [Agent Harness Usage](agent-harness-usage.md), [Data Relationships](../reference/data-relationships.md), [Service Accounts](../access/service-accounts.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Admin Control Plane](../access/admin-control-plane.md), [Deploy and Operations](../setup/deploy-and-operations.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../adr/2026-05-10-team-service-accounts.md), [ADR: OTLP-First Observability and Payload-Backed Request Logs](../adr/2026-03-15-otlp-observability-and-request-log-payloads.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md), [ADR: MCP Tool Cardinality Observability](../adr/2026-04-28-mcp-tool-cardinality-observability.md)
+`See also`: [Request Logs](observability/request-logs.md), [MCP Invocations](observability/mcp-invocations.md), [MCP Registry and Discovery](observability/mcp-registry-and-discovery.md), [Tagging](tagging.md), [Agent Harness Usage](agent-harness-usage.md), [Data Relationships](../reference/data-relationships.md), [Service Accounts](../access/service-accounts.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Admin Control Plane](../access/admin-control-plane.md), [Deploy and Operations](../setup/deploy-and-operations.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../adr/2026-05-10-team-service-accounts.md), [ADR: OTLP-First Observability and Payload-Backed Request Logs](../adr/2026-03-15-otlp-observability-and-request-log-payloads.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md), [ADR: MCP Tool Cardinality Observability](../adr/2026-04-28-mcp-tool-cardinality-observability.md), [ADR: External MCP Registry and Discovery Boundary](../adr/2026-05-26-external-mcp-registry-and-discovery.md)
 
 This document describes the live observability contract for the gateway.
 
@@ -8,6 +8,7 @@ This document describes the live observability contract for the gateway.
 
 - [Request Logs](observability/request-logs.md): request-scoped admin list/detail, payload policy state, provider attempts, and request-level tool cardinality.
 - [MCP Invocations](observability/mcp-invocations.md): per-tool MCP audit rows, request correlation, owner context, authorization policy result, latency, and redacted argument/result metadata.
+- [MCP Registry and Discovery](observability/mcp-registry-and-discovery.md): platform-admin registry management, recommended catalog import flow, Streamable HTTP discovery, auth declarations, and stable MCP server/tool ids.
 
 ## Source of Truth
 
@@ -23,6 +24,7 @@ This document describes the live observability contract for the gateway.
   - [../crates/gateway-service/src/redaction.rs](../../crates/gateway-service/src/redaction.rs)
 - admin APIs:
   - [../crates/gateway/src/http/observability.rs](../../crates/gateway/src/http/observability.rs)
+  - [../crates/gateway/src/http/mcp_registry.rs](../../crates/gateway/src/http/mcp_registry.rs)
 
 ## OTLP-First Model
 

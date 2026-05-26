@@ -25,18 +25,21 @@ mod tests {
         ApiKeyOwnerKind, ApiKeyRepository, AuthMode, BudgetAlertChannel, BudgetAlertDeliveryRecord,
         BudgetAlertDeliveryStatus, BudgetAlertHistoryQuery, BudgetAlertRecord,
         BudgetAlertRepository, BudgetCadence, BudgetRepository, CONFIG_SEED_SERVICE_ACCOUNT_ID,
-        CONFIG_SEED_TEAM_ID, GlobalRole, IdentityRepository, McpToolInvocationPayloadRecord,
+        CONFIG_SEED_TEAM_ID, ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord,
+        ExternalMcpDiscoveryStatus, ExternalMcpServerStatus, ExternalMcpTransport, GlobalRole,
+        IdentityRepository, McpRegistryRepository, McpToolInvocationPayloadRecord,
         McpToolInvocationQuery, McpToolInvocationRecord, McpToolInvocationRepository,
         McpToolInvocationStatus, McpToolPolicyResult, MembershipRole, ModelPricingRecord,
-        ModelRepository, Money4, OidcLoginStateRecord, OpenAiCompatDeveloperRole,
-        OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
-        PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
-        PricingProvenance, ProviderCapabilities, RequestAttemptRecord, RequestAttemptStatus,
-        RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository,
-        RequestTag, RequestTags, RequestToolCardinality, RouteCompatibility, SeedApiKey,
-        SeedBudget, SeedModel, SeedModelRoute, SeedProvider, SeedTeam, SeedUser,
-        SeedUserMembership, StoreError, StoreHealth, UsageLedgerRecord, UsagePricingStatus,
-        UserStatus,
+        ModelRepository, Money4, NewExternalMcpServerRecord, OidcLoginStateRecord,
+        OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
+        OpenAiCompatRouteCompatibility, PricingCatalogCacheRecord, PricingCatalogRepository,
+        PricingLimits, PricingModalities, PricingProvenance, ProviderCapabilities,
+        RequestAttemptRecord, RequestAttemptStatus, RequestLogPayloadRecord, RequestLogQuery,
+        RequestLogRecord, RequestLogRepository, RequestTag, RequestTags, RequestToolCardinality,
+        RouteCompatibility, SeedApiKey, SeedBudget, SeedModel, SeedModelRoute, SeedProvider,
+        SeedTeam, SeedUser, SeedUserMembership, StoreError, StoreHealth,
+        UpdateExternalMcpServerRecord, UpsertExternalMcpToolRecord, UsageLedgerRecord,
+        UsagePricingStatus, UserStatus,
     };
     use serde_json::{Map, json};
     use serial_test::serial;
@@ -369,6 +372,190 @@ mod tests {
         assert_eq!(
             detail.payload.expect("payload").arguments_json["token"],
             "[REDACTED]"
+        );
+    }
+
+    async fn exercise_mcp_registry_repository<S>(store: &S)
+    where
+        S: GatewayStore + McpRegistryRepository + Sync,
+    {
+        let now = OffsetDateTime::now_utc();
+        let server = store
+            .create_external_mcp_server(&NewExternalMcpServerRecord {
+                server_key: "github-prod".to_string(),
+                display_name: "GitHub Production".to_string(),
+                description: Some("Production GitHub MCP".to_string()),
+                transport: ExternalMcpTransport::StreamableHttp,
+                server_url: "https://mcp.example.com/mcp".to_string(),
+                auth_mode: ExternalMcpAuthMode::None,
+                auth_config: Map::new(),
+                timeout_ms: 30_000,
+                created_at: now,
+            })
+            .await
+            .expect("create MCP server");
+
+        let listed = store
+            .list_external_mcp_servers(false)
+            .await
+            .expect("list MCP servers");
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].server_key, "github-prod");
+
+        let updated = store
+            .update_external_mcp_server(&UpdateExternalMcpServerRecord {
+                mcp_server_id: server.mcp_server_id,
+                display_name: "GitHub".to_string(),
+                description: None,
+                server_url: "https://mcp.example.com/updated".to_string(),
+                auth_mode: ExternalMcpAuthMode::GatewayBearerToken,
+                auth_config: Map::from_iter([(
+                    "secret_ref".to_string(),
+                    json!("env/GITHUB_TOKEN"),
+                )]),
+                timeout_ms: 45_000,
+                updated_at: now + Duration::seconds(1),
+            })
+            .await
+            .expect("update MCP server");
+        assert_eq!(updated.display_name, "GitHub");
+        assert_eq!(updated.auth_mode, ExternalMcpAuthMode::GatewayBearerToken);
+
+        let first_run = ExternalMcpDiscoveryRunRecord {
+            discovery_run_id: Uuid::new_v4(),
+            mcp_server_id: server.mcp_server_id,
+            status: ExternalMcpDiscoveryStatus::Success,
+            started_at: now + Duration::seconds(2),
+            finished_at: now + Duration::seconds(3),
+            discovered_tool_count: 2,
+            active_tool_count: 2,
+            schema_set_hash: Some("sha256:first".to_string()),
+            error_summary: None,
+            details: Map::new(),
+        };
+        let first_tools = store
+            .record_external_mcp_discovery_success(
+                &first_run,
+                &[
+                    UpsertExternalMcpToolRecord {
+                        mcp_server_id: server.mcp_server_id,
+                        upstream_name: "issues.create".to_string(),
+                        display_name: "issues.create".to_string(),
+                        description: Some("Create issue".to_string()),
+                        input_schema: json!({
+                            "type": "object",
+                            "properties": {"title": {"type": "string"}}
+                        }),
+                        schema_hash: "sha256:title".to_string(),
+                    },
+                    UpsertExternalMcpToolRecord {
+                        mcp_server_id: server.mcp_server_id,
+                        upstream_name: "repos.get".to_string(),
+                        display_name: "repos.get".to_string(),
+                        description: None,
+                        input_schema: json!({
+                            "type": "object",
+                            "properties": {"repo": {"type": "string"}}
+                        }),
+                        schema_hash: "sha256:repo".to_string(),
+                    },
+                ],
+            )
+            .await
+            .expect("record discovery success");
+        assert_eq!(first_tools.len(), 2);
+        let issue_tool = first_tools
+            .iter()
+            .find(|tool| tool.upstream_name == "issues.create")
+            .expect("issue tool");
+        assert_eq!(issue_tool.schema_version, 1);
+        let issue_tool_id = issue_tool.mcp_tool_id;
+
+        let second_run = ExternalMcpDiscoveryRunRecord {
+            discovery_run_id: Uuid::new_v4(),
+            mcp_server_id: server.mcp_server_id,
+            status: ExternalMcpDiscoveryStatus::Success,
+            started_at: now + Duration::seconds(4),
+            finished_at: now + Duration::seconds(5),
+            discovered_tool_count: 1,
+            active_tool_count: 1,
+            schema_set_hash: Some("sha256:second".to_string()),
+            error_summary: None,
+            details: Map::new(),
+        };
+        let second_tools = store
+            .record_external_mcp_discovery_success(
+                &second_run,
+                &[UpsertExternalMcpToolRecord {
+                    mcp_server_id: server.mcp_server_id,
+                    upstream_name: "issues.create".to_string(),
+                    display_name: "issues.create".to_string(),
+                    description: Some("Create issue".to_string()),
+                    input_schema: json!({
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "body": {"type": "string"}
+                        }
+                    }),
+                    schema_hash: "sha256:title-body".to_string(),
+                }],
+            )
+            .await
+            .expect("record second discovery success");
+        assert_eq!(second_tools.len(), 1);
+        assert_eq!(second_tools[0].mcp_tool_id, issue_tool_id);
+        assert_eq!(second_tools[0].schema_version, 2);
+
+        let all_tools = store
+            .list_external_mcp_tools(server.mcp_server_id, true)
+            .await
+            .expect("list inactive tools");
+        assert_eq!(all_tools.len(), 2);
+        assert!(
+            all_tools
+                .iter()
+                .any(|tool| tool.upstream_name == "repos.get" && !tool.is_active)
+        );
+
+        store
+            .record_external_mcp_discovery_failure(&ExternalMcpDiscoveryRunRecord {
+                discovery_run_id: Uuid::new_v4(),
+                mcp_server_id: server.mcp_server_id,
+                status: ExternalMcpDiscoveryStatus::Failed,
+                started_at: now + Duration::seconds(6),
+                finished_at: now + Duration::seconds(7),
+                discovered_tool_count: 0,
+                active_tool_count: 1,
+                schema_set_hash: None,
+                error_summary: Some("timeout".to_string()),
+                details: Map::new(),
+            })
+            .await
+            .expect("record discovery failure");
+        let failed_server = store
+            .get_external_mcp_server(server.mcp_server_id)
+            .await
+            .expect("load failed server")
+            .expect("server");
+        assert_eq!(
+            failed_server.last_discovery_status,
+            Some(ExternalMcpDiscoveryStatus::Failed)
+        );
+        assert_eq!(failed_server.last_error_summary.as_deref(), Some("timeout"));
+
+        let disabled = store
+            .disable_external_mcp_server(server.mcp_server_id, now + Duration::seconds(8))
+            .await
+            .expect("disable server");
+        assert_eq!(disabled.status, ExternalMcpServerStatus::Disabled);
+        assert!(disabled.disabled_at.is_some());
+        assert!(
+            store
+                .list_external_mcp_servers(false)
+                .await
+                .expect("list active")
+                .is_empty()
         );
     }
 
@@ -1707,6 +1894,20 @@ mod tests {
             .expect("store");
 
         exercise_mcp_tool_invocation_repository(&store).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_external_mcp_registry_round_trip_and_rediscovery() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        exercise_mcp_registry_repository(&store).await;
     }
 
     #[tokio::test]
@@ -5440,6 +5641,32 @@ mod tests {
             .expect("postgres store");
 
         exercise_mcp_tool_invocation_repository(&store).await;
+
+        drop(store);
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_external_mcp_registry_round_trip_and_rediscovery() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!("skipping postgres MCP registry test because TEST_POSTGRES_URL is not set");
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options)
+            .await
+            .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        exercise_mcp_registry_repository(&store).await;
 
         drop(store);
         drop_postgres_test_database(&test_db).await;

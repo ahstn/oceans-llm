@@ -98,6 +98,10 @@ export default defineConfig({
                 text: "MCP Invocations",
                 link: "/operations/observability/mcp-invocations",
               },
+              {
+                text: "MCP Registry and Discovery",
+                link: "/operations/observability/mcp-registry-and-discovery",
+              },
             ],
           },
           {

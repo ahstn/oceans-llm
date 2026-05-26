@@ -1,6 +1,6 @@
 # Request Logs
 
-`See also`: [Observability and Request Logs](../observability-and-request-logs.md), [MCP Invocations](mcp-invocations.md), [Tagging](../tagging.md), [Request Lifecycle and Failure Modes](../../reference/request-lifecycle-and-failure-modes.md), [Data Relationships](../../reference/data-relationships.md), [Admin Control Plane](../../access/admin-control-plane.md)
+`See also`: [Observability and Request Logs](../observability-and-request-logs.md), [MCP Invocations](mcp-invocations.md), [MCP Registry and Discovery](mcp-registry-and-discovery.md), [Tagging](../tagging.md), [Request Lifecycle and Failure Modes](../../reference/request-lifecycle-and-failure-modes.md), [Data Relationships](../../reference/data-relationships.md), [Admin Control Plane](../../access/admin-control-plane.md)
 
 Request logs are the primary admin view for one gateway request. They are request-scoped, not tool-scoped: each row describes the user-visible API outcome, selected model route, owner context, payload capture state, and bounded tool cardinality.
 
@@ -52,6 +52,8 @@ Request-log data is split across:
 - `request_log_attempts` for upstream provider attempts
 
 MCP tool execution rows are intentionally separate from request logs. Request logs keep cardinality counts and correlation ids; MCP invocation records own per-tool status, policy result, latency, and redacted argument/result metadata.
+
+Registry-backed execution can later use stable external MCP server/tool ids to make referenced-server cardinality durable across display-name changes.
 
 ## Failure Reading
 

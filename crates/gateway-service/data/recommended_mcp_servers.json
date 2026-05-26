@@ -1,0 +1,44 @@
+[
+  {
+    "catalog_key": "github",
+    "display_name": "GitHub MCP Server",
+    "description": "GitHub repository, issue, pull request, and workflow automation tools exposed through Streamable HTTP.",
+    "transport": "streamable_http",
+    "server_url": "https://api.githubcopilot.com/mcp/",
+    "auth_mode": "user_passthrough",
+    "auth_config": {
+      "header": "Authorization",
+      "token_type": "bearer"
+    },
+    "documentation_url": "https://docs.github.com/en/copilot/how-tos/provide-context/use-mcp/use-the-github-mcp-server",
+    "tags": ["source-control", "developer-tools"]
+  },
+  {
+    "catalog_key": "gitlab",
+    "display_name": "GitLab MCP Server",
+    "description": "GitLab project, issue, merge request, and CI access through a user-provided MCP server endpoint.",
+    "transport": "streamable_http",
+    "server_url": "https://gitlab.com/api/v4/mcp",
+    "auth_mode": "user_passthrough",
+    "auth_config": {
+      "header": "Authorization",
+      "token_type": "bearer"
+    },
+    "documentation_url": "https://docs.gitlab.com/user/project/mcp_server/",
+    "tags": ["source-control", "developer-tools"]
+  },
+  {
+    "catalog_key": "linear",
+    "display_name": "Linear MCP Server",
+    "description": "Linear issues, projects, cycles, and team planning tools using Linear's remote MCP endpoint.",
+    "transport": "streamable_http",
+    "server_url": "https://mcp.linear.app/mcp",
+    "auth_mode": "oauth_obo",
+    "auth_config": {
+      "token_exchange": "required",
+      "token_type": "bearer"
+    },
+    "documentation_url": "https://linear.app/docs/mcp",
+    "tags": ["product", "planning"]
+  }
+]

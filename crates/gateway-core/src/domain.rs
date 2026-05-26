@@ -1291,6 +1291,217 @@ impl McpToolPolicyResult {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExternalMcpTransport {
+    StreamableHttp,
+}
+
+impl ExternalMcpTransport {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::StreamableHttp => "streamable_http",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "streamable_http" => Some(Self::StreamableHttp),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExternalMcpServerStatus {
+    Active,
+    Disabled,
+}
+
+impl ExternalMcpServerStatus {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Disabled => "disabled",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "active" => Some(Self::Active),
+            "disabled" => Some(Self::Disabled),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExternalMcpAuthMode {
+    None,
+    GatewayStaticHeader,
+    GatewayBearerToken,
+    UserPassthrough,
+    OauthObo,
+}
+
+impl ExternalMcpAuthMode {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::GatewayStaticHeader => "gateway_static_header",
+            Self::GatewayBearerToken => "gateway_bearer_token",
+            Self::UserPassthrough => "user_passthrough",
+            Self::OauthObo => "oauth_obo",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "none" => Some(Self::None),
+            "gateway_static_header" => Some(Self::GatewayStaticHeader),
+            "gateway_bearer_token" => Some(Self::GatewayBearerToken),
+            "user_passthrough" => Some(Self::UserPassthrough),
+            "oauth_obo" => Some(Self::OauthObo),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn supports_gateway_discovery(self) -> bool {
+        matches!(
+            self,
+            Self::None | Self::GatewayStaticHeader | Self::GatewayBearerToken
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExternalMcpDiscoveryStatus {
+    Success,
+    Failed,
+    AuthRequired,
+    Disabled,
+}
+
+impl ExternalMcpDiscoveryStatus {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Success => "success",
+            Self::Failed => "failed",
+            Self::AuthRequired => "auth_required",
+            Self::Disabled => "disabled",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "success" => Some(Self::Success),
+            "failed" => Some(Self::Failed),
+            "auth_required" => Some(Self::AuthRequired),
+            "disabled" => Some(Self::Disabled),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExternalMcpServerRecord {
+    pub mcp_server_id: Uuid,
+    pub server_key: String,
+    pub display_name: String,
+    pub description: Option<String>,
+    pub transport: ExternalMcpTransport,
+    pub server_url: String,
+    pub auth_mode: ExternalMcpAuthMode,
+    pub auth_config: Map<String, Value>,
+    pub timeout_ms: i64,
+    pub status: ExternalMcpServerStatus,
+    pub last_discovery_status: Option<ExternalMcpDiscoveryStatus>,
+    pub last_discovery_at: Option<OffsetDateTime>,
+    pub last_successful_discovery_at: Option<OffsetDateTime>,
+    pub last_error_summary: Option<String>,
+    pub last_tool_count: Option<i64>,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+    pub disabled_at: Option<OffsetDateTime>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewExternalMcpServerRecord {
+    pub server_key: String,
+    pub display_name: String,
+    pub description: Option<String>,
+    pub transport: ExternalMcpTransport,
+    pub server_url: String,
+    pub auth_mode: ExternalMcpAuthMode,
+    pub auth_config: Map<String, Value>,
+    pub timeout_ms: i64,
+    pub created_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateExternalMcpServerRecord {
+    pub mcp_server_id: Uuid,
+    pub display_name: String,
+    pub description: Option<String>,
+    pub server_url: String,
+    pub auth_mode: ExternalMcpAuthMode,
+    pub auth_config: Map<String, Value>,
+    pub timeout_ms: i64,
+    pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExternalMcpToolRecord {
+    pub mcp_tool_id: Uuid,
+    pub mcp_server_id: Uuid,
+    pub upstream_name: String,
+    pub display_name: String,
+    pub description: Option<String>,
+    pub input_schema: Value,
+    pub schema_hash: String,
+    pub schema_version: i64,
+    pub is_active: bool,
+    pub first_discovered_at: OffsetDateTime,
+    pub last_discovered_at: OffsetDateTime,
+    pub deactivated_at: Option<OffsetDateTime>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpsertExternalMcpToolRecord {
+    pub mcp_server_id: Uuid,
+    pub upstream_name: String,
+    pub display_name: String,
+    pub description: Option<String>,
+    pub input_schema: Value,
+    pub schema_hash: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExternalMcpDiscoveryRunRecord {
+    pub discovery_run_id: Uuid,
+    pub mcp_server_id: Uuid,
+    pub status: ExternalMcpDiscoveryStatus,
+    pub started_at: OffsetDateTime,
+    pub finished_at: OffsetDateTime,
+    pub discovered_tool_count: i64,
+    pub active_tool_count: i64,
+    pub schema_set_hash: Option<String>,
+    pub error_summary: Option<String>,
+    pub details: Map<String, Value>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpToolInvocationRecord {
     pub mcp_tool_invocation_id: Uuid,

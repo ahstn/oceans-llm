@@ -5,6 +5,7 @@ pub mod budget_alerts;
 pub mod budget_guard;
 pub mod icon_identity;
 pub mod mcp_invocation_logging;
+pub mod mcp_registry;
 pub mod model_access;
 pub mod model_resolution;
 pub mod pricing_catalog;
@@ -33,6 +34,10 @@ pub use icon_identity::{
 pub use mcp_invocation_logging::{
     LoggedMcpToolInvocation, McpInvocationLogInput, McpInvocationLogging,
     McpInvocationPayloadPolicy,
+};
+pub use mcp_registry::{
+    CreateExternalMcpServerInput, HttpMcpDiscoveryClient, McpDiscoveryClient, McpDiscoveryResult,
+    McpRegistryService, RecommendedMcpServerCatalogEntry, UpdateExternalMcpServerInput,
 };
 pub use model_access::ModelAccess;
 pub use model_resolution::{

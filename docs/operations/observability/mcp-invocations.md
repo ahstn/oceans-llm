@@ -1,6 +1,6 @@
 # MCP Invocations
 
-`See also`: [Observability and Request Logs](../observability-and-request-logs.md), [Request Logs](request-logs.md), [Identity and Access](../../access/identity-and-access.md), [Admin Control Plane](../../access/admin-control-plane.md), [Data Relationships](../../reference/data-relationships.md), [Request Lifecycle and Failure Modes](../../reference/request-lifecycle-and-failure-modes.md)
+`See also`: [Observability and Request Logs](../observability-and-request-logs.md), [MCP Registry and Discovery](mcp-registry-and-discovery.md), [Request Logs](request-logs.md), [Identity and Access](../../access/identity-and-access.md), [Admin Control Plane](../../access/admin-control-plane.md), [Data Relationships](../../reference/data-relationships.md), [Request Lifecycle and Failure Modes](../../reference/request-lifecycle-and-failure-modes.md)
 
 MCP invocation logs are the durable audit view for individual MCP tool calls. They are narrower than request logs: one request can produce zero, one, or many tool invocation rows.
 
@@ -74,6 +74,8 @@ Each invocation record should carry:
 - occurrence time
 
 Arguments and results must be redacted and bounded before persistence. Sensitive headers, tokens, provider credentials, OAuth material, and API keys must never be stored in MCP invocation payloads.
+
+`server_id` and `tool_id` are nullable today so invocation logging can operate before registry-backed execution exists. Future execution should populate them from the external MCP registry's stable server and tool ids.
 
 ## Relationship to Request Logs
 

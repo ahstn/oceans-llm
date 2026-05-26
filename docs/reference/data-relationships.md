@@ -1,6 +1,6 @@
 # Data Relationships
 
-`See also`: [Identity and Access](../access/identity-and-access.md), [Service Accounts](../access/service-accounts.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](provider-api-compatibility.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../operations/observability/mcp-invocations.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../adr/2026-05-10-team-service-accounts.md), [ADR: Identity Foundation for Users, Teams, and API Key Ownership](../adr/2026-03-05-identity-foundation.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md), [ADR: MCP Tool Cardinality Observability](../adr/2026-04-28-mcp-tool-cardinality-observability.md)
+`See also`: [Identity and Access](../access/identity-and-access.md), [Service Accounts](../access/service-accounts.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](provider-api-compatibility.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../operations/observability/mcp-invocations.md), [MCP Registry and Discovery](../operations/observability/mcp-registry-and-discovery.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../adr/2026-05-10-team-service-accounts.md), [ADR: Identity Foundation for Users, Teams, and API Key Ownership](../adr/2026-03-05-identity-foundation.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md), [ADR: MCP Tool Cardinality Observability](../adr/2026-04-28-mcp-tool-cardinality-observability.md), [ADR: External MCP Registry and Discovery Boundary](../adr/2026-05-26-external-mcp-registry-and-discovery.md)
 
 This document is schema-oriented. It describes the persistent relationships that are hard to infer from a single file, but it does not try to restate every runtime rule owned by neighboring docs.
 
@@ -38,6 +38,9 @@ This document is schema-oriented. It describes the persistent relationships that
 14. `pricing_catalog_cache` stores normalized pricing snapshots used by runtime pricing resolution
 15. `model_pricing` stores effective-dated pricing rows used for historical charging
 16. `usage_cost_event_duplicates_archive` preserves duplicate-ledger migration/archive context
+17. `external_mcp_servers` stores user-added MCP server registry rows and soft-disable state
+18. `external_mcp_tools` stores discovered MCP tools, stable tool ids, schema hashes, schema versions, and active/inactive state
+19. `external_mcp_discovery_runs` stores immutable discovery attempt diagnostics
 
 ## Table Catalog
 
@@ -128,6 +131,18 @@ Compatibility metadata is not a provider config fallback and is not an `extra_bo
 - `mcp_tool_invocation_payloads`
   - Key columns: `mcp_tool_invocation_id`, `arguments_json`, `result_json`
   - Notes: payload rows exist only when MCP invocation payload policy captures sanitized payloads; summary rows are still recorded when payload capture is disabled.
+
+### External MCP Registry Tables
+
+- `external_mcp_servers`
+  - Key columns: `mcp_server_id`, `server_key`, `display_name`, `transport`, `server_url`, `auth_mode`, `auth_config_json`, `timeout_ms`, `status`, `last_discovery_status`, `last_discovery_at`, `last_successful_discovery_at`, `last_error_summary`, `last_tool_count`, `created_at`, `updated_at`, `disabled_at`
+  - Notes: rows are user-added registry records. Recommended catalog entries are not seeded into this table. Disabling a server is the archive/delete path; hard delete is not exposed.
+- `external_mcp_tools`
+  - Key columns: `mcp_tool_id`, `mcp_server_id`, `upstream_name`, `display_name`, `description`, `input_schema_json`, `schema_hash`, `schema_version`, `is_active`, `first_discovered_at`, `last_discovered_at`, `deactivated_at`
+  - Notes: `(mcp_server_id, upstream_name)` is unique. Rediscovery preserves `mcp_tool_id` for stable upstream names and increments `schema_version` only when `schema_hash` changes.
+- `external_mcp_discovery_runs`
+  - Key columns: `discovery_run_id`, `mcp_server_id`, `status`, `started_at`, `finished_at`, `discovered_tool_count`, `active_tool_count`, `schema_set_hash`, `error_summary`, `details_json`
+  - Notes: diagnostics are bounded and must not contain raw tokens or user credentials.
 
 Request-log purge treats `request_logs` as the parent retention boundary. Purging a parent row also removes matching `request_log_payloads`, `request_log_tags`, and `request_log_attempts` rows. The purge does not remove `usage_cost_events`; spend reporting and budget enforcement stay tied to the ledger.
 
