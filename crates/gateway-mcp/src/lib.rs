@@ -1,7 +1,11 @@
-use std::{collections::BTreeMap, time::Duration};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    time::Duration,
+};
 
+use futures_util::StreamExt;
 use reqwest::{
-    Client, StatusCode,
+    Client,
     header::{ACCEPT, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue},
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -11,6 +15,8 @@ use url::Url;
 
 pub const DEFAULT_PROTOCOL_VERSION: &str = "2025-03-26";
 pub const MCP_PROTOCOL_VERSION_HEADER: &str = "mcp-protocol-version";
+pub const MCP_SESSION_ID_HEADER: &str = "mcp-session-id";
+const MAX_RESPONSE_BODY_BYTES: usize = 2 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct JsonRpcRequest<T = Value> {
@@ -19,6 +25,25 @@ pub struct JsonRpcRequest<T = Value> {
     pub method: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub params: Option<T>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct JsonRpcNotification<T = Value> {
+    pub jsonrpc: String,
+    pub method: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub params: Option<T>,
+}
+
+impl<T> JsonRpcNotification<T> {
+    #[must_use]
+    pub fn new(method: impl Into<String>, params: Option<T>) -> Self {
+        Self {
+            jsonrpc: "2.0".to_string(),
+            method: method.into(),
+            params,
+        }
+    }
 }
 
 impl<T> JsonRpcRequest<T> {
@@ -150,15 +175,9 @@ impl StreamableHttpClient {
     }
 
     pub async fn initialize(&self) -> Result<InitializeResponse, McpClientError> {
-        self.send(
-            JsonRpcRequest::new(
-                JsonRpcId::Number(1),
-                "initialize",
-                Some(InitializeRequest::default()),
-            ),
-            None,
-        )
-        .await
+        self.initialize_with_session(None)
+            .await
+            .map(|(response, _session_id)| response)
     }
 
     pub async fn ping(&self) -> Result<Value, McpClientError> {
@@ -173,10 +192,20 @@ impl StreamableHttpClient {
         &self,
         headers: Option<&BTreeMap<String, String>>,
     ) -> Result<Vec<NormalizedMcpTool>, McpClientError> {
+        let mut request_headers = headers.cloned().unwrap_or_default();
+        let (_initialize, session_id) = self.initialize_with_session(headers).await?;
+        if let Some(session_id) = session_id {
+            request_headers.insert(MCP_SESSION_ID_HEADER.to_string(), session_id);
+        }
+        self.send_notification(
+            JsonRpcNotification::<Value>::new("notifications/initialized", None),
+            Some(&request_headers),
+        )
+        .await?;
         let response: ToolsListResponse = self
             .send(
                 JsonRpcRequest::new(JsonRpcId::Number(3), "tools/list", Some(json!({}))),
-                headers,
+                Some(&request_headers),
             )
             .await?;
         normalize_tools(response.tools)
@@ -184,12 +213,15 @@ impl StreamableHttpClient {
 
     pub fn build_request<T: Serialize>(
         &self,
-        request: &JsonRpcRequest<T>,
+        request: &T,
         headers: Option<&BTreeMap<String, String>>,
     ) -> Result<reqwest::Request, McpClientError> {
         let mut request_headers = HeaderMap::new();
         request_headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-        request_headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
+        request_headers.insert(
+            ACCEPT,
+            HeaderValue::from_static("application/json, text/event-stream"),
+        );
         request_headers.insert(
             HeaderName::from_static(MCP_PROTOCOL_VERSION_HEADER),
             HeaderValue::from_str(&self.protocol_version)
@@ -218,28 +250,93 @@ impl StreamableHttpClient {
         request: JsonRpcRequest<T>,
         headers: Option<&BTreeMap<String, String>>,
     ) -> Result<R, McpClientError> {
+        self.send_with_session(request, headers)
+            .await
+            .map(|(response, _session_id)| response)
+    }
+
+    async fn initialize_with_session(
+        &self,
+        headers: Option<&BTreeMap<String, String>>,
+    ) -> Result<(InitializeResponse, Option<String>), McpClientError> {
+        self.send_with_session(
+            JsonRpcRequest::new(
+                JsonRpcId::Number(1),
+                "initialize",
+                Some(InitializeRequest::default()),
+            ),
+            headers,
+        )
+        .await
+    }
+
+    async fn send_notification<T: Serialize>(
+        &self,
+        notification: JsonRpcNotification<T>,
+        headers: Option<&BTreeMap<String, String>>,
+    ) -> Result<(), McpClientError> {
+        let response = self
+            .client
+            .execute(self.build_request(&notification, headers)?)
+            .await
+            .map_err(classify_reqwest_error)?;
+        let status = response.status();
+        if !status.is_success() {
+            let body = read_bounded_body(response).await?;
+            return Err(McpClientError::Http {
+                status: status.as_u16(),
+                body: bounded_body(&body),
+            });
+        }
+        Ok(())
+    }
+
+    async fn send_with_session<T: Serialize, R: DeserializeOwned + Default>(
+        &self,
+        request: JsonRpcRequest<T>,
+        headers: Option<&BTreeMap<String, String>>,
+    ) -> Result<(R, Option<String>), McpClientError> {
         let response = self
             .client
             .execute(self.build_request(&request, headers)?)
             .await
             .map_err(classify_reqwest_error)?;
         let status = response.status();
-        let body = response
-            .text()
-            .await
-            .map_err(|error| McpClientError::Transport(error.to_string()))?;
+        let is_sse = response
+            .headers()
+            .get(CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.starts_with("text/event-stream"));
+        let session_id = response
+            .headers()
+            .get(MCP_SESSION_ID_HEADER)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string);
+        let oversized_content_length = response
+            .content_length()
+            .filter(|length| *length > MAX_RESPONSE_BODY_BYTES as u64);
+        if oversized_content_length.is_some() {
+            return Err(McpClientError::ResponseTooLarge {
+                limit_bytes: MAX_RESPONSE_BODY_BYTES,
+            });
+        }
+        let body = read_bounded_body(response).await?;
         if !status.is_success() {
             return Err(McpClientError::Http {
                 status: status.as_u16(),
                 body: bounded_body(&body),
             });
         }
-        decode_json_rpc_result(status, &body)
+        let result = if is_sse {
+            decode_sse_json_rpc_result(&body)?
+        } else {
+            decode_json_rpc_result(&body)?
+        };
+        Ok((result, session_id))
     }
 }
 
 pub fn decode_json_rpc_result<T: DeserializeOwned + Default>(
-    _status: StatusCode,
     body: &str,
 ) -> Result<T, McpClientError> {
     let response: JsonRpcResponse<T> =
@@ -261,14 +358,62 @@ pub fn decode_json_rpc_result<T: DeserializeOwned + Default>(
         })
 }
 
+pub fn decode_sse_json_rpc_result<T: DeserializeOwned + Default>(
+    body: &str,
+) -> Result<T, McpClientError> {
+    let mut data_lines = Vec::new();
+    for line in body.lines() {
+        let line = line.trim_end();
+        if line.is_empty() {
+            if !data_lines.is_empty() {
+                return decode_json_rpc_result(&data_lines.join("\n"));
+            }
+            continue;
+        }
+        if let Some(data) = line.strip_prefix("data:") {
+            data_lines.push(data.trim_start().to_string());
+        }
+    }
+    if !data_lines.is_empty() {
+        return decode_json_rpc_result(&data_lines.join("\n"));
+    }
+    Err(McpClientError::InvalidResponse {
+        message: "SSE response did not contain a JSON-RPC data event".to_string(),
+    })
+}
+
+async fn read_bounded_body(response: reqwest::Response) -> Result<String, McpClientError> {
+    let mut body = Vec::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|error| McpClientError::Transport(error.to_string()))?;
+        if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BODY_BYTES {
+            return Err(McpClientError::ResponseTooLarge {
+                limit_bytes: MAX_RESPONSE_BODY_BYTES,
+            });
+        }
+        body.extend_from_slice(&chunk);
+    }
+    String::from_utf8(body).map_err(|error| McpClientError::InvalidResponse {
+        message: error.to_string(),
+    })
+}
+
 pub fn normalize_tools(tools: Vec<McpTool>) -> Result<Vec<NormalizedMcpTool>, McpClientError> {
     let mut normalized = Vec::with_capacity(tools.len());
+    let mut names = BTreeSet::new();
     for tool in tools {
         let name = tool.name.trim();
         if name.is_empty() {
             return Err(McpClientError::InvalidToolSchema {
                 tool_name: tool.name,
                 message: "tool name cannot be empty".to_string(),
+            });
+        }
+        if !names.insert(name.to_string()) {
+            return Err(McpClientError::InvalidToolSchema {
+                tool_name: name.to_string(),
+                message: "duplicate tool name".to_string(),
             });
         }
         let input_schema = if tool.input_schema.is_null() {
@@ -351,6 +496,8 @@ pub enum McpClientError {
     Transport(String),
     #[error("MCP upstream returned HTTP {status}: {body}")]
     Http { status: u16, body: String },
+    #[error("MCP upstream response exceeded {limit_bytes} bytes")]
+    ResponseTooLarge { limit_bytes: usize },
     #[error("MCP JSON-RPC error: {0:?}")]
     JsonRpc(JsonRpcErrorObject),
     #[error("invalid MCP response: {message}")]
@@ -366,8 +513,7 @@ mod tests {
     #[test]
     fn parses_json_rpc_result() {
         let body = r#"{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}"#;
-        let result: ToolsListResponse =
-            decode_json_rpc_result(StatusCode::OK, body).expect("decode result");
+        let result: ToolsListResponse = decode_json_rpc_result(body).expect("decode result");
 
         assert!(result.tools.is_empty());
     }
@@ -375,7 +521,7 @@ mod tests {
     #[test]
     fn classifies_json_rpc_error() {
         let body = r#"{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"missing"}}"#;
-        let error = decode_json_rpc_result::<Value>(StatusCode::OK, body).expect_err("error");
+        let error = decode_json_rpc_result::<Value>(body).expect_err("error");
 
         assert!(matches!(error, McpClientError::JsonRpc(_)));
     }
@@ -396,6 +542,19 @@ mod tests {
             request.headers().get(MCP_PROTOCOL_VERSION_HEADER).unwrap(),
             DEFAULT_PROTOCOL_VERSION
         );
+        assert_eq!(
+            request.headers().get(ACCEPT).unwrap(),
+            "application/json, text/event-stream"
+        );
+    }
+
+    #[test]
+    fn decodes_sse_json_rpc_result() {
+        let body =
+            "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[]}}\n\n";
+        let result: ToolsListResponse = decode_sse_json_rpc_result(body).expect("decode result");
+
+        assert!(result.tools.is_empty());
     }
 
     #[test]
@@ -419,6 +578,25 @@ mod tests {
             input_schema: json!("not object"),
         }])
         .expect_err("invalid schema");
+
+        assert!(matches!(error, McpClientError::InvalidToolSchema { .. }));
+    }
+
+    #[test]
+    fn rejects_duplicate_tool_names() {
+        let error = normalize_tools(vec![
+            McpTool {
+                name: "search".to_string(),
+                description: None,
+                input_schema: json!({"type": "object"}),
+            },
+            McpTool {
+                name: " search ".to_string(),
+                description: None,
+                input_schema: json!({"type": "object"}),
+            },
+        ])
+        .expect_err("duplicate name");
 
         assert!(matches!(error, McpClientError::InvalidToolSchema { .. }));
     }

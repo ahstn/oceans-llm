@@ -49,9 +49,9 @@ Rediscovery marks previously active tools inactive before upserting the newly di
 
 Phase 2 supports Streamable HTTP only.
 
-Discovery calls the configured server URL with JSON-RPC `tools/list` and sends the MCP protocol version header. Tool input schemas are normalized into canonical JSON before hashing. Non-object input schemas are rejected and recorded as discovery failures.
+Discovery initializes the configured server URL over Streamable HTTP, sends the MCP protocol version header, and accepts JSON or `text/event-stream` JSON-RPC responses. Tool input schemas are normalized into canonical JSON before hashing. Non-object input schemas are rejected and recorded as discovery failures.
 
-Stdio, SSE, protocol proxying, tool federation, and execution-time routing are intentionally not implemented here.
+Stdio MCP servers, legacy SSE transport, protocol proxying, tool federation, and execution-time routing are intentionally not implemented here.
 
 ## Auth Modes
 
@@ -63,7 +63,7 @@ Stored auth modes are declarations:
 - `user_passthrough`
 - `oauth_obo`
 
-Discovery can use only `none` or gateway-managed secret references. Gateway-managed discovery credentials use `auth_config.secret_ref` with the `env/NAME` form. `gateway_static_header` also requires `auth_config.header_name`.
+Discovery can use only `none` or gateway-managed secret references. Gateway-managed discovery credentials require an HTTPS `server_url` and use `auth_config.secret_ref` with the `env/OCEANS_MCP_DISCOVERY_*` form. `gateway_static_header` also requires `auth_config.header_name`.
 
 `user_passthrough` and `oauth_obo` are recorded so future execution and grants can require user-owned credentials. Discovery without a gateway-managed credential records `auth_required` rather than attempting to persist or forward a user token.
 
@@ -74,6 +74,8 @@ Never store raw tokens in:
 - request logs
 - MCP invocation logs
 - admin API responses
+
+Discovery diagnostics store bounded summaries and client error categories. HTTP failure summaries include the upstream status code, but not upstream response bodies.
 
 ## Relationship to Observability
 

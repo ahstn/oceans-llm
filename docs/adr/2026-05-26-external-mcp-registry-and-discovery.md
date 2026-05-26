@@ -40,7 +40,7 @@ Auth modes are stored as declarations:
 - `user_passthrough`
 - `oauth_obo`
 
-Discovery uses only `none` or gateway-managed secret references. User passthrough and OAuth on-behalf-of modes record `auth_required` until execution/grant flows provide per-user credentials.
+Discovery uses only `none` or gateway-managed secret references. Gateway-managed discovery credentials require HTTPS server URLs and environment variable references prefixed with `OCEANS_MCP_DISCOVERY_`. User passthrough and OAuth on-behalf-of modes record `auth_required` until execution/grant flows provide per-user credentials.
 
 ## Trade-offs
 

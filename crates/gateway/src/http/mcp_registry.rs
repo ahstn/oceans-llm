@@ -4,7 +4,7 @@ use axum::{
     http::HeaderMap,
 };
 use gateway_core::{
-    ExternalMcpDiscoveryStatus, ExternalMcpServerRecord, ExternalMcpToolRecord, GatewayError,
+    ExternalMcpAuthMode, ExternalMcpServerRecord, ExternalMcpToolRecord, GatewayError,
 };
 use gateway_service::{
     CreateExternalMcpServerInput, McpDiscoveryResult, McpRegistryService,
@@ -349,6 +349,7 @@ fn map_recommended_server(entry: RecommendedMcpServerCatalogEntry) -> Recommende
 }
 
 fn map_server(server: ExternalMcpServerRecord) -> McpServerView {
+    let auth_config = sanitized_auth_config(server.auth_mode, &server.auth_config);
     McpServerView {
         id: server.mcp_server_id.to_string(),
         server_key: server.server_key,
@@ -357,7 +358,7 @@ fn map_server(server: ExternalMcpServerRecord) -> McpServerView {
         transport: server.transport.as_str().to_string(),
         server_url: server.server_url,
         auth_mode: server.auth_mode.as_str().to_string(),
-        auth_config: server.auth_config,
+        auth_config,
         timeout_ms: server.timeout_ms,
         status: server.status.as_str().to_string(),
         last_discovery_status: server
@@ -393,14 +394,31 @@ fn map_tool(tool: ExternalMcpToolRecord) -> McpToolView {
 fn map_discovery_result(result: McpDiscoveryResult) -> McpDiscoveryRefreshPayload {
     McpDiscoveryRefreshPayload {
         server: map_server(result.server),
-        status: discovery_status(result.status),
+        status: result.status.as_str().to_string(),
         error_summary: result.error_summary,
         tools: result.tools.into_iter().map(map_tool).collect(),
     }
 }
 
-fn discovery_status(status: ExternalMcpDiscoveryStatus) -> String {
-    status.as_str().to_string()
+fn sanitized_auth_config(
+    auth_mode: ExternalMcpAuthMode,
+    auth_config: &Map<String, Value>,
+) -> Map<String, Value> {
+    let allowed_fields: &[&str] = match auth_mode {
+        ExternalMcpAuthMode::None => &[],
+        ExternalMcpAuthMode::GatewayStaticHeader => &["header_name", "secret_ref"],
+        ExternalMcpAuthMode::GatewayBearerToken => &["secret_ref"],
+        ExternalMcpAuthMode::UserPassthrough => &["header", "token_type"],
+        ExternalMcpAuthMode::OauthObo => &["token_exchange", "token_type"],
+    };
+    allowed_fields
+        .iter()
+        .filter_map(|field| {
+            auth_config
+                .get(*field)
+                .map(|value| ((*field).to_string(), value.clone()))
+        })
+        .collect()
 }
 
 fn parse_uuid(raw: &str, field_name: &str) -> Result<Uuid, AppError> {

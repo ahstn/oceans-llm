@@ -1,8 +1,18 @@
 use super::*;
 use crate::shared::{json_object_from_str, parse_uuid, serialize_json, unix_to_datetime};
 
-const SERVER_COLUMNS: &str = "mcp_server_id, server_key, display_name, description, transport, server_url, auth_mode, auth_config_json::text, timeout_ms, status, last_discovery_status, last_discovery_at, last_successful_discovery_at, last_error_summary, last_tool_count, created_at, updated_at, disabled_at";
-const SERVER_SELECT_BY_ID: &str = "SELECT mcp_server_id, server_key, display_name, description, transport, server_url, auth_mode, auth_config_json::text, timeout_ms, status, last_discovery_status, last_discovery_at, last_successful_discovery_at, last_error_summary, last_tool_count, created_at, updated_at, disabled_at FROM external_mcp_servers WHERE mcp_server_id = $1";
+macro_rules! server_columns {
+    () => {
+        "mcp_server_id, server_key, display_name, description, transport, server_url, auth_mode, auth_config_json::text, timeout_ms, status, last_discovery_status, last_discovery_at, last_successful_discovery_at, last_error_summary, last_tool_count, created_at, updated_at, disabled_at"
+    };
+}
+
+const SERVER_COLUMNS: &str = server_columns!();
+const SERVER_SELECT_BY_ID: &str = concat!(
+    "SELECT ",
+    server_columns!(),
+    " FROM external_mcp_servers WHERE mcp_server_id = $1"
+);
 const TOOL_COLUMNS: &str = "mcp_tool_id, mcp_server_id, upstream_name, display_name, description, input_schema_json::text, schema_hash, schema_version, is_active, first_discovered_at, last_discovered_at, deactivated_at";
 
 fn decode_server(row: &PgRow) -> Result<ExternalMcpServerRecord, StoreError> {
