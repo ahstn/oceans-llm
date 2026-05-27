@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::{Arc, Mutex as StdMutex, OnceLock},
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use gateway_core::{
@@ -12,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
+use tokio::sync::Mutex as AsyncMutex;
 use url::Url;
 use uuid::Uuid;
 
@@ -20,6 +25,7 @@ const MIN_DISCOVERY_TIMEOUT_MS: i64 = 1_000;
 const MAX_DISCOVERY_TIMEOUT_MS: i64 = 120_000;
 const MAX_ERROR_SUMMARY_CHARS: usize = 512;
 const DISCOVERY_SECRET_ENV_PREFIX: &str = "OCEANS_MCP_DISCOVERY_";
+static DISCOVERY_LOCKS: OnceLock<StdMutex<HashMap<Uuid, Arc<AsyncMutex<()>>>>> = OnceLock::new();
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecommendedMcpServerCatalogEntry {
@@ -232,12 +238,15 @@ where
         &self,
         mcp_server_id: Uuid,
     ) -> Result<McpDiscoveryResult, GatewayError> {
+        let discovery_lock = discovery_lock_for(mcp_server_id);
+        let _guard = discovery_lock.lock().await;
         let server = self.server_or_not_found(mcp_server_id).await?;
         if server.status == ExternalMcpServerStatus::Disabled {
             return self
                 .record_discovery_failure(
                     server,
                     ExternalMcpDiscoveryStatus::Disabled,
+                    OffsetDateTime::now_utc(),
                     Some("external MCP server is disabled".to_string()),
                     json!({"reason": "disabled"}),
                 )
@@ -249,6 +258,7 @@ where
                 .record_discovery_failure(
                     server,
                     ExternalMcpDiscoveryStatus::AuthRequired,
+                    OffsetDateTime::now_utc(),
                     Some(
                         "server auth mode requires per-user credentials for discovery".to_string(),
                     ),
@@ -257,8 +267,21 @@ where
                 .await;
         }
 
-        let headers = discovery_headers(&server)?;
         let started_at = OffsetDateTime::now_utc();
+        let headers = match discovery_headers(&server) {
+            Ok(headers) => headers,
+            Err(error) => {
+                return self
+                    .record_discovery_failure(
+                        server,
+                        ExternalMcpDiscoveryStatus::Failed,
+                        started_at,
+                        Some(bounded_error_summary(error.to_string())),
+                        json!({"reason": "invalid_discovery_auth_config"}),
+                    )
+                    .await;
+            }
+        };
         match self.client.list_tools(&server, headers.as_ref()).await {
             Ok(tools) => {
                 let finished_at = OffsetDateTime::now_utc();
@@ -303,6 +326,7 @@ where
                 self.record_discovery_failure(
                     server,
                     ExternalMcpDiscoveryStatus::Failed,
+                    started_at,
                     Some(summary),
                     json!({"client_error": classify_client_error(&error)}),
                 )
@@ -391,6 +415,7 @@ where
         &self,
         server: ExternalMcpServerRecord,
         status: ExternalMcpDiscoveryStatus,
+        started_at: OffsetDateTime,
         error_summary: Option<String>,
         details: Value,
     ) -> Result<McpDiscoveryResult, GatewayError> {
@@ -399,7 +424,7 @@ where
             discovery_run_id: Uuid::new_v4(),
             mcp_server_id: server.mcp_server_id,
             status,
-            started_at: now,
+            started_at,
             finished_at: now,
             discovered_tool_count: 0,
             active_tool_count: server.last_tool_count.unwrap_or(0),
@@ -439,6 +464,17 @@ fn load_recommended_catalog() -> Result<Vec<RecommendedMcpServerCatalogEntry>, G
     serde_json::from_str(include_str!("../data/recommended_mcp_servers.json")).map_err(|error| {
         GatewayError::Internal(format!("invalid recommended MCP catalog: {error}"))
     })
+}
+
+fn discovery_lock_for(mcp_server_id: Uuid) -> Arc<AsyncMutex<()>> {
+    let locks = DISCOVERY_LOCKS.get_or_init(|| StdMutex::new(HashMap::new()));
+    let mut locks = locks
+        .lock()
+        .expect("MCP discovery lock registry mutex poisoned");
+    locks
+        .entry(mcp_server_id)
+        .or_insert_with(|| Arc::new(AsyncMutex::new(())))
+        .clone()
 }
 
 fn normalize_server_key(value: &str) -> Result<String, GatewayError> {
@@ -528,7 +564,7 @@ fn validate_auth_config(
         ExternalMcpAuthMode::None => ensure_allowed_auth_fields(auth_config, &[]),
         ExternalMcpAuthMode::GatewayStaticHeader => {
             ensure_allowed_auth_fields(auth_config, &["header_name", "secret_ref"])?;
-            required_string(auth_config, "header_name")?;
+            validate_static_header_name(required_string(auth_config, "header_name")?)?;
             validate_discovery_secret_ref(required_secret_ref(auth_config)?)?;
             Ok(())
         }
@@ -596,7 +632,24 @@ fn required_secret_ref(auth_config: &Map<String, Value>) -> Result<&str, Gateway
     required_string(auth_config, "secret_ref")
 }
 
+fn validate_static_header_name(header_name: &str) -> Result<&str, GatewayError> {
+    if header_name.trim() != header_name {
+        return Err(GatewayError::InvalidRequest(
+            "auth_config.header_name must not contain leading or trailing whitespace".to_string(),
+        ));
+    }
+    reqwest::header::HeaderName::from_bytes(header_name.as_bytes()).map_err(|error| {
+        GatewayError::InvalidRequest(format!("auth_config.header_name is invalid: {error}"))
+    })?;
+    Ok(header_name)
+}
+
 fn validate_discovery_secret_ref(secret_ref: &str) -> Result<&str, GatewayError> {
+    if secret_ref.trim() != secret_ref {
+        return Err(GatewayError::InvalidRequest(
+            "auth_config.secret_ref must not contain leading or trailing whitespace".to_string(),
+        ));
+    }
     let env_name = discovery_secret_env_name(secret_ref)?;
     if !env_name.starts_with(DISCOVERY_SECRET_ENV_PREFIX) {
         return Err(GatewayError::InvalidRequest(format!(
@@ -627,6 +680,14 @@ fn discovery_secret_env_name(secret_ref: &str) -> Result<&str, GatewayError> {
             "secret_ref environment variable name cannot be empty".to_string(),
         ));
     }
+    if !env_name
+        .bytes()
+        .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'_')
+    {
+        return Err(GatewayError::InvalidRequest(
+            "secret_ref environment variable name may only contain uppercase letters, digits, and underscore".to_string(),
+        ));
+    }
     Ok(env_name)
 }
 
@@ -652,9 +713,7 @@ fn discovery_error_summary(error: &McpClientError) -> String {
         McpClientError::Http { status, .. } => {
             format!("MCP upstream returned HTTP {status}")
         }
-        McpClientError::JsonRpc(error) => {
-            format!("MCP JSON-RPC error {}: {}", error.code, error.message)
-        }
+        McpClientError::JsonRpc(error) => format!("MCP JSON-RPC error {}", error.code),
         other => other.to_string(),
     }
 }
@@ -710,5 +769,36 @@ mod tests {
             json!("env/OCEANS_MCP_DISCOVERY_MCP_TOKEN"),
         );
         assert!(validate_auth_config(mode, &config).is_ok());
+    }
+
+    #[test]
+    fn gateway_static_header_auth_validates_header_name() {
+        let mode = ExternalMcpAuthMode::GatewayStaticHeader;
+        let mut config = Map::from_iter([
+            ("header_name".to_string(), json!(" X-Api-Key ")),
+            (
+                "secret_ref".to_string(),
+                json!("env/OCEANS_MCP_DISCOVERY_API_KEY"),
+            ),
+        ]);
+        assert!(validate_auth_config(mode, &config).is_err());
+
+        config.insert("header_name".to_string(), json!("bad header"));
+        assert!(validate_auth_config(mode, &config).is_err());
+
+        config.insert("header_name".to_string(), json!("X-Api-Key"));
+        assert!(validate_auth_config(mode, &config).is_ok());
+    }
+
+    #[test]
+    fn discovery_error_summary_omits_upstream_json_rpc_message() {
+        let summary =
+            discovery_error_summary(&McpClientError::JsonRpc(gateway_mcp::JsonRpcErrorObject {
+                code: -32000,
+                message: "remote controlled diagnostic".to_string(),
+                data: None,
+            }));
+
+        assert_eq!(summary, "MCP JSON-RPC error -32000");
     }
 }

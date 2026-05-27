@@ -916,6 +916,16 @@
               }
             }
           },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
           "404": {
             "description": "",
             "content": {
@@ -962,6 +972,16 @@
               }
             }
           },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          },
           "404": {
             "description": "",
             "content": {
@@ -1004,6 +1024,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope_McpDiscoveryRefreshPayload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
                 }
               }
             }
@@ -1058,6 +1088,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope_McpToolsPayload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
                 }
               }
             }

@@ -1,3 +1,4 @@
+mod any_store_mcp_registry;
 mod libsql_store;
 mod migrate;
 mod migration_registry;

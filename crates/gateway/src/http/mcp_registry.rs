@@ -225,6 +225,7 @@ pub async fn create_mcp_server(
     params(("server_id" = String, Path, description = "External MCP server identifier")),
     responses(
         (status = 200, body = Envelope<McpServerPayload>),
+        (status = 400, body = OpenAiErrorEnvelopeView),
         (status = 404, body = OpenAiErrorEnvelopeView)
     ),
     security(("session_cookie" = []))
@@ -262,6 +263,7 @@ pub async fn update_mcp_server(
     params(("server_id" = String, Path, description = "External MCP server identifier")),
     responses(
         (status = 200, body = Envelope<McpServerPayload>),
+        (status = 400, body = OpenAiErrorEnvelopeView),
         (status = 404, body = OpenAiErrorEnvelopeView)
     ),
     security(("session_cookie" = []))
@@ -289,6 +291,7 @@ pub async fn disable_mcp_server(
     ),
     responses(
         (status = 200, body = Envelope<McpToolsPayload>),
+        (status = 400, body = OpenAiErrorEnvelopeView),
         (status = 404, body = OpenAiErrorEnvelopeView)
     ),
     security(("session_cookie" = []))
@@ -317,6 +320,7 @@ pub async fn list_mcp_server_tools(
     params(("server_id" = String, Path, description = "External MCP server identifier")),
     responses(
         (status = 200, body = Envelope<McpDiscoveryRefreshPayload>),
+        (status = 400, body = OpenAiErrorEnvelopeView),
         (status = 404, body = OpenAiErrorEnvelopeView)
     ),
     security(("session_cookie" = []))

@@ -10,7 +10,7 @@ Oceans LLM needs a registry for external MCP servers before it can safely add gr
 
 The MCP protocol mechanics should not depend on Oceans-specific auth, budgets, request logging, admin DTOs, or store traits. At the same time, user-added MCP server records need durable persistence, discovery diagnostics, and soft-disable behavior across libsql and Postgres.
 
-Recommended server entries are useful operator affordances, but they are not tenant data and must not silently become executable registry records.
+Recommended server entries are useful admin affordances, but they are not tenant data and must not silently become executable registry records.
 
 ## Decision
 

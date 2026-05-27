@@ -1146,6 +1146,7 @@ mod tests {
         assert!(paths.contains_key("/api/v1/admin/mcp/recommended-servers"));
         assert!(paths.contains_key("/api/v1/admin/mcp/servers"));
         assert!(paths.contains_key("/api/v1/admin/mcp/servers/{server_id}"));
+        assert!(paths.contains_key("/api/v1/admin/mcp/servers/{server_id}/disable"));
         assert!(paths.contains_key("/api/v1/admin/mcp/servers/{server_id}/tools"));
         assert!(paths.contains_key("/api/v1/admin/mcp/servers/{server_id}/discovery-refresh"));
         assert!(paths.contains_key("/api/v1/auth/session"));

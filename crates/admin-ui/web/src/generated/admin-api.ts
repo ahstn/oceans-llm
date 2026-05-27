@@ -2543,6 +2543,14 @@ export interface operations {
                     "application/json": components["schemas"]["Envelope_McpServerPayload"];
                 };
             };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -2571,6 +2579,14 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_McpServerPayload"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
                 };
             };
             404: {
@@ -2603,6 +2619,14 @@ export interface operations {
                     "application/json": components["schemas"]["Envelope_McpDiscoveryRefreshPayload"];
                 };
             };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -2633,6 +2657,14 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_McpToolsPayload"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
                 };
             };
             404: {
