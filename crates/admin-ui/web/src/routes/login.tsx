@@ -1,4 +1,4 @@
-import { useState, useTransition, type FormEvent } from 'react'
+import { useEffect, useState, useTransition, type FormEvent } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
@@ -42,8 +42,13 @@ function LoginPage() {
   const oauthProviders = oidcLoginOptions.oauthProviders
   const [email, setEmail] = useState('admin@local')
   const [password, setPassword] = useState('admin')
+  const [isHydrated, setIsHydrated] = useState(false)
   const [isPending, startTransition] = useTransition()
   const ssoError = ssoErrorMessage(search.sso_error)
+
+  useEffect(() => {
+    setIsHydrated(true)
+  }, [])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -105,7 +110,7 @@ function LoginPage() {
         </FieldGroup>
 
         <div className="flex justify-end">
-          <Button type="submit" disabled={isPending}>
+          <Button type="submit" disabled={!isHydrated || isPending}>
             {isPending ? 'Signing in…' : 'Sign in'}
           </Button>
         </div>
