@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { McpServerView, McpToolView, RecommendedMcpServerView } from '@/types/api'
@@ -131,7 +131,11 @@ describe('McpServersPage', () => {
     expect(screen.getByText('/mcp/github')).toBeInTheDocument()
     await waitFor(() => expect(screen.getByText('sha256:abc123')).toBeInTheDocument())
     expect(screen.getByText('Inactive')).toBeInTheDocument()
-    expect(screen.getByText('2')).toBeInTheDocument()
+    const toolRow = screen
+      .getAllByRole('row')
+      .find((row) => within(row).queryByText('sha256:abc123') !== null)
+    expect(toolRow).toBeDefined()
+    expect(within(toolRow as HTMLTableRowElement).getByText('2')).toBeInTheDocument()
   })
 
   it('refreshes discovery and renders refresh feedback', async () => {
@@ -146,6 +150,25 @@ describe('McpServersPage', () => {
       })
     })
     await waitFor(() => expect(screen.getByText('Discovery success')).toBeInTheDocument())
+  })
+
+  it('renders refresh response errors without waiting for loader data', async () => {
+    refreshExternalMcpServerDiscoveryMock.mockResolvedValueOnce({
+      data: {
+        server: { ...server, last_error_summary: 'old upstream failure' },
+        status: 'failed',
+        error_summary: 'new upstream failure',
+        tools: [],
+      },
+    })
+    const { McpServersPage } = await import('@/routes/mcp/servers')
+
+    render(<McpServersPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+
+    await waitFor(() => expect(screen.getByText('Discovery failed')).toBeInTheDocument())
+    expect(screen.getByText('new upstream failure')).toBeInTheDocument()
+    expect(screen.queryByText('old upstream failure')).not.toBeInTheDocument()
   })
 
   it('imports recommended servers through the server function', async () => {

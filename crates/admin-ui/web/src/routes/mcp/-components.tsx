@@ -65,6 +65,7 @@ export function ServerDetail({
   toolsPending,
   toolsError,
   refreshStatus,
+  refreshErrorSummary,
   actionPending,
   onEdit,
   onDisable,
@@ -75,6 +76,7 @@ export function ServerDetail({
   toolsPending: boolean
   toolsError: string | null
   refreshStatus: string | null
+  refreshErrorSummary: string | null
   actionPending: boolean
   onEdit: (server: McpServerView) => void
   onDisable: (server: McpServerView) => void
@@ -121,7 +123,9 @@ export function ServerDetail({
           <Alert variant={refreshStatus === 'success' ? 'default' : 'destructive'}>
             <AlertTitle>Discovery {refreshStatus}</AlertTitle>
             <AlertDescription>
-              {server.last_error_summary ?? 'Discovery metadata has been refreshed.'}
+              {refreshErrorSummary ??
+                server.last_error_summary ??
+                'Discovery metadata has been refreshed.'}
             </AlertDescription>
           </Alert>
         ) : null}

@@ -4,7 +4,7 @@
 
 The external MCP registry is the control-plane record of MCP servers that Oceans LLM can discover and expose through the MCP gateway. It stores user-added server records in the database, keeps recommended server suggestions in a checked-in static catalog, discovers tool metadata through Streamable HTTP, and powers the admin diagnostics page at `/admin/mcp/servers`.
 
-This page is maintainer/operator documentation for registry diagnostics. User-facing server setup lives in [MCP Servers](../../configuration/mcp-servers.md), and client setup lives in [MCP Client Setup](../../setup/mcp-client-setup.md).
+This page is maintainer and admin documentation for registry diagnostics. User-facing server setup lives in [MCP Servers](../../configuration/mcp-servers.md), and client setup lives in [MCP Client Setup](../../setup/mcp-client-setup.md).
 
 Tool grants, toolsets, OAuth token exchange runtime, and stdio MCP servers are out of scope for this slice.
 

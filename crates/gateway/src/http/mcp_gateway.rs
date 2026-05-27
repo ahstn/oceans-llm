@@ -165,7 +165,8 @@ async fn proxy_upstream(
     let method = reqwest::Method::from_bytes(method.as_str().as_bytes()).map_err(|error| {
         GatewayError::InvalidRequest(format!("unsupported HTTP method: {error}"))
     })?;
-    let is_long_lived_receive = method == reqwest::Method::GET;
+    let is_long_lived_receive =
+        method == reqwest::Method::GET || accepts_event_stream(inbound_headers);
     let mut request = client.request(method, upstream_url).body(body);
     if !is_long_lived_receive {
         request = request.timeout(Duration::from_millis(
@@ -180,6 +181,14 @@ async fn proxy_upstream(
 
     let response = request.send().await.map_err(map_reqwest_error)?;
     response_from_upstream(response)
+}
+
+fn accepts_event_stream(headers: &HeaderMap) -> bool {
+    headers.get_all(ACCEPT).iter().any(|value| {
+        value
+            .to_str()
+            .is_ok_and(|value| value.to_ascii_lowercase().contains("text/event-stream"))
+    })
 }
 
 fn upstream_url(server: &ExternalMcpServerRecord) -> Result<Url, GatewayError> {

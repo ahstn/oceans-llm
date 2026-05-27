@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, net::IpAddr};
 
 use gateway_core::{ExternalMcpAuthMode, ExternalMcpServerRecord, GatewayError};
 use serde_json::{Map, Value};
@@ -41,17 +41,31 @@ pub fn validate_gateway_managed_server_url(
     }
     let url = Url::parse(value)
         .map_err(|error| GatewayError::InvalidRequest(format!("server_url is invalid: {error}")))?;
-    if url.scheme() != "https" {
+    if url.scheme() != "https" && !is_loopback_http_url(&url) {
         return Err(GatewayError::InvalidRequest(
-            "gateway-managed MCP credentials require an https server_url".to_string(),
+            "gateway-managed MCP credentials require an https server_url unless the host is loopback"
+                .to_string(),
         ));
     }
     Ok(())
 }
 
+fn is_loopback_http_url(url: &Url) -> bool {
+    if url.scheme() != "http" {
+        return false;
+    }
+    url.host_str().is_some_and(|host| {
+        host.eq_ignore_ascii_case("localhost")
+            || host
+                .parse::<IpAddr>()
+                .is_ok_and(|address| address.is_loopback())
+    })
+}
+
 pub fn gateway_mcp_upstream_headers(
     server: &ExternalMcpServerRecord,
 ) -> Result<Option<BTreeMap<String, String>>, GatewayError> {
+    validate_gateway_managed_server_url(&server.server_url, server.auth_mode)?;
     match server.auth_mode {
         ExternalMcpAuthMode::None => Ok(None),
         ExternalMcpAuthMode::GatewayStaticHeader => {
@@ -149,7 +163,7 @@ fn resolve_secret_ref(secret_ref: &str) -> Result<String, GatewayError> {
     let env_name = secret_env_name(secret_ref)?;
     std::env::var(env_name).map_err(|_| {
         GatewayError::InvalidRequest(format!(
-            "secret_ref env/{env_name} is not available for MCP gateway use"
+            "secret_ref env/{env_name} is not available for MCP use"
         ))
     })
 }
@@ -183,6 +197,27 @@ mod tests {
     use serde_json::{Map, json};
     use time::OffsetDateTime;
     use uuid::Uuid;
+
+    struct EnvVarGuard {
+        key: &'static str,
+    }
+
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            unsafe {
+                std::env::set_var(key, value);
+            }
+            Self { key }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            unsafe {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
 
     #[test]
     fn gateway_managed_auth_requires_secret_refs() {
@@ -223,12 +258,13 @@ mod tests {
             ("header_name".to_string(), json!("X-Upstream-Key")),
             (
                 "secret_ref".to_string(),
-                json!("env/OCEANS_MCP_DISCOVERY_TEST_KEY"),
+                json!("env/OCEANS_MCP_DISCOVERY_STATIC_HEADER_TEST_KEY"),
             ),
         ]);
-        unsafe {
-            std::env::set_var("OCEANS_MCP_DISCOVERY_TEST_KEY", "upstream-secret");
-        }
+        let _env_guard = EnvVarGuard::set(
+            "OCEANS_MCP_DISCOVERY_STATIC_HEADER_TEST_KEY",
+            "upstream-secret",
+        );
         let server = server_record(ExternalMcpAuthMode::GatewayStaticHeader, config.clone());
         let headers = gateway_mcp_upstream_headers(&server)
             .expect("headers")
@@ -247,9 +283,25 @@ mod tests {
                 .expect("headers")
                 .is_none()
         );
-        unsafe {
-            std::env::remove_var("OCEANS_MCP_DISCOVERY_TEST_KEY");
-        }
+    }
+
+    #[test]
+    fn upstream_header_resolver_revalidates_gateway_managed_https() {
+        let _env_guard = EnvVarGuard::set(
+            "OCEANS_MCP_DISCOVERY_BEARER_URL_TEST_KEY",
+            "upstream-secret",
+        );
+        let mut server = server_record(
+            ExternalMcpAuthMode::GatewayBearerToken,
+            Map::from_iter([(
+                "secret_ref".to_string(),
+                json!("env/OCEANS_MCP_DISCOVERY_BEARER_URL_TEST_KEY"),
+            )]),
+        );
+        server.server_url = "http://example.test/mcp".to_string();
+
+        let error = gateway_mcp_upstream_headers(&server).expect_err("http must fail");
+        assert_eq!(error.error_code(), "invalid_request");
     }
 
     fn server_record(

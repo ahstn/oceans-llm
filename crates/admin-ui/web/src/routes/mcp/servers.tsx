@@ -61,6 +61,7 @@ export function McpServersPage() {
   const [toolsPending, setToolsPending] = useState(false)
   const [toolsError, setToolsError] = useState<string | null>(null)
   const [refreshStatus, setRefreshStatus] = useState<string | null>(null)
+  const [refreshErrorSummary, setRefreshErrorSummary] = useState<string | null>(null)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [formState, setFormState] = useState<ServerFormState>(() => emptyServerForm())
@@ -107,6 +108,8 @@ export function McpServersPage() {
 
   function selectServer(serverId: string) {
     setSelectedServerId(serverId)
+    setRefreshStatus(null)
+    setRefreshErrorSummary(null)
     void router.navigate({
       to: '/mcp/servers',
       search: normalizeMcpServersSearch({ server_id: serverId }),
@@ -115,6 +118,8 @@ export function McpServersPage() {
 
   async function selectServerAfterCreate(serverId: string) {
     setSelectedServerId(serverId)
+    setRefreshStatus(null)
+    setRefreshErrorSummary(null)
     await router.invalidate()
     await router.navigate({
       to: '/mcp/servers',
@@ -203,6 +208,7 @@ export function McpServersPage() {
 
   function handleRefreshDiscovery(server: McpServerView) {
     setRefreshStatus('pending')
+    setRefreshErrorSummary(null)
     startTransition(async () => {
       try {
         const response = await refreshExternalMcpServerDiscovery({
@@ -210,6 +216,7 @@ export function McpServersPage() {
         })
         setTools(response.data.tools)
         setRefreshStatus(response.data.status)
+        setRefreshErrorSummary(response.data.error_summary ?? null)
         if (response.data.status === 'success') {
           toast.success('Discovery refreshed')
         } else {
@@ -218,6 +225,7 @@ export function McpServersPage() {
         await router.invalidate()
       } catch (error) {
         setRefreshStatus('failed')
+        setRefreshErrorSummary(error instanceof Error ? error.message : 'Discovery refresh failed')
         toast.error(error instanceof Error ? error.message : 'Discovery refresh failed')
       }
     })
@@ -251,6 +259,7 @@ export function McpServersPage() {
                 toolsPending={toolsPending}
                 toolsError={toolsError}
                 refreshStatus={refreshStatus}
+                refreshErrorSummary={refreshErrorSummary}
                 actionPending={isPending}
                 onEdit={openEditDialog}
                 onDisable={handleDisableServer}
