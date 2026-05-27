@@ -1,4 +1,8 @@
-use std::{io, time::Instant};
+use std::{
+    error::Error as _,
+    io,
+    time::{Duration, Instant},
+};
 
 use axum::{
     Json,
@@ -24,6 +28,7 @@ const X_OCEANS_API_KEY: &str = "x-oceans-api-key";
 const MCP_PROTOCOL_VERSION: &str = "mcp-protocol-version";
 const MCP_SESSION_ID: &str = "mcp-session-id";
 const LAST_EVENT_ID: &str = "last-event-id";
+const MAX_MCP_REQUEST_BODY_BYTES: usize = 4 * 1024 * 1024;
 
 #[tracing::instrument(
     skip(state, request),
@@ -42,7 +47,7 @@ pub async fn mcp_streamable_http_proxy(
 ) -> Response<Body> {
     let started_at = Instant::now();
     let method = request.method().clone();
-    let query = request.uri().query().map(str::to_string);
+    let has_query = request.uri().query().is_some();
     let headers = request.headers().clone();
 
     let bearer_token = match extract_mcp_gateway_api_key(&headers) {
@@ -61,6 +66,11 @@ pub async fn mcp_streamable_http_proxy(
     ) {
         return mcp_error_response(AuthError::InsufficientPrivileges.into());
     }
+    if has_query {
+        return mcp_error_response(GatewayError::InvalidRequest(
+            "query strings are not accepted on MCP gateway routes".to_string(),
+        ));
+    }
 
     let gateway = McpGatewayService::new(state.store.clone());
     let upstream = match gateway.prepare_upstream(&server_key).await {
@@ -70,8 +80,13 @@ pub async fn mcp_streamable_http_proxy(
     tracing::Span::current().record("mcp_server_id", upstream.server.mcp_server_id.to_string());
     tracing::Span::current().record("upstream_auth_mode", upstream.server.auth_mode.as_str());
 
-    let body = match to_bytes(request.into_body(), usize::MAX).await {
+    let body = match to_bytes(request.into_body(), MAX_MCP_REQUEST_BODY_BYTES).await {
         Ok(body) => body,
+        Err(error) if body_read_exceeded_limit(&error) => {
+            return mcp_error_response(GatewayError::PayloadTooLarge {
+                limit_bytes: MAX_MCP_REQUEST_BODY_BYTES,
+            });
+        }
         Err(error) => {
             return mcp_error_response(GatewayError::InvalidRequest(format!(
                 "failed reading MCP request body: {error}"
@@ -79,7 +94,7 @@ pub async fn mcp_streamable_http_proxy(
         }
     };
 
-    match proxy_upstream(&method, query.as_deref(), &headers, body, &upstream).await {
+    match proxy_upstream(&state.mcp_http_client, &method, &headers, body, &upstream).await {
         Ok(response) => {
             tracing::Span::current().record("status_code", i64::from(response.status().as_u16()));
             tracing::debug!(
@@ -90,6 +105,13 @@ pub async fn mcp_streamable_http_proxy(
         }
         Err(error) => mcp_error_response(error),
     }
+}
+
+fn body_read_exceeded_limit(error: &axum::Error) -> bool {
+    error
+        .source()
+        .is_some_and(|source| source.to_string().contains("length limit exceeded"))
+        || error.to_string().contains("length limit exceeded")
 }
 
 fn extract_mcp_gateway_api_key(headers: &HeaderMap) -> Result<String, AuthError> {
@@ -133,23 +155,23 @@ fn extract_mcp_gateway_api_key(headers: &HeaderMap) -> Result<String, AuthError>
 }
 
 async fn proxy_upstream(
+    client: &reqwest::Client,
     method: &Method,
-    inbound_query: Option<&str>,
     inbound_headers: &HeaderMap,
     body: axum::body::Bytes,
     upstream: &McpGatewayUpstream,
 ) -> Result<Response<Body>, GatewayError> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_millis(
-            upstream.server.timeout_ms.max(1) as u64,
-        ))
-        .build()
-        .map_err(|error| ProviderError::Transport(error.to_string()))?;
-    let upstream_url = upstream_url(&upstream.server, inbound_query)?;
+    let upstream_url = upstream_url(&upstream.server)?;
     let method = reqwest::Method::from_bytes(method.as_str().as_bytes()).map_err(|error| {
         GatewayError::InvalidRequest(format!("unsupported HTTP method: {error}"))
     })?;
+    let is_long_lived_receive = method == reqwest::Method::GET;
     let mut request = client.request(method, upstream_url).body(body);
+    if !is_long_lived_receive {
+        request = request.timeout(Duration::from_millis(
+            upstream.server.timeout_ms.max(1) as u64
+        ));
+    }
 
     request = apply_forwarded_request_headers(request, inbound_headers)?;
     if let Some(headers) = &upstream.headers {
@@ -160,16 +182,9 @@ async fn proxy_upstream(
     response_from_upstream(response)
 }
 
-fn upstream_url(
-    server: &ExternalMcpServerRecord,
-    inbound_query: Option<&str>,
-) -> Result<Url, GatewayError> {
-    let mut url = Url::parse(&server.server_url)
-        .map_err(|error| GatewayError::InvalidRequest(format!("server_url is invalid: {error}")))?;
-    if let Some(inbound_query) = inbound_query {
-        url.set_query(Some(inbound_query));
-    }
-    Ok(url)
+fn upstream_url(server: &ExternalMcpServerRecord) -> Result<Url, GatewayError> {
+    Url::parse(&server.server_url)
+        .map_err(|error| GatewayError::InvalidRequest(format!("server_url is invalid: {error}")))
 }
 
 fn apply_forwarded_request_headers(

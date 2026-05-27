@@ -218,7 +218,7 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
                 tracing::info_span!(
                     "http_request",
                     method = %request.method(),
-                    uri = %request.uri(),
+                    uri = %request.uri().path(),
                     request_id = %request_id,
                     http.route = tracing::field::Empty,
                     requested_model = tracing::field::Empty,

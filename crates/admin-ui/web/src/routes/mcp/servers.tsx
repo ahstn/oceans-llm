@@ -113,6 +113,15 @@ export function McpServersPage() {
     })
   }
 
+  async function selectServerAfterCreate(serverId: string) {
+    setSelectedServerId(serverId)
+    await router.invalidate()
+    await router.navigate({
+      to: '/mcp/servers',
+      search: normalizeMcpServersSearch({ server_id: serverId }),
+    })
+  }
+
   function openCreateDialog(server?: RecommendedMcpServerView) {
     setFormState(server ? formFromRecommended(server) : emptyServerForm())
     setCreateDialogOpen(true)
@@ -134,12 +143,7 @@ export function McpServersPage() {
         const response = await addMcpServer({ data: input })
         toast.success('MCP server added')
         setCreateDialogOpen(false)
-        setSelectedServerId(response.data.server.id)
-        await router.invalidate()
-        await router.navigate({
-          to: '/mcp/servers',
-          search: normalizeMcpServersSearch({ server_id: response.data.server.id }),
-        })
+        await selectServerAfterCreate(response.data.server.id)
       } catch (error) {
         toast.error(error instanceof Error ? error.message : 'Failed to add MCP server')
       }
@@ -153,12 +157,7 @@ export function McpServersPage() {
           data: { recommended_catalog_key: server.catalog_key },
         })
         toast.success('MCP server imported')
-        setSelectedServerId(response.data.server.id)
-        await router.invalidate()
-        await router.navigate({
-          to: '/mcp/servers',
-          search: normalizeMcpServersSearch({ server_id: response.data.server.id }),
-        })
+        await selectServerAfterCreate(response.data.server.id)
       } catch (error) {
         toast.error(error instanceof Error ? error.message : 'Failed to import MCP server')
       }

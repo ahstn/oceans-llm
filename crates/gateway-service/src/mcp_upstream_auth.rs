@@ -70,6 +70,24 @@ pub fn gateway_mcp_upstream_headers(
     }
 }
 
+pub fn normalize_mcp_server_key(value: &str) -> Result<String, GatewayError> {
+    let key = value.trim().to_ascii_lowercase();
+    if !(3..=64).contains(&key.len()) {
+        return Err(GatewayError::InvalidRequest(
+            "server_key must be 3-64 characters".to_string(),
+        ));
+    }
+    if !key.bytes().all(|byte| {
+        byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-' || byte == b'_'
+    }) {
+        return Err(GatewayError::InvalidRequest(
+            "server_key may only contain lowercase letters, digits, hyphen, and underscore"
+                .to_string(),
+        ));
+    }
+    Ok(key)
+}
+
 fn ensure_allowed_auth_fields(
     auth_config: &Map<String, Value>,
     allowed_fields: &[&str],

@@ -5,7 +5,7 @@ use gateway_core::{
     McpRegistryRepository, StoreError,
 };
 
-use crate::mcp_upstream_auth::gateway_mcp_upstream_headers;
+use crate::mcp_upstream_auth::{gateway_mcp_upstream_headers, normalize_mcp_server_key};
 
 #[derive(Debug, Clone)]
 pub struct McpGatewayUpstream {
@@ -31,7 +31,7 @@ where
         &self,
         server_key: &str,
     ) -> Result<McpGatewayUpstream, GatewayError> {
-        let server_key = normalize_server_key(server_key)?;
+        let server_key = normalize_mcp_server_key(server_key)?;
         let server = self
             .repo
             .get_external_mcp_server_by_key(&server_key)
@@ -55,24 +55,6 @@ where
         let headers = gateway_mcp_upstream_headers(&server)?;
         Ok(McpGatewayUpstream { server, headers })
     }
-}
-
-fn normalize_server_key(value: &str) -> Result<String, GatewayError> {
-    let key = value.trim().to_ascii_lowercase();
-    if !(3..=64).contains(&key.len()) {
-        return Err(GatewayError::InvalidRequest(
-            "server_key must be 3-64 characters".to_string(),
-        ));
-    }
-    if !key.bytes().all(|byte| {
-        byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-' || byte == b'_'
-    }) {
-        return Err(GatewayError::InvalidRequest(
-            "server_key may only contain lowercase letters, digits, hyphen, and underscore"
-                .to_string(),
-        ));
-    }
-    Ok(key)
 }
 
 #[cfg(test)]

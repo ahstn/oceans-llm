@@ -111,6 +111,8 @@ pub enum GatewayError {
     IdentityConstraint(String),
     #[error("invalid request: {0}")]
     InvalidRequest(String),
+    #[error("request body exceeds {limit_bytes} bytes")]
+    PayloadTooLarge { limit_bytes: usize },
     #[error("feature not implemented: {0}")]
     NotImplemented(String),
     #[error("MCP upstream auth requires user-scoped credentials for server `{server_key}`")]
@@ -139,6 +141,7 @@ impl GatewayError {
             Self::BudgetExceeded { .. } => 429,
             Self::IdentityConstraint(_) => 400,
             Self::InvalidRequest(_) => 400,
+            Self::PayloadTooLarge { .. } => 413,
             Self::Store(StoreError::NotFound(_)) => 404,
             Self::Store(StoreError::Conflict(_)) => 409,
             Self::Route(RouteError::ModelNotFound(_)) => 404,
@@ -170,6 +173,7 @@ impl GatewayError {
             Self::Store(StoreError::Conflict(_)) => "conflict_error",
             Self::Store(_) => "store_error",
             Self::Provider(ProviderError::InvalidRequest(_)) => "invalid_request_error",
+            Self::PayloadTooLarge { .. } => "invalid_request_error",
             Self::Provider(_) => "upstream_error",
             Self::NotImplemented(_) => "not_implemented_error",
             Self::McpUpstreamAuthRequired { .. } => "authentication_error",
@@ -208,6 +212,7 @@ impl GatewayError {
             Self::Provider(ProviderError::NotImplemented(_)) => "provider_not_implemented",
             Self::Provider(ProviderError::InvalidRequest(_)) => "invalid_request",
             Self::InvalidRequest(_) => "invalid_request",
+            Self::PayloadTooLarge { .. } => "request_body_too_large",
             Self::NotImplemented(_) => "not_implemented",
             Self::McpUpstreamAuthRequired { .. } => "mcp_upstream_auth_required",
             Self::Internal(_) => "internal_error",

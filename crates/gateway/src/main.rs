@@ -186,6 +186,7 @@ async fn run_serve_with_store(
             store: service.store().clone(),
             providers,
             metrics,
+            mcp_http_client: reqwest::Client::new(),
             identity_token_secret: Arc::new(load_identity_token_secret()),
             oidc_public_base_url: Arc::new(
                 config
@@ -486,7 +487,10 @@ mod tests {
     use serial_test::serial;
     use sqlx::Row;
     use tempfile::tempdir;
-    use tokio::net::TcpListener;
+    use tokio::{
+        net::TcpListener,
+        time::{Duration, sleep},
+    };
     use tower::ServiceExt;
     use url::Url;
     use uuid::Uuid;
@@ -1130,6 +1134,7 @@ providers:
                 store,
                 providers: provider_registry,
                 metrics: Arc::new(gateway::observability::GatewayMetrics::default()),
+                mcp_http_client: reqwest::Client::new(),
                 identity_token_secret: Arc::new("local-dev-identity-secret".to_string()),
                 oidc_public_base_url: Arc::new(None),
                 oauth_public_base_url: Arc::new(None),
@@ -1188,6 +1193,7 @@ providers:
                 store,
                 providers: provider_registry,
                 metrics: metrics.clone(),
+                mcp_http_client: reqwest::Client::new(),
                 identity_token_secret: Arc::new("local-dev-identity-secret".to_string()),
                 oidc_public_base_url: Arc::new(None),
                 oauth_public_base_url: Arc::new(None),
@@ -1240,6 +1246,27 @@ providers:
         auth_config: Value,
         status: &str,
     ) -> Uuid {
+        insert_mcp_server_with_timeout(
+            db_path,
+            server_key,
+            server_url,
+            auth_mode,
+            auth_config,
+            status,
+            30_000,
+        )
+        .await
+    }
+
+    async fn insert_mcp_server_with_timeout(
+        db_path: &Path,
+        server_key: &str,
+        server_url: &str,
+        auth_mode: &str,
+        auth_config: Value,
+        status: &str,
+        timeout_ms: i64,
+    ) -> Uuid {
         let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
             .build()
             .await
@@ -1254,7 +1281,7 @@ providers:
                   mcp_server_id, server_key, display_name, description, transport, server_url,
                   auth_mode, auth_config_json, timeout_ms, status, created_at, updated_at
                 )
-                VALUES (?1, ?2, ?3, NULL, 'streamable_http', ?4, ?5, ?6, 30000, ?7, ?8, ?8)
+                VALUES (?1, ?2, ?3, NULL, 'streamable_http', ?4, ?5, ?6, ?7, ?8, ?9, ?9)
                 "#,
                 libsql::params![
                     server_id.to_string(),
@@ -1263,6 +1290,7 @@ providers:
                     server_url.to_string(),
                     auth_mode.to_string(),
                     serde_json::to_string(&auth_config).expect("auth config json"),
+                    timeout_ms,
                     status.to_string(),
                     now,
                 ],
@@ -1337,6 +1365,7 @@ providers:
                 store: store.clone(),
                 providers,
                 metrics: Arc::new(gateway::observability::GatewayMetrics::default()),
+                mcp_http_client: reqwest::Client::new(),
                 identity_token_secret: Arc::new("local-dev-identity-secret".to_string()),
                 oidc_public_base_url: Arc::new(None),
                 oauth_public_base_url: Arc::new(None),
@@ -1414,6 +1443,7 @@ providers:
                 store,
                 providers: provider_registry,
                 metrics: Arc::new(gateway::observability::GatewayMetrics::default()),
+                mcp_http_client: reqwest::Client::new(),
                 identity_token_secret: Arc::new("local-dev-identity-secret".to_string()),
                 oidc_public_base_url: Arc::new(None),
                 oauth_public_base_url: Arc::new(None),
@@ -3871,6 +3901,256 @@ request_logging:
         unsafe {
             env::remove_var("OCEANS_MCP_DISCOVERY_PROXY_TEST_KEY");
         }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn mcp_gateway_rejects_query_strings_before_proxying() {
+        let (app, raw_key, _) = build_default_test_app(gateway_core::ProviderRegistry::new()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/mcp/github?token=upstream-secret")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({"jsonrpc": "2.0"}).to_string()))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        let payload: Value = serde_json::from_slice(&body).expect("json body");
+        assert_eq!(payload["error"]["code"], "invalid_request");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn mcp_gateway_rejects_oversized_request_bodies() {
+        let (app, raw_key, db_path) =
+            build_default_test_app(gateway_core::ProviderRegistry::new()).await;
+        insert_mcp_server(
+            &db_path,
+            "github",
+            "http://127.0.0.1:1/mcp",
+            "none",
+            json!({}),
+            "active",
+        )
+        .await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/mcp/github")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(vec![b'a'; 4 * 1024 * 1024 + 1]))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        let payload: Value = serde_json::from_slice(&body).expect("json body");
+        assert_eq!(payload["error"]["code"], "request_body_too_large");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn mcp_gateway_get_sse_is_not_capped_by_server_request_timeout() {
+        let upstream = Router::new().route(
+            "/mcp",
+            any(|| async {
+                sleep(Duration::from_millis(50)).await;
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .header("content-type", "text/event-stream")
+                    .body(Body::from("event: message\ndata: {}\n\n"))
+                    .expect("response")
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+        tokio::spawn(async move {
+            axum::serve(listener, upstream)
+                .await
+                .expect("serve upstream");
+        });
+
+        let (app, raw_key, db_path) =
+            build_default_test_app(gateway_core::ProviderRegistry::new()).await;
+        insert_mcp_server_with_timeout(
+            &db_path,
+            "github",
+            &format!("http://{addr}/mcp"),
+            "none",
+            json!({}),
+            "active",
+            1,
+        )
+        .await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/mcp/github")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .header("accept", "text/event-stream")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        assert_eq!(
+            String::from_utf8(body.to_vec()).expect("utf8"),
+            "event: message\ndata: {}\n\n"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn mcp_gateway_forwards_configured_bearer_token_to_upstream() {
+        let captured_headers = Arc::new(std::sync::Mutex::new(None::<HeaderMap>));
+        let upstream_capture = captured_headers.clone();
+        let upstream = Router::new().route(
+            "/mcp",
+            any(move |headers: HeaderMap| {
+                let upstream_capture = upstream_capture.clone();
+                async move {
+                    *upstream_capture.lock().expect("capture lock") = Some(headers);
+                    Response::builder()
+                        .status(StatusCode::OK)
+                        .header("content-type", "application/json")
+                        .body(Body::from("{}"))
+                        .expect("response")
+                }
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+        tokio::spawn(async move {
+            axum::serve(listener, upstream)
+                .await
+                .expect("serve upstream");
+        });
+
+        let (app, raw_key, db_path) =
+            build_default_test_app(gateway_core::ProviderRegistry::new()).await;
+        unsafe {
+            env::set_var("OCEANS_MCP_DISCOVERY_BEARER_TEST_TOKEN", "upstream-token");
+        }
+        insert_mcp_server(
+            &db_path,
+            "github",
+            &format!("http://{addr}/mcp"),
+            "gateway_bearer_token",
+            json!({
+                "secret_ref": "env/OCEANS_MCP_DISCOVERY_BEARER_TEST_TOKEN"
+            }),
+            "active",
+        )
+        .await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/mcp/github")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({"jsonrpc": "2.0"}).to_string()))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let headers = captured_headers
+            .lock()
+            .expect("capture lock")
+            .clone()
+            .expect("upstream captured headers");
+        assert_eq!(
+            headers
+                .get("authorization")
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer upstream-token")
+        );
+        unsafe {
+            env::remove_var("OCEANS_MCP_DISCOVERY_BEARER_TEST_TOKEN");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn mcp_gateway_proxies_user_owned_key_to_active_server() {
+        let upstream = Router::new().route(
+            "/mcp",
+            any(|| async {
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .header("content-type", "application/json")
+                    .body(Body::from("{}"))
+                    .expect("response")
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+        tokio::spawn(async move {
+            axum::serve(listener, upstream)
+                .await
+                .expect("serve upstream");
+        });
+
+        let (app, raw_key, db_path) =
+            build_default_test_app(gateway_core::ProviderRegistry::new()).await;
+        set_api_key_owner_to_user(&db_path, &raw_key, false).await;
+        insert_mcp_server(
+            &db_path,
+            "github",
+            &format!("http://{addr}/mcp"),
+            "none",
+            json!({}),
+            "active",
+        )
+        .await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/mcp/github")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({"jsonrpc": "2.0"}).to_string()))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
     }
 
     #[tokio::test]

@@ -21,7 +21,8 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::mcp_upstream_auth::{
-    gateway_mcp_upstream_headers, validate_gateway_managed_server_url, validate_mcp_auth_config,
+    gateway_mcp_upstream_headers, normalize_mcp_server_key, validate_gateway_managed_server_url,
+    validate_mcp_auth_config,
 };
 
 const DEFAULT_DISCOVERY_TIMEOUT_MS: i64 = 30_000;
@@ -152,7 +153,7 @@ where
         input: CreateExternalMcpServerInput,
     ) -> Result<ExternalMcpServerRecord, GatewayError> {
         let resolved = self.resolve_create_input(input)?;
-        let server_key = normalize_server_key(&resolved.server_key)?;
+        let server_key = normalize_mcp_server_key(&resolved.server_key)?;
         if self
             .repo
             .get_external_mcp_server_by_key(&server_key)
@@ -481,24 +482,6 @@ fn discovery_lock_for(mcp_server_id: Uuid) -> Arc<AsyncMutex<()>> {
         .clone()
 }
 
-fn normalize_server_key(value: &str) -> Result<String, GatewayError> {
-    let key = value.trim().to_ascii_lowercase();
-    if !(3..=64).contains(&key.len()) {
-        return Err(GatewayError::InvalidRequest(
-            "server_key must be 3-64 characters".to_string(),
-        ));
-    }
-    if !key.bytes().all(|byte| {
-        byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-' || byte == b'_'
-    }) {
-        return Err(GatewayError::InvalidRequest(
-            "server_key may only contain lowercase letters, digits, hyphen, and underscore"
-                .to_string(),
-        ));
-    }
-    Ok(key)
-}
-
 fn validate_display_name(value: String) -> Result<String, GatewayError> {
     let trimmed = value.trim();
     if trimmed.is_empty() || trimmed.len() > 120 {
@@ -605,8 +588,8 @@ mod tests {
 
     #[test]
     fn server_keys_are_normalized_and_limited() {
-        assert_eq!(normalize_server_key(" GitHub ").unwrap(), "github");
-        assert!(normalize_server_key("bad key").is_err());
+        assert_eq!(normalize_mcp_server_key(" GitHub ").unwrap(), "github");
+        assert!(normalize_mcp_server_key("bad key").is_err());
     }
 
     #[test]
