@@ -16,6 +16,8 @@ pub enum AuthError {
     MissingBearerToken,
     #[error("gateway api key format is invalid")]
     InvalidApiKeyFormat,
+    #[error("authorization and x-oceans-api-key headers do not match")]
+    ConflictingApiKeyHeaders,
     #[error("api key was not found")]
     ApiKeyNotFound,
     #[error("api key is revoked")]
@@ -111,6 +113,8 @@ pub enum GatewayError {
     InvalidRequest(String),
     #[error("feature not implemented: {0}")]
     NotImplemented(String),
+    #[error("MCP upstream auth requires user-scoped credentials for server `{server_key}`")]
+    McpUpstreamAuthRequired { server_key: String },
     #[error("internal error: {0}")]
     Internal(String),
 }
@@ -127,7 +131,8 @@ impl GatewayError {
             | Self::Auth(AuthError::ApiKeyNotFound)
             | Self::Auth(AuthError::ApiKeyRevoked)
             | Self::Auth(AuthError::ApiKeySecretMismatch)
-            | Self::Auth(AuthError::InvalidApiKeyFormat) => 401,
+            | Self::Auth(AuthError::InvalidApiKeyFormat)
+            | Self::Auth(AuthError::ConflictingApiKeyHeaders) => 401,
             Self::Auth(AuthError::ApiKeyOwnerInvalid) => 500,
             Self::Auth(AuthError::ModelNotGranted(_))
             | Self::Auth(AuthError::InsufficientPrivileges) => 403,
@@ -138,6 +143,7 @@ impl GatewayError {
             Self::Store(StoreError::Conflict(_)) => 409,
             Self::Route(RouteError::ModelNotFound(_)) => 404,
             Self::NotImplemented(_) | Self::Provider(ProviderError::NotImplemented(_)) => 501,
+            Self::McpUpstreamAuthRequired { .. } => 403,
             Self::Provider(ProviderError::InvalidRequest(_)) => 400,
             Self::Provider(ProviderError::UpstreamHttp { status, .. }) => *status,
             Self::Provider(ProviderError::Timeout) => 504,
@@ -166,6 +172,7 @@ impl GatewayError {
             Self::Provider(ProviderError::InvalidRequest(_)) => "invalid_request_error",
             Self::Provider(_) => "upstream_error",
             Self::NotImplemented(_) => "not_implemented_error",
+            Self::McpUpstreamAuthRequired { .. } => "authentication_error",
             Self::Internal(_) => "internal_error",
         }
     }
@@ -179,6 +186,7 @@ impl GatewayError {
             Self::Auth(AuthError::InvalidAuthorizationHeader) => "invalid_authorization_header",
             Self::Auth(AuthError::MissingBearerToken) => "missing_bearer_token",
             Self::Auth(AuthError::InvalidApiKeyFormat) => "invalid_api_key_format",
+            Self::Auth(AuthError::ConflictingApiKeyHeaders) => "conflicting_api_key_headers",
             Self::Auth(AuthError::ApiKeyNotFound) => "api_key_not_found",
             Self::Auth(AuthError::ApiKeyRevoked) => "api_key_revoked",
             Self::Auth(AuthError::ApiKeySecretMismatch) => "api_key_secret_mismatch",
@@ -201,6 +209,7 @@ impl GatewayError {
             Self::Provider(ProviderError::InvalidRequest(_)) => "invalid_request",
             Self::InvalidRequest(_) => "invalid_request",
             Self::NotImplemented(_) => "not_implemented",
+            Self::McpUpstreamAuthRequired { .. } => "mcp_upstream_auth_required",
             Self::Internal(_) => "internal_error",
         }
     }

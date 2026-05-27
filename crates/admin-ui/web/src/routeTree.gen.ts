@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SpendControlsRouteImport } from './routes/spend-controls'
 import { Route as ModelsRouteImport } from './routes/models'
+import { Route as McpServersRouteImport } from './routes/mcp/servers'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ChangePasswordRouteImport } from './routes/change-password'
 import { Route as ApiKeysRouteImport } from './routes/api-keys'
@@ -33,6 +34,11 @@ const SpendControlsRoute = SpendControlsRouteImport.update({
 const ModelsRoute = ModelsRouteImport.update({
   id: '/models',
   path: '/models',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const McpServersRoute = McpServersRouteImport.update({
+  id: '/mcp/servers',
+  path: '/mcp/servers',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -112,6 +118,7 @@ export interface FileRoutesByFullPath {
   '/change-password': typeof ChangePasswordRoute
   '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
+  '/mcp/servers': typeof McpServersRoute
   '/spend-controls': typeof SpendControlsRoute
   '/identity/teams': typeof IdentityTeamsRoute
   '/identity/users': typeof IdentityUsersRoute
@@ -129,6 +136,7 @@ export interface FileRoutesByTo {
   '/change-password': typeof ChangePasswordRoute
   '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
+  '/mcp/servers': typeof McpServersRoute
   '/spend-controls': typeof SpendControlsRoute
   '/identity/teams': typeof IdentityTeamsRoute
   '/identity/users': typeof IdentityUsersRoute
@@ -147,6 +155,7 @@ export interface FileRoutesById {
   '/change-password': typeof ChangePasswordRoute
   '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
+  '/mcp/servers': typeof McpServersRoute
   '/spend-controls': typeof SpendControlsRoute
   '/identity/teams': typeof IdentityTeamsRoute
   '/identity/users': typeof IdentityUsersRoute
@@ -166,6 +175,7 @@ export interface FileRouteTypes {
     | '/change-password'
     | '/login'
     | '/models'
+    | '/mcp/servers'
     | '/spend-controls'
     | '/identity/teams'
     | '/identity/users'
@@ -183,6 +193,7 @@ export interface FileRouteTypes {
     | '/change-password'
     | '/login'
     | '/models'
+    | '/mcp/servers'
     | '/spend-controls'
     | '/identity/teams'
     | '/identity/users'
@@ -200,6 +211,7 @@ export interface FileRouteTypes {
     | '/change-password'
     | '/login'
     | '/models'
+    | '/mcp/servers'
     | '/spend-controls'
     | '/identity/teams'
     | '/identity/users'
@@ -218,6 +230,7 @@ export interface RootRouteChildren {
   ChangePasswordRoute: typeof ChangePasswordRoute
   LoginRoute: typeof LoginRoute
   ModelsRoute: typeof ModelsRoute
+  McpServersRoute: typeof McpServersRoute
   SpendControlsRoute: typeof SpendControlsRoute
   IdentityTeamsRoute: typeof IdentityTeamsRoute
   IdentityUsersRoute: typeof IdentityUsersRoute
@@ -243,6 +256,13 @@ declare module '@tanstack/react-router' {
       path: '/models'
       fullPath: '/models'
       preLoaderRoute: typeof ModelsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mcp/servers': {
+      id: '/mcp/servers'
+      path: '/mcp/servers'
+      fullPath: '/mcp/servers'
+      preLoaderRoute: typeof McpServersRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -346,6 +366,7 @@ const rootRouteChildren: RootRouteChildren = {
   ChangePasswordRoute: ChangePasswordRoute,
   LoginRoute: LoginRoute,
   ModelsRoute: ModelsRoute,
+  McpServersRoute: McpServersRoute,
   SpendControlsRoute: SpendControlsRoute,
   IdentityTeamsRoute: IdentityTeamsRoute,
   IdentityUsersRoute: IdentityUsersRoute,

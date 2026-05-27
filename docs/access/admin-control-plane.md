@@ -30,7 +30,7 @@ These areas are backed by real gateway APIs today:
 - spend budget management for users and teams
 - request-log list and detail inspection
 - MCP invocation list and detail inspection
-- MCP recommended-server catalog, registry CRUD, soft-disable, tool list, and discovery refresh APIs
+- MCP server registry UI, recommended-server catalog, registry CRUD, soft-disable, tool list, and discovery refresh
 
 ## Live But Still Maturing Surfaces
 
@@ -138,6 +138,10 @@ Admins can:
 - see normalized harness and bounded raw `User-Agent` detail for request logs
 - inspect request-linked MCP invocations by request id, server, tool, API key, user, team, status, and time range
 - compare leaderboard users with average tool exposure and invocation counts
+- manage MCP servers from `/admin/mcp/servers`
+- inspect MCP discovery status as the current server health signal
+- refresh MCP discovery and see bounded failure feedback
+- inspect discovered MCP tool schema hashes, schema versions, active state, and discovery timestamps
 
 Request-log payload policy is read-only in the admin UI. Admins configure it through `gateway.yaml`; see [observability-and-request-logs.md](../operations/observability-and-request-logs.md).
 
@@ -147,7 +151,7 @@ Current limits:
 - admin mutation audit logs are still tracked separately in [issue #99](https://github.com/ahstn/oceans-llm/issues/99)
 - request-log detail missing rows return `404 not_found`
 - request-log filtering ergonomics still have follow-up work
-- MCP invocation persistence and API behavior are still hardening in the backend MCP observability slice
+- MCP grants, toolsets, and user-scoped OAuth credentials are still future work
 
 ## Service Callers Today
 

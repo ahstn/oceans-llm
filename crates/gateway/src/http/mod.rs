@@ -7,6 +7,7 @@ pub mod handlers;
 pub mod identity;
 pub mod identity_lifecycle;
 pub mod identity_views;
+pub mod mcp_gateway;
 pub mod mcp_registry;
 pub mod models;
 pub mod observability;
@@ -26,8 +27,8 @@ use tower_http::{
 };
 
 use self::{
-    api_keys::*, handlers::*, identity::*, mcp_registry::*, models::*, observability::*, spend::*,
-    state::AppState,
+    api_keys::*, handlers::*, identity::*, mcp_gateway::*, mcp_registry::*, models::*,
+    observability::*, spend::*, state::AppState,
 };
 
 pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
@@ -199,6 +200,12 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
         .route("/v1/chat/completions", post(v1_chat_completions))
         .route("/v1/responses", post(v1_responses))
         .route("/v1/embeddings", post(v1_embeddings))
+        .route(
+            "/mcp/{server_key}",
+            post(mcp_streamable_http_proxy)
+                .get(mcp_streamable_http_proxy)
+                .delete(mcp_streamable_http_proxy),
+        )
         .with_state(state)
         .layer(
             TraceLayer::new_for_http().make_span_with(|request: &http::Request<_>| {

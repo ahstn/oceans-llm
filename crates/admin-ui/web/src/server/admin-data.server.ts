@@ -7,6 +7,7 @@ import type {
   ChangePasswordInput,
   CreateApiKeyInput,
   CreateApiKeyResult,
+  CreateMcpServerInput,
   UpdateApiKeyInput,
   UpdateApiKeyResult,
   CreateTeamInput,
@@ -25,6 +26,11 @@ import type {
   McpInvocationDetailView,
   McpInvocationFiltersInput,
   McpInvocationPageView,
+  McpDiscoveryRefreshPayload,
+  McpServerPayload,
+  McpServersPayload,
+  McpToolsPayload,
+  RecommendedMcpServersPayload,
   ModelPageView,
   PasswordInviteResult,
   PasswordLoginInput,
@@ -38,6 +44,7 @@ import type {
   TeamManagementView,
   TransferTeamMemberInput,
   UpdateTeamInput,
+  UpdateMcpServerInput,
   UpdateUserInput,
   UpsertBudgetInput,
   UpsertBudgetResultView,
@@ -282,6 +289,89 @@ export async function getMcpInvocationDetail(
   return unwrapGatewayResponse(
     await client.GET('/api/v1/admin/observability/mcp-invocations/{mcp_tool_invocation_id}', {
       params: { path: { mcp_tool_invocation_id: invocationId } },
+    }),
+  )
+}
+
+export async function listRecommendedMcpServers(): Promise<
+  ApiEnvelope<RecommendedMcpServersPayload>
+> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(await client.GET('/api/v1/admin/mcp/recommended-servers'))
+}
+
+export async function listMcpServers(params?: {
+  include_disabled?: boolean
+}): Promise<ApiEnvelope<McpServersPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.GET('/api/v1/admin/mcp/servers', {
+      params: {
+        query: {
+          include_disabled: params?.include_disabled,
+        },
+      },
+    }),
+  )
+}
+
+export async function createMcpServer(
+  input: CreateMcpServerInput,
+): Promise<ApiEnvelope<McpServerPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.POST('/api/v1/admin/mcp/servers', {
+      body: input,
+    }),
+  )
+}
+
+export async function updateMcpServer(
+  serverId: string,
+  input: UpdateMcpServerInput,
+): Promise<ApiEnvelope<McpServerPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.PATCH('/api/v1/admin/mcp/servers/{server_id}', {
+      params: { path: { server_id: serverId } },
+      body: input,
+    }),
+  )
+}
+
+export async function disableMcpServer(serverId: string): Promise<ApiEnvelope<McpServerPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.POST('/api/v1/admin/mcp/servers/{server_id}/disable', {
+      params: { path: { server_id: serverId } },
+    }),
+  )
+}
+
+export async function listMcpServerTools(
+  serverId: string,
+  params?: { include_inactive?: boolean },
+): Promise<ApiEnvelope<McpToolsPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.GET('/api/v1/admin/mcp/servers/{server_id}/tools', {
+      params: {
+        path: { server_id: serverId },
+        query: {
+          include_inactive: params?.include_inactive,
+        },
+      },
+    }),
+  )
+}
+
+export async function refreshMcpServerDiscovery(
+  serverId: string,
+): Promise<ApiEnvelope<McpDiscoveryRefreshPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.POST('/api/v1/admin/mcp/servers/{server_id}/discovery-refresh', {
+      params: { path: { server_id: serverId } },
     }),
   )
 }

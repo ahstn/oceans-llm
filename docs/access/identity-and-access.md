@@ -1,6 +1,6 @@
 # Identity and Access
 
-`See also`: [Data Relationships](../reference/data-relationships.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Service Accounts](service-accounts.md), [OIDC and SSO](oidc-and-sso-status.md), [Admin Control Plane](admin-control-plane.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Tagging](../operations/tagging.md), [MCP Invocations](../operations/observability/mcp-invocations.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../adr/2026-05-10-team-service-accounts.md), [ADR: Admin Identity Lifecycle and Team Member Workflow Hardening](../adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md)
+`See also`: [MCP Servers](../configuration/mcp-servers.md), [MCP Client Setup](../setup/mcp-client-setup.md), [Data Relationships](../reference/data-relationships.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Service Accounts](service-accounts.md), [OIDC and SSO](oidc-and-sso-status.md), [Admin Control Plane](admin-control-plane.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Tagging](../operations/tagging.md), [MCP Invocations](../operations/observability/mcp-invocations.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../adr/2026-05-10-team-service-accounts.md), [ADR: Admin Identity Lifecycle and Team Member Workflow Hardening](../adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md)
 
 This page describes the live identity model across the gateway and admin control plane.
 
@@ -139,6 +139,35 @@ Effective model access is layered:
 This keeps API-key grants as the baseline contract while allowing narrower restrictions above them.
 
 For service accounts, the team allowlist applies through the owning team. User allowlists do not apply because service accounts are not users.
+
+## MCP Gateway API-Key Contract
+
+MCP gateway data-plane routes use the same Oceans API-key identity model as `/v1/*`, with a narrower header contract:
+
+```text
+GET /mcp/{server_key}
+POST /mcp/{server_key}
+DELETE /mcp/{server_key}
+```
+
+Accepted inbound credential headers:
+
+- preferred: `Authorization: Bearer <oceans-api-key>`
+- secondary explicit header: `x-oceans-api-key: <oceans-api-key>`
+
+If both are present, the raw key extracted from `Authorization` must exactly match `x-oceans-api-key`. A malformed `Authorization` header is rejected even when `x-oceans-api-key` is present.
+
+Not accepted:
+
+- `x-api-key`
+- `API-Key`
+- query-string credentials
+- upstream provider credentials
+- upstream MCP credentials
+
+For this slice, valid user-owned and service-account-owned Oceans API keys may proxy to active MCP servers that use `none`, `gateway_static_header`, or `gateway_bearer_token`. Servers that require user-scoped upstream credentials return `403 mcp_upstream_auth_required`.
+
+Inbound Oceans credentials are never upstream credentials. The gateway strips inbound `Authorization` and `x-oceans-api-key` before proxying to a registered MCP server, then applies only configured gateway-managed upstream auth when the server record requires it.
 
 ## Request Logging Preference
 

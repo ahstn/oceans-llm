@@ -29,6 +29,8 @@ pub struct GatewayMetrics {
     tool_cardinality: Histogram<u64>,
     mcp_tool_invocations: Counter<u64>,
     mcp_tool_invocation_duration: Histogram<f64>,
+    mcp_discovery_refreshes: Counter<u64>,
+    mcp_discovery_refresh_duration: Histogram<f64>,
     usage_records: Counter<u64>,
     usage_record_failures: Counter<u64>,
     #[cfg(any(test, debug_assertions))]
@@ -63,6 +65,14 @@ pub struct McpToolInvocationMetric<'a> {
     pub policy_result: &'a str,
     pub owner_kind: &'a str,
     pub latency_seconds: Option<f64>,
+}
+
+#[derive(Debug, Clone)]
+pub struct McpDiscoveryRefreshMetric<'a> {
+    pub server_id: &'a str,
+    pub result: &'a str,
+    pub status: &'a str,
+    pub latency_seconds: f64,
 }
 
 #[cfg(any(test, debug_assertions))]
@@ -119,6 +129,15 @@ impl GatewayMetrics {
                 .f64_histogram("gateway.mcp.tool_invocation.duration")
                 .with_unit("s")
                 .with_description("MCP tool invocation duration in seconds")
+                .build(),
+            mcp_discovery_refreshes: meter
+                .u64_counter("gateway.mcp.discovery.refreshes")
+                .with_description("MCP discovery refresh attempts")
+                .build(),
+            mcp_discovery_refresh_duration: meter
+                .f64_histogram("gateway.mcp.discovery.refresh.duration")
+                .with_unit("s")
+                .with_description("MCP discovery refresh duration in seconds")
                 .build(),
             usage_records: meter
                 .u64_counter("gateway.chat.usage_records")
@@ -234,6 +253,20 @@ impl GatewayMetrics {
         {
             self.mcp_tool_invocation_duration
                 .record(latency_seconds, &attrs);
+        }
+    }
+
+    pub fn record_mcp_discovery_refresh(&self, metric: &McpDiscoveryRefreshMetric<'_>) {
+        let attrs = vec![
+            KeyValue::new("server_id", metric.server_id.to_string()),
+            KeyValue::new("result", metric.result.to_string()),
+            KeyValue::new("status", metric.status.to_string()),
+        ];
+
+        self.mcp_discovery_refreshes.add(1, &attrs);
+        if metric.latency_seconds >= 0.0 {
+            self.mcp_discovery_refresh_duration
+                .record(metric.latency_seconds, &attrs);
         }
     }
 

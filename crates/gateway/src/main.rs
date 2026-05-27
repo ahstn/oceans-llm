@@ -460,9 +460,9 @@ mod tests {
     use axum::{
         Router,
         body::{Body, Bytes, to_bytes},
-        http::{Request, StatusCode},
+        http::{HeaderMap, Request, StatusCode},
         response::Response,
-        routing::post,
+        routing::{any, post},
     };
     use gateway_core::{
         ApiKeyRepository, AuthMode, BudgetAlertChannel, BudgetAlertDeliveryRecord,
@@ -1230,6 +1230,46 @@ providers:
         }];
 
         build_test_app(seed_providers, models, providers).await
+    }
+
+    async fn insert_mcp_server(
+        db_path: &Path,
+        server_key: &str,
+        server_url: &str,
+        auth_mode: &str,
+        auth_config: Value,
+        status: &str,
+    ) -> Uuid {
+        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
+            .build()
+            .await
+            .expect("libsql db");
+        let connection = db.connect().expect("libsql connection");
+        let server_id = Uuid::new_v4();
+        let now = time::OffsetDateTime::now_utc().unix_timestamp();
+        connection
+            .execute(
+                r#"
+                INSERT INTO external_mcp_servers (
+                  mcp_server_id, server_key, display_name, description, transport, server_url,
+                  auth_mode, auth_config_json, timeout_ms, status, created_at, updated_at
+                )
+                VALUES (?1, ?2, ?3, NULL, 'streamable_http', ?4, ?5, ?6, 30000, ?7, ?8, ?8)
+                "#,
+                libsql::params![
+                    server_id.to_string(),
+                    server_key.to_string(),
+                    server_key.to_string(),
+                    server_url.to_string(),
+                    auth_mode.to_string(),
+                    serde_json::to_string(&auth_config).expect("auth config json"),
+                    status.to_string(),
+                    now,
+                ],
+            )
+            .await
+            .expect("insert mcp server");
+        server_id
     }
 
     async fn build_default_test_app_with_metrics(
@@ -3688,6 +3728,185 @@ request_logging:
         assert_eq!(logs.len(), 1);
         assert_eq!(logs[0].metadata["stream"], Value::Bool(true));
         assert_eq!(logs[0].metadata["operation"], "chat_completions");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn mcp_gateway_returns_401_before_proxying_when_unauthenticated() {
+        let (app, _, _) = build_default_test_app(gateway_core::ProviderRegistry::new()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/mcp/github")
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({"jsonrpc": "2.0"}).to_string()))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response
+                .headers()
+                .get("www-authenticate")
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer")
+        );
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        let payload: Value = serde_json::from_slice(&body).expect("json body");
+        assert_eq!(payload["error"]["code"], "missing_authorization_header");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn mcp_gateway_proxies_active_server_and_strips_gateway_credentials() {
+        let captured_headers = Arc::new(std::sync::Mutex::new(None::<HeaderMap>));
+        let upstream_capture = captured_headers.clone();
+        let upstream = Router::new().route(
+            "/mcp",
+            any(move |headers: HeaderMap| {
+                let upstream_capture = upstream_capture.clone();
+                async move {
+                    *upstream_capture.lock().expect("capture lock") = Some(headers);
+                    Response::builder()
+                        .status(StatusCode::ACCEPTED)
+                        .header("content-type", "text/event-stream")
+                        .header("mcp-session-id", "sess_123")
+                        .body(Body::from("event: message\ndata: {}\n\n"))
+                        .expect("response")
+                }
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+        tokio::spawn(async move {
+            axum::serve(listener, upstream)
+                .await
+                .expect("serve upstream");
+        });
+
+        let (app, raw_key, db_path) =
+            build_default_test_app(gateway_core::ProviderRegistry::new()).await;
+        unsafe {
+            env::set_var("OCEANS_MCP_DISCOVERY_PROXY_TEST_KEY", "upstream-secret");
+        }
+        insert_mcp_server(
+            &db_path,
+            "github",
+            &format!("http://{addr}/mcp"),
+            "gateway_static_header",
+            json!({
+                "header_name": "X-Upstream-Key",
+                "secret_ref": "env/OCEANS_MCP_DISCOVERY_PROXY_TEST_KEY"
+            }),
+            "active",
+        )
+        .await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/mcp/github")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .header("x-oceans-api-key", &raw_key)
+                    .header("content-type", "application/json")
+                    .header("accept", "application/json, text/event-stream")
+                    .header("mcp-protocol-version", "2025-11-25")
+                    .body(Body::from(json!({"jsonrpc": "2.0"}).to_string()))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        assert_eq!(
+            response
+                .headers()
+                .get("content-type")
+                .and_then(|value| value.to_str().ok()),
+            Some("text/event-stream")
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get("mcp-session-id")
+                .and_then(|value| value.to_str().ok()),
+            Some("sess_123")
+        );
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        assert_eq!(
+            String::from_utf8(body.to_vec()).expect("utf8"),
+            "event: message\ndata: {}\n\n"
+        );
+
+        let headers = captured_headers
+            .lock()
+            .expect("capture lock")
+            .clone()
+            .expect("upstream captured headers");
+        assert!(headers.get("authorization").is_none());
+        assert!(headers.get("x-oceans-api-key").is_none());
+        assert_eq!(
+            headers
+                .get("x-upstream-key")
+                .and_then(|value| value.to_str().ok()),
+            Some("upstream-secret")
+        );
+        assert_eq!(
+            headers
+                .get("mcp-protocol-version")
+                .and_then(|value| value.to_str().ok()),
+            Some("2025-11-25")
+        );
+        unsafe {
+            env::remove_var("OCEANS_MCP_DISCOVERY_PROXY_TEST_KEY");
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn mcp_gateway_requires_user_scoped_upstream_auth_for_obo_modes() {
+        let (app, raw_key, db_path) =
+            build_default_test_app(gateway_core::ProviderRegistry::new()).await;
+        insert_mcp_server(
+            &db_path,
+            "github",
+            "https://example.test/mcp",
+            "oauth_obo",
+            json!({}),
+            "active",
+        )
+        .await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/mcp/github")
+                    .header("authorization", format!("Bearer {raw_key}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({"jsonrpc": "2.0"}).to_string()))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        let payload: Value = serde_json::from_slice(&body).expect("json body");
+        assert_eq!(payload["error"]["code"], "mcp_upstream_auth_required");
     }
 
     #[tokio::test]
