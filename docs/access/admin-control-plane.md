@@ -1,6 +1,6 @@
 # Admin Control Plane
 
-`See also`: [Identity and Access](identity-and-access.md), [Service Accounts](service-accounts.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../operations/observability/mcp-invocations.md), [Agent Harness Usage](../operations/agent-harness-usage.md), [Admin API Contract Workflow](../reference/admin-api-contract-workflow.md), [End-to-End Contract Tests](../reference/e2e-contract-tests.md), [OIDC and SSO](oidc-and-sso-status.md)
+`See also`: [Identity and Access](identity-and-access.md), [Service Accounts](service-accounts.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../operations/observability/mcp-invocations.md), [MCP Registry and Discovery](../operations/observability/mcp-registry-and-discovery.md), [Agent Harness Usage](../operations/agent-harness-usage.md), [Admin API Contract Workflow](../reference/admin-api-contract-workflow.md), [End-to-End Contract Tests](../reference/e2e-contract-tests.md), [OIDC and SSO](oidc-and-sso-status.md)
 
 This page describes what admins can actually do in the admin UI today.
 
@@ -30,6 +30,7 @@ These areas are backed by real gateway APIs today:
 - spend budget management for users and teams
 - request-log list and detail inspection
 - MCP invocation list and detail inspection
+- MCP recommended-server catalog, registry CRUD, soft-disable, tool list, and discovery refresh APIs
 
 ## Live But Still Maturing Surfaces
 

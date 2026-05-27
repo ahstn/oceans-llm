@@ -12,6 +12,8 @@ Rust-first LLM gateway workspace with an embedded TanStack Start admin control p
   - Rust HTTP runtime for `/healthz`, `/readyz`, `/v1/*`, and `/api/v1/admin/*`
 - `crates/gateway-core`
   - shared domain types, traits, OpenAI-compatible Chat/Responses/Embeddings DTOs, and errors
+- `crates/gateway-mcp`
+  - protocol-only MCP JSON-RPC, Streamable HTTP discovery, tool normalization, and schema hashing
 - `crates/gateway-store`
   - libsql or SQLite and PostgreSQL stores, migrations, and seed behavior
 - `crates/gateway-service`
@@ -122,6 +124,7 @@ Use the docs site instead of treating this file as the full admin and maintainer
   - [Budgets and Spending](docs/operations/budgets-and-spending.md)
 - observability:
   - [Observability and Request Logs](docs/operations/observability-and-request-logs.md)
+  - [MCP Registry and Discovery](docs/operations/observability/mcp-registry-and-discovery.md)
 - admin UI:
   - [Admin Control Plane](docs/access/admin-control-plane.md)
 - maintainer-facing docs source notes:

@@ -7,7 +7,7 @@ This page is maintainer-facing. It explains how the live admin contract is gener
 ## Source of Truth
 
 - contract DTOs and OpenAPI document: [../crates/gateway/src/http/admin_contract.rs](../../crates/gateway/src/http/admin_contract.rs)
-- route annotations: [../crates/gateway/src/http/identity.rs](../../crates/gateway/src/http/identity.rs), [../crates/gateway/src/http/spend.rs](../../crates/gateway/src/http/spend.rs), [../crates/gateway/src/http/observability.rs](../../crates/gateway/src/http/observability.rs), [../crates/gateway/src/http/api_keys.rs](../../crates/gateway/src/http/api_keys.rs)
+- route annotations: [../crates/gateway/src/http/identity.rs](../../crates/gateway/src/http/identity.rs), [../crates/gateway/src/http/spend.rs](../../crates/gateway/src/http/spend.rs), [../crates/gateway/src/http/observability.rs](../../crates/gateway/src/http/observability.rs), [../crates/gateway/src/http/api_keys.rs](../../crates/gateway/src/http/api_keys.rs), [../crates/gateway/src/http/mcp_registry.rs](../../crates/gateway/src/http/mcp_registry.rs)
 - OpenAPI export binary: [../crates/gateway/src/bin/export_admin_openapi.rs](../../crates/gateway/src/bin/export_admin_openapi.rs)
 - generated artifact: [../crates/gateway/openapi/admin-api.json](../../crates/gateway/openapi/admin-api.json)
 - generated TypeScript types: [../crates/admin-ui/web/src/generated/admin-api.ts](../../crates/admin-ui/web/src/generated/admin-api.ts)
@@ -84,6 +84,7 @@ Current live surfaces:
 - request logs
 - leaderboard
 - agent harness usage
+- MCP registry and discovery
 - Models
 
 That split matters when deciding whether a UI page belongs in this workflow. Once a page reads from gateway APIs, changes to its admin API shape belong in generated contract maintenance even if the UI workflow is still maturing.

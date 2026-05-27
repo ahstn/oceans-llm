@@ -1,0 +1,170 @@
+[
+  {
+    "catalog_key": "github",
+    "display_name": "GitHub MCP Server",
+    "description": "GitHub repository, issue, pull request, and workflow automation tools exposed through Streamable HTTP.",
+    "transport": "streamable_http",
+    "server_url": "https://api.githubcopilot.com/mcp/",
+    "auth_mode": "user_passthrough",
+    "auth_config": {
+      "header": "Authorization",
+      "token_type": "bearer"
+    },
+    "documentation_url": "https://docs.github.com/en/copilot/how-tos/provide-context/use-mcp/use-the-github-mcp-server",
+    "tags": ["source-control", "developer-tools"]
+  },
+  {
+    "catalog_key": "gitlab",
+    "display_name": "GitLab MCP Server",
+    "description": "GitLab project, issue, merge request, and CI access through a user-provided MCP server endpoint.",
+    "transport": "streamable_http",
+    "server_url": "https://gitlab.com/api/v4/mcp",
+    "auth_mode": "user_passthrough",
+    "auth_config": {
+      "header": "Authorization",
+      "token_type": "bearer"
+    },
+    "documentation_url": "https://docs.gitlab.com/user/project/mcp_server/",
+    "tags": ["source-control", "developer-tools"]
+  },
+  {
+    "catalog_key": "linear",
+    "display_name": "Linear MCP Server",
+    "description": "Linear issues, projects, cycles, and team planning tools using Linear's remote MCP endpoint.",
+    "transport": "streamable_http",
+    "server_url": "https://mcp.linear.app/mcp",
+    "auth_mode": "oauth_obo",
+    "auth_config": {
+      "token_exchange": "required",
+      "token_type": "bearer"
+    },
+    "documentation_url": "https://linear.app/docs/mcp",
+    "tags": ["product", "planning"]
+  },
+  {
+    "catalog_key": "notion",
+    "display_name": "Notion MCP Server",
+    "description": "Read and write Notion workspace content through Notion's official remote MCP server and OAuth permissions.",
+    "transport": "streamable_http",
+    "server_url": "https://mcp.notion.com/mcp",
+    "auth_mode": "oauth_obo",
+    "auth_config": {
+      "token_exchange": "required",
+      "token_type": "bearer"
+    },
+    "documentation_url": "https://developers.notion.com/guides/mcp/get-started-with-mcp",
+    "tags": ["knowledge-base", "productivity"]
+  },
+  {
+    "catalog_key": "atlassian",
+    "display_name": "Atlassian Rovo MCP Server",
+    "description": "Cloud-hosted access to Jira, Confluence, Compass, and other Atlassian Cloud data via Atlassian's Rovo MCP bridge.",
+    "transport": "streamable_http",
+    "server_url": "https://mcp.atlassian.com/v1/mcp/authv2",
+    "auth_mode": "oauth_obo",
+    "auth_config": {
+      "token_exchange": "required",
+      "token_type": "bearer"
+    },
+    "documentation_url": "https://support.atlassian.com/atlassian-rovo-mcp-server/docs/getting-started-with-the-atlassian-remote-mcp-server/",
+    "tags": ["planning", "knowledge-base", "developer-tools"]
+  },
+  {
+    "catalog_key": "slack",
+    "display_name": "Slack MCP Server",
+    "description": "Search Slack messages and channels, read workspace context, and perform approved Slack actions through Slack's official hosted MCP endpoint.",
+    "transport": "streamable_http",
+    "server_url": "https://mcp.slack.com/mcp",
+    "auth_mode": "oauth_obo",
+    "auth_config": {
+      "token_exchange": "required",
+      "token_type": "bearer"
+    },
+    "documentation_url": "https://docs.slack.dev/ai/slack-mcp-server",
+    "tags": ["communication", "productivity"]
+  },
+  {
+    "catalog_key": "pendo",
+    "display_name": "Pendo MCP Server",
+    "description": "Bring Pendo product analytics, visitor activity, engagement metrics, and customer context into MCP-compatible AI clients.",
+    "transport": "streamable_http",
+    "server_url": "https://app.pendo.io/mcp/v0/shttp",
+    "auth_mode": "oauth_obo",
+    "auth_config": {
+      "token_exchange": "required",
+      "token_type": "bearer"
+    },
+    "documentation_url": "https://support.pendo.io/hc/en-us/articles/41102236924955-Connect-to-the-Pendo-MCP-server",
+    "tags": ["product-analytics", "product"]
+  },
+  {
+    "catalog_key": "figma",
+    "display_name": "Figma MCP Server",
+    "description": "Access Figma design file context, variables, components, Code Connect metadata, and design-to-code workflows through Figma's hosted MCP server.",
+    "transport": "streamable_http",
+    "server_url": "https://mcp.figma.com/mcp",
+    "auth_mode": "oauth_obo",
+    "auth_config": {
+      "token_exchange": "required",
+      "token_type": "bearer"
+    },
+    "documentation_url": "https://developers.figma.com/docs/figma-mcp-server/remote-server-installation/",
+    "tags": ["design", "developer-tools"]
+  },
+  {
+    "catalog_key": "context7",
+    "display_name": "Context7 MCP Server",
+    "description": "Fetch up-to-date library documentation and code examples for AI coding agents through Context7's remote MCP endpoint.",
+    "transport": "streamable_http",
+    "server_url": "https://mcp.context7.com/mcp",
+    "auth_mode": "oauth_obo",
+    "auth_config": {
+      "token_exchange": "supported",
+      "token_type": "bearer"
+    },
+    "documentation_url": "https://context7.com/docs/resources/all-clients",
+    "tags": ["documentation", "developer-tools"]
+  },
+  {
+    "catalog_key": "google_drive",
+    "display_name": "Google Drive MCP Server",
+    "description": "Developer-preview Google Workspace MCP endpoint for searching, retrieving, and managing Google Drive files through Google OAuth permissions.",
+    "transport": "streamable_http",
+    "server_url": "https://drivemcp.googleapis.com/mcp/v1",
+    "auth_mode": "oauth_obo",
+    "auth_config": {
+      "token_exchange": "required",
+      "token_type": "bearer"
+    },
+    "documentation_url": "https://developers.google.com/workspace/drive/api/guides/configure-mcp-server",
+    "tags": ["productivity", "storage", "google-workspace"]
+  },
+  {
+    "catalog_key": "datadog",
+    "display_name": "Datadog MCP Server",
+    "description": "Query Datadog observability data including logs, metrics, traces, monitors, incidents, and dashboards through Datadog's managed MCP server.",
+    "transport": "streamable_http",
+    "server_url": "https://mcp.datadoghq.com/api/unstable/mcp-server/mcp",
+    "auth_mode": "oauth_obo",
+    "auth_config": {
+      "token_exchange": "required",
+      "token_type": "bearer"
+    },
+    "documentation_url": "https://docs.datadoghq.com/bits_ai/mcp_server/setup/",
+    "tags": ["observability", "devops"]
+  },
+  {
+    "catalog_key": "aws",
+    "display_name": "AWS MCP Server",
+    "description": "Managed AWS MCP endpoint for interacting with AWS services using AWS IAM credentials and SigV4-signed Streamable HTTP requests.",
+    "transport": "streamable_http",
+    "server_url": "https://aws-mcp.us-east-1.api.aws/mcp",
+    "auth_mode": "user_passthrough",
+    "auth_config": {
+      "header": "Authorization",
+      "token_type": "aws_sigv4"
+    },
+    "documentation_url": "https://docs.aws.amazon.com/aws-mcp/latest/userguide/getting-started-aws-mcp-server.html",
+    "tags": ["cloud", "infrastructure", "developer-tools"]
+  }
+]

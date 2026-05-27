@@ -2,6 +2,7 @@ mod api_keys;
 mod budget_alerts;
 mod budgets;
 mod identity;
+mod mcp_registry;
 mod mcp_tool_invocations;
 mod models;
 mod pricing_catalog;
@@ -19,14 +20,17 @@ use gateway_core::{
     BudgetAlertHistoryQuery, BudgetAlertHistoryRecord, BudgetAlertRecord, BudgetAlertRepository,
     BudgetCadence, BudgetRepository, CONFIG_SEED_SERVICE_ACCOUNT_ID,
     CONFIG_SEED_SERVICE_ACCOUNT_KEY, CONFIG_SEED_TEAM_ID, CONFIG_SEED_TEAM_KEY,
+    ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus,
+    ExternalMcpServerRecord, ExternalMcpServerStatus, ExternalMcpToolRecord, ExternalMcpTransport,
     FocusExportAggregateRecord, FocusExportDiagnosticsRecord, GatewayModel, GlobalRole,
     IdentityRepository, IdentityUserRecord, MAX_MCP_TOOL_INVOCATION_PAGE_SIZE,
-    McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationPayloadRecord,
-    McpToolInvocationQuery, McpToolInvocationRecord, McpToolInvocationRepository,
-    McpToolInvocationStatus, McpToolPolicyResult, MembershipRole, ModelAccessMode,
-    ModelPricingRecord, ModelRepository, ModelRoute, Money4, NewApiKeyRecord, OauthJitMembership,
-    OauthJitPolicy, OauthLoginStateRecord, OauthProviderRecord, OidcJitMembership, OidcJitPolicy,
-    OidcLoginStateRecord, OidcProviderRecord, PasswordInvitationRecord, PricingCatalogCacheRecord,
+    McpRegistryRepository, McpToolInvocationDetail, McpToolInvocationPage,
+    McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
+    McpToolInvocationRepository, McpToolInvocationStatus, McpToolPolicyResult, MembershipRole,
+    ModelAccessMode, ModelPricingRecord, ModelRepository, ModelRoute, Money4, NewApiKeyRecord,
+    NewExternalMcpServerRecord, OauthJitMembership, OauthJitPolicy, OauthLoginStateRecord,
+    OauthProviderRecord, OidcJitMembership, OidcJitPolicy, OidcLoginStateRecord,
+    OidcProviderRecord, PasswordInvitationRecord, PricingCatalogCacheRecord,
     PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
     ProviderConnection, ProviderRepository, RequestAttemptRecord, RequestAttemptRepository,
     RequestAttemptStatus, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
@@ -34,7 +38,8 @@ use gateway_core::{
     SYSTEM_BOOTSTRAP_ADMIN_USER_ID, ServiceAccountBudgetRecord, ServiceAccountRecord,
     ServiceAccountStatus, SpendDailyAggregateRecord, SpendModelAggregateRecord,
     SpendOwnerAggregateRecord, StoreError, StoreHealth, TeamBudgetRecord, TeamMembershipRecord,
-    TeamRecord, UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord, UsageLedgerRecord,
+    TeamRecord, UpdateExternalMcpServerRecord, UpsertExternalMcpToolRecord,
+    UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord, UsageLedgerRecord,
     UsagePricingStatus, UserBudgetRecord, UserOauthAuthRecord, UserOidcAuthRecord,
     UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
 };

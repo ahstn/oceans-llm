@@ -260,6 +260,102 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/mcp/recommended-servers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_recommended_mcp_servers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/servers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_mcp_servers"];
+        put?: never;
+        post: operations["create_mcp_server"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/servers/{server_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["update_mcp_server"];
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/servers/{server_id}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["disable_mcp_server"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/servers/{server_id}/discovery-refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["refresh_mcp_server_discovery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/servers/{server_id}/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_mcp_server_tools"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/models": {
         parameters: {
             query?: never;
@@ -978,6 +1074,20 @@ export interface components {
             api_key: components["schemas"]["AdminApiKeyView"];
             raw_key: string;
         };
+        CreateMcpServerRequest: {
+            auth_config?: {
+                [key: string]: unknown;
+            };
+            auth_mode?: string | null;
+            description?: string | null;
+            display_name?: string | null;
+            recommended_catalog_key?: string | null;
+            server_key?: string | null;
+            server_url?: string | null;
+            /** Format: int64 */
+            timeout_ms?: number | null;
+            transport?: string | null;
+        };
         CreateServiceAccountRequest: {
             name: string;
             team_id: string;
@@ -1197,6 +1307,27 @@ export interface components {
             };
             meta: components["schemas"]["ResponseMeta"];
         };
+        Envelope_McpDiscoveryRefreshPayload: {
+            data: {
+                error_summary?: string | null;
+                server: components["schemas"]["McpServerView"];
+                status: string;
+                tools: components["schemas"]["McpToolView"][];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_McpServerPayload: {
+            data: {
+                server: components["schemas"]["McpServerView"];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_McpServersPayload: {
+            data: {
+                items: components["schemas"]["McpServerView"][];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
         Envelope_McpToolInvocationDetailView: {
             data: {
                 invocation: components["schemas"]["McpToolInvocationSummaryView"];
@@ -1213,6 +1344,12 @@ export interface components {
                 page_size: number;
                 /** Format: int64 */
                 total: number;
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_McpToolsPayload: {
+            data: {
+                items: components["schemas"]["McpToolView"][];
             };
             meta: components["schemas"]["ResponseMeta"];
         };
@@ -1240,6 +1377,12 @@ export interface components {
         Envelope_PublicOidcProvidersPayload: {
             data: {
                 providers: components["schemas"]["PublicOidcProviderView"][];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_RecommendedMcpServersPayload: {
+            data: {
+                items: components["schemas"]["RecommendedMcpServerView"][];
             };
             meta: components["schemas"]["ResponseMeta"];
         };
@@ -1391,6 +1534,42 @@ export interface components {
             window_end: string;
             window_start: string;
         };
+        McpDiscoveryRefreshPayload: {
+            error_summary?: string | null;
+            server: components["schemas"]["McpServerView"];
+            status: string;
+            tools: components["schemas"]["McpToolView"][];
+        };
+        McpServerPayload: {
+            server: components["schemas"]["McpServerView"];
+        };
+        McpServerView: {
+            auth_config: {
+                [key: string]: unknown;
+            };
+            auth_mode: string;
+            created_at: string;
+            description?: string | null;
+            disabled_at?: string | null;
+            display_name: string;
+            id: string;
+            last_discovery_at?: string | null;
+            last_discovery_status?: string | null;
+            last_error_summary?: string | null;
+            last_successful_discovery_at?: string | null;
+            /** Format: int64 */
+            last_tool_count?: number | null;
+            server_key: string;
+            server_url: string;
+            status: string;
+            /** Format: int64 */
+            timeout_ms: number;
+            transport: string;
+            updated_at: string;
+        };
+        McpServersPayload: {
+            items: components["schemas"]["McpServerView"][];
+        };
         McpToolInvocationDetailView: {
             invocation: components["schemas"]["McpToolInvocationSummaryView"];
             payload?: null | components["schemas"]["McpToolInvocationPayloadView"];
@@ -1437,6 +1616,24 @@ export interface components {
             tool_id?: string | null;
             user_id?: string | null;
         };
+        McpToolView: {
+            deactivated_at?: string | null;
+            description?: string | null;
+            display_name: string;
+            first_discovered_at: string;
+            id: string;
+            input_schema: unknown;
+            is_active: boolean;
+            last_discovered_at: string;
+            schema_hash: string;
+            /** Format: int64 */
+            schema_version: number;
+            server_id: string;
+            upstream_name: string;
+        };
+        McpToolsPayload: {
+            items: components["schemas"]["McpToolView"][];
+        };
         /** @enum {string} */
         ModelIconKeyView: "anthropic" | "claude" | "gemini" | "openai" | "openrouter" | "vertexai";
         /** @enum {string} */
@@ -1474,6 +1671,22 @@ export interface components {
         };
         PublicOidcProvidersPayload: {
             providers: components["schemas"]["PublicOidcProviderView"][];
+        };
+        RecommendedMcpServerView: {
+            auth_config: {
+                [key: string]: unknown;
+            };
+            auth_mode: string;
+            catalog_key: string;
+            description?: string | null;
+            display_name: string;
+            documentation_url?: string | null;
+            server_url: string;
+            tags: string[];
+            transport: string;
+        };
+        RecommendedMcpServersPayload: {
+            items: components["schemas"]["RecommendedMcpServerView"][];
         };
         RequestAttemptView: {
             /** Format: int64 */
@@ -1710,6 +1923,17 @@ export interface components {
         };
         UpdateApiKeyResponse: {
             api_key: components["schemas"]["AdminApiKeyView"];
+        };
+        UpdateMcpServerRequest: {
+            auth_config?: {
+                [key: string]: unknown;
+            };
+            auth_mode: string;
+            description?: string | null;
+            display_name: string;
+            server_url: string;
+            /** Format: int64 */
+            timeout_ms?: number | null;
         };
         UpdateServiceAccountRequest: {
             name: string;
@@ -2228,6 +2452,227 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_CreateUserResponse"];
+                };
+            };
+        };
+    };
+    list_recommended_mcp_servers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_RecommendedMcpServersPayload"];
+                };
+            };
+        };
+    };
+    list_mcp_servers: {
+        parameters: {
+            query?: {
+                include_disabled?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpServersPayload"];
+                };
+            };
+        };
+    };
+    create_mcp_server: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateMcpServerRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpServerPayload"];
+                };
+            };
+        };
+    };
+    update_mcp_server: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description External MCP server identifier */
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMcpServerRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpServerPayload"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    disable_mcp_server: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description External MCP server identifier */
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpServerPayload"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    refresh_mcp_server_discovery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description External MCP server identifier */
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpDiscoveryRefreshPayload"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    list_mcp_server_tools: {
+        parameters: {
+            query?: {
+                include_inactive?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description External MCP server identifier */
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpToolsPayload"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
                 };
             };
         };

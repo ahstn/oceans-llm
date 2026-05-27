@@ -7,6 +7,7 @@ pub mod handlers;
 pub mod identity;
 pub mod identity_lifecycle;
 pub mod identity_views;
+pub mod mcp_registry;
 pub mod models;
 pub mod observability;
 pub mod request_tags;
@@ -25,7 +26,8 @@ use tower_http::{
 };
 
 use self::{
-    api_keys::*, handlers::*, identity::*, models::*, observability::*, spend::*, state::AppState,
+    api_keys::*, handlers::*, identity::*, mcp_registry::*, models::*, observability::*, spend::*,
+    state::AppState,
 };
 
 pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
@@ -141,6 +143,30 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
         .route(
             "/api/v1/admin/observability/mcp-invocations/{mcp_tool_invocation_id}",
             get(get_mcp_tool_invocation_detail),
+        )
+        .route(
+            "/api/v1/admin/mcp/recommended-servers",
+            get(list_recommended_mcp_servers),
+        )
+        .route(
+            "/api/v1/admin/mcp/servers",
+            get(list_mcp_servers).post(create_mcp_server),
+        )
+        .route(
+            "/api/v1/admin/mcp/servers/{server_id}",
+            patch(update_mcp_server),
+        )
+        .route(
+            "/api/v1/admin/mcp/servers/{server_id}/disable",
+            post(disable_mcp_server),
+        )
+        .route(
+            "/api/v1/admin/mcp/servers/{server_id}/tools",
+            get(list_mcp_server_tools),
+        )
+        .route(
+            "/api/v1/admin/mcp/servers/{server_id}/discovery-refresh",
+            post(refresh_mcp_server_discovery),
         )
         .route("/api/v1/auth/session", get(get_auth_session))
         .route("/api/v1/auth/login/password", post(login_with_password))

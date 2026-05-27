@@ -29,6 +29,7 @@ E2E_GATEWAY_API_KEY="${E2E_GATEWAY_API_KEY:-gwk_e2e.secret-value}"
 E2E_ADMIN_EMAIL="${E2E_ADMIN_EMAIL:-admin@local}"
 E2E_ADMIN_PASSWORD="${E2E_ADMIN_PASSWORD:-admin}"
 E2E_ADMIN_NEW_PASSWORD="${E2E_ADMIN_NEW_PASSWORD:-s3cur3-passw0rd}"
+E2E_GATEWAY_BIN="${E2E_GATEWAY_BIN:-$ROOT_DIR/target/debug/gateway}"
 
 export E2E_GATEWAY_PORT
 export E2E_UI_PORT
@@ -93,6 +94,14 @@ models:
         upstream_model: gpt-4.1
 EOF
 
+if [[ ! -x "$E2E_GATEWAY_BIN" ]]; then
+  echo "Gateway binary not found at $E2E_GATEWAY_BIN; building it before starting the E2E stack."
+  (
+    cd "$ROOT_DIR"
+    "$MISE_BIN" exec -- cargo build -p gateway --bin gateway
+  )
+fi
+
 (
   cd "$ROOT_DIR"
   "$MISE_BIN" exec -- node scripts/mock-openai-upstream.mjs
@@ -115,7 +124,7 @@ UI_PID=$!
   ADMIN_UI_UPSTREAM="http://127.0.0.1:${E2E_UI_PORT}" \
   GATEWAY_CONFIG="$CONFIG_PATH" \
   GATEWAY_IDENTITY_TOKEN_SECRET="local-dev-identity-secret" \
-    "$MISE_BIN" exec -- cargo run -p gateway --bin gateway
+    "$E2E_GATEWAY_BIN"
 ) >"$GATEWAY_LOG" 2>&1 &
 GATEWAY_PID=$!
 

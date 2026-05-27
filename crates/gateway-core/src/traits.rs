@@ -10,17 +10,20 @@ use uuid::Uuid;
 use crate::{
     domain::{
         ApiKeyRecord, BudgetAlertDeliveryRecord, BudgetAlertDispatchTask, BudgetAlertHistoryPage,
-        BudgetAlertHistoryQuery, BudgetAlertRecord, FocusExportAggregateRecord,
+        BudgetAlertHistoryQuery, BudgetAlertRecord, ExternalMcpDiscoveryRunRecord,
+        ExternalMcpServerRecord, ExternalMcpToolRecord, FocusExportAggregateRecord,
         FocusExportDiagnosticsRecord, GatewayModel, HarnessUsageBucketRecord,
         HarnessUsageLeaderRecord, McpToolInvocationDetail, McpToolInvocationPage,
         McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
-        ModelPricingRecord, ModelRoute, Money4, NewApiKeyRecord, PricingCatalogCacheRecord,
-        ProviderCapabilities, ProviderConnection, ProviderRequestContext, RequestAttemptRecord,
-        RequestLogDetail, RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult,
-        RequestLogQuery, RequestLogRecord, ServiceAccountBudgetRecord, ServiceAccountRecord,
-        SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord,
-        TeamBudgetRecord, TeamMembershipRecord, TeamRecord, UsageLeaderboardBucketRecord,
-        UsageLeaderboardUserRecord, UsageLedgerRecord, UserBudgetRecord, UserRecord,
+        ModelPricingRecord, ModelRoute, Money4, NewApiKeyRecord, NewExternalMcpServerRecord,
+        PricingCatalogCacheRecord, ProviderCapabilities, ProviderConnection,
+        ProviderRequestContext, RequestAttemptRecord, RequestLogDetail, RequestLogPage,
+        RequestLogPayloadRecord, RequestLogPurgeResult, RequestLogQuery, RequestLogRecord,
+        ServiceAccountBudgetRecord, ServiceAccountRecord, SpendDailyAggregateRecord,
+        SpendModelAggregateRecord, SpendOwnerAggregateRecord, TeamBudgetRecord,
+        TeamMembershipRecord, TeamRecord, UpdateExternalMcpServerRecord,
+        UpsertExternalMcpToolRecord, UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord,
+        UsageLedgerRecord, UserBudgetRecord, UserRecord,
     },
     error::{ProviderError, RouteError, StoreError},
     protocol::core::{ChatRequest, EmbeddingsRequest, ResponsesRequest},
@@ -547,6 +550,57 @@ pub trait McpToolInvocationRepository: Send + Sync {
         &self,
         mcp_tool_invocation_id: Uuid,
     ) -> Result<McpToolInvocationDetail, StoreError>;
+}
+
+#[async_trait]
+pub trait McpRegistryRepository: Send + Sync {
+    async fn list_external_mcp_servers(
+        &self,
+        include_disabled: bool,
+    ) -> Result<Vec<ExternalMcpServerRecord>, StoreError>;
+
+    async fn get_external_mcp_server(
+        &self,
+        mcp_server_id: Uuid,
+    ) -> Result<Option<ExternalMcpServerRecord>, StoreError>;
+
+    async fn get_external_mcp_server_by_key(
+        &self,
+        server_key: &str,
+    ) -> Result<Option<ExternalMcpServerRecord>, StoreError>;
+
+    async fn create_external_mcp_server(
+        &self,
+        input: &NewExternalMcpServerRecord,
+    ) -> Result<ExternalMcpServerRecord, StoreError>;
+
+    async fn update_external_mcp_server(
+        &self,
+        input: &UpdateExternalMcpServerRecord,
+    ) -> Result<ExternalMcpServerRecord, StoreError>;
+
+    async fn disable_external_mcp_server(
+        &self,
+        mcp_server_id: Uuid,
+        disabled_at: OffsetDateTime,
+    ) -> Result<ExternalMcpServerRecord, StoreError>;
+
+    async fn list_external_mcp_tools(
+        &self,
+        mcp_server_id: Uuid,
+        include_inactive: bool,
+    ) -> Result<Vec<ExternalMcpToolRecord>, StoreError>;
+
+    async fn record_external_mcp_discovery_success(
+        &self,
+        run: &ExternalMcpDiscoveryRunRecord,
+        tools: &[UpsertExternalMcpToolRecord],
+    ) -> Result<Vec<ExternalMcpToolRecord>, StoreError>;
+
+    async fn record_external_mcp_discovery_failure(
+        &self,
+        run: &ExternalMcpDiscoveryRunRecord,
+    ) -> Result<(), StoreError>;
 }
 
 #[async_trait]

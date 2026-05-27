@@ -1623,6 +1623,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "gateway-mcp"
+version = "0.8.0"
+dependencies = [
+ "futures-util",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 2.0.18",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "gateway-providers"
 version = "0.8.0"
 dependencies = [
@@ -1659,14 +1673,17 @@ dependencies = [
  "axum 0.8.8",
  "gateway-client-config",
  "gateway-core",
+ "gateway-mcp",
  "itertools 0.14.0",
  "rand 0.8.5",
  "reqwest",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "time",
  "tokio",
  "tracing",
+ "url",
  "uuid",
 ]
 

@@ -1,4 +1,4 @@
-import { useState, useTransition, type FormEvent } from 'react'
+import { useEffect, useState, useTransition, type FormEvent } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
@@ -22,7 +22,12 @@ function ChangePasswordPage() {
   const [currentPassword, setCurrentPassword] = useState('admin')
   const [newPassword, setNewPassword] = useState('')
   const [confirmation, setConfirmation] = useState('')
+  const [isHydrated, setIsHydrated] = useState(false)
   const [isPending, startTransition] = useTransition()
+
+  useEffect(() => {
+    setIsHydrated(true)
+  }, [])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -100,7 +105,7 @@ function ChangePasswordPage() {
         </FieldGroup>
 
         <div className="flex justify-end">
-          <Button type="submit" disabled={isPending}>
+          <Button type="submit" disabled={!isHydrated || isPending}>
             {isPending ? 'Saving…' : 'Update password'}
           </Button>
         </div>

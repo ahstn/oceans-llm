@@ -1045,7 +1045,14 @@ pub struct RequestLogPayloadView {
         crate::http::observability::list_request_logs,
         crate::http::observability::get_request_log_detail,
         crate::http::observability::list_mcp_tool_invocations,
-        crate::http::observability::get_mcp_tool_invocation_detail
+        crate::http::observability::get_mcp_tool_invocation_detail,
+        crate::http::mcp_registry::list_recommended_mcp_servers,
+        crate::http::mcp_registry::list_mcp_servers,
+        crate::http::mcp_registry::create_mcp_server,
+        crate::http::mcp_registry::update_mcp_server,
+        crate::http::mcp_registry::disable_mcp_server,
+        crate::http::mcp_registry::list_mcp_server_tools,
+        crate::http::mcp_registry::refresh_mcp_server_discovery
     ),
     components(schemas(ObservabilityRangeQueryValue)),
     modifiers(&AdminApiSecurity)
@@ -1136,6 +1143,12 @@ mod tests {
                 "/api/v1/admin/observability/mcp-invocations/{mcp_tool_invocation_id}"
             )
         );
+        assert!(paths.contains_key("/api/v1/admin/mcp/recommended-servers"));
+        assert!(paths.contains_key("/api/v1/admin/mcp/servers"));
+        assert!(paths.contains_key("/api/v1/admin/mcp/servers/{server_id}"));
+        assert!(paths.contains_key("/api/v1/admin/mcp/servers/{server_id}/disable"));
+        assert!(paths.contains_key("/api/v1/admin/mcp/servers/{server_id}/tools"));
+        assert!(paths.contains_key("/api/v1/admin/mcp/servers/{server_id}/discovery-refresh"));
         assert!(paths.contains_key("/api/v1/auth/session"));
         assert!(paths.contains_key("/api/v1/auth/logout"));
 

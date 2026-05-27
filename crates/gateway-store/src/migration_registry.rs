@@ -95,6 +95,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
             "../migrations/postgres/V26__oauth_providers_and_github_sso.sql"
         ),
     },
+    MigrationManifest {
+        version: 27,
+        name: "external_mcp_registry",
+        checksum: "V27__external_mcp_registry.sql",
+        libsql_sql: include_str!("../migrations/V27__external_mcp_registry.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V27__external_mcp_registry.sql"),
+    },
 ];
 
 #[cfg(test)]
