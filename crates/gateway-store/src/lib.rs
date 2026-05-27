@@ -412,7 +412,7 @@ mod tests {
                 auth_mode: ExternalMcpAuthMode::GatewayBearerToken,
                 auth_config: Map::from_iter([(
                     "secret_ref".to_string(),
-                    json!("env/GITHUB_TOKEN"),
+                    json!("env/OCEANS_MCP_DISCOVERY_GITHUB_TOKEN"),
                 )]),
                 timeout_ms: 45_000,
                 updated_at: now + Duration::seconds(1),

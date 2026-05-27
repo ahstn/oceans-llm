@@ -371,11 +371,12 @@ where
             .transport
             .or_else(|| catalog.map(|entry| entry.transport.clone()))
             .unwrap_or_else(|| ExternalMcpTransport::StreamableHttp.as_str().to_string());
+        let request_overrides_auth_mode = input.auth_mode.is_some();
         let auth_mode = input
             .auth_mode
             .or_else(|| catalog.map(|entry| entry.auth_mode.clone()))
             .unwrap_or_else(|| ExternalMcpAuthMode::None.as_str().to_string());
-        let auth_config = if input.auth_config.is_empty() {
+        let auth_config = if input.auth_config.is_empty() && !request_overrides_auth_mode {
             catalog
                 .map(|entry| entry.auth_config.clone())
                 .unwrap_or_default()
@@ -800,5 +801,113 @@ mod tests {
             }));
 
         assert_eq!(summary, "MCP JSON-RPC error -32000");
+    }
+
+    #[test]
+    fn catalog_auth_config_is_not_inherited_when_request_overrides_auth_mode() {
+        let service = McpRegistryService::with_client(
+            Arc::new(NoopMcpRegistryRepository),
+            Arc::new(NoopMcpDiscoveryClient),
+        );
+        let resolved = service
+            .resolve_create_input(CreateExternalMcpServerInput {
+                recommended_catalog_key: Some("github".to_string()),
+                server_key: Some("github-none".to_string()),
+                display_name: Some("GitHub".to_string()),
+                description: None,
+                server_url: None,
+                transport: None,
+                auth_mode: Some(ExternalMcpAuthMode::None.as_str().to_string()),
+                auth_config: Map::new(),
+                timeout_ms: None,
+            })
+            .expect("resolve input");
+
+        assert_eq!(resolved.auth_mode, ExternalMcpAuthMode::None.as_str());
+        assert!(resolved.auth_config.is_empty());
+    }
+
+    struct NoopMcpDiscoveryClient;
+
+    #[async_trait]
+    impl McpDiscoveryClient for NoopMcpDiscoveryClient {
+        async fn list_tools(
+            &self,
+            _server: &ExternalMcpServerRecord,
+            _headers: Option<&BTreeMap<String, String>>,
+        ) -> Result<Vec<NormalizedMcpTool>, McpClientError> {
+            Ok(Vec::new())
+        }
+    }
+
+    struct NoopMcpRegistryRepository;
+
+    #[async_trait]
+    impl McpRegistryRepository for NoopMcpRegistryRepository {
+        async fn list_external_mcp_servers(
+            &self,
+            _include_disabled: bool,
+        ) -> Result<Vec<ExternalMcpServerRecord>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn get_external_mcp_server(
+            &self,
+            _mcp_server_id: Uuid,
+        ) -> Result<Option<ExternalMcpServerRecord>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn get_external_mcp_server_by_key(
+            &self,
+            _server_key: &str,
+        ) -> Result<Option<ExternalMcpServerRecord>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn create_external_mcp_server(
+            &self,
+            _input: &NewExternalMcpServerRecord,
+        ) -> Result<ExternalMcpServerRecord, StoreError> {
+            unimplemented!()
+        }
+
+        async fn update_external_mcp_server(
+            &self,
+            _input: &UpdateExternalMcpServerRecord,
+        ) -> Result<ExternalMcpServerRecord, StoreError> {
+            unimplemented!()
+        }
+
+        async fn disable_external_mcp_server(
+            &self,
+            _mcp_server_id: Uuid,
+            _disabled_at: OffsetDateTime,
+        ) -> Result<ExternalMcpServerRecord, StoreError> {
+            unimplemented!()
+        }
+
+        async fn list_external_mcp_tools(
+            &self,
+            _mcp_server_id: Uuid,
+            _include_inactive: bool,
+        ) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn record_external_mcp_discovery_success(
+            &self,
+            _run: &ExternalMcpDiscoveryRunRecord,
+            _tools: &[UpsertExternalMcpToolRecord],
+        ) -> Result<Vec<ExternalMcpToolRecord>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn record_external_mcp_discovery_failure(
+            &self,
+            _run: &ExternalMcpDiscoveryRunRecord,
+        ) -> Result<(), StoreError> {
+            unimplemented!()
+        }
     }
 }
