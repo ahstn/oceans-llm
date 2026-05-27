@@ -31,7 +31,7 @@ export default defineConfig({
     cwd: repoRoot,
     url: `${baseURL}/readyz`,
     reuseExistingServer: false,
-    timeout: 180_000,
+    timeout: 300_000,
     stdout: 'pipe',
     stderr: 'pipe',
     env: {

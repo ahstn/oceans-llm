@@ -257,9 +257,13 @@ description = "Install Playwright Chromium for the end-to-end suite"
 depends = ["ui-install"]
 run = "bun run --cwd crates/admin-ui/web playwright:install"
 
+[tasks.e2e-gateway-build]
+description = "Build the gateway binary before Playwright starts the E2E stack"
+run = "cargo build -p gateway --bin gateway"
+
 [tasks.e2e-test]
 description = "Run gateway and admin UI end-to-end contract tests"
-depends = ["ui-build", "e2e-install"]
+depends = ["ui-build", "e2e-install", "e2e-gateway-build"]
 run = "bun run --cwd crates/admin-ui/web test:e2e"
 
 [tasks.release]
