@@ -362,7 +362,7 @@ impl StreamableHttpClient {
             });
         }
         let result = if is_sse {
-            decode_sse_json_rpc_result(&body)?
+            decode_sse_json_rpc_result_for_id(&body, Some(&request.id))?
         } else {
             decode_json_rpc_result(&body)?
         };
@@ -373,6 +373,15 @@ impl StreamableHttpClient {
 pub fn decode_json_rpc_result<T: DeserializeOwned + Default>(
     body: &str,
 ) -> Result<T, McpClientError> {
+    decode_json_rpc_result_for_id(body, None)?.ok_or_else(|| McpClientError::InvalidResponse {
+        message: "JSON-RPC response is missing result".to_string(),
+    })
+}
+
+fn decode_json_rpc_result_for_id<T: DeserializeOwned + Default>(
+    body: &str,
+    expected_id: Option<&JsonRpcId>,
+) -> Result<Option<T>, McpClientError> {
     let response: JsonRpcResponse<T> =
         serde_json::from_str(body).map_err(|error| McpClientError::InvalidResponse {
             message: error.to_string(),
@@ -382,6 +391,14 @@ pub fn decode_json_rpc_result<T: DeserializeOwned + Default>(
             message: "JSON-RPC version must be 2.0".to_string(),
         });
     }
+    if let Some(expected_id) = expected_id {
+        match response.id.as_ref() {
+            Some(actual_id) if actual_id == expected_id => {}
+            Some(_) => return Ok(None),
+            None if response.error.is_none() => return Ok(None),
+            None => {}
+        }
+    }
     if let Some(error) = response.error {
         return Err(McpClientError::JsonRpc(error));
     }
@@ -390,17 +407,32 @@ pub fn decode_json_rpc_result<T: DeserializeOwned + Default>(
         .ok_or_else(|| McpClientError::InvalidResponse {
             message: "JSON-RPC response is missing result".to_string(),
         })
+        .map(Some)
 }
 
 pub fn decode_sse_json_rpc_result<T: DeserializeOwned + Default>(
     body: &str,
 ) -> Result<T, McpClientError> {
+    decode_sse_json_rpc_result_for_id(body, None)
+}
+
+fn decode_sse_json_rpc_result_for_id<T: DeserializeOwned + Default>(
+    body: &str,
+    expected_id: Option<&JsonRpcId>,
+) -> Result<T, McpClientError> {
     let mut data_lines = Vec::new();
+    let mut saw_data_event = false;
     for line in body.lines() {
         let line = line.trim_end();
         if line.is_empty() {
             if !data_lines.is_empty() {
-                return decode_json_rpc_result(&data_lines.join("\n"));
+                saw_data_event = true;
+                if let Some(result) =
+                    decode_json_rpc_result_for_id(&data_lines.join("\n"), expected_id)?
+                {
+                    return Ok(result);
+                }
+                data_lines.clear();
             }
             continue;
         }
@@ -409,10 +441,18 @@ pub fn decode_sse_json_rpc_result<T: DeserializeOwned + Default>(
         }
     }
     if !data_lines.is_empty() {
-        return decode_json_rpc_result(&data_lines.join("\n"));
+        saw_data_event = true;
+        if let Some(result) = decode_json_rpc_result_for_id(&data_lines.join("\n"), expected_id)? {
+            return Ok(result);
+        }
     }
+    let message = if saw_data_event {
+        "SSE response did not contain a JSON-RPC result event for the request"
+    } else {
+        "SSE response did not contain a JSON-RPC data event"
+    };
     Err(McpClientError::InvalidResponse {
-        message: "SSE response did not contain a JSON-RPC data event".to_string(),
+        message: message.to_string(),
     })
 }
 
@@ -606,6 +646,27 @@ mod tests {
         let result: ToolsListResponse = decode_sse_json_rpc_result(body).expect("decode result");
 
         assert!(result.tools.is_empty());
+    }
+
+    #[test]
+    fn decodes_matching_sse_response_after_non_response_events() {
+        let body = concat!(
+            "event: message\n",
+            "data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/progress\",\"params\":{\"progress\":1}}\n",
+            "\n",
+            "event: message\n",
+            "data: {\"jsonrpc\":\"2.0\",\"id\":99,\"method\":\"sampling/createMessage\",\"params\":{}}\n",
+            "\n",
+            "event: message\n",
+            "data: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[{\"name\":\"search\",\"inputSchema\":{\"type\":\"object\"}}]}}\n",
+            "\n",
+        );
+        let result: ToolsListResponse =
+            decode_sse_json_rpc_result_for_id(body, Some(&JsonRpcId::Number(1)))
+                .expect("decode matching result");
+
+        assert_eq!(result.tools.len(), 1);
+        assert_eq!(result.tools[0].name, "search");
     }
 
     #[test]
