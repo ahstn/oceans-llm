@@ -820,27 +820,6 @@ providers:
         stream: bool,
     }
 
-    struct EnvVarGuard {
-        key: &'static str,
-    }
-
-    impl EnvVarGuard {
-        fn set(key: &'static str, value: &str) -> Self {
-            unsafe {
-                env::set_var(key, value);
-            }
-            Self { key }
-        }
-    }
-
-    impl Drop for EnvVarGuard {
-        fn drop(&mut self) {
-            unsafe {
-                env::remove_var(self.key);
-            }
-        }
-    }
-
     async fn load_request_logs(db_path: &Path) -> Vec<RequestLogRow> {
         let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
             .build()
