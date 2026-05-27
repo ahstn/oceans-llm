@@ -519,15 +519,41 @@ mod tests {
                 .any(|tool| tool.upstream_name == "repos.get" && !tool.is_active)
         );
 
+        let invalidated = store
+            .update_external_mcp_server(&UpdateExternalMcpServerRecord {
+                mcp_server_id: server.mcp_server_id,
+                display_name: "GitHub".to_string(),
+                description: None,
+                server_url: "https://mcp.example.com/rotated".to_string(),
+                auth_mode: ExternalMcpAuthMode::GatewayBearerToken,
+                auth_config: Map::from_iter([(
+                    "secret_ref".to_string(),
+                    json!("env/OCEANS_MCP_DISCOVERY_GITHUB_TOKEN"),
+                )]),
+                timeout_ms: 45_000,
+                updated_at: now + Duration::seconds(6),
+            })
+            .await
+            .expect("invalidate discovery on config update");
+        assert_eq!(invalidated.last_discovery_status, None);
+        assert_eq!(invalidated.last_tool_count, Some(0));
+        assert_eq!(invalidated.last_error_summary, None);
+
+        let active_after_config_change = store
+            .list_external_mcp_tools(server.mcp_server_id, false)
+            .await
+            .expect("list active tools after config change");
+        assert!(active_after_config_change.is_empty());
+
         store
             .record_external_mcp_discovery_failure(&ExternalMcpDiscoveryRunRecord {
                 discovery_run_id: Uuid::new_v4(),
                 mcp_server_id: server.mcp_server_id,
                 status: ExternalMcpDiscoveryStatus::Failed,
-                started_at: now + Duration::seconds(6),
-                finished_at: now + Duration::seconds(7),
+                started_at: now + Duration::seconds(7),
+                finished_at: now + Duration::seconds(8),
                 discovered_tool_count: 0,
-                active_tool_count: 1,
+                active_tool_count: 0,
                 schema_set_hash: None,
                 error_summary: Some("timeout".to_string()),
                 details: Map::new(),
@@ -546,7 +572,7 @@ mod tests {
         assert_eq!(failed_server.last_error_summary.as_deref(), Some("timeout"));
 
         let disabled = store
-            .disable_external_mcp_server(server.mcp_server_id, now + Duration::seconds(8))
+            .disable_external_mcp_server(server.mcp_server_id, now + Duration::seconds(9))
             .await
             .expect("disable server");
         assert_eq!(disabled.status, ExternalMcpServerStatus::Disabled);

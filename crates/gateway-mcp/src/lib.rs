@@ -17,6 +17,7 @@ pub const DEFAULT_PROTOCOL_VERSION: &str = "2025-03-26";
 pub const MCP_PROTOCOL_VERSION_HEADER: &str = "mcp-protocol-version";
 pub const MCP_SESSION_ID_HEADER: &str = "mcp-session-id";
 const MAX_RESPONSE_BODY_BYTES: usize = 2 * 1024 * 1024;
+const MAX_TOOLS_LIST_PAGES: usize = 100;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct JsonRpcRequest<T = Value> {
@@ -121,9 +122,19 @@ pub struct InitializeResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct ToolsListResponse {
     #[serde(default)]
     pub tools: Vec<McpTool>,
+    #[serde(default)]
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolsListRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -202,13 +213,36 @@ impl StreamableHttpClient {
             Some(&request_headers),
         )
         .await?;
-        let response: ToolsListResponse = self
-            .send(
-                JsonRpcRequest::new(JsonRpcId::Number(3), "tools/list", Some(json!({}))),
-                Some(&request_headers),
-            )
-            .await?;
-        normalize_tools(response.tools)
+        let mut cursor = None;
+        let mut seen_cursors = BTreeSet::new();
+        let mut tools = Vec::new();
+        for page_index in 0..MAX_TOOLS_LIST_PAGES {
+            let response: ToolsListResponse = self
+                .send(
+                    JsonRpcRequest::new(
+                        JsonRpcId::Number((page_index + 3) as i64),
+                        "tools/list",
+                        Some(ToolsListRequest {
+                            cursor: cursor.clone(),
+                        }),
+                    ),
+                    Some(&request_headers),
+                )
+                .await?;
+            tools.extend(response.tools);
+            let Some(next_cursor) = response.next_cursor.filter(|value| !value.is_empty()) else {
+                return normalize_tools(tools);
+            };
+            if !seen_cursors.insert(next_cursor.clone()) {
+                return Err(McpClientError::InvalidResponse {
+                    message: "MCP tools/list returned a repeated nextCursor".to_string(),
+                });
+            }
+            cursor = Some(next_cursor);
+        }
+        Err(McpClientError::InvalidResponse {
+            message: format!("MCP tools/list exceeded {MAX_TOOLS_LIST_PAGES} pages"),
+        })
     }
 
     pub fn build_request<T: Serialize>(
@@ -516,6 +550,23 @@ mod tests {
         let result: ToolsListResponse = decode_json_rpc_result(body).expect("decode result");
 
         assert!(result.tools.is_empty());
+    }
+
+    #[test]
+    fn parses_tools_list_cursor_and_serializes_request_cursor() {
+        let body = r#"{"jsonrpc":"2.0","id":1,"result":{"tools":[],"nextCursor":"page-2"}}"#;
+        let result: ToolsListResponse = decode_json_rpc_result(body).expect("decode result");
+        assert_eq!(result.next_cursor.as_deref(), Some("page-2"));
+
+        let request = JsonRpcRequest::new(
+            JsonRpcId::Number(2),
+            "tools/list",
+            Some(ToolsListRequest {
+                cursor: Some("page-2".to_string()),
+            }),
+        );
+        let encoded = serde_json::to_value(request).expect("serialize request");
+        assert_eq!(encoded["params"], json!({"cursor": "page-2"}));
     }
 
     #[test]

@@ -97,6 +97,15 @@ fn decode_tool(row: &PgRow) -> Result<ExternalMcpToolRecord, StoreError> {
     })
 }
 
+fn discovery_config_changed(
+    existing: &ExternalMcpServerRecord,
+    input: &UpdateExternalMcpServerRecord,
+) -> bool {
+    existing.server_url != input.server_url
+        || existing.auth_mode != input.auth_mode
+        || existing.auth_config != input.auth_config
+}
+
 async fn load_server(
     pool: &PgPool,
     mcp_server_id: Uuid,
@@ -193,8 +202,11 @@ impl McpRegistryRepository for PostgresStore {
         &self,
         input: &UpdateExternalMcpServerRecord,
     ) -> Result<ExternalMcpServerRecord, StoreError> {
+        let existing = load_server(&self.pool, input.mcp_server_id).await?;
+        let invalidate_discovery = discovery_config_changed(&existing, input);
         let auth_config_json = serialize_json(&input.auth_config)?;
-        let changed = sqlx::query(
+        let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+        sqlx::query(
             r#"
             UPDATE external_mcp_servers
             SET display_name = $1, description = $2, server_url = $3, auth_mode = $4,
@@ -210,15 +222,37 @@ impl McpRegistryRepository for PostgresStore {
         .bind(input.timeout_ms)
         .bind(input.updated_at.unix_timestamp())
         .bind(input.mcp_server_id.to_string())
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(to_write_error)?;
-        if changed.rows_affected() == 0 {
-            return Err(StoreError::NotFound(format!(
-                "external MCP server `{}` not found",
-                input.mcp_server_id
-            )));
+        if invalidate_discovery {
+            sqlx::query(
+                r#"
+                UPDATE external_mcp_tools
+                SET is_active = 0, deactivated_at = $1
+                WHERE mcp_server_id = $2 AND is_active = 1
+                "#,
+            )
+            .bind(input.updated_at.unix_timestamp())
+            .bind(input.mcp_server_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .map_err(to_write_error)?;
+            sqlx::query(
+                r#"
+                UPDATE external_mcp_servers
+                SET last_discovery_status = NULL, last_discovery_at = NULL,
+                    last_successful_discovery_at = NULL, last_error_summary = NULL,
+                    last_tool_count = 0
+                WHERE mcp_server_id = $1
+                "#,
+            )
+            .bind(input.mcp_server_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .map_err(to_write_error)?;
         }
+        tx.commit().await.map_err(to_query_error)?;
         load_server(&self.pool, input.mcp_server_id).await
     }
 

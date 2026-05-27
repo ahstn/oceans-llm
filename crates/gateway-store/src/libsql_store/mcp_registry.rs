@@ -83,6 +83,15 @@ fn decode_tool(row: &libsql::Row) -> Result<ExternalMcpToolRecord, StoreError> {
     })
 }
 
+fn discovery_config_changed(
+    existing: &ExternalMcpServerRecord,
+    input: &UpdateExternalMcpServerRecord,
+) -> bool {
+    existing.server_url != input.server_url
+        || existing.auth_mode != input.auth_mode
+        || existing.auth_config != input.auth_config
+}
+
 async fn load_server(
     connection: &libsql::Connection,
     mcp_server_id: Uuid,
@@ -205,35 +214,62 @@ impl McpRegistryRepository for LibsqlStore {
         &self,
         input: &UpdateExternalMcpServerRecord,
     ) -> Result<ExternalMcpServerRecord, StoreError> {
+        let existing = load_server(&self.connection, input.mcp_server_id).await?;
+        let invalidate_discovery = discovery_config_changed(&existing, input);
         let auth_config_json = serialize_json(&input.auth_config)?;
-        let changed = self
+        let tx = self
             .connection
-            .execute(
+            .transaction()
+            .await
+            .map_err(to_query_error)?;
+        tx.execute(
+            r#"
+            UPDATE external_mcp_servers
+            SET display_name = ?1, description = ?2, server_url = ?3, auth_mode = ?4,
+                auth_config_json = ?5, timeout_ms = ?6, updated_at = ?7
+            WHERE mcp_server_id = ?8
+            "#,
+            libsql::params![
+                input.display_name.as_str(),
+                input.description.as_deref(),
+                input.server_url.as_str(),
+                input.auth_mode.as_str(),
+                auth_config_json,
+                input.timeout_ms,
+                input.updated_at.unix_timestamp(),
+                input.mcp_server_id.to_string(),
+            ],
+        )
+        .await
+        .map_err(to_write_error)?;
+        if invalidate_discovery {
+            tx.execute(
                 r#"
-                UPDATE external_mcp_servers
-                SET display_name = ?1, description = ?2, server_url = ?3, auth_mode = ?4,
-                    auth_config_json = ?5, timeout_ms = ?6, updated_at = ?7
-                WHERE mcp_server_id = ?8
+                UPDATE external_mcp_tools
+                SET is_active = 0, deactivated_at = ?1
+                WHERE mcp_server_id = ?2 AND is_active = 1
                 "#,
                 libsql::params![
-                    input.display_name.as_str(),
-                    input.description.as_deref(),
-                    input.server_url.as_str(),
-                    input.auth_mode.as_str(),
-                    auth_config_json,
-                    input.timeout_ms,
                     input.updated_at.unix_timestamp(),
-                    input.mcp_server_id.to_string(),
+                    input.mcp_server_id.to_string()
                 ],
             )
             .await
             .map_err(to_write_error)?;
-        if changed == 0 {
-            return Err(StoreError::NotFound(format!(
-                "external MCP server `{}` not found",
-                input.mcp_server_id
-            )));
+            tx.execute(
+                r#"
+                UPDATE external_mcp_servers
+                SET last_discovery_status = NULL, last_discovery_at = NULL,
+                    last_successful_discovery_at = NULL, last_error_summary = NULL,
+                    last_tool_count = 0
+                WHERE mcp_server_id = ?1
+                "#,
+                libsql::params![input.mcp_server_id.to_string()],
+            )
+            .await
+            .map_err(to_write_error)?;
         }
+        tx.commit().await.map_err(to_query_error)?;
         load_server(&self.connection, input.mcp_server_id).await
     }
 
