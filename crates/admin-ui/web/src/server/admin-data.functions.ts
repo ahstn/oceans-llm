@@ -8,21 +8,26 @@ import {
   changePassword,
   completeInvitation,
   createApiKey,
+  createMcpServer,
   createTeam,
   createUser,
   deactivateTeamBudget,
   deactivateUserBudget,
+  disableMcpServer,
   listBudgetAlertHistory,
   reactivateUser,
   getRequestLogDetail,
   getHarnessUsage,
   getMcpInvocationDetail,
+  listRecommendedMcpServers,
   getSession,
   getUsageLeaderboard,
   getSpendReport,
   getInvitation,
   listRequestLogs,
   listMcpInvocations,
+  listMcpServers,
+  listMcpServerTools,
   listSpendBudgets,
   listTeams,
   listUsers,
@@ -32,12 +37,14 @@ import {
   logoutCurrentSession,
   removeTeamMember,
   revokeApiKey,
+  refreshMcpServerDiscovery,
   resendPasswordInvite,
   resetUserOnboarding,
   transferTeamMember,
   upsertTeamBudget,
   upsertUserBudget,
   updateApiKey,
+  updateMcpServer,
   updateTeam,
   updateUser,
 } from '@/server/admin-data.server'
@@ -198,6 +205,60 @@ export const getMcpInvocations = createServerFn({ method: 'POST' }).handler(
 export const getObservabilityMcpInvocationDetail = createServerFn({ method: 'GET' }).handler(
   async ({ data }: { data: { invocationId: string } }) => {
     return getMcpInvocationDetail(data.invocationId)
+  },
+)
+
+export const getRecommendedMcpServers = createServerFn({ method: 'GET' }).handler(async () => {
+  return listRecommendedMcpServers()
+})
+
+export const getMcpServers = createServerFn({ method: 'GET' }).handler(
+  async ({ data }: { data?: Parameters<typeof listMcpServers>[0] }) => {
+    return listMcpServers(data)
+  },
+)
+
+export const addMcpServer = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: Parameters<typeof createMcpServer>[0] }) => {
+    return createMcpServer(data)
+  },
+)
+
+export const saveMcpServer = createServerFn({ method: 'POST' }).handler(
+  async ({
+    data,
+  }: {
+    data: {
+      serverId: string
+      input: Parameters<typeof updateMcpServer>[1]
+    }
+  }) => {
+    return updateMcpServer(data.serverId, data.input)
+  },
+)
+
+export const disableExternalMcpServer = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: { serverId: string } }) => {
+    return disableMcpServer(data.serverId)
+  },
+)
+
+export const getMcpServerTools = createServerFn({ method: 'GET' }).handler(
+  async ({
+    data,
+  }: {
+    data: {
+      serverId: string
+      include_inactive?: boolean
+    }
+  }) => {
+    return listMcpServerTools(data.serverId, { include_inactive: data.include_inactive })
+  },
+)
+
+export const refreshExternalMcpServerDiscovery = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: { serverId: string } }) => {
+    return refreshMcpServerDiscovery(data.serverId)
   },
 )
 

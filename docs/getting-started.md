@@ -1,6 +1,6 @@
 # Getting Started
 
-`See also`: [Runtime Bootstrap and Access](setup/runtime-bootstrap-and-access.md), [Service Accounts](access/service-accounts.md), [Deploy and Operations](setup/deploy-and-operations.md), [Configuration Reference](configuration/configuration-reference.md)
+`See also`: [Runtime Bootstrap and Access](setup/runtime-bootstrap-and-access.md), [MCP Client Setup](setup/mcp-client-setup.md), [MCP Servers](configuration/mcp-servers.md), [Service Accounts](access/service-accounts.md), [Deploy and Operations](setup/deploy-and-operations.md), [Configuration Reference](configuration/configuration-reference.md)
 
 This page is the admin, user, and maintainer map for the gateway.
 
@@ -16,6 +16,10 @@ This page is the admin, user, and maintainer map for the gateway.
   - [Deploy and Operations](setup/deploy-and-operations.md)
 - YAML shape, auth modes, provider fields, and config limits:
   - [Configuration Reference](configuration/configuration-reference.md)
+- MCP server registration and upstream auth modes:
+  - [MCP Servers](configuration/mcp-servers.md)
+- MCP client connection examples:
+  - [MCP Client Setup](setup/mcp-client-setup.md)
 - Identity lifecycle, team rules, and current admin access overlays:
   - [Identity and Access](access/identity-and-access.md)
 - Non-human team callers and service-account credentials:
@@ -49,12 +53,14 @@ This page is the admin, user, and maintainer map for the gateway.
 
 - [Runtime Bootstrap and Access](setup/runtime-bootstrap-and-access.md)
 - [Deploy and Operations](setup/deploy-and-operations.md)
+- [MCP Client Setup](setup/mcp-client-setup.md)
 
 ### Configuration
 
 - [Configuration Reference](configuration/configuration-reference.md)
 - [Model Routing and API Behavior](configuration/model-routing-and-api-behavior.md)
 - [Pricing Catalog and Accounting](configuration/pricing-catalog-and-accounting.md)
+- [MCP Servers](configuration/mcp-servers.md)
 
 ### Operations
 
@@ -99,3 +105,7 @@ This page is the admin, user, and maintainer map for the gateway.
 - Live admin contract changed and the UI drifted:
   - [Admin API Contract Workflow](reference/admin-api-contract-workflow.md)
   - [End-to-End Contract Tests](reference/e2e-contract-tests.md)
+- MCP client cannot connect:
+  - [MCP Client Setup](setup/mcp-client-setup.md)
+  - [MCP Servers](configuration/mcp-servers.md)
+  - [Identity and Access](access/identity-and-access.md)

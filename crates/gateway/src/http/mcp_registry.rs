@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -21,6 +23,7 @@ use crate::http::{
     error::AppError,
     state::AppState,
 };
+use crate::observability::McpDiscoveryRefreshMetric;
 
 #[derive(Debug, Deserialize, IntoParams)]
 pub struct McpServersQuery {
@@ -325,6 +328,7 @@ pub async fn list_mcp_server_tools(
     ),
     security(("session_cookie" = []))
 )]
+#[tracing::instrument(skip(state, headers), fields(mcp_server_id = %server_id))]
 pub async fn refresh_mcp_server_discovery(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -333,9 +337,39 @@ pub async fn refresh_mcp_server_discovery(
     require_platform_admin(&state, &headers).await?;
     let server_id = parse_uuid(&server_id, "server_id")?;
     let service = McpRegistryService::new(state.store.clone());
-    Ok(Json(envelope(map_discovery_result(
-        service.refresh_discovery(server_id).await?,
-    ))))
+    let started_at = Instant::now();
+    let result = service.refresh_discovery(server_id).await;
+    let latency_seconds = started_at.elapsed().as_secs_f64();
+    match result {
+        Ok(result) => {
+            let status = result.status.as_str();
+            let metric_result = if status == "success" {
+                "success"
+            } else {
+                "failure"
+            };
+            state
+                .metrics
+                .record_mcp_discovery_refresh(&McpDiscoveryRefreshMetric {
+                    server_id: &server_id.to_string(),
+                    result: metric_result,
+                    status,
+                    latency_seconds,
+                });
+            Ok(Json(envelope(map_discovery_result(result))))
+        }
+        Err(error) => {
+            state
+                .metrics
+                .record_mcp_discovery_refresh(&McpDiscoveryRefreshMetric {
+                    server_id: &server_id.to_string(),
+                    result: "error",
+                    status: error.error_code(),
+                    latency_seconds,
+                });
+            Err(error.into())
+        }
+    }
 }
 
 fn map_recommended_server(entry: RecommendedMcpServerCatalogEntry) -> RecommendedMcpServerView {

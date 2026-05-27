@@ -14,6 +14,7 @@ pub struct AppState {
     pub store: Arc<AnyStore>,
     pub providers: ProviderRegistry,
     pub metrics: Arc<GatewayMetrics>,
+    pub mcp_http_client: reqwest::Client,
     pub identity_token_secret: Arc<String>,
     pub oidc_public_base_url: Arc<Option<String>>,
     pub oauth_public_base_url: Arc<Option<String>>,

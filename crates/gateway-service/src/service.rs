@@ -138,6 +138,15 @@ where
             .await
     }
 
+    pub async fn authenticate_bearer_token(
+        &self,
+        bearer_token: &str,
+    ) -> Result<AuthenticatedApiKey, GatewayError> {
+        self.authenticator
+            .authenticate_bearer_token(bearer_token)
+            .await
+    }
+
     pub async fn list_models_for_api_key(
         &self,
         auth: &AuthenticatedApiKey,

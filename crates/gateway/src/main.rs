@@ -186,6 +186,7 @@ async fn run_serve_with_store(
             store: service.store().clone(),
             providers,
             metrics,
+            mcp_http_client: reqwest::Client::new(),
             identity_token_secret: Arc::new(load_identity_token_secret()),
             oidc_public_base_url: Arc::new(
                 config
@@ -460,9 +461,9 @@ mod tests {
     use axum::{
         Router,
         body::{Body, Bytes, to_bytes},
-        http::{Request, StatusCode},
+        http::{HeaderMap, Request, StatusCode},
         response::Response,
-        routing::post,
+        routing::{any, post},
     };
     use gateway_core::{
         ApiKeyRepository, AuthMode, BudgetAlertChannel, BudgetAlertDeliveryRecord,
@@ -486,7 +487,10 @@ mod tests {
     use serial_test::serial;
     use sqlx::Row;
     use tempfile::tempdir;
-    use tokio::net::TcpListener;
+    use tokio::{
+        net::TcpListener,
+        time::{Duration, sleep},
+    };
     use tower::ServiceExt;
     use url::Url;
     use uuid::Uuid;
@@ -1130,6 +1134,7 @@ providers:
                 store,
                 providers: provider_registry,
                 metrics: Arc::new(gateway::observability::GatewayMetrics::default()),
+                mcp_http_client: reqwest::Client::new(),
                 identity_token_secret: Arc::new("local-dev-identity-secret".to_string()),
                 oidc_public_base_url: Arc::new(None),
                 oauth_public_base_url: Arc::new(None),
@@ -1188,6 +1193,7 @@ providers:
                 store,
                 providers: provider_registry,
                 metrics: metrics.clone(),
+                mcp_http_client: reqwest::Client::new(),
                 identity_token_secret: Arc::new("local-dev-identity-secret".to_string()),
                 oidc_public_base_url: Arc::new(None),
                 oauth_public_base_url: Arc::new(None),
@@ -1230,6 +1236,68 @@ providers:
         }];
 
         build_test_app(seed_providers, models, providers).await
+    }
+
+    async fn insert_mcp_server(
+        db_path: &Path,
+        server_key: &str,
+        server_url: &str,
+        auth_mode: &str,
+        auth_config: Value,
+        status: &str,
+    ) -> Uuid {
+        insert_mcp_server_with_timeout(
+            db_path,
+            server_key,
+            server_url,
+            auth_mode,
+            auth_config,
+            status,
+            30_000,
+        )
+        .await
+    }
+
+    async fn insert_mcp_server_with_timeout(
+        db_path: &Path,
+        server_key: &str,
+        server_url: &str,
+        auth_mode: &str,
+        auth_config: Value,
+        status: &str,
+        timeout_ms: i64,
+    ) -> Uuid {
+        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
+            .build()
+            .await
+            .expect("libsql db");
+        let connection = db.connect().expect("libsql connection");
+        let server_id = Uuid::new_v4();
+        let now = time::OffsetDateTime::now_utc().unix_timestamp();
+        connection
+            .execute(
+                r#"
+                INSERT INTO external_mcp_servers (
+                  mcp_server_id, server_key, display_name, description, transport, server_url,
+                  auth_mode, auth_config_json, timeout_ms, status, created_at, updated_at
+                )
+                VALUES (?1, ?2, ?3, NULL, 'streamable_http', ?4, ?5, ?6, ?7, ?8, ?9, ?9)
+                "#,
+                libsql::params![
+                    server_id.to_string(),
+                    server_key.to_string(),
+                    server_key.to_string(),
+                    server_url.to_string(),
+                    auth_mode.to_string(),
+                    serde_json::to_string(&auth_config).expect("auth config json"),
+                    timeout_ms,
+                    status.to_string(),
+                    now,
+                ],
+            )
+            .await
+            .expect("insert mcp server");
+        server_id
     }
 
     async fn build_default_test_app_with_metrics(
@@ -1297,6 +1365,7 @@ providers:
                 store: store.clone(),
                 providers,
                 metrics: Arc::new(gateway::observability::GatewayMetrics::default()),
+                mcp_http_client: reqwest::Client::new(),
                 identity_token_secret: Arc::new("local-dev-identity-secret".to_string()),
                 oidc_public_base_url: Arc::new(None),
                 oauth_public_base_url: Arc::new(None),
@@ -1374,6 +1443,7 @@ providers:
                 store,
                 providers: provider_registry,
                 metrics: Arc::new(gateway::observability::GatewayMetrics::default()),
+                mcp_http_client: reqwest::Client::new(),
                 identity_token_secret: Arc::new("local-dev-identity-secret".to_string()),
                 oidc_public_base_url: Arc::new(None),
                 oauth_public_base_url: Arc::new(None),
@@ -3688,6 +3758,10 @@ request_logging:
         assert_eq!(logs.len(), 1);
         assert_eq!(logs[0].metadata["stream"], Value::Bool(true));
         assert_eq!(logs[0].metadata["operation"], "chat_completions");
+    }
+
+    mod mcp_gateway_tests {
+        include!("tests/mcp_gateway.rs");
     }
 
     #[tokio::test]

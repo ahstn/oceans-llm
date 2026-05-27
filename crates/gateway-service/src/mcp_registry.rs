@@ -20,11 +20,15 @@ use tokio::sync::Mutex as AsyncMutex;
 use url::Url;
 use uuid::Uuid;
 
+use crate::mcp_upstream_auth::{
+    gateway_mcp_upstream_headers, normalize_mcp_server_key, validate_gateway_managed_server_url,
+    validate_mcp_auth_config,
+};
+
 const DEFAULT_DISCOVERY_TIMEOUT_MS: i64 = 30_000;
 const MIN_DISCOVERY_TIMEOUT_MS: i64 = 1_000;
 const MAX_DISCOVERY_TIMEOUT_MS: i64 = 120_000;
 const MAX_ERROR_SUMMARY_CHARS: usize = 512;
-const DISCOVERY_SECRET_ENV_PREFIX: &str = "OCEANS_MCP_DISCOVERY_";
 static DISCOVERY_LOCKS: OnceLock<StdMutex<HashMap<Uuid, Arc<AsyncMutex<()>>>>> = OnceLock::new();
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -149,7 +153,7 @@ where
         input: CreateExternalMcpServerInput,
     ) -> Result<ExternalMcpServerRecord, GatewayError> {
         let resolved = self.resolve_create_input(input)?;
-        let server_key = normalize_server_key(&resolved.server_key)?;
+        let server_key = normalize_mcp_server_key(&resolved.server_key)?;
         if self
             .repo
             .get_external_mcp_server_by_key(&server_key)
@@ -164,8 +168,8 @@ where
         validate_server_url(&resolved.server_url)?;
         let transport = parse_transport(&resolved.transport)?;
         let auth_mode = parse_auth_mode(&resolved.auth_mode)?;
-        validate_auth_config(auth_mode, &resolved.auth_config)?;
-        validate_credentialed_server_url(&resolved.server_url, auth_mode)?;
+        validate_mcp_auth_config(auth_mode, &resolved.auth_config)?;
+        validate_gateway_managed_server_url(&resolved.server_url, auth_mode)?;
         let timeout_ms = validate_timeout_ms(resolved.timeout_ms)?;
         let now = OffsetDateTime::now_utc();
 
@@ -193,8 +197,8 @@ where
         self.server_or_not_found(mcp_server_id).await?;
         validate_server_url(&input.server_url)?;
         let auth_mode = parse_auth_mode(&input.auth_mode)?;
-        validate_auth_config(auth_mode, &input.auth_config)?;
-        validate_credentialed_server_url(&input.server_url, auth_mode)?;
+        validate_mcp_auth_config(auth_mode, &input.auth_config)?;
+        validate_gateway_managed_server_url(&input.server_url, auth_mode)?;
         let timeout_ms = validate_timeout_ms(input.timeout_ms)?;
 
         self.repo
@@ -268,7 +272,7 @@ where
         }
 
         let started_at = OffsetDateTime::now_utc();
-        let headers = match discovery_headers(&server) {
+        let headers = match gateway_mcp_upstream_headers(&server) {
             Ok(headers) => headers,
             Err(error) => {
                 return self
@@ -478,24 +482,6 @@ fn discovery_lock_for(mcp_server_id: Uuid) -> Arc<AsyncMutex<()>> {
         .clone()
 }
 
-fn normalize_server_key(value: &str) -> Result<String, GatewayError> {
-    let key = value.trim().to_ascii_lowercase();
-    if !(3..=64).contains(&key.len()) {
-        return Err(GatewayError::InvalidRequest(
-            "server_key must be 3-64 characters".to_string(),
-        ));
-    }
-    if !key.bytes().all(|byte| {
-        byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-' || byte == b'_'
-    }) {
-        return Err(GatewayError::InvalidRequest(
-            "server_key may only contain lowercase letters, digits, hyphen, and underscore"
-                .to_string(),
-        ));
-    }
-    Ok(key)
-}
-
 fn validate_display_name(value: String) -> Result<String, GatewayError> {
     let trimmed = value.trim();
     if trimmed.is_empty() || trimmed.len() > 120 {
@@ -515,23 +501,6 @@ fn validate_server_url(value: &str) -> Result<(), GatewayError> {
             "server_url must use http or https".to_string(),
         )),
     }
-}
-
-fn validate_credentialed_server_url(
-    value: &str,
-    auth_mode: ExternalMcpAuthMode,
-) -> Result<(), GatewayError> {
-    if !auth_mode.supports_gateway_discovery() || auth_mode == ExternalMcpAuthMode::None {
-        return Ok(());
-    }
-    let url = Url::parse(value)
-        .map_err(|error| GatewayError::InvalidRequest(format!("server_url is invalid: {error}")))?;
-    if url.scheme() != "https" {
-        return Err(GatewayError::InvalidRequest(
-            "gateway-managed MCP discovery credentials require an https server_url".to_string(),
-        ));
-    }
-    Ok(())
 }
 
 fn parse_transport(value: &str) -> Result<ExternalMcpTransport, GatewayError> {
@@ -555,141 +524,6 @@ fn validate_timeout_ms(value: Option<i64>) -> Result<i64, GatewayError> {
         )));
     }
     Ok(timeout_ms)
-}
-
-fn validate_auth_config(
-    auth_mode: ExternalMcpAuthMode,
-    auth_config: &Map<String, Value>,
-) -> Result<(), GatewayError> {
-    match auth_mode {
-        ExternalMcpAuthMode::None => ensure_allowed_auth_fields(auth_config, &[]),
-        ExternalMcpAuthMode::GatewayStaticHeader => {
-            ensure_allowed_auth_fields(auth_config, &["header_name", "secret_ref"])?;
-            validate_static_header_name(required_string(auth_config, "header_name")?)?;
-            validate_discovery_secret_ref(required_secret_ref(auth_config)?)?;
-            Ok(())
-        }
-        ExternalMcpAuthMode::GatewayBearerToken => {
-            ensure_allowed_auth_fields(auth_config, &["secret_ref"])?;
-            validate_discovery_secret_ref(required_secret_ref(auth_config)?)?;
-            Ok(())
-        }
-        ExternalMcpAuthMode::UserPassthrough => {
-            ensure_allowed_auth_fields(auth_config, &["header", "token_type"])
-        }
-        ExternalMcpAuthMode::OauthObo => {
-            ensure_allowed_auth_fields(auth_config, &["token_exchange", "token_type"])
-        }
-    }
-}
-
-fn ensure_allowed_auth_fields(
-    auth_config: &Map<String, Value>,
-    allowed_fields: &[&str],
-) -> Result<(), GatewayError> {
-    for key in auth_config.keys() {
-        if !allowed_fields.contains(&key.as_str()) {
-            return Err(GatewayError::InvalidRequest(format!(
-                "auth_config.{key} is not allowed for this auth mode"
-            )));
-        }
-    }
-    Ok(())
-}
-
-fn discovery_headers(
-    server: &ExternalMcpServerRecord,
-) -> Result<Option<BTreeMap<String, String>>, GatewayError> {
-    match server.auth_mode {
-        ExternalMcpAuthMode::None => Ok(None),
-        ExternalMcpAuthMode::GatewayStaticHeader => {
-            let header_name = required_string(&server.auth_config, "header_name")?;
-            let secret = resolve_secret_ref(required_secret_ref(&server.auth_config)?)?;
-            Ok(Some(BTreeMap::from([(header_name.to_string(), secret)])))
-        }
-        ExternalMcpAuthMode::GatewayBearerToken => {
-            let secret = resolve_secret_ref(required_secret_ref(&server.auth_config)?)?;
-            Ok(Some(BTreeMap::from([(
-                "Authorization".to_string(),
-                format!("Bearer {secret}"),
-            )])))
-        }
-        ExternalMcpAuthMode::UserPassthrough | ExternalMcpAuthMode::OauthObo => Ok(None),
-    }
-}
-
-fn required_string<'a>(
-    auth_config: &'a Map<String, Value>,
-    field: &str,
-) -> Result<&'a str, GatewayError> {
-    auth_config
-        .get(field)
-        .and_then(Value::as_str)
-        .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| GatewayError::InvalidRequest(format!("auth_config.{field} is required")))
-}
-
-fn required_secret_ref(auth_config: &Map<String, Value>) -> Result<&str, GatewayError> {
-    required_string(auth_config, "secret_ref")
-}
-
-fn validate_static_header_name(header_name: &str) -> Result<&str, GatewayError> {
-    if header_name.trim() != header_name {
-        return Err(GatewayError::InvalidRequest(
-            "auth_config.header_name must not contain leading or trailing whitespace".to_string(),
-        ));
-    }
-    reqwest::header::HeaderName::from_bytes(header_name.as_bytes()).map_err(|error| {
-        GatewayError::InvalidRequest(format!("auth_config.header_name is invalid: {error}"))
-    })?;
-    Ok(header_name)
-}
-
-fn validate_discovery_secret_ref(secret_ref: &str) -> Result<&str, GatewayError> {
-    if secret_ref.trim() != secret_ref {
-        return Err(GatewayError::InvalidRequest(
-            "auth_config.secret_ref must not contain leading or trailing whitespace".to_string(),
-        ));
-    }
-    let env_name = discovery_secret_env_name(secret_ref)?;
-    if !env_name.starts_with(DISCOVERY_SECRET_ENV_PREFIX) {
-        return Err(GatewayError::InvalidRequest(format!(
-            "secret_ref environment variable must start with {DISCOVERY_SECRET_ENV_PREFIX}"
-        )));
-    }
-    Ok(secret_ref)
-}
-
-fn resolve_secret_ref(secret_ref: &str) -> Result<String, GatewayError> {
-    validate_discovery_secret_ref(secret_ref)?;
-    let env_name = discovery_secret_env_name(secret_ref)?;
-    std::env::var(env_name).map_err(|_| {
-        GatewayError::InvalidRequest(format!(
-            "secret_ref env/{env_name} is not available for MCP discovery"
-        ))
-    })
-}
-
-fn discovery_secret_env_name(secret_ref: &str) -> Result<&str, GatewayError> {
-    let env_name = secret_ref.strip_prefix("env/").ok_or_else(|| {
-        GatewayError::InvalidRequest(
-            "secret_ref must reference an environment variable as env/NAME".to_string(),
-        )
-    })?;
-    if env_name.is_empty() {
-        return Err(GatewayError::InvalidRequest(
-            "secret_ref environment variable name cannot be empty".to_string(),
-        ));
-    }
-    if !env_name
-        .bytes()
-        .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'_')
-    {
-        return Err(GatewayError::InvalidRequest(
-            "secret_ref environment variable name may only contain uppercase letters, digits, and underscore".to_string(),
-        ));
-    }
-    Ok(env_name)
 }
 
 fn schema_set_hash(tools: &[UpsertExternalMcpToolRecord]) -> String {
@@ -754,41 +588,8 @@ mod tests {
 
     #[test]
     fn server_keys_are_normalized_and_limited() {
-        assert_eq!(normalize_server_key(" GitHub ").unwrap(), "github");
-        assert!(normalize_server_key("bad key").is_err());
-    }
-
-    #[test]
-    fn gateway_managed_auth_requires_secret_refs() {
-        let mode = ExternalMcpAuthMode::GatewayBearerToken;
-        let mut config = Map::new();
-        assert!(validate_auth_config(mode, &config).is_err());
-        config.insert("secret_ref".to_string(), json!("env/MCP_TOKEN"));
-        assert!(validate_auth_config(mode, &config).is_err());
-        config.insert(
-            "secret_ref".to_string(),
-            json!("env/OCEANS_MCP_DISCOVERY_MCP_TOKEN"),
-        );
-        assert!(validate_auth_config(mode, &config).is_ok());
-    }
-
-    #[test]
-    fn gateway_static_header_auth_validates_header_name() {
-        let mode = ExternalMcpAuthMode::GatewayStaticHeader;
-        let mut config = Map::from_iter([
-            ("header_name".to_string(), json!(" X-Api-Key ")),
-            (
-                "secret_ref".to_string(),
-                json!("env/OCEANS_MCP_DISCOVERY_API_KEY"),
-            ),
-        ]);
-        assert!(validate_auth_config(mode, &config).is_err());
-
-        config.insert("header_name".to_string(), json!("bad header"));
-        assert!(validate_auth_config(mode, &config).is_err());
-
-        config.insert("header_name".to_string(), json!("X-Api-Key"));
-        assert!(validate_auth_config(mode, &config).is_ok());
+        assert_eq!(normalize_mcp_server_key(" GitHub ").unwrap(), "github");
+        assert!(normalize_mcp_server_key("bad key").is_err());
     }
 
     #[test]

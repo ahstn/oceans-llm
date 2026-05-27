@@ -1,10 +1,12 @@
 # MCP Registry and Discovery
 
-`See also`: [Observability and Request Logs](../observability-and-request-logs.md), [MCP Invocations](mcp-invocations.md), [Request Logs](request-logs.md), [Data Relationships](../../reference/data-relationships.md), [Admin API Contract Workflow](../../reference/admin-api-contract-workflow.md), [ADR: External MCP Registry and Discovery Boundary](../../adr/2026-05-26-external-mcp-registry-and-discovery.md)
+`See also`: [MCP Servers](../../configuration/mcp-servers.md), [MCP Client Setup](../../setup/mcp-client-setup.md), [Observability and Request Logs](../observability-and-request-logs.md), [MCP Invocations](mcp-invocations.md), [Request Logs](request-logs.md), [Data Relationships](../../reference/data-relationships.md), [Admin API Contract Workflow](../../reference/admin-api-contract-workflow.md), [ADR: External MCP Registry and Discovery Boundary](../../adr/2026-05-26-external-mcp-registry-and-discovery.md)
 
-The external MCP registry is the control-plane record of MCP servers that Oceans LLM may discover and later use for tool execution. Phase 2 stores user-added server records in the database, keeps recommended server suggestions in a checked-in static catalog, and discovers tool metadata through Streamable HTTP.
+The external MCP registry is the control-plane record of MCP servers that Oceans LLM can discover and expose through the MCP gateway. It stores user-added server records in the database, keeps recommended server suggestions in a checked-in static catalog, discovers tool metadata through Streamable HTTP, and powers the admin diagnostics page at `/admin/mcp/servers`.
 
-This page describes registry and discovery behavior. Tool grants, toolsets, chat/request execution, OAuth token exchange runtime, and stdio MCP servers are out of scope for this phase.
+This page is maintainer and admin documentation for registry diagnostics. User-facing server setup lives in [MCP Servers](../../configuration/mcp-servers.md), and client setup lives in [MCP Client Setup](../../setup/mcp-client-setup.md).
+
+Tool grants, toolsets, OAuth token exchange runtime, and stdio MCP servers are out of scope for this slice.
 
 ## Admin API
 
@@ -19,6 +21,25 @@ The platform-admin API surface is:
 - `POST /api/v1/admin/mcp/servers/{server_id}/discovery-refresh`
 
 All endpoints require an active platform-admin session. The admin contract is generated from gateway handler annotations; regenerate it with `mise run admin-contract-generate` after route or DTO changes.
+
+## Admin UI
+
+The admin UI route is:
+
+```text
+/admin/mcp/servers
+```
+
+The page shows:
+
+- registered servers, active/disabled state, discovery status, tool count, and bounded last error
+- selected server diagnostics, URL, auth mode, timeout, and discovery timestamps
+- discovered tools with active state, schema hash, schema version, and first/last discovered timestamps
+- recommended catalog import
+- custom server creation
+- edit, disable, and discovery refresh actions
+
+Keep this page separate from `/admin/observability/mcp-invocations`. The registry page describes configured upstream servers and discovery status; the invocation page describes request-linked tool calls.
 
 ## Recommended Catalog
 
@@ -45,13 +66,36 @@ Delete semantics are disable/archive semantics. There is no hard delete endpoint
 
 Rediscovery marks previously active tools inactive before upserting the newly discovered set. Existing tools keep their stable `mcp_tool_id` when the upstream tool name is unchanged. A changed input schema increments `schema_version`; unchanged schemas keep their current version.
 
+## Gateway Data Plane
+
+The public data-plane route is:
+
+```text
+GET /mcp/{server_key}
+POST /mcp/{server_key}
+DELETE /mcp/{server_key}
+```
+
+It proxies Streamable HTTP requests to the active registered server URL. Runtime policy:
+
+- authenticate inbound callers with Oceans API keys
+- hide disabled and unknown servers as not found
+- allow active servers with `none`, `gateway_static_header`, or `gateway_bearer_token`
+- return `403 mcp_upstream_auth_required` for `user_passthrough` and `oauth_obo`
+- strip inbound `Authorization` and `x-oceans-api-key` before proxying upstream
+- forward only protocol/runtime-safe MCP headers and configured gateway-managed upstream auth
+
+Inbound credential contract details live in [Identity and Access](../../access/identity-and-access.md).
+
 ## Discovery Transport
 
 Phase 2 supports Streamable HTTP only.
 
 Discovery initializes the configured server URL over Streamable HTTP, sends the MCP protocol version header, and accepts JSON or `text/event-stream` JSON-RPC responses. Tool input schemas are normalized into canonical JSON before hashing. Non-object input schemas are rejected and recorded as discovery failures.
 
-Stdio MCP servers, legacy SSE transport, protocol proxying, tool federation, and execution-time routing are intentionally not implemented here.
+Discovery status is the server health signal for this slice. Do not add a separate ping health check or discovery-run history UI until the product needs those distinct diagnostics.
+
+Stdio MCP servers, legacy SSE transport, tool federation, and grants/toolsets are intentionally not implemented here.
 
 ## Auth Modes
 
@@ -63,9 +107,9 @@ Stored auth modes are declarations:
 - `user_passthrough`
 - `oauth_obo`
 
-Discovery can use only `none` or gateway-managed secret references. Gateway-managed discovery credentials require an HTTPS `server_url` and use `auth_config.secret_ref` with the `env/OCEANS_MCP_DISCOVERY_*` form. `gateway_static_header` also requires `auth_config.header_name`.
+Discovery and proxying can use only `none` or gateway-managed secret references. Gateway-managed credentials require an HTTPS `server_url` and use `auth_config.secret_ref` with the `env/OCEANS_MCP_DISCOVERY_*` form. `gateway_static_header` also requires `auth_config.header_name`.
 
-`user_passthrough` and `oauth_obo` are recorded so future execution and grants can require user-owned credentials. Discovery without a gateway-managed credential records `auth_required` rather than attempting to persist or forward a user token.
+`user_passthrough` and `oauth_obo` are recorded so future execution and grants can require user-owned credentials. Discovery records `auth_required`, and proxying returns `mcp_upstream_auth_required`, rather than attempting to persist or forward a user token.
 
 Never store raw tokens in:
 
@@ -76,6 +120,26 @@ Never store raw tokens in:
 - admin API responses
 
 Discovery diagnostics store bounded summaries and client error categories. HTTP failure summaries include the upstream status code, but not upstream response bodies.
+
+## Metrics and Traces
+
+Discovery refresh emits metrics:
+
+- `gateway.mcp.discovery.refreshes`
+- `gateway.mcp.discovery.refresh.duration`
+
+Metric labels are bounded to `server_id`, `result`, and `status`. Do not add labels for URLs, header values, secrets, or raw upstream errors.
+
+Discovery refresh and MCP proxy attempts run under tracing spans with redacted fields. Safe fields include server id, server key, upstream auth mode, caller owner kind, and status code.
+
+## Failure Remediation
+
+Use the registry page first:
+
+- `auth_required`: change the server to `none` or a gateway-managed auth mode, or wait for user-scoped OAuth grants.
+- `failed`: inspect `last_error_summary`, validate URL reachability, timeout, protocol support, and secret environment variables.
+- disabled server: re-create or update the desired server record; disabled servers are hidden from data-plane clients.
+- zero tools after success: confirm the upstream server exposes tools over Streamable HTTP and returns object input schemas.
 
 ## Relationship to Observability
 

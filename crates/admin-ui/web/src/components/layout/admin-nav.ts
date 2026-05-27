@@ -29,6 +29,7 @@ export const adminNavSections: AdminNavSection[] = [
     items: [
       { label: "API Keys", to: "/api-keys", icon: SearchIcon },
       { label: "Models", to: "/models", icon: HomeIcon },
+      { label: "MCP Servers", to: "/mcp/servers", icon: McpServerIcon },
     ],
   },
   {

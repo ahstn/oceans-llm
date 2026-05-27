@@ -4,8 +4,10 @@ pub mod authenticator;
 pub mod budget_alerts;
 pub mod budget_guard;
 pub mod icon_identity;
+pub mod mcp_gateway;
 pub mod mcp_invocation_logging;
 pub mod mcp_registry;
+pub mod mcp_upstream_auth;
 pub mod model_access;
 pub mod model_resolution;
 pub mod pricing_catalog;
@@ -31,6 +33,7 @@ pub use icon_identity::{
     provider_icon_key_from_metadata, resolve_model_icon_key, resolve_provider_display,
     resolve_provider_display_from_parts,
 };
+pub use mcp_gateway::{McpGatewayService, McpGatewayUpstream};
 pub use mcp_invocation_logging::{
     LoggedMcpToolInvocation, McpInvocationLogInput, McpInvocationLogging,
     McpInvocationPayloadPolicy,

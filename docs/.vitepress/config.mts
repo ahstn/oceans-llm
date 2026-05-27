@@ -51,6 +51,7 @@ export default defineConfig({
             text: "Deploy and Operations",
             link: "/setup/deploy-and-operations",
           },
+          { text: "MCP Client Setup", link: "/setup/mcp-client-setup" },
           { text: "Kubernetes and Helm", link: "/setup/kubernetes-and-helm" },
         ],
       },
@@ -69,6 +70,7 @@ export default defineConfig({
             text: "Pricing Catalog and Accounting",
             link: "/configuration/pricing-catalog-and-accounting",
           },
+          { text: "MCP Servers", link: "/configuration/mcp-servers" },
         ],
       },
       {
