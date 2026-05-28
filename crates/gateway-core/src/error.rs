@@ -30,6 +30,8 @@ pub enum AuthError {
     InsufficientPrivileges,
     #[error("api key owner metadata is invalid")]
     ApiKeyOwnerInvalid,
+    #[error("service-account api key requires an active service-account budget")]
+    ServiceAccountBudgetRequired,
     #[error("api key hash verification failed: {0}")]
     HashVerification(String),
 }
@@ -137,6 +139,7 @@ impl GatewayError {
             | Self::Auth(AuthError::ConflictingApiKeyHeaders) => 401,
             Self::Auth(AuthError::ApiKeyOwnerInvalid) => 500,
             Self::Auth(AuthError::ModelNotGranted(_))
+            | Self::Auth(AuthError::ServiceAccountBudgetRequired)
             | Self::Auth(AuthError::InsufficientPrivileges) => 403,
             Self::BudgetExceeded { .. } => 429,
             Self::IdentityConstraint(_) => 400,
@@ -197,6 +200,9 @@ impl GatewayError {
             Self::Auth(AuthError::ModelNotGranted(_)) => "model_not_granted",
             Self::Auth(AuthError::InsufficientPrivileges) => "insufficient_privileges",
             Self::Auth(AuthError::ApiKeyOwnerInvalid) => "api_key_owner_invalid",
+            Self::Auth(AuthError::ServiceAccountBudgetRequired) => {
+                "service_account_budget_required"
+            }
             Self::Auth(AuthError::HashVerification(_)) => "api_key_hash_verification_failed",
             Self::BudgetExceeded { .. } => "budget_exceeded",
             Self::IdentityConstraint(_) => "identity_constraint_violation",
@@ -217,5 +223,19 @@ impl GatewayError {
             Self::McpUpstreamAuthRequired { .. } => "mcp_upstream_auth_required",
             Self::Internal(_) => "internal_error",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AuthError, GatewayError};
+
+    #[test]
+    fn service_account_budget_required_is_auth_forbidden() {
+        let error = GatewayError::Auth(AuthError::ServiceAccountBudgetRequired);
+
+        assert_eq!(error.http_status_code(), 403);
+        assert_eq!(error.error_type(), "authentication_error");
+        assert_eq!(error.error_code(), "service_account_budget_required");
     }
 }

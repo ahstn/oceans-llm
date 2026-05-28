@@ -24,7 +24,7 @@ describe('SpendControlsPage', () => {
     routeMock.useLoaderData.mockReset()
   })
 
-  it('renders user and team budget management tables', async () => {
+  it('renders user, service account, and user model budget management tables', async () => {
     routeMock.useLoaderData.mockReturnValue({
       budgets: {
         data: {
@@ -47,8 +47,11 @@ describe('SpendControlsPage', () => {
               alert_recipient_summary: 'jane@example.com',
             },
           ],
-          teams: [
+          service_accounts: [
             {
+              service_account_id: 'service_account_1',
+              service_account_name: 'CI Indexer',
+              service_account_key: 'ci-indexer',
               team_id: 'team_1',
               team_name: 'Core Platform',
               team_key: 'core-platform',
@@ -56,6 +59,25 @@ describe('SpendControlsPage', () => {
               current_window_spend_usd_10000: 0,
               alert_email_ready: false,
               alert_recipient_summary: 'No active team owners/admins with email addresses',
+            },
+          ],
+          user_model_budgets: [
+            {
+              budget_id: 'budget_1',
+              scope_key: 'budget:v1:user:user_1:upstream_model:gpt-5',
+              user_id: 'user_1',
+              model_id: null,
+              upstream_model: 'gpt-5',
+              budget: {
+                cadence: 'daily',
+                amount_usd: '10.0000',
+                amount_usd_10000: 100_000,
+                hard_limit: true,
+                timezone: 'UTC',
+              },
+              current_window_spend_usd_10000: 0,
+              alert_email_ready: true,
+              alert_recipient_summary: 'jane@example.com',
             },
           ],
         },
@@ -68,14 +90,20 @@ describe('SpendControlsPage', () => {
           total: 0,
         },
       },
+      models: {
+        data: {
+          items: [],
+        },
+      },
     })
 
     const { SpendControlsPage } = await import('@/routes/spend-controls')
     render(<SpendControlsPage />)
 
     expect(screen.getByText('Spend Controls')).toBeInTheDocument()
-    expect(screen.getByText('Jane Admin')).toBeInTheDocument()
-    expect(screen.getByText('Core Platform')).toBeInTheDocument()
+    expect(screen.getAllByText('Jane Admin').length).toBeGreaterThan(0)
+    expect(screen.getByText('CI Indexer')).toBeInTheDocument()
+    expect(screen.getByText('User Model Budgets')).toBeInTheDocument()
     expect(screen.getByText('Budget Alert History')).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'Configure' }).length).toBeGreaterThan(0)
   })

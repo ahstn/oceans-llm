@@ -19,18 +19,18 @@ The product uses first-class users, teams, service accounts, and API-key credent
 
 - Users and service accounts are gateway principals.
 - API keys are credentials attached to a user or service account.
-- Teams are durable ownership boundaries for team budgets and team-owned service accounts.
+- Teams are durable grouping and service-account ownership boundaries.
 - Service accounts are first-class team-owned non-human gateway principals.
 - Direct team-owned runtime API keys are not part of the product contract.
 - One user belongs to at most one team in this slice.
 - Users can exist without a team.
 - There is no reserved `system-legacy` team or system-legacy runtime-key compatibility.
 
-Gateway service-account-style callers are modeled with API keys today, not a distinct owner kind.
+Gateway service-account callers are modeled as service-account principals with API-key credentials.
 
-- Use a team-owned API key for shared automation or service workloads.
+- Use a service-account API key for shared automation or service workloads.
 - Use a user-owned API key only for traffic that should spend against one user.
-- Use config-seeded keys for bootstrap or deployment-managed callers, knowing they are owned by `system-legacy`.
+- Use config-seeded keys for bootstrap or deployment-managed callers by declaring their service account and budget in config.
 - Keep provider service-account credentials out of this identity model; they belong to provider config.
 
 ## User Lifecycle

@@ -13,6 +13,7 @@ Service accounts are first-class gateway principals for automation, applications
 - service-account credentials can call `/v1/*`
 - service-account spend is attributable to the service account and its owning team
 - service-account lifecycle is independent from team user membership
+- active service-account credentials require an active service-account budget
 
 API keys remain credentials. They are not the principal for team automation. A non-human team caller authenticates with a credential attached to a service account.
 
@@ -61,6 +62,10 @@ Deactivation means:
 - the service account cannot be used for new runtime calls unless it is explicitly reactivated by an allowed admin workflow
 
 Credential revocation remains separate from service-account deactivation. Revoking one credential blocks that secret only. Deactivating the service account blocks the principal.
+
+## Budget Gate
+
+Service accounts are spend-bearing principals. A service-account API key cannot authenticate unless the service account has an active budget. Admins must revoke or deactivate active service-account keys before deactivating that service account's budget.
 
 ## Budget Alerts
 

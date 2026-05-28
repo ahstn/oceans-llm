@@ -224,7 +224,6 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
                     .owner_user_id
                     .ok_or_else(|| anyhow::anyhow!("user-owned demo key missing owner_user_id"))?
             ),
-            ApiKeyOwnerKind::Team => "unsupported-team-owned-demo-key".to_string(),
             ApiKeyOwnerKind::ServiceAccount => format!(
                 "service_account:{}",
                 api_key.owner_service_account_id.ok_or_else(|| {
@@ -260,7 +259,7 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
                     })?;
                 user_team_ids.get(owner_email).copied().flatten()
             }
-            ApiKeyOwnerKind::Team | ApiKeyOwnerKind::ServiceAccount => api_key.owner_team_id,
+            ApiKeyOwnerKind::ServiceAccount => api_key.owner_team_id,
         };
 
         let total_tokens = fixture

@@ -4,13 +4,14 @@ use async_trait::async_trait;
 use gateway_core::{
     ApiKeyOwnerKind, AuthenticatedApiKey, BudgetAlertChannel, BudgetAlertDeliveryRecord,
     BudgetAlertDeliveryStatus, BudgetAlertDispatchTask, BudgetAlertRecord, BudgetAlertRepository,
-    BudgetCadence, BudgetRepository, GatewayError, IdentityRepository, MembershipRole, Money4,
-    ServiceAccountBudgetRecord, TeamBudgetRecord, UsageLedgerRecord, UserBudgetRecord, UserStatus,
-    budget_window_utc,
+    BudgetCadence, BudgetRecord, BudgetRepository, BudgetScope, GatewayError, IdentityRepository,
+    MembershipRole, Money4, UsageLedgerRecord, UserStatus, budget_window_utc,
 };
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tracing::{info, warn};
 use uuid::Uuid;
+
+use crate::budget_scopes::applicable_budget_scopes;
 
 pub const BUDGET_ALERT_THRESHOLD_BPS: i32 = 2_000;
 
@@ -93,176 +94,59 @@ where
             return Ok(());
         }
 
-        match api_key.owner_kind {
-            ApiKeyOwnerKind::User => {
-                let user_id = api_key.owner_user_id.ok_or_else(|| {
-                    GatewayError::Internal("user-owned key missing user_id".to_string())
-                })?;
-                let Some(budget) = self.repo.get_active_budget_for_user(user_id).await? else {
-                    return Ok(());
-                };
-                let (window_start, window_end) =
-                    usage_window_bounds(budget.cadence, ledger.occurred_at)?;
-                let spent_after = self
-                    .repo
-                    .sum_usage_cost_for_user_in_window(user_id, window_start, window_end)
-                    .await?;
-                let spent_before = spent_after
-                    .checked_sub(ledger.computed_cost_usd)
-                    .ok_or_else(|| {
-                        GatewayError::Internal(
-                            "budget threshold spend subtraction overflow".to_string(),
-                        )
-                    })?;
-                let owner = self.resolve_user_owner(user_id).await?;
-                self.create_alert_if_needed(AlertEvaluation {
-                    owner,
-                    budget_id: budget.user_budget_id,
-                    cadence: budget.cadence,
-                    budget_amount: budget.amount_usd,
-                    occurred_at: ledger.occurred_at,
-                    spent_before,
-                    spent_after,
-                    immediate_on_existing_threshold: false,
-                })
-                .await
-            }
-            ApiKeyOwnerKind::Team => Err(GatewayError::Internal(
-                "team-owned api keys are no longer supported".to_string(),
-            )),
-            ApiKeyOwnerKind::ServiceAccount => {
-                let service_account_id = api_key.owner_service_account_id.ok_or_else(|| {
+        for scope in applicable_budget_scopes(
+            api_key,
+            ledger.model_id,
+            if ledger.model_id.is_none() {
+                Some(ledger.upstream_model.as_str())
+            } else {
+                None
+            },
+        )? {
+            let Some(budget) = self.repo.get_active_budget_by_scope(&scope).await? else {
+                continue;
+            };
+            let (window_start, window_end) =
+                usage_window_bounds(budget.settings.cadence, ledger.occurred_at)?;
+            let spent_after = self
+                .repo
+                .sum_usage_cost_for_budget_scope_in_window(&scope, window_start, window_end)
+                .await?;
+            let spent_before = spent_after
+                .checked_sub(ledger.computed_cost_usd)
+                .ok_or_else(|| {
                     GatewayError::Internal(
-                        "service-account-owned key missing service_account_id".to_string(),
+                        "budget threshold spend subtraction overflow".to_string(),
                     )
                 })?;
-                let team_id = api_key.owner_team_id.ok_or_else(|| {
-                    GatewayError::Internal("service-account-owned key missing team_id".to_string())
-                })?;
-                if let Some(budget) = self
-                    .repo
-                    .get_active_budget_for_service_account(service_account_id)
-                    .await?
-                {
-                    let (window_start, window_end) =
-                        usage_window_bounds(budget.cadence, ledger.occurred_at)?;
-                    let spent_after = self
-                        .repo
-                        .sum_usage_cost_for_service_account_in_window(
-                            service_account_id,
-                            window_start,
-                            window_end,
-                        )
-                        .await?;
-                    let spent_before = spent_after
-                        .checked_sub(ledger.computed_cost_usd)
-                        .ok_or_else(|| {
-                            GatewayError::Internal(
-                                "budget threshold spend subtraction overflow".to_string(),
-                            )
-                        })?;
-                    let owner = self
-                        .resolve_service_account_owner(service_account_id)
-                        .await?;
-                    self.create_alert_if_needed(AlertEvaluation {
-                        owner,
-                        budget_id: budget.service_account_budget_id,
-                        cadence: budget.cadence,
-                        budget_amount: budget.amount_usd,
-                        occurred_at: ledger.occurred_at,
-                        spent_before,
-                        spent_after,
-                        immediate_on_existing_threshold: false,
-                    })
-                    .await?;
-                }
-
-                let Some(budget) = self.repo.get_active_budget_for_team(team_id).await? else {
-                    return Ok(());
-                };
-                let (window_start, window_end) =
-                    usage_window_bounds(budget.cadence, ledger.occurred_at)?;
-                let spent_after = self
-                    .repo
-                    .sum_usage_cost_for_team_in_window(team_id, window_start, window_end)
-                    .await?;
-                let spent_before = spent_after
-                    .checked_sub(ledger.computed_cost_usd)
-                    .ok_or_else(|| {
-                        GatewayError::Internal(
-                            "budget threshold spend subtraction overflow".to_string(),
-                        )
-                    })?;
-                let owner = self.resolve_team_owner(team_id).await?;
-                self.create_alert_if_needed(AlertEvaluation {
-                    owner,
-                    budget_id: budget.team_budget_id,
-                    cadence: budget.cadence,
-                    budget_amount: budget.amount_usd,
-                    occurred_at: ledger.occurred_at,
-                    spent_before,
-                    spent_after,
-                    immediate_on_existing_threshold: false,
-                })
-                .await
-            }
-        }
-    }
-
-    pub async fn evaluate_after_user_budget_upsert(
-        &self,
-        budget: &UserBudgetRecord,
-        current_spend: Money4,
-        occurred_at: OffsetDateTime,
-    ) -> Result<(), GatewayError> {
-        let owner = self.resolve_user_owner(budget.user_id).await?;
-        self.create_alert_if_needed(AlertEvaluation {
-            owner,
-            budget_id: budget.user_budget_id,
-            cadence: budget.cadence,
-            budget_amount: budget.amount_usd,
-            occurred_at,
-            spent_before: current_spend,
-            spent_after: current_spend,
-            immediate_on_existing_threshold: true,
-        })
-        .await
-    }
-
-    pub async fn evaluate_after_team_budget_upsert(
-        &self,
-        budget: &TeamBudgetRecord,
-        current_spend: Money4,
-        occurred_at: OffsetDateTime,
-    ) -> Result<(), GatewayError> {
-        let owner = self.resolve_team_owner(budget.team_id).await?;
-        self.create_alert_if_needed(AlertEvaluation {
-            owner,
-            budget_id: budget.team_budget_id,
-            cadence: budget.cadence,
-            budget_amount: budget.amount_usd,
-            occurred_at,
-            spent_before: current_spend,
-            spent_after: current_spend,
-            immediate_on_existing_threshold: true,
-        })
-        .await
-    }
-
-    pub async fn evaluate_after_service_account_budget_upsert(
-        &self,
-        budget: &ServiceAccountBudgetRecord,
-        current_spend: Money4,
-        occurred_at: OffsetDateTime,
-    ) -> Result<(), GatewayError> {
-        let owner = self
-            .resolve_service_account_owner(budget.service_account_id)
+            let owner = self.resolve_budget_owner(&budget).await?;
+            self.create_alert_if_needed(AlertEvaluation {
+                owner,
+                budget_id: budget.budget_id,
+                cadence: budget.settings.cadence,
+                budget_amount: budget.settings.amount_usd,
+                occurred_at: ledger.occurred_at,
+                spent_before,
+                spent_after,
+                immediate_on_existing_threshold: false,
+            })
             .await?;
+        }
+        Ok(())
+    }
+
+    pub async fn evaluate_after_budget_upsert(
+        &self,
+        budget: &BudgetRecord,
+        current_spend: Money4,
+        occurred_at: OffsetDateTime,
+    ) -> Result<(), GatewayError> {
+        let owner = self.resolve_budget_owner(budget).await?;
         self.create_alert_if_needed(AlertEvaluation {
             owner,
-            budget_id: budget.service_account_budget_id,
-            cadence: budget.cadence,
-            budget_amount: budget.amount_usd,
+            budget_id: budget.budget_id,
+            cadence: budget.settings.cadence,
+            budget_amount: budget.settings.amount_usd,
             occurred_at,
             spent_before: current_spend,
             spent_after: current_spend,
@@ -385,6 +269,23 @@ where
         Ok(())
     }
 
+    async fn resolve_budget_owner(
+        &self,
+        budget: &BudgetRecord,
+    ) -> Result<AlertOwnerContext, GatewayError> {
+        let mut owner = match budget.scope {
+            BudgetScope::User { user_id } | BudgetScope::UserModel { user_id, .. } => {
+                self.resolve_user_owner(user_id).await?
+            }
+            BudgetScope::ServiceAccount { service_account_id } => {
+                self.resolve_service_account_owner(service_account_id)
+                    .await?
+            }
+        };
+        owner.ownership_scope_key = budget.scope_key.clone();
+        Ok(owner)
+    }
+
     async fn resolve_user_owner(&self, user_id: Uuid) -> Result<AlertOwnerContext, GatewayError> {
         let user = self.repo.get_user_by_id(user_id).await?.ok_or_else(|| {
             GatewayError::Internal(format!("budget alert user `{user_id}` missing"))
@@ -399,10 +300,7 @@ where
         })
     }
 
-    async fn resolve_team_owner(&self, team_id: Uuid) -> Result<AlertOwnerContext, GatewayError> {
-        let team = self.repo.get_team_by_id(team_id).await?.ok_or_else(|| {
-            GatewayError::Internal(format!("budget alert team `{team_id}` missing"))
-        })?;
+    async fn team_alert_recipients(&self, team_id: Uuid) -> Result<Vec<String>, GatewayError> {
         let memberships = self.repo.list_team_memberships(team_id).await?;
         let mut recipients = BTreeSet::new();
 
@@ -422,13 +320,7 @@ where
             recipients.insert(user.email);
         }
 
-        Ok(AlertOwnerContext {
-            owner_kind: ApiKeyOwnerKind::Team,
-            owner_id: team.team_id,
-            owner_name: team.team_name,
-            ownership_scope_key: format!("team:{team_id}:actor:none"),
-            recipients: recipients.into_iter().collect(),
-        })
+        Ok(recipients.into_iter().collect())
     }
 
     async fn resolve_service_account_owner(
@@ -444,12 +336,13 @@ where
                     "budget alert service account `{service_account_id}` missing"
                 ))
             })?;
-        let mut owner = self.resolve_team_owner(service_account.team_id).await?;
-        owner.owner_kind = ApiKeyOwnerKind::ServiceAccount;
-        owner.owner_id = service_account.service_account_id;
-        owner.owner_name = service_account.service_account_name;
-        owner.ownership_scope_key = format!("service_account:{service_account_id}");
-        Ok(owner)
+        Ok(AlertOwnerContext {
+            owner_kind: ApiKeyOwnerKind::ServiceAccount,
+            owner_id: service_account.service_account_id,
+            owner_name: service_account.service_account_name,
+            ownership_scope_key: format!("service_account:{service_account_id}"),
+            recipients: self.team_alert_recipients(service_account.team_id).await?,
+        })
     }
 }
 
@@ -535,664 +428,20 @@ fn render_budget_alert_email(task: &BudgetAlertDispatchTask) -> Result<String, G
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
+    use gateway_core::{BudgetModelSelector, BudgetScope};
+    use uuid::Uuid;
 
-    use gateway_core::{
-        AuthMode, BudgetAlertDispatchTask, BudgetAlertHistoryPage, BudgetAlertHistoryQuery,
-        BudgetAlertRepository, GlobalRole, IdentityRepository, ModelAccessMode,
-        ServiceAccountBudgetRecord, ServiceAccountRecord, ServiceAccountStatus, StoreError,
-        TeamMembershipRecord, TeamRecord, UserBudgetRecord, UserRecord,
-    };
-    use time::OffsetDateTime;
-
-    use super::*;
-
-    #[derive(Clone, Default)]
-    struct InMemoryRepo {
-        user: Option<UserRecord>,
-        team: Option<TeamRecord>,
-        team_memberships: Vec<TeamMembershipRecord>,
-        team_users: Vec<UserRecord>,
-        service_account: Option<ServiceAccountRecord>,
-        active_service_account_budget: Option<ServiceAccountBudgetRecord>,
-        service_account_spend: Money4,
-        active_team_budget: Option<TeamBudgetRecord>,
-        team_spend: Money4,
-        alerts: Arc<Mutex<Vec<BudgetAlertRecord>>>,
-        deliveries: Arc<Mutex<Vec<BudgetAlertDeliveryRecord>>>,
-    }
-
-    #[async_trait]
-    impl IdentityRepository for InMemoryRepo {
-        async fn get_user_by_id(&self, user_id: Uuid) -> Result<Option<UserRecord>, StoreError> {
-            if self
-                .user
-                .as_ref()
-                .is_some_and(|user| user.user_id == user_id)
-            {
-                return Ok(self.user.clone());
-            }
-            Ok(self
-                .team_users
-                .iter()
-                .find(|user| user.user_id == user_id)
-                .cloned())
-        }
-
-        async fn get_team_by_id(&self, team_id: Uuid) -> Result<Option<TeamRecord>, StoreError> {
-            Ok(self.team.clone().filter(|team| team.team_id == team_id))
-        }
-
-        async fn get_service_account_by_id(
-            &self,
-            service_account_id: Uuid,
-        ) -> Result<Option<ServiceAccountRecord>, StoreError> {
-            Ok(self
-                .service_account
-                .clone()
-                .filter(|record| record.service_account_id == service_account_id))
-        }
-
-        async fn get_team_membership_for_user(
-            &self,
-            user_id: Uuid,
-        ) -> Result<Option<TeamMembershipRecord>, StoreError> {
-            Ok(self
-                .team_memberships
-                .iter()
-                .find(|membership| membership.user_id == user_id)
-                .cloned())
-        }
-
-        async fn list_allowed_model_keys_for_user(
-            &self,
-            _user_id: Uuid,
-        ) -> Result<Vec<String>, StoreError> {
-            Ok(Vec::new())
-        }
-
-        async fn list_allowed_model_keys_for_team(
-            &self,
-            _team_id: Uuid,
-        ) -> Result<Vec<String>, StoreError> {
-            Ok(Vec::new())
-        }
-
-        async fn list_team_memberships(
-            &self,
-            team_id: Uuid,
-        ) -> Result<Vec<TeamMembershipRecord>, StoreError> {
-            Ok(self
-                .team_memberships
-                .iter()
-                .filter(|membership| membership.team_id == team_id)
-                .cloned()
-                .collect())
-        }
-    }
-
-    #[async_trait]
-    impl BudgetRepository for InMemoryRepo {
-        async fn get_active_budget_for_user(
-            &self,
-            _user_id: Uuid,
-        ) -> Result<Option<UserBudgetRecord>, StoreError> {
-            Ok(None)
-        }
-
-        async fn get_active_budget_for_team(
-            &self,
-            _team_id: Uuid,
-        ) -> Result<Option<TeamBudgetRecord>, StoreError> {
-            Ok(self.active_team_budget.clone())
-        }
-
-        async fn get_active_budget_for_service_account(
-            &self,
-            _service_account_id: Uuid,
-        ) -> Result<Option<ServiceAccountBudgetRecord>, StoreError> {
-            Ok(self.active_service_account_budget.clone())
-        }
-
-        async fn get_usage_ledger_by_request_and_scope(
-            &self,
-            _request_id: &str,
-            _ownership_scope_key: &str,
-        ) -> Result<Option<UsageLedgerRecord>, StoreError> {
-            Ok(None)
-        }
-
-        async fn sum_usage_cost_for_user_in_window(
-            &self,
-            _user_id: Uuid,
-            _window_start: OffsetDateTime,
-            _window_end: OffsetDateTime,
-        ) -> Result<Money4, StoreError> {
-            Ok(Money4::ZERO)
-        }
-
-        async fn sum_usage_cost_for_team_in_window(
-            &self,
-            _team_id: Uuid,
-            _window_start: OffsetDateTime,
-            _window_end: OffsetDateTime,
-        ) -> Result<Money4, StoreError> {
-            Ok(self.team_spend)
-        }
-
-        async fn sum_usage_cost_for_service_account_in_window(
-            &self,
-            _service_account_id: Uuid,
-            _window_start: OffsetDateTime,
-            _window_end: OffsetDateTime,
-        ) -> Result<Money4, StoreError> {
-            Ok(self.service_account_spend)
-        }
-
-        async fn insert_usage_ledger_if_absent(
-            &self,
-            _event: &UsageLedgerRecord,
-        ) -> Result<bool, StoreError> {
-            Ok(true)
-        }
-    }
-
-    #[async_trait]
-    impl BudgetAlertRepository for InMemoryRepo {
-        async fn create_budget_alert_with_deliveries(
-            &self,
-            alert: &BudgetAlertRecord,
-            deliveries: &[BudgetAlertDeliveryRecord],
-        ) -> Result<bool, StoreError> {
-            let mut alerts = self.alerts.lock().expect("alerts lock");
-            if alerts.iter().any(|existing| {
-                existing.ownership_scope_key == alert.ownership_scope_key
-                    && existing.budget_id == alert.budget_id
-                    && existing.threshold_bps == alert.threshold_bps
-                    && existing.window_start == alert.window_start
-            }) {
-                return Ok(false);
-            }
-            alerts.push(alert.clone());
-            self.deliveries
-                .lock()
-                .expect("deliveries lock")
-                .extend(deliveries.iter().cloned());
-            Ok(true)
-        }
-
-        async fn list_budget_alert_history(
-            &self,
-            _query: &BudgetAlertHistoryQuery,
-        ) -> Result<BudgetAlertHistoryPage, StoreError> {
-            Ok(BudgetAlertHistoryPage {
-                items: Vec::new(),
-                page: 1,
-                page_size: 25,
-                total: 0,
-            })
-        }
-
-        async fn claim_pending_budget_alert_delivery_tasks(
-            &self,
-            limit: u32,
-            claimed_at: OffsetDateTime,
-        ) -> Result<Vec<BudgetAlertDispatchTask>, StoreError> {
-            let alerts = self.alerts.lock().expect("alerts lock").clone();
-            let mut deliveries = self.deliveries.lock().expect("deliveries lock");
-            let mut tasks = Vec::new();
-
-            for delivery in deliveries.iter_mut() {
-                if delivery.delivery_status != BudgetAlertDeliveryStatus::Pending
-                    || delivery.last_attempted_at.is_some()
-                {
-                    continue;
-                }
-                if tasks.len() >= limit as usize {
-                    break;
-                }
-                delivery.last_attempted_at = Some(claimed_at);
-                let alert = alerts
-                    .iter()
-                    .find(|alert| alert.budget_alert_id == delivery.budget_alert_id)
-                    .expect("matching alert")
-                    .clone();
-                tasks.push(BudgetAlertDispatchTask {
-                    alert,
-                    delivery: delivery.clone(),
-                });
-            }
-
-            Ok(tasks)
-        }
-
-        async fn mark_budget_alert_delivery_sent(
-            &self,
-            delivery_id: Uuid,
-            provider_message_id: Option<&str>,
-            sent_at: OffsetDateTime,
-        ) -> Result<(), StoreError> {
-            let mut deliveries = self.deliveries.lock().expect("deliveries lock");
-            let delivery = deliveries
-                .iter_mut()
-                .find(|delivery| delivery.budget_alert_delivery_id == delivery_id)
-                .expect("delivery");
-            delivery.delivery_status = BudgetAlertDeliveryStatus::Sent;
-            delivery.provider_message_id = provider_message_id.map(ToString::to_string);
-            delivery.sent_at = Some(sent_at);
-            delivery.updated_at = sent_at;
-            Ok(())
-        }
-
-        async fn mark_budget_alert_delivery_failed(
-            &self,
-            delivery_id: Uuid,
-            failure_reason: &str,
-            failed_at: OffsetDateTime,
-        ) -> Result<(), StoreError> {
-            let mut deliveries = self.deliveries.lock().expect("deliveries lock");
-            let delivery = deliveries
-                .iter_mut()
-                .find(|delivery| delivery.budget_alert_delivery_id == delivery_id)
-                .expect("delivery");
-            delivery.delivery_status = BudgetAlertDeliveryStatus::Failed;
-            delivery.failure_reason = Some(failure_reason.to_string());
-            delivery.updated_at = failed_at;
-            Ok(())
-        }
-    }
-
-    fn build_user(user_id: Uuid, name: &str, email: &str, status: UserStatus) -> UserRecord {
-        UserRecord {
-            user_id,
-            name: name.to_string(),
-            email: email.to_string(),
-            email_normalized: email.to_string(),
-            global_role: GlobalRole::User,
-            auth_mode: AuthMode::Password,
-            status,
-            must_change_password: false,
-            request_logging_enabled: true,
-            model_access_mode: ModelAccessMode::All,
-            tags: Vec::new(),
-            created_at: OffsetDateTime::now_utc(),
-            updated_at: OffsetDateTime::now_utc(),
-        }
-    }
-
-    fn build_service_account(service_account_id: Uuid, team_id: Uuid) -> ServiceAccountRecord {
-        ServiceAccountRecord {
-            service_account_id,
-            team_id,
-            service_account_key: "batch".to_string(),
-            service_account_name: "Batch Jobs".to_string(),
-            status: ServiceAccountStatus::Active,
-            model_access_mode: ModelAccessMode::All,
-            metadata: serde_json::json!({}),
-            created_at: OffsetDateTime::now_utc(),
-            updated_at: OffsetDateTime::now_utc(),
-            disabled_at: None,
-        }
-    }
-
-    #[tokio::test]
-    async fn monthly_budget_upsert_creates_one_alert_even_when_repeated() {
+    #[test]
+    fn user_model_scope_keys_are_canonical() {
         let user_id = Uuid::new_v4();
-        let repo = Arc::new(InMemoryRepo {
-            user: Some(build_user(
-                user_id,
-                "Jane User",
-                "jane@example.com",
-                UserStatus::Active,
-            )),
-            ..InMemoryRepo::default()
-        });
-        let service = BudgetAlertService::new(repo.clone(), Arc::new(SinkBudgetAlertSender));
-        let now = OffsetDateTime::now_utc();
-        let budget = UserBudgetRecord {
-            user_budget_id: Uuid::new_v4(),
-            user_id,
-            cadence: BudgetCadence::Monthly,
-            amount_usd: Money4::from_scaled(1_000_000),
-            hard_limit: true,
-            timezone: "UTC".to_string(),
-            is_active: true,
-            created_at: now,
-            updated_at: now,
-        };
-
-        service
-            .evaluate_after_user_budget_upsert(&budget, Money4::from_scaled(850_000), now)
-            .await
-            .expect("first alert");
-        service
-            .evaluate_after_user_budget_upsert(&budget, Money4::from_scaled(850_000), now)
-            .await
-            .expect("duplicate suppressed");
-
-        let alerts = repo.alerts.lock().expect("alerts lock");
-        let deliveries = repo.deliveries.lock().expect("deliveries lock");
-        assert_eq!(alerts.len(), 1);
-        assert_eq!(deliveries.len(), 1);
+        let model_id = Uuid::new_v4();
         assert_eq!(
-            deliveries[0].delivery_status,
-            BudgetAlertDeliveryStatus::Pending
-        );
-    }
-
-    #[tokio::test]
-    async fn budget_reconfiguration_can_emit_a_new_alert_in_the_same_window() {
-        let user_id = Uuid::new_v4();
-        let repo = Arc::new(InMemoryRepo {
-            user: Some(build_user(
+            BudgetScope::UserModel {
                 user_id,
-                "Jane User",
-                "jane@example.com",
-                UserStatus::Active,
-            )),
-            ..InMemoryRepo::default()
-        });
-        let service = BudgetAlertService::new(repo.clone(), Arc::new(SinkBudgetAlertSender));
-        let now = OffsetDateTime::now_utc();
-        let original_budget = UserBudgetRecord {
-            user_budget_id: Uuid::new_v4(),
-            user_id,
-            cadence: BudgetCadence::Monthly,
-            amount_usd: Money4::from_scaled(1_000_000),
-            hard_limit: true,
-            timezone: "UTC".to_string(),
-            is_active: true,
-            created_at: now,
-            updated_at: now,
-        };
-        let reconfigured_budget = UserBudgetRecord {
-            user_budget_id: Uuid::new_v4(),
-            user_id,
-            cadence: BudgetCadence::Monthly,
-            amount_usd: Money4::from_scaled(900_000),
-            hard_limit: true,
-            timezone: "UTC".to_string(),
-            is_active: true,
-            created_at: now,
-            updated_at: now,
-        };
-
-        service
-            .evaluate_after_user_budget_upsert(&original_budget, Money4::from_scaled(850_000), now)
-            .await
-            .expect("first budget alert");
-        service
-            .evaluate_after_user_budget_upsert(
-                &reconfigured_budget,
-                Money4::from_scaled(850_000),
-                now + time::Duration::minutes(1),
-            )
-            .await
-            .expect("reconfigured budget alert");
-
-        let alerts = repo.alerts.lock().expect("alerts lock");
-        assert_eq!(alerts.len(), 2);
-        assert_ne!(alerts[0].budget_id, alerts[1].budget_id);
-    }
-
-    #[tokio::test]
-    async fn team_usage_crossing_threshold_creates_alert_and_dispatch_sends_to_admin_recipients() {
-        let team_id = Uuid::new_v4();
-        let owner_id = Uuid::new_v4();
-        let admin_id = Uuid::new_v4();
-        let member_id = Uuid::new_v4();
-        let service_account_id = Uuid::new_v4();
-        let now = OffsetDateTime::now_utc();
-        let repo = Arc::new(InMemoryRepo {
-            team: Some(TeamRecord {
-                team_id,
-                team_key: "platform".to_string(),
-                team_name: "Platform".to_string(),
-                status: "active".to_string(),
-                model_access_mode: ModelAccessMode::All,
-                tags: Vec::new(),
-                created_at: now,
-                updated_at: now,
-            }),
-            team_memberships: vec![
-                TeamMembershipRecord {
-                    team_id,
-                    user_id: owner_id,
-                    role: MembershipRole::Owner,
-                    created_at: now,
-                    updated_at: now,
-                },
-                TeamMembershipRecord {
-                    team_id,
-                    user_id: admin_id,
-                    role: MembershipRole::Admin,
-                    created_at: now,
-                    updated_at: now,
-                },
-                TeamMembershipRecord {
-                    team_id,
-                    user_id: member_id,
-                    role: MembershipRole::Member,
-                    created_at: now,
-                    updated_at: now,
-                },
-            ],
-            team_users: vec![
-                build_user(owner_id, "Owner", "owner@example.com", UserStatus::Active),
-                build_user(admin_id, "Admin", "admin@example.com", UserStatus::Active),
-                build_user(
-                    member_id,
-                    "Member",
-                    "member@example.com",
-                    UserStatus::Active,
-                ),
-            ],
-            service_account: Some(build_service_account(service_account_id, team_id)),
-            active_team_budget: Some(TeamBudgetRecord {
-                team_budget_id: Uuid::new_v4(),
-                team_id,
-                cadence: BudgetCadence::Weekly,
-                amount_usd: Money4::from_scaled(1_000_000),
-                hard_limit: false,
-                timezone: "UTC".to_string(),
-                is_active: true,
-                created_at: now,
-                updated_at: now,
-            }),
-            team_spend: Money4::from_scaled(850_000),
-            ..InMemoryRepo::default()
-        });
-        let service = BudgetAlertService::new(repo.clone(), Arc::new(SinkBudgetAlertSender));
-        let api_key = AuthenticatedApiKey {
-            id: Uuid::new_v4(),
-            public_id: "gwk_test".to_string(),
-            name: "test".to_string(),
-            owner_kind: ApiKeyOwnerKind::ServiceAccount,
-            owner_user_id: None,
-            owner_team_id: Some(team_id),
-            owner_service_account_id: Some(service_account_id),
-        };
-        let ledger = UsageLedgerRecord {
-            usage_event_id: Uuid::new_v4(),
-            request_id: "req-1".to_string(),
-            ownership_scope_key: format!("service_account:{service_account_id}"),
-            api_key_id: api_key.id,
-            user_id: None,
-            team_id: Some(team_id),
-            service_account_id: Some(service_account_id),
-            actor_user_id: None,
-            model_id: None,
-            provider_key: "openai-prod".to_string(),
-            upstream_model: "gpt-5".to_string(),
-            prompt_tokens: Some(100),
-            completion_tokens: Some(50),
-            total_tokens: Some(150),
-            provider_usage: serde_json::json!({}),
-            pricing_status: gateway_core::UsagePricingStatus::Priced,
-            unpriced_reason: None,
-            pricing_row_id: None,
-            pricing_provider_id: Some("openai".to_string()),
-            pricing_model_id: Some("gpt-5".to_string()),
-            pricing_source: None,
-            pricing_source_etag: None,
-            pricing_source_fetched_at: None,
-            pricing_last_updated: None,
-            input_cost_per_million_tokens: None,
-            output_cost_per_million_tokens: None,
-            computed_cost_usd: Money4::from_scaled(100_000),
-            occurred_at: now,
-        };
-
-        service
-            .evaluate_after_usage(&api_key, &ledger)
-            .await
-            .expect("alert created");
-        let sent = service
-            .dispatch_pending_deliveries(10)
-            .await
-            .expect("deliveries sent");
-
-        let alerts = repo.alerts.lock().expect("alerts lock");
-        let deliveries = repo.deliveries.lock().expect("deliveries lock");
-        assert_eq!(alerts.len(), 1);
-        assert_eq!(deliveries.len(), 2);
-        assert_eq!(sent, 2);
-        assert!(
-            deliveries
-                .iter()
-                .all(|delivery| delivery.delivery_status == BudgetAlertDeliveryStatus::Sent)
+                selector: BudgetModelSelector::Model { model_id },
+            }
+            .scope_key(),
+            format!("budget:v1:user:{user_id}:model:{model_id}")
         );
-    }
-
-    #[tokio::test]
-    async fn overspent_budget_upsert_still_creates_alert() {
-        let user_id = Uuid::new_v4();
-        let repo = Arc::new(InMemoryRepo {
-            user: Some(build_user(
-                user_id,
-                "Jane User",
-                "jane@example.com",
-                UserStatus::Active,
-            )),
-            ..InMemoryRepo::default()
-        });
-        let service = BudgetAlertService::new(repo.clone(), Arc::new(SinkBudgetAlertSender));
-        let now = OffsetDateTime::now_utc();
-        let budget = UserBudgetRecord {
-            user_budget_id: Uuid::new_v4(),
-            user_id,
-            cadence: BudgetCadence::Monthly,
-            amount_usd: Money4::from_scaled(1_000_000),
-            hard_limit: true,
-            timezone: "UTC".to_string(),
-            is_active: true,
-            created_at: now,
-            updated_at: now,
-        };
-
-        service
-            .evaluate_after_user_budget_upsert(&budget, Money4::from_scaled(1_250_000), now)
-            .await
-            .expect("overspent alert should not error");
-
-        let alerts = repo.alerts.lock().expect("alerts lock");
-        assert_eq!(alerts.len(), 1);
-        assert_eq!(alerts[0].remaining_budget_usd, Money4::ZERO);
-    }
-
-    #[tokio::test]
-    async fn threshold_crossing_to_overspent_still_creates_alert() {
-        let team_id = Uuid::new_v4();
-        let owner_id = Uuid::new_v4();
-        let service_account_id = Uuid::new_v4();
-        let now = OffsetDateTime::now_utc();
-        let repo = Arc::new(InMemoryRepo {
-            team: Some(TeamRecord {
-                team_id,
-                team_key: "platform".to_string(),
-                team_name: "Platform".to_string(),
-                status: "active".to_string(),
-                model_access_mode: ModelAccessMode::All,
-                tags: Vec::new(),
-                created_at: now,
-                updated_at: now,
-            }),
-            team_memberships: vec![TeamMembershipRecord {
-                team_id,
-                user_id: owner_id,
-                role: MembershipRole::Owner,
-                created_at: now,
-                updated_at: now,
-            }],
-            team_users: vec![build_user(
-                owner_id,
-                "Owner",
-                "owner@example.com",
-                UserStatus::Active,
-            )],
-            service_account: Some(build_service_account(service_account_id, team_id)),
-            active_team_budget: Some(TeamBudgetRecord {
-                team_budget_id: Uuid::new_v4(),
-                team_id,
-                cadence: BudgetCadence::Weekly,
-                amount_usd: Money4::from_scaled(1_000_000),
-                hard_limit: false,
-                timezone: "UTC".to_string(),
-                is_active: true,
-                created_at: now,
-                updated_at: now,
-            }),
-            team_spend: Money4::from_scaled(1_100_000),
-            ..InMemoryRepo::default()
-        });
-        let service = BudgetAlertService::new(repo.clone(), Arc::new(SinkBudgetAlertSender));
-        let api_key = AuthenticatedApiKey {
-            id: Uuid::new_v4(),
-            public_id: "gwk_test".to_string(),
-            name: "test".to_string(),
-            owner_kind: ApiKeyOwnerKind::ServiceAccount,
-            owner_user_id: None,
-            owner_team_id: Some(team_id),
-            owner_service_account_id: Some(service_account_id),
-        };
-        let ledger = UsageLedgerRecord {
-            usage_event_id: Uuid::new_v4(),
-            request_id: "req-overspent".to_string(),
-            ownership_scope_key: format!("service_account:{service_account_id}"),
-            api_key_id: api_key.id,
-            user_id: None,
-            team_id: Some(team_id),
-            service_account_id: Some(service_account_id),
-            actor_user_id: None,
-            model_id: None,
-            provider_key: "openai-prod".to_string(),
-            upstream_model: "gpt-5".to_string(),
-            prompt_tokens: Some(100),
-            completion_tokens: Some(50),
-            total_tokens: Some(150),
-            provider_usage: serde_json::json!({}),
-            pricing_status: gateway_core::UsagePricingStatus::Priced,
-            unpriced_reason: None,
-            pricing_row_id: None,
-            pricing_provider_id: Some("openai".to_string()),
-            pricing_model_id: Some("gpt-5".to_string()),
-            pricing_source: None,
-            pricing_source_etag: None,
-            pricing_source_fetched_at: None,
-            pricing_last_updated: None,
-            input_cost_per_million_tokens: None,
-            output_cost_per_million_tokens: None,
-            computed_cost_usd: Money4::from_scaled(400_000),
-            occurred_at: now,
-        };
-
-        service
-            .evaluate_after_usage(&api_key, &ledger)
-            .await
-            .expect("overspent threshold crossing should still alert");
-
-        let alerts = repo.alerts.lock().expect("alerts lock");
-        assert_eq!(alerts.len(), 1);
-        assert_eq!(alerts[0].remaining_budget_usd, Money4::ZERO);
     }
 }

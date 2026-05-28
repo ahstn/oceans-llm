@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
 
 use gateway_core::{
-    AuthMode, GlobalRole, IdentityUserRecord, MembershipRole, OauthProviderRecord,
-    OidcProviderRecord, SeedTeam, SeedUser, StoreError, TeamRecord, UserStatus,
+    AuthMode, BudgetScope, BudgetSettings, GlobalRole, IdentityUserRecord, MembershipRole,
+    OauthProviderRecord, OidcProviderRecord, SeedApiKey, SeedTeam, SeedUser, StoreError,
+    TeamRecord, UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -31,6 +32,13 @@ pub(crate) fn api_key_uuid(public_id: &str) -> Uuid {
     Uuid::new_v5(
         &Uuid::NAMESPACE_OID,
         format!("api_key:{public_id}").as_bytes(),
+    )
+}
+
+pub(crate) fn service_account_uuid(service_account_key: &str) -> Uuid {
+    Uuid::new_v5(
+        &Uuid::NAMESPACE_OID,
+        format!("service_account:{service_account_key}").as_bytes(),
     )
 }
 
@@ -74,30 +82,28 @@ where
             record.updated_at = now;
         }
 
-        match &team.budget {
-            Some(budget) => {
-                store
-                    .upsert_active_budget_for_team(
-                        record.team_id,
-                        budget.cadence,
-                        budget.amount_usd,
-                        budget.hard_limit,
-                        &budget.timezone,
-                        now,
-                    )
-                    .await?;
-            }
-            None => {
-                store
-                    .deactivate_active_budget_for_team(record.team_id, now)
-                    .await?;
-            }
-        }
-
         records.insert(team.team_key.clone(), record);
     }
 
     Ok(records)
+}
+
+pub(crate) fn validate_seed_api_key_team_references(
+    teams: &[SeedTeam],
+    api_keys: &[SeedApiKey],
+) -> Result<(), StoreError> {
+    for api_key in api_keys {
+        if !teams
+            .iter()
+            .any(|team| team.team_key == api_key.service_account_team_key)
+        {
+            return Err(StoreError::Conflict(format!(
+                "seed api key '{}' references unknown service account team '{}'",
+                api_key.public_id, api_key.service_account_team_key
+            )));
+        }
+    }
+    Ok(())
 }
 
 pub(crate) async fn prevalidate_seed_users<S>(
@@ -248,21 +254,22 @@ where
 
     match &seed_user.budget {
         Some(budget) => {
-            store
-                .upsert_active_budget_for_user(
-                    existing_user.user_id,
-                    budget.cadence,
-                    budget.amount_usd,
-                    budget.hard_limit,
-                    &budget.timezone,
-                    now,
-                )
-                .await?;
+            let scope = BudgetScope::User {
+                user_id: existing_user.user_id,
+            };
+            let settings = BudgetSettings {
+                cadence: budget.cadence,
+                amount_usd: budget.amount_usd,
+                hard_limit: budget.hard_limit,
+                timezone: budget.timezone.clone(),
+            };
+            store.upsert_active_budget(&scope, &settings, now).await?;
         }
         None => {
-            store
-                .deactivate_active_budget_for_user(existing_user.user_id, now)
-                .await?;
+            let scope = BudgetScope::User {
+                user_id: existing_user.user_id,
+            };
+            store.deactivate_active_budget(&scope, now).await?;
         }
     }
 

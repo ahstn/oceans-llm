@@ -8,6 +8,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::{
+    budgets::{BudgetRecord, BudgetScope, BudgetScopeKind, BudgetSettings},
     domain::{
         ApiKeyRecord, BudgetAlertDeliveryRecord, BudgetAlertDispatchTask, BudgetAlertHistoryPage,
         BudgetAlertHistoryQuery, BudgetAlertRecord, ExternalMcpDiscoveryRunRecord,
@@ -19,11 +20,10 @@ use crate::{
         PricingCatalogCacheRecord, ProviderCapabilities, ProviderConnection,
         ProviderRequestContext, RequestAttemptRecord, RequestLogDetail, RequestLogPage,
         RequestLogPayloadRecord, RequestLogPurgeResult, RequestLogQuery, RequestLogRecord,
-        ServiceAccountBudgetRecord, ServiceAccountRecord, SpendDailyAggregateRecord,
-        SpendModelAggregateRecord, SpendOwnerAggregateRecord, TeamBudgetRecord,
-        TeamMembershipRecord, TeamRecord, UpdateExternalMcpServerRecord,
+        ServiceAccountRecord, SpendDailyAggregateRecord, SpendModelAggregateRecord,
+        SpendOwnerAggregateRecord, TeamMembershipRecord, TeamRecord, UpdateExternalMcpServerRecord,
         UpsertExternalMcpToolRecord, UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord,
-        UsageLedgerRecord, UserBudgetRecord, UserRecord,
+        UsageLedgerRecord, UserRecord,
     },
     error::{ProviderError, RouteError, StoreError},
     protocol::core::{ChatRequest, EmbeddingsRequest, ResponsesRequest},
@@ -178,144 +178,48 @@ pub trait AdminIdentityRepository: Send + Sync {
 
 #[async_trait]
 pub trait BudgetRepository: Send + Sync {
-    async fn get_active_budget_for_user(
+    async fn get_active_budget_by_scope(
         &self,
-        user_id: Uuid,
-    ) -> Result<Option<UserBudgetRecord>, StoreError>;
-    async fn get_active_budget_for_team(
+        scope: &BudgetScope,
+    ) -> Result<Option<BudgetRecord>, StoreError>;
+    async fn list_active_budgets(
         &self,
-        team_id: Uuid,
-    ) -> Result<Option<TeamBudgetRecord>, StoreError> {
-        let _ = team_id;
+        scope_kind: Option<BudgetScopeKind>,
+    ) -> Result<Vec<BudgetRecord>, StoreError> {
+        let _ = scope_kind;
         Err(StoreError::Unexpected(
-            "team budgets are not implemented for this repository".to_string(),
+            "list_active_budgets is not implemented for this repository".to_string(),
         ))
     }
-    async fn get_active_budget_for_service_account(
+    async fn upsert_active_budget(
         &self,
-        service_account_id: Uuid,
-    ) -> Result<Option<ServiceAccountBudgetRecord>, StoreError> {
-        let _ = service_account_id;
-        Err(StoreError::Unexpected(
-            "service account budgets are not implemented for this repository".to_string(),
-        ))
-    }
-    async fn upsert_active_budget_for_user(
-        &self,
-        user_id: Uuid,
-        cadence: crate::BudgetCadence,
-        amount_usd: Money4,
-        hard_limit: bool,
-        timezone: &str,
+        scope: &BudgetScope,
+        settings: &BudgetSettings,
         updated_at: OffsetDateTime,
-    ) -> Result<UserBudgetRecord, StoreError> {
-        let _ = (
-            user_id, cadence, amount_usd, hard_limit, timezone, updated_at,
-        );
-        Err(StoreError::Unexpected(
-            "upsert_active_budget_for_user is not implemented for this repository".to_string(),
-        ))
-    }
-    async fn deactivate_active_budget_for_user(
+    ) -> Result<BudgetRecord, StoreError>;
+    async fn deactivate_active_budget(
         &self,
-        user_id: Uuid,
+        scope: &BudgetScope,
         updated_at: OffsetDateTime,
-    ) -> Result<bool, StoreError> {
-        let _ = (user_id, updated_at);
-        Err(StoreError::Unexpected(
-            "deactivate_active_budget_for_user is not implemented for this repository".to_string(),
-        ))
-    }
-    async fn upsert_active_budget_for_team(
-        &self,
-        team_id: Uuid,
-        cadence: crate::BudgetCadence,
-        amount_usd: Money4,
-        hard_limit: bool,
-        timezone: &str,
-        updated_at: OffsetDateTime,
-    ) -> Result<TeamBudgetRecord, StoreError> {
-        let _ = (
-            team_id, cadence, amount_usd, hard_limit, timezone, updated_at,
-        );
-        Err(StoreError::Unexpected(
-            "upsert_active_budget_for_team is not implemented for this repository".to_string(),
-        ))
-    }
-    async fn deactivate_active_budget_for_team(
-        &self,
-        team_id: Uuid,
-        updated_at: OffsetDateTime,
-    ) -> Result<bool, StoreError> {
-        let _ = (team_id, updated_at);
-        Err(StoreError::Unexpected(
-            "deactivate_active_budget_for_team is not implemented for this repository".to_string(),
-        ))
-    }
-    async fn upsert_active_budget_for_service_account(
-        &self,
-        service_account_id: Uuid,
-        cadence: crate::BudgetCadence,
-        amount_usd: Money4,
-        hard_limit: bool,
-        timezone: &str,
-        updated_at: OffsetDateTime,
-    ) -> Result<ServiceAccountBudgetRecord, StoreError> {
-        let _ = (
-            service_account_id,
-            cadence,
-            amount_usd,
-            hard_limit,
-            timezone,
-            updated_at,
-        );
-        Err(StoreError::Unexpected(
-            "upsert_active_budget_for_service_account is not implemented for this repository"
-                .to_string(),
-        ))
-    }
-    async fn deactivate_active_budget_for_service_account(
-        &self,
-        service_account_id: Uuid,
-        updated_at: OffsetDateTime,
-    ) -> Result<bool, StoreError> {
-        let _ = (service_account_id, updated_at);
-        Err(StoreError::Unexpected(
-            "deactivate_active_budget_for_service_account is not implemented for this repository"
-                .to_string(),
-        ))
-    }
+    ) -> Result<bool, StoreError>;
     async fn get_usage_ledger_by_request_and_scope(
         &self,
         request_id: &str,
         ownership_scope_key: &str,
     ) -> Result<Option<UsageLedgerRecord>, StoreError>;
-    async fn sum_usage_cost_for_user_in_window(
+    async fn sum_usage_cost_for_budget_scope_in_window(
         &self,
-        user_id: Uuid,
+        scope: &BudgetScope,
         window_start: OffsetDateTime,
         window_end: OffsetDateTime,
     ) -> Result<Money4, StoreError>;
-    async fn sum_usage_cost_for_team_in_window(
-        &self,
-        team_id: Uuid,
-        window_start: OffsetDateTime,
-        window_end: OffsetDateTime,
-    ) -> Result<Money4, StoreError> {
-        let _ = (team_id, window_start, window_end);
-        Err(StoreError::Unexpected(
-            "sum_usage_cost_for_team_in_window is not implemented for this repository".to_string(),
-        ))
-    }
-    async fn sum_usage_cost_for_service_account_in_window(
+    async fn count_active_api_keys_for_service_account(
         &self,
         service_account_id: Uuid,
-        window_start: OffsetDateTime,
-        window_end: OffsetDateTime,
-    ) -> Result<Money4, StoreError> {
-        let _ = (service_account_id, window_start, window_end);
+    ) -> Result<u64, StoreError> {
+        let _ = service_account_id;
         Err(StoreError::Unexpected(
-            "sum_usage_cost_for_service_account_in_window is not implemented for this repository"
+            "count_active_api_keys_for_service_account is not implemented for this repository"
                 .to_string(),
         ))
     }

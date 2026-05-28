@@ -225,7 +225,7 @@ When rotating secrets, check the dependent path instead of rotating blindly.
 - verify `/v1/models` with the new key
 - verify the old key fails if revocation was intended
 
-For service-account-style callers, prefer a team-owned gateway API key with a narrow model grant set and an explicit team budget. Name the key after the workload, keep the raw secret in your secret manager, and rotate by creating a replacement key before revoking the old one.
+For service-account callers, use a gateway API key attached to an explicit service account with a narrow model grant set and an active service-account budget. Name the key after the workload, keep the raw secret in your secret manager, and rotate by creating a replacement key before revoking the old one.
 
 ### Bootstrap admin password
 

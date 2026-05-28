@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod budgets;
 pub mod domain;
 pub mod error;
 pub mod protocol;
@@ -8,12 +9,14 @@ pub mod traits;
 pub use auth::{
     AuthenticatedApiKey, ParsedGatewayApiKey, extract_bearer_token, parse_gateway_api_key,
 };
+pub use budgets::{
+    BudgetModelSelector, BudgetRecord, BudgetScope, BudgetScopeKind, BudgetSettings,
+};
 pub use domain::{
     ApiKeyOwnerKind, ApiKeyRecord, ApiKeyStatus, AuthMode, BudgetAlertChannel,
     BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus, BudgetAlertDispatchTask,
     BudgetAlertHistoryPage, BudgetAlertHistoryQuery, BudgetAlertHistoryRecord, BudgetAlertRecord,
-    BudgetCadence, BudgetWindow, CONFIG_SEED_SERVICE_ACCOUNT_ID, CONFIG_SEED_SERVICE_ACCOUNT_KEY,
-    CONFIG_SEED_TEAM_ID, CONFIG_SEED_TEAM_KEY, ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord,
+    BudgetCadence, BudgetWindow, ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord,
     ExternalMcpDiscoveryStatus, ExternalMcpServerRecord, ExternalMcpServerStatus,
     ExternalMcpToolRecord, ExternalMcpTransport, FocusExportAggregateRecord,
     FocusExportDiagnosticsRecord, GatewayModel, GlobalRole, HarnessUsageBucketRecord,
@@ -33,13 +36,12 @@ pub use domain::{
     RequestToolCardinalityAverages, ResolvedModelPricing, RouteCompatibility,
     SYSTEM_BOOTSTRAP_ADMIN_EMAIL, SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SeedApiKey, SeedBudget,
     SeedModel, SeedModelRoute, SeedOauthProvider, SeedOidcProvider, SeedProvider, SeedTeam,
-    SeedUser, SeedUserMembership, ServiceAccountBudgetRecord, ServiceAccountRecord,
-    ServiceAccountStatus, SpendDailyAggregateRecord, SpendModelAggregateRecord,
-    SpendOwnerAggregateRecord, TeamBudgetRecord, TeamMembershipRecord, TeamRecord,
-    UpdateExternalMcpServerRecord, UpsertExternalMcpToolRecord, UsageLeaderboardBucketRecord,
-    UsageLeaderboardUserRecord, UsageLedgerRecord, UsagePricingStatus, UserBudgetRecord,
-    UserOauthAuthRecord, UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord,
-    UserStatus, budget_window_utc,
+    SeedUser, SeedUserMembership, ServiceAccountRecord, ServiceAccountStatus,
+    SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord,
+    TeamMembershipRecord, TeamRecord, UpdateExternalMcpServerRecord, UpsertExternalMcpToolRecord,
+    UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord, UsageLedgerRecord,
+    UsagePricingStatus, UserOauthAuthRecord, UserOidcAuthRecord, UserPasswordAuthRecord,
+    UserRecord, UserSessionRecord, UserStatus, budget_window_utc,
 };
 pub use error::{AuthError, GatewayError, ProviderError, RouteError, StoreError};
 pub use protocol::core::{

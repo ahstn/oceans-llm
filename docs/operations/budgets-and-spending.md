@@ -1,26 +1,27 @@
 # Budgets and Spending
 
-`See also`: [Data Relationships](../reference/data-relationships.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Identity and Access](../access/identity-and-access.md), [Service Accounts](../access/service-accounts.md), [Admin Control Plane](../access/admin-control-plane.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../adr/2026-05-10-team-service-accounts.md), [ADR: Spend Control Plane Reporting and Team Hard-Limit Enforcement](../adr/2026-03-15-spend-control-plane-reporting-and-team-hard-limits.md)
+`See also`: [Budgets](../access/budgets.md), [Data Relationships](../reference/data-relationships.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Identity and Access](../access/identity-and-access.md), [Service Accounts](../access/service-accounts.md), [Admin Control Plane](../access/admin-control-plane.md)
 
-This page describes the live spend contract in the gateway.
+This page is the developer/operator contract for spend accounting and budget enforcement. Product-facing setup guidance lives in [Budgets](../access/budgets.md).
 
 ## Source of Truth
 
-- spend ledger:
-  - `usage_cost_events`
-- request-path enforcement:
-  - [../crates/gateway-service/src/budget_guard.rs](../../crates/gateway-service/src/budget_guard.rs)
-- ledger writes:
-  - [../crates/gateway-service/src/service.rs](../../crates/gateway-service/src/service.rs)
-- admin spend APIs:
-  - [../crates/gateway/src/http/spend.rs](../../crates/gateway/src/http/spend.rs)
+- ledger writes: [../../crates/gateway-service/src/service.rs](../../crates/gateway-service/src/service.rs)
+- budget domain: [../../crates/gateway-core/src/budgets.rs](../../crates/gateway-core/src/budgets.rs)
+- budget scope evaluation: [../../crates/gateway-service/src/budget_scopes.rs](../../crates/gateway-service/src/budget_scopes.rs)
+- request-path enforcement: [../../crates/gateway-service/src/budget_guard.rs](../../crates/gateway-service/src/budget_guard.rs)
+- budget persistence: [../../crates/gateway-store/src/libsql_store/budgets.rs](../../crates/gateway-store/src/libsql_store/budgets.rs) and [../../crates/gateway-store/src/postgres_store/budgets.rs](../../crates/gateway-store/src/postgres_store/budgets.rs)
+- admin spend APIs: [../../crates/gateway/src/http/spend.rs](../../crates/gateway/src/http/spend.rs)
 
 ## Ledger Contract
 
-- `usage_cost_events` is the canonical usage and spend ledger
-- request accounting is idempotent on `(request_id, ownership_scope_key)`
+`usage_cost_events` is the canonical usage and spend ledger.
+
+- request accounting stores at most one row per `(request_id, ownership_scope_key)`
+- `ownership_scope_key` uses `user:<user_id>` or `service_account:<service_account_id>`
 - pricing is resolved from the internal pricing catalog and persisted into the ledger row
 - spend math uses fixed-point money and integer arithmetic
+- `team_id` remains reporting metadata for service-account rows, not a spend principal
 
 Pricing states are explicit:
 
@@ -29,233 +30,137 @@ Pricing states are explicit:
 - `unpriced`
 - `usage_missing`
 
-Only `priced` and `legacy_estimated` rows count toward spend totals and budget windows.
+Only `priced` and `legacy_estimated` rows count toward budget windows and spend totals. `unpriced` and `usage_missing` rows remain report-visible accounting-quality signals.
 
-## FOCUS Billing Export
+## Budget Scopes
 
-Design rationale and mapping details are captured in
-[ADR: FOCUS Billing Data Export](../adr/2026-05-19-focus-billing-data-export.md).
+Budgets are stored in the generic `budgets` table. `scope_key` is canonical and has one active budget at a time.
 
-Admins can download best-effort FOCUS-compatible CSV exports from the Usage Costs
-admin page or directly from the gateway API:
+Supported active scope keys:
 
-```text
-GET /api/v1/admin/spend/focus.csv?start=2026-05-01&end=2026-05-31&owner_kind=all&granularity=daily
-GET /api/v1/admin/spend/focus.csv?day=2026-05-19&owner_kind=team&granularity=daily
-```
+- `budget:v1:user:<user_id>`
+- `budget:v1:service_account:<service_account_id>`
+- `budget:v1:user:<user_id>:model:<model_id>`
+- `budget:v1:user:<user_id>:upstream_model:<trimmed_upstream_model>`
 
-Authenticated non-admin users can export only direct user-owned spend attributed
-to themselves:
+Supported `scope_kind` values:
 
-```text
-GET /api/v1/me/spend/focus.csv?start=2026-05-01&end=2026-05-31&granularity=daily
-GET /api/v1/me/spend/focus.csv?day=2026-05-19&granularity=daily
-```
+- `user`
+- `service_account`
+- `user_model`
 
-Export ranges use inclusive UTC dates at the API boundary and are converted to
-exclusive timestamp windows internally. `day=YYYY-MM-DD` is a convenience for a
-single UTC day. When no date parameters are supplied, the default export covers
-the last 30 complete UTC days and excludes the in-progress UTC day. Synchronous
-exports are limited to 90 days and currently support only daily granularity.
+Team budget scopes do not exist. Migration-only references to historical team budget tables are confined to migration SQL.
 
-The CSV includes one row per UTC day, owner scope, upstream provider/model, and
-pricing status for `priced` and `legacy_estimated` ledger rows. `unpriced` and
-`usage_missing` rows are excluded from charge rows and reported through response
-headers:
+## Enforcement Order
 
-- `x-focus-excluded-unpriced-requests`
-- `x-focus-excluded-usage-missing-requests`
+Budget checks run after model resolution and before provider execution, then again after provider execution when actual usage and pricing are known.
 
-The export uses standard FOCUS-style columns first and `x_` custom columns for
-LLM-specific usage details such as prompt tokens, completion tokens, total
-tokens, request count, upstream provider/model, and pricing status. The standard
-`Tags` column contains owner tags as a JSON object when present: user rows use
-user tags, team rows use team tags, and service-account rows inherit the owning
-team's tags because service accounts do not have direct tags. Request tags are
-not exported in FOCUS rows because the v1 row grain aggregates many requests and
-there is no finalized single value per request tag key for the aggregate.
+Human user traffic evaluates:
 
-The current format is intentionally best-effort FOCUS v1.2-compatible and should
-not be represented as strict FOCUS certification.
+1. user model budget, when a matching model scope applies
+2. user budget
 
-When changing this behavior, validate docs and generated contracts with:
+User model matching uses the resolved gateway `model_id` when present. The exact, trim-only upstream model fallback is used only when `model_id` is absent.
 
-```bash
-mise -C docs run check
-mise run admin-contract-check
-```
+Service-account traffic evaluates only:
 
-## Runtime Enforcement
+1. service-account budget
 
-Pre-provider hard-limit checks run on the live request path for:
+Service-account credentials cannot authenticate unless their service account is active and has an active service-account budget.
 
-- `POST /v1/chat/completions`
-- `POST /v1/responses`
-- `POST /v1/embeddings`
-
-Budgets are enforced by owner scope:
-
-- user-owned API keys use the active user budget
-- service-account credentials use the active service-account budget when configured
-- service-account credentials also remain attributable to the owning team for team-level reporting
-- direct team-owned runtime API keys are not supported
+## Hard And Soft Limits
 
 Hard-limit behavior:
 
-- if current priced spend in the active window is already at or above the configured amount and `hard_limit = true`, the pre-provider check fails with `budget_exceeded`
-- after provider execution, if current priced spend plus the computed request cost would exceed the configured amount, the ledger write is blocked before the priced row is committed
-- the HTTP status is `429`
+- pre-provider rejection returns `429 budget_exceeded`
 - no provider call occurs on the pre-provider rejection path
-- observability records pre-provider rejection as a budget outcome instead of provider execution
+- post-provider rejection happens before inserting a new priced ledger row
+- duplicate request ids are rejected with `400 invalid_request` before additional budget math or ledger writes
 
-## Two-Phase Enforcement
+Soft budgets never reject. They still contribute to alert readiness and reporting.
 
-Budget enforcement has two phases:
+Concurrency caveat: hard-limit enforcement is best effort under concurrent requests and can overshoot. Reservations are intentionally out of scope.
 
-1. pre-provider blocking against current priced spend
-2. post-provider projected-cost blocking before the priced ledger row is inserted
+## Windows
 
-This matters because duplicate requests bypass both phases as a no-op. It also explains the boundary difference: before provider execution the gateway does not know the final request cost, but after usage and pricing are available it can block a newly computed charge that would push the owner past the hard limit.
-
-Ownership scope keys:
-
-- user:
-  - `user:<user_id>`
-- service account:
-  - `service_account:<service_account_id>`
-
-Team attribution for service-account spend comes from the owning service account. Acting-user attribution is not used for non-human service-account calls.
-
-## Ledger Write Semantics
-
-- successful request handling writes a ledger row when provider usage can be normalized
-- if usage is missing, the row is marked `usage_missing`
-- if pricing cannot be matched exactly, the row is marked `unpriced`
-- `unpriced` and `usage_missing` rows stay visible in reporting but do not count toward spend totals
-
-Use [request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md) for the cross-cutting path from request execution to ledger state.
-
-## Budget Configuration Model
-
-- `user_budgets` stores active and inactive user budgets
-- `team_budgets` stores active and inactive team budgets
-- `service_account_budgets` stores active and inactive service-account budgets
-- each table enforces one active budget per owner
-
-Budget fields:
-
-- `cadence`
-  - `daily`, `weekly`, or `monthly`
-- `amount_10000`
-- `hard_limit`
-- `timezone`
-
-`timezone` is stored now, but enforcement windows still use UTC.
-
-## Declarative Budget Seed
-
-Active user and team budgets can also come from config-backed seed inputs.
-
-- `teams[*].budget` reconciles the listed team's active budget
-- `users[*].budget` reconciles the listed user's active budget
-- removing a listed owner's `budget` block deactivates that active budget
-- historical budget rows remain historical; config only owns the active row
-
-Service-account budgets are managed through the service-account control-plane workflows. Config seeding does not recreate the removed legacy system-key path.
-
-## Budget Threshold Alerts
-
-Budget alerts have deeper behavior than a plain email side effect.
-
-- alerts are stored durably in `budget_alerts`
-- per-recipient delivery attempts are stored in `budget_alert_deliveries`
-- the initial threshold is fixed at `20%` remaining budget
-- monthly cadence is supported end to end
-
-Alert creation happens:
-
-- after a new chargeable ledger row is written
-- after a budget upsert, if the current spend is already at or below the threshold
-
-Delivery behavior:
-
-- alert creation is durable-first
-- request handling writes alert rows and queued delivery rows first
-- a background dispatcher sends email later
-- delivery is single-attempt oriented in this slice
-- email is the only live channel today, but the schema is channel-aware
-
-Recipient readiness:
-
-- user budgets notify the user email
-- team budgets notify active team owners or admins with emails
-- service-account budgets notify active owners or admins of the owning team
-
-That means email readiness is part of the practical identity setup for alerting.
-
-## Spend Reporting APIs
-
-Live admin spend APIs:
-
-- `GET /api/v1/admin/spend/report`
-- `GET /api/v1/admin/spend/budgets`
-- `GET /api/v1/admin/spend/budget-alerts`
-- `PUT /api/v1/admin/spend/budgets/users/{user_id}`
-- `DELETE /api/v1/admin/spend/budgets/users/{user_id}`
-- `PUT /api/v1/admin/spend/budgets/teams/{team_id}`
-- `DELETE /api/v1/admin/spend/budgets/teams/{team_id}`
-
-These routes require an authenticated platform-admin session.
-
-## Spend Report Semantics
-
-`GET /api/v1/admin/spend/report` is the summary endpoint behind the admin spend page.
-
-Supported query parameters:
-
-- `days`
-  - `7`
-  - `30`
-- `owner_kind`
-  - `all`
-  - `user`
-  - `team`
-
-The report uses full UTC-day buckets for the selected range. Daily series are zero-filled so charts can render stable timelines even when no chargeable rows exist for a day.
-
-The response separates:
-
-- total request count
-- total spend for chargeable rows
-- owner breakdowns
-- model breakdowns
-- daily spend and request points
-- counts by pricing status, including `priced`, `legacy_estimated`, `unpriced`, and `usage_missing`
-
-Only `priced` and `legacy_estimated` rows count toward spend totals. `unpriced` and `usage_missing` rows remain visible as accounting-quality signals.
-
-## Window Semantics
+Budget windows use UTC today:
 
 - daily windows start at `00:00:00 UTC`
 - weekly windows start at `Monday 00:00:00 UTC`
 - monthly windows start at `00:00:00 UTC` on the first day of the month
-- `Sunday 23:59:59 UTC` is still part of the previous weekly window
 
-## Current Gaps
+`timezone` is stored on budget settings for future display/window work, but live enforcement still uses UTC.
 
-- provider breakdown is not part of spend reporting v1
-- acting-user attribution for service-account keys remains the service account principal; user attribution is intentionally absent for non-human callers
-- timezone-aware budget windows are still deferred
-- hardened declarative SSO-backed identity matching remains deferred
-  - [issue #65](https://github.com/ahstn/oceans-llm/issues/65)
+## Alerts
 
-## What This Page Does Not Own
+Budget alerts are durable-first:
 
-- exact pricing coverage and `unpriced` causes:
-  - [pricing-catalog-and-accounting.md](../configuration/pricing-catalog-and-accounting.md)
-- end-to-end request path:
-  - [request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md)
-- admin-facing UI behavior:
-  - [admin-control-plane.md](../access/admin-control-plane.md)
-- identity lifecycle and email readiness:
-  - [identity-and-access.md](../access/identity-and-access.md)
+- alert records are stored in `budget_alerts`
+- delivery attempts are stored in `budget_alert_deliveries`
+- email is the only live channel today
+- the threshold is fixed at `20%` remaining budget
+- alert creation runs after a chargeable ledger row and after a budget upsert when current spend is already at or below the threshold
+
+Recipients:
+
+- user budgets notify the user email
+- user model budgets notify the user email
+- service-account budgets notify active owners or admins of the owning team
+
+## Admin APIs
+
+Live admin spend APIs:
+
+- `GET /api/v1/admin/spend/report`
+- `GET /api/v1/admin/spend/focus.csv`
+- `GET /api/v1/me/spend/focus.csv`
+- `GET /api/v1/admin/spend/budgets`
+- `PUT /api/v1/admin/spend/budgets`
+- `POST /api/v1/admin/spend/budgets/deactivate`
+- `GET /api/v1/admin/spend/budget-alerts`
+
+Budget mutation requests use typed `scope` objects. Responses include:
+
+- `budget_id`
+- typed `scope`
+- computed `scope_key`
+- settings
+- current-window spend
+- alert readiness
+
+Old user, team, and service-account path-specific budget routes are not part of the runtime contract.
+
+## Reporting And FOCUS Export
+
+Spend report and FOCUS owner filters support:
+
+- `all`
+- `user`
+- `service_account`
+
+`team` is rejected. Service-account rows can still include owning team metadata and tags for reporting context.
+
+FOCUS exports aggregate one row per UTC day, owner scope, upstream provider/model, and pricing status for `priced` and `legacy_estimated` ledger rows. `unpriced` and `usage_missing` rows are excluded from charge rows and reported through response headers.
+
+## Declarative Seed
+
+Config-seeded API keys must declare the service account they create or reconcile:
+
+- service-account key
+- service-account name
+- owning team
+- active service-account budget
+- model grants
+
+There is no implicit singleton service account, no reserved `system-legacy` team, and no team-owned runtime key fallback.
+
+## Validation
+
+When changing this area, run:
+
+```bash
+mise run admin-contract-generate
+mise run admin-contract-check
+mise -C docs run check
+mise run lint
+```

@@ -5,12 +5,8 @@ use serde_json::{Map, Value};
 use time::{Date, Duration, Month, OffsetDateTime, UtcOffset};
 use uuid::Uuid;
 
-pub const CONFIG_SEED_TEAM_ID: &str = "00000000-0000-0000-0000-000000000001";
-pub const CONFIG_SEED_TEAM_KEY: &str = "config-seed";
 pub const SYSTEM_BOOTSTRAP_ADMIN_USER_ID: &str = "00000000-0000-0000-0000-000000000002";
 pub const SYSTEM_BOOTSTRAP_ADMIN_EMAIL: &str = "admin@local";
-pub const CONFIG_SEED_SERVICE_ACCOUNT_ID: &str = "00000000-0000-0000-0000-000000000003";
-pub const CONFIG_SEED_SERVICE_ACCOUNT_KEY: &str = "seed-api-keys";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Default)]
 #[serde(transparent)]
@@ -372,7 +368,6 @@ const fn next_calendar_month(year: i32, month: Month) -> (i32, Month) {
 #[serde(rename_all = "snake_case")]
 pub enum ApiKeyOwnerKind {
     User,
-    Team,
     ServiceAccount,
 }
 
@@ -381,7 +376,6 @@ impl ApiKeyOwnerKind {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::User => "user",
-            Self::Team => "team",
             Self::ServiceAccount => "service_account",
         }
     }
@@ -390,7 +384,6 @@ impl ApiKeyOwnerKind {
     pub fn from_db(value: &str) -> Option<Self> {
         match value {
             "user" => Some(Self::User),
-            "team" => Some(Self::Team),
             "service_account" => Some(Self::ServiceAccount),
             _ => None,
         }
@@ -694,45 +687,6 @@ pub struct UserSessionRecord {
     pub created_at: OffsetDateTime,
     pub last_seen_at: OffsetDateTime,
     pub revoked_at: Option<OffsetDateTime>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UserBudgetRecord {
-    pub user_budget_id: Uuid,
-    pub user_id: Uuid,
-    pub cadence: BudgetCadence,
-    pub amount_usd: Money4,
-    pub hard_limit: bool,
-    pub timezone: String,
-    pub is_active: bool,
-    pub created_at: OffsetDateTime,
-    pub updated_at: OffsetDateTime,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TeamBudgetRecord {
-    pub team_budget_id: Uuid,
-    pub team_id: Uuid,
-    pub cadence: BudgetCadence,
-    pub amount_usd: Money4,
-    pub hard_limit: bool,
-    pub timezone: String,
-    pub is_active: bool,
-    pub created_at: OffsetDateTime,
-    pub updated_at: OffsetDateTime,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ServiceAccountBudgetRecord {
-    pub service_account_budget_id: Uuid,
-    pub service_account_id: Uuid,
-    pub cadence: BudgetCadence,
-    pub amount_usd: Money4,
-    pub hard_limit: bool,
-    pub timezone: String,
-    pub is_active: bool,
-    pub created_at: OffsetDateTime,
-    pub updated_at: OffsetDateTime,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -1930,6 +1884,10 @@ pub struct SeedApiKey {
     pub name: String,
     pub public_id: String,
     pub secret_hash: String,
+    pub service_account_key: String,
+    pub service_account_name: String,
+    pub service_account_team_key: String,
+    pub service_account_budget: SeedBudget,
     #[serde(default)]
     pub allowed_models: Vec<String>,
 }
@@ -1971,8 +1929,6 @@ pub struct SeedBudget {
 pub struct SeedTeam {
     pub team_key: String,
     pub team_name: String,
-    #[serde(default)]
-    pub budget: Option<SeedBudget>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

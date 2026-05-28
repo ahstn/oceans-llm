@@ -4,6 +4,8 @@
 
 This page owns config syntax and parse-time rules. It does not own the full runtime story after a request starts moving.
 
+![Models Page](../public/images/screenshot-models.png)
+
 ## Source of Truth
 
 - config parsing and validation:
@@ -254,9 +256,8 @@ Important distinctions:
 - `bootstrap_admin` creates control-plane access
 - `bootstrap_admin.require_password_change` changes first-login behavior
 - `bootstrap_admin.password` must be `literal.*` or `env.*`
-- legacy `seed_api_keys` is not part of the service-account model
 
-Seeded API keys are gateway caller credentials. They are useful for bootstrap automation and service-account-style workloads, but they are not upstream cloud provider service-account credentials. Config-seeded keys are owned by the reserved `system-legacy` team; keys created in the admin UI can be owned by an explicit user or team.
+Seeded API keys are gateway caller credentials. They are useful for bootstrap automation and service-account workloads, but they are not upstream cloud provider service-account credentials. Each seeded key creates or reconciles an explicit gateway service account with an owning team and active budget.
 
 Example seeded gateway key:
 
@@ -265,6 +266,15 @@ auth:
   seed_api_keys:
     - name: ci-indexer
       value: env.CI_INDEXER_GATEWAY_API_KEY
+      service_account:
+        key: ci-indexer
+        name: CI Indexer
+        team: platform
+        budget:
+          cadence: daily
+          amount_usd: "25.0000"
+          hard_limit: true
+          timezone: UTC
       allowed_models:
         - gpt-4o-mini
         - gemini-fast
@@ -274,8 +284,8 @@ Operational guidance:
 
 - store gateway API-key values in the deployment secret manager, not in YAML
 - grant only the gateway models the workload needs
-- prefer team-owned keys for service callers until first-class gateway service-account owners exist
-- attach a team budget to the owning team when service-account-style traffic must be capped
+- declare the owning team in `teams`
+- set a service-account budget before activating service-account traffic
 - rotate by creating or seeding a replacement key, moving the caller, then revoking or removing the old key
 
 OIDC providers use authorization-code login with provider discovery and ID-token verification:

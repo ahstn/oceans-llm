@@ -3,6 +3,7 @@ pub mod admin_models;
 pub mod authenticator;
 pub mod budget_alerts;
 pub mod budget_guard;
+pub mod budget_scopes;
 pub mod icon_identity;
 pub mod mcp_gateway;
 pub mod mcp_invocation_logging;
@@ -18,8 +19,8 @@ pub mod service;
 
 pub use admin_api_keys::{
     AdminApiKeyModelOption, AdminApiKeyService, AdminApiKeyServiceAccountOwner, AdminApiKeySummary,
-    AdminApiKeyTeamOwner, AdminApiKeyUserOwner, AdminApiKeysPayload, CreateAdminApiKeyInput,
-    CreateAdminApiKeyResult, UpdateAdminApiKeyInput,
+    AdminApiKeyUserOwner, AdminApiKeysPayload, CreateAdminApiKeyInput, CreateAdminApiKeyResult,
+    UpdateAdminApiKeyInput,
 };
 pub use admin_models::{AdminModelStatus, AdminModelSummary, AdminModelsService};
 pub use authenticator::{Authenticator, hash_gateway_key_secret, verify_gateway_key_secret};

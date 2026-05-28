@@ -28,7 +28,7 @@ This document is schema-oriented. It describes the persistent relationships that
 6. Optional restriction overlays:
    - `user_model_allowlist`
    - `team_model_allowlist`
-7. `user_budgets`, `team_budgets`, and `service_account_budgets` each allow one active budget per owner
+7. `budgets` stores user, service-account, and user-model budgets with one active row per canonical scope key
 8. `usage_cost_events` records request ownership, model attribution, pricing status, and computed cost
 9. `request_logs` records the final user-visible request outcome
 10. `request_log_payloads` stores sanitized request and response bodies separately from the summary row
@@ -101,15 +101,10 @@ Compatibility metadata is not a provider config fallback and is not an `extra_bo
   - Key columns: `id`, `public_id`, `secret_hash`, `owner_kind`, `owner_user_id`, `owner_service_account_id`
   - Constraint: exactly one owner column must be set consistently with `owner_kind`
   - Notes: direct team-owned runtime keys and `system-legacy` ownership are not supported
-- `user_budgets`
-  - Key columns: `user_budget_id`, `user_id`, `cadence`, `amount_10000`, `hard_limit`, `timezone`, `is_active`
-  - Constraint: one active user budget per user
-- `team_budgets`
-  - Key columns: `team_budget_id`, `team_id`, `cadence`, `amount_10000`, `hard_limit`, `timezone`, `is_active`
-  - Constraint: one active team budget per team
-- `service_account_budgets`
-  - Key columns: `service_account_budget_id`, `service_account_id`, `cadence`, `amount_10000`, `hard_limit`, `timezone`, `is_active`
-  - Constraint: one active service-account budget per service account
+- `budgets`
+  - Key columns: `budget_id`, `scope_kind`, `scope_key`, `user_id`, `service_account_id`, `model_id`, `upstream_model`, `cadence`, `amount_10000`, `hard_limit`, `timezone`, `is_active`
+  - Constraint: one active budget per canonical `scope_key`
+  - Notes: supported scope kinds are `user`, `service_account`, and `user_model`; teams are not budget principals
 - `usage_cost_events`
   - Key columns: `usage_event_id`, `request_id`, `ownership_scope_key`, `api_key_id`, `user_id`, `team_id`, `actor_user_id`, `model_id`, `provider_key`, `upstream_model`, `pricing_status`, `unpriced_reason`, `pricing_row_id`, `pricing_provider_id`, `computed_cost_10000`, `provider_usage`, `occurred_at`
   - Notes: this is the canonical spend ledger used for enforcement and reporting

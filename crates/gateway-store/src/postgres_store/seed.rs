@@ -1,5 +1,8 @@
 use super::*;
-use crate::seed::{prevalidate_seed_users, reconcile_seed_teams, reconcile_seed_users};
+use crate::seed::{
+    prevalidate_seed_users, reconcile_seed_teams, reconcile_seed_users, service_account_uuid,
+    validate_seed_api_key_team_references,
+};
 use crate::shared::{serialize_json, serialize_optional_json};
 
 impl PostgresStore {
@@ -52,21 +55,6 @@ impl PostgresStore {
     ) -> Result<(), StoreError> {
         let now = OffsetDateTime::now_utc();
         let now_unix = now.unix_timestamp();
-
-        sqlx::query(
-            r#"
-            INSERT INTO teams (
-                team_id, team_key, team_name, status, model_access_mode, created_at, updated_at
-            ) VALUES ($1, $2, 'Config Seed', 'active', 'all', $3, $3)
-            ON CONFLICT(team_id) DO NOTHING
-            "#,
-        )
-        .bind(CONFIG_SEED_TEAM_ID)
-        .bind(CONFIG_SEED_TEAM_KEY)
-        .bind(now_unix)
-        .execute(&self.pool)
-        .await
-        .map_err(to_query_error)?;
 
         for provider in providers {
             let config_json = serialize_json(&provider.config)?;
@@ -341,15 +329,28 @@ impl PostgresStore {
             .map_err(to_query_error)?;
         }
 
+        validate_seed_api_key_team_references(teams, api_keys)?;
+        prevalidate_seed_users(self, users).await?;
+        let seeded_teams = reconcile_seed_teams(self, teams, now).await?;
+
         for api_key in api_keys {
             let key_id = api_key_uuid(&api_key.public_id);
+            let service_account_id = service_account_uuid(&api_key.service_account_key);
+            let team = seeded_teams
+                .get(&api_key.service_account_team_key)
+                .ok_or_else(|| {
+                    StoreError::NotFound(format!(
+                        "seed api key `{}` references unknown team `{}`",
+                        api_key.public_id, api_key.service_account_team_key
+                    ))
+                })?;
 
             sqlx::query(
                 r#"
                 INSERT INTO service_accounts (
                     service_account_id, team_id, service_account_key, service_account_name,
                     status, model_access_mode, metadata_json, created_at, updated_at, disabled_at
-                ) VALUES ($1, $2, $3, 'Seed API Keys', 'active', 'all', '{}', $4, $4, NULL)
+                ) VALUES ($1, $2, $3, $4, 'active', 'all', '{}', $5, $5, NULL)
                 ON CONFLICT(service_account_id) DO UPDATE SET
                     team_id = excluded.team_id,
                     service_account_key = excluded.service_account_key,
@@ -361,13 +362,26 @@ impl PostgresStore {
                     disabled_at = NULL
                 "#,
             )
-            .bind(CONFIG_SEED_SERVICE_ACCOUNT_ID)
-            .bind(CONFIG_SEED_TEAM_ID)
-            .bind(CONFIG_SEED_SERVICE_ACCOUNT_KEY)
+            .bind(service_account_id.to_string())
+            .bind(team.team_id.to_string())
+            .bind(api_key.service_account_key.as_str())
+            .bind(api_key.service_account_name.as_str())
             .bind(now_unix)
             .execute(&self.pool)
             .await
             .map_err(to_query_error)?;
+
+            self.upsert_active_budget(
+                &gateway_core::BudgetScope::ServiceAccount { service_account_id },
+                &gateway_core::BudgetSettings {
+                    cadence: api_key.service_account_budget.cadence,
+                    amount_usd: api_key.service_account_budget.amount_usd,
+                    hard_limit: api_key.service_account_budget.hard_limit,
+                    timezone: api_key.service_account_budget.timezone.clone(),
+                },
+                now,
+            )
+            .await?;
 
             sqlx::query(
                 r#"
@@ -388,8 +402,8 @@ impl PostgresStore {
             .bind(api_key.public_id.as_str())
             .bind(api_key.secret_hash.as_str())
             .bind(api_key.name.as_str())
-            .bind(CONFIG_SEED_TEAM_ID)
-            .bind(CONFIG_SEED_SERVICE_ACCOUNT_ID)
+            .bind(team.team_id.to_string())
+            .bind(service_account_id.to_string())
             .bind(now_unix)
             .execute(&self.pool)
             .await
@@ -424,8 +438,6 @@ impl PostgresStore {
             }
         }
 
-        prevalidate_seed_users(self, users).await?;
-        let seeded_teams = reconcile_seed_teams(self, teams, now).await?;
         reconcile_seed_users(self, &seeded_teams, users, now).await?;
 
         Ok(())

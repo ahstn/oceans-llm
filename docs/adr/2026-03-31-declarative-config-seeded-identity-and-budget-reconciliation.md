@@ -2,6 +2,7 @@
 
 - Date: 2026-03-31
 - Status: Accepted
+- Superseded in part by: [2026-05-27 Budget Principal Taxonomy](2026-05-27-budget-principal-taxonomy.md)
 - Related Issues:
   - [#64](https://github.com/ahstn/oceans-llm/issues/64)
   - [#65](https://github.com/ahstn/oceans-llm/issues/65)

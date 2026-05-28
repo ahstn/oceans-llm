@@ -615,7 +615,6 @@ where
     ) -> Result<bool, GatewayError> {
         match api_key.owner_kind {
             ApiKeyOwnerKind::ServiceAccount => Ok(true),
-            ApiKeyOwnerKind::Team => Err(AuthError::ApiKeyOwnerInvalid.into()),
             ApiKeyOwnerKind::User => {
                 let user_id = api_key.owner_user_id.ok_or(AuthError::ApiKeyOwnerInvalid)?;
                 let user = self

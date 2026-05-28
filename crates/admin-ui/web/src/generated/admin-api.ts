@@ -492,7 +492,7 @@ export interface paths {
             cookie?: never;
         };
         get: operations["list_spend_budgets"];
-        put?: never;
+        put: operations["upsert_budget"];
         post?: never;
         delete?: never;
         options?: never;
@@ -500,7 +500,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/admin/spend/budgets/service-accounts/{service_account_id}": {
+    "/api/v1/admin/spend/budgets/deactivate": {
         parameters: {
             query?: never;
             header?: never;
@@ -508,41 +508,9 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        put: operations["upsert_service_account_budget"];
-        post?: never;
-        delete: operations["deactivate_service_account_budget"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/spend/budgets/teams/{team_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put: operations["upsert_team_budget"];
-        post?: never;
-        delete: operations["deactivate_team_budget"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/spend/budgets/users/{user_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put: operations["upsert_user_budget"];
-        post?: never;
-        delete: operations["deactivate_user_budget"];
+        put?: never;
+        post: operations["deactivate_budget"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -809,11 +777,6 @@ export interface components {
             team_key: string;
             team_name: string;
         };
-        AdminApiKeyTeamOwnerView: {
-            id: string;
-            key: string;
-            name: string;
-        };
         AdminApiKeyUserOwnerView: {
             email: string;
             id: string;
@@ -841,7 +804,6 @@ export interface components {
             items: components["schemas"]["AdminApiKeyView"][];
             models: components["schemas"]["AdminApiKeyModelView"][];
             service_accounts: components["schemas"]["AdminApiKeyServiceAccountOwnerView"][];
-            teams: components["schemas"]["AdminApiKeyTeamOwnerView"][];
             users: components["schemas"]["AdminApiKeyUserOwnerView"][];
         };
         AdminEntityTagView: {
@@ -900,6 +862,7 @@ export interface components {
             /** Format: int64 */
             input_window_tokens?: number | null;
             model_icon_key?: null | components["schemas"]["ModelIconKeyView"];
+            model_id: string;
             /** Format: int64 */
             output_cost_per_million_tokens_usd_10000?: number | null;
             /** Format: int64 */
@@ -1044,6 +1007,18 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
+        BudgetScopeRequest: components["schemas"]["BudgetUserScopeRequest"] | components["schemas"]["BudgetServiceAccountScopeRequest"] | components["schemas"]["BudgetUserModelByModelScopeRequest"] | components["schemas"]["BudgetUserModelByUpstreamModelScopeRequest"];
+        BudgetScopeView: components["schemas"]["BudgetUserScopeView"] | components["schemas"]["BudgetServiceAccountScopeView"] | components["schemas"]["BudgetUserModelByModelScopeView"] | components["schemas"]["BudgetUserModelByUpstreamModelScopeView"];
+        /** @enum {string} */
+        BudgetServiceAccountScopeKind: "service_account";
+        BudgetServiceAccountScopeRequest: {
+            kind: components["schemas"]["BudgetServiceAccountScopeKind"];
+            service_account_id: string;
+        };
+        BudgetServiceAccountScopeView: {
+            kind: components["schemas"]["BudgetServiceAccountScopeKind"];
+            service_account_id: string;
+        };
         BudgetSettingsView: {
             amount_usd: string;
             /** Format: int64 */
@@ -1051,6 +1026,38 @@ export interface components {
             cadence: string;
             hard_limit: boolean;
             timezone: string;
+        };
+        BudgetUserModelByModelScopeRequest: {
+            kind: components["schemas"]["BudgetUserModelScopeKind"];
+            model_id: string;
+            user_id: string;
+        };
+        BudgetUserModelByModelScopeView: {
+            kind: components["schemas"]["BudgetUserModelScopeKind"];
+            model_id: string;
+            user_id: string;
+        };
+        BudgetUserModelByUpstreamModelScopeRequest: {
+            kind: components["schemas"]["BudgetUserModelScopeKind"];
+            upstream_model: string;
+            user_id: string;
+        };
+        BudgetUserModelByUpstreamModelScopeView: {
+            kind: components["schemas"]["BudgetUserModelScopeKind"];
+            upstream_model: string;
+            user_id: string;
+        };
+        /** @enum {string} */
+        BudgetUserModelScopeKind: "user_model";
+        /** @enum {string} */
+        BudgetUserScopeKind: "user";
+        BudgetUserScopeRequest: {
+            kind: components["schemas"]["BudgetUserScopeKind"];
+            user_id: string;
+        };
+        BudgetUserScopeView: {
+            kind: components["schemas"]["BudgetUserScopeKind"];
+            user_id: string;
         };
         ChangePasswordRequest: {
             current_password: string;
@@ -1127,17 +1134,19 @@ export interface components {
             sign_in_url: string;
             user: components["schemas"]["AdminIdentityUserView"];
         };
+        DeactivateBudgetRequest: {
+            scope: components["schemas"]["BudgetScopeRequest"];
+        };
         DeactivateBudgetResultView: {
             deactivated: boolean;
-            owner_id: string;
-            owner_kind: string;
+            scope: components["schemas"]["BudgetScopeView"];
+            scope_key: string;
         };
         Envelope_AdminApiKeysPayload: {
             data: {
                 items: components["schemas"]["AdminApiKeyView"][];
                 models: components["schemas"]["AdminApiKeyModelView"][];
                 service_accounts: components["schemas"]["AdminApiKeyServiceAccountOwnerView"][];
-                teams: components["schemas"]["AdminApiKeyTeamOwnerView"][];
                 users: components["schemas"]["AdminApiKeyUserOwnerView"][];
             };
             meta: components["schemas"]["ResponseMeta"];
@@ -1261,8 +1270,8 @@ export interface components {
         Envelope_DeactivateBudgetResultView: {
             data: {
                 deactivated: boolean;
-                owner_id: string;
-                owner_kind: string;
+                scope: components["schemas"]["BudgetScopeView"];
+                scope_key: string;
             };
             meta: components["schemas"]["ResponseMeta"];
         };
@@ -1416,7 +1425,7 @@ export interface components {
         Envelope_SpendBudgetsView: {
             data: {
                 service_accounts: components["schemas"]["SpendBudgetServiceAccountView"][];
-                teams: components["schemas"]["SpendBudgetTeamView"][];
+                user_model_budgets: components["schemas"]["SpendBudgetUserModelView"][];
                 users: components["schemas"]["SpendBudgetUserView"][];
             };
             meta: components["schemas"]["ResponseMeta"];
@@ -1444,10 +1453,11 @@ export interface components {
         Envelope_UpsertBudgetResultView: {
             data: {
                 budget: components["schemas"]["BudgetSettingsView"];
+                budget_id: string;
                 /** Format: int64 */
                 current_window_spend_usd_10000: number;
-                owner_id: string;
-                owner_kind: string;
+                scope: components["schemas"]["BudgetScopeView"];
+                scope_key: string;
             };
             meta: components["schemas"]["ResponseMeta"];
         };
@@ -1831,15 +1841,17 @@ export interface components {
             team_key: string;
             team_name: string;
         };
-        SpendBudgetTeamView: {
+        SpendBudgetUserModelView: {
             alert_email_ready: boolean;
             alert_recipient_summary: string;
-            budget?: null | components["schemas"]["BudgetSettingsView"];
+            budget: components["schemas"]["BudgetSettingsView"];
+            budget_id: string;
             /** Format: int64 */
             current_window_spend_usd_10000: number;
-            team_id: string;
-            team_key: string;
-            team_name: string;
+            model_id?: string | null;
+            scope_key: string;
+            upstream_model?: string | null;
+            user_id: string;
         };
         SpendBudgetUserView: {
             alert_email_ready: boolean;
@@ -1855,7 +1867,7 @@ export interface components {
         };
         SpendBudgetsView: {
             service_accounts: components["schemas"]["SpendBudgetServiceAccountView"][];
-            teams: components["schemas"]["SpendBudgetTeamView"][];
+            user_model_budgets: components["schemas"]["SpendBudgetUserModelView"][];
             users: components["schemas"]["SpendBudgetUserView"][];
         };
         SpendDailyPointView: {
@@ -1956,14 +1968,16 @@ export interface components {
             amount_usd: string;
             cadence: string;
             hard_limit: boolean;
+            scope: components["schemas"]["BudgetScopeRequest"];
             timezone?: string | null;
         };
         UpsertBudgetResultView: {
             budget: components["schemas"]["BudgetSettingsView"];
+            budget_id: string;
             /** Format: int64 */
             current_window_spend_usd_10000: number;
-            owner_id: string;
-            owner_kind: string;
+            scope: components["schemas"]["BudgetScopeView"];
+            scope_key: string;
         };
     };
     responses: never;
@@ -2915,14 +2929,11 @@ export interface operations {
             };
         };
     };
-    upsert_service_account_budget: {
+    upsert_budget: {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                /** @description Service account identifier */
-                service_account_id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         requestBody: {
@@ -2941,113 +2952,18 @@ export interface operations {
             };
         };
     };
-    deactivate_service_account_budget: {
+    deactivate_budget: {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                /** @description Service account identifier */
-                service_account_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_DeactivateBudgetResultView"];
-                };
-            };
-        };
-    };
-    upsert_team_budget: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Team identifier */
-                team_id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["UpsertBudgetRequest"];
+                "application/json": components["schemas"]["DeactivateBudgetRequest"];
             };
         };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_UpsertBudgetResultView"];
-                };
-            };
-        };
-    };
-    deactivate_team_budget: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Team identifier */
-                team_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_DeactivateBudgetResultView"];
-                };
-            };
-        };
-    };
-    upsert_user_budget: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description User identifier */
-                user_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpsertBudgetRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Envelope_UpsertBudgetResultView"];
-                };
-            };
-        };
-    };
-    deactivate_user_budget: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description User identifier */
-                user_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
         responses: {
             200: {
                 headers: {
@@ -3068,7 +2984,7 @@ export interface operations {
                 end?: string | null;
                 /** @description Convenience single-day export date as YYYY-MM-DD. Mutually exclusive with start/end. */
                 day?: string | null;
-                /** @description Admin-only owner filter: all, user, team, or service_account. */
+                /** @description Admin-only owner filter: all, user, or service_account. */
                 owner_kind?: string | null;
                 /** @description Explicit export granularity. Only daily is supported in v1. */
                 granularity?: string | null;

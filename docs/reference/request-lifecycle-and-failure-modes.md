@@ -52,11 +52,11 @@ One common request path looks like this:
 
 - Request:
   - `POST /v1/responses`
-  - API key belongs to team `growth`
+  - API key belongs to service account `growth-indexer`
   - model is `tag:fast`
 - Access:
   - the API key grant allows `gpt-4o-mini` and `claude-3-5-haiku`
-  - the team allowlist is unrestricted
+  - the owning team allowlist is unrestricted
 - Resolution:
   - `tag:fast` resolves to gateway model `gpt-4o-mini`
   - `gpt-4o-mini` is an alias of `openai-gpt-4o-mini`
@@ -78,7 +78,7 @@ One common request path looks like this:
   - usage is normalized
   - pricing resolves exactly
   - `usage_cost_events.pricing_status` becomes `priced`
-  - the team budget window includes the charge
+  - the service-account budget window includes the charge
 
 ## Model Visibility Versus Execution
 

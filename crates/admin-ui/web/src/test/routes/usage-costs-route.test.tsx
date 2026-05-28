@@ -45,9 +45,9 @@ describe('UsageCostsPage', () => {
         ],
         owners: [
           {
-            owner_kind: 'team',
-            owner_id: 'team_1',
-            owner_name: 'Core Platform',
+            owner_kind: 'service_account',
+            owner_id: 'service_account_1',
+            owner_name: 'CI Indexer',
             priced_cost_usd_10000: 80_000,
             priced_request_count: 20,
             unpriced_request_count: 2,
@@ -70,7 +70,7 @@ describe('UsageCostsPage', () => {
     render(<UsageCostsPage />)
 
     expect(screen.getByText('Usage Costs')).toBeInTheDocument()
-    expect(screen.getByText('Core Platform')).toBeInTheDocument()
+    expect(screen.getByText('CI Indexer')).toBeInTheDocument()
     expect(screen.getByText('fast')).toBeInTheDocument()
     expect(screen.getByText('Priced requests')).toBeInTheDocument()
   })

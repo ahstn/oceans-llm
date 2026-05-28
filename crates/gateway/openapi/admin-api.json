@@ -1815,25 +1815,12 @@
             "session_cookie": []
           }
         ]
-      }
-    },
-    "/api/v1/admin/spend/budgets/service-accounts/{service_account_id}": {
+      },
       "put": {
         "tags": [
           "crate::http::spend"
         ],
-        "operationId": "upsert_service_account_budget",
-        "parameters": [
-          {
-            "name": "service_account_id",
-            "in": "path",
-            "description": "Service account identifier",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "upsert_budget",
         "requestBody": {
           "content": {
             "application/json": {
@@ -1861,183 +1848,24 @@
             "session_cookie": []
           }
         ]
-      },
-      "delete": {
-        "tags": [
-          "crate::http::spend"
-        ],
-        "operationId": "deactivate_service_account_budget",
-        "parameters": [
-          {
-            "name": "service_account_id",
-            "in": "path",
-            "description": "Service account identifier",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Envelope_DeactivateBudgetResultView"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          }
-        ]
       }
     },
-    "/api/v1/admin/spend/budgets/teams/{team_id}": {
-      "put": {
+    "/api/v1/admin/spend/budgets/deactivate": {
+      "post": {
         "tags": [
           "crate::http::spend"
         ],
-        "operationId": "upsert_team_budget",
-        "parameters": [
-          {
-            "name": "team_id",
-            "in": "path",
-            "description": "Team identifier",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "deactivate_budget",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UpsertBudgetRequest"
+                "$ref": "#/components/schemas/DeactivateBudgetRequest"
               }
             }
           },
           "required": true
         },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Envelope_UpsertBudgetResultView"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          }
-        ]
-      },
-      "delete": {
-        "tags": [
-          "crate::http::spend"
-        ],
-        "operationId": "deactivate_team_budget",
-        "parameters": [
-          {
-            "name": "team_id",
-            "in": "path",
-            "description": "Team identifier",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Envelope_DeactivateBudgetResultView"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          }
-        ]
-      }
-    },
-    "/api/v1/admin/spend/budgets/users/{user_id}": {
-      "put": {
-        "tags": [
-          "crate::http::spend"
-        ],
-        "operationId": "upsert_user_budget",
-        "parameters": [
-          {
-            "name": "user_id",
-            "in": "path",
-            "description": "User identifier",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpsertBudgetRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Envelope_UpsertBudgetResultView"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          }
-        ]
-      },
-      "delete": {
-        "tags": [
-          "crate::http::spend"
-        ],
-        "operationId": "deactivate_user_budget",
-        "parameters": [
-          {
-            "name": "user_id",
-            "in": "path",
-            "description": "User identifier",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "",
@@ -2103,7 +1931,7 @@
           {
             "name": "owner_kind",
             "in": "query",
-            "description": "Admin-only owner filter: all, user, team, or service_account.",
+            "description": "Admin-only owner filter: all, user, or service_account.",
             "required": false,
             "schema": {
               "type": [
@@ -2754,25 +2582,6 @@
           }
         }
       },
-      "AdminApiKeyTeamOwnerView": {
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "key"
-        ],
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "key": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          }
-        }
-      },
       "AdminApiKeyUserOwnerView": {
         "type": "object",
         "required": [
@@ -2885,7 +2694,6 @@
         "required": [
           "items",
           "users",
-          "teams",
           "service_accounts",
           "models"
         ],
@@ -2906,12 +2714,6 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/AdminApiKeyServiceAccountOwnerView"
-            }
-          },
-          "teams": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AdminApiKeyTeamOwnerView"
             }
           },
           "users": {
@@ -3115,6 +2917,7 @@
         "type": "object",
         "required": [
           "id",
+          "model_id",
           "resolved_model_key",
           "tags",
           "status",
@@ -3179,6 +2982,9 @@
                 "$ref": "#/components/schemas/ModelIconKeyView"
               }
             ]
+          },
+          "model_id": {
+            "type": "string"
           },
           "output_cost_per_million_tokens_usd_10000": {
             "type": [
@@ -3795,6 +3601,75 @@
           }
         }
       },
+      "BudgetScopeRequest": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/BudgetUserScopeRequest"
+          },
+          {
+            "$ref": "#/components/schemas/BudgetServiceAccountScopeRequest"
+          },
+          {
+            "$ref": "#/components/schemas/BudgetUserModelByModelScopeRequest"
+          },
+          {
+            "$ref": "#/components/schemas/BudgetUserModelByUpstreamModelScopeRequest"
+          }
+        ]
+      },
+      "BudgetScopeView": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/BudgetUserScopeView"
+          },
+          {
+            "$ref": "#/components/schemas/BudgetServiceAccountScopeView"
+          },
+          {
+            "$ref": "#/components/schemas/BudgetUserModelByModelScopeView"
+          },
+          {
+            "$ref": "#/components/schemas/BudgetUserModelByUpstreamModelScopeView"
+          }
+        ]
+      },
+      "BudgetServiceAccountScopeKind": {
+        "type": "string",
+        "enum": [
+          "service_account"
+        ]
+      },
+      "BudgetServiceAccountScopeRequest": {
+        "type": "object",
+        "required": [
+          "kind",
+          "service_account_id"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/BudgetServiceAccountScopeKind"
+          },
+          "service_account_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BudgetServiceAccountScopeView": {
+        "type": "object",
+        "required": [
+          "kind",
+          "service_account_id"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/BudgetServiceAccountScopeKind"
+          },
+          "service_account_id": {
+            "type": "string"
+          }
+        }
+      },
       "BudgetSettingsView": {
         "type": "object",
         "required": [
@@ -3819,6 +3694,127 @@
             "type": "boolean"
           },
           "timezone": {
+            "type": "string"
+          }
+        }
+      },
+      "BudgetUserModelByModelScopeRequest": {
+        "type": "object",
+        "required": [
+          "kind",
+          "user_id",
+          "model_id"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/BudgetUserModelScopeKind"
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BudgetUserModelByModelScopeView": {
+        "type": "object",
+        "required": [
+          "kind",
+          "user_id",
+          "model_id"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/BudgetUserModelScopeKind"
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string"
+          }
+        }
+      },
+      "BudgetUserModelByUpstreamModelScopeRequest": {
+        "type": "object",
+        "required": [
+          "kind",
+          "user_id",
+          "upstream_model"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/BudgetUserModelScopeKind"
+          },
+          "upstream_model": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BudgetUserModelByUpstreamModelScopeView": {
+        "type": "object",
+        "required": [
+          "kind",
+          "user_id",
+          "upstream_model"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/BudgetUserModelScopeKind"
+          },
+          "upstream_model": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string"
+          }
+        }
+      },
+      "BudgetUserModelScopeKind": {
+        "type": "string",
+        "enum": [
+          "user_model"
+        ]
+      },
+      "BudgetUserScopeKind": {
+        "type": "string",
+        "enum": [
+          "user"
+        ]
+      },
+      "BudgetUserScopeRequest": {
+        "type": "object",
+        "required": [
+          "kind",
+          "user_id"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/BudgetUserScopeKind"
+          },
+          "user_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BudgetUserScopeView": {
+        "type": "object",
+        "required": [
+          "kind",
+          "user_id"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/BudgetUserScopeKind"
+          },
+          "user_id": {
             "type": "string"
           }
         }
@@ -4147,21 +4143,32 @@
           }
         ]
       },
+      "DeactivateBudgetRequest": {
+        "type": "object",
+        "required": [
+          "scope"
+        ],
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/BudgetScopeRequest"
+          }
+        }
+      },
       "DeactivateBudgetResultView": {
         "type": "object",
         "required": [
-          "owner_kind",
-          "owner_id",
+          "scope",
+          "scope_key",
           "deactivated"
         ],
         "properties": {
           "deactivated": {
             "type": "boolean"
           },
-          "owner_id": {
-            "type": "string"
+          "scope": {
+            "$ref": "#/components/schemas/BudgetScopeView"
           },
-          "owner_kind": {
+          "scope_key": {
             "type": "string"
           }
         }
@@ -4178,7 +4185,6 @@
             "required": [
               "items",
               "users",
-              "teams",
               "service_accounts",
               "models"
             ],
@@ -4199,12 +4205,6 @@
                 "type": "array",
                 "items": {
                   "$ref": "#/components/schemas/AdminApiKeyServiceAccountOwnerView"
-                }
-              },
-              "teams": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/AdminApiKeyTeamOwnerView"
                 }
               },
               "users": {
@@ -4724,18 +4724,18 @@
           "data": {
             "type": "object",
             "required": [
-              "owner_kind",
-              "owner_id",
+              "scope",
+              "scope_key",
               "deactivated"
             ],
             "properties": {
               "deactivated": {
                 "type": "boolean"
               },
-              "owner_id": {
-                "type": "string"
+              "scope": {
+                "$ref": "#/components/schemas/BudgetScopeView"
               },
-              "owner_kind": {
+              "scope_key": {
                 "type": "string"
               }
             }
@@ -5384,8 +5384,8 @@
             "type": "object",
             "required": [
               "users",
-              "teams",
-              "service_accounts"
+              "service_accounts",
+              "user_model_budgets"
             ],
             "properties": {
               "service_accounts": {
@@ -5394,10 +5394,10 @@
                   "$ref": "#/components/schemas/SpendBudgetServiceAccountView"
                 }
               },
-              "teams": {
+              "user_model_budgets": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/components/schemas/SpendBudgetTeamView"
+                  "$ref": "#/components/schemas/SpendBudgetUserModelView"
                 }
               },
               "users": {
@@ -5508,8 +5508,9 @@
           "data": {
             "type": "object",
             "required": [
-              "owner_kind",
-              "owner_id",
+              "budget_id",
+              "scope",
+              "scope_key",
               "budget",
               "current_window_spend_usd_10000"
             ],
@@ -5517,14 +5518,17 @@
               "budget": {
                 "$ref": "#/components/schemas/BudgetSettingsView"
               },
+              "budget_id": {
+                "type": "string"
+              },
               "current_window_spend_usd_10000": {
                 "type": "integer",
                 "format": "int64"
               },
-              "owner_id": {
-                "type": "string"
+              "scope": {
+                "$ref": "#/components/schemas/BudgetScopeView"
               },
-              "owner_kind": {
+              "scope_key": {
                 "type": "string"
               }
             }
@@ -7041,12 +7045,13 @@
           }
         }
       },
-      "SpendBudgetTeamView": {
+      "SpendBudgetUserModelView": {
         "type": "object",
         "required": [
-          "team_id",
-          "team_name",
-          "team_key",
+          "budget_id",
+          "scope_key",
+          "user_id",
+          "budget",
           "current_window_spend_usd_10000",
           "alert_email_ready",
           "alert_recipient_summary"
@@ -7059,26 +7064,31 @@
             "type": "string"
           },
           "budget": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/BudgetSettingsView"
-              }
-            ]
+            "$ref": "#/components/schemas/BudgetSettingsView"
+          },
+          "budget_id": {
+            "type": "string"
           },
           "current_window_spend_usd_10000": {
             "type": "integer",
             "format": "int64"
           },
-          "team_id": {
+          "model_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scope_key": {
             "type": "string"
           },
-          "team_key": {
-            "type": "string"
+          "upstream_model": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
-          "team_name": {
+          "user_id": {
             "type": "string"
           }
         }
@@ -7141,8 +7151,8 @@
         "type": "object",
         "required": [
           "users",
-          "teams",
-          "service_accounts"
+          "service_accounts",
+          "user_model_budgets"
         ],
         "properties": {
           "service_accounts": {
@@ -7151,10 +7161,10 @@
               "$ref": "#/components/schemas/SpendBudgetServiceAccountView"
             }
           },
-          "teams": {
+          "user_model_budgets": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/SpendBudgetTeamView"
+              "$ref": "#/components/schemas/SpendBudgetUserModelView"
             }
           },
           "users": {
@@ -7510,6 +7520,7 @@
       "UpsertBudgetRequest": {
         "type": "object",
         "required": [
+          "scope",
           "cadence",
           "amount_usd",
           "hard_limit"
@@ -7524,6 +7535,9 @@
           "hard_limit": {
             "type": "boolean"
           },
+          "scope": {
+            "$ref": "#/components/schemas/BudgetScopeRequest"
+          },
           "timezone": {
             "type": [
               "string",
@@ -7535,8 +7549,9 @@
       "UpsertBudgetResultView": {
         "type": "object",
         "required": [
-          "owner_kind",
-          "owner_id",
+          "budget_id",
+          "scope",
+          "scope_key",
           "budget",
           "current_window_spend_usd_10000"
         ],
@@ -7544,14 +7559,17 @@
           "budget": {
             "$ref": "#/components/schemas/BudgetSettingsView"
           },
+          "budget_id": {
+            "type": "string"
+          },
           "current_window_spend_usd_10000": {
             "type": "integer",
             "format": "int64"
           },
-          "owner_id": {
-            "type": "string"
+          "scope": {
+            "$ref": "#/components/schemas/BudgetScopeView"
           },
-          "owner_kind": {
+          "scope_key": {
             "type": "string"
           }
         }

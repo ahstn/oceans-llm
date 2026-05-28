@@ -3,260 +3,81 @@ use crate::shared::{parse_uuid, unix_to_datetime};
 
 #[async_trait]
 impl BudgetRepository for PostgresStore {
-    async fn get_active_budget_for_user(
+    async fn get_active_budget_by_scope(
         &self,
-        user_id: Uuid,
-    ) -> Result<Option<UserBudgetRecord>, StoreError> {
+        scope: &BudgetScope,
+    ) -> Result<Option<BudgetRecord>, StoreError> {
         let row = sqlx::query(
             r#"
-            SELECT user_budget_id, user_id, cadence, amount_10000, hard_limit, timezone,
-                   is_active, created_at, updated_at
-            FROM user_budgets
-            WHERE user_id = $1 AND is_active = 1
-            LIMIT 1
-            "#,
-        )
-        .bind(user_id.to_string())
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(to_query_error)?;
-
-        row.as_ref().map(decode_user_budget_record).transpose()
-    }
-
-    async fn get_active_budget_for_team(
-        &self,
-        team_id: Uuid,
-    ) -> Result<Option<TeamBudgetRecord>, StoreError> {
-        let row = sqlx::query(
-            r#"
-            SELECT team_budget_id, team_id, cadence, amount_10000, hard_limit, timezone,
-                   is_active, created_at, updated_at
-            FROM team_budgets
-            WHERE team_id = $1 AND is_active = 1
-            LIMIT 1
-            "#,
-        )
-        .bind(team_id.to_string())
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(to_query_error)?;
-
-        row.as_ref().map(decode_team_budget_record).transpose()
-    }
-
-    async fn get_active_budget_for_service_account(
-        &self,
-        service_account_id: Uuid,
-    ) -> Result<Option<ServiceAccountBudgetRecord>, StoreError> {
-        let row = sqlx::query(
-            r#"
-            SELECT service_account_budget_id, service_account_id, cadence, amount_10000,
-                   hard_limit, timezone, is_active, created_at, updated_at
-            FROM service_account_budgets
-            WHERE service_account_id = $1 AND is_active = 1
-            LIMIT 1
-            "#,
-        )
-        .bind(service_account_id.to_string())
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(to_query_error)?;
-
-        row.as_ref()
-            .map(decode_service_account_budget_record)
-            .transpose()
-    }
-
-    async fn upsert_active_budget_for_user(
-        &self,
-        user_id: Uuid,
-        cadence: BudgetCadence,
-        amount_usd: Money4,
-        hard_limit: bool,
-        timezone: &str,
-        updated_at: OffsetDateTime,
-    ) -> Result<UserBudgetRecord, StoreError> {
-        let updated = sqlx::query(
-            r#"
-            UPDATE user_budgets
-            SET cadence = $1,
-                amount_10000 = $2,
-                hard_limit = $3,
-                timezone = $4,
-                updated_at = $5
-            WHERE user_id = $6
+            SELECT budget_id, scope_kind, scope_key, user_id, service_account_id, model_id,
+                   upstream_model, cadence, amount_10000, hard_limit, timezone, is_active,
+                   created_at, updated_at
+            FROM budgets
+            WHERE scope_key = $1
               AND is_active = 1
+            LIMIT 1
             "#,
         )
-        .bind(cadence.as_str())
-        .bind(amount_usd.as_scaled_i64())
-        .bind(if hard_limit { 1_i64 } else { 0_i64 })
-        .bind(timezone)
-        .bind(updated_at.unix_timestamp())
-        .bind(user_id.to_string())
-        .execute(&self.pool)
+        .bind(scope.scope_key())
+        .fetch_optional(&self.pool)
         .await
-        .map_err(to_query_error)?
-        .rows_affected();
+        .map_err(to_query_error)?;
 
-        if updated == 0 {
+        row.as_ref().map(decode_budget_record).transpose()
+    }
+
+    async fn list_active_budgets(
+        &self,
+        scope_kind: Option<BudgetScopeKind>,
+    ) -> Result<Vec<BudgetRecord>, StoreError> {
+        let rows = if let Some(scope_kind) = scope_kind {
             sqlx::query(
                 r#"
-                INSERT INTO user_budgets (
-                    user_budget_id, user_id, cadence, amount_10000, hard_limit, timezone,
-                    is_active, created_at, updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8)
+                SELECT budget_id, scope_kind, scope_key, user_id, service_account_id, model_id,
+                       upstream_model, cadence, amount_10000, hard_limit, timezone, is_active,
+                       created_at, updated_at
+                FROM budgets
+                WHERE scope_kind = $1
+                  AND is_active = 1
+                ORDER BY updated_at DESC, scope_key ASC
                 "#,
             )
-            .bind(Uuid::new_v4().to_string())
-            .bind(user_id.to_string())
-            .bind(cadence.as_str())
-            .bind(amount_usd.as_scaled_i64())
-            .bind(if hard_limit { 1_i64 } else { 0_i64 })
-            .bind(timezone)
-            .bind(updated_at.unix_timestamp())
-            .bind(updated_at.unix_timestamp())
-            .execute(&self.pool)
+            .bind(scope_kind.as_str())
+            .fetch_all(&self.pool)
             .await
-            .map_err(to_query_error)?;
-        }
-
-        self.get_active_budget_for_user(user_id)
-            .await?
-            .ok_or_else(|| {
-                StoreError::Unexpected(
-                    "active user budget missing after successful upsert".to_string(),
-                )
-            })
-    }
-
-    async fn deactivate_active_budget_for_user(
-        &self,
-        user_id: Uuid,
-        updated_at: OffsetDateTime,
-    ) -> Result<bool, StoreError> {
-        let updated = sqlx::query(
-            r#"
-            UPDATE user_budgets
-            SET is_active = 0,
-                updated_at = $1
-            WHERE user_id = $2
-              AND is_active = 1
-            "#,
-        )
-        .bind(updated_at.unix_timestamp())
-        .bind(user_id.to_string())
-        .execute(&self.pool)
-        .await
-        .map_err(to_query_error)?
-        .rows_affected();
-
-        Ok(updated > 0)
-    }
-
-    async fn upsert_active_budget_for_team(
-        &self,
-        team_id: Uuid,
-        cadence: BudgetCadence,
-        amount_usd: Money4,
-        hard_limit: bool,
-        timezone: &str,
-        updated_at: OffsetDateTime,
-    ) -> Result<TeamBudgetRecord, StoreError> {
-        let updated = sqlx::query(
-            r#"
-            UPDATE team_budgets
-            SET cadence = $1,
-                amount_10000 = $2,
-                hard_limit = $3,
-                timezone = $4,
-                updated_at = $5
-            WHERE team_id = $6
-              AND is_active = 1
-            "#,
-        )
-        .bind(cadence.as_str())
-        .bind(amount_usd.as_scaled_i64())
-        .bind(if hard_limit { 1_i64 } else { 0_i64 })
-        .bind(timezone)
-        .bind(updated_at.unix_timestamp())
-        .bind(team_id.to_string())
-        .execute(&self.pool)
-        .await
-        .map_err(to_query_error)?
-        .rows_affected();
-
-        if updated == 0 {
+            .map_err(to_query_error)?
+        } else {
             sqlx::query(
                 r#"
-                INSERT INTO team_budgets (
-                    team_budget_id, team_id, cadence, amount_10000, hard_limit, timezone,
-                    is_active, created_at, updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8)
+                SELECT budget_id, scope_kind, scope_key, user_id, service_account_id, model_id,
+                       upstream_model, cadence, amount_10000, hard_limit, timezone, is_active,
+                       created_at, updated_at
+                FROM budgets
+                WHERE is_active = 1
+                ORDER BY updated_at DESC, scope_key ASC
                 "#,
             )
-            .bind(Uuid::new_v4().to_string())
-            .bind(team_id.to_string())
-            .bind(cadence.as_str())
-            .bind(amount_usd.as_scaled_i64())
-            .bind(if hard_limit { 1_i64 } else { 0_i64 })
-            .bind(timezone)
-            .bind(updated_at.unix_timestamp())
-            .bind(updated_at.unix_timestamp())
-            .execute(&self.pool)
+            .fetch_all(&self.pool)
             .await
-            .map_err(to_query_error)?;
-        }
-
-        self.get_active_budget_for_team(team_id)
-            .await?
-            .ok_or_else(|| {
-                StoreError::Unexpected(
-                    "active team budget missing after successful upsert".to_string(),
-                )
-            })
+            .map_err(to_query_error)?
+        };
+        rows.iter().map(decode_budget_record).collect()
     }
 
-    async fn deactivate_active_budget_for_team(
+    async fn upsert_active_budget(
         &self,
-        team_id: Uuid,
+        scope: &BudgetScope,
+        settings: &BudgetSettings,
         updated_at: OffsetDateTime,
-    ) -> Result<bool, StoreError> {
-        let updated = sqlx::query(
-            r#"
-            UPDATE team_budgets
-            SET is_active = 0,
-                updated_at = $1
-            WHERE team_id = $2
-              AND is_active = 1
-            "#,
-        )
-        .bind(updated_at.unix_timestamp())
-        .bind(team_id.to_string())
-        .execute(&self.pool)
-        .await
-        .map_err(to_query_error)?
-        .rows_affected();
-        Ok(updated > 0)
-    }
-
-    async fn upsert_active_budget_for_service_account(
-        &self,
-        service_account_id: Uuid,
-        cadence: BudgetCadence,
-        amount_usd: Money4,
-        hard_limit: bool,
-        timezone: &str,
-        updated_at: OffsetDateTime,
-    ) -> Result<ServiceAccountBudgetRecord, StoreError> {
+    ) -> Result<BudgetRecord, StoreError> {
         sqlx::query(
             r#"
-            INSERT INTO service_account_budgets (
-                service_account_budget_id, service_account_id, cadence, amount_10000,
-                hard_limit, timezone, is_active, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8)
-            ON CONFLICT (service_account_id) WHERE is_active = 1
+            INSERT INTO budgets (
+                budget_id, scope_kind, scope_key, user_id, service_account_id, model_id,
+                upstream_model, cadence, amount_10000, hard_limit, timezone, is_active,
+                created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 1, $12, $13)
+            ON CONFLICT (scope_key) WHERE is_active = 1
             DO UPDATE SET
                 cadence = excluded.cadence,
                 amount_10000 = excluded.amount_10000,
@@ -266,42 +87,45 @@ impl BudgetRepository for PostgresStore {
             "#,
         )
         .bind(Uuid::new_v4().to_string())
-        .bind(service_account_id.to_string())
-        .bind(cadence.as_str())
-        .bind(amount_usd.as_scaled_i64())
-        .bind(if hard_limit { 1_i64 } else { 0_i64 })
-        .bind(timezone)
+        .bind(scope.kind().as_str())
+        .bind(scope.scope_key())
+        .bind(scope.user_id().map(|id| id.to_string()))
+        .bind(scope.service_account_id().map(|id| id.to_string()))
+        .bind(scope.model_id().map(|id| id.to_string()))
+        .bind(scope.upstream_model().map(ToOwned::to_owned))
+        .bind(settings.cadence.as_str())
+        .bind(settings.amount_usd.as_scaled_i64())
+        .bind(if settings.hard_limit { 1_i64 } else { 0_i64 })
+        .bind(&settings.timezone)
         .bind(updated_at.unix_timestamp())
         .bind(updated_at.unix_timestamp())
         .execute(&self.pool)
         .await
         .map_err(to_query_error)?;
 
-        self.get_active_budget_for_service_account(service_account_id)
+        self.get_active_budget_by_scope(scope)
             .await?
             .ok_or_else(|| {
-                StoreError::Unexpected(
-                    "active service account budget missing after successful upsert".to_string(),
-                )
+                StoreError::Unexpected("active budget missing after successful upsert".to_string())
             })
     }
 
-    async fn deactivate_active_budget_for_service_account(
+    async fn deactivate_active_budget(
         &self,
-        service_account_id: Uuid,
+        scope: &BudgetScope,
         updated_at: OffsetDateTime,
     ) -> Result<bool, StoreError> {
         let updated = sqlx::query(
             r#"
-            UPDATE service_account_budgets
+            UPDATE budgets
             SET is_active = 0,
                 updated_at = $1
-            WHERE service_account_id = $2
+            WHERE scope_key = $2
               AND is_active = 1
             "#,
         )
         .bind(updated_at.unix_timestamp())
-        .bind(service_account_id.to_string())
+        .bind(scope.scope_key())
         .execute(&self.pool)
         .await
         .map_err(to_query_error)?
@@ -340,40 +164,34 @@ impl BudgetRepository for PostgresStore {
         row.as_ref().map(decode_usage_ledger_record).transpose()
     }
 
-    async fn sum_usage_cost_for_user_in_window(
+    async fn sum_usage_cost_for_budget_scope_in_window(
         &self,
-        user_id: Uuid,
+        scope: &BudgetScope,
         window_start: OffsetDateTime,
         window_end: OffsetDateTime,
     ) -> Result<Money4, StoreError> {
-        sum_usage_cost_for_owner_in_window(&self.pool, "user_id", user_id, window_start, window_end)
-            .await
+        sum_usage_cost_for_budget_scope(&self.pool, scope, window_start, window_end).await
     }
 
-    async fn sum_usage_cost_for_team_in_window(
-        &self,
-        team_id: Uuid,
-        window_start: OffsetDateTime,
-        window_end: OffsetDateTime,
-    ) -> Result<Money4, StoreError> {
-        sum_usage_cost_for_owner_in_window(&self.pool, "team_id", team_id, window_start, window_end)
-            .await
-    }
-
-    async fn sum_usage_cost_for_service_account_in_window(
+    async fn count_active_api_keys_for_service_account(
         &self,
         service_account_id: Uuid,
-        window_start: OffsetDateTime,
-        window_end: OffsetDateTime,
-    ) -> Result<Money4, StoreError> {
-        sum_usage_cost_for_owner_in_window(
-            &self.pool,
-            "service_account_id",
-            service_account_id,
-            window_start,
-            window_end,
+    ) -> Result<u64, StoreError> {
+        let count: i64 = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*)
+            FROM api_keys
+            WHERE owner_kind = 'service_account'
+              AND owner_service_account_id = $1
+              AND status = 'active'
+              AND revoked_at IS NULL
+            "#,
         )
+        .bind(service_account_id.to_string())
+        .fetch_one(&self.pool)
         .await
+        .map_err(to_query_error)?;
+        u64::try_from(count).map_err(|error| StoreError::Serialization(error.to_string()))
     }
 
     async fn list_usage_daily_aggregates(
@@ -399,26 +217,6 @@ impl BudgetRepository for PostgresStore {
                 WHERE occurred_at >= $1
                   AND occurred_at < $2
                   AND user_id IS NOT NULL
-                GROUP BY day_start
-                ORDER BY day_start ASC
-                "#
-            }
-            Some(ApiKeyOwnerKind::Team) => {
-                r#"
-                SELECT
-                    (occurred_at / 86400) * 86400 AS day_start,
-                    COALESCE(SUM(CASE WHEN pricing_status IN ('priced', 'legacy_estimated')
-                        THEN computed_cost_10000 ELSE 0 END), 0)::BIGINT AS priced_cost_10000,
-                    SUM(CASE WHEN pricing_status IN ('priced', 'legacy_estimated') THEN 1 ELSE 0 END)::BIGINT
-                        AS priced_request_count,
-                    SUM(CASE WHEN pricing_status = 'unpriced' THEN 1 ELSE 0 END)::BIGINT
-                        AS unpriced_request_count,
-                    SUM(CASE WHEN pricing_status = 'usage_missing' THEN 1 ELSE 0 END)::BIGINT
-                        AS usage_missing_request_count
-                FROM usage_cost_events
-                WHERE occurred_at >= $1
-                  AND occurred_at < $2
-                  AND team_id IS NOT NULL
                 GROUP BY day_start
                 ORDER BY day_start ASC
                 "#
@@ -517,29 +315,6 @@ impl BudgetRepository for PostgresStore {
                 ORDER BY priced_cost_10000 DESC, owner_name ASC
                 "#
             }
-            Some(ApiKeyOwnerKind::Team) => {
-                r#"
-                SELECT
-                    'team' AS owner_kind,
-                    u.team_id AS owner_id,
-                    teams.team_name AS owner_name,
-                    COALESCE(SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated')
-                        THEN u.computed_cost_10000 ELSE 0 END), 0)::BIGINT AS priced_cost_10000,
-                    SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated') THEN 1 ELSE 0 END)::BIGINT
-                        AS priced_request_count,
-                    SUM(CASE WHEN u.pricing_status = 'unpriced' THEN 1 ELSE 0 END)::BIGINT
-                        AS unpriced_request_count,
-                    SUM(CASE WHEN u.pricing_status = 'usage_missing' THEN 1 ELSE 0 END)::BIGINT
-                        AS usage_missing_request_count
-                FROM usage_cost_events u
-                INNER JOIN teams ON teams.team_id = u.team_id
-                WHERE u.occurred_at >= $1
-                  AND u.occurred_at < $2
-                  AND u.team_id IS NOT NULL
-                GROUP BY u.team_id, teams.team_name
-                ORDER BY priced_cost_10000 DESC, owner_name ASC
-                "#
-            }
             Some(ApiKeyOwnerKind::ServiceAccount) => {
                 r#"
                 SELECT
@@ -584,25 +359,6 @@ impl BudgetRepository for PostgresStore {
                       AND u.occurred_at < $2
                       AND u.user_id IS NOT NULL
                     GROUP BY u.user_id, users.name
-                    UNION ALL
-                    SELECT
-                        'team' AS owner_kind,
-                        u.team_id AS owner_id,
-                        teams.team_name AS owner_name,
-                        COALESCE(SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated')
-                            THEN u.computed_cost_10000 ELSE 0 END), 0)::BIGINT AS priced_cost_10000,
-                        SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated') THEN 1 ELSE 0 END)::BIGINT
-                            AS priced_request_count,
-                        SUM(CASE WHEN u.pricing_status = 'unpriced' THEN 1 ELSE 0 END)::BIGINT
-                            AS unpriced_request_count,
-                        SUM(CASE WHEN u.pricing_status = 'usage_missing' THEN 1 ELSE 0 END)::BIGINT
-                            AS usage_missing_request_count
-                    FROM usage_cost_events u
-                    INNER JOIN teams ON teams.team_id = u.team_id
-                    WHERE u.occurred_at >= $1
-                      AND u.occurred_at < $2
-                      AND u.team_id IS NOT NULL
-                    GROUP BY u.team_id, teams.team_name
                     UNION ALL
                     SELECT
                         'service_account' AS owner_kind,
@@ -680,27 +436,6 @@ impl BudgetRepository for PostgresStore {
                 WHERE u.occurred_at >= $1
                   AND u.occurred_at < $2
                   AND u.user_id IS NOT NULL
-                GROUP BY COALESCE(g.model_key, u.upstream_model)
-                ORDER BY priced_cost_10000 DESC, model_key ASC
-                "#
-            }
-            Some(ApiKeyOwnerKind::Team) => {
-                r#"
-                SELECT
-                    COALESCE(g.model_key, u.upstream_model) AS model_key,
-                    COALESCE(SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated')
-                        THEN u.computed_cost_10000 ELSE 0 END), 0)::BIGINT AS priced_cost_10000,
-                    SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated') THEN 1 ELSE 0 END)::BIGINT
-                        AS priced_request_count,
-                    SUM(CASE WHEN u.pricing_status = 'unpriced' THEN 1 ELSE 0 END)::BIGINT
-                        AS unpriced_request_count,
-                    SUM(CASE WHEN u.pricing_status = 'usage_missing' THEN 1 ELSE 0 END)::BIGINT
-                        AS usage_missing_request_count
-                FROM usage_cost_events u
-                LEFT JOIN gateway_models g ON g.id = u.model_id
-                WHERE u.occurred_at >= $1
-                  AND u.occurred_at < $2
-                  AND u.team_id IS NOT NULL
                 GROUP BY COALESCE(g.model_key, u.upstream_model)
                 ORDER BY priced_cost_10000 DESC, model_key ASC
                 "#
@@ -812,34 +547,6 @@ impl BudgetRepository for PostgresStore {
                 UNION ALL
                 SELECT
                     ((u.occurred_at / 86400) * 86400)::BIGINT AS day_start,
-                    'team' AS owner_kind,
-                    u.team_id::TEXT AS owner_id,
-                    teams.team_name AS owner_name,
-                    teams.tags_json AS owner_tags_json,
-                    u.model_id::TEXT AS model_id,
-                    COALESCE(g.model_key, u.upstream_model) AS model_key,
-                    u.provider_key,
-                    u.upstream_model,
-                    u.pricing_status,
-                    u.pricing_row_id::TEXT AS pricing_row_id,
-                    COALESCE(SUM(u.prompt_tokens), 0)::BIGINT AS prompt_tokens,
-                    COALESCE(SUM(u.completion_tokens), 0)::BIGINT AS completion_tokens,
-                    COALESCE(SUM(u.total_tokens), 0)::BIGINT AS total_tokens,
-                    COUNT(*)::BIGINT AS request_count,
-                    COALESCE(SUM(u.computed_cost_10000), 0)::BIGINT AS computed_cost_10000
-                FROM usage_cost_events u
-                INNER JOIN teams ON teams.team_id = u.team_id
-                LEFT JOIN gateway_models g ON g.id = u.model_id
-                WHERE u.occurred_at >= $1
-                  AND u.occurred_at < $2
-                  AND u.team_id IS NOT NULL
-                  AND u.ownership_scope_key LIKE 'team:%'
-                  AND u.pricing_status IN ('priced', 'legacy_estimated')
-                GROUP BY day_start, u.team_id, teams.team_name, teams.tags_json, u.model_id, model_key,
-                         u.provider_key, u.upstream_model, u.pricing_status, u.pricing_row_id
-                UNION ALL
-                SELECT
-                    ((u.occurred_at / 86400) * 86400)::BIGINT AS day_start,
                     'service_account' AS owner_kind,
                     u.service_account_id::TEXT AS owner_id,
                     service_accounts.service_account_name AS owner_name,
@@ -939,11 +646,6 @@ impl BudgetRepository for PostgresStore {
                 FROM usage_cost_events
                 WHERE occurred_at >= $1 AND occurred_at < $2 AND user_id IS NOT NULL
                   AND ownership_scope_key LIKE 'user:%'
-                UNION ALL
-                SELECT 'team' AS owner_kind, team_id::TEXT AS owner_id, pricing_status
-                FROM usage_cost_events
-                WHERE occurred_at >= $1 AND occurred_at < $2 AND team_id IS NOT NULL
-                  AND ownership_scope_key LIKE 'team:%'
                 UNION ALL
                 SELECT 'service_account' AS owner_kind, service_account_id::TEXT AS owner_id, pricing_status
                 FROM usage_cost_events
@@ -1217,31 +919,54 @@ impl BudgetRepository for PostgresStore {
     }
 }
 
-async fn sum_usage_cost_for_owner_in_window(
+async fn sum_usage_cost_for_budget_scope(
     pool: &PgPool,
-    owner_column: &str,
-    owner_id: Uuid,
+    scope: &BudgetScope,
     window_start: OffsetDateTime,
     window_end: OffsetDateTime,
 ) -> Result<Money4, StoreError> {
+    let (predicate, owner_id, extra_value) = match scope {
+        BudgetScope::User { user_id } => ("user_id = $1", user_id.to_string(), None),
+        BudgetScope::ServiceAccount { service_account_id } => (
+            "service_account_id = $1",
+            service_account_id.to_string(),
+            None,
+        ),
+        BudgetScope::UserModel {
+            user_id,
+            selector: BudgetModelSelector::Model { model_id },
+        } => (
+            "user_id = $1 AND model_id = $4",
+            user_id.to_string(),
+            Some(model_id.to_string()),
+        ),
+        BudgetScope::UserModel {
+            user_id,
+            selector: BudgetModelSelector::UpstreamModel { upstream_model },
+        } => (
+            "user_id = $1 AND model_id IS NULL AND TRIM(upstream_model) = $4",
+            user_id.to_string(),
+            Some(upstream_model.trim().to_string()),
+        ),
+    };
+
     let query = format!(
-        r#"
-        SELECT COALESCE(SUM(computed_cost_10000), 0)::BIGINT
-        FROM usage_cost_events
-        WHERE {owner_column} = $1
-          AND pricing_status IN ('priced', 'legacy_estimated')
-          AND occurred_at >= $2
-          AND occurred_at < $3
-        "#
+        "SELECT COALESCE(SUM(computed_cost_10000), 0)::BIGINT
+         FROM usage_cost_events
+         WHERE {predicate}
+           AND pricing_status IN ('priced', 'legacy_estimated')
+           AND occurred_at >= $2
+           AND occurred_at < $3"
     );
 
-    let row = sqlx::query(query.as_str())
-        .bind(owner_id.to_string())
+    let mut query = sqlx::query(query.as_str())
+        .bind(owner_id)
         .bind(window_start.unix_timestamp())
-        .bind(window_end.unix_timestamp())
-        .fetch_one(pool)
-        .await
-        .map_err(to_query_error)?;
+        .bind(window_end.unix_timestamp());
+    if let Some(extra_value) = extra_value {
+        query = query.bind(extra_value);
+    }
+    let row = query.fetch_one(pool).await.map_err(to_query_error)?;
 
     Ok(Money4::from_scaled(
         row.try_get::<i64, _>(0).map_err(to_query_error)?,

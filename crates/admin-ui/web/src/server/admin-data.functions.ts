@@ -11,8 +11,7 @@ import {
   createMcpServer,
   createTeam,
   createUser,
-  deactivateTeamBudget,
-  deactivateUserBudget,
+  deactivateBudget,
   disableMcpServer,
   listBudgetAlertHistory,
   reactivateUser,
@@ -41,8 +40,7 @@ import {
   resendPasswordInvite,
   resetUserOnboarding,
   transferTeamMember,
-  upsertTeamBudget,
-  upsertUserBudget,
+  upsertBudget,
   updateApiKey,
   updateMcpServer,
   updateTeam,
@@ -119,7 +117,7 @@ export const getSpendUsageReport = createServerFn({ method: 'POST' }).handler(
   }: {
     data: {
       days: 7 | 30
-      owner_kind: 'all' | 'user' | 'team'
+      owner_kind: 'all' | 'user' | 'service_account'
     }
   }) => {
     return getSpendReport(data)
@@ -137,7 +135,7 @@ export const getBudgetAlertHistory = createServerFn({ method: 'POST' }).handler(
     data?: {
       page?: number
       page_size?: number
-      owner_kind?: 'all' | 'user' | 'team'
+      owner_kind?: 'all' | 'user' | 'service_account'
       status?: 'all' | 'pending' | 'sent' | 'failed'
       channel?: 'all' | 'email'
     }
@@ -146,41 +144,19 @@ export const getBudgetAlertHistory = createServerFn({ method: 'POST' }).handler(
   },
 )
 
-export const saveUserBudget = createServerFn({ method: 'POST' }).handler(
+export const saveBudget = createServerFn({ method: 'POST' }).handler(
   async ({
     data,
   }: {
-    data: {
-      userId: string
-      input: Parameters<typeof upsertUserBudget>[1]
-    }
+    data: Parameters<typeof upsertBudget>[0]
   }) => {
-    return upsertUserBudget(data.userId, data.input)
+    return upsertBudget(data)
   },
 )
 
-export const removeUserBudget = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: { userId: string } }) => {
-    return deactivateUserBudget(data.userId)
-  },
-)
-
-export const saveTeamBudget = createServerFn({ method: 'POST' }).handler(
-  async ({
-    data,
-  }: {
-    data: {
-      teamId: string
-      input: Parameters<typeof upsertTeamBudget>[1]
-    }
-  }) => {
-    return upsertTeamBudget(data.teamId, data.input)
-  },
-)
-
-export const removeTeamBudget = createServerFn({ method: 'POST' }).handler(
-  async ({ data }: { data: { teamId: string } }) => {
-    return deactivateTeamBudget(data.teamId)
+export const removeBudget = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: Parameters<typeof deactivateBudget>[0] }) => {
+    return deactivateBudget(data)
   },
 )
 

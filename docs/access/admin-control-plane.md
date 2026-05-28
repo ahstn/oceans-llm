@@ -27,7 +27,7 @@ These areas are backed by real gateway APIs today:
 - password invite and onboarding links
 - OIDC pre-provisioning flows
 - spend usage reporting
-- spend budget management for users and teams
+- spend budget management for users, service accounts, and user model scopes
 - request-log list and detail inspection
 - MCP invocation list and detail inspection
 - MCP server registry UI, recommended-server catalog, registry CRUD, soft-disable, tool list, and discovery refresh
@@ -63,11 +63,11 @@ Admins can:
 - replace model grants for an active key
 - revoke a key so runtime auth rejects it immediately
 
-For service workloads, create a team-owned API key for the workload or owning platform team. Treat the key as a gateway service-account-style credential:
+For service workloads, create a service account for the workload and then create credentials on that service account:
 
 - give it a workload-specific name
 - grant only the gateway models the workload needs
-- put the owning team under the appropriate team budget
+- configure an active service-account budget before using active credentials
 - rotate by creating a replacement key, updating the caller secret, then revoking the old key
 
 Current limits:
@@ -126,7 +126,7 @@ Admins can:
 
 - inspect 7-day and 30-day spend windows
 - filter spend by owner kind
-- manage user and team budgets
+- manage user, service-account, and user model budgets
 - inspect the 7-day or 31-day usage leaderboard
 - inspect 7-day or 31-day self-reported agent harness usage by request count
 - inspect request-log summaries

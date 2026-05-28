@@ -113,6 +113,8 @@ Use the docs site instead of treating this file as the full admin and maintainer
   - [Identity and Access](docs/access/identity-and-access.md)
 - gateway API keys and service-account-style callers:
   - [Admin Control Plane](docs/access/admin-control-plane.md)
+- budgets:
+  - [Budgets](docs/access/budgets.md)
 - routing:
   - [Model Routing and API Behavior](docs/configuration/model-routing-and-api-behavior.md)
 - provider API compatibility:

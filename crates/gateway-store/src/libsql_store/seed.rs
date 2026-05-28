@@ -1,5 +1,8 @@
 use super::*;
-use crate::seed::{prevalidate_seed_users, reconcile_seed_teams, reconcile_seed_users};
+use crate::seed::{
+    prevalidate_seed_users, reconcile_seed_teams, reconcile_seed_users, service_account_uuid,
+    validate_seed_api_key_team_references,
+};
 use crate::shared::{serialize_json, serialize_optional_json};
 
 impl LibsqlStore {
@@ -54,19 +57,6 @@ impl LibsqlStore {
     ) -> Result<(), StoreError> {
         let now = OffsetDateTime::now_utc();
         let now_unix = now.unix_timestamp();
-
-        self.connection
-            .execute(
-                r#"
-                INSERT INTO teams (
-                    team_id, team_key, team_name, status, model_access_mode, created_at, updated_at
-                ) VALUES (?1, ?2, 'Config Seed', 'active', 'all', ?3, ?3)
-                ON CONFLICT(team_id) DO NOTHING
-                "#,
-                libsql::params![CONFIG_SEED_TEAM_ID, CONFIG_SEED_TEAM_KEY, now_unix],
-            )
-            .await
-            .map_err(to_query_error)?;
 
         for provider in providers {
             let config_json = serialize_json(&provider.config)?;
@@ -347,8 +337,21 @@ impl LibsqlStore {
                 .map_err(to_query_error)?;
         }
 
+        validate_seed_api_key_team_references(teams, api_keys)?;
+        prevalidate_seed_users(self, users).await?;
+        let seeded_teams = reconcile_seed_teams(self, teams, now).await?;
+
         for api_key in api_keys {
             let key_id = api_key_uuid(&api_key.public_id);
+            let service_account_id = service_account_uuid(&api_key.service_account_key);
+            let team = seeded_teams
+                .get(&api_key.service_account_team_key)
+                .ok_or_else(|| {
+                    StoreError::NotFound(format!(
+                        "seed api key `{}` references unknown team `{}`",
+                        api_key.public_id, api_key.service_account_team_key
+                    ))
+                })?;
 
             self.connection
                 .execute(
@@ -356,7 +359,7 @@ impl LibsqlStore {
                     INSERT INTO service_accounts (
                         service_account_id, team_id, service_account_key, service_account_name,
                         status, model_access_mode, metadata_json, created_at, updated_at, disabled_at
-                    ) VALUES (?1, ?2, ?3, 'Seed API Keys', 'active', 'all', '{}', ?4, ?4, NULL)
+                    ) VALUES (?1, ?2, ?3, ?4, 'active', 'all', '{}', ?5, ?5, NULL)
                     ON CONFLICT(service_account_id) DO UPDATE SET
                         team_id = excluded.team_id,
                         service_account_key = excluded.service_account_key,
@@ -368,14 +371,27 @@ impl LibsqlStore {
                         disabled_at = NULL
                     "#,
                     libsql::params![
-                        CONFIG_SEED_SERVICE_ACCOUNT_ID,
-                        CONFIG_SEED_TEAM_ID,
-                        CONFIG_SEED_SERVICE_ACCOUNT_KEY,
+                        service_account_id.to_string(),
+                        team.team_id.to_string(),
+                        api_key.service_account_key.as_str(),
+                        api_key.service_account_name.as_str(),
                         now_unix
                     ],
                 )
                 .await
                 .map_err(to_query_error)?;
+
+            self.upsert_active_budget(
+                &gateway_core::BudgetScope::ServiceAccount { service_account_id },
+                &gateway_core::BudgetSettings {
+                    cadence: api_key.service_account_budget.cadence,
+                    amount_usd: api_key.service_account_budget.amount_usd,
+                    hard_limit: api_key.service_account_budget.hard_limit,
+                    timezone: api_key.service_account_budget.timezone.clone(),
+                },
+                now,
+            )
+            .await?;
 
             self.connection
                 .execute(
@@ -397,8 +413,8 @@ impl LibsqlStore {
                         api_key.public_id.as_str(),
                         api_key.secret_hash.as_str(),
                         api_key.name.as_str(),
-                        CONFIG_SEED_TEAM_ID,
-                        CONFIG_SEED_SERVICE_ACCOUNT_ID,
+                        team.team_id.to_string(),
+                        service_account_id.to_string(),
                         now_unix
                     ],
                 )
@@ -435,8 +451,6 @@ impl LibsqlStore {
             }
         }
 
-        prevalidate_seed_users(self, users).await?;
-        let seeded_teams = reconcile_seed_teams(self, teams, now).await?;
         reconcile_seed_users(self, &seeded_teams, users, now).await?;
 
         Ok(())

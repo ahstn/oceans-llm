@@ -14,6 +14,7 @@ import type {
   CreateUserInput,
   CreateUserResult,
   DeactivateBudgetResultView,
+  DeactivateBudgetInput,
   IdentityActionResult,
   IdentityTeamsPayload,
   IdentityUsersPayload,
@@ -197,50 +198,24 @@ export async function listBudgetAlertHistory(params?: {
   )
 }
 
-export async function upsertUserBudget(
-  userId: string,
+export async function upsertBudget(
   input: UpsertBudgetInput,
 ): Promise<ApiEnvelope<UpsertBudgetResultView>> {
   const client = createGatewayApiClient()
   return unwrapGatewayResponse(
-    await client.PUT('/api/v1/admin/spend/budgets/users/{user_id}', {
-      params: { path: { user_id: userId } },
+    await client.PUT('/api/v1/admin/spend/budgets', {
       body: input,
     }),
   )
 }
 
-export async function deactivateUserBudget(
-  userId: string,
+export async function deactivateBudget(
+  input: DeactivateBudgetInput,
 ): Promise<ApiEnvelope<DeactivateBudgetResultView>> {
   const client = createGatewayApiClient()
   return unwrapGatewayResponse(
-    await client.DELETE('/api/v1/admin/spend/budgets/users/{user_id}', {
-      params: { path: { user_id: userId } },
-    }),
-  )
-}
-
-export async function upsertTeamBudget(
-  teamId: string,
-  input: UpsertBudgetInput,
-): Promise<ApiEnvelope<UpsertBudgetResultView>> {
-  const client = createGatewayApiClient()
-  return unwrapGatewayResponse(
-    await client.PUT('/api/v1/admin/spend/budgets/teams/{team_id}', {
-      params: { path: { team_id: teamId } },
+    await client.POST('/api/v1/admin/spend/budgets/deactivate', {
       body: input,
-    }),
-  )
-}
-
-export async function deactivateTeamBudget(
-  teamId: string,
-): Promise<ApiEnvelope<DeactivateBudgetResultView>> {
-  const client = createGatewayApiClient()
-  return unwrapGatewayResponse(
-    await client.DELETE('/api/v1/admin/spend/budgets/teams/{team_id}', {
-      params: { path: { team_id: teamId } },
     }),
   )
 }
