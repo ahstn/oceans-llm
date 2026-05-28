@@ -520,9 +520,11 @@ pub(super) fn decode_budget_record(row: &libsql::Row) -> Result<BudgetRecord, St
                 (Some(model_id), None) => BudgetModelSelector::Model {
                     model_id: parse_uuid(&model_id)?,
                 },
-                (None, Some(upstream_model)) => BudgetModelSelector::UpstreamModel {
-                    upstream_model: upstream_model.trim().to_string(),
-                },
+                (None, Some(upstream_model)) if !upstream_model.trim().is_empty() => {
+                    BudgetModelSelector::UpstreamModel {
+                        upstream_model: upstream_model.trim().to_string(),
+                    }
+                }
                 _ => {
                     return Err(StoreError::Serialization(
                         "user_model budget must have exactly one model selector".to_string(),

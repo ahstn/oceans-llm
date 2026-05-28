@@ -6,9 +6,9 @@ use axum::{
 };
 use gateway_core::{
     ApiKeyOwnerKind, BudgetAlertChannel, BudgetAlertDeliveryStatus, BudgetAlertHistoryQuery,
-    BudgetAlertRepository, BudgetCadence, BudgetRecord, BudgetRepository, BudgetScope,
-    BudgetScopeKind, BudgetSettings, GatewayError, IdentityRepository, MembershipRole, Money4,
-    UserStatus, budget_window_utc,
+    BudgetAlertRepository, BudgetCadence, BudgetModelSelector, BudgetRecord, BudgetRepository,
+    BudgetScope, BudgetScopeKind, BudgetSettings, GatewayError, IdentityRepository, MembershipRole,
+    ModelRepository, Money4, UserStatus, budget_window_utc,
 };
 use gateway_store::GatewayStore;
 use time::{Date, Duration, Month, OffsetDateTime, UtcOffset};
@@ -18,12 +18,14 @@ use crate::http::{
     admin_auth::{require_authenticated_session, require_platform_admin},
     admin_contract::{
         BudgetAlertHistoryItemView, BudgetAlertHistoryRequestQuery, BudgetAlertHistoryView,
-        BudgetScopeRequest, BudgetScopeView, BudgetSettingsView, DeactivateBudgetRequest,
-        DeactivateBudgetResultView, Envelope, FocusExportQuery, FocusSelfExportQuery,
-        SpendBudgetServiceAccountView, SpendBudgetUserModelView, SpendBudgetUserView,
-        SpendBudgetsView, SpendDailyPointView, SpendModelBreakdownView, SpendOwnerBreakdownView,
-        SpendReportQuery, SpendReportView, SpendTotalsView, UpsertBudgetRequest,
-        UpsertBudgetResultView, envelope, format_timestamp,
+        BudgetScopeRequest, BudgetScopeView, BudgetServiceAccountScopeKind,
+        BudgetServiceAccountScopeView, BudgetSettingsView, BudgetUserModelByModelScopeView,
+        BudgetUserModelByUpstreamModelScopeView, BudgetUserModelScopeKind, BudgetUserScopeKind,
+        BudgetUserScopeView, DeactivateBudgetRequest, DeactivateBudgetResultView, Envelope,
+        FocusExportQuery, FocusSelfExportQuery, SpendBudgetServiceAccountView,
+        SpendBudgetUserModelView, SpendBudgetUserView, SpendBudgetsView, SpendDailyPointView,
+        SpendModelBreakdownView, SpendOwnerBreakdownView, SpendReportQuery, SpendReportView,
+        SpendTotalsView, UpsertBudgetRequest, UpsertBudgetResultView, envelope, format_timestamp,
     },
     error::AppError,
     focus_export::{FocusCsvExport, build_focus_csv_export},
@@ -381,7 +383,6 @@ pub async fn deactivate_budget(
 ) -> Result<Json<Envelope<DeactivateBudgetResultView>>, AppError> {
     require_platform_admin(&state, &headers).await?;
     let scope = parse_budget_scope(&request.scope)?;
-    validate_budget_scope_exists(&state, &scope).await?;
     if let BudgetScope::ServiceAccount { service_account_id } = scope
         && state
             .store
@@ -515,51 +516,34 @@ async fn active_user_model_budget_views(
 }
 
 fn parse_budget_scope(request: &BudgetScopeRequest) -> Result<BudgetScope, AppError> {
-    match request.kind.as_str() {
-        "user" => Ok(BudgetScope::User {
-            user_id: parse_required_scope_uuid(request.user_id.as_deref(), "user_id")?,
+    match request {
+        BudgetScopeRequest::User(request) => Ok(BudgetScope::User {
+            user_id: parse_uuid(&request.user_id)?,
         }),
-        "service_account" => Ok(BudgetScope::ServiceAccount {
-            service_account_id: parse_required_scope_uuid(
-                request.service_account_id.as_deref(),
-                "service_account_id",
-            )?,
+        BudgetScopeRequest::ServiceAccount(request) => Ok(BudgetScope::ServiceAccount {
+            service_account_id: parse_uuid(&request.service_account_id)?,
         }),
-        "user_model" => {
-            let user_id = parse_required_scope_uuid(request.user_id.as_deref(), "user_id")?;
-            let selector = match (
-                request.model_id.as_deref(),
-                request.upstream_model.as_deref(),
-            ) {
-                (Some(model_id), None) => gateway_core::BudgetModelSelector::Model {
-                    model_id: parse_uuid(model_id)?,
+        BudgetScopeRequest::UserModelByModel(request) => Ok(BudgetScope::UserModel {
+            user_id: parse_uuid(&request.user_id)?,
+            selector: BudgetModelSelector::Model {
+                model_id: parse_uuid(&request.model_id)?,
+            },
+        }),
+        BudgetScopeRequest::UserModelByUpstreamModel(request) => {
+            let upstream_model = request.upstream_model.trim();
+            if upstream_model.is_empty() {
+                return Err(AppError(GatewayError::InvalidRequest(
+                    "user_model upstream_model cannot be empty".to_string(),
+                )));
+            }
+            Ok(BudgetScope::UserModel {
+                user_id: parse_uuid(&request.user_id)?,
+                selector: BudgetModelSelector::UpstreamModel {
+                    upstream_model: upstream_model.to_string(),
                 },
-                (None, Some(upstream_model)) if !upstream_model.trim().is_empty() => {
-                    gateway_core::BudgetModelSelector::UpstreamModel {
-                        upstream_model: upstream_model.trim().to_string(),
-                    }
-                }
-                _ => {
-                    return Err(AppError(GatewayError::InvalidRequest(
-                        "user_model budgets require exactly one of model_id or upstream_model"
-                            .to_string(),
-                    )));
-                }
-            };
-            Ok(BudgetScope::UserModel { user_id, selector })
+            })
         }
-        other => Err(AppError(GatewayError::InvalidRequest(format!(
-            "invalid budget scope kind `{other}`"
-        )))),
     }
-}
-
-fn parse_required_scope_uuid(value: Option<&str>, field: &str) -> Result<Uuid, AppError> {
-    parse_uuid(value.ok_or_else(|| {
-        AppError(GatewayError::InvalidRequest(format!(
-            "budget scope `{field}` is required"
-        )))
-    })?)
 }
 
 async fn validate_budget_scope_exists(
@@ -567,10 +551,28 @@ async fn validate_budget_scope_exists(
     scope: &BudgetScope,
 ) -> Result<(), AppError> {
     match scope {
-        BudgetScope::User { user_id } | BudgetScope::UserModel { user_id, .. } => {
+        BudgetScope::User { user_id } => {
             state.store.get_user_by_id(*user_id).await?.ok_or_else(|| {
                 AppError(GatewayError::InvalidRequest("user not found".to_string()))
             })?;
+        }
+        BudgetScope::UserModel { user_id, selector } => {
+            state.store.get_user_by_id(*user_id).await?.ok_or_else(|| {
+                AppError(GatewayError::InvalidRequest("user not found".to_string()))
+            })?;
+            if let BudgetModelSelector::Model { model_id } = selector {
+                let model_exists = state
+                    .store
+                    .list_models()
+                    .await?
+                    .into_iter()
+                    .any(|model| model.id == *model_id);
+                if !model_exists {
+                    return Err(AppError(GatewayError::InvalidRequest(
+                        "model not found".to_string(),
+                    )));
+                }
+            }
         }
         BudgetScope::ServiceAccount { service_account_id } => {
             state
@@ -600,12 +602,33 @@ async fn current_window_spend(
 }
 
 fn scope_to_view(scope: &BudgetScope) -> BudgetScopeView {
-    BudgetScopeView {
-        kind: scope.kind().as_str().to_string(),
-        user_id: scope.user_id().map(|value| value.to_string()),
-        service_account_id: scope.service_account_id().map(|value| value.to_string()),
-        model_id: scope.model_id().map(|value| value.to_string()),
-        upstream_model: scope.upstream_model().map(ToOwned::to_owned),
+    match scope {
+        BudgetScope::User { user_id } => BudgetScopeView::User(BudgetUserScopeView {
+            kind: BudgetUserScopeKind::User,
+            user_id: user_id.to_string(),
+        }),
+        BudgetScope::ServiceAccount { service_account_id } => {
+            BudgetScopeView::ServiceAccount(BudgetServiceAccountScopeView {
+                kind: BudgetServiceAccountScopeKind::ServiceAccount,
+                service_account_id: service_account_id.to_string(),
+            })
+        }
+        BudgetScope::UserModel {
+            user_id,
+            selector: BudgetModelSelector::Model { model_id },
+        } => BudgetScopeView::UserModelByModel(BudgetUserModelByModelScopeView {
+            kind: BudgetUserModelScopeKind::UserModel,
+            user_id: user_id.to_string(),
+            model_id: model_id.to_string(),
+        }),
+        BudgetScope::UserModel {
+            user_id,
+            selector: BudgetModelSelector::UpstreamModel { upstream_model },
+        } => BudgetScopeView::UserModelByUpstreamModel(BudgetUserModelByUpstreamModelScopeView {
+            kind: BudgetUserModelScopeKind::UserModel,
+            user_id: user_id.to_string(),
+            upstream_model: upstream_model.trim().to_string(),
+        }),
     }
 }
 

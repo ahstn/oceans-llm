@@ -413,7 +413,7 @@ export function SpendControlsPage() {
                 <SelectContent>
                   <SelectGroup>
                     {models.map((model) => (
-                      <SelectItem key={model.id} value={model.id}>
+                      <SelectItem key={model.model_id} value={model.model_id}>
                         {model.resolved_model_key}
                       </SelectItem>
                     ))}
@@ -754,7 +754,7 @@ function createInitialUserModelDraft(
   return {
     userId: users[0]?.user_id ?? '',
     selectorKind: 'model_id',
-    selectorValue: models[0]?.id ?? '',
+    selectorValue: models[0]?.model_id ?? '',
     settings: initialBudgetSettings,
   }
 }

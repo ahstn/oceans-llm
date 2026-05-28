@@ -315,7 +315,7 @@ impl GatewayConfig {
             }
         }
 
-        let mut seed_service_account_keys = std::collections::BTreeSet::new();
+        let mut seed_service_accounts = std::collections::BTreeMap::new();
         for seed_key in &self.auth.seed_api_keys {
             if seed_key.name.trim().is_empty() {
                 bail!("auth.seed_api_keys entry name cannot be empty");
@@ -325,9 +325,6 @@ impl GatewayConfig {
                 .with_context(|| {
                     format!("auth.seed_api_keys `{}` service_account.key", seed_key.name)
                 })?;
-            if !seed_service_account_keys.insert(service_account_key.clone()) {
-                bail!("duplicate seeded service account key `{service_account_key}`");
-            }
             if service_account.name.trim().is_empty() {
                 bail!("seeded service account `{service_account_key}` name cannot be empty");
             }
@@ -341,6 +338,25 @@ impl GatewayConfig {
             service_account.budget.validate(&format!(
                 "seeded service account `{service_account_key}` budget"
             ))?;
+            let budget = service_account.budget.seed_budget().with_context(|| {
+                format!("seeded service account `{service_account_key}` budget")
+            })?;
+            let signature = SeedServiceAccountSignature {
+                name: service_account.name.trim().to_string(),
+                team_key: team_key.clone(),
+                budget_cadence: budget.cadence,
+                budget_amount_usd: budget.amount_usd,
+                budget_hard_limit: budget.hard_limit,
+                budget_timezone: budget.timezone.trim().to_string(),
+            };
+            if let Some(existing) =
+                seed_service_accounts.insert(service_account_key.clone(), signature.clone())
+                && existing != signature
+            {
+                bail!(
+                    "seeded service account `{service_account_key}` is declared with conflicting name, team, or budget settings"
+                );
+            }
         }
 
         let reserved_bootstrap_admin_email =
@@ -849,6 +865,16 @@ impl GatewayConfig {
     pub fn request_log_payload_policy(&self) -> anyhow::Result<RequestLogPayloadPolicy> {
         self.request_logging.payloads.to_policy()
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SeedServiceAccountSignature {
+    name: String,
+    team_key: String,
+    budget_cadence: BudgetCadence,
+    budget_amount_usd: Money4,
+    budget_hard_limit: bool,
+    budget_timezone: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -3410,6 +3436,99 @@ teams:
             Money4::from_scaled(250_000)
         );
         assert_eq!(api_keys[0].allowed_models, ["fast"]);
+    }
+
+    #[test]
+    fn accepts_multiple_seed_api_keys_for_same_service_account() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        unsafe {
+            env::set_var("OCEANS_TEST_SEED_API_KEY_ONE", "gwk_abcd1234.secret-one");
+            env::set_var("OCEANS_TEST_SEED_API_KEY_TWO", "gwk_wxyz9876.secret-two");
+        }
+
+        write_config(
+            &config_path,
+            r#"
+auth:
+  seed_api_keys:
+    - name: CI Indexer One
+      value: env.OCEANS_TEST_SEED_API_KEY_ONE
+      service_account: &ci_service_account
+        key: ci-indexer
+        name: CI Indexer
+        team: platform
+        budget:
+          cadence: daily
+          amount_usd: "25.0000"
+          hard_limit: true
+          timezone: UTC
+      allowed_models: [fast]
+    - name: CI Indexer Two
+      value: env.OCEANS_TEST_SEED_API_KEY_TWO
+      service_account: *ci_service_account
+      allowed_models: [reasoning]
+teams:
+  - key: platform
+    name: Platform
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let api_keys = config.seed_api_keys().expect("seed api keys");
+        assert_eq!(api_keys.len(), 2);
+        assert_eq!(api_keys[0].service_account_key, "ci-indexer");
+        assert_eq!(api_keys[1].service_account_key, "ci-indexer");
+    }
+
+    #[test]
+    fn rejects_conflicting_seed_service_account_declarations() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        unsafe {
+            env::set_var("OCEANS_TEST_SEED_API_KEY_ONE", "gwk_abcd1234.secret-one");
+            env::set_var("OCEANS_TEST_SEED_API_KEY_TWO", "gwk_wxyz9876.secret-two");
+        }
+
+        write_config(
+            &config_path,
+            r#"
+auth:
+  seed_api_keys:
+    - name: CI Indexer One
+      value: env.OCEANS_TEST_SEED_API_KEY_ONE
+      service_account:
+        key: ci-indexer
+        name: CI Indexer
+        team: platform
+        budget:
+          cadence: daily
+          amount_usd: "25.0000"
+          hard_limit: true
+          timezone: UTC
+    - name: CI Indexer Two
+      value: env.OCEANS_TEST_SEED_API_KEY_TWO
+      service_account:
+        key: ci-indexer
+        name: Different Name
+        team: platform
+        budget:
+          cadence: daily
+          amount_usd: "25.0000"
+          hard_limit: true
+          timezone: UTC
+teams:
+  - key: platform
+    name: Platform
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("conflicting name, team, or budget settings"),
+            "unexpected error: {error_text}"
+        );
     }
 
     #[test]

@@ -862,6 +862,7 @@ export interface components {
             /** Format: int64 */
             input_window_tokens?: number | null;
             model_icon_key?: null | components["schemas"]["ModelIconKeyView"];
+            model_id: string;
             /** Format: int64 */
             output_cost_per_million_tokens_usd_10000?: number | null;
             /** Format: int64 */
@@ -1006,19 +1007,17 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
-        BudgetScopeRequest: {
-            kind: string;
-            model_id?: string | null;
-            service_account_id?: string | null;
-            upstream_model?: string | null;
-            user_id?: string | null;
+        BudgetScopeRequest: components["schemas"]["BudgetUserScopeRequest"] | components["schemas"]["BudgetServiceAccountScopeRequest"] | components["schemas"]["BudgetUserModelByModelScopeRequest"] | components["schemas"]["BudgetUserModelByUpstreamModelScopeRequest"];
+        BudgetScopeView: components["schemas"]["BudgetUserScopeView"] | components["schemas"]["BudgetServiceAccountScopeView"] | components["schemas"]["BudgetUserModelByModelScopeView"] | components["schemas"]["BudgetUserModelByUpstreamModelScopeView"];
+        /** @enum {string} */
+        BudgetServiceAccountScopeKind: "service_account";
+        BudgetServiceAccountScopeRequest: {
+            kind: components["schemas"]["BudgetServiceAccountScopeKind"];
+            service_account_id: string;
         };
-        BudgetScopeView: {
-            kind: string;
-            model_id?: string | null;
-            service_account_id?: string | null;
-            upstream_model?: string | null;
-            user_id?: string | null;
+        BudgetServiceAccountScopeView: {
+            kind: components["schemas"]["BudgetServiceAccountScopeKind"];
+            service_account_id: string;
         };
         BudgetSettingsView: {
             amount_usd: string;
@@ -1027,6 +1026,38 @@ export interface components {
             cadence: string;
             hard_limit: boolean;
             timezone: string;
+        };
+        BudgetUserModelByModelScopeRequest: {
+            kind: components["schemas"]["BudgetUserModelScopeKind"];
+            model_id: string;
+            user_id: string;
+        };
+        BudgetUserModelByModelScopeView: {
+            kind: components["schemas"]["BudgetUserModelScopeKind"];
+            model_id: string;
+            user_id: string;
+        };
+        BudgetUserModelByUpstreamModelScopeRequest: {
+            kind: components["schemas"]["BudgetUserModelScopeKind"];
+            upstream_model: string;
+            user_id: string;
+        };
+        BudgetUserModelByUpstreamModelScopeView: {
+            kind: components["schemas"]["BudgetUserModelScopeKind"];
+            upstream_model: string;
+            user_id: string;
+        };
+        /** @enum {string} */
+        BudgetUserModelScopeKind: "user_model";
+        /** @enum {string} */
+        BudgetUserScopeKind: "user";
+        BudgetUserScopeRequest: {
+            kind: components["schemas"]["BudgetUserScopeKind"];
+            user_id: string;
+        };
+        BudgetUserScopeView: {
+            kind: components["schemas"]["BudgetUserScopeKind"];
+            user_id: string;
         };
         ChangePasswordRequest: {
             current_password: string;

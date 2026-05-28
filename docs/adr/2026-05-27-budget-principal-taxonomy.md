@@ -16,7 +16,7 @@ Budget enforcement is scoped to spend-bearing principals only:
 
 Teams are grouping and service-account ownership metadata. Teams are not budget principals, API-key owner kinds, or runtime ownership scopes.
 
-The budget API is generic and scope based:
+The budget API is generic and scope-based:
 
 - `GET /api/v1/admin/spend/budgets`
 - `PUT /api/v1/admin/spend/budgets`
@@ -39,12 +39,23 @@ Active service-account API keys require an active service-account budget. Admins
 
 Config-seeded API keys declare the service account they create or reconcile, including the owning team and active service-account budget. There is no implicit singleton service account and no reserved `system-legacy` owner.
 
+## Rationale
+
+The issue discussion clarified that teams are access and grouping metadata, not spend-bearing actors. Keeping budgets attached only to human users, service accounts, and user model scopes makes enforcement match the credential that generates spend and removes the ambiguity of team-level ownership when service accounts can be associated with a team.
+
+A generic scope API was chosen over separate path-specific budget endpoints so new budget views share one persistence contract, one active-budget uniqueness rule, and one enforcement path.
+
 ## Consequences
 
 - Team budget APIs and UI controls are removed.
 - Spend/report filters support `all`, `user`, and `service_account`; `team` is rejected.
 - Team metadata can still narrow or describe service-account reporting, but it is not an ownership scope.
 - Hard-limit enforcement remains best effort under concurrency and may overshoot. Reservations are out of scope.
+
+## Follow-up Items
+
+- Add a bounded store-level budget overview query if tenant size makes the admin budget page's per-scope spend lookups too expensive.
+- Revisit reservation-based hard-limit enforcement if concurrency overshoot becomes unacceptable for production operators.
 
 ## Supersedes
 

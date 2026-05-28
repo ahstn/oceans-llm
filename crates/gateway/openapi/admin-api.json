@@ -2917,6 +2917,7 @@
         "type": "object",
         "required": [
           "id",
+          "model_id",
           "resolved_model_key",
           "tags",
           "status",
@@ -2981,6 +2982,9 @@
                 "$ref": "#/components/schemas/ModelIconKeyView"
               }
             ]
+          },
+          "model_id": {
+            "type": "string"
           },
           "output_cost_per_million_tokens_usd_10000": {
             "type": [
@@ -3598,72 +3602,71 @@
         }
       },
       "BudgetScopeRequest": {
-        "type": "object",
-        "required": [
-          "kind"
-        ],
-        "properties": {
-          "kind": {
-            "type": "string"
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/BudgetUserScopeRequest"
           },
-          "model_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+          {
+            "$ref": "#/components/schemas/BudgetServiceAccountScopeRequest"
           },
-          "service_account_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+          {
+            "$ref": "#/components/schemas/BudgetUserModelByModelScopeRequest"
           },
-          "upstream_model": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "user_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+          {
+            "$ref": "#/components/schemas/BudgetUserModelByUpstreamModelScopeRequest"
           }
-        }
+        ]
       },
       "BudgetScopeView": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/BudgetUserScopeView"
+          },
+          {
+            "$ref": "#/components/schemas/BudgetServiceAccountScopeView"
+          },
+          {
+            "$ref": "#/components/schemas/BudgetUserModelByModelScopeView"
+          },
+          {
+            "$ref": "#/components/schemas/BudgetUserModelByUpstreamModelScopeView"
+          }
+        ]
+      },
+      "BudgetServiceAccountScopeKind": {
+        "type": "string",
+        "enum": [
+          "service_account"
+        ]
+      },
+      "BudgetServiceAccountScopeRequest": {
         "type": "object",
         "required": [
-          "kind"
+          "kind",
+          "service_account_id"
         ],
         "properties": {
           "kind": {
-            "type": "string"
-          },
-          "model_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "$ref": "#/components/schemas/BudgetServiceAccountScopeKind"
           },
           "service_account_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BudgetServiceAccountScopeView": {
+        "type": "object",
+        "required": [
+          "kind",
+          "service_account_id"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/BudgetServiceAccountScopeKind"
           },
-          "upstream_model": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "user_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+          "service_account_id": {
+            "type": "string"
           }
         }
       },
@@ -3691,6 +3694,127 @@
             "type": "boolean"
           },
           "timezone": {
+            "type": "string"
+          }
+        }
+      },
+      "BudgetUserModelByModelScopeRequest": {
+        "type": "object",
+        "required": [
+          "kind",
+          "user_id",
+          "model_id"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/BudgetUserModelScopeKind"
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BudgetUserModelByModelScopeView": {
+        "type": "object",
+        "required": [
+          "kind",
+          "user_id",
+          "model_id"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/BudgetUserModelScopeKind"
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string"
+          }
+        }
+      },
+      "BudgetUserModelByUpstreamModelScopeRequest": {
+        "type": "object",
+        "required": [
+          "kind",
+          "user_id",
+          "upstream_model"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/BudgetUserModelScopeKind"
+          },
+          "upstream_model": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BudgetUserModelByUpstreamModelScopeView": {
+        "type": "object",
+        "required": [
+          "kind",
+          "user_id",
+          "upstream_model"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/BudgetUserModelScopeKind"
+          },
+          "upstream_model": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string"
+          }
+        }
+      },
+      "BudgetUserModelScopeKind": {
+        "type": "string",
+        "enum": [
+          "user_model"
+        ]
+      },
+      "BudgetUserScopeKind": {
+        "type": "string",
+        "enum": [
+          "user"
+        ]
+      },
+      "BudgetUserScopeRequest": {
+        "type": "object",
+        "required": [
+          "kind",
+          "user_id"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/BudgetUserScopeKind"
+          },
+          "user_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BudgetUserScopeView": {
+        "type": "object",
+        "required": [
+          "kind",
+          "user_id"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/BudgetUserScopeKind"
+          },
+          "user_id": {
             "type": "string"
           }
         }

@@ -258,6 +258,7 @@ impl From<ServiceModelIconKey> for ModelIconKeyView {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AdminModelView {
     pub id: String,
+    pub model_id: String,
     pub resolved_model_key: String,
     pub alias_of: Option<String>,
     pub description: Option<String>,
@@ -758,21 +759,95 @@ pub struct BudgetAlertHistoryView {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
-pub struct BudgetScopeView {
-    pub kind: String,
-    pub user_id: Option<String>,
-    pub service_account_id: Option<String>,
-    pub model_id: Option<String>,
-    pub upstream_model: Option<String>,
+#[serde(untagged)]
+pub enum BudgetScopeView {
+    User(BudgetUserScopeView),
+    ServiceAccount(BudgetServiceAccountScopeView),
+    UserModelByModel(BudgetUserModelByModelScopeView),
+    UserModelByUpstreamModel(BudgetUserModelByUpstreamModelScopeView),
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
-pub struct BudgetScopeRequest {
-    pub kind: String,
-    pub user_id: Option<String>,
-    pub service_account_id: Option<String>,
-    pub model_id: Option<String>,
-    pub upstream_model: Option<String>,
+#[serde(untagged)]
+pub enum BudgetScopeRequest {
+    User(BudgetUserScopeRequest),
+    ServiceAccount(BudgetServiceAccountScopeRequest),
+    UserModelByModel(BudgetUserModelByModelScopeRequest),
+    UserModelByUpstreamModel(BudgetUserModelByUpstreamModelScopeRequest),
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct BudgetUserScopeView {
+    pub kind: BudgetUserScopeKind,
+    pub user_id: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BudgetUserScopeRequest {
+    pub kind: BudgetUserScopeKind,
+    pub user_id: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct BudgetServiceAccountScopeView {
+    pub kind: BudgetServiceAccountScopeKind,
+    pub service_account_id: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BudgetServiceAccountScopeRequest {
+    pub kind: BudgetServiceAccountScopeKind,
+    pub service_account_id: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct BudgetUserModelByModelScopeView {
+    pub kind: BudgetUserModelScopeKind,
+    pub user_id: String,
+    pub model_id: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BudgetUserModelByModelScopeRequest {
+    pub kind: BudgetUserModelScopeKind,
+    pub user_id: String,
+    pub model_id: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct BudgetUserModelByUpstreamModelScopeView {
+    pub kind: BudgetUserModelScopeKind,
+    pub user_id: String,
+    pub upstream_model: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BudgetUserModelByUpstreamModelScopeRequest {
+    pub kind: BudgetUserModelScopeKind,
+    pub user_id: String,
+    pub upstream_model: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BudgetUserScopeKind {
+    User,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BudgetServiceAccountScopeKind {
+    ServiceAccount,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BudgetUserModelScopeKind {
+    UserModel,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

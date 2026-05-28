@@ -61,6 +61,7 @@ pub async fn list_models(
 fn map_model_summary(model: AdminModelSummary) -> AdminModelView {
     AdminModelView {
         id: model.id,
+        model_id: model.model_id,
         resolved_model_key: model.resolved_model_key,
         alias_of: model.alias_of,
         description: model.description,

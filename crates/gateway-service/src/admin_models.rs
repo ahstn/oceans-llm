@@ -35,6 +35,7 @@ impl AdminModelStatus {
 #[derive(Debug, Clone)]
 pub struct AdminModelSummary {
     pub id: String,
+    pub model_id: String,
     pub resolved_model_key: String,
     pub alias_of: Option<String>,
     pub description: Option<String>,
@@ -162,6 +163,7 @@ where
 
             items.push(AdminModelSummary {
                 id: model.model_key.clone(),
+                model_id: model.id.to_string(),
                 resolved_model_key: execution_model.model_key.clone(),
                 alias_of: model.alias_target_model_key.clone(),
                 description: model.description.clone(),

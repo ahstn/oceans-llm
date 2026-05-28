@@ -172,8 +172,14 @@ test('service-account budget update triggers hard-limit enforcement for service-
       service_accounts: Array<{ service_account_id: string; service_account_key: string }>
     }
   }
-  expect(budgetsBody.data.service_accounts.length).toBeGreaterThanOrEqual(1)
-  const serviceAccountId = budgetsBody.data.service_accounts[0].service_account_id
+  const serviceAccount = budgetsBody.data.service_accounts.find(
+    (item) => item.service_account_key === 'seed-api-keys',
+  )
+  expect(serviceAccount).toBeTruthy()
+  if (!serviceAccount) {
+    throw new Error('expected seeded service account key `seed-api-keys`')
+  }
+  const serviceAccountId = serviceAccount.service_account_id
 
   const upsertBudgetResponse = await request.put(`${root}/api/v1/admin/spend/budgets`, {
     headers: {
@@ -217,6 +223,8 @@ test('service-account budget update triggers hard-limit enforcement for service-
 
   const capturedResponse = await request.get(stubAdminUrl('/__admin/requests'))
   expect(capturedResponse.ok()).toBe(true)
+  const capturedBody = (await capturedResponse.json()) as { requests: Array<unknown> }
+  expect(capturedBody.requests).toHaveLength(0)
 })
 
 test('request log detail returns 404 for a missing row', async ({ request, page, baseURL }) => {
