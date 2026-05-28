@@ -1002,16 +1002,31 @@ async fn sum_usage_cost_for_budget_scope(
            AND occurred_at < ?3"
     );
 
-    let params = libsql::params![
-        owner_id,
-        window_start.unix_timestamp(),
-        window_end.unix_timestamp(),
-        extra_value
-    ];
-    let mut rows = connection
-        .query(query.as_str(), params)
-        .await
-        .map_err(|error| StoreError::Query(error.to_string()))?;
+    let mut rows = if let Some(extra_value) = extra_value {
+        connection
+            .query(
+                query.as_str(),
+                libsql::params![
+                    owner_id,
+                    window_start.unix_timestamp(),
+                    window_end.unix_timestamp(),
+                    extra_value
+                ],
+            )
+            .await
+    } else {
+        connection
+            .query(
+                query.as_str(),
+                libsql::params![
+                    owner_id,
+                    window_start.unix_timestamp(),
+                    window_end.unix_timestamp()
+                ],
+            )
+            .await
+    }
+    .map_err(|error| StoreError::Query(error.to_string()))?;
 
     let Some(row) = rows
         .next()
