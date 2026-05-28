@@ -93,13 +93,12 @@ export function UsageCostsPage() {
                 <SelectValue placeholder="Owner" />
               </SelectTrigger>
               <SelectContent>
-                <SelectGroup>
-                  <SelectItem value="all">All owners</SelectItem>
-                  <SelectItem value="user">User owners</SelectItem>
-                  <SelectItem value="team">Team scopes</SelectItem>
-                  <SelectItem value="service_account">Service accounts</SelectItem>
-                </SelectGroup>
-              </SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="all">All owners</SelectItem>
+                    <SelectItem value="user">User owners</SelectItem>
+                    <SelectItem value="service_account">Service accounts</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
             </Select>
             <Button type="button" variant="secondary" onClick={refreshReport} disabled={isPending}>
               {isPending ? 'Refreshing...' : 'Refresh'}
@@ -189,7 +188,7 @@ export function UsageCostsPage() {
         <CardHeader>
           <CardTitle>Owner Breakdown</CardTitle>
           <CardDescription>
-            Spend by user, service account, and team ownership scopes.
+            Spend by user and service account ownership scopes.
           </CardDescription>
         </CardHeader>
         <CardContent>

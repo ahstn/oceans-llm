@@ -494,7 +494,7 @@ pub struct FocusExportQuery {
     pub end: Option<String>,
     /// Convenience single-day export date as YYYY-MM-DD. Mutually exclusive with start/end.
     pub day: Option<String>,
-    /// Admin-only owner filter: all, user, team, or service_account.
+    /// Admin-only owner filter: all, user, or service_account.
     pub owner_kind: Option<String>,
     /// Explicit export granularity. Only daily is supported in v1.
     pub granularity: Option<String>,
@@ -694,11 +694,13 @@ pub struct SpendBudgetUserView {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
-pub struct SpendBudgetTeamView {
-    pub team_id: String,
-    pub team_name: String,
-    pub team_key: String,
-    pub budget: Option<BudgetSettingsView>,
+pub struct SpendBudgetUserModelView {
+    pub budget_id: String,
+    pub scope_key: String,
+    pub user_id: String,
+    pub model_id: Option<String>,
+    pub upstream_model: Option<String>,
+    pub budget: BudgetSettingsView,
     pub current_window_spend_usd_10000: i64,
     pub alert_email_ready: bool,
     pub alert_recipient_summary: String,
@@ -721,8 +723,8 @@ pub struct SpendBudgetServiceAccountView {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct SpendBudgetsView {
     pub users: Vec<SpendBudgetUserView>,
-    pub teams: Vec<SpendBudgetTeamView>,
     pub service_accounts: Vec<SpendBudgetServiceAccountView>,
+    pub user_model_budgets: Vec<SpendBudgetUserModelView>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -756,26 +758,51 @@ pub struct BudgetAlertHistoryView {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+pub struct BudgetScopeView {
+    pub kind: String,
+    pub user_id: Option<String>,
+    pub service_account_id: Option<String>,
+    pub model_id: Option<String>,
+    pub upstream_model: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct BudgetScopeRequest {
+    pub kind: String,
+    pub user_id: Option<String>,
+    pub service_account_id: Option<String>,
+    pub model_id: Option<String>,
+    pub upstream_model: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
 pub struct UpsertBudgetResultView {
-    pub owner_kind: String,
-    pub owner_id: String,
+    pub budget_id: String,
+    pub scope: BudgetScopeView,
+    pub scope_key: String,
     pub budget: BudgetSettingsView,
     pub current_window_spend_usd_10000: i64,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct DeactivateBudgetResultView {
-    pub owner_kind: String,
-    pub owner_id: String,
+    pub scope: BudgetScopeView,
+    pub scope_key: String,
     pub deactivated: bool,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct UpsertBudgetRequest {
+    pub scope: BudgetScopeRequest,
     pub cadence: String,
     pub amount_usd: String,
     pub hard_limit: bool,
     pub timezone: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct DeactivateBudgetRequest {
+    pub scope: BudgetScopeRequest,
 }
 
 #[derive(Debug, Deserialize, Default, IntoParams)]
@@ -1034,12 +1061,8 @@ pub struct RequestLogPayloadView {
         crate::http::spend::get_my_focus_export,
         crate::http::spend::list_spend_budgets,
         crate::http::spend::list_budget_alert_history,
-        crate::http::spend::upsert_user_budget,
-        crate::http::spend::deactivate_user_budget,
-        crate::http::spend::upsert_team_budget,
-        crate::http::spend::deactivate_team_budget,
-        crate::http::spend::upsert_service_account_budget,
-        crate::http::spend::deactivate_service_account_budget,
+        crate::http::spend::upsert_budget,
+        crate::http::spend::deactivate_budget,
         crate::http::observability::get_usage_leaderboard,
         crate::http::observability::get_harness_usage,
         crate::http::observability::list_request_logs,

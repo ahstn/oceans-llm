@@ -9,7 +9,7 @@ use gateway_core::{
 };
 use gateway_service::{
     AdminApiKeyModelOption, AdminApiKeyService, AdminApiKeyServiceAccountOwner, AdminApiKeySummary,
-    AdminApiKeyTeamOwner, AdminApiKeyUserOwner, AdminApiKeysPayload as ServiceAdminApiKeysPayload,
+    AdminApiKeyUserOwner, AdminApiKeysPayload as ServiceAdminApiKeysPayload,
     CreateAdminApiKeyInput, CreateAdminApiKeyResult, UpdateAdminApiKeyInput,
 };
 use serde::{Deserialize, Serialize};
@@ -27,7 +27,6 @@ use crate::http::{
 pub struct AdminApiKeysPayload {
     items: Vec<AdminApiKeyView>,
     users: Vec<AdminApiKeyUserOwnerView>,
-    teams: Vec<AdminApiKeyTeamOwnerView>,
     service_accounts: Vec<AdminApiKeyServiceAccountOwnerView>,
     models: Vec<AdminApiKeyModelView>,
 }
@@ -57,13 +56,6 @@ pub struct AdminApiKeyUserOwnerView {
     id: String,
     name: String,
     email: String,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-pub struct AdminApiKeyTeamOwnerView {
-    id: String,
-    name: String,
-    key: String,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -312,7 +304,6 @@ fn map_payload_for_scope(
         mapped
             .items
             .retain(|item| item.owner_service_account_team_id.as_deref() == Some(team_id.as_str()));
-        mapped.teams.retain(|team| team.id == team_id);
         mapped
             .service_accounts
             .retain(|service_account| service_account.team_id == team_id);
@@ -329,7 +320,6 @@ fn map_payload(payload: ServiceAdminApiKeysPayload) -> AdminApiKeysPayload {
     AdminApiKeysPayload {
         items: payload.items.into_iter().map(map_api_key_summary).collect(),
         users: payload.users.into_iter().map(map_user_owner).collect(),
-        teams: payload.teams.into_iter().map(map_team_owner).collect(),
         service_accounts: payload
             .service_accounts
             .into_iter()
@@ -387,14 +377,6 @@ fn map_user_owner(user: AdminApiKeyUserOwner) -> AdminApiKeyUserOwnerView {
         id: user.id.to_string(),
         name: user.name,
         email: user.email,
-    }
-}
-
-fn map_team_owner(team: AdminApiKeyTeamOwner) -> AdminApiKeyTeamOwnerView {
-    AdminApiKeyTeamOwnerView {
-        id: team.id.to_string(),
-        name: team.name,
-        key: team.key,
     }
 }
 

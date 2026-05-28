@@ -169,7 +169,13 @@ pub async fn v1_chat_completions(
 
     if let Err(error) = state
         .service
-        .enforce_pre_provider_budget(&auth, &request_id, OffsetDateTime::now_utc())
+        .enforce_pre_provider_budget(
+            &auth,
+            &request_id,
+            Some(resolved.selection.execution_model.id),
+            Some(route.upstream_model.as_str()),
+            OffsetDateTime::now_utc(),
+        )
         .await
     {
         state.metrics.record_chat_request(&ChatRequestMetric {
@@ -487,7 +493,13 @@ pub async fn v1_responses(
 
     if let Err(error) = state
         .service
-        .enforce_pre_provider_budget(&auth, &request_id, OffsetDateTime::now_utc())
+        .enforce_pre_provider_budget(
+            &auth,
+            &request_id,
+            Some(resolved.selection.execution_model.id),
+            Some(route.upstream_model.as_str()),
+            OffsetDateTime::now_utc(),
+        )
         .await
     {
         state.metrics.record_chat_request(&ChatRequestMetric {
@@ -767,7 +779,13 @@ pub async fn v1_embeddings(
 
     state
         .service
-        .enforce_pre_provider_budget(&auth, &request_id, OffsetDateTime::now_utc())
+        .enforce_pre_provider_budget(
+            &auth,
+            &request_id,
+            Some(resolved.selection.execution_model.id),
+            Some(route.upstream_model.as_str()),
+            OffsetDateTime::now_utc(),
+        )
         .await?;
 
     let context = build_provider_context(
@@ -1350,19 +1368,14 @@ fn record_usage_metrics_from_ref(
     labels: &ChatMetricLabels<'_>,
     usage: &gateway_service::RecordedChatUsage,
 ) {
-    if matches!(
-        usage.disposition,
-        gateway_service::budget_guard::BudgetGuardDisposition::Inserted
-    ) {
-        metrics.record_usage(
-            labels,
-            usage.pricing_status.as_str(),
-            usage.prompt_tokens,
-            usage.completion_tokens,
-            usage.total_tokens,
-            usage.cost_usd,
-        );
-    }
+    metrics.record_usage(
+        labels,
+        usage.pricing_status.as_str(),
+        usage.prompt_tokens,
+        usage.completion_tokens,
+        usage.total_tokens,
+        usage.cost_usd,
+    );
 }
 
 async fn finalize_successful_usage_accounting(

@@ -25,22 +25,21 @@ mod tests {
     use gateway_core::{
         ApiKeyOwnerKind, ApiKeyRepository, AuthMode, BudgetAlertChannel, BudgetAlertDeliveryRecord,
         BudgetAlertDeliveryStatus, BudgetAlertHistoryQuery, BudgetAlertRecord,
-        BudgetAlertRepository, BudgetCadence, BudgetRepository, CONFIG_SEED_SERVICE_ACCOUNT_ID,
-        CONFIG_SEED_TEAM_ID, ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord,
-        ExternalMcpDiscoveryStatus, ExternalMcpServerStatus, ExternalMcpTransport, GlobalRole,
-        IdentityRepository, McpRegistryRepository, McpToolInvocationPayloadRecord,
-        McpToolInvocationQuery, McpToolInvocationRecord, McpToolInvocationRepository,
-        McpToolInvocationStatus, McpToolPolicyResult, MembershipRole, ModelPricingRecord,
-        ModelRepository, Money4, NewExternalMcpServerRecord, OidcLoginStateRecord,
-        OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
-        OpenAiCompatRouteCompatibility, PricingCatalogCacheRecord, PricingCatalogRepository,
-        PricingLimits, PricingModalities, PricingProvenance, ProviderCapabilities,
-        RequestAttemptRecord, RequestAttemptStatus, RequestLogPayloadRecord, RequestLogQuery,
-        RequestLogRecord, RequestLogRepository, RequestTag, RequestTags, RequestToolCardinality,
-        RouteCompatibility, SeedApiKey, SeedBudget, SeedModel, SeedModelRoute, SeedProvider,
-        SeedTeam, SeedUser, SeedUserMembership, StoreError, StoreHealth,
-        UpdateExternalMcpServerRecord, UpsertExternalMcpToolRecord, UsageLedgerRecord,
-        UsagePricingStatus, UserStatus,
+        BudgetAlertRepository, BudgetCadence, BudgetRepository, BudgetScope, BudgetSettings,
+        ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus,
+        ExternalMcpServerStatus, ExternalMcpTransport, GlobalRole, IdentityRepository,
+        McpRegistryRepository, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
+        McpToolInvocationRecord, McpToolInvocationRepository, McpToolInvocationStatus,
+        McpToolPolicyResult, MembershipRole, ModelPricingRecord, ModelRepository, Money4,
+        NewExternalMcpServerRecord, OidcLoginStateRecord, OpenAiCompatDeveloperRole,
+        OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
+        PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
+        PricingProvenance, ProviderCapabilities, RequestAttemptRecord, RequestAttemptStatus,
+        RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository,
+        RequestTag, RequestTags, RequestToolCardinality, RouteCompatibility, SeedApiKey,
+        SeedBudget, SeedModel, SeedModelRoute, SeedProvider, SeedTeam, SeedUser,
+        SeedUserMembership, StoreError, StoreHealth, UpdateExternalMcpServerRecord,
+        UpsertExternalMcpToolRecord, UsageLedgerRecord, UsagePricingStatus, UserStatus,
     };
     use serde_json::{Map, json};
     use serial_test::serial;
@@ -71,6 +70,13 @@ mod tests {
         )
     }
 
+    fn seed_api_key_teams() -> Vec<SeedTeam> {
+        vec![SeedTeam {
+            team_key: "seed-workloads".to_string(),
+            team_name: "Seed Workloads".to_string(),
+        }]
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn build_usage_ledger_record(
         request_id: &str,
@@ -78,6 +84,7 @@ mod tests {
         api_key_id: Uuid,
         user_id: Option<Uuid>,
         team_id: Option<Uuid>,
+        service_account_id: Option<Uuid>,
         model_id: Option<Uuid>,
         upstream_model: &str,
         pricing_status: UsagePricingStatus,
@@ -96,7 +103,7 @@ mod tests {
             api_key_id,
             user_id,
             team_id,
-            service_account_id: None,
+            service_account_id,
             actor_user_id: None,
             model_id,
             provider_key: "openai-prod".to_string(),
@@ -130,7 +137,7 @@ mod tests {
         window_start: OffsetDateTime,
         window_end: OffsetDateTime,
         user_id: Uuid,
-        team_id: Uuid,
+        service_account_id: Uuid,
     ) where
         S: BudgetRepository,
     {
@@ -163,16 +170,22 @@ mod tests {
             }]
         );
 
-        let team_row = rows
+        let service_account_row = rows
             .iter()
-            .find(|row| row.owner_kind == ApiKeyOwnerKind::Team)
-            .expect("team focus row");
-        assert_eq!(team_row.owner_id, team_id);
-        assert_eq!(team_row.model_key, "claude-3-5-sonnet");
-        assert_eq!(team_row.computed_cost_usd, Money4::from_scaled(22_000));
-        assert_eq!(team_row.pricing_status, UsagePricingStatus::LegacyEstimated);
+            .find(|row| row.owner_kind == ApiKeyOwnerKind::ServiceAccount)
+            .expect("service account focus row");
+        assert_eq!(service_account_row.owner_id, service_account_id);
+        assert_eq!(service_account_row.model_key, "claude-3-5-sonnet");
         assert_eq!(
-            team_row.owner_tags,
+            service_account_row.computed_cost_usd,
+            Money4::from_scaled(22_000)
+        );
+        assert_eq!(
+            service_account_row.pricing_status,
+            UsagePricingStatus::LegacyEstimated
+        );
+        assert_eq!(
+            service_account_row.owner_tags,
             vec![RequestTag {
                 key: "team".to_string(),
                 value: "platform".to_string(),
@@ -226,7 +239,7 @@ mod tests {
             user_id,
             team_id,
             owner_kind: if team_id.is_some() {
-                ApiKeyOwnerKind::Team
+                ApiKeyOwnerKind::ServiceAccount
             } else {
                 ApiKeyOwnerKind::User
             },
@@ -282,11 +295,28 @@ mod tests {
             name: "dev".to_string(),
             public_id: "dev123".to_string(),
             secret_hash: "hash".to_string(),
+            service_account_key: "seed-workloads".to_string(),
+            service_account_name: "Seed Workloads".to_string(),
+            service_account_team_key: "seed-workloads".to_string(),
+            service_account_budget: SeedBudget {
+                cadence: BudgetCadence::Daily,
+                amount_usd: Money4::from_scaled(100_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            },
             allowed_models: vec!["fast".to_string()],
         }];
 
         store
-            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[], &[])
+            .seed_from_inputs(
+                &providers,
+                &models,
+                &api_keys,
+                &[],
+                &[],
+                &seed_api_key_teams(),
+                &[],
+            )
             .await
             .expect("seed");
         let api_key = store
@@ -647,10 +677,27 @@ mod tests {
             name: "dev".to_string(),
             public_id: "dev123".to_string(),
             secret_hash: "hash".to_string(),
+            service_account_key: "seed-workloads".to_string(),
+            service_account_name: "Seed Workloads".to_string(),
+            service_account_team_key: "seed-workloads".to_string(),
+            service_account_budget: SeedBudget {
+                cadence: BudgetCadence::Daily,
+                amount_usd: Money4::from_scaled(100_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            },
             allowed_models: vec!["fast".to_string(), "reasoning".to_string()],
         }];
         store
-            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[], &[])
+            .seed_from_inputs(
+                &providers,
+                &models,
+                &api_keys,
+                &[],
+                &[],
+                &seed_api_key_teams(),
+                &[],
+            )
             .await
             .expect("seed");
 
@@ -747,6 +794,7 @@ mod tests {
                 api_key.id,
                 Some(ada.user_id),
                 None,
+                None,
                 Some(fast_model.id),
                 "gpt-4o-mini",
                 UsagePricingStatus::Priced,
@@ -758,6 +806,7 @@ mod tests {
                 format!("user:{}", ada.user_id),
                 api_key.id,
                 Some(ada.user_id),
+                None,
                 None,
                 Some(reasoning_model.id),
                 "gpt-5",
@@ -771,6 +820,7 @@ mod tests {
                 api_key.id,
                 Some(ada.user_id),
                 None,
+                None,
                 Some(fast_model.id),
                 "gpt-4o-mini",
                 UsagePricingStatus::Unpriced,
@@ -782,6 +832,7 @@ mod tests {
                 format!("user:{}", ben.user_id),
                 api_key.id,
                 Some(ben.user_id),
+                None,
                 None,
                 Some(fast_model.id),
                 "gpt-4o-mini",
@@ -795,6 +846,7 @@ mod tests {
                 api_key.id,
                 Some(ben.user_id),
                 None,
+                None,
                 Some(reasoning_model.id),
                 "gpt-5",
                 UsagePricingStatus::Priced,
@@ -806,6 +858,7 @@ mod tests {
                 format!("user:{}", cleo.user_id),
                 api_key.id,
                 Some(cleo.user_id),
+                None,
                 None,
                 Some(fast_model.id),
                 "gpt-4o-mini",
@@ -1239,10 +1292,10 @@ mod tests {
 
         let alert_two = BudgetAlertRecord {
             budget_alert_id: Uuid::new_v4(),
-            ownership_scope_key: format!("team:{}:actor:none", Uuid::new_v4()),
-            owner_kind: ApiKeyOwnerKind::Team,
+            ownership_scope_key: format!("service_account:{}", Uuid::new_v4()),
+            owner_kind: ApiKeyOwnerKind::ServiceAccount,
             owner_id: Uuid::new_v4(),
-            owner_name: "Ops".to_string(),
+            owner_name: "Ops Automation".to_string(),
             budget_id: Uuid::new_v4(),
             cadence: BudgetCadence::Weekly,
             threshold_bps: 2_000,
@@ -1306,19 +1359,19 @@ mod tests {
         assert_eq!(page.items[2].budget_alert_id, alert_one.budget_alert_id);
         assert_eq!(page.items[2].cadence, BudgetCadence::Monthly);
 
-        let team_only = repo
+        let service_account_only = repo
             .list_budget_alert_history(&BudgetAlertHistoryQuery {
                 page: 1,
                 page_size: 10,
-                owner_kind: Some(ApiKeyOwnerKind::Team),
+                owner_kind: Some(ApiKeyOwnerKind::ServiceAccount),
                 channel: Some(BudgetAlertChannel::Email),
                 delivery_status: Some(BudgetAlertDeliveryStatus::Failed),
             })
             .await
             .expect("filter alert history");
-        assert_eq!(team_only.total, 1);
+        assert_eq!(service_account_only.total, 1);
         assert_eq!(
-            team_only.items[0].budget_alert_id,
+            service_account_only.items[0].budget_alert_id,
             alert_two.budget_alert_id
         );
 
@@ -1712,16 +1765,41 @@ mod tests {
             name: "dev".to_string(),
             public_id: "dev123".to_string(),
             secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
+            service_account_key: "seed-workloads".to_string(),
+            service_account_name: "Seed Workloads".to_string(),
+            service_account_team_key: "seed-workloads".to_string(),
+            service_account_budget: SeedBudget {
+                cadence: BudgetCadence::Daily,
+                amount_usd: Money4::from_scaled(100_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            },
             allowed_models: vec!["fast".to_string()],
         }];
 
         store
-            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[], &[])
+            .seed_from_inputs(
+                &providers,
+                &models,
+                &api_keys,
+                &[],
+                &[],
+                &seed_api_key_teams(),
+                &[],
+            )
             .await
             .expect("seed #1");
 
         store
-            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[], &[])
+            .seed_from_inputs(
+                &providers,
+                &models,
+                &api_keys,
+                &[],
+                &[],
+                &seed_api_key_teams(),
+                &[],
+            )
             .await
             .expect("seed #2 idempotent");
 
@@ -1730,9 +1808,14 @@ mod tests {
             .await
             .expect("query key")
             .expect("api key should exist");
-        let seed_team_id = Uuid::parse_str(CONFIG_SEED_TEAM_ID).expect("seed team uuid");
+        let seed_team_id = store
+            .get_team_by_key("seed-workloads")
+            .await
+            .expect("load seed team")
+            .expect("seed team")
+            .team_id;
         let seed_service_account_id =
-            Uuid::parse_str(CONFIG_SEED_SERVICE_ACCOUNT_ID).expect("seed service account uuid");
+            Uuid::new_v5(&Uuid::NAMESPACE_OID, b"service_account:seed-workloads");
         assert_eq!(api_key.owner_kind, ApiKeyOwnerKind::ServiceAccount);
         assert_eq!(api_key.owner_team_id, Some(seed_team_id));
         assert_eq!(
@@ -1964,8 +2047,17 @@ mod tests {
                     name: "dev".to_string(),
                     public_id: "dev123".to_string(),
                     secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
+            service_account_key: "seed-workloads".to_string(),
+            service_account_name: "Seed Workloads".to_string(),
+            service_account_team_key: "seed-workloads".to_string(),
+            service_account_budget: SeedBudget {
+                cadence: BudgetCadence::Daily,
+                amount_usd: Money4::from_scaled(100_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            },
                     allowed_models: vec!["fast".to_string()],
-                }], &[], &[], &[], &[])
+                }], &[], &[], &seed_api_key_teams(), &[])
             .await
             .expect("seed");
         let api_key = store
@@ -2154,8 +2246,17 @@ mod tests {
                     name: "dev".to_string(),
                     public_id: "dev123".to_string(),
                     secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
+            service_account_key: "seed-workloads".to_string(),
+            service_account_name: "Seed Workloads".to_string(),
+            service_account_team_key: "seed-workloads".to_string(),
+            service_account_budget: SeedBudget {
+                cadence: BudgetCadence::Daily,
+                amount_usd: Money4::from_scaled(100_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            },
                     allowed_models: vec!["fast".to_string()],
-                }], &[], &[], &[], &[])
+                }], &[], &[], &seed_api_key_teams(), &[])
             .await
             .expect("seed");
         let api_key = store
@@ -2355,11 +2456,28 @@ mod tests {
             name: "dev".to_string(),
             public_id: "dev123".to_string(),
             secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
+            service_account_key: "seed-workloads".to_string(),
+            service_account_name: "Seed Workloads".to_string(),
+            service_account_team_key: "seed-workloads".to_string(),
+            service_account_budget: SeedBudget {
+                cadence: BudgetCadence::Daily,
+                amount_usd: Money4::from_scaled(100_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            },
             allowed_models: vec!["fast".to_string()],
         }];
 
         store
-            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[], &[])
+            .seed_from_inputs(
+                &providers,
+                &models,
+                &api_keys,
+                &[],
+                &[],
+                &seed_api_key_teams(),
+                &[],
+            )
             .await
             .expect("seed");
 
@@ -3197,7 +3315,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn user_budget_enforces_single_active_record_per_user() {
+    async fn budget_scope_enforces_single_active_record_per_scope_key() {
         let tmp = tempdir().expect("tempdir");
         let db_path = tmp.path().join("gateway.db");
         run_migrations(&db_path).await.expect("migrations");
@@ -3223,11 +3341,17 @@ mod tests {
 
         conn.execute(
             r#"
-            INSERT INTO user_budgets (
-                user_budget_id, user_id, cadence, amount_10000, hard_limit, timezone, is_active, created_at, updated_at
-            ) VALUES (?1, ?2, 'daily', 100000, 1, 'UTC', 1, ?3, ?3)
+            INSERT INTO budgets (
+                budget_id, scope_kind, scope_key, user_id, cadence, amount_10000,
+                hard_limit, timezone, is_active, created_at, updated_at
+            ) VALUES (?1, 'user', ?2, ?3, 'daily', 100000, 1, 'UTC', 1, ?4, ?4)
             "#,
-            libsql::params![Uuid::new_v4().to_string(), user_id.to_string(), now],
+            libsql::params![
+                Uuid::new_v4().to_string(),
+                format!("budget:v1:user:{user_id}"),
+                user_id.to_string(),
+                now
+            ],
         )
         .await
         .expect("first budget");
@@ -3235,22 +3359,34 @@ mod tests {
         let duplicate_active_result = conn
             .execute(
                 r#"
-                INSERT INTO user_budgets (
-                    user_budget_id, user_id, cadence, amount_10000, hard_limit, timezone, is_active, created_at, updated_at
-                ) VALUES (?1, ?2, 'weekly', 200000, 1, 'UTC', 1, ?3, ?3)
+                INSERT INTO budgets (
+                    budget_id, scope_kind, scope_key, user_id, cadence, amount_10000,
+                    hard_limit, timezone, is_active, created_at, updated_at
+                ) VALUES (?1, 'user', ?2, ?3, 'weekly', 200000, 1, 'UTC', 1, ?4, ?4)
                 "#,
-                libsql::params![Uuid::new_v4().to_string(), user_id.to_string(), now],
+                libsql::params![
+                    Uuid::new_v4().to_string(),
+                    format!("budget:v1:user:{user_id}"),
+                    user_id.to_string(),
+                    now
+                ],
             )
             .await;
         assert!(duplicate_active_result.is_err());
 
         conn.execute(
             r#"
-            INSERT INTO user_budgets (
-                user_budget_id, user_id, cadence, amount_10000, hard_limit, timezone, is_active, created_at, updated_at
-            ) VALUES (?1, ?2, 'weekly', 200000, 1, 'UTC', 0, ?3, ?3)
+            INSERT INTO budgets (
+                budget_id, scope_kind, scope_key, user_id, cadence, amount_10000,
+                hard_limit, timezone, is_active, created_at, updated_at
+            ) VALUES (?1, 'user', ?2, ?3, 'weekly', 200000, 1, 'UTC', 0, ?4, ?4)
             "#,
-            libsql::params![Uuid::new_v4().to_string(), user_id.to_string(), now],
+            libsql::params![
+                Uuid::new_v4().to_string(),
+                format!("budget:v1:user:{user_id}"),
+                user_id.to_string(),
+                now
+            ],
         )
         .await
         .expect("inactive budget should be allowed");
@@ -3258,7 +3394,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn team_budget_enforces_single_active_record_per_team() {
+    async fn service_account_budget_scope_enforces_single_active_record_per_scope_key() {
         let tmp = tempdir().expect("tempdir");
         let db_path = tmp.path().join("gateway.db");
         run_migrations(&db_path).await.expect("migrations");
@@ -3269,6 +3405,7 @@ mod tests {
         let conn = db.connect().expect("connection");
         let now = time::OffsetDateTime::now_utc().unix_timestamp();
         let team_id = Uuid::new_v4();
+        let service_account_id = Uuid::new_v4();
 
         conn.execute(
             r#"
@@ -3283,11 +3420,29 @@ mod tests {
 
         conn.execute(
             r#"
-            INSERT INTO team_budgets (
-                team_budget_id, team_id, cadence, amount_10000, hard_limit, timezone, is_active, created_at, updated_at
-            ) VALUES (?1, ?2, 'daily', 100000, 1, 'UTC', 1, ?3, ?3)
+            INSERT INTO service_accounts (
+              service_account_id, team_id, service_account_key, service_account_name,
+              status, model_access_mode, metadata_json, created_at, updated_at
+            ) VALUES (?1, ?2, 'svc', 'Service', 'active', 'all', '{}', ?3, ?3)
             "#,
-            libsql::params![Uuid::new_v4().to_string(), team_id.to_string(), now],
+            libsql::params![service_account_id.to_string(), team_id.to_string(), now],
+        )
+        .await
+        .expect("service account");
+
+        conn.execute(
+            r#"
+            INSERT INTO budgets (
+                budget_id, scope_kind, scope_key, service_account_id, cadence, amount_10000,
+                hard_limit, timezone, is_active, created_at, updated_at
+            ) VALUES (?1, 'service_account', ?2, ?3, 'daily', 100000, 1, 'UTC', 1, ?4, ?4)
+            "#,
+            libsql::params![
+                Uuid::new_v4().to_string(),
+                format!("budget:v1:service_account:{service_account_id}"),
+                service_account_id.to_string(),
+                now
+            ],
         )
         .await
         .expect("first budget");
@@ -3295,22 +3450,34 @@ mod tests {
         let duplicate_active_result = conn
             .execute(
                 r#"
-                INSERT INTO team_budgets (
-                    team_budget_id, team_id, cadence, amount_10000, hard_limit, timezone, is_active, created_at, updated_at
-                ) VALUES (?1, ?2, 'weekly', 200000, 1, 'UTC', 1, ?3, ?3)
+                INSERT INTO budgets (
+                    budget_id, scope_kind, scope_key, service_account_id, cadence, amount_10000,
+                    hard_limit, timezone, is_active, created_at, updated_at
+                ) VALUES (?1, 'service_account', ?2, ?3, 'weekly', 200000, 1, 'UTC', 1, ?4, ?4)
                 "#,
-                libsql::params![Uuid::new_v4().to_string(), team_id.to_string(), now],
+                libsql::params![
+                    Uuid::new_v4().to_string(),
+                    format!("budget:v1:service_account:{service_account_id}"),
+                    service_account_id.to_string(),
+                    now
+                ],
             )
             .await;
         assert!(duplicate_active_result.is_err());
 
         conn.execute(
             r#"
-            INSERT INTO team_budgets (
-                team_budget_id, team_id, cadence, amount_10000, hard_limit, timezone, is_active, created_at, updated_at
-            ) VALUES (?1, ?2, 'weekly', 200000, 1, 'UTC', 0, ?3, ?3)
+            INSERT INTO budgets (
+                budget_id, scope_kind, scope_key, service_account_id, cadence, amount_10000,
+                hard_limit, timezone, is_active, created_at, updated_at
+            ) VALUES (?1, 'service_account', ?2, ?3, 'weekly', 200000, 1, 'UTC', 0, ?4, ?4)
             "#,
-            libsql::params![Uuid::new_v4().to_string(), team_id.to_string(), now],
+            libsql::params![
+                Uuid::new_v4().to_string(),
+                format!("budget:v1:service_account:{service_account_id}"),
+                service_account_id.to_string(),
+                now
+            ],
         )
         .await
         .expect("inactive budget should be allowed");
@@ -3388,17 +3555,10 @@ mod tests {
             SeedTeam {
                 team_key: "platform".to_string(),
                 team_name: "Platform".to_string(),
-                budget: Some(SeedBudget {
-                    cadence: BudgetCadence::Monthly,
-                    amount_usd: Money4::from_scaled(2_500_000),
-                    hard_limit: true,
-                    timezone: "UTC".to_string(),
-                }),
             },
             SeedTeam {
                 team_key: "ops".to_string(),
                 team_name: "Ops".to_string(),
-                budget: None,
             },
         ];
         let initial_users = vec![SeedUser {
@@ -3447,21 +3607,16 @@ mod tests {
             .expect("identity user exists");
         assert_eq!(identity_user.team_name.as_deref(), Some("Platform"));
         assert_eq!(identity_user.membership_role, Some(MembershipRole::Admin));
+        let _platform_team_id = platform_team.team_id;
         assert_eq!(
             store
-                .get_active_budget_for_team(platform_team.team_id)
-                .await
-                .expect("team budget")
-                .expect("platform budget")
-                .amount_usd,
-            Money4::from_scaled(2_500_000)
-        );
-        assert_eq!(
-            store
-                .get_active_budget_for_user(user.user_id)
+                .get_active_budget_by_scope(&BudgetScope::User {
+                    user_id: user.user_id,
+                })
                 .await
                 .expect("user budget")
                 .expect("user budget exists")
+                .settings
                 .amount_usd,
             Money4::from_scaled(750_000)
         );
@@ -3472,17 +3627,10 @@ mod tests {
             SeedTeam {
                 team_key: "platform".to_string(),
                 team_name: "Platform Engineering".to_string(),
-                budget: None,
             },
             SeedTeam {
                 team_key: "ops".to_string(),
                 team_name: "Operations".to_string(),
-                budget: Some(SeedBudget {
-                    cadence: BudgetCadence::Daily,
-                    amount_usd: Money4::from_scaled(125_000),
-                    hard_limit: false,
-                    timezone: "UTC".to_string(),
-                }),
             },
         ];
         let updated_users = vec![SeedUser {
@@ -3556,25 +3704,12 @@ mod tests {
             .expect("reload ops team")
             .expect("ops team exists");
         assert_eq!(refreshed_platform.team_name, "Platform Engineering");
+        let _ops_team_id = ops_team.team_id;
         assert!(
             store
-                .get_active_budget_for_team(refreshed_platform.team_id)
-                .await
-                .expect("platform budget after reseed")
-                .is_none()
-        );
-        assert_eq!(
-            store
-                .get_active_budget_for_team(ops_team.team_id)
-                .await
-                .expect("ops budget")
-                .expect("ops budget exists")
-                .amount_usd,
-            Money4::from_scaled(125_000)
-        );
-        assert!(
-            store
-                .get_active_budget_for_user(user.user_id)
+                .get_active_budget_by_scope(&BudgetScope::User {
+                    user_id: user.user_id,
+                })
                 .await
                 .expect("user budget after reseed")
                 .is_none()
@@ -3595,12 +3730,6 @@ mod tests {
         let initial_teams = vec![SeedTeam {
             team_key: "platform".to_string(),
             team_name: "Platform".to_string(),
-            budget: Some(SeedBudget {
-                cadence: BudgetCadence::Monthly,
-                amount_usd: Money4::from_scaled(500_000),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-            }),
         }];
         let initial_users = vec![SeedUser {
             name: "Member".to_string(),
@@ -3653,7 +3782,6 @@ mod tests {
         let invalid_teams = vec![SeedTeam {
             team_key: "platform".to_string(),
             team_name: "Platform Renamed".to_string(),
-            budget: None,
         }];
 
         let error = store
@@ -3678,15 +3806,7 @@ mod tests {
             .expect("reload team")
             .expect("team exists");
         assert_eq!(refreshed_team.team_name, "Platform");
-        assert_eq!(
-            store
-                .get_active_budget_for_team(platform_team.team_id)
-                .await
-                .expect("team budget")
-                .expect("team budget exists")
-                .amount_usd,
-            Money4::from_scaled(500_000)
-        );
+        let _platform_team_id = platform_team.team_id;
     }
 
     #[tokio::test]
@@ -3893,17 +4013,10 @@ mod tests {
             SeedTeam {
                 team_key: "platform".to_string(),
                 team_name: "Platform".to_string(),
-                budget: Some(SeedBudget {
-                    cadence: BudgetCadence::Monthly,
-                    amount_usd: Money4::from_scaled(2_500_000),
-                    hard_limit: true,
-                    timezone: "UTC".to_string(),
-                }),
             },
             SeedTeam {
                 team_key: "ops".to_string(),
                 team_name: "Ops".to_string(),
-                budget: None,
             },
         ];
         let initial_users = vec![SeedUser {
@@ -3952,21 +4065,16 @@ mod tests {
             .expect("identity user exists");
         assert_eq!(identity_user.team_name.as_deref(), Some("Platform"));
         assert_eq!(identity_user.membership_role, Some(MembershipRole::Admin));
+        let _platform_team_id = platform_team.team_id;
         assert_eq!(
             store
-                .get_active_budget_for_team(platform_team.team_id)
-                .await
-                .expect("team budget")
-                .expect("platform budget")
-                .amount_usd,
-            Money4::from_scaled(2_500_000)
-        );
-        assert_eq!(
-            store
-                .get_active_budget_for_user(user.user_id)
+                .get_active_budget_by_scope(&BudgetScope::User {
+                    user_id: user.user_id,
+                })
                 .await
                 .expect("user budget")
                 .expect("user budget exists")
+                .settings
                 .amount_usd,
             Money4::from_scaled(750_000)
         );
@@ -3977,17 +4085,10 @@ mod tests {
             SeedTeam {
                 team_key: "platform".to_string(),
                 team_name: "Platform Engineering".to_string(),
-                budget: None,
             },
             SeedTeam {
                 team_key: "ops".to_string(),
                 team_name: "Operations".to_string(),
-                budget: Some(SeedBudget {
-                    cadence: BudgetCadence::Daily,
-                    amount_usd: Money4::from_scaled(125_000),
-                    hard_limit: false,
-                    timezone: "UTC".to_string(),
-                }),
             },
         ];
         let updated_users = vec![SeedUser {
@@ -4061,25 +4162,12 @@ mod tests {
             .expect("reload ops team")
             .expect("ops team exists");
         assert_eq!(refreshed_platform.team_name, "Platform Engineering");
+        let _ops_team_id = ops_team.team_id;
         assert!(
             store
-                .get_active_budget_for_team(refreshed_platform.team_id)
-                .await
-                .expect("platform budget after reseed")
-                .is_none()
-        );
-        assert_eq!(
-            store
-                .get_active_budget_for_team(ops_team.team_id)
-                .await
-                .expect("ops budget")
-                .expect("ops budget exists")
-                .amount_usd,
-            Money4::from_scaled(125_000)
-        );
-        assert!(
-            store
-                .get_active_budget_for_user(user.user_id)
+                .get_active_budget_by_scope(&BudgetScope::User {
+                    user_id: user.user_id,
+                })
                 .await
                 .expect("user budget after reseed")
                 .is_none()
@@ -4114,12 +4202,6 @@ mod tests {
         let initial_teams = vec![SeedTeam {
             team_key: "platform".to_string(),
             team_name: "Platform".to_string(),
-            budget: Some(SeedBudget {
-                cadence: BudgetCadence::Monthly,
-                amount_usd: Money4::from_scaled(500_000),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-            }),
         }];
         let initial_users = vec![SeedUser {
             name: "Member".to_string(),
@@ -4172,7 +4254,6 @@ mod tests {
         let invalid_teams = vec![SeedTeam {
             team_key: "platform".to_string(),
             team_name: "Platform Renamed".to_string(),
-            budget: None,
         }];
 
         let error = store
@@ -4197,15 +4278,7 @@ mod tests {
             .expect("reload team")
             .expect("team exists");
         assert_eq!(refreshed_team.team_name, "Platform");
-        assert_eq!(
-            store
-                .get_active_budget_for_team(platform_team.team_id)
-                .await
-                .expect("team budget")
-                .expect("team budget exists")
-                .amount_usd,
-            Money4::from_scaled(500_000)
-        );
+        let _platform_team_id = platform_team.team_id;
 
         store.pool().close().await;
         drop_postgres_test_database(&test_db).await;
@@ -4420,7 +4493,8 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn libsql_spend_reporting_aggregates_and_team_window_sum_filter_chargeable_statuses() {
+    async fn libsql_spend_reporting_aggregates_and_service_account_window_sum_filter_chargeable_statuses()
+     {
         let tmp = tempdir().expect("tempdir");
         let db_path = tmp.path().join("gateway.db");
         run_migrations(&db_path).await.expect("migrations");
@@ -4460,10 +4534,27 @@ mod tests {
             name: "dev".to_string(),
             public_id: "dev123".to_string(),
             secret_hash: "hash".to_string(),
+            service_account_key: "seed-workloads".to_string(),
+            service_account_name: "Seed Workloads".to_string(),
+            service_account_team_key: "seed-workloads".to_string(),
+            service_account_budget: SeedBudget {
+                cadence: BudgetCadence::Daily,
+                amount_usd: Money4::from_scaled(100_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            },
             allowed_models: vec!["fast".to_string()],
         }];
         store
-            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[], &[])
+            .seed_from_inputs(
+                &providers,
+                &models,
+                &api_keys,
+                &[],
+                &[],
+                &seed_api_key_teams(),
+                &[],
+            )
             .await
             .expect("seed");
 
@@ -4477,10 +4568,12 @@ mod tests {
             .await
             .expect("load model")
             .expect("model");
-        let team = store
-            .create_team("platform", "Platform")
-            .await
-            .expect("create team");
+        let service_account_id = api_key
+            .owner_service_account_id
+            .expect("seed api key has service account owner");
+        let team_id = api_key
+            .owner_team_id
+            .expect("seed service account has owning team");
         let user = store
             .create_identity_user(
                 "Member",
@@ -4498,23 +4591,25 @@ mod tests {
             .await
             .expect("update user tags");
         store
-            .update_team_tags(team.team_id, &team_tags, OffsetDateTime::now_utc())
+            .update_team_tags(team_id, &team_tags, OffsetDateTime::now_utc())
             .await
             .expect("update team tags");
 
         let now = OffsetDateTime::from_unix_timestamp(1_773_484_800).expect("timestamp");
         let budget = store
-            .upsert_active_budget_for_team(
-                team.team_id,
-                BudgetCadence::Daily,
-                Money4::from_scaled(100_000),
-                true,
-                "UTC",
+            .upsert_active_budget(
+                &BudgetScope::ServiceAccount { service_account_id },
+                &BudgetSettings {
+                    cadence: BudgetCadence::Daily,
+                    amount_usd: Money4::from_scaled(100_000),
+                    hard_limit: true,
+                    timezone: "UTC".to_string(),
+                },
                 now,
             )
             .await
-            .expect("upsert team budget");
-        assert_eq!(budget.amount_usd, Money4::from_scaled(100_000));
+            .expect("upsert service account budget");
+        assert_eq!(budget.settings.amount_usd, Money4::from_scaled(100_000));
 
         let day_one = OffsetDateTime::from_unix_timestamp(1_773_486_600).expect("day one");
         let day_two = day_one + Duration::days(1);
@@ -4525,6 +4620,7 @@ mod tests {
                 format!("user:{}", user.user_id),
                 api_key.id,
                 Some(user.user_id),
+                None,
                 None,
                 Some(model.id),
                 "gpt-4o-mini",
@@ -4538,6 +4634,7 @@ mod tests {
                 api_key.id,
                 Some(user.user_id),
                 None,
+                None,
                 Some(model.id),
                 "gpt-4o-mini",
                 UsagePricingStatus::Unpriced,
@@ -4545,11 +4642,12 @@ mod tests {
                 day_one,
             ),
             build_usage_ledger_record(
-                "req-team-legacy",
-                format!("team:{}:actor:none", team.team_id),
+                "req-service-account-legacy",
+                format!("service_account:{service_account_id}"),
                 api_key.id,
                 None,
-                Some(team.team_id),
+                Some(team_id),
+                Some(service_account_id),
                 None,
                 "claude-3-5-sonnet",
                 UsagePricingStatus::LegacyEstimated,
@@ -4557,11 +4655,12 @@ mod tests {
                 day_two,
             ),
             build_usage_ledger_record(
-                "req-team-unpriced",
-                format!("team:{}:actor:none", team.team_id),
+                "req-service-account-unpriced",
+                format!("service_account:{service_account_id}"),
                 api_key.id,
                 None,
-                Some(team.team_id),
+                Some(team_id),
+                Some(service_account_id),
                 None,
                 "claude-3-5-sonnet",
                 UsagePricingStatus::Unpriced,
@@ -4569,11 +4668,12 @@ mod tests {
                 day_two,
             ),
             build_usage_ledger_record(
-                "req-team-usage-missing",
-                format!("team:{}:actor:none", team.team_id),
+                "req-service-account-usage-missing",
+                format!("service_account:{service_account_id}"),
                 api_key.id,
                 None,
-                Some(team.team_id),
+                Some(team_id),
+                Some(service_account_id),
                 None,
                 "claude-3-5-sonnet",
                 UsagePricingStatus::UsageMissing,
@@ -4591,11 +4691,15 @@ mod tests {
 
         let window_start = day_one - Duration::hours(1);
         let window_end = day_two + Duration::days(1);
-        let team_sum = store
-            .sum_usage_cost_for_team_in_window(team.team_id, window_start, window_end)
+        let service_account_sum = store
+            .sum_usage_cost_for_budget_scope_in_window(
+                &BudgetScope::ServiceAccount { service_account_id },
+                window_start,
+                window_end,
+            )
             .await
-            .expect("team sum");
-        assert_eq!(team_sum, Money4::from_scaled(22_000));
+            .expect("service account sum");
+        assert_eq!(service_account_sum, Money4::from_scaled(22_000));
 
         let daily = store
             .list_usage_daily_aggregates(window_start, window_end, None)
@@ -4635,15 +4739,18 @@ mod tests {
         assert_eq!(user_owner.priced_request_count, 1);
         assert_eq!(user_owner.unpriced_request_count, 1);
         assert_eq!(user_owner.usage_missing_request_count, 0);
-        let team_owner = owners
+        let service_account_owner = owners
             .iter()
-            .find(|row| row.owner_kind == ApiKeyOwnerKind::Team)
-            .expect("team owner aggregate");
-        assert_eq!(team_owner.owner_id, team.team_id);
-        assert_eq!(team_owner.priced_cost_usd, Money4::from_scaled(22_000));
-        assert_eq!(team_owner.priced_request_count, 1);
-        assert_eq!(team_owner.unpriced_request_count, 1);
-        assert_eq!(team_owner.usage_missing_request_count, 1);
+            .find(|row| row.owner_kind == ApiKeyOwnerKind::ServiceAccount)
+            .expect("service account owner aggregate");
+        assert_eq!(service_account_owner.owner_id, service_account_id);
+        assert_eq!(
+            service_account_owner.priced_cost_usd,
+            Money4::from_scaled(22_000)
+        );
+        assert_eq!(service_account_owner.priced_request_count, 1);
+        assert_eq!(service_account_owner.unpriced_request_count, 1);
+        assert_eq!(service_account_owner.usage_missing_request_count, 1);
 
         let models = store
             .list_usage_model_aggregates(window_start, window_end, None)
@@ -4672,7 +4779,7 @@ mod tests {
             window_start,
             window_end,
             user.user_id,
-            team.team_id,
+            service_account_id,
         )
         .await;
     }
@@ -4745,11 +4852,28 @@ mod tests {
             name: "dev".to_string(),
             public_id: "dev123".to_string(),
             secret_hash: "hash".to_string(),
+            service_account_key: "seed-workloads".to_string(),
+            service_account_name: "Seed Workloads".to_string(),
+            service_account_team_key: "seed-workloads".to_string(),
+            service_account_budget: SeedBudget {
+                cadence: BudgetCadence::Daily,
+                amount_usd: Money4::from_scaled(100_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            },
             allowed_models: vec!["fast".to_string()],
         }];
 
         store
-            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[], &[])
+            .seed_from_inputs(
+                &providers,
+                &models,
+                &api_keys,
+                &[],
+                &[],
+                &seed_api_key_teams(),
+                &[],
+            )
             .await
             .expect("seed");
 
@@ -4758,9 +4882,14 @@ mod tests {
             .await
             .expect("get key")
             .expect("api key exists");
-        let seed_team_id = Uuid::parse_str(CONFIG_SEED_TEAM_ID).expect("seed team uuid");
+        let seed_team_id = store
+            .get_team_by_key("seed-workloads")
+            .await
+            .expect("load seed team")
+            .expect("seed team")
+            .team_id;
         let seed_service_account_id =
-            Uuid::parse_str(CONFIG_SEED_SERVICE_ACCOUNT_ID).expect("seed service account uuid");
+            Uuid::new_v5(&Uuid::NAMESPACE_OID, b"service_account:seed-workloads");
         assert_eq!(key.owner_kind, ApiKeyOwnerKind::ServiceAccount);
         assert_eq!(key.owner_team_id, Some(seed_team_id));
         assert_eq!(key.owner_service_account_id, Some(seed_service_account_id));
@@ -5007,8 +5136,10 @@ mod tests {
         );
         assert_eq!(
             store
-                .sum_usage_cost_for_user_in_window(
-                    member.user_id,
+                .sum_usage_cost_for_budget_scope_in_window(
+                    &BudgetScope::User {
+                        user_id: member.user_id,
+                    },
                     pricing_time - time::Duration::minutes(1),
                     pricing_time + time::Duration::minutes(1),
                 )
@@ -5093,10 +5224,10 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn postgres_team_budget_enforces_single_active_record_per_team() {
+    async fn postgres_service_account_budget_enforces_single_active_record_per_scope_key() {
         let Some(test_db) = create_postgres_test_database().await else {
             eprintln!(
-                "skipping postgres team budget uniqueness test because TEST_POSTGRES_URL is not set"
+                "skipping postgres service account budget uniqueness test because TEST_POSTGRES_URL is not set"
             );
             return;
         };
@@ -5116,6 +5247,7 @@ mod tests {
             .expect("postgres pool");
         let now = OffsetDateTime::now_utc().unix_timestamp();
         let team_id = Uuid::new_v4();
+        let service_account_id = Uuid::new_v4();
 
         sqlx::query(
             r#"
@@ -5132,13 +5264,30 @@ mod tests {
 
         sqlx::query(
             r#"
-            INSERT INTO team_budgets (
-                team_budget_id, team_id, cadence, amount_10000, hard_limit, timezone, is_active, created_at, updated_at
-            ) VALUES ($1, $2, 'daily', 100000, 1, 'UTC', 1, $3, $3)
+            INSERT INTO service_accounts (
+              service_account_id, team_id, service_account_key, service_account_name,
+              status, model_access_mode, metadata_json, created_at, updated_at
+            ) VALUES ($1, $2, 'svc', 'Service', 'active', 'all', '{}', $3, $3)
+            "#,
+        )
+        .bind(service_account_id.to_string())
+        .bind(team_id.to_string())
+        .bind(now)
+        .execute(&pool)
+        .await
+        .expect("service account");
+
+        sqlx::query(
+            r#"
+            INSERT INTO budgets (
+                budget_id, scope_kind, scope_key, service_account_id, cadence, amount_10000,
+                hard_limit, timezone, is_active, created_at, updated_at
+            ) VALUES ($1, 'service_account', $2, $3, 'daily', 100000, 1, 'UTC', 1, $4, $4)
             "#,
         )
         .bind(Uuid::new_v4().to_string())
-        .bind(team_id.to_string())
+        .bind(format!("budget:v1:service_account:{service_account_id}"))
+        .bind(service_account_id.to_string())
         .bind(now)
         .execute(&pool)
         .await
@@ -5146,13 +5295,15 @@ mod tests {
 
         let duplicate_active_result = sqlx::query(
             r#"
-            INSERT INTO team_budgets (
-                team_budget_id, team_id, cadence, amount_10000, hard_limit, timezone, is_active, created_at, updated_at
-            ) VALUES ($1, $2, 'weekly', 200000, 1, 'UTC', 1, $3, $3)
+            INSERT INTO budgets (
+                budget_id, scope_kind, scope_key, service_account_id, cadence, amount_10000,
+                hard_limit, timezone, is_active, created_at, updated_at
+            ) VALUES ($1, 'service_account', $2, $3, 'weekly', 200000, 1, 'UTC', 1, $4, $4)
             "#,
         )
         .bind(Uuid::new_v4().to_string())
-        .bind(team_id.to_string())
+        .bind(format!("budget:v1:service_account:{service_account_id}"))
+        .bind(service_account_id.to_string())
         .bind(now)
         .execute(&pool)
         .await;
@@ -5160,13 +5311,15 @@ mod tests {
 
         sqlx::query(
             r#"
-            INSERT INTO team_budgets (
-                team_budget_id, team_id, cadence, amount_10000, hard_limit, timezone, is_active, created_at, updated_at
-            ) VALUES ($1, $2, 'weekly', 200000, 1, 'UTC', 0, $3, $3)
+            INSERT INTO budgets (
+                budget_id, scope_kind, scope_key, service_account_id, cadence, amount_10000,
+                hard_limit, timezone, is_active, created_at, updated_at
+            ) VALUES ($1, 'service_account', $2, $3, 'weekly', 200000, 1, 'UTC', 0, $4, $4)
             "#,
         )
         .bind(Uuid::new_v4().to_string())
-        .bind(team_id.to_string())
+        .bind(format!("budget:v1:service_account:{service_account_id}"))
+        .bind(service_account_id.to_string())
         .bind(now)
         .execute(&pool)
         .await
@@ -5206,7 +5359,8 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn postgres_spend_reporting_aggregates_and_team_window_sum_filter_chargeable_statuses() {
+    async fn postgres_spend_reporting_aggregates_and_service_account_window_sum_filter_chargeable_statuses()
+     {
         let Some(test_db) = create_postgres_test_database().await else {
             eprintln!(
                 "skipping postgres spend reporting parity test because TEST_POSTGRES_URL is not set"
@@ -5257,10 +5411,27 @@ mod tests {
             name: "dev".to_string(),
             public_id: "dev123".to_string(),
             secret_hash: "hash".to_string(),
+            service_account_key: "seed-workloads".to_string(),
+            service_account_name: "Seed Workloads".to_string(),
+            service_account_team_key: "seed-workloads".to_string(),
+            service_account_budget: SeedBudget {
+                cadence: BudgetCadence::Daily,
+                amount_usd: Money4::from_scaled(100_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            },
             allowed_models: vec!["fast".to_string()],
         }];
         store
-            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[], &[])
+            .seed_from_inputs(
+                &providers,
+                &models,
+                &api_keys,
+                &[],
+                &[],
+                &seed_api_key_teams(),
+                &[],
+            )
             .await
             .expect("seed");
 
@@ -5274,10 +5445,12 @@ mod tests {
             .await
             .expect("load model")
             .expect("model");
-        let team = store
-            .create_team("platform", "Platform")
-            .await
-            .expect("create team");
+        let service_account_id = api_key
+            .owner_service_account_id
+            .expect("seed api key has service account owner");
+        let team_id = api_key
+            .owner_team_id
+            .expect("seed service account has owning team");
         let user = store
             .create_identity_user(
                 "Member",
@@ -5295,23 +5468,25 @@ mod tests {
             .await
             .expect("update user tags");
         store
-            .update_team_tags(team.team_id, &team_tags, OffsetDateTime::now_utc())
+            .update_team_tags(team_id, &team_tags, OffsetDateTime::now_utc())
             .await
             .expect("update team tags");
 
         let now = OffsetDateTime::from_unix_timestamp(1_773_484_800).expect("timestamp");
         let budget = store
-            .upsert_active_budget_for_team(
-                team.team_id,
-                BudgetCadence::Daily,
-                Money4::from_scaled(100_000),
-                true,
-                "UTC",
+            .upsert_active_budget(
+                &BudgetScope::ServiceAccount { service_account_id },
+                &BudgetSettings {
+                    cadence: BudgetCadence::Daily,
+                    amount_usd: Money4::from_scaled(100_000),
+                    hard_limit: true,
+                    timezone: "UTC".to_string(),
+                },
                 now,
             )
             .await
-            .expect("upsert team budget");
-        assert_eq!(budget.amount_usd, Money4::from_scaled(100_000));
+            .expect("upsert service account budget");
+        assert_eq!(budget.settings.amount_usd, Money4::from_scaled(100_000));
 
         let day_one = OffsetDateTime::from_unix_timestamp(1_773_486_600).expect("day one");
         let day_two = day_one + Duration::days(1);
@@ -5322,6 +5497,7 @@ mod tests {
                 format!("user:{}", user.user_id),
                 api_key.id,
                 Some(user.user_id),
+                None,
                 None,
                 Some(model.id),
                 "gpt-4o-mini",
@@ -5335,6 +5511,7 @@ mod tests {
                 api_key.id,
                 Some(user.user_id),
                 None,
+                None,
                 Some(model.id),
                 "gpt-4o-mini",
                 UsagePricingStatus::Unpriced,
@@ -5342,11 +5519,12 @@ mod tests {
                 day_one,
             ),
             build_usage_ledger_record(
-                "req-team-legacy",
-                format!("team:{}:actor:none", team.team_id),
+                "req-service-account-legacy",
+                format!("service_account:{service_account_id}"),
                 api_key.id,
                 None,
-                Some(team.team_id),
+                Some(team_id),
+                Some(service_account_id),
                 None,
                 "claude-3-5-sonnet",
                 UsagePricingStatus::LegacyEstimated,
@@ -5354,11 +5532,12 @@ mod tests {
                 day_two,
             ),
             build_usage_ledger_record(
-                "req-team-unpriced",
-                format!("team:{}:actor:none", team.team_id),
+                "req-service-account-unpriced",
+                format!("service_account:{service_account_id}"),
                 api_key.id,
                 None,
-                Some(team.team_id),
+                Some(team_id),
+                Some(service_account_id),
                 None,
                 "claude-3-5-sonnet",
                 UsagePricingStatus::Unpriced,
@@ -5366,11 +5545,12 @@ mod tests {
                 day_two,
             ),
             build_usage_ledger_record(
-                "req-team-usage-missing",
-                format!("team:{}:actor:none", team.team_id),
+                "req-service-account-usage-missing",
+                format!("service_account:{service_account_id}"),
                 api_key.id,
                 None,
-                Some(team.team_id),
+                Some(team_id),
+                Some(service_account_id),
                 None,
                 "claude-3-5-sonnet",
                 UsagePricingStatus::UsageMissing,
@@ -5388,11 +5568,15 @@ mod tests {
 
         let window_start = day_one - Duration::hours(1);
         let window_end = day_two + Duration::days(1);
-        let team_sum = store
-            .sum_usage_cost_for_team_in_window(team.team_id, window_start, window_end)
+        let service_account_sum = store
+            .sum_usage_cost_for_budget_scope_in_window(
+                &BudgetScope::ServiceAccount { service_account_id },
+                window_start,
+                window_end,
+            )
             .await
-            .expect("team sum");
-        assert_eq!(team_sum, Money4::from_scaled(22_000));
+            .expect("service account sum");
+        assert_eq!(service_account_sum, Money4::from_scaled(22_000));
 
         let daily = store
             .list_usage_daily_aggregates(window_start, window_end, None)
@@ -5432,15 +5616,18 @@ mod tests {
         assert_eq!(user_owner.priced_request_count, 1);
         assert_eq!(user_owner.unpriced_request_count, 1);
         assert_eq!(user_owner.usage_missing_request_count, 0);
-        let team_owner = owners
+        let service_account_owner = owners
             .iter()
-            .find(|row| row.owner_kind == ApiKeyOwnerKind::Team)
-            .expect("team owner aggregate");
-        assert_eq!(team_owner.owner_id, team.team_id);
-        assert_eq!(team_owner.priced_cost_usd, Money4::from_scaled(22_000));
-        assert_eq!(team_owner.priced_request_count, 1);
-        assert_eq!(team_owner.unpriced_request_count, 1);
-        assert_eq!(team_owner.usage_missing_request_count, 1);
+            .find(|row| row.owner_kind == ApiKeyOwnerKind::ServiceAccount)
+            .expect("service account owner aggregate");
+        assert_eq!(service_account_owner.owner_id, service_account_id);
+        assert_eq!(
+            service_account_owner.priced_cost_usd,
+            Money4::from_scaled(22_000)
+        );
+        assert_eq!(service_account_owner.priced_request_count, 1);
+        assert_eq!(service_account_owner.unpriced_request_count, 1);
+        assert_eq!(service_account_owner.usage_missing_request_count, 1);
 
         let models = store
             .list_usage_model_aggregates(window_start, window_end, None)
@@ -5469,7 +5656,7 @@ mod tests {
             window_start,
             window_end,
             user.user_id,
-            team.team_id,
+            service_account_id,
         )
         .await;
 
@@ -5566,11 +5753,28 @@ mod tests {
             name: "dev".to_string(),
             public_id: "dev123".to_string(),
             secret_hash: "hash".to_string(),
+            service_account_key: "seed-workloads".to_string(),
+            service_account_name: "Seed Workloads".to_string(),
+            service_account_team_key: "seed-workloads".to_string(),
+            service_account_budget: SeedBudget {
+                cadence: BudgetCadence::Daily,
+                amount_usd: Money4::from_scaled(100_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            },
             allowed_models: vec!["fast".to_string()],
         }];
 
         store
-            .seed_from_inputs(&providers, &models, &api_keys, &[], &[], &[], &[])
+            .seed_from_inputs(
+                &providers,
+                &models,
+                &api_keys,
+                &[],
+                &[],
+                &seed_api_key_teams(),
+                &[],
+            )
             .await
             .expect("seed");
 

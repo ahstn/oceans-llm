@@ -37,8 +37,8 @@ features:
     link: /access/identity-and-access
     linkText: Review access
   - title: Control spend
-    details: Track budgets, spending windows, accounting behavior, alerts, and reporting obligations.
-    link: /operations/budgets-and-spending
+    details: Set user, service-account, and user model budgets, then review operator accounting behavior.
+    link: /access/budgets
     linkText: Manage budgets
   - title: Trace requests
     details: Follow request logs, retention purge, MCP invocation records, observability payloads, failure modes, and provider compatibility edges.

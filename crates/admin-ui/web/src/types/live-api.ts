@@ -9,7 +9,6 @@ export interface ApiEnvelope<T> {
 }
 
 export type ApiKeyOwnerUserView = components['schemas']['AdminApiKeyUserOwnerView']
-export type ApiKeyOwnerTeamView = components['schemas']['AdminApiKeyTeamOwnerView']
 export type ApiKeyOwnerServiceAccountView =
   components['schemas']['AdminApiKeyServiceAccountOwnerView']
 export type ApiKeyModelOptionView = components['schemas']['AdminApiKeyModelView']
@@ -21,7 +20,7 @@ export type UpdateApiKeyInput = components['schemas']['UpdateApiKeyRequest']
 export type UpdateApiKeyResult = components['schemas']['UpdateApiKeyResponse']
 export type RevokeApiKeyResult = components['schemas']['RevokeApiKeyResponse']
 
-export type SpendOwnerKind = 'all' | 'user' | 'team' | 'service_account'
+export type SpendOwnerKind = 'all' | 'user' | 'service_account'
 
 export type SpendTotalsView = components['schemas']['SpendTotalsView']
 export type SpendDailyPointView = components['schemas']['SpendDailyPointView']
@@ -41,12 +40,17 @@ export type HarnessUsageSeriesPointView = components['schemas']['HarnessUsageSer
 export type HarnessUsageLeaderView = components['schemas']['HarnessUsageLeaderView']
 export type HarnessUsageView = components['schemas']['HarnessUsageView']
 export type BudgetSettingsView = components['schemas']['BudgetSettingsView']
+export type BudgetScopeRequest = components['schemas']['BudgetScopeRequest']
+export type BudgetScopeView = components['schemas']['BudgetScopeView']
 export type SpendBudgetUserView = components['schemas']['SpendBudgetUserView']
-export type SpendBudgetTeamView = components['schemas']['SpendBudgetTeamView']
+export type SpendBudgetServiceAccountView =
+  components['schemas']['SpendBudgetServiceAccountView']
+export type SpendBudgetUserModelView = components['schemas']['SpendBudgetUserModelView']
 export type SpendBudgetsView = components['schemas']['SpendBudgetsView']
 export type BudgetAlertHistoryItemView = components['schemas']['BudgetAlertHistoryItemView']
 export type BudgetAlertHistoryView = components['schemas']['BudgetAlertHistoryView']
 export type UpsertBudgetInput = components['schemas']['UpsertBudgetRequest']
+export type DeactivateBudgetInput = components['schemas']['DeactivateBudgetRequest']
 export type UpsertBudgetResultView = components['schemas']['UpsertBudgetResultView']
 export type DeactivateBudgetResultView = components['schemas']['DeactivateBudgetResultView']
 

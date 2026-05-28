@@ -313,9 +313,34 @@ impl GatewayConfig {
             if !team_keys.insert(team_key.clone()) {
                 bail!("duplicate team key `{team_key}`");
             }
-            if let Some(budget) = &team.budget {
-                budget.validate(&format!("team `{team_key}` budget"))?;
+        }
+
+        let mut seed_service_account_keys = std::collections::BTreeSet::new();
+        for seed_key in &self.auth.seed_api_keys {
+            if seed_key.name.trim().is_empty() {
+                bail!("auth.seed_api_keys entry name cannot be empty");
             }
+            let service_account = &seed_key.service_account;
+            let service_account_key = normalize_config_service_account_key(&service_account.key)
+                .with_context(|| {
+                    format!("auth.seed_api_keys `{}` service_account.key", seed_key.name)
+                })?;
+            if !seed_service_account_keys.insert(service_account_key.clone()) {
+                bail!("duplicate seeded service account key `{service_account_key}`");
+            }
+            if service_account.name.trim().is_empty() {
+                bail!("seeded service account `{service_account_key}` name cannot be empty");
+            }
+            let team_key = normalize_config_team_key(&service_account.team)
+                .with_context(|| format!("seeded service account `{service_account_key}` team"))?;
+            if !team_keys.contains(&team_key) {
+                bail!(
+                    "seeded service account `{service_account_key}` references unknown team `{team_key}`"
+                );
+            }
+            service_account.budget.validate(&format!(
+                "seeded service account `{service_account_key}` budget"
+            ))?;
         }
 
         let reserved_bootstrap_admin_email =
@@ -612,6 +637,14 @@ impl GatewayConfig {
                 name: seed_key.name.clone(),
                 public_id: parsed.public_id,
                 secret_hash,
+                service_account_key: normalize_config_service_account_key(
+                    &seed_key.service_account.key,
+                )?,
+                service_account_name: seed_key.service_account.name.trim().to_string(),
+                service_account_team_key: normalize_config_team_key(
+                    &seed_key.service_account.team,
+                )?,
+                service_account_budget: seed_key.service_account.budget.seed_budget()?,
                 allowed_models: seed_key.allowed_models.clone(),
             });
         }
@@ -644,11 +677,6 @@ impl GatewayConfig {
                 Ok(SeedTeam {
                     team_key: normalize_config_team_key(&team.key)?,
                     team_name: team.name.trim().to_string(),
-                    budget: team
-                        .budget
-                        .as_ref()
-                        .map(BudgetConfig::seed_budget)
-                        .transpose()?,
                 })
             })
             .collect()
@@ -1560,16 +1588,23 @@ impl BootstrapAdminConfig {
 pub struct SeedApiKeyConfig {
     pub name: String,
     pub value: String,
+    pub service_account: SeedApiKeyServiceAccountConfig,
     #[serde(default)]
     pub allowed_models: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SeedApiKeyServiceAccountConfig {
+    pub key: String,
+    pub name: String,
+    pub team: String,
+    pub budget: BudgetConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct TeamConfig {
     pub key: String,
     pub name: String,
-    #[serde(default)]
-    pub budget: Option<BudgetConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1961,6 +1996,14 @@ fn normalize_config_team_key(team_key: &str) -> anyhow::Result<String> {
     let normalized = team_key.trim().to_string();
     if normalized.is_empty() {
         bail!("team key cannot be empty");
+    }
+    Ok(normalized)
+}
+
+fn normalize_config_service_account_key(service_account_key: &str) -> anyhow::Result<String> {
+    let normalized = service_account_key.trim().to_string();
+    if normalized.is_empty() {
+        bail!("service account key cannot be empty");
     }
     Ok(normalized)
 }
@@ -3109,11 +3152,6 @@ auth:
 teams:
   - key: " platform "
     name: Platform
-    budget:
-      cadence: monthly
-      amount_usd: "250.0000"
-      hard_limit: true
-      timezone: UTC
 users:
   - name: Member
     email: " Member@Example.com "
@@ -3145,11 +3183,6 @@ users:
         assert_eq!(teams.len(), 1);
         assert_eq!(teams[0].team_key, "platform");
         assert_eq!(teams[0].team_name, "Platform");
-        let team_budget = teams[0].budget.as_ref().expect("team budget");
-        assert_eq!(team_budget.cadence, BudgetCadence::Monthly);
-        assert_eq!(team_budget.amount_usd, Money4::from_scaled(2_500_000));
-        assert!(team_budget.hard_limit);
-        assert_eq!(team_budget.timezone, "UTC");
 
         assert_eq!(users.len(), 1);
         assert_eq!(users[0].email_normalized, "member@example.com");
@@ -3336,24 +3369,47 @@ auth:
     }
 
     #[test]
-    fn accepts_system_legacy_as_ordinary_team_key() {
+    fn parses_seed_api_keys_with_explicit_service_account_budget() {
         let tmp = tempdir().expect("tempdir");
         let config_path = tmp.path().join("gateway.yaml");
+        unsafe {
+            env::set_var("OCEANS_TEST_SEED_API_KEY", "gwk_abcd1234.secret-value");
+        }
 
         write_config(
             &config_path,
             r#"
+auth:
+  seed_api_keys:
+    - name: CI Indexer
+      value: env.OCEANS_TEST_SEED_API_KEY
+      service_account:
+        key: " ci-indexer "
+        name: CI Indexer
+        team: " platform "
+        budget:
+          cadence: daily
+          amount_usd: "25.0000"
+          hard_limit: true
+          timezone: UTC
+      allowed_models: [fast]
 teams:
-  - key: " system-legacy "
-    name: Reserved
+  - key: " platform "
+    name: Platform
 "#,
         );
 
         let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let api_keys = config.seed_api_keys().expect("seed api keys");
+        assert_eq!(api_keys.len(), 1);
+        assert_eq!(api_keys[0].service_account_key, "ci-indexer");
+        assert_eq!(api_keys[0].service_account_name, "CI Indexer");
+        assert_eq!(api_keys[0].service_account_team_key, "platform");
         assert_eq!(
-            config.seed_teams().expect("seed teams")[0].team_key,
-            "system-legacy"
+            api_keys[0].service_account_budget.amount_usd,
+            Money4::from_scaled(250_000)
         );
+        assert_eq!(api_keys[0].allowed_models, ["fast"]);
     }
 
     #[test]

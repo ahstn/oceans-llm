@@ -489,81 +489,73 @@ pub(super) fn decode_user_oauth_auth_record(
     })
 }
 
-pub(super) fn decode_user_budget_record(row: &libsql::Row) -> Result<UserBudgetRecord, StoreError> {
-    let user_budget_id: String = row.get(0).map_err(to_query_error)?;
-    let user_id: String = row.get(1).map_err(to_query_error)?;
-    let cadence: String = row.get(2).map_err(to_query_error)?;
-    let amount_10000: i64 = row.get(3).map_err(to_query_error)?;
-    let hard_limit: i64 = row.get(4).map_err(to_query_error)?;
-    let is_active: i64 = row.get(6).map_err(to_query_error)?;
-    let created_at: i64 = row.get(7).map_err(to_query_error)?;
-    let updated_at: i64 = row.get(8).map_err(to_query_error)?;
+pub(super) fn decode_budget_record(row: &libsql::Row) -> Result<BudgetRecord, StoreError> {
+    let budget_id: String = row.get(0).map_err(to_query_error)?;
+    let scope_kind: String = row.get(1).map_err(to_query_error)?;
+    let scope_key: String = row.get(2).map_err(to_query_error)?;
+    let user_id: Option<String> = row.get(3).map_err(to_query_error)?;
+    let service_account_id: Option<String> = row.get(4).map_err(to_query_error)?;
+    let model_id: Option<String> = row.get(5).map_err(to_query_error)?;
+    let upstream_model: Option<String> = row.get(6).map_err(to_query_error)?;
+    let cadence: String = row.get(7).map_err(to_query_error)?;
+    let amount_10000: i64 = row.get(8).map_err(to_query_error)?;
+    let hard_limit: i64 = row.get(9).map_err(to_query_error)?;
+    let timezone: String = row.get(10).map_err(to_query_error)?;
+    let is_active: i64 = row.get(11).map_err(to_query_error)?;
+    let created_at: i64 = row.get(12).map_err(to_query_error)?;
+    let updated_at: i64 = row.get(13).map_err(to_query_error)?;
 
-    Ok(UserBudgetRecord {
-        user_budget_id: parse_uuid(&user_budget_id)?,
-        user_id: parse_uuid(&user_id)?,
-        cadence: BudgetCadence::from_db(&cadence).ok_or_else(|| {
-            StoreError::Serialization(format!("unknown budget cadence `{cadence}`"))
-        })?,
-        amount_usd: Money4::from_scaled(amount_10000),
-        hard_limit: hard_limit == 1,
-        timezone: row.get(5).map_err(to_query_error)?,
+    let scope = match BudgetScopeKind::from_db(&scope_kind).ok_or_else(|| {
+        StoreError::Serialization(format!("unknown budget scope kind `{scope_kind}`"))
+    })? {
+        BudgetScopeKind::User => BudgetScope::User {
+            user_id: parse_required_uuid(user_id, "user_id")?,
+        },
+        BudgetScopeKind::ServiceAccount => BudgetScope::ServiceAccount {
+            service_account_id: parse_required_uuid(service_account_id, "service_account_id")?,
+        },
+        BudgetScopeKind::UserModel => {
+            let user_id = parse_required_uuid(user_id, "user_id")?;
+            let selector = match (model_id, upstream_model) {
+                (Some(model_id), None) => BudgetModelSelector::Model {
+                    model_id: parse_uuid(&model_id)?,
+                },
+                (None, Some(upstream_model)) => BudgetModelSelector::UpstreamModel {
+                    upstream_model: upstream_model.trim().to_string(),
+                },
+                _ => {
+                    return Err(StoreError::Serialization(
+                        "user_model budget must have exactly one model selector".to_string(),
+                    ));
+                }
+            };
+            BudgetScope::UserModel { user_id, selector }
+        }
+    };
+
+    Ok(BudgetRecord {
+        budget_id: parse_uuid(&budget_id)?,
+        scope,
+        scope_key,
+        settings: BudgetSettings {
+            cadence: BudgetCadence::from_db(&cadence).ok_or_else(|| {
+                StoreError::Serialization(format!("unknown budget cadence `{cadence}`"))
+            })?,
+            amount_usd: Money4::from_scaled(amount_10000),
+            hard_limit: hard_limit == 1,
+            timezone,
+        },
         is_active: is_active == 1,
         created_at: unix_to_datetime(created_at)?,
         updated_at: unix_to_datetime(updated_at)?,
     })
 }
 
-pub(super) fn decode_team_budget_record(row: &libsql::Row) -> Result<TeamBudgetRecord, StoreError> {
-    let team_budget_id: String = row.get(0).map_err(to_query_error)?;
-    let team_id: String = row.get(1).map_err(to_query_error)?;
-    let cadence: String = row.get(2).map_err(to_query_error)?;
-    let amount_10000: i64 = row.get(3).map_err(to_query_error)?;
-    let hard_limit: i64 = row.get(4).map_err(to_query_error)?;
-    let is_active: i64 = row.get(6).map_err(to_query_error)?;
-    let created_at: i64 = row.get(7).map_err(to_query_error)?;
-    let updated_at: i64 = row.get(8).map_err(to_query_error)?;
-
-    Ok(TeamBudgetRecord {
-        team_budget_id: parse_uuid(&team_budget_id)?,
-        team_id: parse_uuid(&team_id)?,
-        cadence: BudgetCadence::from_db(&cadence).ok_or_else(|| {
-            StoreError::Serialization(format!("unknown budget cadence `{cadence}`"))
-        })?,
-        amount_usd: Money4::from_scaled(amount_10000),
-        hard_limit: hard_limit == 1,
-        timezone: row.get(5).map_err(to_query_error)?,
-        is_active: is_active == 1,
-        created_at: unix_to_datetime(created_at)?,
-        updated_at: unix_to_datetime(updated_at)?,
-    })
-}
-
-pub(super) fn decode_service_account_budget_record(
-    row: &libsql::Row,
-) -> Result<ServiceAccountBudgetRecord, StoreError> {
-    let service_account_budget_id: String = row.get(0).map_err(to_query_error)?;
-    let service_account_id: String = row.get(1).map_err(to_query_error)?;
-    let cadence: String = row.get(2).map_err(to_query_error)?;
-    let amount_10000: i64 = row.get(3).map_err(to_query_error)?;
-    let hard_limit: i64 = row.get(4).map_err(to_query_error)?;
-    let is_active: i64 = row.get(6).map_err(to_query_error)?;
-    let created_at: i64 = row.get(7).map_err(to_query_error)?;
-    let updated_at: i64 = row.get(8).map_err(to_query_error)?;
-
-    Ok(ServiceAccountBudgetRecord {
-        service_account_budget_id: parse_uuid(&service_account_budget_id)?,
-        service_account_id: parse_uuid(&service_account_id)?,
-        cadence: BudgetCadence::from_db(&cadence).ok_or_else(|| {
-            StoreError::Serialization(format!("unknown budget cadence `{cadence}`"))
-        })?,
-        amount_usd: Money4::from_scaled(amount_10000),
-        hard_limit: hard_limit == 1,
-        timezone: row.get(5).map_err(to_query_error)?,
-        is_active: is_active == 1,
-        created_at: unix_to_datetime(created_at)?,
-        updated_at: unix_to_datetime(updated_at)?,
-    })
+fn parse_required_uuid(value: Option<String>, column: &str) -> Result<Uuid, StoreError> {
+    let value = value.ok_or_else(|| {
+        StoreError::Serialization(format!("budget record is missing required `{column}`"))
+    })?;
+    parse_uuid(&value)
 }
 
 pub(super) fn decode_pricing_catalog_cache_record(

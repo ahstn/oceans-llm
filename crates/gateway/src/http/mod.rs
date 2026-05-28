@@ -103,23 +103,17 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
         .route("/api/v1/admin/spend/report", get(get_spend_report))
         .route("/api/v1/admin/spend/focus.csv", get(get_admin_focus_export))
         .route("/api/v1/me/spend/focus.csv", get(get_my_focus_export))
-        .route("/api/v1/admin/spend/budgets", get(list_spend_budgets))
+        .route(
+            "/api/v1/admin/spend/budgets",
+            get(list_spend_budgets).put(upsert_budget),
+        )
+        .route(
+            "/api/v1/admin/spend/budgets/deactivate",
+            post(deactivate_budget),
+        )
         .route(
             "/api/v1/admin/spend/budget-alerts",
             get(list_budget_alert_history),
-        )
-        .route(
-            "/api/v1/admin/spend/budgets/users/{user_id}",
-            axum::routing::put(upsert_user_budget).delete(deactivate_user_budget),
-        )
-        .route(
-            "/api/v1/admin/spend/budgets/teams/{team_id}",
-            axum::routing::put(upsert_team_budget).delete(deactivate_team_budget),
-        )
-        .route(
-            "/api/v1/admin/spend/budgets/service-accounts/{service_account_id}",
-            axum::routing::put(upsert_service_account_budget)
-                .delete(deactivate_service_account_budget),
         )
         .route(
             "/api/v1/admin/observability/leaderboard",

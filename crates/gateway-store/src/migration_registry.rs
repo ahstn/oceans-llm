@@ -102,6 +102,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V27__external_mcp_registry.sql"),
         postgres_sql: include_str!("../migrations/postgres/V27__external_mcp_registry.sql"),
     },
+    MigrationManifest {
+        version: 28,
+        name: "generic_budget_scopes",
+        checksum: "V28__generic_budget_scopes.sql",
+        libsql_sql: include_str!("../migrations/V28__generic_budget_scopes.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V28__generic_budget_scopes.sql"),
+    },
 ];
 
 #[cfg(test)]

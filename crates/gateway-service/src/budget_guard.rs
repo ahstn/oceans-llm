@@ -1,20 +1,17 @@
 use std::sync::Arc;
 
 use gateway_core::{
-    ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, BudgetCadence, BudgetRepository, GatewayError,
+    AuthenticatedApiKey, BudgetCadence, BudgetRecord, BudgetRepository, BudgetScope, GatewayError,
     UsageLedgerRecord, budget_window_utc,
 };
 use time::OffsetDateTime;
+use uuid::Uuid;
+
+use crate::budget_scopes::{applicable_budget_scopes, usage_ownership_scope_key};
 
 #[derive(Clone)]
 pub struct BudgetGuard<R> {
     repo: Arc<R>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BudgetGuardDisposition {
-    Inserted,
-    Duplicate,
 }
 
 impl<R> BudgetGuard<R>
@@ -30,82 +27,26 @@ where
         &self,
         api_key: &AuthenticatedApiKey,
         request_id: &str,
+        model_id: Option<Uuid>,
+        upstream_model: Option<&str>,
         occurred_at: OffsetDateTime,
     ) -> Result<(), GatewayError> {
-        let ownership_scope_key = ownership_scope_key(api_key)?;
+        let ownership_scope_key = usage_ownership_scope_key(api_key)?;
         if self
             .repo
             .get_usage_ledger_by_request_and_scope(request_id, &ownership_scope_key)
             .await?
             .is_some()
         {
-            return Ok(());
+            return Err(duplicate_request_error(request_id));
         }
 
-        match api_key.owner_kind {
-            ApiKeyOwnerKind::User => {
-                let user_id = api_key.owner_user_id.ok_or(AuthError::ApiKeyOwnerInvalid)?;
-                if let Some(budget) = self.repo.get_active_budget_for_user(user_id).await? {
-                    let (window_start, window_end) =
-                        budget_window_bounds_utc(budget.cadence, occurred_at)?;
-                    let spent = self
-                        .repo
-                        .sum_usage_cost_for_user_in_window(user_id, window_start, window_end)
-                        .await?;
-                    if budget.hard_limit && spent >= budget.amount_usd {
-                        return Err(GatewayError::BudgetExceeded {
-                            ownership_scope: format!("user:{user_id}"),
-                            projected_cost_usd: spent,
-                            limit_usd: budget.amount_usd,
-                        });
-                    }
-                }
-            }
-            ApiKeyOwnerKind::ServiceAccount => {
-                let service_account_id = api_key
-                    .owner_service_account_id
-                    .ok_or(AuthError::ApiKeyOwnerInvalid)?;
-                let team_id = api_key.owner_team_id.ok_or(AuthError::ApiKeyOwnerInvalid)?;
-                if let Some(budget) = self
-                    .repo
-                    .get_active_budget_for_service_account(service_account_id)
-                    .await?
-                {
-                    let (window_start, window_end) =
-                        budget_window_bounds_utc(budget.cadence, occurred_at)?;
-                    let spent = self
-                        .repo
-                        .sum_usage_cost_for_service_account_in_window(
-                            service_account_id,
-                            window_start,
-                            window_end,
-                        )
-                        .await?;
-                    if budget.hard_limit && spent >= budget.amount_usd {
-                        return Err(GatewayError::BudgetExceeded {
-                            ownership_scope: format!("service_account:{service_account_id}"),
-                            projected_cost_usd: spent,
-                            limit_usd: budget.amount_usd,
-                        });
-                    }
-                }
-                if let Some(budget) = self.repo.get_active_budget_for_team(team_id).await? {
-                    let (window_start, window_end) =
-                        budget_window_bounds_utc(budget.cadence, occurred_at)?;
-                    let spent = self
-                        .repo
-                        .sum_usage_cost_for_team_in_window(team_id, window_start, window_end)
-                        .await?;
-                    if budget.hard_limit && spent >= budget.amount_usd {
-                        return Err(GatewayError::BudgetExceeded {
-                            ownership_scope: format!("team:{team_id}"),
-                            projected_cost_usd: spent,
-                            limit_usd: budget.amount_usd,
-                        });
-                    }
-                }
-            }
-            ApiKeyOwnerKind::Team => return Err(AuthError::ApiKeyOwnerInvalid.into()),
+        for scope in applicable_budget_scopes(api_key, model_id, upstream_model)? {
+            let Some(budget) = self.repo.get_active_budget_by_scope(&scope).await? else {
+                continue;
+            };
+            self.reject_if_pre_provider_exceeded(&scope, &budget, occurred_at)
+                .await?;
         }
 
         Ok(())
@@ -115,7 +56,7 @@ where
         &self,
         api_key: &AuthenticatedApiKey,
         ledger: &UsageLedgerRecord,
-    ) -> Result<BudgetGuardDisposition, GatewayError> {
+    ) -> Result<(), GatewayError> {
         if ledger.computed_cost_usd.is_negative() {
             return Err(GatewayError::InvalidRequest(
                 "computed_cost_usd must be >= 0".to_string(),
@@ -128,95 +69,91 @@ where
             .await?
             .is_some()
         {
-            return Ok(BudgetGuardDisposition::Duplicate);
+            return Err(duplicate_request_error(&ledger.request_id));
         }
 
         if ledger.pricing_status.counts_toward_spend() {
-            match api_key.owner_kind {
-                ApiKeyOwnerKind::User => {
-                    let user_id = api_key.owner_user_id.ok_or(AuthError::ApiKeyOwnerInvalid)?;
-                    if let Some(budget) = self.repo.get_active_budget_for_user(user_id).await? {
-                        let (window_start, window_end) =
-                            budget_window_bounds_utc(budget.cadence, ledger.occurred_at)?;
-                        let spent = self
-                            .repo
-                            .sum_usage_cost_for_user_in_window(user_id, window_start, window_end)
-                            .await?;
-                        let projected =
-                            spent.checked_add(ledger.computed_cost_usd).ok_or_else(|| {
-                                GatewayError::Internal("budget projection overflow".to_string())
-                            })?;
-                        if budget.hard_limit && projected > budget.amount_usd {
-                            return Err(GatewayError::BudgetExceeded {
-                                ownership_scope: format!("user:{user_id}"),
-                                projected_cost_usd: projected,
-                                limit_usd: budget.amount_usd,
-                            });
-                        }
-                    }
-                }
-                ApiKeyOwnerKind::ServiceAccount => {
-                    let service_account_id = api_key
-                        .owner_service_account_id
-                        .ok_or(AuthError::ApiKeyOwnerInvalid)?;
-                    let team_id = api_key.owner_team_id.ok_or(AuthError::ApiKeyOwnerInvalid)?;
-                    if let Some(budget) = self
-                        .repo
-                        .get_active_budget_for_service_account(service_account_id)
-                        .await?
-                    {
-                        let (window_start, window_end) =
-                            budget_window_bounds_utc(budget.cadence, ledger.occurred_at)?;
-                        let spent = self
-                            .repo
-                            .sum_usage_cost_for_service_account_in_window(
-                                service_account_id,
-                                window_start,
-                                window_end,
-                            )
-                            .await?;
-                        let projected =
-                            spent.checked_add(ledger.computed_cost_usd).ok_or_else(|| {
-                                GatewayError::Internal("budget projection overflow".to_string())
-                            })?;
-                        if budget.hard_limit && projected > budget.amount_usd {
-                            return Err(GatewayError::BudgetExceeded {
-                                ownership_scope: format!("service_account:{service_account_id}"),
-                                projected_cost_usd: projected,
-                                limit_usd: budget.amount_usd,
-                            });
-                        }
-                    }
-                    if let Some(budget) = self.repo.get_active_budget_for_team(team_id).await? {
-                        let (window_start, window_end) =
-                            budget_window_bounds_utc(budget.cadence, ledger.occurred_at)?;
-                        let spent = self
-                            .repo
-                            .sum_usage_cost_for_team_in_window(team_id, window_start, window_end)
-                            .await?;
-                        let projected =
-                            spent.checked_add(ledger.computed_cost_usd).ok_or_else(|| {
-                                GatewayError::Internal("budget projection overflow".to_string())
-                            })?;
-                        if budget.hard_limit && projected > budget.amount_usd {
-                            return Err(GatewayError::BudgetExceeded {
-                                ownership_scope: format!("team:{team_id}"),
-                                projected_cost_usd: projected,
-                                limit_usd: budget.amount_usd,
-                            });
-                        }
-                    }
-                }
-                ApiKeyOwnerKind::Team => return Err(AuthError::ApiKeyOwnerInvalid.into()),
+            for scope in applicable_budget_scopes(
+                api_key,
+                ledger.model_id,
+                if ledger.model_id.is_none() {
+                    Some(ledger.upstream_model.as_str())
+                } else {
+                    None
+                },
+            )? {
+                let Some(budget) = self.repo.get_active_budget_by_scope(&scope).await? else {
+                    continue;
+                };
+                self.reject_if_projected_exceeded(
+                    &scope,
+                    &budget,
+                    ledger.occurred_at,
+                    ledger.computed_cost_usd,
+                )
+                .await?;
             }
         }
 
-        if self.repo.insert_usage_ledger_if_absent(ledger).await? {
-            Ok(BudgetGuardDisposition::Inserted)
-        } else {
-            Ok(BudgetGuardDisposition::Duplicate)
+        if !self.repo.insert_usage_ledger_if_absent(ledger).await? {
+            return Err(duplicate_request_error(&ledger.request_id));
         }
+        Ok(())
     }
+
+    async fn reject_if_pre_provider_exceeded(
+        &self,
+        scope: &BudgetScope,
+        budget: &BudgetRecord,
+        occurred_at: OffsetDateTime,
+    ) -> Result<(), GatewayError> {
+        let (window_start, window_end) =
+            budget_window_bounds_utc(budget.settings.cadence, occurred_at)?;
+        let spent = self
+            .repo
+            .sum_usage_cost_for_budget_scope_in_window(scope, window_start, window_end)
+            .await?;
+        if budget.settings.hard_limit && spent >= budget.settings.amount_usd {
+            return Err(GatewayError::BudgetExceeded {
+                ownership_scope: budget.scope_key.clone(),
+                projected_cost_usd: spent,
+                limit_usd: budget.settings.amount_usd,
+            });
+        }
+        Ok(())
+    }
+
+    async fn reject_if_projected_exceeded(
+        &self,
+        scope: &BudgetScope,
+        budget: &BudgetRecord,
+        occurred_at: OffsetDateTime,
+        cost_usd: gateway_core::Money4,
+    ) -> Result<(), GatewayError> {
+        let (window_start, window_end) =
+            budget_window_bounds_utc(budget.settings.cadence, occurred_at)?;
+        let spent = self
+            .repo
+            .sum_usage_cost_for_budget_scope_in_window(scope, window_start, window_end)
+            .await?;
+        let projected = spent
+            .checked_add(cost_usd)
+            .ok_or_else(|| GatewayError::Internal("budget projection overflow".to_string()))?;
+        if budget.settings.hard_limit && projected > budget.settings.amount_usd {
+            return Err(GatewayError::BudgetExceeded {
+                ownership_scope: budget.scope_key.clone(),
+                projected_cost_usd: projected,
+                limit_usd: budget.settings.amount_usd,
+            });
+        }
+        Ok(())
+    }
+}
+
+fn duplicate_request_error(request_id: &str) -> GatewayError {
+    GatewayError::InvalidRequest(format!(
+        "request_id `{request_id}` has already been recorded for this owner"
+    ))
 }
 
 fn budget_window_bounds_utc(
@@ -227,70 +164,54 @@ fn budget_window_bounds_utc(
     Ok((window.period_start, window.observed_end))
 }
 
-fn ownership_scope_key(api_key: &AuthenticatedApiKey) -> Result<String, AuthError> {
-    match api_key.owner_kind {
-        ApiKeyOwnerKind::User => {
-            let user_id = api_key.owner_user_id.ok_or(AuthError::ApiKeyOwnerInvalid)?;
-            Ok(format!("user:{user_id}"))
-        }
-        ApiKeyOwnerKind::Team => Err(AuthError::ApiKeyOwnerInvalid),
-        ApiKeyOwnerKind::ServiceAccount => {
-            let service_account_id = api_key
-                .owner_service_account_id
-                .ok_or(AuthError::ApiKeyOwnerInvalid)?;
-            Ok(format!("service_account:{service_account_id}"))
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex};
 
     use async_trait::async_trait;
     use gateway_core::{
-        ApiKeyOwnerKind, AuthenticatedApiKey, BudgetCadence, BudgetRepository, Money4,
-        ServiceAccountBudgetRecord, StoreError, TeamBudgetRecord, UsageLedgerRecord,
-        UsagePricingStatus, UserBudgetRecord,
+        ApiKeyOwnerKind, AuthenticatedApiKey, BudgetCadence, BudgetRecord, BudgetRepository,
+        BudgetScope, BudgetSettings, Money4, StoreError, UsageLedgerRecord, UsagePricingStatus,
     };
     use serde_json::json;
-    use time::{Date, Month, OffsetDateTime};
+    use time::OffsetDateTime;
     use uuid::Uuid;
 
-    use super::{BudgetGuard, BudgetGuardDisposition, budget_window_bounds_utc};
+    use super::BudgetGuard;
 
     #[derive(Clone, Default)]
     struct InMemoryBudgetRepo {
-        active_budget: Option<UserBudgetRecord>,
+        active_budget: Option<BudgetRecord>,
         current_spend: Money4,
-        active_team_budget: Option<TeamBudgetRecord>,
-        current_team_spend: Money4,
-        active_service_account_budget: Option<ServiceAccountBudgetRecord>,
-        current_service_account_spend: Money4,
         inserted_events: Arc<Mutex<Vec<UsageLedgerRecord>>>,
     }
 
     #[async_trait]
     impl BudgetRepository for InMemoryBudgetRepo {
-        async fn get_active_budget_for_user(
+        async fn get_active_budget_by_scope(
             &self,
-            _user_id: Uuid,
-        ) -> Result<Option<UserBudgetRecord>, StoreError> {
+            _scope: &BudgetScope,
+        ) -> Result<Option<BudgetRecord>, StoreError> {
             Ok(self.active_budget.clone())
         }
 
-        async fn get_active_budget_for_team(
+        async fn upsert_active_budget(
             &self,
-            _team_id: Uuid,
-        ) -> Result<Option<TeamBudgetRecord>, StoreError> {
-            Ok(self.active_team_budget.clone())
+            _scope: &BudgetScope,
+            _settings: &BudgetSettings,
+            _updated_at: OffsetDateTime,
+        ) -> Result<BudgetRecord, StoreError> {
+            self.active_budget
+                .clone()
+                .ok_or_else(|| StoreError::NotFound("budget missing".to_string()))
         }
 
-        async fn get_active_budget_for_service_account(
+        async fn deactivate_active_budget(
             &self,
-            _service_account_id: Uuid,
-        ) -> Result<Option<ServiceAccountBudgetRecord>, StoreError> {
-            Ok(self.active_service_account_budget.clone())
+            _scope: &BudgetScope,
+            _updated_at: OffsetDateTime,
+        ) -> Result<bool, StoreError> {
+            Ok(false)
         }
 
         async fn get_usage_ledger_by_request_and_scope(
@@ -310,31 +231,13 @@ mod tests {
                 .cloned())
         }
 
-        async fn sum_usage_cost_for_user_in_window(
+        async fn sum_usage_cost_for_budget_scope_in_window(
             &self,
-            _user_id: Uuid,
+            _scope: &BudgetScope,
             _window_start: OffsetDateTime,
             _window_end: OffsetDateTime,
         ) -> Result<Money4, StoreError> {
             Ok(self.current_spend)
-        }
-
-        async fn sum_usage_cost_for_team_in_window(
-            &self,
-            _team_id: Uuid,
-            _window_start: OffsetDateTime,
-            _window_end: OffsetDateTime,
-        ) -> Result<Money4, StoreError> {
-            Ok(self.current_team_spend)
-        }
-
-        async fn sum_usage_cost_for_service_account_in_window(
-            &self,
-            _service_account_id: Uuid,
-            _window_start: OffsetDateTime,
-            _window_end: OffsetDateTime,
-        ) -> Result<Money4, StoreError> {
-            Ok(self.current_service_account_spend)
         }
 
         async fn insert_usage_ledger_if_absent(
@@ -348,7 +251,6 @@ mod tests {
             }) {
                 return Ok(false);
             }
-
             events.push(event.clone());
             Ok(true)
         }
@@ -366,15 +268,21 @@ mod tests {
         }
     }
 
-    fn service_account_auth(team_id: Uuid) -> AuthenticatedApiKey {
-        AuthenticatedApiKey {
-            id: Uuid::new_v4(),
-            public_id: "dev123".to_string(),
-            name: "dev".to_string(),
-            owner_kind: ApiKeyOwnerKind::ServiceAccount,
-            owner_user_id: None,
-            owner_team_id: Some(team_id),
-            owner_service_account_id: Some(Uuid::new_v4()),
+    fn budget(scope: BudgetScope, amount_usd: Money4, hard_limit: bool) -> BudgetRecord {
+        let now = OffsetDateTime::now_utc();
+        BudgetRecord {
+            budget_id: Uuid::new_v4(),
+            scope_key: scope.scope_key(),
+            scope,
+            settings: BudgetSettings {
+                cadence: BudgetCadence::Daily,
+                amount_usd,
+                hard_limit,
+                timezone: "UTC".to_string(),
+            },
+            is_active: true,
+            created_at: now,
+            updated_at: now,
         }
     }
 
@@ -383,32 +291,15 @@ mod tests {
         request_id: &str,
         pricing_status: UsagePricingStatus,
         computed_cost_usd: Money4,
-        occurred_at: OffsetDateTime,
     ) -> UsageLedgerRecord {
-        let ownership_scope_key = match api_key.owner_kind {
-            ApiKeyOwnerKind::User => {
-                format!(
-                    "user:{}",
-                    api_key.owner_user_id.expect("user owner").simple()
-                )
-            }
-            ApiKeyOwnerKind::Team => panic!("team-owned api keys are unsupported"),
-            ApiKeyOwnerKind::ServiceAccount => format!(
-                "service_account:{}",
-                api_key
-                    .owner_service_account_id
-                    .expect("service account owner")
-                    .simple()
-            ),
-        };
-
+        let occurred_at = OffsetDateTime::now_utc();
         UsageLedgerRecord {
             usage_event_id: Uuid::new_v4(),
             request_id: request_id.to_string(),
-            ownership_scope_key,
+            ownership_scope_key: format!("user:{}", api_key.owner_user_id.expect("user owner")),
             api_key_id: api_key.id,
             user_id: api_key.owner_user_id,
-            team_id: api_key.owner_team_id,
+            team_id: None,
             service_account_id: None,
             actor_user_id: None,
             model_id: None,
@@ -437,26 +328,12 @@ mod tests {
     #[tokio::test]
     async fn blocks_when_hard_limit_would_be_exceeded() {
         let user_id = Uuid::new_v4();
+        let scope = BudgetScope::User { user_id };
         let repo = Arc::new(InMemoryBudgetRepo {
-            active_budget: Some(UserBudgetRecord {
-                user_budget_id: Uuid::new_v4(),
-                user_id,
-                cadence: BudgetCadence::Daily,
-                amount_usd: Money4::from_scaled(100_000),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-                is_active: true,
-                created_at: OffsetDateTime::now_utc(),
-                updated_at: OffsetDateTime::now_utc(),
-            }),
+            active_budget: Some(budget(scope, Money4::from_scaled(100_000), true)),
             current_spend: Money4::from_scaled(95_000),
-            active_team_budget: None,
-            current_team_spend: Money4::ZERO,
-            active_service_account_budget: None,
-            current_service_account_spend: Money4::ZERO,
             inserted_events: Arc::new(Mutex::new(Vec::new())),
         });
-
         let guard = BudgetGuard::new(repo.clone());
         let auth = user_auth(user_id);
         let ledger = sample_usage_ledger(
@@ -464,7 +341,6 @@ mod tests {
             "req_1",
             UsagePricingStatus::Priced,
             Money4::from_scaled(10_000),
-            OffsetDateTime::now_utc(),
         );
         let error = guard
             .enforce_and_record_usage(&auth, &ledger)
@@ -476,293 +352,97 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn pre_provider_blocks_user_when_hard_limit_is_already_reached() {
+    async fn soft_budget_never_blocks() {
         let user_id = Uuid::new_v4();
+        let scope = BudgetScope::User { user_id };
         let repo = Arc::new(InMemoryBudgetRepo {
-            active_budget: Some(UserBudgetRecord {
-                user_budget_id: Uuid::new_v4(),
-                user_id,
-                cadence: BudgetCadence::Daily,
-                amount_usd: Money4::from_scaled(100_000),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-                is_active: true,
-                created_at: OffsetDateTime::now_utc(),
-                updated_at: OffsetDateTime::now_utc(),
-            }),
+            active_budget: Some(budget(scope, Money4::from_scaled(1), false)),
             current_spend: Money4::from_scaled(100_000),
-            active_team_budget: None,
-            current_team_spend: Money4::ZERO,
-            active_service_account_budget: None,
-            current_service_account_spend: Money4::ZERO,
-            inserted_events: Arc::new(Mutex::new(Vec::new())),
-        });
-
-        let guard = BudgetGuard::new(repo);
-        let auth = user_auth(user_id);
-        let error = guard
-            .enforce_pre_provider_budget(&auth, "req_pre_user", OffsetDateTime::now_utc())
-            .await
-            .expect_err("pre-provider guard should block at the hard limit");
-
-        assert_eq!(error.error_code(), "budget_exceeded");
-    }
-
-    #[tokio::test]
-    async fn service_account_keys_bypass_user_budget_check() {
-        let team_id = Uuid::new_v4();
-        let repo = Arc::new(InMemoryBudgetRepo {
-            active_budget: None,
-            current_spend: Money4::ZERO,
-            active_team_budget: None,
-            current_team_spend: Money4::ZERO,
-            active_service_account_budget: None,
-            current_service_account_spend: Money4::ZERO,
-            inserted_events: Arc::new(Mutex::new(Vec::new())),
-        });
-
-        let guard = BudgetGuard::new(repo.clone());
-        let auth = service_account_auth(team_id);
-        let outcome = guard
-            .enforce_and_record_usage(
-                &auth,
-                &sample_usage_ledger(
-                    &auth,
-                    "req_2",
-                    UsagePricingStatus::Priced,
-                    Money4::from_scaled(125_000),
-                    OffsetDateTime::now_utc(),
-                ),
-            )
-            .await
-            .expect("service-account keys should not be blocked by user budget policy");
-
-        assert_eq!(outcome, BudgetGuardDisposition::Inserted);
-        assert_eq!(repo.inserted_events.lock().expect("events lock").len(), 1);
-    }
-
-    #[tokio::test]
-    async fn team_hard_limit_blocks_when_spend_would_be_exceeded() {
-        let team_id = Uuid::new_v4();
-        let repo = Arc::new(InMemoryBudgetRepo {
-            active_budget: None,
-            current_spend: Money4::ZERO,
-            active_team_budget: Some(TeamBudgetRecord {
-                team_budget_id: Uuid::new_v4(),
-                team_id,
-                cadence: BudgetCadence::Weekly,
-                amount_usd: Money4::from_scaled(80_000),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-                is_active: true,
-                created_at: OffsetDateTime::now_utc(),
-                updated_at: OffsetDateTime::now_utc(),
-            }),
-            current_team_spend: Money4::from_scaled(79_500),
-            active_service_account_budget: None,
-            current_service_account_spend: Money4::ZERO,
-            inserted_events: Arc::new(Mutex::new(Vec::new())),
-        });
-
-        let guard = BudgetGuard::new(repo.clone());
-        let auth = service_account_auth(team_id);
-        let error = guard
-            .enforce_and_record_usage(
-                &auth,
-                &sample_usage_ledger(
-                    &auth,
-                    "req_team_hard_limit",
-                    UsagePricingStatus::Priced,
-                    Money4::from_scaled(1_000),
-                    OffsetDateTime::now_utc(),
-                ),
-            )
-            .await
-            .expect_err("team hard budget should block request");
-
-        assert_eq!(error.error_code(), "budget_exceeded");
-        assert_eq!(repo.inserted_events.lock().expect("events lock").len(), 0);
-    }
-
-    #[tokio::test]
-    async fn pre_provider_blocks_team_when_hard_limit_is_already_reached() {
-        let team_id = Uuid::new_v4();
-        let repo = Arc::new(InMemoryBudgetRepo {
-            active_budget: None,
-            current_spend: Money4::ZERO,
-            active_team_budget: Some(TeamBudgetRecord {
-                team_budget_id: Uuid::new_v4(),
-                team_id,
-                cadence: BudgetCadence::Weekly,
-                amount_usd: Money4::from_scaled(80_000),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-                is_active: true,
-                created_at: OffsetDateTime::now_utc(),
-                updated_at: OffsetDateTime::now_utc(),
-            }),
-            current_team_spend: Money4::from_scaled(80_000),
-            active_service_account_budget: None,
-            current_service_account_spend: Money4::ZERO,
-            inserted_events: Arc::new(Mutex::new(Vec::new())),
-        });
-
-        let guard = BudgetGuard::new(repo);
-        let auth = service_account_auth(team_id);
-        let error = guard
-            .enforce_pre_provider_budget(&auth, "req_pre_team", OffsetDateTime::now_utc())
-            .await
-            .expect_err("pre-provider guard should block at the hard limit");
-
-        assert_eq!(error.error_code(), "budget_exceeded");
-    }
-
-    #[tokio::test]
-    async fn team_unpriced_requests_do_not_trigger_budget_blocking() {
-        let team_id = Uuid::new_v4();
-        let repo = Arc::new(InMemoryBudgetRepo {
-            active_budget: None,
-            current_spend: Money4::ZERO,
-            active_team_budget: Some(TeamBudgetRecord {
-                team_budget_id: Uuid::new_v4(),
-                team_id,
-                cadence: BudgetCadence::Daily,
-                amount_usd: Money4::from_scaled(1),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-                is_active: true,
-                created_at: OffsetDateTime::now_utc(),
-                updated_at: OffsetDateTime::now_utc(),
-            }),
-            current_team_spend: Money4::from_scaled(100_000),
-            active_service_account_budget: None,
-            current_service_account_spend: Money4::ZERO,
-            inserted_events: Arc::new(Mutex::new(Vec::new())),
-        });
-
-        let guard = BudgetGuard::new(repo.clone());
-        let auth = service_account_auth(team_id);
-        let outcome = guard
-            .enforce_and_record_usage(
-                &auth,
-                &sample_usage_ledger(
-                    &auth,
-                    "req_team_unpriced",
-                    UsagePricingStatus::Unpriced,
-                    Money4::ZERO,
-                    OffsetDateTime::now_utc(),
-                ),
-            )
-            .await
-            .expect("unpriced request should bypass hard-limit blocking");
-
-        assert_eq!(outcome, BudgetGuardDisposition::Inserted);
-        assert_eq!(repo.inserted_events.lock().expect("events lock").len(), 1);
-    }
-
-    #[tokio::test]
-    async fn duplicate_request_is_a_no_op() {
-        let user_id = Uuid::new_v4();
-        let repo = Arc::new(InMemoryBudgetRepo {
-            active_budget: None,
-            current_spend: Money4::ZERO,
-            active_team_budget: None,
-            current_team_spend: Money4::ZERO,
-            active_service_account_budget: None,
-            current_service_account_spend: Money4::ZERO,
             inserted_events: Arc::new(Mutex::new(Vec::new())),
         });
         let guard = BudgetGuard::new(repo.clone());
         let auth = user_auth(user_id);
         let ledger = sample_usage_ledger(
             &auth,
-            "req_dup",
+            "req_2",
             UsagePricingStatus::Priced,
-            Money4::from_scaled(1_000),
-            OffsetDateTime::now_utc(),
+            Money4::from_scaled(10_000),
         );
 
-        let first = guard
+        guard
             .enforce_and_record_usage(&auth, &ledger)
             .await
-            .expect("first insert");
-        let second = guard
-            .enforce_and_record_usage(&auth, &ledger)
-            .await
-            .expect("duplicate insert should succeed");
+            .expect("soft budget should not block");
 
-        assert_eq!(first, BudgetGuardDisposition::Inserted);
-        assert_eq!(second, BudgetGuardDisposition::Duplicate);
         assert_eq!(repo.inserted_events.lock().expect("events lock").len(), 1);
     }
 
     #[tokio::test]
-    async fn pre_provider_budget_check_allows_duplicate_replays() {
+    async fn duplicate_request_id_rejected_before_provider_execution() {
         let user_id = Uuid::new_v4();
-        let auth = user_auth(user_id);
-        let mut existing = sample_usage_ledger(
-            &auth,
-            "req_dup_preflight",
-            UsagePricingStatus::Priced,
-            Money4::from_scaled(1_000),
-            OffsetDateTime::now_utc(),
-        );
-        existing.ownership_scope_key = format!("user:{user_id}");
         let repo = Arc::new(InMemoryBudgetRepo {
-            active_budget: Some(UserBudgetRecord {
-                user_budget_id: Uuid::new_v4(),
-                user_id,
-                cadence: BudgetCadence::Daily,
-                amount_usd: Money4::from_scaled(1),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-                is_active: true,
-                created_at: OffsetDateTime::now_utc(),
-                updated_at: OffsetDateTime::now_utc(),
-            }),
-            current_spend: Money4::from_scaled(200_000),
-            active_team_budget: None,
-            current_team_spend: Money4::ZERO,
-            active_service_account_budget: None,
-            current_service_account_spend: Money4::ZERO,
-            inserted_events: Arc::new(Mutex::new(vec![existing])),
+            active_budget: Some(budget(
+                BudgetScope::User { user_id },
+                Money4::from_scaled(100_000),
+                true,
+            )),
+            current_spend: Money4::ZERO,
+            inserted_events: Arc::new(Mutex::new(Vec::new())),
         });
+        let guard = BudgetGuard::new(repo.clone());
+        let auth = user_auth(user_id);
+        let ledger = sample_usage_ledger(
+            &auth,
+            "req_duplicate",
+            UsagePricingStatus::Priced,
+            Money4::from_scaled(10_000),
+        );
+        repo.inserted_events
+            .lock()
+            .expect("events lock")
+            .push(ledger);
 
-        let guard = BudgetGuard::new(repo);
-        guard
-            .enforce_pre_provider_budget(&auth, "req_dup_preflight", OffsetDateTime::now_utc())
+        let error = guard
+            .enforce_pre_provider_budget(
+                &auth,
+                "req_duplicate",
+                None,
+                Some("gpt-4o-mini"),
+                OffsetDateTime::now_utc(),
+            )
             .await
-            .expect("duplicate replay should bypass pre-provider hard-limit blocking");
+            .expect_err("duplicate request id should be rejected");
+
+        assert_eq!(error.error_code(), "invalid_request");
     }
 
-    #[test]
-    fn weekly_budget_window_includes_sunday_in_prior_week() {
-        let sunday = date_time(2025, Month::March, 2, 23, 59, 59);
-        let (start, _) =
-            budget_window_bounds_utc(BudgetCadence::Weekly, sunday).expect("window bounds");
-        assert_eq!(start, date_time(2025, Month::February, 24, 0, 0, 0));
-    }
+    #[tokio::test]
+    async fn duplicate_request_id_rejected_when_recording_usage() {
+        let user_id = Uuid::new_v4();
+        let repo = Arc::new(InMemoryBudgetRepo {
+            active_budget: None,
+            current_spend: Money4::ZERO,
+            inserted_events: Arc::new(Mutex::new(Vec::new())),
+        });
+        let guard = BudgetGuard::new(repo.clone());
+        let auth = user_auth(user_id);
+        let ledger = sample_usage_ledger(
+            &auth,
+            "req_duplicate_record",
+            UsagePricingStatus::Priced,
+            Money4::from_scaled(10_000),
+        );
+        repo.inserted_events
+            .lock()
+            .expect("events lock")
+            .push(ledger.clone());
 
-    #[test]
-    fn weekly_budget_window_starts_new_week_at_monday_midnight_utc() {
-        let monday = date_time(2025, Month::March, 3, 0, 0, 0);
-        let (start, _) =
-            budget_window_bounds_utc(BudgetCadence::Weekly, monday).expect("window bounds");
-        assert_eq!(start, date_time(2025, Month::March, 3, 0, 0, 0));
-    }
+        let error = guard
+            .enforce_and_record_usage(&auth, &ledger)
+            .await
+            .expect_err("duplicate request id should be rejected");
 
-    fn date_time(
-        year: i32,
-        month: Month,
-        day: u8,
-        hour: u8,
-        minute: u8,
-        second: u8,
-    ) -> OffsetDateTime {
-        Date::from_calendar_date(year, month, day)
-            .expect("valid date")
-            .with_hms(hour, minute, second)
-            .expect("valid time")
-            .assume_utc()
+        assert_eq!(error.error_code(), "invalid_request");
+        assert_eq!(repo.inserted_events.lock().expect("events lock").len(), 1);
     }
 }

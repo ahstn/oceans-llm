@@ -1,15 +1,14 @@
 use std::sync::Arc;
 
 use gateway_core::{
-    ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, BudgetAlertRepository, BudgetRepository,
+    AuthenticatedApiKey, BudgetAlertRepository, BudgetRecord, BudgetRepository,
     ChatCompletionsRequest, GatewayError, GatewayModel, IdentityRepository,
     McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationQuery,
     McpToolInvocationRepository, ModelRepository, ModelRoute, Money4, PricingCatalogRepository,
     PricingResolution, PricingUnpricedReason, ProviderRepository, RequestLogDetail, RequestLogPage,
     RequestLogPurgeResult, RequestLogQuery, RequestLogRecord, RequestLogRepository,
     RequestLogRetentionWindow, RequestTags, ResolvedModelPricing, ResponsesRequest, RouteError,
-    RoutePlanner, ServiceAccountBudgetRecord, StoreHealth, TeamBudgetRecord, UsageLedgerRecord,
-    UsagePricingStatus, UserBudgetRecord,
+    RoutePlanner, StoreHealth, UsageLedgerRecord, UsagePricingStatus,
 };
 use serde_json::{Value, json};
 use time::OffsetDateTime;
@@ -21,13 +20,13 @@ use crate::{
     RequestLogIconMetadata, RequestLogPayloadPolicy, RequestLogging, ResolvedGatewayRequest,
     ResolvedProviderConnection, StreamLogResultInput, StreamResponseCollector,
     budget_alerts::{BudgetAlertSender, BudgetAlertService, SinkBudgetAlertSender},
-    budget_guard::{BudgetGuard, BudgetGuardDisposition},
+    budget_guard::BudgetGuard,
+    budget_scopes::usage_ownership_scope_key,
     mcp_invocation_logging::{McpInvocationLogInput, McpInvocationLogging},
 };
 
 #[derive(Debug, Clone)]
 pub struct RecordedChatUsage {
-    pub disposition: BudgetGuardDisposition,
     pub pricing_status: UsagePricingStatus,
     pub prompt_tokens: Option<i64>,
     pub completion_tokens: Option<i64>,
@@ -410,36 +409,14 @@ where
         self.budget_alerts.dispatch_pending_deliveries(limit).await
     }
 
-    pub async fn evaluate_budget_alert_after_user_budget_upsert(
+    pub async fn evaluate_budget_alert_after_budget_upsert(
         &self,
-        budget: &UserBudgetRecord,
+        budget: &BudgetRecord,
         current_spend: Money4,
         occurred_at: OffsetDateTime,
     ) -> Result<(), GatewayError> {
         self.budget_alerts
-            .evaluate_after_user_budget_upsert(budget, current_spend, occurred_at)
-            .await
-    }
-
-    pub async fn evaluate_budget_alert_after_team_budget_upsert(
-        &self,
-        budget: &TeamBudgetRecord,
-        current_spend: Money4,
-        occurred_at: OffsetDateTime,
-    ) -> Result<(), GatewayError> {
-        self.budget_alerts
-            .evaluate_after_team_budget_upsert(budget, current_spend, occurred_at)
-            .await
-    }
-
-    pub async fn evaluate_budget_alert_after_service_account_budget_upsert(
-        &self,
-        budget: &ServiceAccountBudgetRecord,
-        current_spend: Money4,
-        occurred_at: OffsetDateTime,
-    ) -> Result<(), GatewayError> {
-        self.budget_alerts
-            .evaluate_after_service_account_budget_upsert(budget, current_spend, occurred_at)
+            .evaluate_after_budget_upsert(budget, current_spend, occurred_at)
             .await
     }
 
@@ -465,10 +442,12 @@ where
         &self,
         auth: &AuthenticatedApiKey,
         request_id: &str,
+        model_id: Option<Uuid>,
+        upstream_model: Option<&str>,
         occurred_at: OffsetDateTime,
     ) -> Result<(), GatewayError> {
         self.budget_guard
-            .enforce_pre_provider_budget(auth, request_id, occurred_at)
+            .enforce_pre_provider_budget(auth, request_id, model_id, upstream_model, occurred_at)
             .await
     }
 
@@ -481,7 +460,7 @@ where
         provider_usage: Option<Value>,
         occurred_at: OffsetDateTime,
     ) -> Result<RecordedChatUsage, GatewayError> {
-        let ownership_scope_key = ownership_scope_key(auth, None)?;
+        let ownership_scope_key = usage_ownership_scope_key(auth)?;
         let usage_summary = usage_summary_from_value(provider_usage.as_ref())?;
         let provider_usage = provider_usage.unwrap_or_else(|| json!({}));
 
@@ -540,17 +519,10 @@ where
             );
         }
 
-        let disposition = self
-            .budget_guard
+        self.budget_guard
             .enforce_and_record_usage(auth, &record)
             .await?;
-        if disposition == BudgetGuardDisposition::Duplicate {
-            warn!(
-                request_id = %request_id,
-                ownership_scope_key = %record.ownership_scope_key,
-                "duplicate usage ledger write ignored"
-            );
-        } else if let Err(error) = self.budget_alerts.evaluate_after_usage(auth, &record).await {
+        if let Err(error) = self.budget_alerts.evaluate_after_usage(auth, &record).await {
             warn!(
                 request_id = %request_id,
                 ownership_scope_key = %record.ownership_scope_key,
@@ -560,7 +532,6 @@ where
         }
 
         Ok(RecordedChatUsage {
-            disposition,
             pricing_status: record.pricing_status,
             prompt_tokens: record.prompt_tokens,
             completion_tokens: record.completion_tokens,
@@ -621,28 +592,6 @@ fn money_to_f64(value: Money4) -> Option<f64> {
         None
     } else {
         Some(value.as_scaled_i64() as f64 / Money4::SCALE as f64)
-    }
-}
-
-fn ownership_scope_key(
-    auth: &AuthenticatedApiKey,
-    actor_user_id: Option<Uuid>,
-) -> Result<String, GatewayError> {
-    match auth.owner_kind {
-        ApiKeyOwnerKind::User => {
-            let user_id = auth.owner_user_id.ok_or(AuthError::ApiKeyOwnerInvalid)?;
-            Ok(format!("user:{user_id}"))
-        }
-        ApiKeyOwnerKind::Team => {
-            let _ = actor_user_id;
-            Err(AuthError::ApiKeyOwnerInvalid.into())
-        }
-        ApiKeyOwnerKind::ServiceAccount => {
-            let service_account_id = auth
-                .owner_service_account_id
-                .ok_or(AuthError::ApiKeyOwnerInvalid)?;
-            Ok(format!("service_account:{service_account_id}"))
-        }
     }
 }
 
@@ -742,513 +691,5 @@ fn unpriced_reason_string(reason: &PricingUnpricedReason) -> String {
             format!("unsupported_billing_modifier:{value}")
         }
         PricingUnpricedReason::ModelNotFound => "model_not_found".to_string(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::{
-        collections::HashMap,
-        sync::{
-            Arc,
-            atomic::{AtomicUsize, Ordering},
-        },
-    };
-
-    use async_trait::async_trait;
-    use gateway_core::RequestLogPurgeResult;
-    use gateway_core::{
-        ApiKeyOwnerKind, ApiKeyRepository, AuthenticatedApiKey, BudgetRepository, GatewayModel,
-        McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationPayloadRecord,
-        McpToolInvocationQuery, McpToolInvocationRecord, McpToolInvocationRepository,
-        McpToolInvocationStatus, McpToolPolicyResult, ModelRepository, ModelRoute, Money4,
-        PricingCatalogRepository, ProviderCapabilities, ProviderConnection, ProviderRepository,
-        RequestLogDetail, RequestLogPage, RequestLogPayloadRecord, RequestLogQuery,
-        RequestLogRecord, RequestLogRepository, RoutePlanner, StoreError, StoreHealth,
-    };
-    use serde_json::{Map, json};
-    use time::OffsetDateTime;
-    use tokio::sync::Mutex;
-    use uuid::Uuid;
-
-    use super::{GatewayService, McpInvocationLogInput};
-    use crate::{RequestLogPayloadPolicy, SinkBudgetAlertSender};
-
-    #[derive(Default)]
-    struct TestRepo {
-        model: Option<GatewayModel>,
-        routes: Vec<ModelRoute>,
-        providers: HashMap<String, ProviderConnection>,
-        provider_lookups: AtomicUsize,
-        mcp_invocations: Mutex<
-            Vec<(
-                McpToolInvocationRecord,
-                Option<McpToolInvocationPayloadRecord>,
-            )>,
-        >,
-    }
-
-    #[async_trait]
-    impl ApiKeyRepository for TestRepo {
-        async fn get_api_key_by_public_id(
-            &self,
-            _public_id: &str,
-        ) -> Result<Option<gateway_core::ApiKeyRecord>, StoreError> {
-            unreachable!("not used in resolve_request test")
-        }
-
-        async fn touch_api_key_last_used(&self, _api_key_id: Uuid) -> Result<(), StoreError> {
-            unreachable!("not used in resolve_request test")
-        }
-    }
-
-    #[async_trait]
-    impl gateway_core::BudgetAlertRepository for TestRepo {}
-
-    #[async_trait]
-    impl BudgetRepository for TestRepo {
-        async fn get_active_budget_for_user(
-            &self,
-            _user_id: Uuid,
-        ) -> Result<Option<gateway_core::UserBudgetRecord>, StoreError> {
-            Ok(None)
-        }
-
-        async fn get_usage_ledger_by_request_and_scope(
-            &self,
-            _request_id: &str,
-            _ownership_scope_key: &str,
-        ) -> Result<Option<gateway_core::UsageLedgerRecord>, StoreError> {
-            Ok(None)
-        }
-
-        async fn sum_usage_cost_for_user_in_window(
-            &self,
-            _user_id: Uuid,
-            _window_start: OffsetDateTime,
-            _window_end: OffsetDateTime,
-        ) -> Result<Money4, StoreError> {
-            Ok(Money4::ZERO)
-        }
-
-        async fn insert_usage_ledger_if_absent(
-            &self,
-            _event: &gateway_core::UsageLedgerRecord,
-        ) -> Result<bool, StoreError> {
-            Ok(false)
-        }
-    }
-
-    #[async_trait]
-    impl ModelRepository for TestRepo {
-        async fn list_models(&self) -> Result<Vec<GatewayModel>, StoreError> {
-            Ok(self.model.clone().into_iter().collect())
-        }
-
-        async fn get_model_by_key(
-            &self,
-            model_key: &str,
-        ) -> Result<Option<GatewayModel>, StoreError> {
-            Ok(self
-                .model
-                .clone()
-                .filter(|model| model.model_key == model_key))
-        }
-
-        async fn list_models_for_api_key(
-            &self,
-            _api_key_id: Uuid,
-        ) -> Result<Vec<GatewayModel>, StoreError> {
-            Ok(self.model.clone().into_iter().collect())
-        }
-
-        async fn list_routes_for_model(
-            &self,
-            _model_id: Uuid,
-        ) -> Result<Vec<ModelRoute>, StoreError> {
-            Ok(self.routes.clone())
-        }
-    }
-
-    #[async_trait]
-    impl gateway_core::IdentityRepository for TestRepo {
-        async fn get_user_by_id(
-            &self,
-            _user_id: Uuid,
-        ) -> Result<Option<gateway_core::UserRecord>, StoreError> {
-            Ok(None)
-        }
-
-        async fn get_team_by_id(
-            &self,
-            _team_id: Uuid,
-        ) -> Result<Option<gateway_core::TeamRecord>, StoreError> {
-            Ok(None)
-        }
-
-        async fn get_team_membership_for_user(
-            &self,
-            _user_id: Uuid,
-        ) -> Result<Option<gateway_core::TeamMembershipRecord>, StoreError> {
-            Ok(None)
-        }
-
-        async fn list_allowed_model_keys_for_user(
-            &self,
-            _user_id: Uuid,
-        ) -> Result<Vec<String>, StoreError> {
-            Ok(Vec::new())
-        }
-
-        async fn list_allowed_model_keys_for_team(
-            &self,
-            _team_id: Uuid,
-        ) -> Result<Vec<String>, StoreError> {
-            Ok(Vec::new())
-        }
-    }
-
-    #[async_trait]
-    impl PricingCatalogRepository for TestRepo {
-        async fn get_pricing_catalog_cache(
-            &self,
-            _catalog_key: &str,
-        ) -> Result<Option<gateway_core::PricingCatalogCacheRecord>, StoreError> {
-            Ok(None)
-        }
-
-        async fn upsert_pricing_catalog_cache(
-            &self,
-            _cache: &gateway_core::PricingCatalogCacheRecord,
-        ) -> Result<(), StoreError> {
-            Ok(())
-        }
-
-        async fn touch_pricing_catalog_cache_fetched_at(
-            &self,
-            _catalog_key: &str,
-            _fetched_at: OffsetDateTime,
-        ) -> Result<(), StoreError> {
-            Ok(())
-        }
-
-        async fn list_active_model_pricing(
-            &self,
-        ) -> Result<Vec<gateway_core::ModelPricingRecord>, StoreError> {
-            Ok(Vec::new())
-        }
-
-        async fn insert_model_pricing(
-            &self,
-            _record: &gateway_core::ModelPricingRecord,
-        ) -> Result<(), StoreError> {
-            Ok(())
-        }
-
-        async fn close_model_pricing(
-            &self,
-            _model_pricing_id: Uuid,
-            _effective_end_at: OffsetDateTime,
-            _updated_at: OffsetDateTime,
-        ) -> Result<(), StoreError> {
-            Ok(())
-        }
-
-        async fn resolve_model_pricing_at(
-            &self,
-            _pricing_provider_id: &str,
-            _pricing_model_id: &str,
-            _occurred_at: OffsetDateTime,
-        ) -> Result<Option<gateway_core::ModelPricingRecord>, StoreError> {
-            Ok(None)
-        }
-    }
-
-    #[async_trait]
-    impl RequestLogRepository for TestRepo {
-        async fn insert_request_log(
-            &self,
-            _log: &RequestLogRecord,
-            _payload: Option<&RequestLogPayloadRecord>,
-        ) -> Result<(), StoreError> {
-            Ok(())
-        }
-
-        async fn list_request_logs(
-            &self,
-            _query: &RequestLogQuery,
-        ) -> Result<RequestLogPage, StoreError> {
-            unreachable!("not used in resolve_request test")
-        }
-
-        async fn get_request_log_detail(
-            &self,
-            _request_log_id: Uuid,
-        ) -> Result<RequestLogDetail, StoreError> {
-            unreachable!("not used in resolve_request test")
-        }
-
-        async fn purge_request_logs_older_than(
-            &self,
-            _cutoff: OffsetDateTime,
-            _dry_run: bool,
-        ) -> Result<RequestLogPurgeResult, StoreError> {
-            unreachable!("not used in resolve_request test")
-        }
-    }
-
-    #[async_trait]
-    impl McpToolInvocationRepository for TestRepo {
-        async fn insert_mcp_tool_invocation(
-            &self,
-            invocation: &McpToolInvocationRecord,
-            payload: Option<&McpToolInvocationPayloadRecord>,
-        ) -> Result<(), StoreError> {
-            self.mcp_invocations
-                .lock()
-                .await
-                .push((invocation.clone(), payload.cloned()));
-            Ok(())
-        }
-
-        async fn list_mcp_tool_invocations(
-            &self,
-            _query: &McpToolInvocationQuery,
-        ) -> Result<McpToolInvocationPage, StoreError> {
-            let items = self
-                .mcp_invocations
-                .lock()
-                .await
-                .iter()
-                .map(|(invocation, _)| invocation.clone())
-                .collect::<Vec<_>>();
-            Ok(McpToolInvocationPage {
-                total: items.len() as u64,
-                items,
-                page: 1,
-                page_size: 100,
-            })
-        }
-
-        async fn get_mcp_tool_invocation_detail(
-            &self,
-            _mcp_tool_invocation_id: Uuid,
-        ) -> Result<McpToolInvocationDetail, StoreError> {
-            unreachable!("not used in resolve_request test")
-        }
-    }
-
-    #[async_trait]
-    impl ProviderRepository for TestRepo {
-        async fn get_provider_by_key(
-            &self,
-            provider_key: &str,
-        ) -> Result<Option<ProviderConnection>, StoreError> {
-            self.provider_lookups.fetch_add(1, Ordering::SeqCst);
-            Ok(self.providers.get(provider_key).cloned())
-        }
-    }
-
-    #[async_trait]
-    impl StoreHealth for TestRepo {
-        async fn ping(&self) -> Result<(), StoreError> {
-            Ok(())
-        }
-    }
-
-    struct PassthroughPlanner;
-
-    impl RoutePlanner for PassthroughPlanner {
-        fn plan_routes(
-            &self,
-            routes: &[ModelRoute],
-        ) -> Result<Vec<ModelRoute>, gateway_core::RouteError> {
-            Ok(routes.to_vec())
-        }
-    }
-
-    fn auth() -> AuthenticatedApiKey {
-        AuthenticatedApiKey {
-            id: Uuid::new_v4(),
-            public_id: "pk_test".to_string(),
-            name: "test".to_string(),
-            owner_kind: ApiKeyOwnerKind::User,
-            owner_user_id: None,
-            owner_team_id: None,
-            owner_service_account_id: None,
-        }
-    }
-
-    fn model() -> GatewayModel {
-        GatewayModel {
-            id: Uuid::new_v4(),
-            model_key: "fast".to_string(),
-            alias_target_model_key: None,
-            description: None,
-            tags: Vec::new(),
-            rank: 10,
-        }
-    }
-
-    fn route(model_id: Uuid, provider_key: &str) -> ModelRoute {
-        ModelRoute {
-            id: Uuid::new_v4(),
-            model_id,
-            provider_key: provider_key.to_string(),
-            upstream_model: "gpt-5-mini".to_string(),
-            priority: 10,
-            weight: 1.0,
-            enabled: true,
-            extra_headers: Map::new(),
-            extra_body: Map::new(),
-            capabilities: ProviderCapabilities::all_enabled(),
-            compatibility: Default::default(),
-        }
-    }
-
-    fn provider(provider_key: &str) -> ProviderConnection {
-        ProviderConnection {
-            provider_key: provider_key.to_string(),
-            provider_type: "openai_compat".to_string(),
-            config: json!({
-                "base_url": "https://openrouter.ai/api/v1",
-                "display": {
-                    "label": "OpenRouter",
-                    "icon_key": "openrouter"
-                }
-            }),
-            secrets: Some(json!({
-                "api_key": "sk-live-raw",
-                "service_account": {
-                    "client_email": "svc@example.com",
-                    "private_key": "-----BEGIN PRIVATE KEY-----",
-                    "scopes": ["scope-a", "scope-b"]
-                }
-            })),
-        }
-    }
-
-    #[tokio::test]
-    async fn resolve_request_caches_provider_connections_for_viable_routes() {
-        let model = model();
-        let repo = Arc::new(TestRepo {
-            model: Some(model.clone()),
-            routes: vec![route(model.id, "router")],
-            providers: HashMap::from([("router".to_string(), provider("router"))]),
-            provider_lookups: AtomicUsize::new(0),
-            mcp_invocations: Mutex::new(Vec::new()),
-        });
-        let service = GatewayService::new(repo.clone(), Arc::new(PassthroughPlanner));
-
-        let resolved = service
-            .resolve_request(&auth(), "fast")
-            .await
-            .expect("request should resolve");
-
-        assert_eq!(resolved.routes.len(), 1);
-        let provider = resolved
-            .provider_connections
-            .get("router")
-            .expect("provider should be cached");
-        assert_eq!(provider.provider_key, "router");
-        assert_eq!(
-            provider.config["display"]["icon_key"],
-            serde_json::Value::String("openrouter".to_string())
-        );
-        let redacted = provider
-            .redacted_secrets
-            .as_ref()
-            .expect("redacted secrets should be cached");
-        assert_eq!(redacted["api_key"], "********");
-        assert_eq!(redacted["service_account"]["client_email"], "********");
-        assert_eq!(redacted["service_account"]["private_key"], "********");
-        assert_eq!(redacted["service_account"]["scopes"][0], "********");
-        assert_eq!(redacted["service_account"]["scopes"][1], "********");
-        let serialized = redacted.to_string();
-        assert!(!serialized.contains("sk-live-raw"));
-        assert!(!serialized.contains("svc@example.com"));
-        assert!(!serialized.contains("BEGIN PRIVATE KEY"));
-        assert_eq!(repo.provider_lookups.load(Ordering::SeqCst), 1);
-    }
-
-    #[tokio::test]
-    async fn resolve_request_excludes_missing_provider_from_cache_and_routes() {
-        let model = model();
-        let repo = Arc::new(TestRepo {
-            model: Some(model.clone()),
-            routes: vec![route(model.id, "missing")],
-            providers: HashMap::new(),
-            provider_lookups: AtomicUsize::new(0),
-            mcp_invocations: Mutex::new(Vec::new()),
-        });
-        let service = GatewayService::new(repo.clone(), Arc::new(PassthroughPlanner));
-
-        let error = service
-            .resolve_request(&auth(), "fast")
-            .await
-            .expect_err("missing provider should leave no viable routes");
-
-        assert!(matches!(
-            error,
-            gateway_core::GatewayError::Route(gateway_core::RouteError::NoRoutesAvailable(_))
-        ));
-        assert_eq!(repo.provider_lookups.load(Ordering::SeqCst), 1);
-    }
-
-    #[tokio::test]
-    async fn configured_disabled_payload_policy_suppresses_mcp_payload_rows() {
-        let repo = Arc::new(TestRepo::default());
-        let service = GatewayService::new_with_budget_alert_sender_and_payload_policy(
-            repo.clone(),
-            Arc::new(PassthroughPlanner),
-            Arc::new(SinkBudgetAlertSender),
-            RequestLogPayloadPolicy::new(
-                crate::RequestLogPayloadCaptureMode::Disabled,
-                4096,
-                4096,
-                1,
-                Vec::new(),
-            ),
-        );
-        let auth = AuthenticatedApiKey {
-            id: Uuid::new_v4(),
-            public_id: "dev123".to_string(),
-            name: "dev".to_string(),
-            owner_kind: ApiKeyOwnerKind::User,
-            owner_user_id: Some(Uuid::new_v4()),
-            owner_team_id: None,
-            owner_service_account_id: None,
-        };
-
-        let logged = service
-            .log_mcp_tool_invocation(
-                &auth,
-                McpInvocationLogInput {
-                    request_log_id: None,
-                    request_id: "req_123".to_string(),
-                    server_id: None,
-                    server_display_key: "github".to_string(),
-                    server_display_name: "GitHub".to_string(),
-                    tool_id: None,
-                    tool_display_key: "issues.create".to_string(),
-                    tool_display_name: "Create issue".to_string(),
-                    status: McpToolInvocationStatus::Success,
-                    policy_result: McpToolPolicyResult::Allowed,
-                    latency_ms: Some(10),
-                    error_code: None,
-                    arguments_json: Some(json!({"token": "secret"})),
-                    result_json: Some(json!({"ok": true})),
-                    metadata: Map::new(),
-                    occurred_at: OffsetDateTime::now_utc(),
-                },
-            )
-            .await
-            .expect("log MCP invocation");
-
-        assert!(!logged.wrote_payload);
-        let invocations = repo.mcp_invocations.lock().await;
-        assert_eq!(invocations.len(), 1);
-        assert!(!invocations[0].0.has_payload);
-        assert!(invocations[0].1.is_none());
     }
 }

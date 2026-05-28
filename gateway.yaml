@@ -24,35 +24,15 @@ request_logging:
 teams:
   - key: platform
     name: Platform
-    budget:
-      cadence: monthly
-      amount_usd: "1000.0000"
-      hard_limit: true
-      timezone: UTC
 
   - key: research
     name: Research
-    budget:
-      cadence: monthly
-      amount_usd: "1000.0000"
-      hard_limit: true
-      timezone: UTC
 
   - key: applied-ai
     name: Applied AI
-    budget:
-      cadence: monthly
-      amount_usd: "750.0000"
-      hard_limit: true
-      timezone: UTC
 
   - key: operations
     name: Operations
-    budget:
-      cadence: monthly
-      amount_usd: "500.0000"
-      hard_limit: true
-      timezone: UTC
 
 users:
   - name: Alice Platform Lead

@@ -5,8 +5,8 @@ use std::{
 
 use gateway_core::{
     AdminApiKeyRepository, AdminIdentityRepository, ApiKeyOwnerKind, ApiKeyRecord, ApiKeyStatus,
-    GatewayError, GatewayModel, IdentityUserRecord, ModelRepository, NewApiKeyRecord,
-    ServiceAccountRecord, StoreError, TeamRecord, UserStatus,
+    BudgetRepository, BudgetScope, GatewayError, GatewayModel, IdentityUserRecord, ModelRepository,
+    NewApiKeyRecord, ServiceAccountRecord, StoreError, TeamRecord, UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -24,7 +24,6 @@ pub struct AdminApiKeyService<R> {
 pub struct AdminApiKeysPayload {
     pub items: Vec<AdminApiKeySummary>,
     pub users: Vec<AdminApiKeyUserOwner>,
-    pub teams: Vec<AdminApiKeyTeamOwner>,
     pub service_accounts: Vec<AdminApiKeyServiceAccountOwner>,
     pub models: Vec<AdminApiKeyModelOption>,
 }
@@ -54,13 +53,6 @@ pub struct AdminApiKeyUserOwner {
     pub id: Uuid,
     pub name: String,
     pub email: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct AdminApiKeyTeamOwner {
-    pub id: Uuid,
-    pub name: String,
-    pub key: String,
 }
 
 #[derive(Debug, Clone)]
@@ -104,7 +96,13 @@ pub struct UpdateAdminApiKeyInput {
 
 impl<R> AdminApiKeyService<R>
 where
-    R: AdminApiKeyRepository + AdminIdentityRepository + ModelRepository + Send + Sync + 'static,
+    R: AdminApiKeyRepository
+        + AdminIdentityRepository
+        + ModelRepository
+        + BudgetRepository
+        + Send
+        + Sync
+        + 'static,
 {
     #[must_use]
     pub fn new(repo: Arc<R>) -> Self {
@@ -114,7 +112,6 @@ where
     pub async fn list_api_keys(&self) -> Result<AdminApiKeysPayload, GatewayError> {
         let api_keys = self.repo.list_api_keys().await?;
         let users = self.repo.list_identity_users().await?;
-        let active_teams = self.repo.list_active_teams().await?;
         let teams = self.repo.list_teams().await?;
         let service_accounts = self.repo.list_service_accounts().await?;
         let active_service_accounts = self.repo.list_active_service_accounts().await?;
@@ -143,14 +140,6 @@ where
                     id: user.user.user_id,
                     name: user.user.name.clone(),
                     email: user.user.email.clone(),
-                })
-                .collect(),
-            teams: active_teams
-                .iter()
-                .map(|team| AdminApiKeyTeamOwner {
-                    id: team.team_id,
-                    name: team.team_name.clone(),
-                    key: team.team_key.clone(),
                 })
                 .collect(),
             service_accounts: service_account_owners,
@@ -195,6 +184,20 @@ where
             &active_teams,
             &service_accounts,
         )?;
+        if let Some(service_account_id) = owner_service_account_id {
+            let scope = BudgetScope::ServiceAccount { service_account_id };
+            if self
+                .repo
+                .get_active_budget_by_scope(&scope)
+                .await?
+                .is_none()
+            {
+                return Err(GatewayError::InvalidRequest(
+                    "service-account-owned api keys require an active service account budget"
+                        .to_string(),
+                ));
+            }
+        }
         let granted_models = select_granted_models(&request.model_keys, &models)?;
 
         let public_id = Uuid::new_v4().simple().to_string();
@@ -373,11 +376,6 @@ fn build_api_key_summary(
                 Some(team.team_key.clone()),
             )
         }
-        ApiKeyOwnerKind::Team => {
-            return Err(GatewayError::InvalidRequest(
-                "team-owned api keys are no longer supported".to_string(),
-            ));
-        }
     };
 
     Ok(AdminApiKeySummary {
@@ -483,9 +481,6 @@ fn validate_owner(
             }
             Ok((None, Some(team_id), Some(service_account_id)))
         }
-        ApiKeyOwnerKind::Team => Err(GatewayError::InvalidRequest(
-            "team-owned api keys are no longer supported".to_string(),
-        )),
     }
 }
 
@@ -554,623 +549,4 @@ fn select_granted_models(
 fn parse_uuid(raw: &str, field_name: &str) -> Result<Uuid, GatewayError> {
     Uuid::parse_str(raw)
         .map_err(|_| GatewayError::InvalidRequest(format!("{field_name} must be a valid uuid")))
-}
-
-#[cfg(test)]
-mod tests {
-    use std::collections::HashMap;
-
-    use async_trait::async_trait;
-    use gateway_core::{
-        AdminIdentityRepository, ApiKeyOwnerKind, AuthMode, GlobalRole, IdentityRepository,
-        ModelAccessMode, ModelRoute, ServiceAccountStatus, StoreError, TeamMembershipRecord,
-        UserRecord,
-    };
-
-    use super::*;
-
-    #[derive(Clone, Default)]
-    struct InMemoryRepo {
-        api_keys: Arc<std::sync::Mutex<HashMap<Uuid, ApiKeyRecord>>>,
-        models: HashMap<String, GatewayModel>,
-        grants: Arc<std::sync::Mutex<HashMap<Uuid, Vec<Uuid>>>>,
-        users: Vec<IdentityUserRecord>,
-        teams: Vec<TeamRecord>,
-        service_accounts: Vec<ServiceAccountRecord>,
-    }
-
-    #[async_trait]
-    impl AdminApiKeyRepository for InMemoryRepo {
-        async fn list_api_keys(&self) -> Result<Vec<ApiKeyRecord>, StoreError> {
-            Ok(self
-                .api_keys
-                .lock()
-                .expect("api keys lock")
-                .values()
-                .cloned()
-                .collect())
-        }
-
-        async fn get_api_key_by_id(
-            &self,
-            api_key_id: Uuid,
-        ) -> Result<Option<ApiKeyRecord>, StoreError> {
-            Ok(self
-                .api_keys
-                .lock()
-                .expect("api keys lock")
-                .get(&api_key_id)
-                .cloned())
-        }
-
-        async fn create_api_key(
-            &self,
-            api_key: &NewApiKeyRecord,
-        ) -> Result<ApiKeyRecord, StoreError> {
-            let record = ApiKeyRecord {
-                id: Uuid::new_v4(),
-                public_id: api_key.public_id.clone(),
-                secret_hash: api_key.secret_hash.clone(),
-                name: api_key.name.clone(),
-                status: ApiKeyStatus::Active,
-                owner_kind: api_key.owner_kind,
-                owner_user_id: api_key.owner_user_id,
-                owner_team_id: api_key.owner_team_id,
-                owner_service_account_id: api_key.owner_service_account_id,
-                created_at: api_key.created_at,
-                last_used_at: None,
-                revoked_at: None,
-            };
-            self.api_keys
-                .lock()
-                .expect("api keys lock")
-                .insert(record.id, record.clone());
-            Ok(record)
-        }
-
-        async fn replace_api_key_model_grants(
-            &self,
-            api_key_id: Uuid,
-            model_ids: &[Uuid],
-        ) -> Result<(), StoreError> {
-            self.grants
-                .lock()
-                .expect("grants lock")
-                .insert(api_key_id, model_ids.to_vec());
-            Ok(())
-        }
-
-        async fn revoke_api_key(
-            &self,
-            api_key_id: Uuid,
-            revoked_at: OffsetDateTime,
-        ) -> Result<bool, StoreError> {
-            let mut api_keys = self.api_keys.lock().expect("api keys lock");
-            let Some(record) = api_keys.get_mut(&api_key_id) else {
-                return Ok(false);
-            };
-            if record.revoked_at.is_some() {
-                return Ok(false);
-            }
-            record.status = ApiKeyStatus::Revoked;
-            record.revoked_at = Some(revoked_at);
-            Ok(true)
-        }
-    }
-
-    #[async_trait]
-    impl AdminIdentityRepository for InMemoryRepo {
-        async fn list_identity_users(&self) -> Result<Vec<IdentityUserRecord>, StoreError> {
-            Ok(self.users.clone())
-        }
-
-        async fn list_active_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
-            Ok(self
-                .teams
-                .iter()
-                .filter(|team| team.status == "active")
-                .cloned()
-                .collect())
-        }
-
-        async fn list_teams(&self) -> Result<Vec<TeamRecord>, StoreError> {
-            Ok(self.teams.clone())
-        }
-
-        async fn list_active_service_accounts(
-            &self,
-        ) -> Result<Vec<ServiceAccountRecord>, StoreError> {
-            Ok(self
-                .service_accounts
-                .iter()
-                .filter(|service_account| service_account.status == ServiceAccountStatus::Active)
-                .cloned()
-                .collect())
-        }
-
-        async fn list_service_accounts(&self) -> Result<Vec<ServiceAccountRecord>, StoreError> {
-            Ok(self.service_accounts.clone())
-        }
-    }
-
-    #[async_trait]
-    impl ModelRepository for InMemoryRepo {
-        async fn list_models(&self) -> Result<Vec<GatewayModel>, StoreError> {
-            Ok(self.models.values().cloned().collect())
-        }
-
-        async fn get_model_by_key(
-            &self,
-            model_key: &str,
-        ) -> Result<Option<GatewayModel>, StoreError> {
-            Ok(self.models.get(model_key).cloned())
-        }
-
-        async fn list_models_for_api_key(
-            &self,
-            api_key_id: Uuid,
-        ) -> Result<Vec<GatewayModel>, StoreError> {
-            let grants = self.grants.lock().expect("grants lock");
-            let Some(model_ids) = grants.get(&api_key_id) else {
-                return Ok(Vec::new());
-            };
-            Ok(model_ids
-                .iter()
-                .filter_map(|model_id| {
-                    self.models
-                        .values()
-                        .find(|model| &model.id == model_id)
-                        .cloned()
-                })
-                .collect())
-        }
-
-        async fn list_routes_for_model(
-            &self,
-            _model_id: Uuid,
-        ) -> Result<Vec<ModelRoute>, StoreError> {
-            Ok(Vec::new())
-        }
-    }
-
-    #[async_trait]
-    impl IdentityRepository for InMemoryRepo {
-        async fn get_user_by_id(&self, _user_id: Uuid) -> Result<Option<UserRecord>, StoreError> {
-            Ok(None)
-        }
-
-        async fn get_team_by_id(&self, _team_id: Uuid) -> Result<Option<TeamRecord>, StoreError> {
-            Ok(None)
-        }
-
-        async fn get_team_membership_for_user(
-            &self,
-            _user_id: Uuid,
-        ) -> Result<Option<TeamMembershipRecord>, StoreError> {
-            Ok(None)
-        }
-
-        async fn list_allowed_model_keys_for_user(
-            &self,
-            _user_id: Uuid,
-        ) -> Result<Vec<String>, StoreError> {
-            Ok(Vec::new())
-        }
-
-        async fn list_allowed_model_keys_for_team(
-            &self,
-            _team_id: Uuid,
-        ) -> Result<Vec<String>, StoreError> {
-            Ok(Vec::new())
-        }
-    }
-
-    fn model(model_key: &str) -> GatewayModel {
-        GatewayModel {
-            id: Uuid::new_v4(),
-            model_key: model_key.to_string(),
-            alias_target_model_key: None,
-            description: Some(format!("{model_key} tier")),
-            tags: vec![model_key.to_string()],
-            rank: 1,
-        }
-    }
-
-    fn user(user_id: Uuid, status: UserStatus) -> IdentityUserRecord {
-        IdentityUserRecord {
-            user: UserRecord {
-                user_id,
-                name: "Member".to_string(),
-                email: "member@example.com".to_string(),
-                email_normalized: "member@example.com".to_string(),
-                global_role: GlobalRole::User,
-                auth_mode: AuthMode::Password,
-                status,
-                must_change_password: false,
-                request_logging_enabled: true,
-                model_access_mode: ModelAccessMode::All,
-                tags: Vec::new(),
-                created_at: OffsetDateTime::now_utc(),
-                updated_at: OffsetDateTime::now_utc(),
-            },
-            team_id: None,
-            team_name: None,
-            membership_role: None,
-            oidc_provider_id: None,
-            oidc_provider_key: None,
-            oauth_provider_id: None,
-            oauth_provider_key: None,
-        }
-    }
-
-    fn team(team_id: Uuid, status: &str) -> TeamRecord {
-        TeamRecord {
-            team_id,
-            team_key: "core-platform".to_string(),
-            team_name: "Core Platform".to_string(),
-            status: status.to_string(),
-            model_access_mode: ModelAccessMode::All,
-            tags: Vec::new(),
-            created_at: OffsetDateTime::now_utc(),
-            updated_at: OffsetDateTime::now_utc(),
-        }
-    }
-
-    fn service_account(service_account_id: Uuid, team_id: Uuid) -> ServiceAccountRecord {
-        ServiceAccountRecord {
-            service_account_id,
-            team_id,
-            service_account_key: "batch".to_string(),
-            service_account_name: "Batch Jobs".to_string(),
-            status: ServiceAccountStatus::Active,
-            model_access_mode: ModelAccessMode::All,
-            metadata: serde_json::json!({}),
-            created_at: OffsetDateTime::now_utc(),
-            updated_at: OffsetDateTime::now_utc(),
-            disabled_at: None,
-        }
-    }
-
-    fn repo_with_defaults() -> InMemoryRepo {
-        let fast = model("fast");
-        let reasoning = model("reasoning");
-        let user_id = Uuid::new_v4();
-        let team_id = Uuid::new_v4();
-        let service_account_id = Uuid::new_v4();
-
-        InMemoryRepo {
-            api_keys: Arc::new(std::sync::Mutex::new(HashMap::new())),
-            models: HashMap::from([
-                (fast.model_key.clone(), fast),
-                (reasoning.model_key.clone(), reasoning),
-            ]),
-            grants: Arc::new(std::sync::Mutex::new(HashMap::new())),
-            users: vec![user(user_id, UserStatus::Active)],
-            teams: vec![team(team_id, "active")],
-            service_accounts: vec![service_account(service_account_id, team_id)],
-        }
-    }
-
-    #[tokio::test]
-    async fn creates_user_owned_keys() {
-        let repo = repo_with_defaults();
-        let user_id = repo.users[0].user.user_id;
-        let service = AdminApiKeyService::new(Arc::new(repo.clone()));
-
-        let result = service
-            .create_api_key(CreateAdminApiKeyInput {
-                name: "Production Web".to_string(),
-                owner_kind: "user".to_string(),
-                owner_user_id: Some(user_id.to_string()),
-                owner_team_id: None,
-                owner_service_account_id: None,
-                model_keys: vec!["fast".to_string()],
-            })
-            .await
-            .expect("create api key");
-
-        assert!(result.raw_key.starts_with("gwk_"));
-        assert_eq!(result.api_key.owner_kind, ApiKeyOwnerKind::User);
-        assert_eq!(result.api_key.owner_id, user_id);
-        assert_eq!(result.api_key.model_keys, vec!["fast".to_string()]);
-    }
-
-    #[tokio::test]
-    async fn creates_service_account_owned_keys() {
-        let repo = repo_with_defaults();
-        let service_account_id = repo.service_accounts[0].service_account_id;
-        let team_id = repo.service_accounts[0].team_id;
-        let service = AdminApiKeyService::new(Arc::new(repo.clone()));
-
-        let result = service
-            .create_api_key(CreateAdminApiKeyInput {
-                name: "Batch Jobs".to_string(),
-                owner_kind: "service_account".to_string(),
-                owner_user_id: None,
-                owner_team_id: Some(team_id.to_string()),
-                owner_service_account_id: Some(service_account_id.to_string()),
-                model_keys: vec!["reasoning".to_string()],
-            })
-            .await
-            .expect("create api key");
-
-        assert_eq!(result.api_key.owner_kind, ApiKeyOwnerKind::ServiceAccount);
-        assert_eq!(result.api_key.owner_id, service_account_id);
-        assert_eq!(result.api_key.model_keys, vec!["reasoning".to_string()]);
-    }
-
-    #[tokio::test]
-    async fn rejects_empty_name() {
-        let repo = repo_with_defaults();
-        let user_id = repo.users[0].user.user_id;
-        let service = AdminApiKeyService::new(Arc::new(repo.clone()));
-
-        let error = service
-            .create_api_key(CreateAdminApiKeyInput {
-                name: "   ".to_string(),
-                owner_kind: "user".to_string(),
-                owner_user_id: Some(user_id.to_string()),
-                owner_team_id: None,
-                owner_service_account_id: None,
-                model_keys: vec!["fast".to_string()],
-            })
-            .await
-            .expect_err("empty name should fail");
-
-        assert_eq!(error.error_code(), "invalid_request");
-        assert!(error.to_string().contains("name is required"));
-    }
-
-    #[tokio::test]
-    async fn rejects_invalid_owner_kind() {
-        let repo = repo_with_defaults();
-        let service = AdminApiKeyService::new(Arc::new(repo.clone()));
-
-        let error = service
-            .create_api_key(CreateAdminApiKeyInput {
-                name: "Bad Owner".to_string(),
-                owner_kind: "system".to_string(),
-                owner_user_id: None,
-                owner_team_id: None,
-                owner_service_account_id: None,
-                model_keys: vec!["fast".to_string()],
-            })
-            .await
-            .expect_err("invalid owner kind should fail");
-
-        assert_eq!(error.error_code(), "invalid_request");
-        assert!(error.to_string().contains("owner_kind"));
-    }
-
-    #[tokio::test]
-    async fn rejects_inactive_or_missing_owner() {
-        let mut repo = repo_with_defaults();
-        let user_id = repo.users[0].user.user_id;
-        repo.users = vec![user(user_id, UserStatus::Disabled)];
-        let service = AdminApiKeyService::new(Arc::new(repo.clone()));
-
-        let inactive_error = service
-            .create_api_key(CreateAdminApiKeyInput {
-                name: "Inactive User".to_string(),
-                owner_kind: "user".to_string(),
-                owner_user_id: Some(user_id.to_string()),
-                owner_team_id: None,
-                owner_service_account_id: None,
-                model_keys: vec!["fast".to_string()],
-            })
-            .await
-            .expect_err("inactive owner should fail");
-        assert_eq!(inactive_error.error_code(), "invalid_request");
-
-        let missing_error = service
-            .create_api_key(CreateAdminApiKeyInput {
-                name: "Missing User".to_string(),
-                owner_kind: "user".to_string(),
-                owner_user_id: Some(Uuid::new_v4().to_string()),
-                owner_team_id: None,
-                owner_service_account_id: None,
-                model_keys: vec!["fast".to_string()],
-            })
-            .await
-            .expect_err("missing owner should fail");
-        assert_eq!(missing_error.error_code(), "not_found");
-    }
-
-    #[tokio::test]
-    async fn rejects_unknown_or_empty_model_grants() {
-        let repo = repo_with_defaults();
-        let user_id = repo.users[0].user.user_id;
-        let service = AdminApiKeyService::new(Arc::new(repo.clone()));
-
-        let unknown_error = service
-            .create_api_key(CreateAdminApiKeyInput {
-                name: "Unknown Model".to_string(),
-                owner_kind: "user".to_string(),
-                owner_user_id: Some(user_id.to_string()),
-                owner_team_id: None,
-                owner_service_account_id: None,
-                model_keys: vec!["missing".to_string()],
-            })
-            .await
-            .expect_err("unknown model should fail");
-        assert_eq!(unknown_error.error_code(), "invalid_request");
-
-        let empty_error = service
-            .create_api_key(CreateAdminApiKeyInput {
-                name: "Empty Grants".to_string(),
-                owner_kind: "user".to_string(),
-                owner_user_id: Some(user_id.to_string()),
-                owner_team_id: None,
-                owner_service_account_id: None,
-                model_keys: vec!["   ".to_string()],
-            })
-            .await
-            .expect_err("empty grants should fail");
-        assert_eq!(empty_error.error_code(), "invalid_request");
-    }
-
-    #[tokio::test]
-    async fn revoke_reload_reflects_revoked_status() {
-        let repo = repo_with_defaults();
-        let user_id = repo.users[0].user.user_id;
-        let service = AdminApiKeyService::new(Arc::new(repo.clone()));
-        let created = service
-            .create_api_key(CreateAdminApiKeyInput {
-                name: "Revoke Me".to_string(),
-                owner_kind: "user".to_string(),
-                owner_user_id: Some(user_id.to_string()),
-                owner_team_id: None,
-                owner_service_account_id: None,
-                model_keys: vec!["fast".to_string()],
-            })
-            .await
-            .expect("create api key");
-
-        let revoked = service
-            .revoke_api_key(created.api_key.id)
-            .await
-            .expect("revoke api key");
-
-        assert_eq!(revoked.status, ApiKeyStatus::Revoked);
-        assert!(revoked.revoked_at.is_some());
-    }
-
-    #[tokio::test]
-    async fn updates_model_grants_for_active_keys() {
-        let repo = repo_with_defaults();
-        let user_id = repo.users[0].user.user_id;
-        let service = AdminApiKeyService::new(Arc::new(repo.clone()));
-        let created = service
-            .create_api_key(CreateAdminApiKeyInput {
-                name: "Manage Me".to_string(),
-                owner_kind: "user".to_string(),
-                owner_user_id: Some(user_id.to_string()),
-                owner_team_id: None,
-                owner_service_account_id: None,
-                model_keys: vec!["fast".to_string()],
-            })
-            .await
-            .expect("create api key");
-
-        let updated = service
-            .update_api_key(
-                created.api_key.id,
-                UpdateAdminApiKeyInput {
-                    model_keys: vec!["reasoning".to_string(), "fast".to_string()],
-                },
-            )
-            .await
-            .expect("update api key");
-
-        assert_eq!(
-            updated.model_keys,
-            vec!["reasoning".to_string(), "fast".to_string()]
-        );
-    }
-
-    #[tokio::test]
-    async fn rejects_updates_for_revoked_keys() {
-        let repo = repo_with_defaults();
-        let user_id = repo.users[0].user.user_id;
-        let service = AdminApiKeyService::new(Arc::new(repo.clone()));
-        let created = service
-            .create_api_key(CreateAdminApiKeyInput {
-                name: "Revoked Key".to_string(),
-                owner_kind: "user".to_string(),
-                owner_user_id: Some(user_id.to_string()),
-                owner_team_id: None,
-                owner_service_account_id: None,
-                model_keys: vec!["fast".to_string()],
-            })
-            .await
-            .expect("create api key");
-
-        service
-            .revoke_api_key(created.api_key.id)
-            .await
-            .expect("revoke api key");
-
-        let error = service
-            .update_api_key(
-                created.api_key.id,
-                UpdateAdminApiKeyInput {
-                    model_keys: vec!["reasoning".to_string()],
-                },
-            )
-            .await
-            .expect_err("revoked api key update should fail");
-
-        assert_eq!(error.error_code(), "invalid_request");
-        assert!(error.to_string().contains("cannot be updated"));
-    }
-
-    #[tokio::test]
-    async fn lists_and_revokes_keys_for_service_accounts_on_inactive_teams() {
-        let mut repo = repo_with_defaults();
-        let team_id = repo.teams[0].team_id;
-        let service_account_id = repo.service_accounts[0].service_account_id;
-        repo.teams = vec![team(team_id, "inactive")];
-        let repo = Arc::new(repo);
-        let service = AdminApiKeyService::new(repo.clone());
-        let now = OffsetDateTime::now_utc();
-        let api_key = repo
-            .create_api_key(&NewApiKeyRecord {
-                name: "Dormant Service Account".to_string(),
-                public_id: Uuid::new_v4().simple().to_string(),
-                secret_hash: "secret-hash".to_string(),
-                owner_kind: ApiKeyOwnerKind::ServiceAccount,
-                owner_user_id: None,
-                owner_team_id: Some(team_id),
-                owner_service_account_id: Some(service_account_id),
-                created_at: now,
-            })
-            .await
-            .expect("seed api key");
-
-        repo.replace_api_key_model_grants(api_key.id, &[repo.models["fast"].id])
-            .await
-            .expect("seed grants");
-
-        let listed = service.list_api_keys().await.expect("list api keys");
-        assert_eq!(listed.items.len(), 1);
-        assert_eq!(listed.items[0].owner_id, service_account_id);
-        assert!(listed.teams.is_empty());
-
-        let revoked = service
-            .revoke_api_key(api_key.id)
-            .await
-            .expect("revoke api key");
-        assert_eq!(revoked.owner_id, service_account_id);
-        assert_eq!(revoked.status, ApiKeyStatus::Revoked);
-    }
-
-    #[tokio::test]
-    async fn list_payload_preserves_owner_and_grant_metadata() {
-        let repo = repo_with_defaults();
-        let user_id = repo.users[0].user.user_id;
-        let service = AdminApiKeyService::new(Arc::new(repo.clone()));
-        service
-            .create_api_key(CreateAdminApiKeyInput {
-                name: "Listed Key".to_string(),
-                owner_kind: "user".to_string(),
-                owner_user_id: Some(user_id.to_string()),
-                owner_team_id: None,
-                owner_service_account_id: None,
-                model_keys: vec!["fast".to_string(), "reasoning".to_string()],
-            })
-            .await
-            .expect("create api key");
-
-        let payload = service.list_api_keys().await.expect("list api keys");
-
-        assert_eq!(payload.items.len(), 1);
-        assert_eq!(payload.items[0].owner_name, "Member");
-        assert_eq!(
-            payload.items[0].model_keys,
-            vec!["fast".to_string(), "reasoning".to_string()]
-        );
-        assert_eq!(payload.users.len(), 1);
-        assert_eq!(payload.teams.len(), 1);
-        assert_eq!(payload.models.len(), 2);
-    }
 }

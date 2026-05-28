@@ -153,7 +153,7 @@ test('admin spend report endpoint and usage costs page reflect live usage ledger
   await expect(page.getByText('fast').first()).toBeVisible()
 })
 
-test('team budget update triggers hard-limit enforcement for service-account keys', async ({
+test('service-account budget update triggers hard-limit enforcement for service-account keys', async ({
   request,
   page,
   baseURL,
@@ -169,27 +169,28 @@ test('team budget update triggers hard-limit enforcement for service-account key
   expect(budgetsResponse.status()).toBe(200)
   const budgetsBody = (await budgetsResponse.json()) as {
     data: {
-      teams: Array<{ team_id: string; team_key: string }>
+      service_accounts: Array<{ service_account_id: string; service_account_key: string }>
     }
   }
-  expect(budgetsBody.data.teams.length).toBeGreaterThanOrEqual(1)
-  const teamId = budgetsBody.data.teams[0].team_id
+  expect(budgetsBody.data.service_accounts.length).toBeGreaterThanOrEqual(1)
+  const serviceAccountId = budgetsBody.data.service_accounts[0].service_account_id
 
-  const upsertBudgetResponse = await request.put(
-    `${root}/api/v1/admin/spend/budgets/teams/${teamId}`,
-    {
-      headers: {
-        cookie: adminCookie,
-        'content-type': 'application/json',
-      },
-      data: {
-        cadence: 'daily',
-        amount_usd: '0.0000',
-        hard_limit: true,
-        timezone: 'UTC',
-      },
+  const upsertBudgetResponse = await request.put(`${root}/api/v1/admin/spend/budgets`, {
+    headers: {
+      cookie: adminCookie,
+      'content-type': 'application/json',
     },
-  )
+    data: {
+      scope: {
+        kind: 'service_account',
+        service_account_id: serviceAccountId,
+      },
+      cadence: 'daily',
+      amount_usd: '0.0000',
+      hard_limit: true,
+      timezone: 'UTC',
+    },
+  })
   expect(upsertBudgetResponse.status()).toBe(200)
 
   const clearResponse = await request.delete(stubAdminUrl('/__admin/requests'))
@@ -199,11 +200,11 @@ test('team budget update triggers hard-limit enforcement for service-account key
     headers: {
       authorization: `Bearer ${gatewayApiKey}`,
       'content-type': 'application/json',
-      'idempotency-key': 'e2e-team-budget-blocked',
+      'idempotency-key': 'e2e-service-account-budget-blocked',
     },
     data: {
       model: 'fast',
-      messages: [{ role: 'user', content: 'should be blocked by team budget' }],
+      messages: [{ role: 'user', content: 'should be blocked by service account budget' }],
     },
   })
   expect(blockedResponse.status()).toBe(429)

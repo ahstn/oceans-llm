@@ -27,11 +27,6 @@ impl AuthenticatedApiKey {
     }
 
     #[must_use]
-    pub fn is_team_owned(&self) -> bool {
-        self.owner_kind == ApiKeyOwnerKind::Team
-    }
-
-    #[must_use]
     pub fn is_service_account_owned(&self) -> bool {
         self.owner_kind == ApiKeyOwnerKind::ServiceAccount
     }

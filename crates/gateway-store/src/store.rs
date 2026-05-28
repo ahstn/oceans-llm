@@ -597,111 +597,35 @@ impl AdminIdentityRepository for AnyStore {
 
 #[async_trait]
 impl BudgetRepository for AnyStore {
-    async fn get_active_budget_for_user(
+    async fn get_active_budget_by_scope(
         &self,
-        user_id: Uuid,
-    ) -> Result<Option<gateway_core::UserBudgetRecord>, StoreError> {
-        dispatch_store!(self, get_active_budget_for_user(user_id))
+        scope: &gateway_core::BudgetScope,
+    ) -> Result<Option<gateway_core::BudgetRecord>, StoreError> {
+        dispatch_store!(self, get_active_budget_by_scope(scope))
     }
 
-    async fn get_active_budget_for_team(
+    async fn list_active_budgets(
         &self,
-        team_id: Uuid,
-    ) -> Result<Option<gateway_core::TeamBudgetRecord>, StoreError> {
-        dispatch_store!(self, get_active_budget_for_team(team_id))
+        scope_kind: Option<gateway_core::BudgetScopeKind>,
+    ) -> Result<Vec<gateway_core::BudgetRecord>, StoreError> {
+        dispatch_store!(self, list_active_budgets(scope_kind))
     }
 
-    async fn get_active_budget_for_service_account(
+    async fn upsert_active_budget(
         &self,
-        service_account_id: Uuid,
-    ) -> Result<Option<gateway_core::ServiceAccountBudgetRecord>, StoreError> {
-        dispatch_store!(
-            self,
-            get_active_budget_for_service_account(service_account_id)
-        )
-    }
-
-    async fn upsert_active_budget_for_user(
-        &self,
-        user_id: Uuid,
-        cadence: gateway_core::BudgetCadence,
-        amount_usd: gateway_core::Money4,
-        hard_limit: bool,
-        timezone: &str,
+        scope: &gateway_core::BudgetScope,
+        settings: &gateway_core::BudgetSettings,
         updated_at: OffsetDateTime,
-    ) -> Result<gateway_core::UserBudgetRecord, StoreError> {
-        dispatch_store!(
-            self,
-            upsert_active_budget_for_user(
-                user_id, cadence, amount_usd, hard_limit, timezone, updated_at
-            )
-        )
+    ) -> Result<gateway_core::BudgetRecord, StoreError> {
+        dispatch_store!(self, upsert_active_budget(scope, settings, updated_at))
     }
 
-    async fn deactivate_active_budget_for_user(
+    async fn deactivate_active_budget(
         &self,
-        user_id: Uuid,
+        scope: &gateway_core::BudgetScope,
         updated_at: OffsetDateTime,
     ) -> Result<bool, StoreError> {
-        dispatch_store!(self, deactivate_active_budget_for_user(user_id, updated_at))
-    }
-
-    async fn upsert_active_budget_for_team(
-        &self,
-        team_id: Uuid,
-        cadence: gateway_core::BudgetCadence,
-        amount_usd: gateway_core::Money4,
-        hard_limit: bool,
-        timezone: &str,
-        updated_at: OffsetDateTime,
-    ) -> Result<gateway_core::TeamBudgetRecord, StoreError> {
-        dispatch_store!(
-            self,
-            upsert_active_budget_for_team(
-                team_id, cadence, amount_usd, hard_limit, timezone, updated_at
-            )
-        )
-    }
-
-    async fn deactivate_active_budget_for_team(
-        &self,
-        team_id: Uuid,
-        updated_at: OffsetDateTime,
-    ) -> Result<bool, StoreError> {
-        dispatch_store!(self, deactivate_active_budget_for_team(team_id, updated_at))
-    }
-
-    async fn upsert_active_budget_for_service_account(
-        &self,
-        service_account_id: Uuid,
-        cadence: gateway_core::BudgetCadence,
-        amount_usd: gateway_core::Money4,
-        hard_limit: bool,
-        timezone: &str,
-        updated_at: OffsetDateTime,
-    ) -> Result<gateway_core::ServiceAccountBudgetRecord, StoreError> {
-        dispatch_store!(
-            self,
-            upsert_active_budget_for_service_account(
-                service_account_id,
-                cadence,
-                amount_usd,
-                hard_limit,
-                timezone,
-                updated_at
-            )
-        )
-    }
-
-    async fn deactivate_active_budget_for_service_account(
-        &self,
-        service_account_id: Uuid,
-        updated_at: OffsetDateTime,
-    ) -> Result<bool, StoreError> {
-        dispatch_store!(
-            self,
-            deactivate_active_budget_for_service_account(service_account_id, updated_at)
-        )
+        dispatch_store!(self, deactivate_active_budget(scope, updated_at))
     }
 
     async fn get_usage_ledger_by_request_and_scope(
@@ -715,43 +639,25 @@ impl BudgetRepository for AnyStore {
         )
     }
 
-    async fn sum_usage_cost_for_user_in_window(
+    async fn sum_usage_cost_for_budget_scope_in_window(
         &self,
-        user_id: Uuid,
+        scope: &gateway_core::BudgetScope,
         window_start: OffsetDateTime,
         window_end: OffsetDateTime,
     ) -> Result<gateway_core::Money4, StoreError> {
         dispatch_store!(
             self,
-            sum_usage_cost_for_user_in_window(user_id, window_start, window_end)
+            sum_usage_cost_for_budget_scope_in_window(scope, window_start, window_end)
         )
     }
 
-    async fn sum_usage_cost_for_team_in_window(
-        &self,
-        team_id: Uuid,
-        window_start: OffsetDateTime,
-        window_end: OffsetDateTime,
-    ) -> Result<gateway_core::Money4, StoreError> {
-        dispatch_store!(
-            self,
-            sum_usage_cost_for_team_in_window(team_id, window_start, window_end)
-        )
-    }
-
-    async fn sum_usage_cost_for_service_account_in_window(
+    async fn count_active_api_keys_for_service_account(
         &self,
         service_account_id: Uuid,
-        window_start: OffsetDateTime,
-        window_end: OffsetDateTime,
-    ) -> Result<gateway_core::Money4, StoreError> {
+    ) -> Result<u64, StoreError> {
         dispatch_store!(
             self,
-            sum_usage_cost_for_service_account_in_window(
-                service_account_id,
-                window_start,
-                window_end
-            )
+            count_active_api_keys_for_service_account(service_account_id)
         )
     }
 

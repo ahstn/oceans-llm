@@ -11,7 +11,6 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SpendControlsRouteImport } from './routes/spend-controls'
 import { Route as ModelsRouteImport } from './routes/models'
-import { Route as McpServersRouteImport } from './routes/mcp/servers'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ChangePasswordRouteImport } from './routes/change-password'
 import { Route as ApiKeysRouteImport } from './routes/api-keys'
@@ -22,6 +21,7 @@ import { Route as ObservabilityRequestLogsRouteImport } from './routes/observabi
 import { Route as ObservabilityMcpInvocationsRouteImport } from './routes/observability/mcp-invocations'
 import { Route as ObservabilityLeaderboardRouteImport } from './routes/observability/leaderboard'
 import { Route as ObservabilityAgentHarnessesRouteImport } from './routes/observability/agent-harnesses'
+import { Route as McpServersRouteImport } from './routes/mcp/servers'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as IdentityUsersRouteImport } from './routes/identity/users'
 import { Route as IdentityTeamsRouteImport } from './routes/identity/teams'
@@ -34,11 +34,6 @@ const SpendControlsRoute = SpendControlsRouteImport.update({
 const ModelsRoute = ModelsRouteImport.update({
   id: '/models',
   path: '/models',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const McpServersRoute = McpServersRouteImport.update({
-  id: '/mcp/servers',
-  path: '/mcp/servers',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -95,6 +90,11 @@ const ObservabilityAgentHarnessesRoute =
     path: '/observability/agent-harnesses',
     getParentRoute: () => rootRouteImport,
   } as any)
+const McpServersRoute = McpServersRouteImport.update({
+  id: '/mcp/servers',
+  path: '/mcp/servers',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const InviteTokenRoute = InviteTokenRouteImport.update({
   id: '/invite/$token',
   path: '/invite/$token',
@@ -118,11 +118,11 @@ export interface FileRoutesByFullPath {
   '/change-password': typeof ChangePasswordRoute
   '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
-  '/mcp/servers': typeof McpServersRoute
   '/spend-controls': typeof SpendControlsRoute
   '/identity/teams': typeof IdentityTeamsRoute
   '/identity/users': typeof IdentityUsersRoute
   '/invite/$token': typeof InviteTokenRoute
+  '/mcp/servers': typeof McpServersRoute
   '/observability/agent-harnesses': typeof ObservabilityAgentHarnessesRoute
   '/observability/leaderboard': typeof ObservabilityLeaderboardRoute
   '/observability/mcp-invocations': typeof ObservabilityMcpInvocationsRoute
@@ -136,11 +136,11 @@ export interface FileRoutesByTo {
   '/change-password': typeof ChangePasswordRoute
   '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
-  '/mcp/servers': typeof McpServersRoute
   '/spend-controls': typeof SpendControlsRoute
   '/identity/teams': typeof IdentityTeamsRoute
   '/identity/users': typeof IdentityUsersRoute
   '/invite/$token': typeof InviteTokenRoute
+  '/mcp/servers': typeof McpServersRoute
   '/observability/agent-harnesses': typeof ObservabilityAgentHarnessesRoute
   '/observability/leaderboard': typeof ObservabilityLeaderboardRoute
   '/observability/mcp-invocations': typeof ObservabilityMcpInvocationsRoute
@@ -155,11 +155,11 @@ export interface FileRoutesById {
   '/change-password': typeof ChangePasswordRoute
   '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
-  '/mcp/servers': typeof McpServersRoute
   '/spend-controls': typeof SpendControlsRoute
   '/identity/teams': typeof IdentityTeamsRoute
   '/identity/users': typeof IdentityUsersRoute
   '/invite/$token': typeof InviteTokenRoute
+  '/mcp/servers': typeof McpServersRoute
   '/observability/agent-harnesses': typeof ObservabilityAgentHarnessesRoute
   '/observability/leaderboard': typeof ObservabilityLeaderboardRoute
   '/observability/mcp-invocations': typeof ObservabilityMcpInvocationsRoute
@@ -175,11 +175,11 @@ export interface FileRouteTypes {
     | '/change-password'
     | '/login'
     | '/models'
-    | '/mcp/servers'
     | '/spend-controls'
     | '/identity/teams'
     | '/identity/users'
     | '/invite/$token'
+    | '/mcp/servers'
     | '/observability/agent-harnesses'
     | '/observability/leaderboard'
     | '/observability/mcp-invocations'
@@ -193,11 +193,11 @@ export interface FileRouteTypes {
     | '/change-password'
     | '/login'
     | '/models'
-    | '/mcp/servers'
     | '/spend-controls'
     | '/identity/teams'
     | '/identity/users'
     | '/invite/$token'
+    | '/mcp/servers'
     | '/observability/agent-harnesses'
     | '/observability/leaderboard'
     | '/observability/mcp-invocations'
@@ -211,11 +211,11 @@ export interface FileRouteTypes {
     | '/change-password'
     | '/login'
     | '/models'
-    | '/mcp/servers'
     | '/spend-controls'
     | '/identity/teams'
     | '/identity/users'
     | '/invite/$token'
+    | '/mcp/servers'
     | '/observability/agent-harnesses'
     | '/observability/leaderboard'
     | '/observability/mcp-invocations'
@@ -230,11 +230,11 @@ export interface RootRouteChildren {
   ChangePasswordRoute: typeof ChangePasswordRoute
   LoginRoute: typeof LoginRoute
   ModelsRoute: typeof ModelsRoute
-  McpServersRoute: typeof McpServersRoute
   SpendControlsRoute: typeof SpendControlsRoute
   IdentityTeamsRoute: typeof IdentityTeamsRoute
   IdentityUsersRoute: typeof IdentityUsersRoute
   InviteTokenRoute: typeof InviteTokenRoute
+  McpServersRoute: typeof McpServersRoute
   ObservabilityAgentHarnessesRoute: typeof ObservabilityAgentHarnessesRoute
   ObservabilityLeaderboardRoute: typeof ObservabilityLeaderboardRoute
   ObservabilityMcpInvocationsRoute: typeof ObservabilityMcpInvocationsRoute
@@ -256,13 +256,6 @@ declare module '@tanstack/react-router' {
       path: '/models'
       fullPath: '/models'
       preLoaderRoute: typeof ModelsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/mcp/servers': {
-      id: '/mcp/servers'
-      path: '/mcp/servers'
-      fullPath: '/mcp/servers'
-      preLoaderRoute: typeof McpServersRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -335,6 +328,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ObservabilityAgentHarnessesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/mcp/servers': {
+      id: '/mcp/servers'
+      path: '/mcp/servers'
+      fullPath: '/mcp/servers'
+      preLoaderRoute: typeof McpServersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/invite/$token': {
       id: '/invite/$token'
       path: '/invite/$token'
@@ -366,11 +366,11 @@ const rootRouteChildren: RootRouteChildren = {
   ChangePasswordRoute: ChangePasswordRoute,
   LoginRoute: LoginRoute,
   ModelsRoute: ModelsRoute,
-  McpServersRoute: McpServersRoute,
   SpendControlsRoute: SpendControlsRoute,
   IdentityTeamsRoute: IdentityTeamsRoute,
   IdentityUsersRoute: IdentityUsersRoute,
   InviteTokenRoute: InviteTokenRoute,
+  McpServersRoute: McpServersRoute,
   ObservabilityAgentHarnessesRoute: ObservabilityAgentHarnessesRoute,
   ObservabilityLeaderboardRoute: ObservabilityLeaderboardRoute,
   ObservabilityMcpInvocationsRoute: ObservabilityMcpInvocationsRoute,

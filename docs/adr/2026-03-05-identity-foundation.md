@@ -2,6 +2,7 @@
 
 - Date: 2026-03-06
 - Status: Accepted
+- Superseded in part by: [2026-05-27 Budget Principal Taxonomy](2026-05-27-budget-principal-taxonomy.md)
 
 ## Implemented By
 

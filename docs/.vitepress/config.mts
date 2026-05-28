@@ -118,6 +118,7 @@ export default defineConfig({
         items: [
           { text: "Identity and Access", link: "/access/identity-and-access" },
           { text: "Service Accounts", link: "/access/service-accounts" },
+          { text: "Budgets", link: "/access/budgets" },
           { text: "OIDC and SSO", link: "/access/oidc-and-sso-status" },
           {
             text: "GitHub OAuth SSO Setup",
