@@ -959,14 +959,14 @@ async fn sum_usage_cost_for_budget_scope(
            AND occurred_at < $3"
     );
 
-    let row = sqlx::query(query.as_str())
+    let mut query = sqlx::query(query.as_str())
         .bind(owner_id)
         .bind(window_start.unix_timestamp())
-        .bind(window_end.unix_timestamp())
-        .bind(extra_value)
-        .fetch_one(pool)
-        .await
-        .map_err(to_query_error)?;
+        .bind(window_end.unix_timestamp());
+    if let Some(extra_value) = extra_value {
+        query = query.bind(extra_value);
+    }
+    let row = query.fetch_one(pool).await.map_err(to_query_error)?;
 
     Ok(Money4::from_scaled(
         row.try_get::<i64, _>(0).map_err(to_query_error)?,

@@ -89,7 +89,7 @@ where
                 .await?
                 .is_none()
             {
-                return Err(AuthError::ApiKeyOwnerInvalid.into());
+                return Err(AuthError::ServiceAccountBudgetRequired.into());
             }
         }
 

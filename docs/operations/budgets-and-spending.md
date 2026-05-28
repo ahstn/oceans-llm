@@ -17,7 +17,7 @@ This page is the developer/operator contract for spend accounting and budget enf
 
 `usage_cost_events` is the canonical usage and spend ledger.
 
-- request accounting is idempotent on `(request_id, ownership_scope_key)`
+- request accounting stores at most one row per `(request_id, ownership_scope_key)`
 - `ownership_scope_key` uses `user:<user_id>` or `service_account:<service_account_id>`
 - pricing is resolved from the internal pricing catalog and persisted into the ledger row
 - spend math uses fixed-point money and integer arithmetic
@@ -75,7 +75,7 @@ Hard-limit behavior:
 - pre-provider rejection returns `429 budget_exceeded`
 - no provider call occurs on the pre-provider rejection path
 - post-provider rejection happens before inserting a new priced ledger row
-- duplicate request ids bypass budget math as an idempotent no-op for the same ownership scope
+- duplicate request ids are rejected with `400 invalid_request` before additional budget math or ledger writes
 
 Soft budgets never reject. They still contribute to alert readiness and reporting.
 
