@@ -4,6 +4,8 @@
 
 This page owns config syntax and parse-time rules. It does not own the full runtime story after a request starts moving.
 
+![Models Page](../public/images/screenshot-models.png)
+
 ## Source of Truth
 
 - config parsing and validation:

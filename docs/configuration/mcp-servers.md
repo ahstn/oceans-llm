@@ -2,6 +2,9 @@
 
 `See also`: [MCP Client Setup](../setup/mcp-client-setup.md), [Identity and Access](../access/identity-and-access.md), [Admin Control Plane](../access/admin-control-plane.md), [MCP Registry and Discovery](../operations/observability/mcp-registry-and-discovery.md)
 
+
+![MCP Servers Page](../public/images/screenshot-mcp-servers.png)
+
 Oceans can register external Streamable HTTP MCP servers and expose them to MCP clients through the gateway at:
 
 ```text
