@@ -6,6 +6,66 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+### :rocket: New features
+- *(gateway)* Implement oidc sso by @ahstn
+- *(auth)* Add direct GitHub OAuth SSO by @ahstn
+- *(auth)* Add direct GitHub OAuth SSO by @ahstn
+- *(gateway)* Implement OIDC SSO by @ahstn in [#157](https://github.com/ahstn/oceans-llm/pull/157)
+- *(auth)* Add direct GitHub OAuth SSO by @ahstn in [#158](https://github.com/ahstn/oceans-llm/pull/158)
+- *(gateway)* Export spend as FOCUS CSV by @ahstn
+- *(gateway)* Include owner tags in FOCUS export by @ahstn
+- *(gateway)* Export spend as FOCUS CSV by @ahstn in [#160](https://github.com/ahstn/oceans-llm/pull/160)
+- *(gateway)* Add external MCP registry by @ahstn
+- *(gateway)* Add external MCP registry by @ahstn in [#161](https://github.com/ahstn/oceans-llm/pull/161)
+- *(gateway)* Add MCP gateway auth and diagnostics by @ahstn
+- *(gateway)* Add MCP gateway auth and diagnostics by @ahstn in [#162](https://github.com/ahstn/oceans-llm/pull/162)
+- *(gateway)* Implement budget principal taxonomy by @ahstn
+- *(gateway)* Implement budget principal taxonomy by @ahstn in [#163](https://github.com/ahstn/oceans-llm/pull/163)
+
+### :bug: Bug fixes
+- *(gateway)* Harden oidc review findings by @ahstn
+- *(gateway)* Address oidc review hardening by @ahstn
+- *(auth)* Address GitHub OAuth PR feedback by @ahstn
+- *(auth)* Make SSO JIT retries recoverable by @ahstn
+- *(auth)* Harden OAuth provider updates by @ahstn
+- *(gateway)* Address FOCUS export review findings by @ahstn
+- *(gateway)* Address FOCUS export review follow-ups by @ahstn
+- *(gateway)* Harden MCP registry discovery by @ahstn
+- *(gateway)* Address MCP registry review feedback by @ahstn
+- *(gateway)* Tighten MCP catalog auth overrides by @ahstn
+- *(gateway)* Handle MCP discovery pagination by @ahstn
+- *(gateway)* Skip non-response MCP SSE events by @ahstn
+- *(ci)* Prebuild gateway for e2e stack by @ahstn
+- *(admin-ui)* Prevent pre-hydration auth submits by @ahstn
+- *(gateway)* Harden MCP proxy handling by @ahstn
+- *(gateway)* Address MCP PR review feedback by @ahstn
+- Address budget taxonomy PR feedback by @ahstn
+- Resolve budget review edge cases by @ahstn
+- Bind libsql budget query parameters conditionally by @ahstn
+
+### Build
+- Post release tasks - v0.8.0 by @ahstn
+
+### Changed
+- Add hosted MCP recommendations by @ahstn
+- Record MCP gateway auth alignment interview by @ahstn
+
+### Documentation
+- Adding more screenshots by @ahstn
+- Adding more screenshots by @ahstn
+- Address FOCUS export review notes by @ahstn
+- Updating screenshots by @ahstn
+
+### Miscellaneous
+- Upgrade bun deps by @ahstn
+
+### Testing
+- *(gateway)* Preserve env vars in MCP guards by @ahstn
+
+
+
+
 ## [0.8.0] - 2026-05-15
 ### :rocket: New features
 - *(deploy)* Add Helm OCI chart by @ahstn
@@ -112,7 +172,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Miscellaneous
 - Consolidate mise monorepo tasks by @ahstn
-- *(version)* V0.8.0
+- *(version)* V0.8.0 by @ahstn
 
 ### Testing
 - *(gateway)* Close request-attempt observability gaps by @ahstn
@@ -381,6 +441,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+[unreleased]: https://github.com/ahstn/oceans-llm/compare/v0.8.0...HEAD
 [0.8.0]: https://github.com/ahstn/oceans-llm/compare/v0.6.0...v0.8.0
 [0.6.0]: https://github.com/ahstn/oceans-llm/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/ahstn/oceans-llm/compare/v0.4.0...v0.5.0
