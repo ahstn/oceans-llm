@@ -6,11 +6,12 @@ use axum::{
     http::HeaderMap,
 };
 use gateway_core::{
-    BudgetRepository, GatewayError, MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, McpToolInvocationDetail,
-    McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
-    McpToolInvocationStatus, McpToolPolicyResult, ProviderConnection, ProviderRepository,
-    RequestAttemptRecord, RequestLogDetail, RequestLogPayloadRecord, RequestLogQuery,
-    RequestLogRecord, RequestLogRepository, RequestTag, RequestTags,
+    BudgetRepository, GatewayError, MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, McpTokenOverheadRepository,
+    McpToolInvocationDetail, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
+    McpToolInvocationRecord, McpToolInvocationStatus, McpToolPolicyResult, ProviderConnection,
+    ProviderRepository, RequestAttemptRecord, RequestLogDetail, RequestLogPayloadRecord,
+    RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestMcpTokenOverheadRecord,
+    RequestTag, RequestTags,
 };
 use gateway_service::{
     model_icon_key_from_metadata, provider_icon_key_from_metadata, resolve_model_icon_key,
@@ -31,8 +32,8 @@ use crate::http::{
         McpToolInvocationPayloadView, McpToolInvocationSummaryView, OpenAiErrorEnvelopeView,
         RequestAttemptView, RequestLogDetailView, RequestLogListQuery, RequestLogPageView,
         RequestLogPayloadCaptureModeView, RequestLogPayloadPolicyView, RequestLogPayloadView,
-        RequestLogSummaryView, RequestTagView, RequestTagsView, RequestToolCardinalityAveragesView,
-        RequestToolCardinalityView, envelope, format_timestamp,
+        RequestLogSummaryView, RequestMcpTokenOverheadView, RequestTagView, RequestTagsView,
+        RequestToolCardinalityAveragesView, RequestToolCardinalityView, envelope, format_timestamp,
     },
     error::AppError,
     request_tags::build_bespoke_tag_filter,
@@ -337,7 +338,15 @@ pub async fn get_request_log_detail(
 
     let detail = state.service.get_request_log_detail(request_log_id).await?;
     let provider = provider_connection(&state, detail.log.provider_key.as_str()).await?;
-    Ok(Json(envelope(detail_view(detail, provider.as_ref())?)))
+    let mcp_token_overhead = state
+        .store
+        .get_request_mcp_token_overhead(&detail.log.request_id)
+        .await?;
+    Ok(Json(envelope(detail_view(
+        detail,
+        provider.as_ref(),
+        mcp_token_overhead,
+    )?)))
 }
 
 #[utoipa::path(
@@ -603,13 +612,32 @@ fn payload_policy_contract_error(message: impl Into<String>) -> AppError {
 fn detail_view(
     detail: RequestLogDetail,
     provider: Option<&ProviderConnection>,
+    mcp_token_overhead: Option<RequestMcpTokenOverheadRecord>,
 ) -> Result<RequestLogDetailView, AppError> {
     Ok(RequestLogDetailView {
         log: summary_view(&detail.log, provider)?,
         user_agent_raw: detail.log.user_agent_raw,
         payload: detail.payload.map(payload_view),
         attempts: detail.attempts.into_iter().map(attempt_view).collect(),
+        mcp_token_overhead: mcp_token_overhead.map(mcp_token_overhead_view),
     })
+}
+
+fn mcp_token_overhead_view(overhead: RequestMcpTokenOverheadRecord) -> RequestMcpTokenOverheadView {
+    RequestMcpTokenOverheadView {
+        provider_family: overhead.provider_family,
+        model_or_encoding: overhead.model_or_encoding,
+        exposed_tool_count: overhead.exposed_tool_count,
+        estimated_definition_tokens: overhead.estimated_definition_tokens,
+        estimated_result_tokens: overhead.estimated_result_tokens,
+        estimator_source: overhead.estimator_source.as_str().to_string(),
+        confidence: overhead.confidence.as_str().to_string(),
+        cache_hit_count: overhead.cache_hit_count,
+        cache_miss_count: overhead.cache_miss_count,
+        context_window_tokens: overhead.context_window_tokens,
+        context_window_percent_bps: overhead.context_window_percent_bps,
+        metadata: overhead.metadata,
+    }
 }
 
 fn attempt_view(attempt: RequestAttemptRecord) -> RequestAttemptView {

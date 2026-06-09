@@ -109,6 +109,15 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V28__generic_budget_scopes.sql"),
         postgres_sql: include_str!("../migrations/postgres/V28__generic_budget_scopes.sql"),
     },
+    MigrationManifest {
+        version: 29,
+        name: "mcp_tool_access_and_token_overhead",
+        checksum: "V29__mcp_tool_access_and_token_overhead.sql",
+        libsql_sql: include_str!("../migrations/V29__mcp_tool_access_and_token_overhead.sql"),
+        postgres_sql: include_str!(
+            "../migrations/postgres/V29__mcp_tool_access_and_token_overhead.sql"
+        ),
+    },
 ];
 
 #[cfg(test)]

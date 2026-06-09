@@ -476,6 +476,8 @@ export function RequestLogsPage() {
 
               <ToolCardinalityCard item={selectedDetail.log} />
 
+              <McpTokenOverheadCard detail={selectedDetail} />
+
               <PayloadPolicyCard log={selectedDetail.log} />
 
               <Card>
@@ -545,6 +547,43 @@ function DetailSkeleton() {
       <Skeleton className="h-32 w-full" />
       <Skeleton className="h-48 w-full" />
     </div>
+  )
+}
+
+function McpTokenOverheadCard({ detail }: { detail: RequestLogDetailView }) {
+  const overhead = detail.mcp_token_overhead
+  if (!overhead) {
+    return null
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>MCP Token Overhead</CardTitle>
+        <CardDescription>Context-window estimate, not spend accounting.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <DetailRow
+            label="Definition Tokens"
+            value={formatTokenCount(overhead.estimated_definition_tokens)}
+          />
+          <DetailRow label="Tools" value={String(overhead.exposed_tool_count)} />
+          <DetailRow label="Estimator" value={overhead.estimator_source} mono />
+          <DetailRow label="Confidence" value={overhead.confidence} />
+          <DetailRow label="Cache Hits" value={String(overhead.cache_hit_count)} />
+          <DetailRow label="Cache Misses" value={String(overhead.cache_miss_count)} />
+          <DetailRow
+            label="Context Window"
+            value={formatTokenCount(overhead.context_window_tokens)}
+          />
+          <DetailRow
+            label="Context Share"
+            value={formatBasisPoints(overhead.context_window_percent_bps)}
+          />
+        </dl>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -823,6 +862,10 @@ function formatLatency(latencyMs: number | null) {
 
 function formatTokenCount(totalTokens: number | null) {
   return totalTokens === null ? 'n/a' : String(totalTokens)
+}
+
+function formatBasisPoints(value: number | null) {
+  return value === null ? 'n/a' : `${(value / 100).toFixed(2)}%`
 }
 
 function formatToolCount(value: number | null | undefined) {

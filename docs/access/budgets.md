@@ -1,6 +1,6 @@
 # Budgets
 
-`See also`: [Service Accounts](service-accounts.md), [Admin Control Plane](admin-control-plane.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Data Relationships](../reference/data-relationships.md)
+`See also`: [Service Accounts](service-accounts.md), [MCP Tool Access](mcp-tool-access.md), [Admin Control Plane](admin-control-plane.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Data Relationships](../reference/data-relationships.md)
 
 Budgets limit or monitor gateway spend for principals that can generate spend.
 
@@ -20,6 +20,8 @@ Supported budget types:
 - User model budget: applies to one user's spend for one gateway model or, when no gateway model id is available, one exact trimmed upstream model name.
 
 Teams are not budget principals. Teams group users, own service accounts, and provide reporting metadata for service-account spend.
+
+MCP tool grants and toolsets are separate access controls. MCP token-overhead estimates report context-window pressure from tool definitions and results; they are not spend-budget accounting and do not create budget charges.
 
 ## Hard And Soft Budgets
 
@@ -55,6 +57,8 @@ The page has three budget sections:
 - User Model Budgets
 
 Use User Budgets for normal human access. Use Service Account Budgets before activating automation credentials. Use User Model Budgets when one user needs a lower or separate limit for a specific model.
+
+To set a user budget, choose the user, cadence, amount, and whether the budget is hard or soft. To set a service-account budget, choose the service account and the same budget controls; active service-account API keys require this budget. To set a user model budget, choose the user and model selector, then set the cadence, amount, and hard-limit behavior.
 
 ## Config-Seeded Service Accounts
 

@@ -1,3 +1,5 @@
+mod views;
+
 use std::time::Instant;
 
 use axum::{
@@ -6,145 +8,23 @@ use axum::{
     http::HeaderMap,
 };
 use gateway_core::{
-    ExternalMcpAuthMode, ExternalMcpServerRecord, ExternalMcpToolRecord, GatewayError,
+    GatewayError, McpAccessRepository, McpToolGrantSubjectKind, NewMcpToolsetRecord,
+    UpdateMcpToolsetRecord, UpsertMcpToolGrantRecord,
 };
 use gateway_service::{
-    CreateExternalMcpServerInput, McpDiscoveryResult, McpRegistryService,
-    RecommendedMcpServerCatalogEntry, UpdateExternalMcpServerInput,
+    CreateExternalMcpServerInput, McpRegistryService, UpdateExternalMcpServerInput,
 };
-use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
-use utoipa::{IntoParams, ToSchema};
+use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::http::{
     admin_auth::require_platform_admin,
-    admin_contract::{Envelope, OpenAiErrorEnvelopeView, envelope, format_timestamp},
+    admin_contract::{Envelope, OpenAiErrorEnvelopeView, envelope},
     error::AppError,
     state::AppState,
 };
 use crate::observability::McpDiscoveryRefreshMetric;
-
-#[derive(Debug, Deserialize, IntoParams)]
-pub struct McpServersQuery {
-    #[serde(default)]
-    include_disabled: bool,
-}
-
-#[derive(Debug, Deserialize, IntoParams)]
-pub struct McpToolsQuery {
-    #[serde(default)]
-    include_inactive: bool,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-pub struct RecommendedMcpServersPayload {
-    items: Vec<RecommendedMcpServerView>,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-pub struct RecommendedMcpServerView {
-    catalog_key: String,
-    display_name: String,
-    description: Option<String>,
-    transport: String,
-    server_url: String,
-    auth_mode: String,
-    #[schema(additional_properties = true)]
-    auth_config: Map<String, Value>,
-    documentation_url: Option<String>,
-    tags: Vec<String>,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-pub struct McpServersPayload {
-    items: Vec<McpServerView>,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-pub struct McpServerPayload {
-    server: McpServerView,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-pub struct McpServerView {
-    id: String,
-    server_key: String,
-    display_name: String,
-    description: Option<String>,
-    transport: String,
-    server_url: String,
-    auth_mode: String,
-    #[schema(additional_properties = true)]
-    auth_config: Map<String, Value>,
-    timeout_ms: i64,
-    status: String,
-    last_discovery_status: Option<String>,
-    last_discovery_at: Option<String>,
-    last_successful_discovery_at: Option<String>,
-    last_error_summary: Option<String>,
-    last_tool_count: Option<i64>,
-    created_at: String,
-    updated_at: String,
-    disabled_at: Option<String>,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-pub struct McpToolsPayload {
-    items: Vec<McpToolView>,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-pub struct McpToolView {
-    id: String,
-    server_id: String,
-    upstream_name: String,
-    display_name: String,
-    description: Option<String>,
-    #[schema(additional_properties = true)]
-    input_schema: Value,
-    schema_hash: String,
-    schema_version: i64,
-    is_active: bool,
-    first_discovered_at: String,
-    last_discovered_at: String,
-    deactivated_at: Option<String>,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-pub struct McpDiscoveryRefreshPayload {
-    server: McpServerView,
-    status: String,
-    error_summary: Option<String>,
-    tools: Vec<McpToolView>,
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-pub struct CreateMcpServerRequest {
-    recommended_catalog_key: Option<String>,
-    server_key: Option<String>,
-    display_name: Option<String>,
-    description: Option<String>,
-    server_url: Option<String>,
-    transport: Option<String>,
-    auth_mode: Option<String>,
-    #[serde(default)]
-    #[schema(additional_properties = true)]
-    auth_config: Map<String, Value>,
-    timeout_ms: Option<i64>,
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-pub struct UpdateMcpServerRequest {
-    display_name: String,
-    description: Option<String>,
-    server_url: String,
-    auth_mode: String,
-    #[serde(default)]
-    #[schema(additional_properties = true)]
-    auth_config: Map<String, Value>,
-    timeout_ms: Option<i64>,
-}
+use views::*;
 
 #[utoipa::path(
     get,
@@ -372,91 +252,267 @@ pub async fn refresh_mcp_server_discovery(
     }
 }
 
-fn map_recommended_server(entry: RecommendedMcpServerCatalogEntry) -> RecommendedMcpServerView {
-    RecommendedMcpServerView {
-        catalog_key: entry.catalog_key,
-        display_name: entry.display_name,
-        description: entry.description,
-        transport: entry.transport,
-        server_url: entry.server_url,
-        auth_mode: entry.auth_mode,
-        auth_config: entry.auth_config,
-        documentation_url: entry.documentation_url,
-        tags: entry.tags,
-    }
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/mcp/toolsets",
+    params(McpToolsetsQuery),
+    responses((status = 200, body = Envelope<McpToolsetsPayload>)),
+    security(("session_cookie" = []))
+)]
+pub async fn list_mcp_toolsets(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<McpToolsetsQuery>,
+) -> Result<Json<Envelope<McpToolsetsPayload>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+    let items = state
+        .store
+        .list_mcp_toolsets(query.include_disabled)
+        .await?
+        .into_iter()
+        .map(map_toolset)
+        .collect();
+    Ok(Json(envelope(McpToolsetsPayload { items })))
 }
 
-fn map_server(server: ExternalMcpServerRecord) -> McpServerView {
-    let auth_config = sanitized_auth_config(server.auth_mode, &server.auth_config);
-    McpServerView {
-        id: server.mcp_server_id.to_string(),
-        server_key: server.server_key,
-        display_name: server.display_name,
-        description: server.description,
-        transport: server.transport.as_str().to_string(),
-        server_url: server.server_url,
-        auth_mode: server.auth_mode.as_str().to_string(),
-        auth_config,
-        timeout_ms: server.timeout_ms,
-        status: server.status.as_str().to_string(),
-        last_discovery_status: server
-            .last_discovery_status
-            .map(|status| status.as_str().to_string()),
-        last_discovery_at: server.last_discovery_at.map(format_timestamp),
-        last_successful_discovery_at: server.last_successful_discovery_at.map(format_timestamp),
-        last_error_summary: server.last_error_summary,
-        last_tool_count: server.last_tool_count,
-        created_at: format_timestamp(server.created_at),
-        updated_at: format_timestamp(server.updated_at),
-        disabled_at: server.disabled_at.map(format_timestamp),
-    }
-}
-
-fn map_tool(tool: ExternalMcpToolRecord) -> McpToolView {
-    McpToolView {
-        id: tool.mcp_tool_id.to_string(),
-        server_id: tool.mcp_server_id.to_string(),
-        upstream_name: tool.upstream_name,
-        display_name: tool.display_name,
-        description: tool.description,
-        input_schema: tool.input_schema,
-        schema_hash: tool.schema_hash,
-        schema_version: tool.schema_version,
-        is_active: tool.is_active,
-        first_discovered_at: format_timestamp(tool.first_discovered_at),
-        last_discovered_at: format_timestamp(tool.last_discovered_at),
-        deactivated_at: tool.deactivated_at.map(format_timestamp),
-    }
-}
-
-fn map_discovery_result(result: McpDiscoveryResult) -> McpDiscoveryRefreshPayload {
-    McpDiscoveryRefreshPayload {
-        server: map_server(result.server),
-        status: result.status.as_str().to_string(),
-        error_summary: result.error_summary,
-        tools: result.tools.into_iter().map(map_tool).collect(),
-    }
-}
-
-fn sanitized_auth_config(
-    auth_mode: ExternalMcpAuthMode,
-    auth_config: &Map<String, Value>,
-) -> Map<String, Value> {
-    let allowed_fields: &[&str] = match auth_mode {
-        ExternalMcpAuthMode::None => &[],
-        ExternalMcpAuthMode::GatewayStaticHeader => &["header_name", "secret_ref"],
-        ExternalMcpAuthMode::GatewayBearerToken => &["secret_ref"],
-        ExternalMcpAuthMode::UserPassthrough => &["header", "token_type"],
-        ExternalMcpAuthMode::OauthObo => &["token_exchange", "token_type"],
-    };
-    allowed_fields
-        .iter()
-        .filter_map(|field| {
-            auth_config
-                .get(*field)
-                .map(|value| ((*field).to_string(), value.clone()))
+#[utoipa::path(
+    post,
+    path = "/api/v1/admin/mcp/toolsets",
+    request_body = CreateMcpToolsetRequest,
+    responses((status = 200, body = Envelope<McpToolsetPayload>)),
+    security(("session_cookie" = []))
+)]
+pub async fn create_mcp_toolset(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<CreateMcpToolsetRequest>,
+) -> Result<Json<Envelope<McpToolsetPayload>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+    let toolset = state
+        .store
+        .create_mcp_toolset(&NewMcpToolsetRecord {
+            toolset_key: request.toolset_key,
+            display_name: request.display_name,
+            description: request.description,
+            created_at: OffsetDateTime::now_utc(),
         })
-        .collect()
+        .await?;
+    Ok(Json(envelope(McpToolsetPayload {
+        toolset: map_toolset(toolset),
+    })))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/v1/admin/mcp/toolsets/{toolset_id}",
+    request_body = UpdateMcpToolsetRequest,
+    responses((status = 200, body = Envelope<McpToolsetPayload>)),
+    security(("session_cookie" = []))
+)]
+pub async fn update_mcp_toolset(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(toolset_id): Path<Uuid>,
+    Json(request): Json<UpdateMcpToolsetRequest>,
+) -> Result<Json<Envelope<McpToolsetPayload>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+    let toolset = state
+        .store
+        .update_mcp_toolset(&UpdateMcpToolsetRecord {
+            toolset_id,
+            display_name: request.display_name,
+            description: request.description,
+            updated_at: OffsetDateTime::now_utc(),
+        })
+        .await?;
+    Ok(Json(envelope(McpToolsetPayload {
+        toolset: map_toolset(toolset),
+    })))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/admin/mcp/toolsets/{toolset_id}/disable",
+    responses((status = 200, body = Envelope<McpToolsetPayload>)),
+    security(("session_cookie" = []))
+)]
+pub async fn disable_mcp_toolset(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(toolset_id): Path<Uuid>,
+) -> Result<Json<Envelope<McpToolsetPayload>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+    let toolset = state
+        .store
+        .disable_mcp_toolset(toolset_id, OffsetDateTime::now_utc())
+        .await?;
+    Ok(Json(envelope(McpToolsetPayload {
+        toolset: map_toolset(toolset),
+    })))
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/v1/admin/mcp/toolsets/{toolset_id}/tools",
+    request_body = ReplaceMcpToolsetToolsRequest,
+    responses((status = 200, body = Envelope<McpToolsetToolsPayload>)),
+    security(("session_cookie" = []))
+)]
+pub async fn replace_mcp_toolset_tools(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(toolset_id): Path<Uuid>,
+    Json(request): Json<ReplaceMcpToolsetToolsRequest>,
+) -> Result<Json<Envelope<McpToolsetToolsPayload>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+    let tools = state
+        .store
+        .replace_mcp_toolset_tools(toolset_id, &request.tool_ids, OffsetDateTime::now_utc())
+        .await?;
+    Ok(Json(envelope(McpToolsetToolsPayload {
+        tool_ids: tools
+            .into_iter()
+            .map(|tool| tool.mcp_tool_id.to_string())
+            .collect(),
+    })))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/mcp/grants",
+    params(McpGrantsQuery),
+    responses((status = 200, body = Envelope<McpGrantsPayload>)),
+    security(("session_cookie" = []))
+)]
+pub async fn list_mcp_grants(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<McpGrantsQuery>,
+) -> Result<Json<Envelope<McpGrantsPayload>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+    let subject_kind = query
+        .subject_kind
+        .as_deref()
+        .map(parse_grant_subject_kind)
+        .transpose()?;
+    let items = state
+        .store
+        .list_mcp_tool_grants(subject_kind, query.subject_id)
+        .await?
+        .into_iter()
+        .map(map_grant)
+        .collect();
+    Ok(Json(envelope(McpGrantsPayload { items })))
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/v1/admin/mcp/grants",
+    request_body = UpsertMcpGrantRequest,
+    responses((status = 200, body = Envelope<McpGrantPayload>)),
+    security(("session_cookie" = []))
+)]
+pub async fn upsert_mcp_grant(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<UpsertMcpGrantRequest>,
+) -> Result<Json<Envelope<McpGrantPayload>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+    let grant = state
+        .store
+        .upsert_mcp_tool_grant(&UpsertMcpToolGrantRecord {
+            subject_kind: parse_grant_subject_kind(&request.subject_kind)?,
+            subject_id: request.subject_id,
+            target_kind: parse_grant_target_kind(&request.target_kind)?,
+            target_id: request.target_id,
+            updated_at: OffsetDateTime::now_utc(),
+        })
+        .await?;
+    Ok(Json(envelope(McpGrantPayload {
+        grant: map_grant(grant),
+    })))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/v1/admin/mcp/grants",
+    request_body = UpsertMcpGrantRequest,
+    responses((status = 200, body = Envelope<McpGrantsPayload>)),
+    security(("session_cookie" = []))
+)]
+pub async fn revoke_mcp_grant(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<UpsertMcpGrantRequest>,
+) -> Result<Json<Envelope<McpGrantsPayload>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+    state
+        .store
+        .revoke_mcp_tool_grant(
+            parse_grant_subject_kind(&request.subject_kind)?,
+            request.subject_id,
+            parse_grant_target_kind(&request.target_kind)?,
+            request.target_id,
+            OffsetDateTime::now_utc(),
+        )
+        .await?;
+    Ok(Json(envelope(McpGrantsPayload { items: Vec::new() })))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/mcp/effective-access",
+    params(McpEffectiveAccessQuery),
+    responses((status = 200, body = Envelope<McpEffectiveAccessPayload>)),
+    security(("session_cookie" = []))
+)]
+pub async fn preview_mcp_effective_access(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<McpEffectiveAccessQuery>,
+) -> Result<Json<Envelope<McpEffectiveAccessPayload>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+    let mut subjects = Vec::new();
+    if let Some(api_key_id) = query.api_key_id {
+        subjects.push(gateway_core::McpGrantSubject {
+            subject_kind: McpToolGrantSubjectKind::ApiKey,
+            subject_id: api_key_id,
+        });
+    }
+    if let Some(user_id) = query.user_id {
+        subjects.push(gateway_core::McpGrantSubject {
+            subject_kind: McpToolGrantSubjectKind::User,
+            subject_id: user_id,
+        });
+    }
+    if let Some(service_account_id) = query.service_account_id {
+        subjects.push(gateway_core::McpGrantSubject {
+            subject_kind: McpToolGrantSubjectKind::ServiceAccount,
+            subject_id: service_account_id,
+        });
+    }
+    if let Some(team_id) = query.team_id {
+        subjects.push(gateway_core::McpGrantSubject {
+            subject_kind: McpToolGrantSubjectKind::Team,
+            subject_id: team_id,
+        });
+    }
+    if subjects.is_empty() {
+        return Err(GatewayError::InvalidRequest(
+            "at least one access preview subject is required".to_string(),
+        )
+        .into());
+    }
+    let resolution = state
+        .store
+        .resolve_mcp_access_for_subjects(&subjects, query.server_id)
+        .await?;
+    Ok(Json(envelope(McpEffectiveAccessPayload {
+        referenced_server_count: resolution.referenced_server_count,
+        exposed_tool_count: resolution.exposed_tool_count,
+        filtered_tool_count: resolution.filtered_tool_count,
+        tools: resolution.allowed_tools.into_iter().map(map_tool).collect(),
+    })))
 }
 
 fn parse_uuid(raw: &str, field_name: &str) -> Result<Uuid, AppError> {

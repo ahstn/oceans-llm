@@ -1,6 +1,6 @@
 # MCP Servers
 
-`See also`: [MCP Client Setup](../setup/mcp-client-setup.md), [Identity and Access](../access/identity-and-access.md), [Admin Control Plane](../access/admin-control-plane.md), [MCP Registry and Discovery](../operations/observability/mcp-registry-and-discovery.md)
+`See also`: [MCP Client Setup](../setup/mcp-client-setup.md), [MCP Tool Access](../access/mcp-tool-access.md), [Identity and Access](../access/identity-and-access.md), [Admin Control Plane](../access/admin-control-plane.md), [MCP Registry and Discovery](../operations/observability/mcp-registry-and-discovery.md)
 
 
 ![MCP Servers Page](../public/images/screenshot-mcp-servers.png)
@@ -12,6 +12,8 @@ Oceans can register external Streamable HTTP MCP servers and expose them to MCP 
 ```
 
 The gateway authenticates the caller with an Oceans API key, looks up the active registered server, applies any gateway-managed upstream credential, and proxies the MCP Streamable HTTP request to the registered server URL.
+
+Discovered tools are not automatically callable. Configure explicit MCP tool or toolset grants before clients can see tools in `tools/list` or call them with `tools/call`; see [MCP Tool Access](../access/mcp-tool-access.md).
 
 ## Add a Server
 
@@ -94,3 +96,7 @@ Refresh discovery from the admin UI after adding or editing a server. Discovery:
 - records bounded failure summaries
 
 No separate ping health check or discovery-run history UI exists in this slice.
+
+## Access
+
+`tools/list` responses are filtered to active tools granted to the authenticated API key, owner user, owner service account, or team. `tools/call` is rejected before upstream when the tool is not granted. Disabled servers, inactive tools, disabled toolsets, revoked grants, and inactive memberships do not resolve as callable access.

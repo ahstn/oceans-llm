@@ -151,7 +151,7 @@ Current limits:
 - admin mutation audit logs are still tracked separately in [issue #99](https://github.com/ahstn/oceans-llm/issues/99)
 - request-log detail missing rows return `404 not_found`
 - request-log filtering ergonomics still have follow-up work
-- MCP grants, toolsets, and user-scoped OAuth credentials are still future work
+- MCP toolsets, grants, and effective-access previews are managed under the MCP admin API; user-scoped OAuth credentials are still future work
 
 ## Service Callers Today
 
