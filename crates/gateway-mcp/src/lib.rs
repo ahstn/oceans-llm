@@ -141,6 +141,25 @@ pub struct ToolsListRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+pub struct ToolsCallRequest {
+    pub name: String,
+    #[serde(default)]
+    pub arguments: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolsCallResponse {
+    #[serde(default)]
+    pub content: Vec<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub structured_content: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_error: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct McpTool {
     pub name: String,
     #[serde(default)]
@@ -245,6 +264,36 @@ impl StreamableHttpClient {
         Err(McpClientError::InvalidResponse {
             message: format!("MCP tools/list exceeded {MAX_TOOLS_LIST_PAGES} pages"),
         })
+    }
+
+    pub async fn call_tool(
+        &self,
+        headers: Option<&BTreeMap<String, String>>,
+        tool_name: &str,
+        arguments: Value,
+    ) -> Result<ToolsCallResponse, McpClientError> {
+        let mut request_headers = headers.cloned().unwrap_or_default();
+        let (_initialize, session_id) = self.initialize_with_session(headers).await?;
+        if let Some(session_id) = session_id {
+            request_headers.insert(MCP_SESSION_ID_HEADER.to_string(), session_id);
+        }
+        self.send_notification(
+            JsonRpcNotification::<Value>::new("notifications/initialized", None),
+            Some(&request_headers),
+        )
+        .await?;
+        self.send(
+            JsonRpcRequest::new(
+                JsonRpcId::Number(3),
+                "tools/call",
+                Some(ToolsCallRequest {
+                    name: tool_name.to_string(),
+                    arguments,
+                }),
+            ),
+            Some(&request_headers),
+        )
+        .await
     }
 
     pub fn build_request<T: Serialize>(
@@ -609,6 +658,23 @@ mod tests {
         );
         let encoded = serde_json::to_value(request).expect("serialize request");
         assert_eq!(encoded["params"], json!({"cursor": "page-2"}));
+    }
+
+    #[test]
+    fn serializes_tools_call_request() {
+        let request = JsonRpcRequest::new(
+            JsonRpcId::Number(3),
+            "tools/call",
+            Some(ToolsCallRequest {
+                name: "search".to_string(),
+                arguments: json!({"q": "mcp"}),
+            }),
+        );
+        let encoded = serde_json::to_value(request).expect("serialize request");
+        assert_eq!(
+            encoded["params"],
+            json!({"name": "search", "arguments": {"q": "mcp"}})
+        );
     }
 
     #[test]

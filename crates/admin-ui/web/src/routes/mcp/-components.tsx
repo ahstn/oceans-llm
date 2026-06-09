@@ -35,10 +35,12 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import type {
   CreateMcpServerInput,
+  McpCredentialBindingView,
   McpServerView,
   McpToolView,
   RecommendedMcpServerView,
   UpdateMcpServerInput,
+  UpsertMcpCredentialBindingInput,
 } from '@/types/api'
 
 const AUTH_MODES = [
@@ -57,6 +59,19 @@ export type ServerFormState = {
   auth_mode: string
   auth_config: string
   timeout_ms: string
+}
+
+export type CredentialBindingFormState = {
+  owner_scope_kind: 'user' | 'team' | 'service_account'
+  owner_user_id: string
+  owner_team_id: string
+  owner_service_account_id: string
+  material_kind: 'static_header' | 'bearer_token' | 'oauth_tokens'
+  header_name: string
+  storage_mode: 'secret' | 'secret_ref'
+  secret: string
+  secret_ref: string
+  expires_at: string
 }
 
 export function ServerDetail({
@@ -212,6 +227,267 @@ export function ServerDetail({
             </Table>
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+export function CredentialBindingsPanel({
+  bindings,
+  form,
+  pending,
+  error,
+  onFormChange,
+  onSubmit,
+  onRevoke,
+}: {
+  bindings: McpCredentialBindingView[]
+  form: CredentialBindingFormState
+  pending: boolean
+  error: string | null
+  onFormChange: (form: CredentialBindingFormState) => void
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void
+  onRevoke: (binding: McpCredentialBindingView) => void
+}) {
+  const activeBindings = bindings.filter((binding) => !binding.revoked_at)
+  return (
+    <div className="min-w-0 rounded-md border">
+      <div className="flex flex-col gap-1 border-b p-4">
+        <h3 className="font-medium">Credential bindings</h3>
+        <p className="text-sm text-[var(--color-text-muted)]">
+          Principal-scoped upstream credentials for user passthrough and OAuth on-behalf-of modes.
+        </p>
+      </div>
+
+      {error ? (
+        <div className="m-4 rounded-md border border-[var(--color-danger)] p-3 text-sm text-[var(--color-danger)]">
+          {error}
+        </div>
+      ) : null}
+
+      <form className="grid gap-4 border-b p-4" onSubmit={onSubmit}>
+        <FieldGroup className="grid gap-3 md:grid-cols-3">
+          <Field>
+            <FieldLabel>Owner scope</FieldLabel>
+            <Select
+              value={form.owner_scope_kind}
+              onValueChange={(value) =>
+                onFormChange({
+                  ...form,
+                  owner_scope_kind: value as CredentialBindingFormState['owner_scope_kind'],
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="user">User</SelectItem>
+                  <SelectItem value="team">Team shared</SelectItem>
+                  <SelectItem value="service_account">Service account</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field>
+            <FieldLabel>Material</FieldLabel>
+            <Select
+              value={form.material_kind}
+              onValueChange={(value) =>
+                onFormChange({
+                  ...form,
+                  material_kind: value as CredentialBindingFormState['material_kind'],
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="bearer_token">Bearer token</SelectItem>
+                  <SelectItem value="static_header">Static header</SelectItem>
+                  <SelectItem value="oauth_tokens">OAuth bearer</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field>
+            <FieldLabel>Storage</FieldLabel>
+            <Select
+              value={form.storage_mode}
+              onValueChange={(value) =>
+                onFormChange({
+                  ...form,
+                  storage_mode: value as CredentialBindingFormState['storage_mode'],
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="secret">Encrypted secret</SelectItem>
+                  <SelectItem value="secret_ref">Secret reference</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </Field>
+
+          {form.owner_scope_kind === 'user' ? (
+            <Field>
+              <FieldLabel htmlFor="mcp-credential-owner-user">User ID</FieldLabel>
+              <Input
+                id="mcp-credential-owner-user"
+                value={form.owner_user_id}
+                onChange={(event) => onFormChange({ ...form, owner_user_id: event.target.value })}
+                required
+              />
+            </Field>
+          ) : null}
+          {form.owner_scope_kind === 'team' || form.owner_scope_kind === 'service_account' ? (
+            <Field>
+              <FieldLabel htmlFor="mcp-credential-owner-team">Team ID</FieldLabel>
+              <Input
+                id="mcp-credential-owner-team"
+                value={form.owner_team_id}
+                onChange={(event) => onFormChange({ ...form, owner_team_id: event.target.value })}
+                required
+              />
+            </Field>
+          ) : null}
+          {form.owner_scope_kind === 'service_account' ? (
+            <Field>
+              <FieldLabel htmlFor="mcp-credential-owner-service-account">
+                Service account ID
+              </FieldLabel>
+              <Input
+                id="mcp-credential-owner-service-account"
+                value={form.owner_service_account_id}
+                onChange={(event) =>
+                  onFormChange({ ...form, owner_service_account_id: event.target.value })
+                }
+                required
+              />
+            </Field>
+          ) : null}
+          {form.material_kind === 'static_header' ? (
+            <Field>
+              <FieldLabel htmlFor="mcp-credential-header-name">Header name</FieldLabel>
+              <Input
+                id="mcp-credential-header-name"
+                value={form.header_name}
+                onChange={(event) => onFormChange({ ...form, header_name: event.target.value })}
+                placeholder="X-API-Key"
+                required
+              />
+            </Field>
+          ) : null}
+          {form.storage_mode === 'secret' ? (
+            <Field>
+              <FieldLabel htmlFor="mcp-credential-secret">Secret</FieldLabel>
+              <Input
+                id="mcp-credential-secret"
+                type="password"
+                value={form.secret}
+                onChange={(event) => onFormChange({ ...form, secret: event.target.value })}
+                required
+              />
+            </Field>
+          ) : (
+            <Field>
+              <FieldLabel htmlFor="mcp-credential-secret-ref">Secret reference</FieldLabel>
+              <Input
+                id="mcp-credential-secret-ref"
+                value={form.secret_ref}
+                onChange={(event) => onFormChange({ ...form, secret_ref: event.target.value })}
+                placeholder="env/OCEANS_MCP_CREDENTIAL_GITHUB"
+                required
+              />
+            </Field>
+          )}
+          <Field>
+            <FieldLabel htmlFor="mcp-credential-expires-at">Expires at</FieldLabel>
+            <Input
+              id="mcp-credential-expires-at"
+              type="datetime-local"
+              value={form.expires_at}
+              onChange={(event) => onFormChange({ ...form, expires_at: event.target.value })}
+            />
+          </Field>
+        </FieldGroup>
+        <div className="flex justify-end">
+          <Button type="submit" disabled={pending}>
+            {pending ? 'Saving...' : 'Add binding'}
+          </Button>
+        </div>
+      </form>
+
+      {bindings.length === 0 ? (
+        <Empty>
+          <EmptyHeader>
+            <EmptyTitle>No credential bindings</EmptyTitle>
+            <EmptyDescription>Execution will use gateway-managed auth or require a binding.</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      ) : (
+        <div className="overflow-x-auto">
+          <Table className="min-w-[72rem]">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Status</TableHead>
+                <TableHead>Owner</TableHead>
+                <TableHead>Material</TableHead>
+                <TableHead>Storage</TableHead>
+                <TableHead>Secret ref</TableHead>
+                <TableHead>Expires</TableHead>
+                <TableHead>Last used</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {bindings.map((binding) => (
+                <TableRow key={binding.id}>
+                  <TableCell>{binding.revoked_at ? 'Revoked' : 'Active'}</TableCell>
+                  <TableCell>
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <span>{binding.owner_scope_kind}</span>
+                      <span className="truncate font-mono text-xs text-[var(--color-text-muted)]">
+                        {binding.owner_scope_key}
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    {binding.material_kind}
+                    {binding.header_name ? ` (${binding.header_name})` : ''}
+                  </TableCell>
+                  <TableCell>{binding.storage_kind}</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {binding.secret_ref ?? 'redacted'}
+                  </TableCell>
+                  <TableCell>{binding.expires_at ?? 'never'}</TableCell>
+                  <TableCell>{binding.last_used_at ?? 'never'}</TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => onRevoke(binding)}
+                      disabled={pending || Boolean(binding.revoked_at)}
+                    >
+                      Revoke
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+      <div className="border-t px-4 py-3 text-sm text-[var(--color-text-muted)]">
+        {activeBindings.length} active binding{activeBindings.length === 1 ? '' : 's'}
       </div>
     </div>
   )
@@ -396,6 +672,21 @@ export function emptyServerForm(): ServerFormState {
   }
 }
 
+export function emptyCredentialBindingForm(): CredentialBindingFormState {
+  return {
+    owner_scope_kind: 'user',
+    owner_user_id: '',
+    owner_team_id: '',
+    owner_service_account_id: '',
+    material_kind: 'bearer_token',
+    header_name: '',
+    storage_mode: 'secret',
+    secret: '',
+    secret_ref: '',
+    expires_at: '',
+  }
+}
+
 export function formFromRecommended(server: RecommendedMcpServerView): ServerFormState {
   return {
     server_key: server.catalog_key,
@@ -452,6 +743,35 @@ export function formToUpdateInput(form: ServerFormState): UpdateMcpServerInput |
   }
 }
 
+export function formToCredentialBindingInput(
+  serverId: string,
+  form: CredentialBindingFormState,
+): UpsertMcpCredentialBindingInput | null {
+  const expiresAt = optionalDateTime(form.expires_at)
+  if (expiresAt === undefined) {
+    return null
+  }
+  return {
+    server_id: serverId,
+    owner_scope_kind: form.owner_scope_kind,
+    owner_user_id: form.owner_scope_kind === 'user' ? requiredString(form.owner_user_id) : null,
+    owner_team_id:
+      form.owner_scope_kind === 'team' || form.owner_scope_kind === 'service_account'
+        ? requiredString(form.owner_team_id)
+        : null,
+    owner_service_account_id:
+      form.owner_scope_kind === 'service_account'
+        ? requiredString(form.owner_service_account_id)
+        : null,
+    material_kind: form.material_kind,
+    header_name: form.material_kind === 'static_header' ? requiredString(form.header_name) : null,
+    secret: form.storage_mode === 'secret' ? requiredString(form.secret) : null,
+    secret_ref: form.storage_mode === 'secret_ref' ? requiredString(form.secret_ref) : null,
+    expires_at: expiresAt,
+    metadata: {},
+  }
+}
+
 function parseAuthConfig(value: string): Record<string, unknown> | null {
   try {
     const parsed = JSON.parse(value || '{}') as unknown
@@ -474,4 +794,22 @@ function optionalString(value: string) {
 function optionalNumber(value: string) {
   const trimmed = value.trim()
   return trimmed.length > 0 ? Number(trimmed) : null
+}
+
+function requiredString(value: string) {
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+function optionalDateTime(value: string): string | null | undefined {
+  const trimmed = value.trim()
+  if (trimmed.length === 0) {
+    return null
+  }
+  const date = new Date(trimmed)
+  if (Number.isNaN(date.getTime())) {
+    toast.error('Credential expiry is not a valid date')
+    return undefined
+  }
+  return date.toISOString()
 }

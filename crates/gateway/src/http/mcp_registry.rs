@@ -12,7 +12,8 @@ use gateway_core::{
     NewMcpToolsetRecord, UpdateMcpToolsetRecord, UpsertMcpToolGrantRecord,
 };
 use gateway_service::{
-    CreateExternalMcpServerInput, McpRegistryService, UpdateExternalMcpServerInput,
+    CreateExternalMcpServerInput, McpCredentialService, McpRegistryService,
+    UpdateExternalMcpServerInput, UpsertMcpCredentialBindingInput,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -457,6 +458,94 @@ pub async fn revoke_mcp_grant(
         )
         .await?;
     Ok(Json(envelope(McpGrantsPayload { items: Vec::new() })))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/mcp/credential-bindings",
+    params(McpCredentialBindingsQuery),
+    responses((status = 200, body = Envelope<McpCredentialBindingsPayload>)),
+    security(("session_cookie" = []))
+)]
+pub async fn list_mcp_credential_bindings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<McpCredentialBindingsQuery>,
+) -> Result<Json<Envelope<McpCredentialBindingsPayload>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+    let owner_scope_kind = query
+        .owner_scope_kind
+        .as_deref()
+        .map(parse_credential_owner_scope_kind)
+        .transpose()?;
+    let service = McpCredentialService::new(state.store.clone());
+    let items = service
+        .list_bindings(
+            query.server_id,
+            owner_scope_kind,
+            query.owner_scope_id,
+            query.include_revoked,
+        )
+        .await?
+        .into_iter()
+        .map(map_credential_binding)
+        .collect();
+    Ok(Json(envelope(McpCredentialBindingsPayload { items })))
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/v1/admin/mcp/credential-bindings",
+    request_body = UpsertMcpCredentialBindingRequest,
+    responses((status = 200, body = Envelope<McpCredentialBindingPayload>)),
+    security(("session_cookie" = []))
+)]
+pub async fn upsert_mcp_credential_binding(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<UpsertMcpCredentialBindingRequest>,
+) -> Result<Json<Envelope<McpCredentialBindingPayload>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+    let service = McpCredentialService::new(state.store.clone());
+    let binding = service
+        .upsert_binding(UpsertMcpCredentialBindingInput {
+            credential_binding_id: request.credential_binding_id,
+            mcp_server_id: request.server_id,
+            owner_scope_kind: parse_credential_owner_scope_kind(&request.owner_scope_kind)?,
+            owner_user_id: request.owner_user_id,
+            owner_team_id: request.owner_team_id,
+            owner_service_account_id: request.owner_service_account_id,
+            material_kind: parse_credential_material_kind(&request.material_kind)?,
+            header_name: request.header_name,
+            secret: request.secret,
+            secret_ref: request.secret_ref,
+            expires_at: request.expires_at,
+            metadata: request.metadata,
+        })
+        .await?;
+    Ok(Json(envelope(McpCredentialBindingPayload {
+        binding: map_credential_binding(binding),
+    })))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/v1/admin/mcp/credential-bindings/{credential_binding_id}",
+    params(("credential_binding_id" = String, Path, description = "MCP credential binding identifier")),
+    responses((status = 200, body = Envelope<McpCredentialBindingsPayload>)),
+    security(("session_cookie" = []))
+)]
+pub async fn revoke_mcp_credential_binding(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(credential_binding_id): Path<Uuid>,
+) -> Result<Json<Envelope<McpCredentialBindingsPayload>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+    let service = McpCredentialService::new(state.store.clone());
+    service.revoke_binding(credential_binding_id).await?;
+    Ok(Json(envelope(McpCredentialBindingsPayload {
+        items: Vec::new(),
+    })))
 }
 
 #[utoipa::path(

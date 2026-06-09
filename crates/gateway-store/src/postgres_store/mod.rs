@@ -4,6 +4,7 @@ mod budgets;
 mod identity;
 mod mcp_access;
 mod mcp_aggregate_sessions;
+mod mcp_credentials;
 mod mcp_registry;
 mod mcp_token_overhead;
 mod mcp_tool_invocations;
@@ -34,11 +35,13 @@ use gateway_core::{
     McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
     McpToolInvocationRecord, McpToolInvocationRepository, McpToolInvocationStatus,
     McpToolPolicyResult, McpToolTokenEstimateRecord, McpToolsetRecord, McpToolsetStatus,
-    McpToolsetToolRecord, MembershipRole, ModelAccessMode, ModelPricingRecord, ModelRepository,
-    ModelRoute, Money4, NewApiKeyRecord, NewExternalMcpServerRecord, NewMcpAggregateSessionRecord,
-    NewMcpToolsetRecord, OauthJitMembership, OauthJitPolicy, OauthLoginStateRecord,
-    OauthProviderRecord, OidcJitMembership, OidcJitPolicy, OidcLoginStateRecord,
-    OidcProviderRecord, PasswordInvitationRecord, PricingCatalogCacheRecord,
+    McpToolsetToolRecord, McpUpstreamCredentialBindingRecord, McpUpstreamCredentialMaterialKind,
+    McpUpstreamCredentialOwnerScopeKind, McpUpstreamCredentialRepository,
+    McpUpstreamSecretStorageKind, MembershipRole, ModelAccessMode, ModelPricingRecord,
+    ModelRepository, ModelRoute, Money4, NewApiKeyRecord, NewExternalMcpServerRecord,
+    NewMcpAggregateSessionRecord, NewMcpToolsetRecord, OauthJitMembership, OauthJitPolicy,
+    OauthLoginStateRecord, OauthProviderRecord, OidcJitMembership, OidcJitPolicy,
+    OidcLoginStateRecord, OidcProviderRecord, PasswordInvitationRecord, PricingCatalogCacheRecord,
     PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
     ProviderConnection, ProviderRepository, RequestAttemptRecord, RequestAttemptRepository,
     RequestAttemptStatus, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
@@ -47,9 +50,9 @@ use gateway_core::{
     SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord, StoreError,
     StoreHealth, TeamMembershipRecord, TeamRecord, UpdateExternalMcpServerRecord,
     UpdateMcpToolsetRecord, UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
-    UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord, UsageLedgerRecord,
-    UsagePricingStatus, UserOauthAuthRecord, UserOidcAuthRecord, UserPasswordAuthRecord,
-    UserRecord, UserSessionRecord, UserStatus,
+    UpsertMcpUpstreamCredentialBindingRecord, UsageLeaderboardBucketRecord,
+    UsageLeaderboardUserRecord, UsageLedgerRecord, UsagePricingStatus, UserOauthAuthRecord,
+    UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
 };
 use sqlx::{
     PgPool, Row,

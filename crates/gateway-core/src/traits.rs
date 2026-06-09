@@ -18,15 +18,17 @@ use crate::{
         McpCatalogAccessResolution, McpGrantSubject, McpToolGrantRecord, McpToolGrantSubjectKind,
         McpToolGrantTargetKind, McpToolInvocationDetail, McpToolInvocationPage,
         McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
-        McpToolTokenEstimateRecord, McpToolsetRecord, McpToolsetToolRecord, ModelPricingRecord,
-        ModelRoute, Money4, NewApiKeyRecord, NewExternalMcpServerRecord,
+        McpToolTokenEstimateRecord, McpToolsetRecord, McpToolsetToolRecord,
+        McpUpstreamCredentialBindingRecord, McpUpstreamCredentialOwnerScopeKind,
+        ModelPricingRecord, ModelRoute, Money4, NewApiKeyRecord, NewExternalMcpServerRecord,
         NewMcpAggregateSessionRecord, NewMcpToolsetRecord, PricingCatalogCacheRecord,
         ProviderCapabilities, ProviderConnection, ProviderRequestContext, RequestAttemptRecord,
         RequestLogDetail, RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult,
         RequestLogQuery, RequestLogRecord, RequestMcpTokenOverheadRecord, ServiceAccountRecord,
         SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord,
         TeamMembershipRecord, TeamRecord, UpdateExternalMcpServerRecord, UpdateMcpToolsetRecord,
-        UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord, UsageLeaderboardBucketRecord,
+        UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
+        UpsertMcpUpstreamCredentialBindingRecord, UsageLeaderboardBucketRecord,
         UsageLeaderboardUserRecord, UsageLedgerRecord, UserRecord,
     },
     error::{ProviderError, RouteError, StoreError},
@@ -617,6 +619,40 @@ pub trait McpAggregateSessionRepository: Send + Sync {
         token_hash: &str,
         revoked_at: OffsetDateTime,
     ) -> Result<bool, StoreError>;
+}
+
+#[async_trait]
+pub trait McpUpstreamCredentialRepository: Send + Sync {
+    async fn upsert_mcp_upstream_credential_binding(
+        &self,
+        input: &UpsertMcpUpstreamCredentialBindingRecord,
+    ) -> Result<McpUpstreamCredentialBindingRecord, StoreError>;
+
+    async fn get_active_mcp_upstream_credential_binding(
+        &self,
+        mcp_server_id: Uuid,
+        owner_scope_key: &str,
+    ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError>;
+
+    async fn list_mcp_upstream_credential_bindings(
+        &self,
+        mcp_server_id: Option<Uuid>,
+        owner_scope_kind: Option<McpUpstreamCredentialOwnerScopeKind>,
+        owner_scope_id: Option<Uuid>,
+        include_revoked: bool,
+    ) -> Result<Vec<McpUpstreamCredentialBindingRecord>, StoreError>;
+
+    async fn revoke_mcp_upstream_credential_binding(
+        &self,
+        credential_binding_id: Uuid,
+        revoked_at: OffsetDateTime,
+    ) -> Result<bool, StoreError>;
+
+    async fn touch_mcp_upstream_credential_binding_last_used(
+        &self,
+        credential_binding_id: Uuid,
+        last_used_at: OffsetDateTime,
+    ) -> Result<(), StoreError>;
 }
 
 #[async_trait]

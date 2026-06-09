@@ -785,6 +785,145 @@
         ]
       }
     },
+    "/api/v1/admin/mcp/credential-bindings": {
+      "get": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "list_mcp_credential_bindings",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "owner_scope_kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "owner_scope_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "include_revoked",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpCredentialBindingsPayload"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "upsert_mcp_credential_binding",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertMcpCredentialBindingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpCredentialBindingPayload"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/credential-bindings/{credential_binding_id}": {
+      "delete": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "revoke_mcp_credential_binding",
+        "parameters": [
+          {
+            "name": "credential_binding_id",
+            "in": "path",
+            "description": "MCP credential binding identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpCredentialBindingsPayload"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/mcp/effective-access": {
       "get": {
         "tags": [
@@ -5345,6 +5484,55 @@
           }
         }
       },
+      "Envelope_McpCredentialBindingPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "binding"
+            ],
+            "properties": {
+              "binding": {
+                "$ref": "#/components/schemas/McpCredentialBindingView"
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_McpCredentialBindingsPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/McpCredentialBindingView"
+                }
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
       "Envelope_McpDiscoveryRefreshPayload": {
         "type": "object",
         "required": [
@@ -6449,6 +6637,118 @@
           },
           "window_start": {
             "type": "string"
+          }
+        }
+      },
+      "McpCredentialBindingPayload": {
+        "type": "object",
+        "required": [
+          "binding"
+        ],
+        "properties": {
+          "binding": {
+            "$ref": "#/components/schemas/McpCredentialBindingView"
+          }
+        }
+      },
+      "McpCredentialBindingView": {
+        "type": "object",
+        "required": [
+          "id",
+          "server_id",
+          "owner_scope_kind",
+          "owner_scope_key",
+          "material_kind",
+          "storage_kind",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "header_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "last_used_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "material_kind": {
+            "type": "string"
+          },
+          "owner_scope_key": {
+            "type": "string"
+          },
+          "owner_scope_kind": {
+            "type": "string"
+          },
+          "owner_service_account_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "owner_team_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "owner_user_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revoked_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "secret_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "storage_kind": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "McpCredentialBindingsPayload": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/McpCredentialBindingView"
+            }
           }
         }
       },
@@ -8458,6 +8758,83 @@
           },
           "scope_key": {
             "type": "string"
+          }
+        }
+      },
+      "UpsertMcpCredentialBindingRequest": {
+        "type": "object",
+        "required": [
+          "server_id",
+          "owner_scope_kind",
+          "material_kind"
+        ],
+        "properties": {
+          "credential_binding_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "header_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "material_kind": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "owner_scope_kind": {
+            "type": "string"
+          },
+          "owner_service_account_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "owner_team_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "owner_user_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "secret": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "secret_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "server_id": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       },

@@ -13,7 +13,7 @@ Oceans exposes two MCP data-plane shapes:
 - `/mcp`: a gateway-owned aggregate MCP server for catalog discovery
 - `/mcp/{server_key}`: a direct Streamable HTTP proxy to one registered upstream MCP server
 
-The aggregate endpoint exposes only `search_tools` and `describe_tool` in this slice. It does not expose every upstream tool directly and does not execute upstream tools. Tool execution through aggregate addresses is a separate follow-up capability.
+The aggregate endpoint exposes only `search_tools` and `describe_tool` in this slice. It does not expose every upstream tool directly and does not execute upstream tools. Tool execution through aggregate addresses is a separate follow-up capability that is covered by [ADR: MCP Upstream Credential Bindings And Aggregate Execution](./2026-06-09-mcp-upstream-credential-bindings-and-execution.md).
 
 Aggregate sessions are durable transport state in `mcp_aggregate_sessions`. The gateway stores hashed signed session tokens, binds each session to the authenticated API key and owner metadata, and treats cross-principal reuse as not found.
 
@@ -41,6 +41,6 @@ No legacy HTTP+SSE fallback is added because this route is a new Streamable HTTP
 
 ## Follow-Ups
 
-- Add aggregate execution for canonical tool addresses in a separate issue.
+- Add aggregate execution for canonical tool addresses. Completed by [ADR: MCP Upstream Credential Bindings And Aggregate Execution](./2026-06-09-mcp-upstream-credential-bindings-and-execution.md).
 - Add semantic ranking only after lexical ranking proves insufficient.
-- Add invocation logging for aggregate execution when upstream calls are introduced.
+- Add invocation logging for aggregate execution when upstream calls are introduced. Completed by [ADR: MCP Upstream Credential Bindings And Aggregate Execution](./2026-06-09-mcp-upstream-credential-bindings-and-execution.md).

@@ -125,6 +125,15 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V30__mcp_aggregate_sessions.sql"),
         postgres_sql: include_str!("../migrations/postgres/V30__mcp_aggregate_sessions.sql"),
     },
+    MigrationManifest {
+        version: 31,
+        name: "mcp_upstream_credential_bindings",
+        checksum: "V31__mcp_upstream_credential_bindings.sql",
+        libsql_sql: include_str!("../migrations/V31__mcp_upstream_credential_bindings.sql"),
+        postgres_sql: include_str!(
+            "../migrations/postgres/V31__mcp_upstream_credential_bindings.sql"
+        ),
+    },
 ];
 
 #[cfg(test)]

@@ -5,8 +5,10 @@ edition = "2024"
 
 [dependencies]
 anyhow.workspace = true
+aes-gcm.workspace = true
 argon2.workspace = true
 async-trait.workspace = true
+base64.workspace = true
 gateway-core.workspace = true
 gateway-client-config.workspace = true
 gateway-mcp.workspace = true

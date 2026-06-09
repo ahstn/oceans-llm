@@ -1446,6 +1446,135 @@ pub struct McpCatalogAccessResolution {
     pub filtered_tool_count: i64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum McpUpstreamCredentialOwnerScopeKind {
+    User,
+    Team,
+    ServiceAccount,
+}
+
+impl McpUpstreamCredentialOwnerScopeKind {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Team => "team",
+            Self::ServiceAccount => "service_account",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "user" => Some(Self::User),
+            "team" => Some(Self::Team),
+            "service_account" => Some(Self::ServiceAccount),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum McpUpstreamCredentialMaterialKind {
+    StaticHeader,
+    BearerToken,
+    OauthTokens,
+}
+
+impl McpUpstreamCredentialMaterialKind {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::StaticHeader => "static_header",
+            Self::BearerToken => "bearer_token",
+            Self::OauthTokens => "oauth_tokens",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "static_header" => Some(Self::StaticHeader),
+            "bearer_token" => Some(Self::BearerToken),
+            "oauth_tokens" => Some(Self::OauthTokens),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum McpUpstreamSecretStorageKind {
+    EncryptedBlob,
+    SecretRef,
+}
+
+impl McpUpstreamSecretStorageKind {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::EncryptedBlob => "encrypted_blob",
+            Self::SecretRef => "secret_ref",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "encrypted_blob" => Some(Self::EncryptedBlob),
+            "secret_ref" => Some(Self::SecretRef),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpUpstreamCredentialBindingRecord {
+    pub credential_binding_id: Uuid,
+    pub mcp_server_id: Uuid,
+    pub owner_scope_kind: McpUpstreamCredentialOwnerScopeKind,
+    pub owner_scope_key: String,
+    pub owner_user_id: Option<Uuid>,
+    pub owner_team_id: Option<Uuid>,
+    pub owner_service_account_id: Option<Uuid>,
+    pub material_kind: McpUpstreamCredentialMaterialKind,
+    pub header_name: Option<String>,
+    pub storage_kind: McpUpstreamSecretStorageKind,
+    pub secret_ciphertext: Option<String>,
+    pub secret_nonce: Option<String>,
+    pub secret_key_id: Option<String>,
+    pub secret_ref: Option<String>,
+    pub expires_at: Option<OffsetDateTime>,
+    pub metadata: Map<String, Value>,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+    pub last_used_at: Option<OffsetDateTime>,
+    pub revoked_at: Option<OffsetDateTime>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpsertMcpUpstreamCredentialBindingRecord {
+    pub credential_binding_id: Option<Uuid>,
+    pub mcp_server_id: Uuid,
+    pub owner_scope_kind: McpUpstreamCredentialOwnerScopeKind,
+    pub owner_scope_key: String,
+    pub owner_user_id: Option<Uuid>,
+    pub owner_team_id: Option<Uuid>,
+    pub owner_service_account_id: Option<Uuid>,
+    pub material_kind: McpUpstreamCredentialMaterialKind,
+    pub header_name: Option<String>,
+    pub storage_kind: McpUpstreamSecretStorageKind,
+    pub secret_ciphertext: Option<String>,
+    pub secret_nonce: Option<String>,
+    pub secret_key_id: Option<String>,
+    pub secret_ref: Option<String>,
+    pub expires_at: Option<OffsetDateTime>,
+    pub metadata: Map<String, Value>,
+    pub updated_at: OffsetDateTime,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpsertExternalMcpToolRecord {
     pub mcp_server_id: Uuid,

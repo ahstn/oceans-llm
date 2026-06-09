@@ -36,15 +36,22 @@ pub struct DescribeMcpToolInput {
     pub address: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CallMcpToolInput {
+    pub address: String,
+    #[serde(default)]
+    pub arguments: Value,
+    #[serde(default)]
+    pub schema_hash: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct SearchMcpToolsOutput {
     pub items: Vec<McpCatalogSearchItem>,
     pub total: usize,
     pub next_offset: Option<usize>,
     pub ranker: &'static str,
-    pub referenced_server_count: i64,
-    pub exposed_tool_count: i64,
-    pub filtered_tool_count: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -153,9 +160,6 @@ where
             total,
             next_offset,
             ranker: MCP_CATALOG_RANKER,
-            referenced_server_count: records.referenced_server_count,
-            exposed_tool_count: records.exposed_tool_count,
-            filtered_tool_count: records.filtered_tool_count,
         })
     }
 
@@ -165,16 +169,7 @@ where
         input: DescribeMcpToolInput,
     ) -> Result<DescribeMcpToolOutput, GatewayError> {
         let parsed = parse_tool_address(&input.address)?;
-        let records = self
-            .authorized_catalog(auth, Some(parsed.server_key.as_str()))
-            .await?;
-        let record = records
-            .allowed_tools
-            .into_iter()
-            .find(|record| record.tool.upstream_name == parsed.upstream_name)
-            .ok_or_else(|| {
-                GatewayError::InvalidRequest("MCP tool address is not granted".to_string())
-            })?;
+        let record = self.authorized_tool(auth, &parsed).await?;
         Ok(DescribeMcpToolOutput {
             address: tool_address(&record.server.server_key, &record.tool.upstream_name)?,
             server: server_view(&record),
@@ -190,6 +185,15 @@ where
         })
     }
 
+    pub async fn authorized_tool_by_address(
+        &self,
+        auth: &AuthenticatedApiKey,
+        address: &str,
+    ) -> Result<McpCatalogToolRecord, GatewayError> {
+        let parsed = parse_tool_address(address)?;
+        self.authorized_tool(auth, &parsed).await
+    }
+
     async fn authorized_catalog(
         &self,
         auth: &AuthenticatedApiKey,
@@ -201,6 +205,23 @@ where
             .repo
             .resolve_mcp_catalog_access_for_subjects(&subjects, server_key)
             .await?)
+    }
+
+    async fn authorized_tool(
+        &self,
+        auth: &AuthenticatedApiKey,
+        parsed: &McpToolAddress,
+    ) -> Result<McpCatalogToolRecord, GatewayError> {
+        let records = self
+            .authorized_catalog(auth, Some(parsed.server_key.as_str()))
+            .await?;
+        records
+            .allowed_tools
+            .into_iter()
+            .find(|record| record.tool.upstream_name == parsed.upstream_name)
+            .ok_or_else(|| {
+                GatewayError::InvalidRequest("MCP tool address is not granted".to_string())
+            })
     }
 }
 

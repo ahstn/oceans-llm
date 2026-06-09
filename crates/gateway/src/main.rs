@@ -13,8 +13,8 @@ use gateway::{
 use gateway_core::ProviderRegistry;
 use gateway_providers::{BedrockProvider, OpenAiCompatProvider, VertexProvider};
 use gateway_service::{
-    DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, GatewayService, WeightedRoutePlanner,
-    hash_gateway_key_secret,
+    DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, GatewayService, McpCredentialService,
+    WeightedRoutePlanner, hash_gateway_key_secret,
 };
 use gateway_store::{
     AnyStore, GatewayStore, MigrationStatus, check_migrations_with_options,
@@ -173,6 +173,8 @@ async fn run_serve_with_store(
     spawn_budget_alert_delivery_loop(service.clone(), &config.budget_alerts.email);
     request_log_purge::spawn_loop(service.clone(), &config.request_logging.purge);
     let providers = build_provider_registry(config)?;
+    McpCredentialService::<AnyStore>::validate_runtime_configuration()
+        .context("invalid MCP credential runtime configuration")?;
 
     let bind_address: SocketAddr = config
         .server

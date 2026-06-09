@@ -41,6 +41,7 @@ This document is schema-oriented. It describes the persistent relationships that
 17. `external_mcp_servers` stores user-added MCP server registry rows and soft-disable state
 18. `external_mcp_tools` stores discovered MCP tools, stable tool ids, schema hashes, schema versions, and active/inactive state
 19. `external_mcp_discovery_runs` stores immutable discovery attempt diagnostics
+20. `mcp_upstream_credential_bindings` stores redacted, principal-scoped upstream credentials for MCP execution
 
 ## Table Catalog
 
@@ -129,6 +130,9 @@ Compatibility metadata is not a provider config fallback and is not an `extra_bo
 - `mcp_aggregate_sessions`
   - Key columns: `session_id`, `token_hash`, `api_key_id`, `owner_kind`, `owner_user_id`, `owner_team_id`, `owner_service_account_id`, `protocol_version`, `initialized`, `expires_at`, `created_at`, `updated_at`, `revoked_at`
   - Notes: aggregate `/mcp` Streamable HTTP sessions are durable transport state. Only token hashes are stored. Sessions are bound to the authenticated API key and owner metadata; reuse by another principal is treated as not found.
+- `mcp_upstream_credential_bindings`
+  - Key columns: `credential_binding_id`, `mcp_server_id`, `owner_scope_kind`, `owner_scope_key`, `owner_user_id`, `owner_team_id`, `owner_service_account_id`, `material_kind`, `header_name`, `storage_kind`, `secret_ciphertext`, `secret_nonce`, `secret_key_id`, `secret_ref`, `expires_at`, `last_used_at`, `revoked_at`
+  - Notes: bindings are separate from server registry rows and grants. Active uniqueness is `(mcp_server_id, owner_scope_key)`. Encrypted blobs store ciphertext and nonce only; `secret_ref` rows reference `env/OCEANS_MCP_CREDENTIAL_*`. Admin responses must not expose raw secret material.
 
 ### External MCP Registry Tables
 

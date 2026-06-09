@@ -173,6 +173,22 @@ pub fn call_tool_result(text: impl Into<String>, structured_content: Value) -> C
     }
 }
 
+pub fn call_tool_error_result(
+    text: impl Into<String>,
+    error_code: impl Into<String>,
+    structured_content: Value,
+) -> CallToolResult {
+    let mut structured_content = structured_content;
+    if let Some(object) = structured_content.as_object_mut() {
+        object.insert("error_code".to_string(), json!(error_code.into()));
+    }
+    CallToolResult {
+        content: vec![ToolContent::Text { text: text.into() }],
+        structured_content: Some(structured_content),
+        is_error: Some(true),
+    }
+}
+
 pub fn json_rpc_success<T: Serialize>(
     id: JsonRpcId,
     result: T,

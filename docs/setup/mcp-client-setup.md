@@ -12,6 +12,7 @@ The aggregate endpoint exposes a small discovery surface:
 
 - `search_tools`: search the tools granted to the authenticated API key across all registered MCP servers
 - `describe_tool`: fetch the persisted schema and metadata for one granted tool address
+- `call_tool`: call one granted tool by canonical `mcp://{server_key}/tools/{tool_name}` address
 
 Direct per-server proxying remains available when a client should talk to one upstream server:
 
@@ -37,7 +38,7 @@ x-oceans-api-key: <oceans-api-key>
 
 If both headers are present, they must contain the same raw Oceans key after Bearer extraction. A malformed `Authorization` header is rejected even when `x-oceans-api-key` is valid.
 
-Valid user-owned and service-account-owned Oceans API keys can use `/mcp`. Direct `/mcp/{server_key}` proxy calls can target active servers that use `none`, `gateway_static_header`, or `gateway_bearer_token` upstream auth modes.
+Valid user-owned and service-account-owned Oceans API keys can use `/mcp`. Direct `/mcp/{server_key}` proxy calls can target active servers with gateway-managed credentials or principal-bound upstream credential bindings.
 
 ## Claude Code
 
@@ -101,6 +102,8 @@ The aggregate endpoint issues an `MCP-Session-Id` during `initialize`. Clients m
 
 For direct proxying, send requests to `/mcp/{server_key}`. The gateway preserves MCP response status, content type, and upstream MCP session headers. It strips inbound `Authorization` and `x-oceans-api-key` before proxying upstream.
 
-## OAuth Boundary
+## Upstream Credentials
 
-Servers registered as `user_passthrough` or `oauth_obo` are visible in the registry but not proxyable yet. Calls to those servers return `403 mcp_upstream_auth_required` until Oceans has user-scoped OAuth credentials.
+Oceans API keys are never forwarded upstream. For servers that need caller-specific credentials, platform admins create MCP credential bindings for a user, team, or service account. User-owned keys use a user binding first and then an allowed team binding. Service-account keys use a service-account binding first and then the owning-team binding. A service account never borrows a user's credential.
+
+Missing upstream credentials return a structured `credential_required` tool error from aggregate `call_tool`, or a normal gateway error from direct `/mcp/{server_key}` proxying. Expired bindings return `credential_expired`.

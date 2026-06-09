@@ -1,10 +1,11 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use gateway_core::{
-    ExternalMcpAuthMode, ExternalMcpServerRecord, ExternalMcpServerStatus, GatewayError,
-    McpRegistryRepository, StoreError,
+    AuthenticatedApiKey, ExternalMcpAuthMode, ExternalMcpServerRecord, ExternalMcpServerStatus,
+    GatewayError, McpRegistryRepository, McpUpstreamCredentialRepository, StoreError,
 };
 
+use crate::mcp_credentials::McpCredentialService;
 use crate::mcp_upstream_auth::{gateway_mcp_upstream_headers, normalize_mcp_server_key};
 
 #[derive(Debug, Clone)]
@@ -31,9 +32,17 @@ where
         &self,
         server_key: &str,
     ) -> Result<McpGatewayUpstream, GatewayError> {
+        let server = self.load_active_server(server_key).await?;
+        let headers = gateway_mcp_upstream_headers(&server)?;
+        Ok(McpGatewayUpstream { server, headers })
+    }
+
+    pub async fn load_active_server(
+        &self,
+        server_key: &str,
+    ) -> Result<ExternalMcpServerRecord, GatewayError> {
         let server_key = normalize_mcp_server_key(server_key)?;
-        let server = self
-            .repo
+        self.repo
             .get_external_mcp_server_by_key(&server_key)
             .await?
             .filter(|server| server.status == ExternalMcpServerStatus::Active)
@@ -41,20 +50,49 @@ where
                 GatewayError::Store(StoreError::NotFound(format!(
                     "external MCP server `{server_key}` not found"
                 )))
-            })?;
+            })
+    }
+}
 
-        if matches!(
-            server.auth_mode,
-            ExternalMcpAuthMode::UserPassthrough | ExternalMcpAuthMode::OauthObo
-        ) {
-            return Err(GatewayError::McpUpstreamAuthRequired {
-                server_key: server.server_key,
-            });
-        }
-
-        let headers = gateway_mcp_upstream_headers(&server)?;
+impl<R> McpGatewayService<R>
+where
+    R: McpRegistryRepository + McpUpstreamCredentialRepository,
+{
+    pub async fn prepare_upstream_for_auth(
+        &self,
+        auth: &AuthenticatedApiKey,
+        server: ExternalMcpServerRecord,
+    ) -> Result<McpGatewayUpstream, GatewayError> {
+        let headers = match server.auth_mode {
+            ExternalMcpAuthMode::None
+            | ExternalMcpAuthMode::GatewayStaticHeader
+            | ExternalMcpAuthMode::GatewayBearerToken => gateway_mcp_upstream_headers(&server)?,
+            ExternalMcpAuthMode::UserPassthrough | ExternalMcpAuthMode::OauthObo => Some(
+                McpCredentialService::new(self.repo.clone())
+                    .resolve_for_auth(auth, &server)
+                    .await?
+                    .headers,
+            ),
+        };
         Ok(McpGatewayUpstream { server, headers })
     }
+
+    pub async fn prepare_upstream_for_key_and_auth(
+        &self,
+        auth: &AuthenticatedApiKey,
+        server_key: &str,
+    ) -> Result<McpGatewayUpstream, GatewayError> {
+        let server = self.load_active_server(server_key).await?;
+        self.prepare_upstream_for_auth(auth, server).await
+    }
+}
+
+#[must_use]
+pub fn upstream_auth_requires_principal_credentials(server: &ExternalMcpServerRecord) -> bool {
+    matches!(
+        server.auth_mode,
+        ExternalMcpAuthMode::UserPassthrough | ExternalMcpAuthMode::OauthObo
+    )
 }
 
 #[cfg(test)]
@@ -70,7 +108,7 @@ mod tests {
     use uuid::Uuid;
 
     #[tokio::test]
-    async fn personal_oauth_modes_require_user_scoped_grants() {
+    async fn direct_prepare_keeps_protocol_auth_unresolved() {
         let repo = Arc::new(SingleServerRepo {
             server: server_record(
                 ExternalMcpAuthMode::OauthObo,
@@ -79,12 +117,14 @@ mod tests {
         });
         let service = McpGatewayService::new(repo);
 
-        let error = service
+        let upstream = service
             .prepare_upstream("github")
             .await
-            .expect_err("requires grants");
-        assert_eq!(error.http_status_code(), 403);
-        assert_eq!(error.error_code(), "mcp_upstream_auth_required");
+            .expect("server loads without credential lookup");
+        assert!(upstream.headers.is_none());
+        assert!(upstream_auth_requires_principal_credentials(
+            &upstream.server
+        ));
     }
 
     #[tokio::test]

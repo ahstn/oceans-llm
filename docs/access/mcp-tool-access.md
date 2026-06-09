@@ -32,16 +32,30 @@ Teams are access metadata, not runtime owners. Spend, request ownership, and ser
 
 ## Runtime Behavior
 
-For aggregate `/mcp`, `tools/list` exposes only gateway discovery tools: `search_tools` and `describe_tool`. `search_tools` searches the caller's granted active tools across registered servers. `describe_tool` returns the exact persisted schema and metadata for a granted canonical address such as `mcp://github/tools/issues.create`.
+For aggregate `/mcp`, `tools/list` exposes only gateway-owned tools: `search_tools`, `describe_tool`, and `call_tool`. `search_tools` searches the caller's granted active tools across registered servers. `describe_tool` returns the exact persisted schema and metadata for a granted canonical address such as `mcp://github/tools/issues.create`. `call_tool` re-checks the grant, resolves the upstream credential, and calls the upstream server.
 
 For direct `/mcp/{server_key}`, Oceans filters the upstream `tools/list` response to only granted, active tools on the requested server. The gateway supports JSON responses and finite `text/event-stream` responses for this rewrite.
 
-For direct `tools/call`, Oceans checks access before contacting the upstream MCP server. Unauthorized calls return a deterministic MCP JSON-RPC error and are logged as policy-denied invocations. Aggregate `/mcp` does not execute upstream tools in this slice; execution through aggregate tool addresses is a separate capability.
+For direct `tools/call`, Oceans checks access before contacting the upstream MCP server. Unauthorized calls return a deterministic MCP JSON-RPC error and are logged as policy-denied invocations.
+
+`call_tool` input uses:
+
+```json
+{
+  "address": "mcp://github/tools/issues.create",
+  "arguments": {},
+  "schema_hash": "sha256:optional"
+}
+```
+
+If `schema_hash` is supplied and no longer matches the persisted tool schema, the gateway returns `tool_schema_changed` without contacting the upstream server. Missing upstream credentials return `credential_required`; expired bindings return `credential_expired`.
 
 Disabled servers, disabled toolsets, inactive tools, revoked grants, and inactive team memberships do not resolve as callable access.
 
 ## Relation To Budgets
 
 MCP grants decide tool visibility and call permission. They do not create spend budgets.
+
+Service-account MCP credentials and service-account budgets are separate controls. A service account can have an upstream credential binding and still be blocked by budget policy elsewhere, or have budget capacity but no MCP credential for a particular upstream server. User-facing budget setup remains in [Budgets](budgets.md).
 
 MCP token-overhead estimates are context-window telemetry. They estimate how many prompt-context tokens granted tool definitions and tool results may consume, but they are not billing truth and do not count toward spend-budget accounting.

@@ -5,6 +5,7 @@
 //! `tests/` or private test submodules as store domains continue to grow.
 mod any_store_mcp_access;
 mod any_store_mcp_aggregate_sessions;
+mod any_store_mcp_credentials;
 mod any_store_mcp_registry;
 mod any_store_mcp_token_overhead;
 mod libsql_store;
@@ -38,7 +39,9 @@ mod tests {
         ExternalMcpServerStatus, ExternalMcpTransport, GlobalRole, IdentityRepository,
         McpRegistryRepository, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
         McpToolInvocationRecord, McpToolInvocationRepository, McpToolInvocationStatus,
-        McpToolPolicyResult, MembershipRole, ModelPricingRecord, ModelRepository, Money4,
+        McpToolPolicyResult, McpUpstreamCredentialMaterialKind,
+        McpUpstreamCredentialOwnerScopeKind, McpUpstreamCredentialRepository,
+        McpUpstreamSecretStorageKind, MembershipRole, ModelPricingRecord, ModelRepository, Money4,
         NewExternalMcpServerRecord, OidcLoginStateRecord, OpenAiCompatDeveloperRole,
         OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
         PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
@@ -47,7 +50,8 @@ mod tests {
         RequestTag, RequestTags, RequestToolCardinality, RouteCompatibility, SeedApiKey,
         SeedBudget, SeedModel, SeedModelRoute, SeedProvider, SeedTeam, SeedUser,
         SeedUserMembership, StoreError, StoreHealth, UpdateExternalMcpServerRecord,
-        UpsertExternalMcpToolRecord, UsageLedgerRecord, UsagePricingStatus, UserStatus,
+        UpsertExternalMcpToolRecord, UpsertMcpUpstreamCredentialBindingRecord, UsageLedgerRecord,
+        UsagePricingStatus, UserStatus,
     };
     use serde_json::{Map, json};
     use serial_test::serial;
@@ -621,6 +625,199 @@ mod tests {
                 .await
                 .expect("list active")
                 .is_empty()
+        );
+    }
+
+    async fn exercise_mcp_upstream_credential_repository<S>(store: &S)
+    where
+        S: GatewayStore
+            + IdentityRepository
+            + McpRegistryRepository
+            + McpUpstreamCredentialRepository
+            + Sync,
+    {
+        let now = OffsetDateTime::now_utc();
+        let server = store
+            .create_external_mcp_server(&NewExternalMcpServerRecord {
+                server_key: "github-creds".to_string(),
+                display_name: "GitHub Credentials".to_string(),
+                description: None,
+                transport: ExternalMcpTransport::StreamableHttp,
+                server_url: "https://mcp.example.com/mcp".to_string(),
+                auth_mode: ExternalMcpAuthMode::UserPassthrough,
+                auth_config: Map::new(),
+                timeout_ms: 30_000,
+                created_at: now,
+            })
+            .await
+            .expect("create MCP server for credentials");
+        let user = store
+            .create_identity_user(
+                "MCP Credential User",
+                "mcp-credential-user@example.com",
+                "mcp-credential-user@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
+            .await
+            .expect("create credential owner user");
+        let user_id = user.user_id;
+        let scope_key = format!("mcp_credential:v1:user:{user_id}");
+        let binding = store
+            .upsert_mcp_upstream_credential_binding(&UpsertMcpUpstreamCredentialBindingRecord {
+                credential_binding_id: None,
+                mcp_server_id: server.mcp_server_id,
+                owner_scope_kind: McpUpstreamCredentialOwnerScopeKind::User,
+                owner_scope_key: scope_key.clone(),
+                owner_user_id: Some(user_id),
+                owner_team_id: None,
+                owner_service_account_id: None,
+                material_kind: McpUpstreamCredentialMaterialKind::BearerToken,
+                header_name: None,
+                storage_kind: McpUpstreamSecretStorageKind::SecretRef,
+                secret_ciphertext: None,
+                secret_nonce: None,
+                secret_key_id: None,
+                secret_ref: Some("env/OCEANS_MCP_CREDENTIAL_GITHUB".to_string()),
+                expires_at: Some(now + Duration::hours(1)),
+                metadata: Map::from_iter([("source".to_string(), json!("test"))]),
+                updated_at: now,
+            })
+            .await
+            .expect("create credential binding");
+        assert_eq!(binding.owner_scope_key, scope_key);
+        assert_eq!(
+            binding.secret_ref.as_deref(),
+            Some("env/OCEANS_MCP_CREDENTIAL_GITHUB")
+        );
+        assert!(binding.secret_ciphertext.is_none());
+
+        let duplicate = store
+            .upsert_mcp_upstream_credential_binding(&UpsertMcpUpstreamCredentialBindingRecord {
+                credential_binding_id: None,
+                mcp_server_id: server.mcp_server_id,
+                owner_scope_kind: McpUpstreamCredentialOwnerScopeKind::User,
+                owner_scope_key: scope_key.clone(),
+                owner_user_id: Some(user_id),
+                owner_team_id: None,
+                owner_service_account_id: None,
+                material_kind: McpUpstreamCredentialMaterialKind::BearerToken,
+                header_name: None,
+                storage_kind: McpUpstreamSecretStorageKind::SecretRef,
+                secret_ciphertext: None,
+                secret_nonce: None,
+                secret_key_id: None,
+                secret_ref: Some("env/OCEANS_MCP_CREDENTIAL_DUPLICATE".to_string()),
+                expires_at: None,
+                metadata: Map::new(),
+                updated_at: now + Duration::seconds(1),
+            })
+            .await;
+        assert!(
+            duplicate.is_err(),
+            "active credential bindings should be unique per server/scope"
+        );
+
+        let active = store
+            .get_active_mcp_upstream_credential_binding(server.mcp_server_id, &scope_key)
+            .await
+            .expect("get active credential")
+            .expect("active credential");
+        assert_eq!(active.credential_binding_id, binding.credential_binding_id);
+
+        let user_filtered = store
+            .list_mcp_upstream_credential_bindings(
+                Some(server.mcp_server_id),
+                Some(McpUpstreamCredentialOwnerScopeKind::User),
+                Some(user_id),
+                false,
+            )
+            .await
+            .expect("list user credentials");
+        assert_eq!(user_filtered.len(), 1);
+
+        let last_used_at = now + Duration::minutes(5);
+        store
+            .touch_mcp_upstream_credential_binding_last_used(
+                binding.credential_binding_id,
+                last_used_at,
+            )
+            .await
+            .expect("touch last used");
+        let touched = store
+            .get_active_mcp_upstream_credential_binding(server.mcp_server_id, &scope_key)
+            .await
+            .expect("get touched credential")
+            .expect("touched credential");
+        assert_eq!(
+            touched.last_used_at.map(|value| value.unix_timestamp()),
+            Some(last_used_at.unix_timestamp())
+        );
+
+        assert!(
+            store
+                .revoke_mcp_upstream_credential_binding(
+                    binding.credential_binding_id,
+                    now + Duration::minutes(10),
+                )
+                .await
+                .expect("revoke credential")
+        );
+        assert!(
+            store
+                .get_active_mcp_upstream_credential_binding(server.mcp_server_id, &scope_key)
+                .await
+                .expect("get revoked credential")
+                .is_none()
+        );
+        assert_eq!(
+            store
+                .list_mcp_upstream_credential_bindings(
+                    Some(server.mcp_server_id),
+                    None,
+                    None,
+                    false
+                )
+                .await
+                .expect("list active after revoke")
+                .len(),
+            0
+        );
+        assert_eq!(
+            store
+                .list_mcp_upstream_credential_bindings(Some(server.mcp_server_id), None, None, true)
+                .await
+                .expect("list revoked")
+                .len(),
+            1
+        );
+
+        let replacement = store
+            .upsert_mcp_upstream_credential_binding(&UpsertMcpUpstreamCredentialBindingRecord {
+                credential_binding_id: None,
+                mcp_server_id: server.mcp_server_id,
+                owner_scope_kind: McpUpstreamCredentialOwnerScopeKind::User,
+                owner_scope_key: scope_key,
+                owner_user_id: Some(user_id),
+                owner_team_id: None,
+                owner_service_account_id: None,
+                material_kind: McpUpstreamCredentialMaterialKind::StaticHeader,
+                header_name: Some("X-Api-Key".to_string()),
+                storage_kind: McpUpstreamSecretStorageKind::EncryptedBlob,
+                secret_ciphertext: Some("ciphertext".to_string()),
+                secret_nonce: Some("nonce".to_string()),
+                secret_key_id: Some("env/OCEANS_MCP_CREDENTIAL_ENCRYPTION_KEY".to_string()),
+                secret_ref: None,
+                expires_at: None,
+                metadata: Map::new(),
+                updated_at: now + Duration::minutes(11),
+            })
+            .await
+            .expect("create replacement credential");
+        assert_eq!(
+            replacement.material_kind,
+            McpUpstreamCredentialMaterialKind::StaticHeader
         );
     }
 
@@ -2027,6 +2224,20 @@ mod tests {
             .expect("store");
 
         exercise_mcp_registry_repository(&store).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_mcp_upstream_credentials_round_trip_and_revoke() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        exercise_mcp_upstream_credential_repository(&store).await;
     }
 
     #[tokio::test]
@@ -5907,6 +6118,32 @@ mod tests {
             .expect("postgres store");
 
         exercise_mcp_registry_repository(&store).await;
+
+        drop(store);
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_mcp_upstream_credentials_round_trip_and_revoke() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!("skipping postgres MCP credential test because TEST_POSTGRES_URL is not set");
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options)
+            .await
+            .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        exercise_mcp_upstream_credential_repository(&store).await;
 
         drop(store);
         drop_postgres_test_database(&test_db).await;

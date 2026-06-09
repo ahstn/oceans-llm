@@ -260,6 +260,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/mcp/credential-bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_mcp_credential_bindings"];
+        put: operations["upsert_mcp_credential_binding"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/credential-bindings/{credential_binding_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["revoke_mcp_credential_binding"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/mcp/effective-access": {
         parameters: {
             query?: never;
@@ -1417,6 +1449,18 @@ export interface components {
             };
             meta: components["schemas"]["ResponseMeta"];
         };
+        Envelope_McpCredentialBindingPayload: {
+            data: {
+                binding: components["schemas"]["McpCredentialBindingView"];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_McpCredentialBindingsPayload: {
+            data: {
+                items: components["schemas"]["McpCredentialBindingView"][];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
         Envelope_McpDiscoveryRefreshPayload: {
             data: {
                 error_summary?: string | null;
@@ -1687,6 +1731,30 @@ export interface components {
             series: components["schemas"]["LeaderboardSeriesPointView"][];
             window_end: string;
             window_start: string;
+        };
+        McpCredentialBindingPayload: {
+            binding: components["schemas"]["McpCredentialBindingView"];
+        };
+        McpCredentialBindingView: {
+            created_at: string;
+            expires_at?: string | null;
+            header_name?: string | null;
+            id: string;
+            last_used_at?: string | null;
+            material_kind: string;
+            owner_scope_key: string;
+            owner_scope_kind: string;
+            owner_service_account_id?: string | null;
+            owner_team_id?: string | null;
+            owner_user_id?: string | null;
+            revoked_at?: string | null;
+            secret_ref?: string | null;
+            server_id: string;
+            storage_kind: string;
+            updated_at: string;
+        };
+        McpCredentialBindingsPayload: {
+            items: components["schemas"]["McpCredentialBindingView"][];
         };
         McpDiscoveryRefreshPayload: {
             error_summary?: string | null;
@@ -2199,6 +2267,28 @@ export interface components {
             scope: components["schemas"]["BudgetScopeView"];
             scope_key: string;
         };
+        UpsertMcpCredentialBindingRequest: {
+            /** Format: uuid */
+            credential_binding_id?: string | null;
+            /** Format: date-time */
+            expires_at?: string | null;
+            header_name?: string | null;
+            material_kind: string;
+            metadata?: {
+                [key: string]: unknown;
+            };
+            owner_scope_kind: string;
+            /** Format: uuid */
+            owner_service_account_id?: string | null;
+            /** Format: uuid */
+            owner_team_id?: string | null;
+            /** Format: uuid */
+            owner_user_id?: string | null;
+            secret?: string | null;
+            secret_ref?: string | null;
+            /** Format: uuid */
+            server_id: string;
+        };
         UpsertMcpGrantRequest: {
             /** Format: uuid */
             subject_id: string;
@@ -2694,6 +2784,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_CreateUserResponse"];
+                };
+            };
+        };
+    };
+    list_mcp_credential_bindings: {
+        parameters: {
+            query?: {
+                server_id?: string | null;
+                owner_scope_kind?: string | null;
+                owner_scope_id?: string | null;
+                include_revoked?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpCredentialBindingsPayload"];
+                };
+            };
+        };
+    };
+    upsert_mcp_credential_binding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpsertMcpCredentialBindingRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpCredentialBindingPayload"];
+                };
+            };
+        };
+    };
+    revoke_mcp_credential_binding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description MCP credential binding identifier */
+                credential_binding_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpCredentialBindingsPayload"];
                 };
             };
         };

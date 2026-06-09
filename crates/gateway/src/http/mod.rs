@@ -186,6 +186,14 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
                 .delete(revoke_mcp_grant),
         )
         .route(
+            "/api/v1/admin/mcp/credential-bindings",
+            get(list_mcp_credential_bindings).put(upsert_mcp_credential_binding),
+        )
+        .route(
+            "/api/v1/admin/mcp/credential-bindings/{credential_binding_id}",
+            axum::routing::delete(revoke_mcp_credential_binding),
+        )
+        .route(
             "/api/v1/admin/mcp/effective-access",
             get(preview_mcp_effective_access),
         )
