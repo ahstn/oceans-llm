@@ -29,10 +29,10 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::http::{join_base_url, map_reqwest_error};
-use crate::openai_compat::{
-    normalize_openai_compat_responses_stream, normalize_openai_compat_stream,
+use crate::streaming::{
+    done_sse_chunk, normalize_openai_compat_responses_stream, normalize_openai_compat_stream,
+    openai_sse_error_chunk, render_sse_event_chunk,
 };
-use crate::streaming::{done_sse_chunk, openai_sse_error_chunk, render_sse_event_chunk};
 
 #[derive(Debug, Clone)]
 pub enum BedrockAuthConfig {
