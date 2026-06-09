@@ -1,6 +1,6 @@
 # Client Harness Configuration
 
-See Also: [Model Routing and API Behavior](model-routing-and-api-behavior.md)
+`See also`: [Model Routing and API Behavior](model-routing-and-api-behavior.md)
 
 ![Model Config Page](../public/images/screenshot-model-client-config.png)
 

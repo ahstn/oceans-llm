@@ -4,15 +4,29 @@
 
 This page owns provider-specific configuration examples for Amazon Bedrock routes.
 
-## Current Runtime Boundary
+## Endpoint and API Style
 
-The gateway uses the Bedrock Runtime endpoint shape:
+The `aws_bedrock` provider supports two explicit endpoint kinds:
 
-- non-Anthropic chat models use Bedrock `Converse`
-- Anthropic Claude chat models use Bedrock `InvokeModel` with the native Anthropic Messages body for non-streaming requests
-- streaming chat uses Bedrock `ConverseStream` and is normalized into OpenAI-compatible chat-completion chunks
-- native Anthropic Messages streaming through `InvokeModelWithResponseStream` is not implemented in this gateway slice
-- `/v1/responses` and `/v1/embeddings` are not implemented for `aws_bedrock` routes
+- `bedrock_runtime`: default endpoint `https://bedrock-runtime.{region}.amazonaws.com`, SigV4 service `bedrock`
+- `bedrock_mantle`: default endpoint `https://bedrock-mantle.{region}.api.aws`, SigV4 service `bedrock-mantle`
+
+Every Bedrock route must also declare `compatibility.aws_bedrock.api_style`; the gateway never infers the upstream API from the hostname or model name.
+
+Supported route API styles:
+
+- `runtime_converse`
+- `runtime_anthropic_invoke`
+- `runtime_openai_chat`
+- `mantle_openai_responses`
+- `mantle_openai_chat`
+- `mantle_anthropic_messages`
+
+OpenAI-shaped styles also require `compatibility.aws_bedrock.openai_base_path`, for example `/openai/v1`.
+
+Only `mantle_openai_responses` routes can enable the route `responses` and `json_schema` capabilities. Those Responses routes must set `capabilities.chat_completions: false`. For Runtime routes, Mantle Chat Completions routes, and Mantle Anthropic Messages routes, set `capabilities.responses: false` and `capabilities.json_schema: false` so requests cannot select an incompatible wire API.
+
+For OpenAI GPT-5.5 on Bedrock Mantle, start with [OpenAI GPT-5.5 on Bedrock Mantle](aws-bedrock-openai-gpt-55.md).
 
 The provider adapter supports bearer-token auth and IAM SigV4 request signing. AWS documents `AWS_BEARER_TOKEN_BEDROCK` as the environment variable recognized by Bedrock API-key auth and direct HTTP calls can pass the same value as `Authorization: Bearer ...`: [Use an Amazon Bedrock API key](https://docs.aws.amazon.com/en_us/bedrock/latest/userguide/api-keys-use.html).
 
@@ -27,6 +41,7 @@ providers:
   - id: bedrock-us-east-1
     type: aws_bedrock
     region: us-east-1
+    endpoint_kind: bedrock_runtime
     auth:
       mode: bearer
       token: env.AWS_BEARER_TOKEN_BEDROCK
@@ -35,7 +50,7 @@ providers:
       icon_key: aws
 ```
 
-`endpoint_url` is optional. When omitted, the gateway uses `https://bedrock-runtime.{region}.amazonaws.com`.
+`endpoint_url` is optional. When omitted, the gateway derives it from `endpoint_kind` and `region`.
 
 IAM examples:
 
@@ -44,12 +59,14 @@ providers:
   - id: bedrock-irsa
     type: aws_bedrock
     region: us-east-1
+    endpoint_kind: bedrock_runtime
     auth:
       mode: default_chain
 
   - id: bedrock-static
     type: aws_bedrock
     region: us-east-1
+    endpoint_kind: bedrock_runtime
     auth:
       mode: static_credentials
       access_key_id: env.AWS_ACCESS_KEY_ID
@@ -81,9 +98,9 @@ Examples verified against AWS model cards on 2026-04-30:
 
 Prefer geo or global inference profile IDs when your AWS account and residency policy allow them. They let Bedrock route within the selected geography or globally for higher throughput. Use in-region base model IDs when data residency requires one specific Region.
 
-## Claude Example
+## Runtime Claude Example
 
-Claude routes are detected by `upstream_model` values containing `anthropic.claude`. Non-streaming Chat Completions requests are sent to Bedrock Runtime `InvokeModel` with Anthropic Messages fields, including `anthropic_version: bedrock-2023-05-31`.
+This route sends non-streaming Chat Completions requests to Bedrock Runtime `InvokeModel` with Anthropic Messages fields, including `anthropic_version: bedrock-2023-05-31`. The `api_style` selects that behavior.
 
 ```yaml
 models:
@@ -93,17 +110,20 @@ models:
     routes:
       - provider: bedrock-us-east-1
         upstream_model: global.anthropic.claude-opus-4-7
+        compatibility:
+          aws_bedrock:
+            api_style: runtime_anthropic_invoke
         capabilities:
           chat_completions: true
           responses: false
           embeddings: false
-          stream: true
+          stream: false
           tools: true
           vision: true
           json_schema: false
 ```
 
-Native Claude invocation requires callers to set `max_tokens` or `max_completion_tokens`. Bedrock-hosted Claude vision is limited to base64 image payloads in this gateway slice; remote image URLs are rejected before the provider call.
+Native Claude invocation requires callers to set `max_tokens` or `max_completion_tokens`. `runtime_anthropic_invoke` is non-streaming; use `runtime_converse` when a Bedrock Runtime route needs ConverseStream. Bedrock-hosted Claude vision is limited to base64 image payloads in this gateway slice; remote image URLs are rejected before the provider call.
 
 ### Claude Thinking Compatibility
 
@@ -128,11 +148,11 @@ For Opus 4.7 and later, non-default `temperature`, `top_p`, and `top_k` fail loc
 
 ### Streaming and Tool Continuations
 
-Streaming Bedrock routes currently use Bedrock `ConverseStream`. Native Anthropic Messages streaming through `InvokeModelWithResponseStream` remains a separate follow-up tracked by [issue #139](https://github.com/ahstn/oceans-llm/issues/139). This matters for Claude-specific stream contracts: native Messages streams emit Anthropic SSE events such as `thinking_delta`, `signature_delta`, and `content_block_start`, while the current Bedrock stream path normalizes Bedrock Converse EventStream events.
+Runtime streaming routes use `api_style: runtime_converse` and Bedrock `ConverseStream`. Mantle Anthropic routes use `api_style: mantle_anthropic_messages` and the Mantle Anthropic Messages SSE endpoint.
 
 Chat Completions hides Claude thinking from normal `content` and `delta.content`. Native Anthropic thinking blocks and Bedrock Converse reasoning content are preserved under `provider_metadata.aws_bedrock.reasoning` for debugging and provider continuity. The gateway does not yet rehydrate those preserved `thinking`, `signature`, or `redacted_thinking` blocks back into future request content when callers send tool results. Anthropic documents that tool-use continuations with thinking may require complete unmodified thinking blocks, so callers should treat this as unsupported gateway-managed continuity until [issue #140](https://github.com/ahstn/oceans-llm/issues/140) lands.
 
-## Amazon Nova Example
+## Runtime Amazon Nova Example
 
 Amazon Nova routes use the generic Bedrock Converse request shape.
 
@@ -144,6 +164,9 @@ models:
     routes:
       - provider: bedrock-us-east-1
         upstream_model: global.amazon.nova-2-lite-v1:0
+        compatibility:
+          aws_bedrock:
+            api_style: runtime_converse
         capabilities:
           chat_completions: true
           responses: false
@@ -159,6 +182,9 @@ models:
     routes:
       - provider: bedrock-us-east-1
         upstream_model: us.amazon.nova-premier-v1:0
+        compatibility:
+          aws_bedrock:
+            api_style: runtime_converse
         capabilities:
           chat_completions: true
           responses: false
@@ -187,13 +213,16 @@ models:
         weight: 1.0
       - provider: bedrock-us-east-1
         upstream_model: global.anthropic.claude-opus-4-7
+        compatibility:
+          aws_bedrock:
+            api_style: runtime_anthropic_invoke
         priority: 20
         weight: 1.0
         capabilities:
           chat_completions: true
           responses: false
           embeddings: false
-          stream: true
+          stream: false
           tools: true
           vision: true
           json_schema: false
@@ -203,8 +232,9 @@ The current runtime executes one selected route. Priority and weight affect rout
 
 ## Operational Notes
 
-- Set `responses: false` and `embeddings: false` on Bedrock routes until those API families exist in the provider adapter.
-- Keep `json_schema: false` unless a specific Bedrock route has explicit provider-specific overrides and tests.
+- Use `mantle_openai_responses` for OpenAI Responses routes on Bedrock Mantle; keep `responses: false` on Runtime routes.
+- Keep `json_schema: false` except on tested `mantle_openai_responses` routes.
+- Keep `stream: false` on `runtime_anthropic_invoke` routes; use `runtime_converse` for Bedrock Runtime streaming.
 - Use `extra_body` only for additive Bedrock or Anthropic fields you have tested for the exact model family.
 - Chat Completions hides Claude thinking from normal `content` and `delta.content`. Native Anthropic thinking blocks and Bedrock Converse reasoning content are preserved under `provider_metadata.aws_bedrock.reasoning` for debugging and provider continuity. Exact reasoning/cache accounting remains tracked by [issue #92](https://github.com/ahstn/oceans-llm/issues/92), native Bedrock Anthropic streaming remains tracked by [issue #139](https://github.com/ahstn/oceans-llm/issues/139), and thinking block replay for tool-use continuations remains tracked by [issue #140](https://github.com/ahstn/oceans-llm/issues/140).
 - Check the model card before adding a new `upstream_model`; Bedrock model IDs and inference profile support differ by model and Region.

@@ -2,16 +2,16 @@ use std::{collections::BTreeMap, env, fs, path::Path};
 
 use anyhow::{Context, bail};
 use gateway_core::{
-    AuthMode, BudgetCadence, GlobalRole, MembershipRole, Money4, OauthJitMembership,
-    OauthJitPolicy, OidcJitMembership, OidcJitPolicy, OpenAiCompatDeveloperRole,
-    OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
-    ProviderCapabilities, RequestLogRetentionWindow, RouteCompatibility, SeedApiKey, SeedBudget,
-    SeedModel, SeedModelRoute, SeedOauthProvider, SeedOidcProvider, SeedProvider, SeedTeam,
-    SeedUser, SeedUserMembership, parse_gateway_api_key,
+    AuthMode, AwsBedrockApiStyle, AwsBedrockRouteCompatibility, BudgetCadence, GlobalRole,
+    MembershipRole, Money4, OauthJitMembership, OauthJitPolicy, OidcJitMembership, OidcJitPolicy,
+    OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
+    OpenAiCompatRouteCompatibility, ProviderCapabilities, RequestLogRetentionWindow,
+    RouteCompatibility, SeedApiKey, SeedBudget, SeedModel, SeedModelRoute, SeedOauthProvider,
+    SeedOidcProvider, SeedProvider, SeedTeam, SeedUser, SeedUserMembership, parse_gateway_api_key,
 };
 use gateway_providers::{
-    BedrockAuthConfig, BedrockProviderConfig, OpenAiCompatConfig, VertexAuthConfig,
-    VertexProviderConfig,
+    BedrockAuthConfig, BedrockEndpointKind, BedrockProviderConfig, OpenAiCompatConfig,
+    VertexAuthConfig, VertexProviderConfig,
 };
 use gateway_service::{
     PayloadPath, ProviderIconKey, RequestLogPayloadCaptureMode, RequestLogPayloadPolicy,
@@ -171,6 +171,7 @@ impl GatewayConfig {
                         validate_bedrock_endpoint_url(&provider.id, endpoint_url)?;
                     }
                     let _ = BedrockProviderConfig::resolved_endpoint_url(
+                        provider.endpoint_kind,
                         provider.region.trim(),
                         provider.endpoint_url.as_deref(),
                     )
@@ -282,6 +283,11 @@ impl GatewayConfig {
                     && matches!(provider, ProviderConfig::GcpVertex(_))
                 {
                     validate_vertex_upstream_model_format(&route.upstream_model)?;
+                }
+                if let Some(ProviderConfig::AwsBedrock(provider)) =
+                    provider_by_id.get(route.provider.as_str())
+                {
+                    validate_aws_bedrock_route_compatibility(&model.id, route, provider)?;
                 }
             }
         }
@@ -550,6 +556,7 @@ impl GatewayConfig {
                     }
 
                     let endpoint_url = BedrockProviderConfig::resolved_endpoint_url(
+                        provider.endpoint_kind,
                         provider.region.trim(),
                         provider.endpoint_url.as_deref(),
                     )
@@ -562,6 +569,7 @@ impl GatewayConfig {
 
                     let config = json!({
                         "region": provider.region.trim(),
+                        "endpoint_kind": provider.endpoint_kind,
                         "endpoint_url": endpoint_url,
                         "default_headers": provider.default_headers,
                         "timeouts": provider.timeouts,
@@ -812,6 +820,7 @@ impl GatewayConfig {
             };
 
             let endpoint_url = BedrockProviderConfig::resolved_endpoint_url(
+                provider.endpoint_kind,
                 provider.region.trim(),
                 provider.endpoint_url.as_deref(),
             )
@@ -844,6 +853,7 @@ impl GatewayConfig {
             configs.push(BedrockProviderConfig {
                 provider_key: provider.id.clone(),
                 region: provider.region.trim().to_string(),
+                endpoint_kind: provider.endpoint_kind,
                 endpoint_url,
                 auth,
                 default_headers: provider.default_headers.clone(),
@@ -1775,6 +1785,7 @@ pub enum GcpVertexAuthConfig {
 pub struct AwsBedrockProviderConfig {
     pub id: String,
     pub region: String,
+    pub endpoint_kind: BedrockEndpointKind,
     #[serde(default)]
     pub endpoint_url: Option<String>,
     #[serde(default)]
@@ -1898,6 +1909,8 @@ impl Default for RouteCapabilitiesConfig {
 pub struct RouteCompatibilityConfig {
     #[serde(default)]
     pub openai_compat: Option<OpenAiCompatRouteCompatibilityConfig>,
+    #[serde(default)]
+    pub aws_bedrock: Option<AwsBedrockRouteCompatibilityConfig>,
 }
 
 impl RouteCompatibilityConfig {
@@ -1906,6 +1919,25 @@ impl RouteCompatibilityConfig {
             openai_compat: self
                 .openai_compat
                 .map(OpenAiCompatRouteCompatibilityConfig::into_compatibility),
+            aws_bedrock: self
+                .aws_bedrock
+                .map(AwsBedrockRouteCompatibilityConfig::into_compatibility),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AwsBedrockRouteCompatibilityConfig {
+    pub api_style: AwsBedrockApiStyle,
+    #[serde(default)]
+    pub openai_base_path: Option<String>,
+}
+
+impl AwsBedrockRouteCompatibilityConfig {
+    fn into_compatibility(self) -> AwsBedrockRouteCompatibility {
+        AwsBedrockRouteCompatibility {
+            api_style: self.api_style,
+            openai_base_path: self.openai_base_path,
         }
     }
 }
@@ -2005,6 +2037,99 @@ fn validate_bedrock_endpoint_url(provider_id: &str, endpoint_url: &str) -> anyho
     }
     if parsed.host().is_none() {
         bail!("aws_bedrock provider `{provider_id}` endpoint_url must include a host");
+    }
+
+    Ok(())
+}
+
+fn validate_aws_bedrock_route_compatibility(
+    model_id: &str,
+    route: &ModelRouteConfig,
+    provider: &AwsBedrockProviderConfig,
+) -> anyhow::Result<()> {
+    let Some(compatibility) = route.compatibility.aws_bedrock.as_ref() else {
+        bail!(
+            "model `{model_id}` route for aws_bedrock provider `{}` requires compatibility.aws_bedrock.api_style",
+            provider.id
+        );
+    };
+
+    let endpoint_matches = match provider.endpoint_kind {
+        BedrockEndpointKind::BedrockRuntime => compatibility.api_style.is_runtime(),
+        BedrockEndpointKind::BedrockMantle => compatibility.api_style.is_mantle(),
+    };
+    if !endpoint_matches {
+        bail!(
+            "model `{model_id}` route for aws_bedrock provider `{}` uses api_style `{:?}` incompatible with endpoint_kind `{}`",
+            provider.id,
+            compatibility.api_style,
+            provider.endpoint_kind.as_config_value()
+        );
+    }
+
+    if compatibility.api_style.is_openai_shaped()
+        && compatibility
+            .openai_base_path
+            .as_deref()
+            .map(str::trim)
+            .is_none_or(str::is_empty)
+    {
+        bail!(
+            "model `{model_id}` route for aws_bedrock provider `{}` api_style `{:?}` requires compatibility.aws_bedrock.openai_base_path",
+            provider.id,
+            compatibility.api_style
+        );
+    }
+
+    if !compatibility.api_style.is_openai_shaped()
+        && compatibility
+            .openai_base_path
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty())
+    {
+        bail!(
+            "model `{model_id}` route for aws_bedrock provider `{}` api_style `{:?}` cannot set compatibility.aws_bedrock.openai_base_path",
+            provider.id,
+            compatibility.api_style
+        );
+    }
+
+    if route.capabilities.responses
+        && compatibility.api_style != AwsBedrockApiStyle::MantleOpenaiResponses
+    {
+        bail!(
+            "model `{model_id}` route for aws_bedrock provider `{}` api_style `{:?}` cannot enable responses capability; responses require api_style `mantle_openai_responses`",
+            provider.id,
+            compatibility.api_style
+        );
+    }
+
+    if route.capabilities.json_schema
+        && compatibility.api_style != AwsBedrockApiStyle::MantleOpenaiResponses
+    {
+        bail!(
+            "model `{model_id}` route for aws_bedrock provider `{}` api_style `{:?}` cannot enable json_schema capability; json_schema requires api_style `mantle_openai_responses`",
+            provider.id,
+            compatibility.api_style
+        );
+    }
+
+    if compatibility.api_style == AwsBedrockApiStyle::MantleOpenaiResponses
+        && route.capabilities.chat_completions
+    {
+        bail!(
+            "model `{model_id}` route for aws_bedrock provider `{}` api_style `mantle_openai_responses` cannot enable chat_completions capability",
+            provider.id
+        );
+    }
+
+    if compatibility.api_style == AwsBedrockApiStyle::RuntimeAnthropicInvoke
+        && route.capabilities.stream
+    {
+        bail!(
+            "model `{model_id}` route for aws_bedrock provider `{}` api_style `runtime_anthropic_invoke` cannot enable stream capability",
+            provider.id
+        );
     }
 
     Ok(())
@@ -2239,8 +2364,9 @@ mod tests {
     use std::{env, path::Path};
 
     use gateway_core::{
-        AuthMode, BudgetCadence, GlobalRole, MembershipRole, Money4, OpenAiCompatDeveloperRole,
-        OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, RequestLogRetentionWindow,
+        AuthMode, AwsBedrockApiStyle, BudgetCadence, GlobalRole, MembershipRole, Money4,
+        OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
+        RequestLogRetentionWindow,
     };
     use gateway_service::RequestLogPayloadCaptureMode;
     use tempfile::tempdir;
@@ -2474,6 +2600,7 @@ providers:
   - id: bedrock-bearer
     type: aws_bedrock
     region: " us-west-2 "
+    endpoint_kind: bedrock_runtime
     endpoint_url: "https://bedrock-runtime.us-west-2.amazonaws.com/"
     auth:
       mode: bearer
@@ -2498,6 +2625,7 @@ providers:
             "https://bedrock-runtime.us-west-2.amazonaws.com"
         );
         assert_eq!(providers[0].config["region"], "us-west-2");
+        assert_eq!(providers[0].config["endpoint_kind"], "bedrock_runtime");
         assert!(providers[0].config.get("token").is_none());
         assert_eq!(providers[0].secrets.as_ref().unwrap()["mode"], "bearer");
 
@@ -2519,6 +2647,7 @@ providers:
   - id: ""
     type: aws_bedrock
     region: us-east-1
+    endpoint_kind: bedrock_runtime
 "#,
         );
         let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
@@ -2535,6 +2664,7 @@ providers:
   - id: bedrock
     type: aws_bedrock
     region: ""
+    endpoint_kind: bedrock_runtime
 "#,
         );
         let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
@@ -2551,6 +2681,7 @@ providers:
   - id: bedrock
     type: aws_bedrock
     region: us-east-1
+    endpoint_kind: bedrock_runtime
     endpoint_url: "not a url"
 "#,
         );
@@ -2568,6 +2699,7 @@ providers:
   - id: bedrock
     type: aws_bedrock
     region: "us east 1"
+    endpoint_kind: bedrock_runtime
 "#,
         );
         let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
@@ -2584,6 +2716,7 @@ providers:
   - id: bedrock
     type: aws_bedrock
     region: us-east-1
+    endpoint_kind: bedrock_runtime
     auth:
       mode: static_credentials
       access_key_id: literal.test-access-key
@@ -2598,6 +2731,7 @@ providers:
   - id: bedrock
     type: aws_bedrock
     region: us-east-1
+    endpoint_kind: bedrock_runtime
     auth:
       mode: bearer
       token: literal.test-token
@@ -2613,6 +2747,7 @@ providers:
   - id: bedrock
     type: aws_bedrock
     region: us-east-1
+    endpoint_kind: bedrock_runtime
     auth:
       mode: bearer
       token: raw-token
@@ -2638,11 +2773,13 @@ providers:
   - id: bedrock-default
     type: aws_bedrock
     region: us-east-1
+    endpoint_kind: bedrock_runtime
     auth:
       mode: default_chain
   - id: bedrock-static
     type: aws_bedrock
     region: us-west-2
+    endpoint_kind: bedrock_runtime
     auth:
       mode: static_credentials
       access_key_id: literal.test-access-key
@@ -2687,6 +2824,7 @@ providers:
   - id: bedrock
     type: aws_bedrock
     region: us-east-1
+    endpoint_kind: bedrock_runtime
     auth:
       mode: static_credentials
       access_key_id: literal.
@@ -2707,6 +2845,7 @@ providers:
   - id: bedrock
     type: aws_bedrock
     region: us-east-1
+    endpoint_kind: bedrock_runtime
     auth:
       mode: static_credentials
       access_key_id: literal.test-access-key
@@ -2727,6 +2866,7 @@ providers:
   - id: bedrock
     type: aws_bedrock
     region: us-east-1
+    endpoint_kind: bedrock_runtime
     auth:
       mode: static_credentials
       access_key_id: literal.test-access-key
@@ -2815,6 +2955,288 @@ models:
             OpenAiCompatReasoningEffort::ReasoningObject
         );
         assert!(profile.supports_stream_usage);
+    }
+
+    #[test]
+    fn parses_bedrock_mantle_route_compatibility_and_extra_headers() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: bedrock-mantle
+    type: aws_bedrock
+    region: us-east-2
+    endpoint_kind: bedrock_mantle
+    auth:
+      mode: bearer
+      token: literal.test-token
+models:
+  - id: gpt-55
+    routes:
+      - provider: bedrock-mantle
+        upstream_model: openai.gpt-5.5
+        capabilities:
+          chat_completions: false
+          responses: true
+          stream: true
+          embeddings: false
+        extra_headers:
+          OpenAI-Project: proj_123
+        compatibility:
+          aws_bedrock:
+            api_style: mantle_openai_responses
+            openai_base_path: /openai/v1
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let models = config.seed_models().expect("seed models");
+        let route = &models[0].routes[0];
+        let compatibility = route
+            .compatibility
+            .aws_bedrock
+            .as_ref()
+            .expect("aws bedrock compatibility");
+
+        assert_eq!(
+            compatibility.api_style,
+            AwsBedrockApiStyle::MantleOpenaiResponses
+        );
+        assert_eq!(
+            compatibility.openai_base_path.as_deref(),
+            Some("/openai/v1")
+        );
+        assert_eq!(route.extra_headers["OpenAI-Project"], "proj_123");
+    }
+
+    #[test]
+    fn rejects_bedrock_routes_without_required_compatibility() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: bedrock
+    type: aws_bedrock
+    region: us-east-1
+    endpoint_kind: bedrock_runtime
+models:
+  - id: nova
+    routes:
+      - provider: bedrock
+        upstream_model: amazon.nova-pro-v1:0
+"#,
+        );
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("compatibility.aws_bedrock.api_style"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_incompatible_bedrock_endpoint_and_api_style_config() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: bedrock-mantle
+    type: aws_bedrock
+    region: us-east-2
+    endpoint_kind: bedrock_mantle
+models:
+  - id: nova
+    routes:
+      - provider: bedrock-mantle
+        upstream_model: amazon.nova-pro-v1:0
+        compatibility:
+          aws_bedrock:
+            api_style: runtime_converse
+"#,
+        );
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("incompatible with endpoint_kind `bedrock_mantle`"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_openai_shaped_bedrock_route_without_base_path() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: bedrock-mantle
+    type: aws_bedrock
+    region: us-east-2
+    endpoint_kind: bedrock_mantle
+models:
+  - id: gpt-55
+    routes:
+      - provider: bedrock-mantle
+        upstream_model: openai.gpt-5.5
+        compatibility:
+          aws_bedrock:
+            api_style: mantle_openai_responses
+"#,
+        );
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("compatibility.aws_bedrock.openai_base_path"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_bedrock_responses_capability_for_non_responses_api_style() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: bedrock
+    type: aws_bedrock
+    region: us-east-1
+    endpoint_kind: bedrock_runtime
+models:
+  - id: nova
+    routes:
+      - provider: bedrock
+        upstream_model: amazon.nova-pro-v1:0
+        capabilities:
+          responses: true
+        compatibility:
+          aws_bedrock:
+            api_style: runtime_converse
+"#,
+        );
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("responses require api_style `mantle_openai_responses`"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_bedrock_json_schema_capability_for_non_responses_api_style() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: bedrock
+    type: aws_bedrock
+    region: us-east-1
+    endpoint_kind: bedrock_runtime
+models:
+  - id: nova
+    routes:
+      - provider: bedrock
+        upstream_model: amazon.nova-pro-v1:0
+        capabilities:
+          responses: false
+          json_schema: true
+        compatibility:
+          aws_bedrock:
+            api_style: runtime_converse
+"#,
+        );
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("json_schema requires api_style `mantle_openai_responses`"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_bedrock_responses_api_style_with_chat_capability() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: bedrock-mantle
+    type: aws_bedrock
+    region: us-east-2
+    endpoint_kind: bedrock_mantle
+models:
+  - id: gpt-55
+    routes:
+      - provider: bedrock-mantle
+        upstream_model: openai.gpt-5.5
+        capabilities:
+          responses: true
+          chat_completions: true
+        compatibility:
+          aws_bedrock:
+            api_style: mantle_openai_responses
+            openai_base_path: /openai/v1
+"#,
+        );
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("cannot enable chat_completions capability"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_runtime_anthropic_invoke_with_stream_capability() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: bedrock
+    type: aws_bedrock
+    region: us-east-1
+    endpoint_kind: bedrock_runtime
+models:
+  - id: claude
+    routes:
+      - provider: bedrock
+        upstream_model: anthropic.claude-sonnet-4-5-20250929-v1:0
+        capabilities:
+          responses: false
+          stream: true
+          json_schema: false
+        compatibility:
+          aws_bedrock:
+            api_style: runtime_anthropic_invoke
+"#,
+        );
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("cannot enable stream capability"),
+            "unexpected error: {error_text}"
+        );
     }
 
     #[test]

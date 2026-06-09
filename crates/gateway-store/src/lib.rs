@@ -1757,6 +1757,7 @@ mod tests {
                         reasoning_effort: OpenAiCompatReasoningEffort::ReasoningObject,
                         supports_stream_usage: true,
                     }),
+                    ..Default::default()
                 },
             }],
         }];
