@@ -1433,6 +1433,20 @@ pub struct ExternalMcpToolRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpCatalogToolRecord {
+    pub server: ExternalMcpServerRecord,
+    pub tool: ExternalMcpToolRecord,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct McpCatalogAccessResolution {
+    pub allowed_tools: Vec<McpCatalogToolRecord>,
+    pub referenced_server_count: i64,
+    pub exposed_tool_count: i64,
+    pub filtered_tool_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpsertExternalMcpToolRecord {
     pub mcp_server_id: Uuid,
     pub upstream_name: String,
@@ -1609,6 +1623,37 @@ pub struct McpAccessResolution {
     pub referenced_server_count: i64,
     pub exposed_tool_count: i64,
     pub filtered_tool_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpAggregateSessionRecord {
+    pub session_id: Uuid,
+    pub token_hash: String,
+    pub api_key_id: Uuid,
+    pub owner_kind: ApiKeyOwnerKind,
+    pub owner_user_id: Option<Uuid>,
+    pub owner_team_id: Option<Uuid>,
+    pub owner_service_account_id: Option<Uuid>,
+    pub protocol_version: String,
+    pub initialized: bool,
+    pub expires_at: OffsetDateTime,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+    pub revoked_at: Option<OffsetDateTime>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewMcpAggregateSessionRecord {
+    pub session_id: Uuid,
+    pub token_hash: String,
+    pub api_key_id: Uuid,
+    pub owner_kind: ApiKeyOwnerKind,
+    pub owner_user_id: Option<Uuid>,
+    pub owner_team_id: Option<Uuid>,
+    pub owner_service_account_id: Option<Uuid>,
+    pub protocol_version: String,
+    pub expires_at: OffsetDateTime,
+    pub created_at: OffsetDateTime,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

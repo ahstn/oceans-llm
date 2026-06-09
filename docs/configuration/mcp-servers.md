@@ -5,13 +5,16 @@
 
 ![MCP Servers Page](../public/images/screenshot-mcp-servers.png)
 
-Oceans can register external Streamable HTTP MCP servers and expose them to MCP clients through the gateway at:
+Oceans can register external Streamable HTTP MCP servers and expose them to MCP clients through two gateway data-plane routes:
 
 ```text
+/mcp
 /mcp/{server_key}
 ```
 
-The gateway authenticates the caller with an Oceans API key, looks up the active registered server, applies any gateway-managed upstream credential, and proxies the MCP Streamable HTTP request to the registered server URL.
+`/mcp` is the aggregate discovery endpoint. It exposes `search_tools` and `describe_tool` over the caller's granted active tools across all registered servers.
+
+`/mcp/{server_key}` is the direct proxy endpoint. The gateway authenticates the caller with an Oceans API key, looks up the active registered server, applies any gateway-managed upstream credential, and proxies the MCP Streamable HTTP request to the registered server URL.
 
 Discovered tools are not automatically callable. Configure explicit MCP tool or toolset grants before clients can see tools in `tools/list` or call them with `tools/call`; see [MCP Tool Access](../access/mcp-tool-access.md).
 
@@ -36,7 +39,7 @@ The corresponding admin API surface is documented for maintainers in [MCP Regist
 
 ## Server Keys
 
-`server_key` is the public path segment clients use in `/mcp/{server_key}`.
+`server_key` is the public namespace used in direct `/mcp/{server_key}` URLs and aggregate tool addresses such as `mcp://github/tools/issues.create`.
 
 Rules:
 
@@ -99,4 +102,6 @@ No separate ping health check or discovery-run history UI exists in this slice.
 
 ## Access
 
-`tools/list` responses are filtered to active tools granted to the authenticated API key, owner user, owner service account, or team. `tools/call` is rejected before upstream when the tool is not granted. Disabled servers, inactive tools, disabled toolsets, revoked grants, and inactive memberships do not resolve as callable access.
+On `/mcp`, `search_tools` and `describe_tool` resolve only active tools granted to the authenticated API key, owner user, owner service account, or team.
+
+On `/mcp/{server_key}`, `tools/list` responses are filtered to granted active tools for that server. `tools/call` is rejected before upstream when the tool is not granted. Disabled servers, inactive tools, disabled toolsets, revoked grants, and inactive memberships do not resolve as callable access.

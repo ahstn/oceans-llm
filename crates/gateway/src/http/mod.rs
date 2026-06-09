@@ -221,6 +221,12 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
         .route("/v1/responses", post(v1_responses))
         .route("/v1/embeddings", post(v1_embeddings))
         .route(
+            "/mcp",
+            post(mcp_aggregate_streamable_http)
+                .get(mcp_aggregate_streamable_http)
+                .delete(mcp_aggregate_streamable_http),
+        )
+        .route(
             "/mcp/{server_key}",
             post(mcp_streamable_http_proxy)
                 .get(mcp_streamable_http_proxy)

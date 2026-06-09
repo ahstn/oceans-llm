@@ -11,6 +11,7 @@ gateway-core.workspace = true
 gateway-client-config.workspace = true
 gateway-mcp.workspace = true
 itertools.workspace = true
+percent-encoding.workspace = true
 rand.workspace = true
 reqwest.workspace = true
 serde.workspace = true

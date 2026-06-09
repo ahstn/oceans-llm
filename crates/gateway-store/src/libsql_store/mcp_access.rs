@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
 use super::*;
-use crate::shared::{parse_uuid, unix_to_datetime};
+use crate::shared::{json_object_from_str, parse_uuid, unix_to_datetime};
 
 const TOOLSET_COLUMNS: &str = "toolset_id, toolset_key, display_name, description, status, created_at, updated_at, disabled_at";
 const TOOL_COLUMNS: &str = "t.mcp_tool_id, t.mcp_server_id, t.upstream_name, t.display_name, t.description, t.input_schema_json, t.schema_hash, t.schema_version, t.is_active, t.first_discovered_at, t.last_discovered_at, t.deactivated_at";
+const SERVER_COLUMNS: &str = "s.mcp_server_id, s.server_key, s.display_name, s.description, s.transport, s.server_url, s.auth_mode, s.auth_config_json, s.timeout_ms, s.status, s.last_discovery_status, s.last_discovery_at, s.last_successful_discovery_at, s.last_error_summary, s.last_tool_count, s.created_at, s.updated_at, s.disabled_at";
 
 fn decode_toolset(row: &libsql::Row) -> Result<McpToolsetRecord, StoreError> {
     let toolset_id: String = row.get(0).map_err(to_query_error)?;
@@ -86,6 +87,73 @@ fn decode_tool(row: &libsql::Row) -> Result<ExternalMcpToolRecord, StoreError> {
         first_discovered_at: unix_to_datetime(first_discovered_at)?,
         last_discovered_at: unix_to_datetime(last_discovered_at)?,
         deactivated_at: deactivated_at.map(unix_to_datetime).transpose()?,
+    })
+}
+
+fn libsql_idx(offset: usize, column: usize) -> i32 {
+    (offset + column) as i32
+}
+
+fn decode_server_at(
+    row: &libsql::Row,
+    offset: usize,
+) -> Result<ExternalMcpServerRecord, StoreError> {
+    let mcp_server_id: String = row.get(libsql_idx(offset, 0)).map_err(to_query_error)?;
+    let transport: String = row.get(libsql_idx(offset, 4)).map_err(to_query_error)?;
+    let auth_mode: String = row.get(libsql_idx(offset, 6)).map_err(to_query_error)?;
+    let auth_config_json: String = row.get(libsql_idx(offset, 7)).map_err(to_query_error)?;
+    let status: String = row.get(libsql_idx(offset, 9)).map_err(to_query_error)?;
+    let last_discovery_status: Option<String> =
+        row.get(libsql_idx(offset, 10)).map_err(to_query_error)?;
+    let last_discovery_at: Option<i64> = row.get(libsql_idx(offset, 11)).map_err(to_query_error)?;
+    let last_successful_discovery_at: Option<i64> =
+        row.get(libsql_idx(offset, 12)).map_err(to_query_error)?;
+    let created_at: i64 = row.get(libsql_idx(offset, 15)).map_err(to_query_error)?;
+    let updated_at: i64 = row.get(libsql_idx(offset, 16)).map_err(to_query_error)?;
+    let disabled_at: Option<i64> = row.get(libsql_idx(offset, 17)).map_err(to_query_error)?;
+    Ok(ExternalMcpServerRecord {
+        mcp_server_id: parse_uuid(&mcp_server_id)?,
+        server_key: row.get(libsql_idx(offset, 1)).map_err(to_query_error)?,
+        display_name: row.get(libsql_idx(offset, 2)).map_err(to_query_error)?,
+        description: row.get(libsql_idx(offset, 3)).map_err(to_query_error)?,
+        transport: ExternalMcpTransport::from_db(&transport).ok_or_else(|| {
+            StoreError::Serialization(format!("invalid external MCP transport `{transport}`"))
+        })?,
+        server_url: row.get(libsql_idx(offset, 5)).map_err(to_query_error)?,
+        auth_mode: ExternalMcpAuthMode::from_db(&auth_mode).ok_or_else(|| {
+            StoreError::Serialization(format!("invalid external MCP auth mode `{auth_mode}`"))
+        })?,
+        auth_config: json_object_from_str(&auth_config_json)?,
+        timeout_ms: row.get(libsql_idx(offset, 8)).map_err(to_query_error)?,
+        status: ExternalMcpServerStatus::from_db(&status).ok_or_else(|| {
+            StoreError::Serialization(format!("invalid external MCP server status `{status}`"))
+        })?,
+        last_discovery_status: last_discovery_status
+            .as_deref()
+            .map(|value| {
+                ExternalMcpDiscoveryStatus::from_db(value).ok_or_else(|| {
+                    StoreError::Serialization(format!(
+                        "invalid external MCP discovery status `{value}`"
+                    ))
+                })
+            })
+            .transpose()?,
+        last_discovery_at: last_discovery_at.map(unix_to_datetime).transpose()?,
+        last_successful_discovery_at: last_successful_discovery_at
+            .map(unix_to_datetime)
+            .transpose()?,
+        last_error_summary: row.get(libsql_idx(offset, 13)).map_err(to_query_error)?,
+        last_tool_count: row.get(libsql_idx(offset, 14)).map_err(to_query_error)?,
+        created_at: unix_to_datetime(created_at)?,
+        updated_at: unix_to_datetime(updated_at)?,
+        disabled_at: disabled_at.map(unix_to_datetime).transpose()?,
+    })
+}
+
+fn decode_catalog_tool(row: &libsql::Row) -> Result<McpCatalogToolRecord, StoreError> {
+    Ok(McpCatalogToolRecord {
+        tool: decode_tool(row)?,
+        server: decode_server_at(row, 12)?,
     })
 }
 
@@ -390,6 +458,44 @@ impl McpAccessRepository for LibsqlStore {
         })
     }
 
+    async fn resolve_mcp_catalog_access_for_subjects(
+        &self,
+        subjects: &[McpGrantSubject],
+        server_key: Option<&str>,
+    ) -> Result<McpCatalogAccessResolution, StoreError> {
+        let exposed_tool_count = active_catalog_tool_count(&self.connection, server_key).await?;
+        let mut tools_by_id: HashMap<Uuid, McpCatalogToolRecord> = HashMap::new();
+
+        for subject in subjects {
+            collect_catalog_direct_tools(&self.connection, subject, server_key, &mut tools_by_id)
+                .await?;
+            collect_catalog_toolset_tools(&self.connection, subject, server_key, &mut tools_by_id)
+                .await?;
+        }
+
+        let mut allowed_tools: Vec<_> = tools_by_id.into_values().collect();
+        allowed_tools.sort_by(|a, b| {
+            a.server
+                .server_key
+                .cmp(&b.server.server_key)
+                .then_with(|| a.tool.upstream_name.cmp(&b.tool.upstream_name))
+                .then_with(|| a.tool.mcp_tool_id.cmp(&b.tool.mcp_tool_id))
+        });
+        let referenced_server_count = allowed_tools
+            .iter()
+            .map(|record| record.server.mcp_server_id)
+            .collect::<std::collections::HashSet<_>>()
+            .len() as i64;
+        let filtered_tool_count = exposed_tool_count.saturating_sub(allowed_tools.len() as i64);
+
+        Ok(McpCatalogAccessResolution {
+            allowed_tools,
+            referenced_server_count,
+            exposed_tool_count,
+            filtered_tool_count,
+        })
+    }
+
     async fn get_active_mcp_tool_by_name(
         &self,
         mcp_server_id: Uuid,
@@ -412,6 +518,28 @@ impl McpAccessRepository for LibsqlStore {
             .map(|row| decode_tool(&row))
             .transpose()
     }
+}
+
+async fn active_catalog_tool_count(
+    connection: &libsql::Connection,
+    server_key: Option<&str>,
+) -> Result<i64, StoreError> {
+    let mut rows = connection
+        .query(
+            r#"
+            SELECT COUNT(*)
+            FROM external_mcp_tools t
+            JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id
+            WHERE t.is_active = 1 AND s.status = 'active' AND (?1 IS NULL OR s.server_key = ?1)
+            "#,
+            libsql::params![server_key],
+        )
+        .await
+        .map_err(to_query_error)?;
+    let row = rows.next().await.map_err(to_query_error)?.ok_or_else(|| {
+        StoreError::Unexpected("active MCP catalog tool count returned no row".to_string())
+    })?;
+    row.get(0).map_err(to_query_error)
 }
 
 async fn active_tool_count(
@@ -486,6 +614,60 @@ async fn collect_toolset_tools(
     while let Some(row) = rows.next().await.map_err(to_query_error)? {
         let tool = decode_tool(&row)?;
         out.insert(tool.mcp_tool_id, tool);
+    }
+    Ok(())
+}
+
+async fn collect_catalog_direct_tools(
+    connection: &libsql::Connection,
+    subject: &McpGrantSubject,
+    server_key: Option<&str>,
+    out: &mut HashMap<Uuid, McpCatalogToolRecord>,
+) -> Result<(), StoreError> {
+    let sql = format!(
+        "SELECT {TOOL_COLUMNS}, {SERVER_COLUMNS} FROM mcp_tool_grants g JOIN external_mcp_tools t ON t.mcp_tool_id = g.target_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE g.is_active = 1 AND g.target_kind = 'tool' AND g.subject_kind = ?1 AND g.subject_id = ?2 AND t.is_active = 1 AND s.status = 'active' AND (?3 IS NULL OR s.server_key = ?3)"
+    );
+    let mut rows = connection
+        .query(
+            &sql,
+            libsql::params![
+                subject.subject_kind.as_str(),
+                subject.subject_id.to_string(),
+                server_key,
+            ],
+        )
+        .await
+        .map_err(to_query_error)?;
+    while let Some(row) = rows.next().await.map_err(to_query_error)? {
+        let record = decode_catalog_tool(&row)?;
+        out.insert(record.tool.mcp_tool_id, record);
+    }
+    Ok(())
+}
+
+async fn collect_catalog_toolset_tools(
+    connection: &libsql::Connection,
+    subject: &McpGrantSubject,
+    server_key: Option<&str>,
+    out: &mut HashMap<Uuid, McpCatalogToolRecord>,
+) -> Result<(), StoreError> {
+    let sql = format!(
+        "SELECT {TOOL_COLUMNS}, {SERVER_COLUMNS} FROM mcp_tool_grants g JOIN mcp_toolsets ts ON ts.toolset_id = g.target_id JOIN mcp_toolset_tools tst ON tst.toolset_id = ts.toolset_id JOIN external_mcp_tools t ON t.mcp_tool_id = tst.mcp_tool_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE g.is_active = 1 AND g.target_kind = 'toolset' AND g.subject_kind = ?1 AND g.subject_id = ?2 AND ts.status = 'active' AND t.is_active = 1 AND s.status = 'active' AND (?3 IS NULL OR s.server_key = ?3)"
+    );
+    let mut rows = connection
+        .query(
+            &sql,
+            libsql::params![
+                subject.subject_kind.as_str(),
+                subject.subject_id.to_string(),
+                server_key,
+            ],
+        )
+        .await
+        .map_err(to_query_error)?;
+    while let Some(row) = rows.next().await.map_err(to_query_error)? {
+        let record = decode_catalog_tool(&row)?;
+        out.insert(record.tool.mcp_tool_id, record);
     }
     Ok(())
 }

@@ -1,9 +1,9 @@
 use async_trait::async_trait;
 use gateway_core::{
-    ExternalMcpToolRecord, McpAccessRepository, McpAccessResolution, McpGrantSubject,
-    McpToolGrantRecord, McpToolGrantSubjectKind, McpToolGrantTargetKind, McpToolsetRecord,
-    McpToolsetToolRecord, NewMcpToolsetRecord, StoreError, UpdateMcpToolsetRecord,
-    UpsertMcpToolGrantRecord,
+    ExternalMcpToolRecord, McpAccessRepository, McpAccessResolution, McpCatalogAccessResolution,
+    McpGrantSubject, McpToolGrantRecord, McpToolGrantSubjectKind, McpToolGrantTargetKind,
+    McpToolsetRecord, McpToolsetToolRecord, NewMcpToolsetRecord, StoreError,
+    UpdateMcpToolsetRecord, UpsertMcpToolGrantRecord,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -152,6 +152,25 @@ impl McpAccessRepository for AnyStore {
             Self::Postgres(store) => {
                 store
                     .resolve_mcp_access_for_subjects(subjects, mcp_server_id)
+                    .await
+            }
+        }
+    }
+
+    async fn resolve_mcp_catalog_access_for_subjects(
+        &self,
+        subjects: &[McpGrantSubject],
+        server_key: Option<&str>,
+    ) -> Result<McpCatalogAccessResolution, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .resolve_mcp_catalog_access_for_subjects(subjects, server_key)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .resolve_mcp_catalog_access_for_subjects(subjects, server_key)
                     .await
             }
         }

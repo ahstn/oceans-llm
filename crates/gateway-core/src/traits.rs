@@ -14,12 +14,13 @@ use crate::{
         BudgetAlertHistoryQuery, BudgetAlertRecord, ExternalMcpDiscoveryRunRecord,
         ExternalMcpServerRecord, ExternalMcpToolRecord, FocusExportAggregateRecord,
         FocusExportDiagnosticsRecord, GatewayModel, HarnessUsageBucketRecord,
-        HarnessUsageLeaderRecord, McpAccessResolution, McpGrantSubject, McpToolGrantRecord,
-        McpToolGrantSubjectKind, McpToolGrantTargetKind, McpToolInvocationDetail,
-        McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
-        McpToolInvocationRecord, McpToolTokenEstimateRecord, McpToolsetRecord,
-        McpToolsetToolRecord, ModelPricingRecord, ModelRoute, Money4, NewApiKeyRecord,
-        NewExternalMcpServerRecord, NewMcpToolsetRecord, PricingCatalogCacheRecord,
+        HarnessUsageLeaderRecord, McpAccessResolution, McpAggregateSessionRecord,
+        McpCatalogAccessResolution, McpGrantSubject, McpToolGrantRecord, McpToolGrantSubjectKind,
+        McpToolGrantTargetKind, McpToolInvocationDetail, McpToolInvocationPage,
+        McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
+        McpToolTokenEstimateRecord, McpToolsetRecord, McpToolsetToolRecord, ModelPricingRecord,
+        ModelRoute, Money4, NewApiKeyRecord, NewExternalMcpServerRecord,
+        NewMcpAggregateSessionRecord, NewMcpToolsetRecord, PricingCatalogCacheRecord,
         ProviderCapabilities, ProviderConnection, ProviderRequestContext, RequestAttemptRecord,
         RequestLogDetail, RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult,
         RequestLogQuery, RequestLogRecord, RequestMcpTokenOverheadRecord, ServiceAccountRecord,
@@ -571,11 +572,51 @@ pub trait McpAccessRepository: Send + Sync {
         mcp_server_id: Option<Uuid>,
     ) -> Result<McpAccessResolution, StoreError>;
 
+    async fn resolve_mcp_catalog_access_for_subjects(
+        &self,
+        subjects: &[McpGrantSubject],
+        server_key: Option<&str>,
+    ) -> Result<McpCatalogAccessResolution, StoreError>;
+
     async fn get_active_mcp_tool_by_name(
         &self,
         mcp_server_id: Uuid,
         upstream_name: &str,
     ) -> Result<Option<ExternalMcpToolRecord>, StoreError>;
+}
+
+#[async_trait]
+pub trait McpAggregateSessionRepository: Send + Sync {
+    async fn create_mcp_aggregate_session(
+        &self,
+        session: &NewMcpAggregateSessionRecord,
+    ) -> Result<McpAggregateSessionRecord, StoreError>;
+
+    async fn get_mcp_aggregate_session_by_token_hash(
+        &self,
+        token_hash: &str,
+    ) -> Result<Option<McpAggregateSessionRecord>, StoreError>;
+
+    async fn update_mcp_aggregate_session_initialized(
+        &self,
+        session_id: Uuid,
+        token_hash: &str,
+        initialized_at: OffsetDateTime,
+    ) -> Result<Option<McpAggregateSessionRecord>, StoreError>;
+
+    async fn touch_mcp_aggregate_session(
+        &self,
+        session_id: Uuid,
+        token_hash: &str,
+        touched_at: OffsetDateTime,
+    ) -> Result<Option<McpAggregateSessionRecord>, StoreError>;
+
+    async fn revoke_mcp_aggregate_session(
+        &self,
+        session_id: Uuid,
+        token_hash: &str,
+        revoked_at: OffsetDateTime,
+    ) -> Result<bool, StoreError>;
 }
 
 #[async_trait]

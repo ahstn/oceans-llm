@@ -1,3 +1,4 @@
+mod aggregate;
 mod json_rpc;
 mod upstream;
 
@@ -206,6 +207,8 @@ pub async fn mcp_streamable_http_proxy(
         Err(error) => mcp_error_response(error),
     }
 }
+
+pub use aggregate::mcp_aggregate_streamable_http;
 
 fn body_read_exceeded_limit(error: &axum::Error) -> bool {
     error

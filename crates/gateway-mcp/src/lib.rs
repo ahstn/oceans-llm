@@ -13,6 +13,8 @@ use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use url::Url;
 
+pub mod server;
+
 pub const DEFAULT_PROTOCOL_VERSION: &str = "2025-03-26";
 pub const MCP_PROTOCOL_VERSION_HEADER: &str = "mcp-protocol-version";
 pub const MCP_SESSION_ID_HEADER: &str = "mcp-session-id";

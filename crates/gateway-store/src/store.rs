@@ -4,13 +4,13 @@ use async_trait::async_trait;
 use gateway_core::{
     AdminApiKeyRepository, AdminIdentityRepository, ApiKeyRepository, AuthMode,
     BudgetAlertRepository, BudgetRepository, GlobalRole, IdentityRepository, IdentityUserRecord,
-    McpAccessRepository, McpRegistryRepository, McpTokenOverheadRepository,
-    McpToolInvocationRepository, MembershipRole, ModelRepository, OauthLoginStateRecord,
-    OauthProviderRecord, OidcLoginStateRecord, OidcProviderRecord, PasswordInvitationRecord,
-    PricingCatalogRepository, ProviderRepository, RequestLogRepository, RequestTag, SeedApiKey,
-    SeedModel, SeedOauthProvider, SeedOidcProvider, SeedProvider, SeedTeam, SeedUser, StoreError,
-    StoreHealth, TeamMembershipRecord, TeamRecord, UserOauthAuthRecord, UserOidcAuthRecord,
-    UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
+    McpAccessRepository, McpAggregateSessionRepository, McpRegistryRepository,
+    McpTokenOverheadRepository, McpToolInvocationRepository, MembershipRole, ModelRepository,
+    OauthLoginStateRecord, OauthProviderRecord, OidcLoginStateRecord, OidcProviderRecord,
+    PasswordInvitationRecord, PricingCatalogRepository, ProviderRepository, RequestLogRepository,
+    RequestTag, SeedApiKey, SeedModel, SeedOauthProvider, SeedOidcProvider, SeedProvider, SeedTeam,
+    SeedUser, StoreError, StoreHealth, TeamMembershipRecord, TeamRecord, UserOauthAuthRecord,
+    UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -49,6 +49,7 @@ pub trait GatewayStore:
     + RequestLogRepository
     + McpRegistryRepository
     + McpAccessRepository
+    + McpAggregateSessionRepository
     + McpTokenOverheadRepository
     + McpToolInvocationRepository
     + PricingCatalogRepository

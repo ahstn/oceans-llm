@@ -126,6 +126,9 @@ Compatibility metadata is not a provider config fallback and is not an `extra_bo
 - `mcp_tool_invocation_payloads`
   - Key columns: `mcp_tool_invocation_id`, `arguments_json`, `result_json`
   - Notes: payload rows exist only when MCP invocation payload policy captures sanitized payloads; summary rows are still recorded when payload capture is disabled.
+- `mcp_aggregate_sessions`
+  - Key columns: `session_id`, `token_hash`, `api_key_id`, `owner_kind`, `owner_user_id`, `owner_team_id`, `owner_service_account_id`, `protocol_version`, `initialized`, `expires_at`, `created_at`, `updated_at`, `revoked_at`
+  - Notes: aggregate `/mcp` Streamable HTTP sessions are durable transport state. Only token hashes are stored. Sessions are bound to the authenticated API key and owner metadata; reuse by another principal is treated as not found.
 
 ### External MCP Registry Tables
 

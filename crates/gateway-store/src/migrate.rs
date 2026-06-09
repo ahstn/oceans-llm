@@ -82,6 +82,7 @@ const ACTIVE_APPLICATION_TABLES: &[&str] = &[
     "external_mcp_servers",
     "external_mcp_tools",
     "external_mcp_discovery_runs",
+    "mcp_aggregate_sessions",
     "budgets",
     "budget_alerts",
     "budget_alert_deliveries",

@@ -77,6 +77,8 @@ Arguments and results must be redacted and bounded before persistence. Sensitive
 
 `server_id` and `tool_id` are nullable so policy-denied, unknown, or inactive tool names can still be audited. Successful registry-backed `tools/call` executions populate stable server and tool ids.
 
+Aggregate `/mcp` `search_tools` and `describe_tool` calls are discovery operations and do not create MCP invocation rows. Invocation logs are reserved for mediated upstream `tools/list` and `tools/call` activity on `/mcp/{server_key}` until aggregate execution is implemented.
+
 ## Relationship to Request Logs
 
 Request logs keep the request-level outcome and tool cardinality. MCP invocation logs keep per-tool audit detail.
