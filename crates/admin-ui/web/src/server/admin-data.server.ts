@@ -8,6 +8,7 @@ import type {
   CreateApiKeyInput,
   CreateApiKeyResult,
   CreateMcpServerInput,
+  CreateMcpToolsetInput,
   UpdateApiKeyInput,
   UpdateApiKeyResult,
   CreateTeamInput,
@@ -28,8 +29,16 @@ import type {
   McpInvocationFiltersInput,
   McpInvocationPageView,
   McpDiscoveryRefreshPayload,
+  McpEffectiveAccessPayload,
+  McpEffectiveAccessQuery,
+  McpGrantPayload,
+  McpGrantsPayload,
+  McpGrantsQuery,
   McpServerPayload,
   McpServersPayload,
+  McpToolsetPayload,
+  McpToolsetsPayload,
+  McpToolsetToolsPayload,
   McpToolsPayload,
   RecommendedMcpServersPayload,
   ModelPageView,
@@ -46,9 +55,11 @@ import type {
   TransferTeamMemberInput,
   UpdateTeamInput,
   UpdateMcpServerInput,
+  UpdateMcpToolsetInput,
   UpdateUserInput,
   UpsertBudgetInput,
   UpsertBudgetResultView,
+  UpsertMcpGrantInput,
 } from '@/types/api'
 import {
   createGatewayApiClient,
@@ -351,6 +362,101 @@ export async function refreshMcpServerDiscovery(
   )
 }
 
+export async function listMcpToolsets(params?: {
+  include_disabled?: boolean
+}): Promise<ApiEnvelope<McpToolsetsPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.GET('/api/v1/admin/mcp/toolsets', {
+      params: {
+        query: {
+          include_disabled: params?.include_disabled,
+        },
+      },
+    }),
+  )
+}
+
+export async function createMcpToolset(
+  input: CreateMcpToolsetInput,
+): Promise<ApiEnvelope<McpToolsetPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(await client.POST('/api/v1/admin/mcp/toolsets', { body: input }))
+}
+
+export async function updateMcpToolset(
+  toolsetId: string,
+  input: UpdateMcpToolsetInput,
+): Promise<ApiEnvelope<McpToolsetPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.PATCH('/api/v1/admin/mcp/toolsets/{toolset_id}', {
+      params: { path: { toolset_id: toolsetId } },
+      body: input,
+    }),
+  )
+}
+
+export async function disableMcpToolset(
+  toolsetId: string,
+): Promise<ApiEnvelope<McpToolsetPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.POST('/api/v1/admin/mcp/toolsets/{toolset_id}/disable', {
+      params: { path: { toolset_id: toolsetId } },
+    }),
+  )
+}
+
+export async function replaceMcpToolsetTools(
+  toolsetId: string,
+  toolIds: string[],
+): Promise<ApiEnvelope<McpToolsetToolsPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.PUT('/api/v1/admin/mcp/toolsets/{toolset_id}/tools', {
+      params: { path: { toolset_id: toolsetId } },
+      body: { tool_ids: toolIds },
+    }),
+  )
+}
+
+export async function listMcpGrants(
+  params?: McpGrantsQuery,
+): Promise<ApiEnvelope<McpGrantsPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.GET('/api/v1/admin/mcp/grants', {
+      params: { query: params },
+    }),
+  )
+}
+
+export async function upsertMcpGrant(
+  input: UpsertMcpGrantInput,
+): Promise<ApiEnvelope<McpGrantPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(await client.PUT('/api/v1/admin/mcp/grants', { body: input }))
+}
+
+export async function revokeMcpGrant(
+  input: UpsertMcpGrantInput,
+): Promise<ApiEnvelope<McpGrantsPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(await client.DELETE('/api/v1/admin/mcp/grants', { body: input }))
+}
+
+export async function previewMcpEffectiveAccess(
+  params: McpEffectiveAccessQuery,
+): Promise<ApiEnvelope<McpEffectiveAccessPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.GET('/api/v1/admin/mcp/effective-access', {
+      params: { query: params },
+    }),
+  )
+}
+
 export async function listTeams(): Promise<ApiEnvelope<IdentityTeamsPayload>> {
   const client = createGatewayApiClient()
   return unwrapGatewayResponse(await client.GET('/api/v1/admin/identity/teams'))
@@ -419,15 +525,11 @@ export async function getSession(): Promise<ApiEnvelope<AuthSessionView | null>>
 }
 
 export async function listOidcProviders(): Promise<ApiEnvelope<PublicOidcProvidersPayload>> {
-  return fetchGatewayJson<ApiEnvelope<PublicOidcProvidersPayload>>(
-    '/api/v1/auth/oidc/providers',
-  )
+  return fetchGatewayJson<ApiEnvelope<PublicOidcProvidersPayload>>('/api/v1/auth/oidc/providers')
 }
 
 export async function listOauthProviders(): Promise<ApiEnvelope<PublicOauthProvidersPayload>> {
-  return fetchGatewayJson<ApiEnvelope<PublicOauthProvidersPayload>>(
-    '/api/v1/auth/oauth/providers',
-  )
+  return fetchGatewayJson<ApiEnvelope<PublicOauthProvidersPayload>>('/api/v1/auth/oauth/providers')
 }
 
 export async function loginWithPassword(

@@ -17,6 +17,9 @@ use uuid::Uuid;
 
 use crate::{LibsqlStore, PostgresStore};
 
+// Split plan: keep `GatewayStore` as the composed facade used by callers, then
+// move domain-specific admin and identity operations into narrower repository
+// traits as those areas receive substantive changes.
 #[derive(Debug, Clone)]
 pub enum StoreConnectionOptions {
     Libsql { path: PathBuf },

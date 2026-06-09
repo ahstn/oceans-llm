@@ -19,8 +19,8 @@ use gateway_core::{
     openai_responses_request_to_core, protocol::openai::ModelCard,
 };
 use gateway_service::{
-    RequestLogIconMetadata, ResolvedProviderConnection, resolve_model_icon_key,
-    resolve_provider_display_from_parts,
+    McpAccess, McpTokenOverhead, McpTokenOverheadInput, RequestLogContext, RequestLogIconMetadata,
+    ResolvedProviderConnection, resolve_model_icon_key, resolve_provider_display_from_parts,
 };
 use serde_json::{Value, json};
 use time::OffsetDateTime;
@@ -96,7 +96,7 @@ pub async fn v1_chat_completions(
 
     let request_headers = extract_request_headers(&headers);
     let request_tags = extract_request_tags(&headers)?;
-    let request_log_context = state.service.begin_chat_request_log(
+    let mut request_log_context = state.service.begin_chat_request_log(
         &request_id,
         &resolved.selection.requested_model.model_key,
         &resolved.selection.execution_model.model_key,
@@ -159,6 +159,14 @@ pub async fn v1_chat_completions(
         &resolved.selection.execution_model.model_key,
         &resolved.selection.requested_model.model_key,
     );
+    best_effort_record_mcp_request_telemetry(
+        &state,
+        &auth,
+        &mut request_log_context,
+        &route,
+        resolved.provider_connections.get(&route.provider_key),
+    )
+    .await;
     let labels = ChatMetricLabels {
         requested_model: &resolved.selection.requested_model.model_key,
         resolved_model: &resolved.selection.execution_model.model_key,
@@ -420,7 +428,7 @@ pub async fn v1_responses(
 
     let request_headers = extract_request_headers(&headers);
     let request_tags = extract_request_tags(&headers)?;
-    let request_log_context = state.service.begin_responses_request_log(
+    let mut request_log_context = state.service.begin_responses_request_log(
         &request_id,
         &resolved.selection.requested_model.model_key,
         &resolved.selection.execution_model.model_key,
@@ -483,6 +491,14 @@ pub async fn v1_responses(
         &resolved.selection.execution_model.model_key,
         &resolved.selection.requested_model.model_key,
     );
+    best_effort_record_mcp_request_telemetry(
+        &state,
+        &auth,
+        &mut request_log_context,
+        &route,
+        resolved.provider_connections.get(&route.provider_key),
+    )
+    .await;
     let labels = ChatMetricLabels {
         requested_model: &resolved.selection.requested_model.model_key,
         resolved_model: &resolved.selection.execution_model.model_key,
@@ -738,7 +754,7 @@ pub async fn v1_embeddings(
         .await?;
     let request_headers = extract_request_headers(&headers);
     let request_tags = extract_request_tags(&headers)?;
-    let request_log_context = state.service.begin_embeddings_request_log(
+    let mut request_log_context = state.service.begin_embeddings_request_log(
         &request_id,
         &resolved.selection.requested_model.model_key,
         &resolved.selection.execution_model.model_key,
@@ -770,6 +786,14 @@ pub async fn v1_embeddings(
         &resolved.selection.execution_model.model_key,
         &resolved.selection.requested_model.model_key,
     );
+    best_effort_record_mcp_request_telemetry(
+        &state,
+        &auth,
+        &mut request_log_context,
+        &route,
+        resolved.provider_connections.get(&route.provider_key),
+    )
+    .await;
     let labels = ChatMetricLabels {
         requested_model: &resolved.selection.requested_model.model_key,
         resolved_model: &resolved.selection.execution_model.model_key,
@@ -1281,6 +1305,55 @@ async fn best_effort_log_stream_result(
             model_key = %context.requested_model_key,
             error = %error,
             "request logging failed"
+        );
+    }
+}
+
+async fn best_effort_record_mcp_request_telemetry(
+    state: &AppState,
+    auth: &AuthenticatedApiKey,
+    context: &mut RequestLogContext,
+    route: &gateway_core::ModelRoute,
+    provider: Option<&ResolvedProviderConnection>,
+) {
+    let access = McpAccess::new(state.store.clone());
+    let resolution = match access.effective_tools_for_api_key(auth, None).await {
+        Ok(resolution) => resolution,
+        Err(error) => {
+            tracing::warn!(
+                request_id = %context.request_id,
+                error = %error,
+                "failed resolving MCP access for request telemetry"
+            );
+            return;
+        }
+    };
+
+    context.tool_cardinality.referenced_mcp_server_count = Some(resolution.referenced_server_count);
+    context.tool_cardinality.exposed_tool_count = Some(resolution.allowed_tools.len() as i64);
+    context.tool_cardinality.filtered_tool_count = Some(resolution.filtered_tool_count);
+
+    let overhead = McpTokenOverhead::new(state.store.clone());
+    if let Err(error) = overhead
+        .record_request_overhead(McpTokenOverheadInput {
+            request_id: context.request_id.clone(),
+            request_log_id: None,
+            model_key: Some(context.resolved_model_key.clone()),
+            provider_family: provider
+                .map(|provider| provider.provider_type.clone())
+                .unwrap_or_else(|| route.provider_key.clone()),
+            model_or_encoding: route.upstream_model.clone(),
+            tools: resolution.allowed_tools,
+            context_window_tokens: None,
+            protocol_version: None,
+            occurred_at: OffsetDateTime::now_utc(),
+        })
+        .await
+    {
+        tracing::warn!(
+            request_id = %context.request_id,
+            error = %error,
+            "failed recording MCP token-overhead telemetry"
         );
     }
 }

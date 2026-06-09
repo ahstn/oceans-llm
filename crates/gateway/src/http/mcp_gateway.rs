@@ -5,7 +5,7 @@ use std::{error::Error as _, time::Instant};
 
 use axum::{
     Json,
-    body::{Body, to_bytes},
+    body::{Body, Bytes, to_bytes},
     extract::{Path, State},
     http::{
         HeaderMap, HeaderValue, Request, Response, StatusCode,
@@ -18,12 +18,10 @@ use gateway_core::{
     OpenAiErrorEnvelope, ProviderError, auth::extract_bearer_token,
 };
 use gateway_service::{McpAccess, McpGatewayService, McpInvocationLogInput, McpInvocationLogging};
-use json_rpc::{
-    McpRpcRequest, mcp_jsonrpc_error_response, mcp_request_id, parse_mcp_rpc_request, response_json,
-};
-use serde_json::Map;
+use json_rpc::{McpRpcRequest, mcp_jsonrpc_error_response, mcp_request_id, parse_mcp_rpc_request};
+use serde_json::{Map, json};
 use time::OffsetDateTime;
-use upstream::{BufferedMcpResponse, proxy_buffered, proxy_tools_list, proxy_upstream};
+use upstream::{proxy_tools_list, proxy_upstream};
 use uuid::Uuid;
 
 use crate::http::state::AppState;
@@ -112,116 +110,53 @@ pub async fn mcp_streamable_http_proxy(
                 Ok(resolution) => resolution,
                 Err(error) => return mcp_error_response(error),
             };
-            proxy_tools_list(
+            let allowed_tool_names = access_resolution
+                .allowed_tools
+                .iter()
+                .map(|tool| tool.upstream_name.as_str())
+                .collect::<std::collections::HashSet<_>>();
+            let outcome = proxy_tools_list(
                 &state.mcp_http_client,
                 &method,
                 &headers,
                 body,
                 &upstream,
-                &access_resolution
-                    .allowed_tools
-                    .iter()
-                    .map(|tool| tool.upstream_name.as_str())
-                    .collect::<std::collections::HashSet<_>>(),
+                &allowed_tool_names,
                 id.as_ref(),
             )
-            .await
+            .await;
+            let (status, error_code) = response_outcome(&outcome);
+            let mut log_input = tool_invocation_log_input(
+                &upstream,
+                &id,
+                None,
+                "tools/list",
+                "tools/list",
+                status,
+                McpToolPolicyResult::Allowed,
+                error_code,
+                None,
+                None,
+                started_at,
+            );
+            log_input.metadata = tools_list_metadata(
+                access_resolution.referenced_server_count,
+                access_resolution.allowed_tools.len() as i64,
+                access_resolution.filtered_tool_count,
+            );
+            let _ = invocation_logger.log_invocation(&auth, log_input).await;
+            outcome
         }
         Ok(McpRpcRequest::ToolsCall {
             id,
             tool_name,
             arguments,
         }) => {
-            let allowed_tool = match access
-                .allowed_tool_for_call(&auth, upstream.server.mcp_server_id, &tool_name)
-                .await
-            {
-                Ok(tool) => tool,
-                Err(error) => return mcp_error_response(error),
-            };
-            let Some(tool) = allowed_tool else {
-                let _ = invocation_logger
-                    .log_invocation(
-                        &auth,
-                        McpInvocationLogInput {
-                            request_log_id: None,
-                            request_id: mcp_request_id(&id),
-                            server_id: Some(upstream.server.mcp_server_id),
-                            server_display_key: upstream.server.server_key.clone(),
-                            server_display_name: upstream.server.display_name.clone(),
-                            tool_id: None,
-                            tool_display_key: tool_name.clone(),
-                            tool_display_name: tool_name.clone(),
-                            status: McpToolInvocationStatus::PolicyDenied,
-                            policy_result: McpToolPolicyResult::Denied,
-                            latency_ms: Some(started_at.elapsed().as_millis() as i64),
-                            error_code: Some("mcp_tool_not_granted".to_string()),
-                            arguments_json: arguments.clone(),
-                            result_json: None,
-                            metadata: Map::new(),
-                            occurred_at: OffsetDateTime::now_utc(),
-                        },
-                    )
-                    .await;
-                return mcp_jsonrpc_error_response(
-                    StatusCode::FORBIDDEN,
-                    id.as_ref(),
-                    -32001,
-                    "MCP tool is not granted for this API key",
-                );
-            };
-            let outcome =
-                proxy_buffered(&state.mcp_http_client, &method, &headers, body, &upstream).await;
-            let (status, policy_result, error_code, result_json) = match &outcome {
-                Ok(response) if response.status.is_success() => (
-                    McpToolInvocationStatus::Success,
-                    McpToolPolicyResult::Allowed,
-                    None,
-                    response_json(response.body()),
-                ),
-                Ok(response) => (
-                    McpToolInvocationStatus::UpstreamError,
-                    McpToolPolicyResult::Allowed,
-                    Some(format!("http_{}", response.status.as_u16())),
-                    response_json(response.body()),
-                ),
-                Err(GatewayError::Provider(ProviderError::Timeout)) => (
-                    McpToolInvocationStatus::Timeout,
-                    McpToolPolicyResult::Allowed,
-                    Some("timeout".to_string()),
-                    None,
-                ),
-                Err(error) => (
-                    McpToolInvocationStatus::GatewayError,
-                    McpToolPolicyResult::Allowed,
-                    Some(error.to_string()),
-                    None,
-                ),
-            };
-            let _ = invocation_logger
-                .log_invocation(
-                    &auth,
-                    McpInvocationLogInput {
-                        request_log_id: None,
-                        request_id: mcp_request_id(&id),
-                        server_id: Some(upstream.server.mcp_server_id),
-                        server_display_key: upstream.server.server_key.clone(),
-                        server_display_name: upstream.server.display_name.clone(),
-                        tool_id: Some(tool.mcp_tool_id),
-                        tool_display_key: tool.upstream_name.clone(),
-                        tool_display_name: tool.display_name.clone(),
-                        status,
-                        policy_result,
-                        latency_ms: Some(started_at.elapsed().as_millis() as i64),
-                        error_code,
-                        arguments_json: arguments.clone(),
-                        result_json,
-                        metadata: Map::new(),
-                        occurred_at: OffsetDateTime::now_utc(),
-                    },
-                )
-                .await;
-            outcome.map(BufferedMcpResponse::into_response)
+            return handle_tools_call(
+                &state, &auth, &method, &headers, body, &upstream, started_at, id, tool_name,
+                arguments,
+            )
+            .await;
         }
         Ok(McpRpcRequest::Other) => {
             proxy_upstream(&state.mcp_http_client, &method, &headers, body, &upstream).await
@@ -250,7 +185,12 @@ pub async fn mcp_streamable_http_proxy(
                     },
                 )
                 .await;
-            return mcp_error_response(error);
+            return mcp_jsonrpc_error_response(
+                StatusCode::BAD_REQUEST,
+                None,
+                -32600,
+                &error.to_string(),
+            );
         }
     };
 
@@ -272,6 +212,154 @@ fn body_read_exceeded_limit(error: &axum::Error) -> bool {
         .source()
         .is_some_and(|source| source.to_string().contains("length limit exceeded"))
         || error.to_string().contains("length limit exceeded")
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn handle_tools_call(
+    state: &AppState,
+    auth: &gateway_core::AuthenticatedApiKey,
+    method: &axum::http::Method,
+    headers: &HeaderMap,
+    body: Bytes,
+    upstream: &gateway_service::McpGatewayUpstream,
+    started_at: Instant,
+    id: Option<serde_json::Value>,
+    tool_name: String,
+    arguments: Option<serde_json::Value>,
+) -> Response<Body> {
+    let access = McpAccess::new(state.store.clone());
+    let invocation_logger = McpInvocationLogging::new(state.store.clone());
+    let allowed_tool = match access
+        .allowed_tool_for_call(auth, upstream.server.mcp_server_id, &tool_name)
+        .await
+    {
+        Ok(tool) => tool,
+        Err(error) => return mcp_error_response(error),
+    };
+    let Some(tool) = allowed_tool else {
+        let _ = invocation_logger
+            .log_invocation(
+                auth,
+                tool_invocation_log_input(
+                    upstream,
+                    &id,
+                    None,
+                    &tool_name,
+                    &tool_name,
+                    McpToolInvocationStatus::PolicyDenied,
+                    McpToolPolicyResult::Denied,
+                    Some("mcp_tool_not_granted".to_string()),
+                    arguments.clone(),
+                    None,
+                    started_at,
+                ),
+            )
+            .await;
+        return mcp_jsonrpc_error_response(
+            StatusCode::FORBIDDEN,
+            id.as_ref(),
+            -32001,
+            "MCP tool is not granted for this API key",
+        );
+    };
+
+    let outcome = proxy_upstream(&state.mcp_http_client, method, headers, body, upstream).await;
+    let (status, error_code) = response_outcome(&outcome);
+    let _ = invocation_logger
+        .log_invocation(
+            auth,
+            tool_invocation_log_input(
+                upstream,
+                &id,
+                Some(tool.mcp_tool_id),
+                &tool.upstream_name,
+                &tool.display_name,
+                status,
+                McpToolPolicyResult::Allowed,
+                error_code,
+                arguments,
+                None,
+                started_at,
+            ),
+        )
+        .await;
+    match outcome {
+        Ok(response) => response,
+        Err(error) => mcp_error_response(error),
+    }
+}
+
+fn tools_list_metadata(
+    referenced_server_count: i64,
+    exposed_tool_count: i64,
+    filtered_tool_count: i64,
+) -> Map<String, serde_json::Value> {
+    Map::from_iter([
+        ("mcp_method".to_string(), json!("tools/list")),
+        (
+            "referenced_mcp_server_count".to_string(),
+            json!(referenced_server_count),
+        ),
+        ("exposed_tool_count".to_string(), json!(exposed_tool_count)),
+        (
+            "filtered_tool_count".to_string(),
+            json!(filtered_tool_count),
+        ),
+    ])
+}
+
+#[allow(clippy::too_many_arguments)]
+fn tool_invocation_log_input(
+    upstream: &gateway_service::McpGatewayUpstream,
+    id: &Option<serde_json::Value>,
+    tool_id: Option<uuid::Uuid>,
+    tool_display_key: &str,
+    tool_display_name: &str,
+    status: McpToolInvocationStatus,
+    policy_result: McpToolPolicyResult,
+    error_code: Option<String>,
+    arguments_json: Option<serde_json::Value>,
+    result_json: Option<serde_json::Value>,
+    started_at: Instant,
+) -> McpInvocationLogInput {
+    McpInvocationLogInput {
+        request_log_id: None,
+        request_id: mcp_request_id(id),
+        server_id: Some(upstream.server.mcp_server_id),
+        server_display_key: upstream.server.server_key.clone(),
+        server_display_name: upstream.server.display_name.clone(),
+        tool_id,
+        tool_display_key: tool_display_key.to_string(),
+        tool_display_name: tool_display_name.to_string(),
+        status,
+        policy_result,
+        latency_ms: Some(started_at.elapsed().as_millis() as i64),
+        error_code,
+        arguments_json,
+        result_json,
+        metadata: Map::new(),
+        occurred_at: OffsetDateTime::now_utc(),
+    }
+}
+
+fn response_outcome(
+    outcome: &Result<Response<Body>, GatewayError>,
+) -> (McpToolInvocationStatus, Option<String>) {
+    match outcome {
+        Ok(response) if response.status().is_success() => (McpToolInvocationStatus::Success, None),
+        Ok(response) => (
+            McpToolInvocationStatus::UpstreamError,
+            Some(format!("http_{}", response.status().as_u16())),
+        ),
+        Err(GatewayError::Provider(ProviderError::Timeout)) => (
+            McpToolInvocationStatus::Timeout,
+            Some("timeout".to_string()),
+        ),
+        Err(error) => (
+            McpToolInvocationStatus::GatewayError,
+            Some(error.to_string()),
+        ),
+    }
 }
 
 fn extract_mcp_gateway_api_key(headers: &HeaderMap) -> Result<String, AuthError> {

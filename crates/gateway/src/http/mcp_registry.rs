@@ -8,8 +8,8 @@ use axum::{
     http::HeaderMap,
 };
 use gateway_core::{
-    GatewayError, McpAccessRepository, McpToolGrantSubjectKind, NewMcpToolsetRecord,
-    UpdateMcpToolsetRecord, UpsertMcpToolGrantRecord,
+    GatewayError, McpAccessRepository, McpGrantSubject, McpToolGrantSubjectKind,
+    NewMcpToolsetRecord, UpdateMcpToolsetRecord, UpsertMcpToolGrantRecord,
 };
 use gateway_service::{
     CreateExternalMcpServerInput, McpRegistryService, UpdateExternalMcpServerInput,
@@ -472,31 +472,7 @@ pub async fn preview_mcp_effective_access(
     Query(query): Query<McpEffectiveAccessQuery>,
 ) -> Result<Json<Envelope<McpEffectiveAccessPayload>>, AppError> {
     require_platform_admin(&state, &headers).await?;
-    let mut subjects = Vec::new();
-    if let Some(api_key_id) = query.api_key_id {
-        subjects.push(gateway_core::McpGrantSubject {
-            subject_kind: McpToolGrantSubjectKind::ApiKey,
-            subject_id: api_key_id,
-        });
-    }
-    if let Some(user_id) = query.user_id {
-        subjects.push(gateway_core::McpGrantSubject {
-            subject_kind: McpToolGrantSubjectKind::User,
-            subject_id: user_id,
-        });
-    }
-    if let Some(service_account_id) = query.service_account_id {
-        subjects.push(gateway_core::McpGrantSubject {
-            subject_kind: McpToolGrantSubjectKind::ServiceAccount,
-            subject_id: service_account_id,
-        });
-    }
-    if let Some(team_id) = query.team_id {
-        subjects.push(gateway_core::McpGrantSubject {
-            subject_kind: McpToolGrantSubjectKind::Team,
-            subject_id: team_id,
-        });
-    }
+    let subjects = preview_subjects(&query);
     if subjects.is_empty() {
         return Err(GatewayError::InvalidRequest(
             "at least one access preview subject is required".to_string(),
@@ -513,6 +489,30 @@ pub async fn preview_mcp_effective_access(
         filtered_tool_count: resolution.filtered_tool_count,
         tools: resolution.allowed_tools.into_iter().map(map_tool).collect(),
     })))
+}
+
+fn preview_subjects(query: &McpEffectiveAccessQuery) -> Vec<McpGrantSubject> {
+    [
+        query
+            .api_key_id
+            .map(|subject_id| (McpToolGrantSubjectKind::ApiKey, subject_id)),
+        query
+            .user_id
+            .map(|subject_id| (McpToolGrantSubjectKind::User, subject_id)),
+        query
+            .service_account_id
+            .map(|subject_id| (McpToolGrantSubjectKind::ServiceAccount, subject_id)),
+        query
+            .team_id
+            .map(|subject_id| (McpToolGrantSubjectKind::Team, subject_id)),
+    ]
+    .into_iter()
+    .flatten()
+    .map(|(subject_kind, subject_id)| McpGrantSubject {
+        subject_kind,
+        subject_id,
+    })
+    .collect()
 }
 
 fn parse_uuid(raw: &str, field_name: &str) -> Result<Uuid, AppError> {

@@ -13,26 +13,12 @@ use gateway_service::McpGatewayUpstream;
 use serde_json::Value;
 use url::Url;
 
-use super::{
-    LAST_EVENT_ID, MAX_MCP_REWRITE_BODY_BYTES, MCP_PROTOCOL_VERSION, MCP_SESSION_ID,
-    mcp_error_response,
-};
+use super::{LAST_EVENT_ID, MAX_MCP_REWRITE_BODY_BYTES, MCP_PROTOCOL_VERSION, MCP_SESSION_ID};
 
 pub(super) struct BufferedMcpResponse {
     pub(super) status: StatusCode,
     headers: reqwest::header::HeaderMap,
     body: Bytes,
-}
-
-impl BufferedMcpResponse {
-    pub(super) fn body(&self) -> &[u8] {
-        &self.body
-    }
-
-    pub(super) fn into_response(self) -> Response<Body> {
-        response_from_parts(self.status, &self.headers, Body::from(self.body))
-            .unwrap_or_else(mcp_error_response)
-    }
 }
 
 pub(super) async fn proxy_upstream(
@@ -96,12 +82,7 @@ pub(super) async fn proxy_buffered(
         GatewayError::Internal(format!("upstream returned invalid status code: {error}"))
     })?;
     let headers = response.headers().clone();
-    let body = response.bytes().await.map_err(map_reqwest_error)?;
-    if body.len() as u64 > MAX_MCP_REWRITE_BODY_BYTES {
-        return Err(GatewayError::PayloadTooLarge {
-            limit_bytes: MAX_MCP_REWRITE_BODY_BYTES as usize,
-        });
-    }
+    let body = read_limited_response_body(response).await?;
     Ok(BufferedMcpResponse {
         status,
         headers,
@@ -164,8 +145,9 @@ fn filter_tools_list_sse(
     let text = std::str::from_utf8(body).map_err(|error| {
         GatewayError::InvalidRequest(format!("MCP tools/list SSE was not UTF-8: {error}"))
     })?;
+    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
     let mut out = String::with_capacity(text.len());
-    for event in text.split("\n\n") {
+    for event in normalized.split("\n\n") {
         if event.trim().is_empty() {
             continue;
         }
@@ -209,6 +191,20 @@ fn filter_tools_list_sse(
         out.push_str("\n\n");
     }
     Ok(out.into_bytes())
+}
+
+async fn read_limited_response_body(response: reqwest::Response) -> Result<Bytes, GatewayError> {
+    let mut body = Vec::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.try_next().await.map_err(map_reqwest_error)? {
+        if body.len().saturating_add(chunk.len()) > MAX_MCP_REWRITE_BODY_BYTES as usize {
+            return Err(GatewayError::PayloadTooLarge {
+                limit_bytes: MAX_MCP_REWRITE_BODY_BYTES as usize,
+            });
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(Bytes::from(body))
 }
 
 fn filter_tools_array(
@@ -260,7 +256,7 @@ fn response_from_parts(
         .map_err(|error| GatewayError::Internal(format!("failed building MCP response: {error}")))
 }
 
-fn accepts_event_stream(headers: &HeaderMap) -> bool {
+pub(super) fn accepts_event_stream(headers: &HeaderMap) -> bool {
     headers.get_all(ACCEPT).iter().any(|value| {
         value
             .to_str()
@@ -348,4 +344,22 @@ fn map_reqwest_error(error: reqwest::Error) -> GatewayError {
         return ProviderError::Timeout.into();
     }
     ProviderError::Transport(error.to_string()).into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn filters_crlf_delimited_sse_tools_list() {
+        let body = b"event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[{\"name\":\"allowed\"},{\"name\":\"blocked\"}]}}\r\n\r\n";
+        let allowed = HashSet::from(["allowed"]);
+
+        let filtered = filter_tools_list_sse(body, &allowed).expect("sse should filter");
+        let text = std::str::from_utf8(&filtered).expect("filtered sse is utf8");
+
+        assert!(text.contains("\"name\":\"allowed\""));
+        assert!(!text.contains("\"name\":\"blocked\""));
+        assert!(text.ends_with("\n\n"));
+    }
 }

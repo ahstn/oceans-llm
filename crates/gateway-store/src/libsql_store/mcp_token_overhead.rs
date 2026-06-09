@@ -4,8 +4,8 @@ use crate::shared::{json_object_from_str, parse_uuid, serialize_json, unix_to_da
 fn decode_estimate(row: &libsql::Row) -> Result<McpToolTokenEstimateRecord, StoreError> {
     let mcp_server_id: String = row.get(3).map_err(to_query_error)?;
     let mcp_tool_id: String = row.get(4).map_err(to_query_error)?;
-    let estimator_source: String = row.get(12).map_err(to_query_error)?;
-    let confidence: String = row.get(13).map_err(to_query_error)?;
+    let estimator_source: String = row.get(11).map_err(to_query_error)?;
+    let confidence: String = row.get(12).map_err(to_query_error)?;
     Ok(McpToolTokenEstimateRecord {
         cache_key: row.get(0).map_err(to_query_error)?,
         provider_family: row.get(1).map_err(to_query_error)?,
@@ -24,9 +24,9 @@ fn decode_estimate(row: &libsql::Row) -> Result<McpToolTokenEstimateRecord, Stor
         confidence: McpTokenEstimateConfidence::from_db(&confidence).ok_or_else(|| {
             StoreError::Serialization(format!("invalid MCP estimate confidence `{confidence}`"))
         })?,
-        created_at: unix_to_datetime(row.get(14).map_err(to_query_error)?)?,
-        updated_at: unix_to_datetime(row.get(15).map_err(to_query_error)?)?,
-        expires_at: unix_to_datetime(row.get(16).map_err(to_query_error)?)?,
+        created_at: unix_to_datetime(row.get(13).map_err(to_query_error)?)?,
+        updated_at: unix_to_datetime(row.get(14).map_err(to_query_error)?)?,
+        expires_at: unix_to_datetime(row.get(15).map_err(to_query_error)?)?,
     })
 }
 

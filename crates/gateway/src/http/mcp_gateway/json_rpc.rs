@@ -89,7 +89,3 @@ pub(super) fn mcp_request_id(id: &Option<Value>) -> String {
         })
         .unwrap_or_else(|| Uuid::new_v4().to_string())
 }
-
-pub(super) fn response_json(body: &[u8]) -> Option<Value> {
-    serde_json::from_slice(body).ok()
-}
