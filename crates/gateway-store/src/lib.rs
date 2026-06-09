@@ -1,4 +1,11 @@
+//! Store crate boundary.
+//!
+//! Split plan: keep this root as a narrow export surface and move the large
+//! backend integration test module into domain-focused files under
+//! `tests/` or private test submodules as store domains continue to grow.
+mod any_store_mcp_access;
 mod any_store_mcp_registry;
+mod any_store_mcp_token_overhead;
 mod libsql_store;
 mod migrate;
 mod migration_registry;

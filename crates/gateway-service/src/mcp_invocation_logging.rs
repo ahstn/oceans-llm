@@ -207,6 +207,11 @@ fn validate_owner(auth: &AuthenticatedApiKey) -> Result<(), GatewayError> {
         ApiKeyOwnerKind::User if auth.owner_user_id.is_none() => {
             Err(AuthError::ApiKeyOwnerInvalid.into())
         }
+        ApiKeyOwnerKind::ServiceAccount
+            if auth.owner_service_account_id.is_none() || auth.owner_team_id.is_none() =>
+        {
+            Err(AuthError::ApiKeyOwnerInvalid.into())
+        }
         _ => Ok(()),
     }
 }

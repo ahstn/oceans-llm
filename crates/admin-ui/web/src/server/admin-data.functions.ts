@@ -18,6 +18,7 @@ import {
   getRequestLogDetail,
   getHarnessUsage,
   getMcpInvocationDetail,
+  previewMcpEffectiveAccess,
   listRecommendedMcpServers,
   getSession,
   getUsageLeaderboard,
@@ -27,6 +28,8 @@ import {
   listMcpInvocations,
   listMcpServers,
   listMcpServerTools,
+  listMcpGrants,
+  listMcpToolsets,
   listSpendBudgets,
   listTeams,
   listUsers,
@@ -37,14 +40,20 @@ import {
   removeTeamMember,
   revokeApiKey,
   refreshMcpServerDiscovery,
+  replaceMcpToolsetTools,
   resendPasswordInvite,
   resetUserOnboarding,
   transferTeamMember,
   upsertBudget,
   updateApiKey,
   updateMcpServer,
+  updateMcpToolset,
   updateTeam,
   updateUser,
+  upsertMcpGrant,
+  createMcpToolset,
+  disableMcpToolset,
+  revokeMcpGrant,
 } from '@/server/admin-data.server'
 import { resolveBrowserGatewayOrigin } from '@/server/gateway-client.server'
 
@@ -145,11 +154,7 @@ export const getBudgetAlertHistory = createServerFn({ method: 'POST' }).handler(
 )
 
 export const saveBudget = createServerFn({ method: 'POST' }).handler(
-  async ({
-    data,
-  }: {
-    data: Parameters<typeof upsertBudget>[0]
-  }) => {
+  async ({ data }: { data: Parameters<typeof upsertBudget>[0] }) => {
     return upsertBudget(data)
   },
 )
@@ -235,6 +240,74 @@ export const getMcpServerTools = createServerFn({ method: 'GET' }).handler(
 export const refreshExternalMcpServerDiscovery = createServerFn({ method: 'POST' }).handler(
   async ({ data }: { data: { serverId: string } }) => {
     return refreshMcpServerDiscovery(data.serverId)
+  },
+)
+
+export const getMcpToolsets = createServerFn({ method: 'GET' }).handler(
+  async ({ data }: { data?: Parameters<typeof listMcpToolsets>[0] }) => {
+    return listMcpToolsets(data)
+  },
+)
+
+export const addMcpToolset = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: Parameters<typeof createMcpToolset>[0] }) => {
+    return createMcpToolset(data)
+  },
+)
+
+export const saveMcpToolset = createServerFn({ method: 'POST' }).handler(
+  async ({
+    data,
+  }: {
+    data: {
+      toolsetId: string
+      input: Parameters<typeof updateMcpToolset>[1]
+    }
+  }) => {
+    return updateMcpToolset(data.toolsetId, data.input)
+  },
+)
+
+export const disableExternalMcpToolset = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: { toolsetId: string } }) => {
+    return disableMcpToolset(data.toolsetId)
+  },
+)
+
+export const saveMcpToolsetTools = createServerFn({ method: 'POST' }).handler(
+  async ({
+    data,
+  }: {
+    data: {
+      toolsetId: string
+      toolIds: string[]
+    }
+  }) => {
+    return replaceMcpToolsetTools(data.toolsetId, data.toolIds)
+  },
+)
+
+export const getMcpGrants = createServerFn({ method: 'GET' }).handler(
+  async ({ data }: { data?: Parameters<typeof listMcpGrants>[0] }) => {
+    return listMcpGrants(data)
+  },
+)
+
+export const saveMcpGrant = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: Parameters<typeof upsertMcpGrant>[0] }) => {
+    return upsertMcpGrant(data)
+  },
+)
+
+export const removeMcpGrant = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: Parameters<typeof revokeMcpGrant>[0] }) => {
+    return revokeMcpGrant(data)
+  },
+)
+
+export const getMcpEffectiveAccess = createServerFn({ method: 'GET' }).handler(
+  async ({ data }: { data: Parameters<typeof previewMcpEffectiveAccess>[0] }) => {
+    return previewMcpEffectiveAccess(data)
   },
 )
 

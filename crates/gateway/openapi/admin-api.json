@@ -785,6 +785,209 @@
         ]
       }
     },
+    "/api/v1/admin/mcp/effective-access": {
+      "get": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "preview_mcp_effective_access",
+        "parameters": [
+          {
+            "name": "api_key_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "service_account_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "team_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "server_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpEffectiveAccessPayload"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/grants": {
+      "get": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "list_mcp_grants",
+        "parameters": [
+          {
+            "name": "subject_kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "subject_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpGrantsPayload"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "upsert_mcp_grant",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertMcpGrantRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpGrantPayload"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "revoke_mcp_grant",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertMcpGrantRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpGrantsPayload"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/mcp/recommended-servers": {
       "get": {
         "tags": [
@@ -1108,6 +1311,202 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/toolsets": {
+      "get": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "list_mcp_toolsets",
+        "parameters": [
+          {
+            "name": "include_disabled",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpToolsetsPayload"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "create_mcp_toolset",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMcpToolsetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpToolsetPayload"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/toolsets/{toolset_id}": {
+      "patch": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "update_mcp_toolset",
+        "parameters": [
+          {
+            "name": "toolset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMcpToolsetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpToolsetPayload"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/toolsets/{toolset_id}/disable": {
+      "post": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "disable_mcp_toolset",
+        "parameters": [
+          {
+            "name": "toolset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpToolsetPayload"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/toolsets/{toolset_id}/tools": {
+      "put": {
+        "tags": [
+          "crate::http::mcp_registry"
+        ],
+        "operationId": "replace_mcp_toolset_tools",
+        "parameters": [
+          {
+            "name": "toolset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceMcpToolsetToolsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_McpToolsetToolsPayload"
                 }
               }
             }
@@ -3969,6 +4368,27 @@
           }
         }
       },
+      "CreateMcpToolsetRequest": {
+        "type": "object",
+        "required": [
+          "toolset_key",
+          "display_name"
+        ],
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "toolset_key": {
+            "type": "string"
+          }
+        }
+      },
       "CreateServiceAccountRequest": {
         "type": "object",
         "required": [
@@ -4965,6 +5385,96 @@
           }
         }
       },
+      "Envelope_McpEffectiveAccessPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "referenced_server_count",
+              "exposed_tool_count",
+              "filtered_tool_count",
+              "tools"
+            ],
+            "properties": {
+              "exposed_tool_count": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "filtered_tool_count": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "referenced_server_count": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "tools": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/McpToolView"
+                }
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_McpGrantPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "grant"
+            ],
+            "properties": {
+              "grant": {
+                "$ref": "#/components/schemas/McpGrantView"
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_McpGrantsPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/McpGrantView"
+                }
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
       "Envelope_McpServerPayload": {
         "type": "object",
         "required": [
@@ -5108,6 +5618,81 @@
                 "type": "array",
                 "items": {
                   "$ref": "#/components/schemas/McpToolView"
+                }
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_McpToolsetPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "toolset"
+            ],
+            "properties": {
+              "toolset": {
+                "$ref": "#/components/schemas/McpToolsetView"
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_McpToolsetToolsPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "tool_ids"
+            ],
+            "properties": {
+              "tool_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_McpToolsetsPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/McpToolsetView"
                 }
               }
             }
@@ -5282,6 +5867,16 @@
               },
               "log": {
                 "$ref": "#/components/schemas/RequestLogSummaryView"
+              },
+              "mcp_token_overhead": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RequestMcpTokenOverheadView"
+                  }
+                ]
               },
               "payload": {
                 "oneOf": [
@@ -5885,6 +6480,105 @@
           }
         }
       },
+      "McpEffectiveAccessPayload": {
+        "type": "object",
+        "required": [
+          "referenced_server_count",
+          "exposed_tool_count",
+          "filtered_tool_count",
+          "tools"
+        ],
+        "properties": {
+          "exposed_tool_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "filtered_tool_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "referenced_server_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/McpToolView"
+            }
+          }
+        }
+      },
+      "McpGrantPayload": {
+        "type": "object",
+        "required": [
+          "grant"
+        ],
+        "properties": {
+          "grant": {
+            "$ref": "#/components/schemas/McpGrantView"
+          }
+        }
+      },
+      "McpGrantView": {
+        "type": "object",
+        "required": [
+          "id",
+          "subject_kind",
+          "subject_id",
+          "target_kind",
+          "target_id",
+          "is_active",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "revoked_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subject_id": {
+            "type": "string"
+          },
+          "subject_kind": {
+            "type": "string"
+          },
+          "target_id": {
+            "type": "string"
+          },
+          "target_kind": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "McpGrantsPayload": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/McpGrantView"
+            }
+          }
+        }
+      },
       "McpServerPayload": {
         "type": "object",
         "required": [
@@ -6263,6 +6957,88 @@
           }
         }
       },
+      "McpToolsetPayload": {
+        "type": "object",
+        "required": [
+          "toolset"
+        ],
+        "properties": {
+          "toolset": {
+            "$ref": "#/components/schemas/McpToolsetView"
+          }
+        }
+      },
+      "McpToolsetToolsPayload": {
+        "type": "object",
+        "required": [
+          "tool_ids"
+        ],
+        "properties": {
+          "tool_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "McpToolsetView": {
+        "type": "object",
+        "required": [
+          "id",
+          "toolset_key",
+          "display_name",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "disabled_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "toolset_key": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "McpToolsetsPayload": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/McpToolsetView"
+            }
+          }
+        }
+      },
       "ModelIconKeyView": {
         "type": "string",
         "enum": [
@@ -6486,6 +7262,21 @@
           }
         }
       },
+      "ReplaceMcpToolsetToolsRequest": {
+        "type": "object",
+        "required": [
+          "tool_ids"
+        ],
+        "properties": {
+          "tool_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      },
       "RequestAttemptView": {
         "type": "object",
         "required": [
@@ -6602,6 +7393,16 @@
           },
           "log": {
             "$ref": "#/components/schemas/RequestLogSummaryView"
+          },
+          "mcp_token_overhead": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RequestMcpTokenOverheadView"
+              }
+            ]
           },
           "payload": {
             "oneOf": [
@@ -6853,6 +7654,75 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "RequestMcpTokenOverheadView": {
+        "type": "object",
+        "required": [
+          "provider_family",
+          "model_or_encoding",
+          "exposed_tool_count",
+          "estimated_definition_tokens",
+          "estimator_source",
+          "confidence",
+          "cache_hit_count",
+          "cache_miss_count",
+          "metadata"
+        ],
+        "properties": {
+          "cache_hit_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "cache_miss_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "confidence": {
+            "type": "string"
+          },
+          "context_window_percent_bps": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "context_window_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "estimated_definition_tokens": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "estimated_result_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "estimator_source": {
+            "type": "string"
+          },
+          "exposed_tool_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "model_or_encoding": {
+            "type": "string"
+          },
+          "provider_family": {
+            "type": "string"
           }
         }
       },
@@ -7429,6 +8299,23 @@
           }
         }
       },
+      "UpdateMcpToolsetRequest": {
+        "type": "object",
+        "required": [
+          "display_name"
+        ],
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_name": {
+            "type": "string"
+          }
+        }
+      },
       "UpdateServiceAccountRequest": {
         "type": "object",
         "required": [
@@ -7570,6 +8457,31 @@
             "$ref": "#/components/schemas/BudgetScopeView"
           },
           "scope_key": {
+            "type": "string"
+          }
+        }
+      },
+      "UpsertMcpGrantRequest": {
+        "type": "object",
+        "required": [
+          "subject_kind",
+          "subject_id",
+          "target_kind",
+          "target_id"
+        ],
+        "properties": {
+          "subject_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "subject_kind": {
+            "type": "string"
+          },
+          "target_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "target_kind": {
             "type": "string"
           }
         }

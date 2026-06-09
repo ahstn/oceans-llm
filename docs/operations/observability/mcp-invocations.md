@@ -75,7 +75,7 @@ Each invocation record should carry:
 
 Arguments and results must be redacted and bounded before persistence. Sensitive headers, tokens, provider credentials, OAuth material, and API keys must never be stored in MCP invocation payloads.
 
-`server_id` and `tool_id` are nullable today so invocation logging can operate before registry-backed execution exists. Future execution should populate them from the external MCP registry's stable server and tool ids.
+`server_id` and `tool_id` are nullable so policy-denied, unknown, or inactive tool names can still be audited. Successful registry-backed `tools/call` executions populate stable server and tool ids.
 
 ## Relationship to Request Logs
 
@@ -84,6 +84,8 @@ Request logs keep the request-level outcome and tool cardinality. MCP invocation
 `request_id` is the durable correlation key. `request_log_id` is an optional non-owning link when the request-log row is known; it is not required for insertion because request-log summaries are written at final outcome and may be absent or purged independently.
 
 Use request logs first when debugging the model/API request. Use MCP invocation logs when the question is which tool ran, whether access policy allowed it, how long it took, and whether the tool result failed or was truncated.
+
+Policy-denied `tools/call` requests are logged before upstream execution. Allowed calls are logged with `allowed`; upstream failures, timeouts, and invalid requests keep their distinct status values.
 
 ## What This Page Does Not Own
 

@@ -1061,6 +1061,24 @@ pub struct RequestLogDetailView {
     pub user_agent_raw: Option<String>,
     pub payload: Option<RequestLogPayloadView>,
     pub attempts: Vec<RequestAttemptView>,
+    pub mcp_token_overhead: Option<RequestMcpTokenOverheadView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct RequestMcpTokenOverheadView {
+    pub provider_family: String,
+    pub model_or_encoding: String,
+    pub exposed_tool_count: i64,
+    pub estimated_definition_tokens: i64,
+    pub estimated_result_tokens: Option<i64>,
+    pub estimator_source: String,
+    pub confidence: String,
+    pub cache_hit_count: i64,
+    pub cache_miss_count: i64,
+    pub context_window_tokens: Option<i64>,
+    pub context_window_percent_bps: Option<i64>,
+    #[schema(additional_properties = true)]
+    pub metadata: Map<String, Value>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -1150,7 +1168,16 @@ pub struct RequestLogPayloadView {
         crate::http::mcp_registry::update_mcp_server,
         crate::http::mcp_registry::disable_mcp_server,
         crate::http::mcp_registry::list_mcp_server_tools,
-        crate::http::mcp_registry::refresh_mcp_server_discovery
+        crate::http::mcp_registry::refresh_mcp_server_discovery,
+        crate::http::mcp_registry::list_mcp_toolsets,
+        crate::http::mcp_registry::create_mcp_toolset,
+        crate::http::mcp_registry::update_mcp_toolset,
+        crate::http::mcp_registry::disable_mcp_toolset,
+        crate::http::mcp_registry::replace_mcp_toolset_tools,
+        crate::http::mcp_registry::list_mcp_grants,
+        crate::http::mcp_registry::upsert_mcp_grant,
+        crate::http::mcp_registry::revoke_mcp_grant,
+        crate::http::mcp_registry::preview_mcp_effective_access
     ),
     components(schemas(ObservabilityRangeQueryValue)),
     modifiers(&AdminApiSecurity)
@@ -1247,6 +1274,12 @@ mod tests {
         assert!(paths.contains_key("/api/v1/admin/mcp/servers/{server_id}/disable"));
         assert!(paths.contains_key("/api/v1/admin/mcp/servers/{server_id}/tools"));
         assert!(paths.contains_key("/api/v1/admin/mcp/servers/{server_id}/discovery-refresh"));
+        assert!(paths.contains_key("/api/v1/admin/mcp/toolsets"));
+        assert!(paths.contains_key("/api/v1/admin/mcp/toolsets/{toolset_id}"));
+        assert!(paths.contains_key("/api/v1/admin/mcp/toolsets/{toolset_id}/disable"));
+        assert!(paths.contains_key("/api/v1/admin/mcp/toolsets/{toolset_id}/tools"));
+        assert!(paths.contains_key("/api/v1/admin/mcp/grants"));
+        assert!(paths.contains_key("/api/v1/admin/mcp/effective-access"));
         assert!(paths.contains_key("/api/v1/auth/session"));
         assert!(paths.contains_key("/api/v1/auth/logout"));
 

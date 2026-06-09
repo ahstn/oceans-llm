@@ -1,12 +1,12 @@
 # MCP Registry and Discovery
 
-`See also`: [MCP Servers](../../configuration/mcp-servers.md), [MCP Client Setup](../../setup/mcp-client-setup.md), [Observability and Request Logs](../observability-and-request-logs.md), [MCP Invocations](mcp-invocations.md), [Request Logs](request-logs.md), [Data Relationships](../../reference/data-relationships.md), [Admin API Contract Workflow](../../reference/admin-api-contract-workflow.md), [ADR: External MCP Registry and Discovery Boundary](../../adr/2026-05-26-external-mcp-registry-and-discovery.md)
+`See also`: [MCP Servers](../../configuration/mcp-servers.md), [MCP Tool Access](../../access/mcp-tool-access.md), [MCP Client Setup](../../setup/mcp-client-setup.md), [Observability and Request Logs](../observability-and-request-logs.md), [MCP Invocations](mcp-invocations.md), [Request Logs](request-logs.md), [Data Relationships](../../reference/data-relationships.md), [Admin API Contract Workflow](../../reference/admin-api-contract-workflow.md), [ADR: External MCP Registry and Discovery Boundary](../../adr/2026-05-26-external-mcp-registry-and-discovery.md), [ADR: MCP Tool Grants and Token Overhead](../../adr/2026-06-09-mcp-tool-grants-and-token-overhead.md)
 
 The external MCP registry is the control-plane record of MCP servers that Oceans LLM can discover and expose through the MCP gateway. It stores user-added server records in the database, keeps recommended server suggestions in a checked-in static catalog, discovers tool metadata through Streamable HTTP, and powers the admin diagnostics page at `/admin/mcp/servers`.
 
 This page is maintainer and admin documentation for registry diagnostics. User-facing server setup lives in [MCP Servers](../../configuration/mcp-servers.md), and client setup lives in [MCP Client Setup](../../setup/mcp-client-setup.md).
 
-Tool grants, toolsets, OAuth token exchange runtime, and stdio MCP servers are out of scope for this slice.
+Tool grants and toolsets are now part of the MCP access layer. OAuth token exchange runtime and stdio MCP servers remain out of scope.
 
 ## Admin API
 
@@ -19,6 +19,15 @@ The platform-admin API surface is:
 - `POST /api/v1/admin/mcp/servers/{server_id}/disable`
 - `GET /api/v1/admin/mcp/servers/{server_id}/tools`
 - `POST /api/v1/admin/mcp/servers/{server_id}/discovery-refresh`
+- `GET /api/v1/admin/mcp/toolsets`
+- `POST /api/v1/admin/mcp/toolsets`
+- `PATCH /api/v1/admin/mcp/toolsets/{toolset_id}`
+- `POST /api/v1/admin/mcp/toolsets/{toolset_id}/disable`
+- `PUT /api/v1/admin/mcp/toolsets/{toolset_id}/tools`
+- `GET /api/v1/admin/mcp/grants`
+- `PUT /api/v1/admin/mcp/grants`
+- `DELETE /api/v1/admin/mcp/grants`
+- `GET /api/v1/admin/mcp/effective-access`
 
 All endpoints require an active platform-admin session. The admin contract is generated from gateway handler annotations; regenerate it with `mise run admin-contract-generate` after route or DTO changes.
 
@@ -61,6 +70,11 @@ User-added MCP servers are stored in:
 - `external_mcp_servers`: durable server identity, display data, auth declaration, discovery summary, and soft-disable state
 - `external_mcp_tools`: latest known tools, normalized schemas, stable tool ids, schema hashes, schema versions, and active/inactive state
 - `external_mcp_discovery_runs`: immutable discovery attempt diagnostics
+- `mcp_toolsets`: named access bundles
+- `mcp_toolset_tools`: stable tool membership for each bundle
+- `mcp_tool_grants`: active and revoked grants from API keys, users, teams, and service accounts to tools or toolsets
+- `mcp_tool_token_estimates`: cached context-token estimates for MCP tool definitions
+- `request_mcp_token_overheads`: request-level MCP context-overhead summaries, separate from spend accounting
 
 Delete semantics are disable/archive semantics. There is no hard delete endpoint. Disabled servers are omitted from normal list views unless `include_disabled=true` is requested.
 
@@ -81,6 +95,8 @@ It proxies Streamable HTTP requests to the active registered server URL. Runtime
 - authenticate inbound callers with Oceans API keys
 - hide disabled and unknown servers as not found
 - allow active servers with `none`, `gateway_static_header`, or `gateway_bearer_token`
+- filter `tools/list` to the active tools granted to the caller
+- reject ungranted `tools/call` requests before contacting upstream
 - return `403 mcp_upstream_auth_required` for `user_passthrough` and `oauth_obo`
 - strip inbound `Authorization` and `x-oceans-api-key` before proxying upstream
 - forward only protocol/runtime-safe MCP headers and configured gateway-managed upstream auth
@@ -95,7 +111,7 @@ Discovery initializes the configured server URL over Streamable HTTP, sends the 
 
 Discovery status is the server health signal for this slice. Do not add a separate ping health check or discovery-run history UI until the product needs those distinct diagnostics.
 
-Stdio MCP servers, legacy SSE transport, tool federation, and grants/toolsets are intentionally not implemented here.
+Stdio MCP servers, legacy SSE transport, and tool federation are intentionally not implemented here.
 
 ## Auth Modes
 
@@ -109,7 +125,7 @@ Stored auth modes are declarations:
 
 Discovery and proxying can use only `none` or gateway-managed secret references. Gateway-managed credentials require an HTTPS `server_url` and use `auth_config.secret_ref` with the `env/OCEANS_MCP_DISCOVERY_*` form. `gateway_static_header` also requires `auth_config.header_name`.
 
-`user_passthrough` and `oauth_obo` are recorded so future execution and grants can require user-owned credentials. Discovery records `auth_required`, and proxying returns `mcp_upstream_auth_required`, rather than attempting to persist or forward a user token.
+`user_passthrough` and `oauth_obo` are recorded so future execution can require user-owned credentials. Discovery records `auth_required`, and proxying returns `mcp_upstream_auth_required`, rather than attempting to persist or forward a user token.
 
 Never store raw tokens in:
 
@@ -136,16 +152,16 @@ Discovery refresh and MCP proxy attempts run under tracing spans with redacted f
 
 Use the registry page first:
 
-- `auth_required`: change the server to `none` or a gateway-managed auth mode, or wait for user-scoped OAuth grants.
+- `auth_required`: change the server to `none` or a gateway-managed auth mode, or wait for user-scoped OAuth credentials.
 - `failed`: inspect `last_error_summary`, validate URL reachability, timeout, protocol support, and secret environment variables.
 - disabled server: re-create or update the desired server record; disabled servers are hidden from data-plane clients.
 - zero tools after success: confirm the upstream server exposes tools over Streamable HTTP and returns object input schemas.
 
 ## Relationship to Observability
 
-MCP invocation logs already have nullable `server_id` and `tool_id` fields. Registry-backed execution can later populate those fields from `external_mcp_servers` and `external_mcp_tools` so request-log MCP cardinality can use stable registry identities.
+MCP invocation logs populate stable `server_id` and `tool_id` when the gateway handles `tools/call`. Policy-denied calls may not have a tool id if the requested upstream name is unknown or inactive.
 
-Until execution is implemented, registry discovery only records server and tool metadata. It does not expose tools to model requests.
+Request-log MCP cardinality remains request-scoped. MCP token-overhead summaries are stored separately from usage cost events and are not billing inputs.
 
 ## Validation
 

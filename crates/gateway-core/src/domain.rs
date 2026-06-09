@@ -1456,6 +1456,254 @@ pub struct ExternalMcpDiscoveryRunRecord {
     pub details: Map<String, Value>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum McpToolsetStatus {
+    Active,
+    Disabled,
+}
+
+impl McpToolsetStatus {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Disabled => "disabled",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "active" => Some(Self::Active),
+            "disabled" => Some(Self::Disabled),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum McpToolGrantSubjectKind {
+    ApiKey,
+    User,
+    Team,
+    ServiceAccount,
+}
+
+impl McpToolGrantSubjectKind {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ApiKey => "api_key",
+            Self::User => "user",
+            Self::Team => "team",
+            Self::ServiceAccount => "service_account",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "api_key" => Some(Self::ApiKey),
+            "user" => Some(Self::User),
+            "team" => Some(Self::Team),
+            "service_account" => Some(Self::ServiceAccount),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum McpToolGrantTargetKind {
+    Tool,
+    Toolset,
+}
+
+impl McpToolGrantTargetKind {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Tool => "tool",
+            Self::Toolset => "toolset",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "tool" => Some(Self::Tool),
+            "toolset" => Some(Self::Toolset),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct McpGrantSubject {
+    pub subject_kind: McpToolGrantSubjectKind,
+    pub subject_id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpToolsetRecord {
+    pub toolset_id: Uuid,
+    pub toolset_key: String,
+    pub display_name: String,
+    pub description: Option<String>,
+    pub status: McpToolsetStatus,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+    pub disabled_at: Option<OffsetDateTime>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewMcpToolsetRecord {
+    pub toolset_key: String,
+    pub display_name: String,
+    pub description: Option<String>,
+    pub created_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateMcpToolsetRecord {
+    pub toolset_id: Uuid,
+    pub display_name: String,
+    pub description: Option<String>,
+    pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpToolsetToolRecord {
+    pub toolset_id: Uuid,
+    pub mcp_tool_id: Uuid,
+    pub created_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpToolGrantRecord {
+    pub grant_id: Uuid,
+    pub subject_kind: McpToolGrantSubjectKind,
+    pub subject_id: Uuid,
+    pub target_kind: McpToolGrantTargetKind,
+    pub target_id: Uuid,
+    pub is_active: bool,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+    pub revoked_at: Option<OffsetDateTime>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpsertMcpToolGrantRecord {
+    pub subject_kind: McpToolGrantSubjectKind,
+    pub subject_id: Uuid,
+    pub target_kind: McpToolGrantTargetKind,
+    pub target_id: Uuid,
+    pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct McpAccessResolution {
+    pub allowed_tools: Vec<ExternalMcpToolRecord>,
+    pub referenced_server_count: i64,
+    pub exposed_tool_count: i64,
+    pub filtered_tool_count: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum McpTokenEstimateSource {
+    LocalTokenizer,
+    ConservativeFallback,
+}
+
+impl McpTokenEstimateSource {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::LocalTokenizer => "local_tokenizer",
+            Self::ConservativeFallback => "conservative_fallback",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "local_tokenizer" => Some(Self::LocalTokenizer),
+            "conservative_fallback" => Some(Self::ConservativeFallback),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum McpTokenEstimateConfidence {
+    High,
+    Low,
+}
+
+impl McpTokenEstimateConfidence {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::High => "high",
+            Self::Low => "low",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "high" => Some(Self::High),
+            "low" => Some(Self::Low),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpToolTokenEstimateRecord {
+    pub cache_key: String,
+    pub provider_family: String,
+    pub model_or_encoding: String,
+    pub mcp_server_id: Uuid,
+    pub mcp_tool_id: Uuid,
+    pub tool_name: String,
+    pub schema_hash: String,
+    pub description_hash: String,
+    pub protocol_version: String,
+    pub serializer_version: String,
+    pub estimated_tokens: i64,
+    pub estimator_source: McpTokenEstimateSource,
+    pub confidence: McpTokenEstimateConfidence,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+    pub expires_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RequestMcpTokenOverheadRecord {
+    pub request_id: String,
+    pub request_log_id: Option<Uuid>,
+    pub model_key: Option<String>,
+    pub provider_family: String,
+    pub model_or_encoding: String,
+    pub exposed_tool_count: i64,
+    pub estimated_definition_tokens: i64,
+    pub estimated_result_tokens: Option<i64>,
+    pub estimator_source: McpTokenEstimateSource,
+    pub confidence: McpTokenEstimateConfidence,
+    pub cache_hit_count: i64,
+    pub cache_miss_count: i64,
+    pub context_window_tokens: Option<i64>,
+    pub context_window_percent_bps: Option<i64>,
+    pub metadata: Map<String, Value>,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpToolInvocationRecord {
     pub mcp_tool_invocation_id: Uuid,

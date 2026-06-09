@@ -4,18 +4,22 @@ use async_trait::async_trait;
 use gateway_core::{
     AdminApiKeyRepository, AdminIdentityRepository, ApiKeyRepository, AuthMode,
     BudgetAlertRepository, BudgetRepository, GlobalRole, IdentityRepository, IdentityUserRecord,
-    McpRegistryRepository, McpToolInvocationRepository, MembershipRole, ModelRepository,
-    OauthLoginStateRecord, OauthProviderRecord, OidcLoginStateRecord, OidcProviderRecord,
-    PasswordInvitationRecord, PricingCatalogRepository, ProviderRepository, RequestLogRepository,
-    RequestTag, SeedApiKey, SeedModel, SeedOauthProvider, SeedOidcProvider, SeedProvider, SeedTeam,
-    SeedUser, StoreError, StoreHealth, TeamMembershipRecord, TeamRecord, UserOauthAuthRecord,
-    UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
+    McpAccessRepository, McpRegistryRepository, McpTokenOverheadRepository,
+    McpToolInvocationRepository, MembershipRole, ModelRepository, OauthLoginStateRecord,
+    OauthProviderRecord, OidcLoginStateRecord, OidcProviderRecord, PasswordInvitationRecord,
+    PricingCatalogRepository, ProviderRepository, RequestLogRepository, RequestTag, SeedApiKey,
+    SeedModel, SeedOauthProvider, SeedOidcProvider, SeedProvider, SeedTeam, SeedUser, StoreError,
+    StoreHealth, TeamMembershipRecord, TeamRecord, UserOauthAuthRecord, UserOidcAuthRecord,
+    UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::{LibsqlStore, PostgresStore};
 
+// Split plan: keep `GatewayStore` as the composed facade used by callers, then
+// move domain-specific admin and identity operations into narrower repository
+// traits as those areas receive substantive changes.
 #[derive(Debug, Clone)]
 pub enum StoreConnectionOptions {
     Libsql { path: PathBuf },
@@ -44,6 +48,8 @@ pub trait GatewayStore:
     + BudgetAlertRepository
     + RequestLogRepository
     + McpRegistryRepository
+    + McpAccessRepository
+    + McpTokenOverheadRepository
     + McpToolInvocationRepository
     + PricingCatalogRepository
     + StoreHealth

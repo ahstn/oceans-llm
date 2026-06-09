@@ -14,16 +14,19 @@ use crate::{
         BudgetAlertHistoryQuery, BudgetAlertRecord, ExternalMcpDiscoveryRunRecord,
         ExternalMcpServerRecord, ExternalMcpToolRecord, FocusExportAggregateRecord,
         FocusExportDiagnosticsRecord, GatewayModel, HarnessUsageBucketRecord,
-        HarnessUsageLeaderRecord, McpToolInvocationDetail, McpToolInvocationPage,
-        McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
-        ModelPricingRecord, ModelRoute, Money4, NewApiKeyRecord, NewExternalMcpServerRecord,
-        PricingCatalogCacheRecord, ProviderCapabilities, ProviderConnection,
-        ProviderRequestContext, RequestAttemptRecord, RequestLogDetail, RequestLogPage,
-        RequestLogPayloadRecord, RequestLogPurgeResult, RequestLogQuery, RequestLogRecord,
-        ServiceAccountRecord, SpendDailyAggregateRecord, SpendModelAggregateRecord,
-        SpendOwnerAggregateRecord, TeamMembershipRecord, TeamRecord, UpdateExternalMcpServerRecord,
-        UpsertExternalMcpToolRecord, UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord,
-        UsageLedgerRecord, UserRecord,
+        HarnessUsageLeaderRecord, McpAccessResolution, McpGrantSubject, McpToolGrantRecord,
+        McpToolGrantSubjectKind, McpToolGrantTargetKind, McpToolInvocationDetail,
+        McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
+        McpToolInvocationRecord, McpToolTokenEstimateRecord, McpToolsetRecord,
+        McpToolsetToolRecord, ModelPricingRecord, ModelRoute, Money4, NewApiKeyRecord,
+        NewExternalMcpServerRecord, NewMcpToolsetRecord, PricingCatalogCacheRecord,
+        ProviderCapabilities, ProviderConnection, ProviderRequestContext, RequestAttemptRecord,
+        RequestLogDetail, RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult,
+        RequestLogQuery, RequestLogRecord, RequestMcpTokenOverheadRecord, ServiceAccountRecord,
+        SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord,
+        TeamMembershipRecord, TeamRecord, UpdateExternalMcpServerRecord, UpdateMcpToolsetRecord,
+        UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord, UsageLeaderboardBucketRecord,
+        UsageLeaderboardUserRecord, UsageLedgerRecord, UserRecord,
     },
     error::{ProviderError, RouteError, StoreError},
     protocol::core::{ChatRequest, EmbeddingsRequest, ResponsesRequest},
@@ -505,6 +508,98 @@ pub trait McpRegistryRepository: Send + Sync {
         &self,
         run: &ExternalMcpDiscoveryRunRecord,
     ) -> Result<(), StoreError>;
+}
+
+#[async_trait]
+pub trait McpAccessRepository: Send + Sync {
+    async fn list_mcp_toolsets(
+        &self,
+        include_disabled: bool,
+    ) -> Result<Vec<McpToolsetRecord>, StoreError>;
+
+    async fn create_mcp_toolset(
+        &self,
+        input: &NewMcpToolsetRecord,
+    ) -> Result<McpToolsetRecord, StoreError>;
+
+    async fn update_mcp_toolset(
+        &self,
+        input: &UpdateMcpToolsetRecord,
+    ) -> Result<McpToolsetRecord, StoreError>;
+
+    async fn disable_mcp_toolset(
+        &self,
+        toolset_id: Uuid,
+        disabled_at: OffsetDateTime,
+    ) -> Result<McpToolsetRecord, StoreError>;
+
+    async fn replace_mcp_toolset_tools(
+        &self,
+        toolset_id: Uuid,
+        tool_ids: &[Uuid],
+        updated_at: OffsetDateTime,
+    ) -> Result<Vec<McpToolsetToolRecord>, StoreError>;
+
+    async fn list_mcp_toolset_tools(
+        &self,
+        toolset_id: Uuid,
+    ) -> Result<Vec<McpToolsetToolRecord>, StoreError>;
+
+    async fn upsert_mcp_tool_grant(
+        &self,
+        grant: &UpsertMcpToolGrantRecord,
+    ) -> Result<McpToolGrantRecord, StoreError>;
+
+    async fn revoke_mcp_tool_grant(
+        &self,
+        subject_kind: McpToolGrantSubjectKind,
+        subject_id: Uuid,
+        target_kind: McpToolGrantTargetKind,
+        target_id: Uuid,
+        revoked_at: OffsetDateTime,
+    ) -> Result<bool, StoreError>;
+
+    async fn list_mcp_tool_grants(
+        &self,
+        subject_kind: Option<McpToolGrantSubjectKind>,
+        subject_id: Option<Uuid>,
+    ) -> Result<Vec<McpToolGrantRecord>, StoreError>;
+
+    async fn resolve_mcp_access_for_subjects(
+        &self,
+        subjects: &[McpGrantSubject],
+        mcp_server_id: Option<Uuid>,
+    ) -> Result<McpAccessResolution, StoreError>;
+
+    async fn get_active_mcp_tool_by_name(
+        &self,
+        mcp_server_id: Uuid,
+        upstream_name: &str,
+    ) -> Result<Option<ExternalMcpToolRecord>, StoreError>;
+}
+
+#[async_trait]
+pub trait McpTokenOverheadRepository: Send + Sync {
+    async fn get_mcp_tool_token_estimate(
+        &self,
+        cache_key: &str,
+        now: OffsetDateTime,
+    ) -> Result<Option<McpToolTokenEstimateRecord>, StoreError>;
+
+    async fn upsert_mcp_tool_token_estimate(
+        &self,
+        estimate: &McpToolTokenEstimateRecord,
+    ) -> Result<(), StoreError>;
+
+    async fn upsert_request_mcp_token_overhead(
+        &self,
+        overhead: &RequestMcpTokenOverheadRecord,
+    ) -> Result<(), StoreError>;
+
+    async fn get_request_mcp_token_overhead(
+        &self,
+        request_id: &str,
+    ) -> Result<Option<RequestMcpTokenOverheadRecord>, StoreError>;
 }
 
 #[async_trait]

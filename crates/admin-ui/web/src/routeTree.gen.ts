@@ -22,6 +22,7 @@ import { Route as ObservabilityMcpInvocationsRouteImport } from './routes/observ
 import { Route as ObservabilityLeaderboardRouteImport } from './routes/observability/leaderboard'
 import { Route as ObservabilityAgentHarnessesRouteImport } from './routes/observability/agent-harnesses'
 import { Route as McpServersRouteImport } from './routes/mcp/servers'
+import { Route as McpAccessRouteImport } from './routes/mcp/access'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as IdentityUsersRouteImport } from './routes/identity/users'
 import { Route as IdentityTeamsRouteImport } from './routes/identity/teams'
@@ -95,6 +96,11 @@ const McpServersRoute = McpServersRouteImport.update({
   path: '/mcp/servers',
   getParentRoute: () => rootRouteImport,
 } as any)
+const McpAccessRoute = McpAccessRouteImport.update({
+  id: '/mcp/access',
+  path: '/mcp/access',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const InviteTokenRoute = InviteTokenRouteImport.update({
   id: '/invite/$token',
   path: '/invite/$token',
@@ -122,6 +128,7 @@ export interface FileRoutesByFullPath {
   '/identity/teams': typeof IdentityTeamsRoute
   '/identity/users': typeof IdentityUsersRoute
   '/invite/$token': typeof InviteTokenRoute
+  '/mcp/access': typeof McpAccessRoute
   '/mcp/servers': typeof McpServersRoute
   '/observability/agent-harnesses': typeof ObservabilityAgentHarnessesRoute
   '/observability/leaderboard': typeof ObservabilityLeaderboardRoute
@@ -140,6 +147,7 @@ export interface FileRoutesByTo {
   '/identity/teams': typeof IdentityTeamsRoute
   '/identity/users': typeof IdentityUsersRoute
   '/invite/$token': typeof InviteTokenRoute
+  '/mcp/access': typeof McpAccessRoute
   '/mcp/servers': typeof McpServersRoute
   '/observability/agent-harnesses': typeof ObservabilityAgentHarnessesRoute
   '/observability/leaderboard': typeof ObservabilityLeaderboardRoute
@@ -159,6 +167,7 @@ export interface FileRoutesById {
   '/identity/teams': typeof IdentityTeamsRoute
   '/identity/users': typeof IdentityUsersRoute
   '/invite/$token': typeof InviteTokenRoute
+  '/mcp/access': typeof McpAccessRoute
   '/mcp/servers': typeof McpServersRoute
   '/observability/agent-harnesses': typeof ObservabilityAgentHarnessesRoute
   '/observability/leaderboard': typeof ObservabilityLeaderboardRoute
@@ -179,6 +188,7 @@ export interface FileRouteTypes {
     | '/identity/teams'
     | '/identity/users'
     | '/invite/$token'
+    | '/mcp/access'
     | '/mcp/servers'
     | '/observability/agent-harnesses'
     | '/observability/leaderboard'
@@ -197,6 +207,7 @@ export interface FileRouteTypes {
     | '/identity/teams'
     | '/identity/users'
     | '/invite/$token'
+    | '/mcp/access'
     | '/mcp/servers'
     | '/observability/agent-harnesses'
     | '/observability/leaderboard'
@@ -215,6 +226,7 @@ export interface FileRouteTypes {
     | '/identity/teams'
     | '/identity/users'
     | '/invite/$token'
+    | '/mcp/access'
     | '/mcp/servers'
     | '/observability/agent-harnesses'
     | '/observability/leaderboard'
@@ -234,6 +246,7 @@ export interface RootRouteChildren {
   IdentityTeamsRoute: typeof IdentityTeamsRoute
   IdentityUsersRoute: typeof IdentityUsersRoute
   InviteTokenRoute: typeof InviteTokenRoute
+  McpAccessRoute: typeof McpAccessRoute
   McpServersRoute: typeof McpServersRoute
   ObservabilityAgentHarnessesRoute: typeof ObservabilityAgentHarnessesRoute
   ObservabilityLeaderboardRoute: typeof ObservabilityLeaderboardRoute
@@ -335,6 +348,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof McpServersRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/mcp/access': {
+      id: '/mcp/access'
+      path: '/mcp/access'
+      fullPath: '/mcp/access'
+      preLoaderRoute: typeof McpAccessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/invite/$token': {
       id: '/invite/$token'
       path: '/invite/$token'
@@ -370,6 +390,7 @@ const rootRouteChildren: RootRouteChildren = {
   IdentityTeamsRoute: IdentityTeamsRoute,
   IdentityUsersRoute: IdentityUsersRoute,
   InviteTokenRoute: InviteTokenRoute,
+  McpAccessRoute: McpAccessRoute,
   McpServersRoute: McpServersRoute,
   ObservabilityAgentHarnessesRoute: ObservabilityAgentHarnessesRoute,
   ObservabilityLeaderboardRoute: ObservabilityLeaderboardRoute,

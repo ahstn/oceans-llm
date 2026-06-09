@@ -1,26 +1,28 @@
-use std::{
-    error::Error as _,
-    io,
-    time::{Duration, Instant},
-};
+mod json_rpc;
+mod upstream;
+
+use std::{error::Error as _, time::Instant};
 
 use axum::{
     Json,
-    body::{Body, to_bytes},
+    body::{Body, Bytes, to_bytes},
     extract::{Path, State},
     http::{
-        HeaderMap, HeaderName, HeaderValue, Method, Request, Response, StatusCode,
-        header::{ACCEPT, AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE, WWW_AUTHENTICATE},
+        HeaderMap, HeaderValue, Request, Response, StatusCode,
+        header::{AUTHORIZATION, WWW_AUTHENTICATE},
     },
     response::IntoResponse,
 };
-use futures_util::TryStreamExt;
 use gateway_core::{
-    ApiKeyOwnerKind, AuthError, ExternalMcpServerRecord, GatewayError, OpenAiErrorEnvelope,
-    ProviderError, auth::extract_bearer_token,
+    ApiKeyOwnerKind, AuthError, GatewayError, McpToolInvocationStatus, McpToolPolicyResult,
+    OpenAiErrorEnvelope, ProviderError, auth::extract_bearer_token,
 };
-use gateway_service::{McpGatewayService, McpGatewayUpstream};
-use url::Url;
+use gateway_service::{McpAccess, McpGatewayService, McpInvocationLogInput, McpInvocationLogging};
+use json_rpc::{McpRpcRequest, mcp_jsonrpc_error_response, mcp_request_id, parse_mcp_rpc_request};
+use serde_json::{Map, json};
+use time::OffsetDateTime;
+use upstream::{proxy_tools_list, proxy_upstream};
+use uuid::Uuid;
 
 use crate::http::state::AppState;
 
@@ -29,6 +31,7 @@ const MCP_PROTOCOL_VERSION: &str = "mcp-protocol-version";
 const MCP_SESSION_ID: &str = "mcp-session-id";
 const LAST_EVENT_ID: &str = "last-event-id";
 const MAX_MCP_REQUEST_BODY_BYTES: usize = 4 * 1024 * 1024;
+const MAX_MCP_REWRITE_BODY_BYTES: u64 = 4 * 1024 * 1024;
 
 #[tracing::instrument(
     skip(state, request),
@@ -94,7 +97,104 @@ pub async fn mcp_streamable_http_proxy(
         }
     };
 
-    match proxy_upstream(&state.mcp_http_client, &method, &headers, body, &upstream).await {
+    let rpc_request = parse_mcp_rpc_request(&body);
+    let access = McpAccess::new(state.store.clone());
+    let invocation_logger = McpInvocationLogging::new(state.store.clone());
+
+    let response_result = match rpc_request {
+        Ok(McpRpcRequest::ToolsList { id }) => {
+            let access_resolution = match access
+                .effective_tools_for_api_key(&auth, Some(upstream.server.mcp_server_id))
+                .await
+            {
+                Ok(resolution) => resolution,
+                Err(error) => return mcp_error_response(error),
+            };
+            let allowed_tool_names = access_resolution
+                .allowed_tools
+                .iter()
+                .map(|tool| tool.upstream_name.as_str())
+                .collect::<std::collections::HashSet<_>>();
+            let outcome = proxy_tools_list(
+                &state.mcp_http_client,
+                &method,
+                &headers,
+                body,
+                &upstream,
+                &allowed_tool_names,
+                id.as_ref(),
+            )
+            .await;
+            let (status, error_code) = response_outcome(&outcome);
+            let mut log_input = tool_invocation_log_input(
+                &upstream,
+                &id,
+                None,
+                "tools/list",
+                "tools/list",
+                status,
+                McpToolPolicyResult::Allowed,
+                error_code,
+                None,
+                None,
+                started_at,
+            );
+            log_input.metadata = tools_list_metadata(
+                access_resolution.referenced_server_count,
+                access_resolution.allowed_tools.len() as i64,
+                access_resolution.filtered_tool_count,
+            );
+            let _ = invocation_logger.log_invocation(&auth, log_input).await;
+            outcome
+        }
+        Ok(McpRpcRequest::ToolsCall {
+            id,
+            tool_name,
+            arguments,
+        }) => {
+            return handle_tools_call(
+                &state, &auth, &method, &headers, body, &upstream, started_at, id, tool_name,
+                arguments,
+            )
+            .await;
+        }
+        Ok(McpRpcRequest::Other) => {
+            proxy_upstream(&state.mcp_http_client, &method, &headers, body, &upstream).await
+        }
+        Err(error) => {
+            let _ = invocation_logger
+                .log_invocation(
+                    &auth,
+                    McpInvocationLogInput {
+                        request_log_id: None,
+                        request_id: Uuid::new_v4().to_string(),
+                        server_id: Some(upstream.server.mcp_server_id),
+                        server_display_key: upstream.server.server_key.clone(),
+                        server_display_name: upstream.server.display_name.clone(),
+                        tool_id: None,
+                        tool_display_key: "unknown".to_string(),
+                        tool_display_name: "unknown".to_string(),
+                        status: McpToolInvocationStatus::InvalidRequest,
+                        policy_result: McpToolPolicyResult::NotEvaluated,
+                        latency_ms: Some(started_at.elapsed().as_millis() as i64),
+                        error_code: Some("invalid_json_rpc".to_string()),
+                        arguments_json: None,
+                        result_json: None,
+                        metadata: Map::new(),
+                        occurred_at: OffsetDateTime::now_utc(),
+                    },
+                )
+                .await;
+            return mcp_jsonrpc_error_response(
+                StatusCode::BAD_REQUEST,
+                None,
+                -32600,
+                &error.to_string(),
+            );
+        }
+    };
+
+    match response_result {
         Ok(response) => {
             tracing::Span::current().record("status_code", i64::from(response.status().as_u16()));
             tracing::debug!(
@@ -112,6 +212,154 @@ fn body_read_exceeded_limit(error: &axum::Error) -> bool {
         .source()
         .is_some_and(|source| source.to_string().contains("length limit exceeded"))
         || error.to_string().contains("length limit exceeded")
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn handle_tools_call(
+    state: &AppState,
+    auth: &gateway_core::AuthenticatedApiKey,
+    method: &axum::http::Method,
+    headers: &HeaderMap,
+    body: Bytes,
+    upstream: &gateway_service::McpGatewayUpstream,
+    started_at: Instant,
+    id: Option<serde_json::Value>,
+    tool_name: String,
+    arguments: Option<serde_json::Value>,
+) -> Response<Body> {
+    let access = McpAccess::new(state.store.clone());
+    let invocation_logger = McpInvocationLogging::new(state.store.clone());
+    let allowed_tool = match access
+        .allowed_tool_for_call(auth, upstream.server.mcp_server_id, &tool_name)
+        .await
+    {
+        Ok(tool) => tool,
+        Err(error) => return mcp_error_response(error),
+    };
+    let Some(tool) = allowed_tool else {
+        let _ = invocation_logger
+            .log_invocation(
+                auth,
+                tool_invocation_log_input(
+                    upstream,
+                    &id,
+                    None,
+                    &tool_name,
+                    &tool_name,
+                    McpToolInvocationStatus::PolicyDenied,
+                    McpToolPolicyResult::Denied,
+                    Some("mcp_tool_not_granted".to_string()),
+                    arguments.clone(),
+                    None,
+                    started_at,
+                ),
+            )
+            .await;
+        return mcp_jsonrpc_error_response(
+            StatusCode::FORBIDDEN,
+            id.as_ref(),
+            -32001,
+            "MCP tool is not granted for this API key",
+        );
+    };
+
+    let outcome = proxy_upstream(&state.mcp_http_client, method, headers, body, upstream).await;
+    let (status, error_code) = response_outcome(&outcome);
+    let _ = invocation_logger
+        .log_invocation(
+            auth,
+            tool_invocation_log_input(
+                upstream,
+                &id,
+                Some(tool.mcp_tool_id),
+                &tool.upstream_name,
+                &tool.display_name,
+                status,
+                McpToolPolicyResult::Allowed,
+                error_code,
+                arguments,
+                None,
+                started_at,
+            ),
+        )
+        .await;
+    match outcome {
+        Ok(response) => response,
+        Err(error) => mcp_error_response(error),
+    }
+}
+
+fn tools_list_metadata(
+    referenced_server_count: i64,
+    exposed_tool_count: i64,
+    filtered_tool_count: i64,
+) -> Map<String, serde_json::Value> {
+    Map::from_iter([
+        ("mcp_method".to_string(), json!("tools/list")),
+        (
+            "referenced_mcp_server_count".to_string(),
+            json!(referenced_server_count),
+        ),
+        ("exposed_tool_count".to_string(), json!(exposed_tool_count)),
+        (
+            "filtered_tool_count".to_string(),
+            json!(filtered_tool_count),
+        ),
+    ])
+}
+
+#[allow(clippy::too_many_arguments)]
+fn tool_invocation_log_input(
+    upstream: &gateway_service::McpGatewayUpstream,
+    id: &Option<serde_json::Value>,
+    tool_id: Option<uuid::Uuid>,
+    tool_display_key: &str,
+    tool_display_name: &str,
+    status: McpToolInvocationStatus,
+    policy_result: McpToolPolicyResult,
+    error_code: Option<String>,
+    arguments_json: Option<serde_json::Value>,
+    result_json: Option<serde_json::Value>,
+    started_at: Instant,
+) -> McpInvocationLogInput {
+    McpInvocationLogInput {
+        request_log_id: None,
+        request_id: mcp_request_id(id),
+        server_id: Some(upstream.server.mcp_server_id),
+        server_display_key: upstream.server.server_key.clone(),
+        server_display_name: upstream.server.display_name.clone(),
+        tool_id,
+        tool_display_key: tool_display_key.to_string(),
+        tool_display_name: tool_display_name.to_string(),
+        status,
+        policy_result,
+        latency_ms: Some(started_at.elapsed().as_millis() as i64),
+        error_code,
+        arguments_json,
+        result_json,
+        metadata: Map::new(),
+        occurred_at: OffsetDateTime::now_utc(),
+    }
+}
+
+fn response_outcome(
+    outcome: &Result<Response<Body>, GatewayError>,
+) -> (McpToolInvocationStatus, Option<String>) {
+    match outcome {
+        Ok(response) if response.status().is_success() => (McpToolInvocationStatus::Success, None),
+        Ok(response) => (
+            McpToolInvocationStatus::UpstreamError,
+            Some(format!("http_{}", response.status().as_u16())),
+        ),
+        Err(GatewayError::Provider(ProviderError::Timeout)) => (
+            McpToolInvocationStatus::Timeout,
+            Some("timeout".to_string()),
+        ),
+        Err(error) => (
+            McpToolInvocationStatus::GatewayError,
+            Some(error.to_string()),
+        ),
+    }
 }
 
 fn extract_mcp_gateway_api_key(headers: &HeaderMap) -> Result<String, AuthError> {
@@ -152,140 +400,6 @@ fn extract_mcp_gateway_api_key(headers: &HeaderMap) -> Result<String, AuthError>
         (None, Some(explicit_key)) => Ok(explicit_key),
         (None, None) => Err(AuthError::MissingAuthorizationHeader),
     }
-}
-
-async fn proxy_upstream(
-    client: &reqwest::Client,
-    method: &Method,
-    inbound_headers: &HeaderMap,
-    body: axum::body::Bytes,
-    upstream: &McpGatewayUpstream,
-) -> Result<Response<Body>, GatewayError> {
-    let upstream_url = upstream_url(&upstream.server)?;
-    let method = reqwest::Method::from_bytes(method.as_str().as_bytes()).map_err(|error| {
-        GatewayError::InvalidRequest(format!("unsupported HTTP method: {error}"))
-    })?;
-    let is_long_lived_receive =
-        method == reqwest::Method::GET || accepts_event_stream(inbound_headers);
-    let mut request = client.request(method, upstream_url).body(body);
-    if !is_long_lived_receive {
-        request = request.timeout(Duration::from_millis(
-            upstream.server.timeout_ms.max(1) as u64
-        ));
-    }
-
-    request = apply_forwarded_request_headers(request, inbound_headers)?;
-    if let Some(headers) = &upstream.headers {
-        request = apply_gateway_managed_upstream_headers(request, headers)?;
-    }
-
-    let response = request.send().await.map_err(map_reqwest_error)?;
-    response_from_upstream(response)
-}
-
-fn accepts_event_stream(headers: &HeaderMap) -> bool {
-    headers.get_all(ACCEPT).iter().any(|value| {
-        value
-            .to_str()
-            .is_ok_and(|value| value.to_ascii_lowercase().contains("text/event-stream"))
-    })
-}
-
-fn upstream_url(server: &ExternalMcpServerRecord) -> Result<Url, GatewayError> {
-    Url::parse(&server.server_url)
-        .map_err(|error| GatewayError::InvalidRequest(format!("server_url is invalid: {error}")))
-}
-
-fn apply_forwarded_request_headers(
-    mut request: reqwest::RequestBuilder,
-    inbound_headers: &HeaderMap,
-) -> Result<reqwest::RequestBuilder, GatewayError> {
-    for name in [
-        ACCEPT.as_str(),
-        CONTENT_TYPE.as_str(),
-        MCP_PROTOCOL_VERSION,
-        MCP_SESSION_ID,
-        LAST_EVENT_ID,
-    ] {
-        let header_name =
-            reqwest::header::HeaderName::from_bytes(name.as_bytes()).map_err(|error| {
-                GatewayError::InvalidRequest(format!("invalid header name: {error}"))
-            })?;
-        for value in inbound_headers.get_all(name).iter() {
-            let header_value = value.to_str().map_err(|_| {
-                GatewayError::InvalidRequest(format!("{name} header must be visible ASCII"))
-            })?;
-            request = request.header(header_name.clone(), header_value);
-        }
-    }
-    Ok(request)
-}
-
-fn apply_gateway_managed_upstream_headers(
-    mut request: reqwest::RequestBuilder,
-    headers: &std::collections::BTreeMap<String, String>,
-) -> Result<reqwest::RequestBuilder, GatewayError> {
-    for (name, value) in headers {
-        let header_name =
-            reqwest::header::HeaderName::from_bytes(name.as_bytes()).map_err(|error| {
-                GatewayError::InvalidRequest(format!("configured MCP header is invalid: {error}"))
-            })?;
-        let header_value = reqwest::header::HeaderValue::from_str(value).map_err(|error| {
-            GatewayError::InvalidRequest(format!("configured MCP header value is invalid: {error}"))
-        })?;
-        request = request.header(header_name, header_value);
-    }
-    Ok(request)
-}
-
-fn response_from_upstream(response: reqwest::Response) -> Result<Response<Body>, GatewayError> {
-    let status = StatusCode::from_u16(response.status().as_u16()).map_err(|error| {
-        GatewayError::Internal(format!("upstream returned invalid status code: {error}"))
-    })?;
-    let headers = response.headers().clone();
-    let stream = response
-        .bytes_stream()
-        .map_err(|error| io::Error::other(error.to_string()));
-    let mut builder = Response::builder().status(status);
-    let response_headers = builder.headers_mut().ok_or_else(|| {
-        GatewayError::Internal("failed constructing MCP upstream response".to_string())
-    })?;
-    for name in [
-        CONTENT_TYPE.as_str(),
-        CACHE_CONTROL.as_str(),
-        MCP_PROTOCOL_VERSION,
-        MCP_SESSION_ID,
-        WWW_AUTHENTICATE.as_str(),
-    ] {
-        copy_response_header(name, &headers, response_headers)?;
-    }
-    builder
-        .body(Body::from_stream(stream))
-        .map_err(|error| GatewayError::Internal(format!("failed building MCP response: {error}")))
-}
-
-fn copy_response_header(
-    name: &str,
-    upstream_headers: &reqwest::header::HeaderMap,
-    response_headers: &mut HeaderMap,
-) -> Result<(), GatewayError> {
-    let header_name = HeaderName::from_bytes(name.as_bytes()).map_err(|error| {
-        GatewayError::Internal(format!("invalid response header name: {error}"))
-    })?;
-    for value in upstream_headers.get_all(name).iter() {
-        let value = HeaderValue::from_bytes(value.as_bytes()).map_err(|error| {
-            GatewayError::Internal(format!("invalid upstream response header value: {error}"))
-        })?;
-        response_headers.append(header_name.clone(), value);
-    }
-    Ok(())
-}
-
-fn map_reqwest_error(error: reqwest::Error) -> GatewayError {
-    if error.is_timeout() {
-        return ProviderError::Timeout.into();
-    }
-    ProviderError::Transport(error.to_string()).into()
 }
 
 fn mcp_error_response(error: GatewayError) -> Response<Body> {

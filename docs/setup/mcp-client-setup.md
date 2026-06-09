@@ -90,4 +90,4 @@ The gateway preserves MCP response status, content type, and MCP session headers
 
 ## OAuth Boundary
 
-Servers registered as `user_passthrough` or `oauth_obo` are visible in the registry but not proxyable yet. Calls to those servers return `403 mcp_upstream_auth_required` until Oceans has user-scoped OAuth grants and toolsets.
+Servers registered as `user_passthrough` or `oauth_obo` are visible in the registry but not proxyable yet. Calls to those servers return `403 mcp_upstream_auth_required` until Oceans has user-scoped OAuth credentials.

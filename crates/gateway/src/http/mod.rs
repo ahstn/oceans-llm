@@ -163,6 +163,32 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
             "/api/v1/admin/mcp/servers/{server_id}/discovery-refresh",
             post(refresh_mcp_server_discovery),
         )
+        .route(
+            "/api/v1/admin/mcp/toolsets",
+            get(list_mcp_toolsets).post(create_mcp_toolset),
+        )
+        .route(
+            "/api/v1/admin/mcp/toolsets/{toolset_id}",
+            patch(update_mcp_toolset),
+        )
+        .route(
+            "/api/v1/admin/mcp/toolsets/{toolset_id}/disable",
+            post(disable_mcp_toolset),
+        )
+        .route(
+            "/api/v1/admin/mcp/toolsets/{toolset_id}/tools",
+            axum::routing::put(replace_mcp_toolset_tools),
+        )
+        .route(
+            "/api/v1/admin/mcp/grants",
+            get(list_mcp_grants)
+                .put(upsert_mcp_grant)
+                .delete(revoke_mcp_grant),
+        )
+        .route(
+            "/api/v1/admin/mcp/effective-access",
+            get(preview_mcp_effective_access),
+        )
         .route("/api/v1/auth/session", get(get_auth_session))
         .route("/api/v1/auth/login/password", post(login_with_password))
         .route("/api/v1/auth/logout", post(logout_current_session))

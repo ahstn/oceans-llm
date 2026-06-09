@@ -260,6 +260,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/mcp/effective-access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["preview_mcp_effective_access"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_mcp_grants"];
+        put: operations["upsert_mcp_grant"];
+        post?: never;
+        delete: operations["revoke_mcp_grant"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/mcp/recommended-servers": {
         parameters: {
             query?: never;
@@ -349,6 +381,70 @@ export interface paths {
         };
         get: operations["list_mcp_server_tools"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/toolsets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_mcp_toolsets"];
+        put?: never;
+        post: operations["create_mcp_toolset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/toolsets/{toolset_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["update_mcp_toolset"];
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/toolsets/{toolset_id}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["disable_mcp_toolset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mcp/toolsets/{toolset_id}/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["replace_mcp_toolset_tools"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1095,6 +1191,11 @@ export interface components {
             timeout_ms?: number | null;
             transport?: string | null;
         };
+        CreateMcpToolsetRequest: {
+            description?: string | null;
+            display_name: string;
+            toolset_key: string;
+        };
         CreateServiceAccountRequest: {
             name: string;
             team_id: string;
@@ -1325,6 +1426,30 @@ export interface components {
             };
             meta: components["schemas"]["ResponseMeta"];
         };
+        Envelope_McpEffectiveAccessPayload: {
+            data: {
+                /** Format: int64 */
+                exposed_tool_count: number;
+                /** Format: int64 */
+                filtered_tool_count: number;
+                /** Format: int64 */
+                referenced_server_count: number;
+                tools: components["schemas"]["McpToolView"][];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_McpGrantPayload: {
+            data: {
+                grant: components["schemas"]["McpGrantView"];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_McpGrantsPayload: {
+            data: {
+                items: components["schemas"]["McpGrantView"][];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
         Envelope_McpServerPayload: {
             data: {
                 server: components["schemas"]["McpServerView"];
@@ -1359,6 +1484,24 @@ export interface components {
         Envelope_McpToolsPayload: {
             data: {
                 items: components["schemas"]["McpToolView"][];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_McpToolsetPayload: {
+            data: {
+                toolset: components["schemas"]["McpToolsetView"];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_McpToolsetToolsPayload: {
+            data: {
+                tool_ids: string[];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_McpToolsetsPayload: {
+            data: {
+                items: components["schemas"]["McpToolsetView"][];
             };
             meta: components["schemas"]["ResponseMeta"];
         };
@@ -1399,6 +1542,7 @@ export interface components {
             data: {
                 attempts: components["schemas"]["RequestAttemptView"][];
                 log: components["schemas"]["RequestLogSummaryView"];
+                mcp_token_overhead?: null | components["schemas"]["RequestMcpTokenOverheadView"];
                 payload?: null | components["schemas"]["RequestLogPayloadView"];
                 user_agent_raw?: string | null;
             };
@@ -1550,6 +1694,32 @@ export interface components {
             status: string;
             tools: components["schemas"]["McpToolView"][];
         };
+        McpEffectiveAccessPayload: {
+            /** Format: int64 */
+            exposed_tool_count: number;
+            /** Format: int64 */
+            filtered_tool_count: number;
+            /** Format: int64 */
+            referenced_server_count: number;
+            tools: components["schemas"]["McpToolView"][];
+        };
+        McpGrantPayload: {
+            grant: components["schemas"]["McpGrantView"];
+        };
+        McpGrantView: {
+            created_at: string;
+            id: string;
+            is_active: boolean;
+            revoked_at?: string | null;
+            subject_id: string;
+            subject_kind: string;
+            target_id: string;
+            target_kind: string;
+            updated_at: string;
+        };
+        McpGrantsPayload: {
+            items: components["schemas"]["McpGrantView"][];
+        };
         McpServerPayload: {
             server: components["schemas"]["McpServerView"];
         };
@@ -1644,6 +1814,25 @@ export interface components {
         McpToolsPayload: {
             items: components["schemas"]["McpToolView"][];
         };
+        McpToolsetPayload: {
+            toolset: components["schemas"]["McpToolsetView"];
+        };
+        McpToolsetToolsPayload: {
+            tool_ids: string[];
+        };
+        McpToolsetView: {
+            created_at: string;
+            description?: string | null;
+            disabled_at?: string | null;
+            display_name: string;
+            id: string;
+            status: string;
+            toolset_key: string;
+            updated_at: string;
+        };
+        McpToolsetsPayload: {
+            items: components["schemas"]["McpToolsetView"][];
+        };
         /** @enum {string} */
         ModelIconKeyView: "anthropic" | "claude" | "gemini" | "openai" | "openrouter" | "vertexai";
         /** @enum {string} */
@@ -1698,6 +1887,9 @@ export interface components {
         RecommendedMcpServersPayload: {
             items: components["schemas"]["RecommendedMcpServerView"][];
         };
+        ReplaceMcpToolsetToolsRequest: {
+            tool_ids: string[];
+        };
         RequestAttemptView: {
             /** Format: int64 */
             attempt_number: number;
@@ -1728,6 +1920,7 @@ export interface components {
         RequestLogDetailView: {
             attempts: components["schemas"]["RequestAttemptView"][];
             log: components["schemas"]["RequestLogSummaryView"];
+            mcp_token_overhead?: null | components["schemas"]["RequestMcpTokenOverheadView"];
             payload?: null | components["schemas"]["RequestLogPayloadView"];
             user_agent_raw?: string | null;
         };
@@ -1791,6 +1984,29 @@ export interface components {
             /** Format: int64 */
             total_tokens?: number | null;
             user_id?: string | null;
+        };
+        RequestMcpTokenOverheadView: {
+            /** Format: int64 */
+            cache_hit_count: number;
+            /** Format: int64 */
+            cache_miss_count: number;
+            confidence: string;
+            /** Format: int64 */
+            context_window_percent_bps?: number | null;
+            /** Format: int64 */
+            context_window_tokens?: number | null;
+            /** Format: int64 */
+            estimated_definition_tokens: number;
+            /** Format: int64 */
+            estimated_result_tokens?: number | null;
+            estimator_source: string;
+            /** Format: int64 */
+            exposed_tool_count: number;
+            metadata: {
+                [key: string]: unknown;
+            };
+            model_or_encoding: string;
+            provider_family: string;
         };
         RequestTagView: {
             key: string;
@@ -1947,6 +2163,10 @@ export interface components {
             /** Format: int64 */
             timeout_ms?: number | null;
         };
+        UpdateMcpToolsetRequest: {
+            description?: string | null;
+            display_name: string;
+        };
         UpdateServiceAccountRequest: {
             name: string;
         };
@@ -1978,6 +2198,14 @@ export interface components {
             current_window_spend_usd_10000: number;
             scope: components["schemas"]["BudgetScopeView"];
             scope_key: string;
+        };
+        UpsertMcpGrantRequest: {
+            /** Format: uuid */
+            subject_id: string;
+            subject_kind: string;
+            /** Format: uuid */
+            target_id: string;
+            target_kind: string;
         };
     };
     responses: never;
@@ -2470,6 +2698,99 @@ export interface operations {
             };
         };
     };
+    preview_mcp_effective_access: {
+        parameters: {
+            query?: {
+                api_key_id?: string | null;
+                user_id?: string | null;
+                service_account_id?: string | null;
+                team_id?: string | null;
+                server_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpEffectiveAccessPayload"];
+                };
+            };
+        };
+    };
+    list_mcp_grants: {
+        parameters: {
+            query?: {
+                subject_kind?: string | null;
+                subject_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpGrantsPayload"];
+                };
+            };
+        };
+    };
+    upsert_mcp_grant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpsertMcpGrantRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpGrantPayload"];
+                };
+            };
+        };
+    };
+    revoke_mcp_grant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpsertMcpGrantRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpGrantsPayload"];
+                };
+            };
+        };
+    };
     list_recommended_mcp_servers: {
         parameters: {
             query?: never;
@@ -2687,6 +3008,121 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    list_mcp_toolsets: {
+        parameters: {
+            query?: {
+                include_disabled?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpToolsetsPayload"];
+                };
+            };
+        };
+    };
+    create_mcp_toolset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateMcpToolsetRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpToolsetPayload"];
+                };
+            };
+        };
+    };
+    update_mcp_toolset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                toolset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMcpToolsetRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpToolsetPayload"];
+                };
+            };
+        };
+    };
+    disable_mcp_toolset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                toolset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpToolsetPayload"];
+                };
+            };
+        };
+    };
+    replace_mcp_toolset_tools: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                toolset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplaceMcpToolsetToolsRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_McpToolsetToolsPayload"];
                 };
             };
         };
