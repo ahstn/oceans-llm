@@ -87,6 +87,14 @@ models:
     routes:
       - provider: bedrock-mantle-openai
         upstream_model: openai.gpt-5.5
+        capabilities:
+          chat_completions: false
+          responses: true
+          stream: true
+          embeddings: false
+          tools: true
+          vision: true
+          json_schema: true
         extra_headers:
           OpenAI-Project: proj_123
         compatibility:
