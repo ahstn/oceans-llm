@@ -488,9 +488,13 @@ Important fields:
 
 - `id`
 - `region`
+- `endpoint_kind`
+  - required
+  - `bedrock_runtime` or `bedrock_mantle`
 - `endpoint_url`
   - optional
-  - defaults to `https://bedrock-runtime.{region}.amazonaws.com`
+  - defaults to `https://bedrock-runtime.{region}.amazonaws.com` for `bedrock_runtime`
+  - defaults to `https://bedrock-mantle.{region}.api.aws` for `bedrock_mantle`
 - `auth.mode`
 - `default_headers`
 - `timeouts.total_ms`
@@ -504,19 +508,20 @@ providers:
   - id: bedrock-api-key
     type: aws_bedrock
     region: us-east-1
+    endpoint_kind: bedrock_runtime
     auth:
       mode: bearer
       token: env.AWS_BEARER_TOKEN_BEDROCK
 ```
 
-`default_chain` and `static_credentials` use IAM SigV4 signing for Bedrock Runtime requests. `bearer` remains available for bearer-token based Bedrock access where applicable.
+`default_chain` and `static_credentials` use IAM SigV4 signing. Runtime providers sign with service `bedrock`; Mantle providers sign with service `bedrock-mantle`. `bearer` remains available for bearer-token based Bedrock access where applicable.
 
 Routing caveats:
 
-- `upstream_model` should be the Bedrock Runtime model identity passed to Bedrock APIs: a base model ID such as `anthropic.claude-3-5-sonnet-20240620-v1:0`, an inference profile ID such as `us.anthropic.claude-3-5-sonnet-20240620-v1:0`, or a supported Bedrock ARN.
-- `/v1/chat/completions` routing is provider/model-specific in this slice: Claude non-streaming requests use `InvokeModel` with Anthropic Messages, while Bedrock Converse and ConverseStream are used for supported Bedrock-native chat flows.
-- Route `stream` may be enabled for Bedrock models that support streaming through `ConverseStream`; keep `responses` and `embeddings` capability flags `false`.
-- `/v1/responses` and `/v1/embeddings` are not implemented for `aws_bedrock`.
+- `upstream_model` should be the model identity accepted by the configured Bedrock endpoint and API style.
+- every `aws_bedrock` route requires `compatibility.aws_bedrock.api_style`.
+- OpenAI-shaped API styles require `compatibility.aws_bedrock.openai_base_path`, for example `/openai/v1`.
+- Route `extra_headers` is the supported way to proxy provider headers such as `OpenAI-Project`; arbitrary inbound caller headers are not forwarded to providers.
 - Validate documentation-only updates with `mise run docs-check`.
 
 ## Model Config
@@ -573,6 +578,31 @@ models:
             reasoning_effort: omit
             supports_stream_usage: true
 ```
+
+AWS Bedrock route profile:
+
+```yaml
+models:
+  - id: gpt-55-bedrock
+    routes:
+      - provider: bedrock-mantle-openai
+        upstream_model: openai.gpt-5.5
+        extra_headers:
+          OpenAI-Project: proj_123
+        compatibility:
+          aws_bedrock:
+            api_style: mantle_openai_responses
+            openai_base_path: /openai/v1
+```
+
+`compatibility.aws_bedrock.api_style` values:
+
+- `runtime_converse`
+- `runtime_anthropic_invoke`
+- `runtime_openai_chat`
+- `mantle_openai_responses`
+- `mantle_openai_chat`
+- `mantle_anthropic_messages`
 
 OpenAI-compatible profile defaults:
 

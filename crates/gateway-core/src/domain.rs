@@ -1788,6 +1788,52 @@ const fn default_true() -> bool {
 pub struct RouteCompatibility {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub openai_compat: Option<OpenAiCompatRouteCompatibility>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aws_bedrock: Option<AwsBedrockRouteCompatibility>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AwsBedrockRouteCompatibility {
+    pub api_style: AwsBedrockApiStyle,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub openai_base_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AwsBedrockApiStyle {
+    RuntimeConverse,
+    RuntimeAnthropicInvoke,
+    RuntimeOpenaiChat,
+    MantleOpenaiResponses,
+    MantleOpenaiChat,
+    MantleAnthropicMessages,
+}
+
+impl AwsBedrockApiStyle {
+    #[must_use]
+    pub const fn is_runtime(self) -> bool {
+        matches!(
+            self,
+            Self::RuntimeConverse | Self::RuntimeAnthropicInvoke | Self::RuntimeOpenaiChat
+        )
+    }
+
+    #[must_use]
+    pub const fn is_mantle(self) -> bool {
+        matches!(
+            self,
+            Self::MantleOpenaiResponses | Self::MantleOpenaiChat | Self::MantleAnthropicMessages
+        )
+    }
+
+    #[must_use]
+    pub const fn is_openai_shaped(self) -> bool {
+        matches!(
+            self,
+            Self::RuntimeOpenaiChat | Self::MantleOpenaiResponses | Self::MantleOpenaiChat
+        )
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

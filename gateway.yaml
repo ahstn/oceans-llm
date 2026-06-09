@@ -203,6 +203,7 @@ providers:
   - id: bedrock-us-east-1
     type: aws_bedrock
     region: us-east-1
+    endpoint_kind: bedrock_runtime
     auth:
       mode: default_chain
     display:
@@ -247,12 +248,19 @@ models:
     routes:
       - provider: bedrock-us-east-1
         upstream_model: us.anthropic.claude-sonnet-4-6-v1:0
+        compatibility:
+          aws_bedrock:
+            api_style: runtime_anthropic_invoke
 
   - id: gpt-oss-120b
     description: OpenAI OSS on AWS Bedrock
     routes:
       - provider: bedrock-us-east-1
         upstream_model: gpt-oss-120b
+        compatibility:
+          aws_bedrock:
+            api_style: runtime_openai_chat
+            openai_base_path: /openai/v1
 
   - id: gemini-pro-preview
     description: Gemini preview on Vertex

@@ -35,7 +35,7 @@ This matrix is about current execution support, not provider marketing claims.
 | `openai_compat` | Supported. Chat Completions route profiles can rewrite known request-shape quirks. | Supported through the distinct Responses request/provider path. Chat Completions profile transforms do not apply. | Supported. No route compatibility transforms apply in this slice. |
 | `gcp_vertex` with `google/*` upstream models | Supported for the current Vertex chat path when route capabilities allow it. | Not implemented; keep route `responses: false`. | Not implemented in this slice; keep route `embeddings: false`. |
 | `gcp_vertex` with `anthropic/*` upstream models | Supported for the current Vertex chat path when route capabilities allow it. | Not implemented; keep route `responses: false`. | Not applicable. |
-| `aws_bedrock` | Supported for Bedrock Converse chat. Anthropic Claude upstream model IDs use Bedrock `InvokeModel` with the native Anthropic Messages payload for non-streaming Chat Completions. Streaming chat uses ConverseStream and normalizes AWS Smithy/EventStream frames into OpenAI-compatible SSE; it is not native Anthropic Messages streaming. | Not implemented; keep route `responses: false`. | Not implemented; keep route `embeddings: false`. |
+| `aws_bedrock` | Supported through explicit `compatibility.aws_bedrock.api_style`: Runtime Converse, Runtime Anthropic InvokeModel, Runtime OpenAI Chat, Mantle OpenAI Chat, or Mantle Anthropic Messages. Streaming uses the configured style's stream contract. | Supported for `api_style: mantle_openai_responses` with an OpenAI base path such as `/openai/v1`. | Not implemented; keep route `embeddings: false`. |
 
 Route capability flags are still useful when a provider implementation does not support a public API family. They make failures happen at the gateway edge instead of later inside the provider adapter.
 
@@ -66,6 +66,24 @@ models:
             supports_stream_usage: true
 ```
 
+Bedrock routes use an explicit AWS Bedrock profile:
+
+```yaml
+models:
+  - id: gpt-55-bedrock
+    routes:
+      - provider: bedrock-mantle-openai
+        upstream_model: openai.gpt-5.5
+        extra_headers:
+          OpenAI-Project: proj_123
+        compatibility:
+          aws_bedrock:
+            api_style: mantle_openai_responses
+            openai_base_path: /openai/v1
+```
+
+`api_style` values are `runtime_converse`, `runtime_anthropic_invoke`, `runtime_openai_chat`, `mantle_openai_responses`, `mantle_openai_chat`, and `mantle_anthropic_messages`. OpenAI-shaped styles require `openai_base_path`.
+
 ## Effective Capabilities
 
 Effective capability is the intersection of configured route metadata and provider runtime support.
@@ -76,7 +94,7 @@ Effective capability is the intersection of configured route metadata and provid
 
 For example, a Vertex Google chat route should normally set `responses: false` and `embeddings: false` until those provider paths are implemented. Otherwise the route may look viable from config alone and still fail when the provider adapter rejects the unsupported API family.
 
-For Bedrock, this foundation guarantees config load, validation, seeding, registration, deterministic region, endpoint, timeout, display, auth metadata, Converse chat execution, Claude Messages invocation, and ConverseStream chat streaming for bearer-token auth. It also supports IAM/SigV4 signing for the `default_chain` and `static_credentials` auth modes. Bedrock `upstream_model` values should match Bedrock Runtime model identity: base model IDs, inference profile IDs, or Bedrock ARNs accepted by the target Bedrock Runtime operation. AWS documents `InvokeModel` as requiring `bedrock:InvokeModel`; streamed invocation and Converse access require the corresponding Bedrock runtime permissions.
+For Bedrock, this foundation guarantees config load, validation, seeding, registration, deterministic region, endpoint kind, timeout, display, auth metadata, explicit Runtime and Mantle API style selection, and request/stream normalization for supported route styles. It also supports IAM/SigV4 signing for the `default_chain` and `static_credentials` auth modes. Runtime providers sign with service `bedrock`; Mantle providers sign with service `bedrock-mantle`. Bedrock `upstream_model` values should match the model identity accepted by the configured endpoint and API style.
 
 ## Google Vertex Anthropic Claude
 
@@ -109,9 +127,9 @@ Vertex Claude route capabilities should stay aligned with tested gateway behavio
 
 Vertex Google publisher routes remain separate from Anthropic-on-Vertex. `google/*` upstream models use Vertex `generateContent` and `streamGenerateContent`; Anthropic Messages fields such as `thinking`, `output_config`, and `anthropic_version` do not apply to those routes.
 
-## AWS Bedrock Anthropic Claude
+## AWS Bedrock Runtime Anthropic Claude
 
-Bedrock-hosted Claude models are selected when the Bedrock `upstream_model` contains `anthropic.claude`, including regional inference profile IDs such as `us.anthropic.claude-3-5-sonnet-20241022-v2:0`. Non-streaming Chat Completions for those routes use Bedrock Runtime `InvokeModel` (`/model/{modelId}/invoke`) with Anthropic's native Messages body instead of the generic Converse body.
+Bedrock Runtime Anthropic `InvokeModel` is selected by `compatibility.aws_bedrock.api_style: runtime_anthropic_invoke`. Non-streaming Chat Completions for those routes use Bedrock Runtime `InvokeModel` (`/model/{modelId}/invoke`) with Anthropic's native Messages body instead of the generic Converse body.
 
 The native Bedrock Anthropic body always includes:
 
@@ -147,7 +165,7 @@ Anthropic documents that Claude 4 models can return summarized thinking, encrypt
 
 Provider metadata preservation is not yet request-side replay. The current Bedrock Anthropic mappers do not rehydrate preserved `thinking`, `signature`, or `redacted_thinking` blocks into later assistant content when callers send tool results. Tool-use continuations that require exact thinking block round-trip are tracked by [issue #140](https://github.com/ahstn/oceans-llm/issues/140). Exact cache, reasoning, and modality token accounting remains tracked by [issue #92](https://github.com/ahstn/oceans-llm/issues/92).
 
-Streaming boundary: native Anthropic Messages streaming over `InvokeModelWithResponseStream` is not implemented in this slice. If a Bedrock route enables streaming, it is using the generic Bedrock Converse stream adapter from [issue #128](https://github.com/ahstn/oceans-llm/issues/128), not the native Anthropic Messages stream event contract. Native Bedrock Anthropic Messages streaming is tracked by [issue #139](https://github.com/ahstn/oceans-llm/issues/139).
+Streaming boundary: Runtime Anthropic `InvokeModel` does not provide the route's streaming path. Configure `api_style: runtime_converse` for Bedrock Runtime ConverseStream, or `api_style: mantle_anthropic_messages` for Mantle Anthropic Messages SSE.
 
 ## OpenAI-Compatible Profile Fields
 
@@ -230,7 +248,7 @@ These items are intentionally outside this first slice:
 - cache, reasoning, and modality token accounting: [issue #92](https://github.com/ahstn/oceans-llm/issues/92)
 - multimodal image/file compatibility across provider families: [issue #93](https://github.com/ahstn/oceans-llm/issues/93)
 - Vertex embeddings provider support: [issue #103](https://github.com/ahstn/oceans-llm/issues/103)
-- Bedrock native Anthropic Messages streaming over `InvokeModelWithResponseStream`: [issue #139](https://github.com/ahstn/oceans-llm/issues/139)
+- Bedrock Runtime Anthropic streaming over `InvokeModelWithResponseStream`: [issue #139](https://github.com/ahstn/oceans-llm/issues/139)
 - Anthropic thinking block replay for tool-use continuations: [issue #140](https://github.com/ahstn/oceans-llm/issues/140)
 - Vertex Claude tool and multimodal parity: [issue #141](https://github.com/ahstn/oceans-llm/issues/141)
 - route readiness diagnostics: [issue #98](https://github.com/ahstn/oceans-llm/issues/98)

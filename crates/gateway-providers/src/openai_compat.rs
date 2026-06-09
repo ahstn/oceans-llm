@@ -392,7 +392,7 @@ impl ProviderClient for OpenAiCompatProvider {
     }
 }
 
-fn normalize_openai_compat_stream<S>(upstream: S) -> ProviderStream
+pub(crate) fn normalize_openai_compat_stream<S>(upstream: S) -> ProviderStream
 where
     S: futures_util::stream::Stream<Item = Result<Bytes, reqwest::Error>> + Send + 'static,
 {
@@ -474,7 +474,7 @@ fn normalize_openai_compat_sse_data(data: &str) -> String {
     serde_json::to_string(&value).unwrap_or_else(|_| data.to_string())
 }
 
-fn normalize_openai_compat_responses_stream<S>(upstream: S) -> ProviderStream
+pub(crate) fn normalize_openai_compat_responses_stream<S>(upstream: S) -> ProviderStream
 where
     S: futures_util::stream::Stream<Item = Result<Bytes, reqwest::Error>> + Send + 'static,
 {
@@ -649,6 +649,7 @@ mod tests {
             request_headers: BTreeMap::new(),
             compatibility: RouteCompatibility {
                 openai_compat: Some(profile),
+                ..Default::default()
             },
         }
     }
@@ -1024,6 +1025,7 @@ mod tests {
                     supports_store: false,
                     ..Default::default()
                 }),
+                ..Default::default()
             },
         };
 
