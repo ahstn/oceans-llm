@@ -248,6 +248,8 @@ models:
     routes:
       - provider: bedrock-us-east-1
         upstream_model: us.anthropic.claude-sonnet-4-6-v1:0
+        capabilities:
+          responses: false
         compatibility:
           aws_bedrock:
             api_style: runtime_anthropic_invoke
@@ -257,6 +259,8 @@ models:
     routes:
       - provider: bedrock-us-east-1
         upstream_model: gpt-oss-120b
+        capabilities:
+          responses: false
         compatibility:
           aws_bedrock:
             api_style: runtime_openai_chat

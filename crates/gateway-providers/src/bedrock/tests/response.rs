@@ -35,6 +35,45 @@ async fn normalizes_mantle_anthropic_messages_sse() {
     assert!(transcript.ends_with("data: [DONE]\n\n"));
 }
 
+#[tokio::test]
+async fn normalizes_mantle_anthropic_messages_sse_error_without_done() {
+    let transcript = collect_anthropic_messages_stream(vec![Ok(Bytes::from_static(
+        b"event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"rate limited\"}}\n\n",
+    ))])
+    .await;
+
+    assert!(transcript.contains(r#""code":"overloaded_error""#));
+    assert!(transcript.contains(r#""message":"rate limited""#));
+    assert!(!transcript.contains("[DONE]"));
+}
+
+#[tokio::test]
+async fn normalizes_mantle_anthropic_messages_streamed_tool_call_metadata() {
+    let transcript = collect_anthropic_messages_stream(vec![
+        Ok(Bytes::from_static(
+            b"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_123\"}}\n\n",
+        )),
+        Ok(Bytes::from_static(
+            b"event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_123\",\"name\":\"get_weather\",\"input\":{}}}\n\n",
+        )),
+        Ok(Bytes::from_static(
+            b"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"city\\\":\\\"London\\\"}\"}}\n\n",
+        )),
+        Ok(Bytes::from_static(
+            b"event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"},\"usage\":{\"input_tokens\":8,\"output_tokens\":4}}\n\n",
+        )),
+    ])
+    .await;
+
+    assert!(transcript.contains(r#""delta":{"role":"assistant"}"#));
+    assert!(transcript.contains(r#""id":"toolu_123""#));
+    assert!(transcript.contains(r#""type":"function""#));
+    assert!(transcript.contains(r#""name":"get_weather""#));
+    assert!(transcript.contains(r#""arguments":"{\"city\":\"London\"}""#));
+    assert!(transcript.contains(r#""finish_reason":"tool_calls""#));
+    assert!(transcript.ends_with("data: [DONE]\n\n"));
+}
+
 #[test]
 fn normalizes_text_response_with_usage() {
     let response = json!({
@@ -180,6 +219,25 @@ fn normalizes_tool_use_response() {
             }
         })
     );
+}
+
+async fn collect_anthropic_messages_stream(chunks: Vec<Result<Bytes, reqwest::Error>>) -> String {
+    let mut stream = normalize_anthropic_messages_stream(
+        futures_util::stream::iter(chunks),
+        context_with_api_style(
+            "anthropic.claude-sonnet-4-5",
+            AwsBedrockApiStyle::MantleAnthropicMessages,
+            None,
+        ),
+    );
+    let mut transcript = String::new();
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.expect("chunk");
+        transcript.push_str(std::str::from_utf8(&chunk).expect("utf8"));
+    }
+
+    transcript
 }
 
 #[test]

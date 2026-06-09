@@ -4,7 +4,8 @@ use bytes::Bytes;
 use futures_util::StreamExt;
 use gateway_core::{
     AwsBedrockApiStyle, AwsBedrockRouteCompatibility, CoreChatMessage, CoreChatRequest,
-    CoreResponsesRequest, ProviderError, ProviderRequestContext, RouteCompatibility,
+    CoreResponsesRequest, ProviderClient, ProviderError, ProviderRequestContext,
+    RouteCompatibility,
 };
 use serde_json::{Map, Value, json};
 use serial_test::serial;

@@ -24,6 +24,8 @@ Supported route API styles:
 
 OpenAI-shaped styles also require `compatibility.aws_bedrock.openai_base_path`, for example `/openai/v1`.
 
+Only `mantle_openai_responses` routes can enable the route `responses` capability. For Runtime routes, Mantle Chat Completions routes, and Mantle Anthropic Messages routes, set `capabilities.responses: false` so `/v1/responses` requests cannot select an incompatible wire API.
+
 For OpenAI GPT-5.5 on Bedrock Mantle, start with [OpenAI GPT-5.5 on Bedrock Mantle](aws-bedrock-openai-gpt-55.md).
 
 The provider adapter supports bearer-token auth and IAM SigV4 request signing. AWS documents `AWS_BEARER_TOKEN_BEDROCK` as the environment variable recognized by Bedrock API-key auth and direct HTTP calls can pass the same value as `Authorization: Bearer ...`: [Use an Amazon Bedrock API key](https://docs.aws.amazon.com/en_us/bedrock/latest/userguide/api-keys-use.html).

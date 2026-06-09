@@ -1,5 +1,15 @@
 use super::*;
 
+#[test]
+fn provider_capabilities_include_responses_for_mantle_routes() {
+    let capabilities = mantle_bearer_provider().capabilities();
+
+    assert!(capabilities.chat_completions);
+    assert!(capabilities.responses);
+    assert!(capabilities.stream);
+    assert!(!capabilities.embeddings);
+}
+
 #[tokio::test]
 async fn builds_bearer_converse_request_with_encoded_model_path_and_headers() {
     let provider = BedrockProvider::new(BedrockProviderConfig {

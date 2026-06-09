@@ -616,7 +616,16 @@ impl ProviderClient for BedrockProvider {
     }
 
     fn capabilities(&self) -> ProviderCapabilities {
-        ProviderCapabilities::with_dimensions(true, true, false, true, true, false, true)
+        ProviderCapabilities {
+            chat_completions: true,
+            responses: true,
+            stream: true,
+            embeddings: false,
+            tools: true,
+            vision: true,
+            json_schema: false,
+            developer_role: true,
+        }
     }
 
     async fn chat_completions(

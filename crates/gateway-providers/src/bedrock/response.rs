@@ -217,6 +217,21 @@ where
                     .or_else(|| value.get("type").and_then(Value::as_str))
                     .unwrap_or_default();
 
+                if event_type == "error" {
+                    let error = value.get("error").unwrap_or(&value);
+                    let code = error
+                        .get("type")
+                        .and_then(Value::as_str)
+                        .unwrap_or("anthropic_messages_stream_error");
+                    let message = error
+                        .get("message")
+                        .and_then(Value::as_str)
+                        .unwrap_or("upstream Anthropic Messages stream failed");
+                    yield Ok(openai_sse_error_chunk(code, message));
+                    stream_failed = true;
+                    break;
+                }
+
                 if event_type == "message_start" {
                     if let Some(message_id) = value
                         .get("message")
@@ -236,6 +251,60 @@ where
                         )).unwrap_or_else(|_| "{}".to_string())));
                         sent_role = true;
                     }
+                    continue;
+                }
+
+                if event_type == "content_block_start" {
+                    let Some(content_block) =
+                        value.get("content_block").and_then(Value::as_object)
+                    else {
+                        continue;
+                    };
+                    if content_block.get("type").and_then(Value::as_str) != Some("tool_use") {
+                        continue;
+                    }
+
+                    if !sent_role {
+                        yield Ok(render_sse_event_chunk(None, &serde_json::to_string(&anthropic_stream_chunk(
+                            &id,
+                            created,
+                            &context,
+                            json!({"role": "assistant"}),
+                            None,
+                            None,
+                        )).unwrap_or_else(|_| "{}".to_string())));
+                        sent_role = true;
+                    }
+
+                    let index = value
+                        .get("index")
+                        .and_then(Value::as_u64)
+                        .and_then(|value| u32::try_from(value).ok())
+                        .unwrap_or(0);
+                    let tool_id = content_block
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default();
+                    let name = content_block
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default();
+                    yield Ok(render_sse_event_chunk(None, &serde_json::to_string(&anthropic_stream_chunk(
+                        &id,
+                        created,
+                        &context,
+                        json!({"tool_calls": [{
+                            "index": index,
+                            "id": tool_id,
+                            "type": "function",
+                            "function": {
+                                "name": name,
+                                "arguments": ""
+                            }
+                        }]}),
+                        None,
+                        None,
+                    )).unwrap_or_else(|_| "{}".to_string())));
                     continue;
                 }
 
@@ -325,6 +394,10 @@ where
                         )).unwrap_or_else(|_| "{}".to_string())));
                     }
                 }
+            }
+
+            if stream_failed {
+                break;
             }
         }
 
