@@ -2104,6 +2104,34 @@ fn validate_aws_bedrock_route_compatibility(
         );
     }
 
+    if route.capabilities.json_schema
+        && compatibility.api_style != AwsBedrockApiStyle::MantleOpenaiResponses
+    {
+        bail!(
+            "model `{model_id}` route for aws_bedrock provider `{}` api_style `{:?}` cannot enable json_schema capability; json_schema requires api_style `mantle_openai_responses`",
+            provider.id,
+            compatibility.api_style
+        );
+    }
+
+    if compatibility.api_style == AwsBedrockApiStyle::MantleOpenaiResponses
+        && route.capabilities.chat_completions
+    {
+        bail!(
+            "model `{model_id}` route for aws_bedrock provider `{}` api_style `mantle_openai_responses` cannot enable chat_completions capability",
+            provider.id
+        );
+    }
+
+    if compatibility.api_style == AwsBedrockApiStyle::RuntimeAnthropicInvoke
+        && route.capabilities.stream
+    {
+        bail!(
+            "model `{model_id}` route for aws_bedrock provider `{}` api_style `runtime_anthropic_invoke` cannot enable stream capability",
+            provider.id
+        );
+    }
+
     Ok(())
 }
 
@@ -3103,6 +3131,110 @@ models:
         let error_text = format!("{error:#}");
         assert!(
             error_text.contains("responses require api_style `mantle_openai_responses`"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_bedrock_json_schema_capability_for_non_responses_api_style() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: bedrock
+    type: aws_bedrock
+    region: us-east-1
+    endpoint_kind: bedrock_runtime
+models:
+  - id: nova
+    routes:
+      - provider: bedrock
+        upstream_model: amazon.nova-pro-v1:0
+        capabilities:
+          responses: false
+          json_schema: true
+        compatibility:
+          aws_bedrock:
+            api_style: runtime_converse
+"#,
+        );
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("json_schema requires api_style `mantle_openai_responses`"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_bedrock_responses_api_style_with_chat_capability() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: bedrock-mantle
+    type: aws_bedrock
+    region: us-east-2
+    endpoint_kind: bedrock_mantle
+models:
+  - id: gpt-55
+    routes:
+      - provider: bedrock-mantle
+        upstream_model: openai.gpt-5.5
+        capabilities:
+          responses: true
+          chat_completions: true
+        compatibility:
+          aws_bedrock:
+            api_style: mantle_openai_responses
+            openai_base_path: /openai/v1
+"#,
+        );
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("cannot enable chat_completions capability"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_runtime_anthropic_invoke_with_stream_capability() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: bedrock
+    type: aws_bedrock
+    region: us-east-1
+    endpoint_kind: bedrock_runtime
+models:
+  - id: claude
+    routes:
+      - provider: bedrock
+        upstream_model: anthropic.claude-sonnet-4-5-20250929-v1:0
+        capabilities:
+          responses: false
+          stream: true
+          json_schema: false
+        compatibility:
+          aws_bedrock:
+            api_style: runtime_anthropic_invoke
+"#,
+        );
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("cannot enable stream capability"),
             "unexpected error: {error_text}"
         );
     }

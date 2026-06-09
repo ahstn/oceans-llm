@@ -623,7 +623,7 @@ impl ProviderClient for BedrockProvider {
             embeddings: false,
             tools: true,
             vision: true,
-            json_schema: false,
+            json_schema: true,
             developer_role: true,
         }
     }

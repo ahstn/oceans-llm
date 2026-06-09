@@ -250,6 +250,8 @@ models:
         upstream_model: us.anthropic.claude-sonnet-4-6-v1:0
         capabilities:
           responses: false
+          stream: false
+          json_schema: false
         compatibility:
           aws_bedrock:
             api_style: runtime_anthropic_invoke
@@ -261,6 +263,7 @@ models:
         upstream_model: gpt-oss-120b
         capabilities:
           responses: false
+          json_schema: false
         compatibility:
           aws_bedrock:
             api_style: runtime_openai_chat

@@ -587,6 +587,12 @@ models:
     routes:
       - provider: bedrock-mantle-openai
         upstream_model: openai.gpt-5.5
+        capabilities:
+          chat_completions: false
+          responses: true
+          stream: true
+          embeddings: false
+          json_schema: true
         extra_headers:
           OpenAI-Project: proj_123
         compatibility:
@@ -669,11 +675,15 @@ models:
     routes:
       - provider: bedrock
         upstream_model: us.anthropic.claude-3-5-sonnet-20240620-v1:0
+        compatibility:
+          aws_bedrock:
+            api_style: runtime_converse
         capabilities:
           chat_completions: true
           responses: false
           embeddings: false
           stream: true
+          json_schema: false
 ```
 
 OpenAI-compatible embeddings-only routes should narrow route capability so chat and Responses requests fail early:

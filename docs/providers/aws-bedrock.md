@@ -24,7 +24,7 @@ Supported route API styles:
 
 OpenAI-shaped styles also require `compatibility.aws_bedrock.openai_base_path`, for example `/openai/v1`.
 
-Only `mantle_openai_responses` routes can enable the route `responses` capability. For Runtime routes, Mantle Chat Completions routes, and Mantle Anthropic Messages routes, set `capabilities.responses: false` so `/v1/responses` requests cannot select an incompatible wire API.
+Only `mantle_openai_responses` routes can enable the route `responses` and `json_schema` capabilities. Those Responses routes must set `capabilities.chat_completions: false`. For Runtime routes, Mantle Chat Completions routes, and Mantle Anthropic Messages routes, set `capabilities.responses: false` and `capabilities.json_schema: false` so requests cannot select an incompatible wire API.
 
 For OpenAI GPT-5.5 on Bedrock Mantle, start with [OpenAI GPT-5.5 on Bedrock Mantle](aws-bedrock-openai-gpt-55.md).
 
@@ -117,13 +117,13 @@ models:
           chat_completions: true
           responses: false
           embeddings: false
-          stream: true
+          stream: false
           tools: true
           vision: true
           json_schema: false
 ```
 
-Native Claude invocation requires callers to set `max_tokens` or `max_completion_tokens`. Bedrock-hosted Claude vision is limited to base64 image payloads in this gateway slice; remote image URLs are rejected before the provider call.
+Native Claude invocation requires callers to set `max_tokens` or `max_completion_tokens`. `runtime_anthropic_invoke` is non-streaming; use `runtime_converse` when a Bedrock Runtime route needs ConverseStream. Bedrock-hosted Claude vision is limited to base64 image payloads in this gateway slice; remote image URLs are rejected before the provider call.
 
 ### Claude Thinking Compatibility
 
@@ -222,7 +222,7 @@ models:
           chat_completions: true
           responses: false
           embeddings: false
-          stream: true
+          stream: false
           tools: true
           vision: true
           json_schema: false
@@ -233,7 +233,8 @@ The current runtime executes one selected route. Priority and weight affect rout
 ## Operational Notes
 
 - Use `mantle_openai_responses` for OpenAI Responses routes on Bedrock Mantle; keep `responses: false` on Runtime routes.
-- Keep `json_schema: false` unless a specific Bedrock route has explicit provider-specific overrides and tests.
+- Keep `json_schema: false` except on tested `mantle_openai_responses` routes.
+- Keep `stream: false` on `runtime_anthropic_invoke` routes; use `runtime_converse` for Bedrock Runtime streaming.
 - Use `extra_body` only for additive Bedrock or Anthropic fields you have tested for the exact model family.
 - Chat Completions hides Claude thinking from normal `content` and `delta.content`. Native Anthropic thinking blocks and Bedrock Converse reasoning content are preserved under `provider_metadata.aws_bedrock.reasoning` for debugging and provider continuity. Exact reasoning/cache accounting remains tracked by [issue #92](https://github.com/ahstn/oceans-llm/issues/92), native Bedrock Anthropic streaming remains tracked by [issue #139](https://github.com/ahstn/oceans-llm/issues/139), and thinking block replay for tool-use continuations remains tracked by [issue #140](https://github.com/ahstn/oceans-llm/issues/140).
 - Check the model card before adding a new `upstream_model`; Bedrock model IDs and inference profile support differ by model and Region.

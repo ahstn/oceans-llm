@@ -253,11 +253,13 @@ pub(super) fn map_anthropic_image_block(
     match image_url {
         Value::Object(image_object) => {
             if image_object.get("type").and_then(Value::as_str) == Some("base64") {
+                validate_anthropic_base64_image_source(image_object)?;
                 return Ok(json!({ "type": "image", "source": image_object }));
             }
             if let Some(source) = image_object.get("source").and_then(Value::as_object)
                 && source.get("type").and_then(Value::as_str) == Some("base64")
             {
+                validate_anthropic_base64_image_source(source)?;
                 return Ok(json!({ "type": "image", "source": source }));
             }
 
@@ -275,6 +277,36 @@ pub(super) fn map_anthropic_image_block(
                 .to_string(),
         )),
     }
+}
+
+fn validate_anthropic_base64_image_source(
+    source: &Map<String, Value>,
+) -> Result<(), ProviderError> {
+    let media_type = source
+        .get("media_type")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            ProviderError::InvalidRequest(
+                "base64 image sources for aws_bedrock Anthropic Claude Messages must include `media_type`"
+                    .to_string(),
+            )
+        })?;
+    if !matches!(
+        media_type,
+        "image/jpeg" | "image/png" | "image/webp" | "image/gif"
+    ) {
+        return Err(ProviderError::InvalidRequest(format!(
+            "unsupported image media type `{media_type}` for aws_bedrock Anthropic Claude Messages"
+        )));
+    }
+    if source.get("data").and_then(Value::as_str).is_none() {
+        return Err(ProviderError::InvalidRequest(
+            "base64 image sources for aws_bedrock Anthropic Claude Messages must include string `data`"
+                .to_string(),
+        ));
+    }
+
+    Ok(())
 }
 
 pub(super) fn map_anthropic_data_url_image(

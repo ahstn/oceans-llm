@@ -74,6 +74,12 @@ models:
     routes:
       - provider: bedrock-mantle-openai
         upstream_model: openai.gpt-5.5
+        capabilities:
+          chat_completions: false
+          responses: true
+          stream: true
+          embeddings: false
+          json_schema: true
         extra_headers:
           OpenAI-Project: proj_123
         compatibility:
@@ -82,7 +88,7 @@ models:
             openai_base_path: /openai/v1
 ```
 
-`api_style` values are `runtime_converse`, `runtime_anthropic_invoke`, `runtime_openai_chat`, `mantle_openai_responses`, `mantle_openai_chat`, and `mantle_anthropic_messages`. OpenAI-shaped styles require `openai_base_path`.
+`api_style` values are `runtime_converse`, `runtime_anthropic_invoke`, `runtime_openai_chat`, `mantle_openai_responses`, `mantle_openai_chat`, and `mantle_anthropic_messages`. OpenAI-shaped styles require `openai_base_path`. Only `mantle_openai_responses` routes can enable `responses` and `json_schema`; those routes must disable `chat_completions`.
 
 ## Effective Capabilities
 

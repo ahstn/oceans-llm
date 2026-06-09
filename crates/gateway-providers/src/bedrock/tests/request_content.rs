@@ -241,6 +241,60 @@ fn maps_anthropic_base64_image_blocks_and_rejects_remote_urls() {
 }
 
 #[test]
+fn rejects_anthropic_base64_image_blocks_without_supported_media_type() {
+    let missing_media_type = CoreChatRequest {
+        model: "claude".to_string(),
+        messages: vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: json!([{
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "data": "aW1hZ2U="
+                }
+            }]),
+            name: None,
+            extra: BTreeMap::new(),
+        }],
+        stream: false,
+        extra: BTreeMap::from([("max_tokens".to_string(), json!(64))]),
+    };
+
+    let error = map_chat_request_to_anthropic_messages(
+        &missing_media_type,
+        &context("anthropic.claude-3-haiku-20240307-v1:0"),
+    )
+    .expect_err("missing media type rejected")
+    .to_string();
+    assert!(error.contains("must include `media_type`"));
+
+    let unsupported_media_type = CoreChatRequest {
+        messages: vec![CoreChatMessage {
+            content: json!([{
+                "type": "image",
+                "image_url": {
+                    "source": {
+                        "type": "base64",
+                        "media_type": "application/pdf",
+                        "data": "aW1hZ2U="
+                    }
+                }
+            }]),
+            ..message("user", "")
+        }],
+        ..missing_media_type
+    };
+
+    let error = map_chat_request_to_anthropic_messages(
+        &unsupported_media_type,
+        &context("anthropic.claude-3-haiku-20240307-v1:0"),
+    )
+    .expect_err("unsupported media type rejected")
+    .to_string();
+    assert!(error.contains("unsupported image media type `application/pdf`"));
+}
+
+#[test]
 fn rejects_anthropic_messages_without_max_tokens() {
     let request = CoreChatRequest {
         model: "claude".to_string(),
