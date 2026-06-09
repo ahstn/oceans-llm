@@ -65,12 +65,25 @@ auth:
   seed_api_keys:
     - name: "E2E Contract Key"
       value: env.E2E_GATEWAY_API_KEY
+      service_account:
+        key: seed-api-keys
+        name: E2E Seed API Keys
+        team: e2e
+        budget:
+          cadence: daily
+          amount_usd: "25.0000"
+          hard_limit: true
+          timezone: UTC
       allowed_models: ["fast"]
   bootstrap_admin:
     enabled: true
     email: "${E2E_ADMIN_EMAIL}"
     password: "literal.${E2E_ADMIN_PASSWORD}"
     require_password_change: true
+
+teams:
+  - key: e2e
+    name: E2E
 
 providers:
   - id: openai-e2e
