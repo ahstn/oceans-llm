@@ -51,6 +51,12 @@ pub async fn mcp_aggregate_streamable_http(
 
     let method = request.method().clone();
     let headers = request.headers().clone();
+    if method == axum::http::Method::GET {
+        return StatusCode::METHOD_NOT_ALLOWED.into_response();
+    }
+    if method != axum::http::Method::POST && method != axum::http::Method::DELETE {
+        return StatusCode::METHOD_NOT_ALLOWED.into_response();
+    }
     let bearer_token = match extract_mcp_gateway_api_key(&headers) {
         Ok(token) => token,
         Err(error) => return mcp_error_response(error.into()),
@@ -67,7 +73,6 @@ pub async fn mcp_aggregate_streamable_http(
     }
 
     match method.as_str() {
-        "GET" => StatusCode::METHOD_NOT_ALLOWED.into_response(),
         "DELETE" => handle_delete(&state, &auth, &headers).await,
         "POST" => handle_post(state, auth, headers, request).await,
         _ => StatusCode::METHOD_NOT_ALLOWED.into_response(),

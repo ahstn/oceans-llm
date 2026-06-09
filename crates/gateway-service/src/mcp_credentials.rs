@@ -90,6 +90,7 @@ where
         auth: &AuthenticatedApiKey,
         server: &ExternalMcpServerRecord,
     ) -> Result<ResolvedMcpCredential, GatewayError> {
+        let mut expired_candidate_seen = false;
         for owner_scope_key in credential_lookup_order(auth)? {
             let Some(binding) = self
                 .repo
@@ -102,11 +103,10 @@ where
                 .expires_at
                 .is_some_and(|expires_at| expires_at <= OffsetDateTime::now_utc())
             {
-                return Err(GatewayError::McpCredentialExpired {
-                    server_key: server.server_key.clone(),
-                });
+                expired_candidate_seen = true;
+                continue;
             }
-            let headers = credential_headers(&binding)?;
+            let headers = credential_headers(&binding, &server.server_key)?;
             self.repo
                 .touch_mcp_upstream_credential_binding_last_used(
                     binding.credential_binding_id,
@@ -117,6 +117,11 @@ where
                 headers,
                 credential_binding_id: binding.credential_binding_id,
                 owner_scope_key,
+            });
+        }
+        if expired_candidate_seen {
+            return Err(GatewayError::McpCredentialExpired {
+                server_key: server.server_key.clone(),
             });
         }
         Err(GatewayError::McpCredentialRequired {
@@ -330,13 +335,18 @@ fn credential_lookup_order(auth: &AuthenticatedApiKey) -> Result<Vec<String>, Ga
 
 fn credential_headers(
     binding: &McpUpstreamCredentialBindingRecord,
+    server_key: &str,
 ) -> Result<BTreeMap<String, String>, GatewayError> {
     let secret = match binding.storage_kind {
-        McpUpstreamSecretStorageKind::EncryptedBlob => decrypt_binding_secret(binding)?,
+        McpUpstreamSecretStorageKind::EncryptedBlob => decrypt_binding_secret(binding)
+            .map_err(|_| credential_material_unavailable(server_key))?,
         McpUpstreamSecretStorageKind::SecretRef => {
-            resolve_credential_secret_ref(binding.secret_ref.as_deref().ok_or_else(|| {
-                StoreError::Serialization("missing credential secret_ref".to_string())
-            })?)?
+            let secret_ref = binding
+                .secret_ref
+                .as_deref()
+                .ok_or_else(|| credential_material_unavailable(server_key))?;
+            resolve_credential_secret_ref(secret_ref)
+                .map_err(|_| credential_material_unavailable(server_key))?
         }
     };
     match binding.material_kind {
@@ -354,6 +364,12 @@ fn credential_headers(
             "Authorization".to_string(),
             format!("Bearer {secret}"),
         )])),
+    }
+}
+
+fn credential_material_unavailable(server_key: &str) -> GatewayError {
+    GatewayError::McpCredentialRequired {
+        server_key: server_key.to_string(),
     }
 }
 
@@ -636,7 +652,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn expired_principal_binding_is_not_masked_by_team_binding() {
+    async fn expired_principal_binding_falls_back_to_team_binding() {
         let team_id = Uuid::new_v4();
         let user_id = Uuid::new_v4();
         let server = server_record();
@@ -663,6 +679,7 @@ mod tests {
                 binding(&server, &team_key, "env/OCEANS_MCP_CREDENTIAL_TEAM"),
             ),
         ]);
+        let _team_secret = EnvVarGuard::set("OCEANS_MCP_CREDENTIAL_TEAM", "team-token");
         let service = McpCredentialService::new(std::sync::Arc::new(repo));
         let auth = AuthenticatedApiKey {
             id: Uuid::new_v4(),
@@ -674,12 +691,89 @@ mod tests {
             owner_service_account_id: None,
         };
 
+        let resolved = service
+            .resolve_for_auth(&auth, &server)
+            .await
+            .expect("resolve team fallback");
+
+        assert_eq!(
+            resolved.headers.get("Authorization").map(String::as_str),
+            Some("Bearer team-token")
+        );
+        assert_eq!(resolved.owner_scope_key, team_key);
+    }
+
+    #[tokio::test]
+    async fn expired_credential_errors_when_no_fallback_exists() {
+        let user_id = Uuid::new_v4();
+        let server = server_record();
+        let user_key = credential_owner_scope_key(
+            McpUpstreamCredentialOwnerScopeKind::User,
+            Some(user_id),
+            None,
+            None,
+        )
+        .expect("user key");
+        let mut expired = binding(&server, &user_key, "env/OCEANS_MCP_CREDENTIAL_USER");
+        expired.expires_at = Some(OffsetDateTime::now_utc() - Duration::seconds(1));
+        let repo = ArcCredentialRepo::new([(user_key, expired)]);
+        let service = McpCredentialService::new(std::sync::Arc::new(repo));
+        let auth = AuthenticatedApiKey {
+            id: Uuid::new_v4(),
+            public_id: "gwk_test".to_string(),
+            name: "test".to_string(),
+            owner_kind: ApiKeyOwnerKind::User,
+            owner_user_id: Some(user_id),
+            owner_team_id: None,
+            owner_service_account_id: None,
+        };
+
         let error = service
             .resolve_for_auth(&auth, &server)
             .await
             .expect_err("expired");
 
         assert_eq!(error.error_code(), "credential_expired");
+    }
+
+    #[tokio::test]
+    async fn missing_secret_ref_material_returns_credential_required() {
+        let user_id = Uuid::new_v4();
+        let server = server_record();
+        let user_key = credential_owner_scope_key(
+            McpUpstreamCredentialOwnerScopeKind::User,
+            Some(user_id),
+            None,
+            None,
+        )
+        .expect("user key");
+        let repo = ArcCredentialRepo::new([(
+            user_key,
+            binding(
+                &server,
+                &format!("mcp_credential:v1:user:{user_id}"),
+                "env/OCEANS_MCP_CREDENTIAL_MISSING",
+            ),
+        )]);
+        let _missing_secret = EnvVarGuard::remove("OCEANS_MCP_CREDENTIAL_MISSING");
+        let service = McpCredentialService::new(std::sync::Arc::new(repo));
+        let auth = AuthenticatedApiKey {
+            id: Uuid::new_v4(),
+            public_id: "gwk_test".to_string(),
+            name: "test".to_string(),
+            owner_kind: ApiKeyOwnerKind::User,
+            owner_user_id: Some(user_id),
+            owner_team_id: None,
+            owner_service_account_id: None,
+        };
+
+        let error = service
+            .resolve_for_auth(&auth, &server)
+            .await
+            .expect_err("missing secret");
+
+        assert_eq!(error.error_code(), "credential_required");
+        assert!(!error.to_string().contains("OCEANS_MCP_CREDENTIAL_MISSING"));
     }
 
     struct EnvVarGuard {
@@ -692,6 +786,14 @@ mod tests {
             let previous = std::env::var_os(key);
             unsafe {
                 std::env::set_var(key, value);
+            }
+            Self { key, previous }
+        }
+
+        fn remove(key: &'static str) -> Self {
+            let previous = std::env::var_os(key);
+            unsafe {
+                std::env::remove_var(key);
             }
             Self { key, previous }
         }
