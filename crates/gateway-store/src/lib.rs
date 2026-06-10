@@ -245,6 +245,7 @@ mod tests {
     ) -> McpToolInvocationRecord {
         McpToolInvocationRecord {
             mcp_tool_invocation_id: Uuid::new_v4(),
+            parent_invocation_id: None,
             request_log_id: None,
             request_id: request_id.to_string(),
             api_key_id,
@@ -375,6 +376,7 @@ mod tests {
                 page: 1,
                 page_size: 10,
                 request_id: Some("req-mcp-1".to_string()),
+                parent_invocation_id: None,
                 server_display_key: Some("github-prod".to_string()),
                 server_display_name: Some("GitHub Production".to_string()),
                 tool_display_key: Some("issues.create".to_string()),
@@ -412,9 +414,37 @@ mod tests {
             .await
             .expect("invocation detail");
         assert_eq!(detail.invocation.request_id, "req-mcp-1");
+        assert_eq!(detail.invocation.parent_invocation_id, None);
         assert_eq!(
             detail.payload.expect("payload").arguments_json["token"],
             "[REDACTED]"
+        );
+
+        let child = McpToolInvocationRecord {
+            mcp_tool_invocation_id: Uuid::new_v4(),
+            parent_invocation_id: Some(invocation.mcp_tool_invocation_id),
+            request_id: "req-mcp-3".to_string(),
+            ..invocation.clone()
+        };
+        store
+            .insert_mcp_tool_invocation(&child, None)
+            .await
+            .expect("insert child invocation");
+
+        let linked_page = store
+            .list_mcp_tool_invocations(&McpToolInvocationQuery {
+                page: 1,
+                page_size: 10,
+                parent_invocation_id: Some(invocation.mcp_tool_invocation_id),
+                ..Default::default()
+            })
+            .await
+            .expect("list linked invocations");
+        assert_eq!(linked_page.total, 1);
+        assert_eq!(linked_page.items[0].request_id, "req-mcp-3");
+        assert_eq!(
+            linked_page.items[0].parent_invocation_id,
+            Some(invocation.mcp_tool_invocation_id)
         );
     }
 

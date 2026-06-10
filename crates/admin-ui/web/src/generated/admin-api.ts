@@ -1849,6 +1849,7 @@ export interface components {
             };
             occurred_at: string;
             owner_kind: string;
+            parent_invocation_id?: string | null;
             policy_result: string;
             request_id: string;
             request_log_id?: string | null;
@@ -3356,6 +3357,7 @@ export interface operations {
                 page?: number | null;
                 page_size?: number | null;
                 request_id?: string | null;
+                parent_invocation_id?: string | null;
                 server_display_key?: string | null;
                 server_display_name?: string | null;
                 tool_display_key?: string | null;

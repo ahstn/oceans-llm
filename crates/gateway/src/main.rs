@@ -7,7 +7,10 @@ use gateway::{
     cli::{Cli, Command, MigrateAction, ServeArgs},
     config::{BootstrapAdminConfig, BudgetAlertEmailConfig, GatewayConfig},
     email::build_budget_alert_sender,
-    http::{build_router, state::AppState},
+    http::{
+        build_router,
+        state::{AppState, CodeModeState},
+    },
     observability,
 };
 use gateway_core::ProviderRegistry;
@@ -204,6 +207,7 @@ async fn run_serve_with_store(
                     .resolved_public_base_url()
                     .context("failed resolving OAuth public base URL")?,
             ),
+            code_mode: build_code_mode_state(config)?,
         },
         load_admin_ui_config(),
     );
@@ -441,7 +445,73 @@ fn env_u64(key: &str, default: u64) -> u64 {
         .unwrap_or(default)
 }
 
+fn build_code_mode_state(config: &GatewayConfig) -> anyhow::Result<CodeModeState> {
+    if !config.mcp.code_mode.enabled {
+        return Ok(CodeModeState::disabled());
+    }
+    // `wasmtime_quickjs` is the only sandbox_backend value; constructing the
+    // executor validates the embedded guest module (including its minimum
+    // memory requirement against `memory_limit_bytes`) and fails startup
+    // loudly if the artifact or configuration is invalid.
+    let limits = config.mcp.code_mode.code_mode_limits();
+    let executor = gateway_code_mode_wasmtime::WasmtimeQuickjsExecutor::new(&limits)
+        .map_err(anyhow::Error::from)
+        .context("failed initializing the wasmtime_quickjs code-mode sandbox backend")?;
+    Ok(CodeModeState {
+        enabled: true,
+        executor: Arc::new(executor),
+        limits,
+    })
+}
+
 fn load_identity_token_secret() -> String {
     env::var("GATEWAY_IDENTITY_TOKEN_SECRET")
         .unwrap_or_else(|_| "local-dev-identity-secret".to_string())
+}
+
+#[cfg(test)]
+mod code_mode_startup_tests {
+    use super::*;
+
+    #[test]
+    fn disabled_code_mode_builds_disabled_state() {
+        let config = GatewayConfig::default();
+        let state = build_code_mode_state(&config).expect("disabled state");
+        assert!(!state.enabled);
+    }
+
+    #[test]
+    fn enabled_code_mode_builds_the_wasmtime_quickjs_backend() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        std::fs::write(
+            &config_path,
+            "mcp:\n  code_mode:\n    enabled: true\n    limits:\n      execution_timeout_ms: 1234\n",
+        )
+        .expect("write config");
+        let config = GatewayConfig::from_path(&config_path).expect("config");
+        let state = build_code_mode_state(&config).expect("backend builds from embedded guest");
+        assert!(state.enabled);
+        assert_eq!(state.limits.execution_timeout_ms, 1234);
+    }
+
+    #[test]
+    fn enabled_code_mode_rejects_memory_limit_below_guest_baseline() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        std::fs::write(
+            &config_path,
+            "mcp:\n  code_mode:\n    enabled: true\n    limits:\n      memory_limit_bytes: 65536\n",
+        )
+        .expect("write config");
+        let config = GatewayConfig::from_path(&config_path).expect("config");
+        let error = match build_code_mode_state(&config) {
+            Err(error) => error,
+            Ok(_) => panic!("too-small memory limit must fail startup"),
+        };
+        assert!(
+            format!("{error:#}").contains("minimum memory requirement"),
+            "got: {error:#}"
+        );
+    }
 }

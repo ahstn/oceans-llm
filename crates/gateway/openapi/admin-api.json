@@ -1826,6 +1826,17 @@
             }
           },
           {
+            "name": "parent_invocation_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
             "name": "server_display_key",
             "in": "query",
             "required": false,
@@ -7125,6 +7136,12 @@
           },
           "owner_kind": {
             "type": "string"
+          },
+          "parent_invocation_id": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "policy_result": {
             "type": "string"

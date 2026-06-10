@@ -79,6 +79,23 @@ diff -u crates/gateway/openapi/admin-api.json "$tmpdir/admin-api.json"
 diff -u crates/admin-ui/web/src/generated/admin-api.ts "$tmpdir/admin-api.ts"
 """
 
+[tasks.code-mode-guest-build]
+description = "Rebuild the Code Mode QuickJS guest and refresh the checked-in wasm artifact"
+run = "./crates/code-mode-guest/build-guest.sh crates/gateway-code-mode-wasmtime/guest/code_mode_guest.wasm"
+
+[tasks.code-mode-guest-check]
+description = "Verify the checked-in Code Mode guest wasm artifact matches a fresh build"
+run = """
+set -euo pipefail
+
+tmpdir="$(mktemp -d)"
+trap 'rm -rf "$tmpdir"' EXIT
+
+./crates/code-mode-guest/build-guest.sh "$tmpdir/code_mode_guest.wasm"
+cmp crates/gateway-code-mode-wasmtime/guest/code_mode_guest.wasm "$tmpdir/code_mode_guest.wasm" \\
+  || { echo "code_mode_guest.wasm is stale; run \\`mise run code-mode-guest-build\\`" >&2; exit 1; }
+"""
+
 [tasks.lint]
 description = "Run Rust and admin UI linting"
 depends = ["ui-install"]

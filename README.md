@@ -124,6 +124,8 @@ Use the docs site instead of treating this file as the full admin and maintainer
 - pricing and spend:
   - [Pricing Catalog and Accounting](docs/configuration/pricing-catalog-and-accounting.md)
   - [Budgets and Spending](docs/operations/budgets-and-spending.md)
+- MCP clients and Code Mode:
+  - [MCP Client Setup](docs/setup/mcp-client-setup.md)
 - observability:
   - [Observability and Request Logs](docs/operations/observability-and-request-logs.md)
   - [MCP Registry and Discovery](docs/operations/observability/mcp-registry-and-discovery.md)

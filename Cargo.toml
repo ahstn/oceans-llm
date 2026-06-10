@@ -4,15 +4,21 @@ members = [
     "crates/gateway-client-config",
     "crates/gateway",
     "crates/gateway-core",
+    "crates/gateway-code-mode-wasmtime",
     "crates/gateway-mcp",
     "crates/gateway-providers",
     "crates/gateway-service",
     "crates/gateway-store",
 ]
+# The Code Mode guest is compiled separately to wasm32-wasip1 (see
+# `mise run code-mode-guest-build`); excluding it keeps the default
+# workspace buildable without the wasm target installed.
+exclude = ["crates/code-mode-guest"]
 resolver = "2"
 
 [workspace.dependencies]
 admin-ui = { path = "crates/admin-ui" }
+gateway-code-mode-wasmtime = { path = "crates/gateway-code-mode-wasmtime" }
 gateway-core = { path = "crates/gateway-core" }
 gateway-client-config = { path = "crates/gateway-client-config" }
 gateway-mcp = { path = "crates/gateway-mcp" }
@@ -59,4 +65,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"]
 utoipa = { version = "5", features = ["axum_extras", "time", "uuid"] }
 utoipa-axum = "0.2"
 url = "2"
+# Sandbox-boundary dependencies are pinned exactly (GHSA watch: wasmtime had
+# critical sandbox-escape advisories patched in April 2026). `rquickjs` is
+# consumed by the excluded `crates/code-mode-guest` crate, which must use the
+# same exact pin (rquickjs 0.12.0 vendors quickjs-ng 0.15.0).
+wasmtime = { version = "=45.0.1", default-features = false, features = ["anyhow", "async", "cranelift", "runtime", "std", "parallel-compilation"] }
+rquickjs = "=0.12.0"
 uuid = { version = "1", features = ["serde", "v4", "v5"] }

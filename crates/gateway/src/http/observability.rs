@@ -370,6 +370,10 @@ pub async fn list_mcp_tool_invocations(
             .unwrap_or(DEFAULT_PAGE_SIZE)
             .clamp(1, MAX_MCP_TOOL_INVOCATION_PAGE_SIZE),
         request_id: empty_to_none(query.request_id),
+        parent_invocation_id: parse_optional_uuid(
+            query.parent_invocation_id.as_deref(),
+            "parent_invocation_id",
+        )?,
         server_display_key: empty_to_none(query.server_display_key),
         server_display_name: empty_to_none(query.server_display_name),
         tool_display_key: empty_to_none(query.tool_display_key),
@@ -475,6 +479,9 @@ fn mcp_invocation_summary_view(
 ) -> McpToolInvocationSummaryView {
     McpToolInvocationSummaryView {
         mcp_tool_invocation_id: invocation.mcp_tool_invocation_id.to_string(),
+        parent_invocation_id: invocation
+            .parent_invocation_id
+            .map(|value| value.to_string()),
         request_log_id: invocation.request_log_id.map(|value| value.to_string()),
         request_id: invocation.request_id.clone(),
         api_key_id: invocation.api_key_id.map(|value| value.to_string()),

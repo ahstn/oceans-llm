@@ -54,11 +54,18 @@ impl McpInvocationPayloadPolicy {
     pub fn from_request_log_policy(policy: RequestLogPayloadPolicy) -> Self {
         Self { inner: policy }
     }
+
+    /// Whether this policy persists (sanitized) payload rows at all.
+    #[must_use]
+    pub fn captures_payloads(&self) -> bool {
+        self.inner.should_capture_payloads()
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct McpInvocationLogInput {
     pub request_log_id: Option<Uuid>,
+    pub parent_invocation_id: Option<Uuid>,
     pub request_id: String,
     pub server_id: Option<Uuid>,
     pub server_display_key: String,
@@ -108,6 +115,11 @@ where
         }
     }
 
+    #[must_use]
+    pub fn payload_policy(&self) -> &McpInvocationPayloadPolicy {
+        &self.payload_policy
+    }
+
     pub async fn log_invocation(
         &self,
         auth: &AuthenticatedApiKey,
@@ -118,6 +130,7 @@ where
             self.payload_for(mcp_tool_invocation_id, &input);
         let invocation = McpToolInvocationRecord {
             mcp_tool_invocation_id,
+            parent_invocation_id: input.parent_invocation_id,
             request_log_id: input.request_log_id,
             request_id: input.request_id,
             api_key_id: Some(auth.id),

@@ -5,16 +5,19 @@
 
 ![MCP Servers Page](../public/images/screenshot-mcp-servers.png)
 
-Oceans can register external Streamable HTTP MCP servers and expose them to MCP clients through two gateway data-plane routes:
+Oceans can register external Streamable HTTP MCP servers and expose them to MCP clients through three gateway data-plane routes:
 
 ```text
 /mcp
 /mcp/{server_key}
+/code-mode-mcp
 ```
 
 `/mcp` is the aggregate endpoint. It exposes `search_tools`, `describe_tool`, and `call_tool` over the caller's granted active tools across all registered servers.
 
 `/mcp/{server_key}` is the direct proxy endpoint. The gateway authenticates the caller with an Oceans API key, looks up the active registered server, applies any gateway-managed upstream credential, and proxies the MCP Streamable HTTP request to the registered server URL.
+
+`/code-mode-mcp` is the Code Mode endpoint. When enabled, it exposes `explore` and `execute` tools that run sandboxed JavaScript over the caller's granted tools; see [MCP Client Setup](../setup/mcp-client-setup.md). When Code Mode is not enabled, the route returns not found.
 
 Discovered tools are not automatically callable. Configure explicit MCP tool or toolset grants before clients can see tools in `tools/list` or call them with `tools/call`; see [MCP Tool Access](../access/mcp-tool-access.md).
 
@@ -47,6 +50,7 @@ Rules:
 - lowercase letters, digits, hyphen, and underscore
 - stable once clients are configured
 - unknown or disabled servers return not found
+- `mcp` and `code-mode-mcp` are reserved for gateway-owned routes and are rejected at registration
 
 ## Auth Modes
 

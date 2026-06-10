@@ -2,7 +2,7 @@
 
 `See also`: [MCP Servers](../configuration/mcp-servers.md), [MCP Client Setup](../setup/mcp-client-setup.md), [Identity and Access](identity-and-access.md), [Budgets](budgets.md), [MCP Invocations](../operations/observability/mcp-invocations.md)
 
-MCP tool access controls which discovered tools an Oceans API key can find through `/mcp` and see or call through `/mcp/{server_key}`.
+MCP tool access controls which discovered tools an Oceans API key can find through `/mcp`, see or call through `/mcp/{server_key}`, and reach from Code Mode sandboxes through `/code-mode-mcp`.
 
 There is no implicit access to every discovered MCP tool. A tool is callable only when an active grant resolves to that tool for the authenticated API key, owner user, owner service account, or team.
 
@@ -51,6 +51,19 @@ For direct `tools/call`, Oceans checks access before contacting the upstream MCP
 If `schema_hash` is supplied and no longer matches the persisted tool schema, the gateway returns `tool_schema_changed` without contacting the upstream server. Missing upstream credentials return `credential_required`; expired bindings return `credential_expired`.
 
 Disabled servers, disabled toolsets, inactive tools, revoked grants, and inactive team memberships do not resolve as callable access.
+
+## Code Mode Behavior
+
+When Code Mode is enabled, `/code-mode-mcp` code sees only the caller's granted tools. `oceans.searchTools` and `oceans.describeTool` resolve against the same effective grants as the aggregate catalog; ungranted tools do not appear in results, counts, or error detail.
+
+Every nested `oceans.callTool` invocation re-checks grants at call time, exactly like aggregate `call_tool`. Grant changes take effect on the next call, even within a single running execution.
+
+Error behavior splits into two contracts:
+
+- Grant denials, capability denials, and invalid arguments **throw** catchable exceptions inside the sandbox.
+- Structured tool errors (`credential_required`, `credential_expired`, `tool_schema_changed`) and upstream failures **resolve**: `await oceans.callTool(...)` returns the same aggregate-style result object `/mcp` clients see — `{content, isError: true, structuredContent: {error_code, ...}}`. Code must check `result.isError` before using a tool result; these errors do not throw.
+
+The `explore` tool cannot call tools at all. `oceans.callTool` is only available in `execute`; an explore execution that attempts it gets a thrown exception, and an execution whose uncaught failure is that denial is logged as a policy-denied invocation.
 
 ## Relation To Budgets
 

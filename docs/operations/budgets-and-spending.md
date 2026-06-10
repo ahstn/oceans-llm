@@ -32,6 +32,8 @@ Pricing states are explicit:
 
 Only `priced` and `legacy_estimated` rows count toward budget windows and spend totals. `unpriced` and `usage_missing` rows remain report-visible accounting-quality signals.
 
+MCP invocation logging, including Code Mode parent and nested child rows in `mcp_tool_invocations`, is observability, not spend. MCP and Code Mode executions write no ledger rows and run no budget checks; the usage ledger remains the only budget source. See [MCP Invocations](observability/mcp-invocations.md).
+
 ## Budget Scopes
 
 Budgets are stored in the generic `budgets` table. `scope_key` is canonical and has one active budget at a time.
