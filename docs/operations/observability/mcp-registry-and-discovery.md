@@ -91,12 +91,14 @@ The public data-plane route is:
 
 ```text
 POST /mcp
+GET /mcp
+DELETE /mcp
 GET /mcp/{server_key}
 POST /mcp/{server_key}
 DELETE /mcp/{server_key}
 ```
 
-`/mcp` is a gateway-owned aggregate MCP server. It handles Streamable HTTP `POST` messages, returns `405` for `GET`, issues durable `MCP-Session-Id` values during initialize, and exposes only `search_tools`, `describe_tool`, and `call_tool` over granted active catalog rows.
+`/mcp` is a gateway-owned aggregate MCP server. It handles Streamable HTTP `POST` messages, returns `405` for `GET`, terminates aggregate sessions with `DELETE`, issues durable `MCP-Session-Id` values during initialize, and exposes only `search_tools`, `describe_tool`, and `call_tool` over granted active catalog rows.
 
 `/mcp/{server_key}` proxies Streamable HTTP requests to the active registered server URL. Runtime policy:
 

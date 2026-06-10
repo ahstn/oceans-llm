@@ -254,8 +254,9 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
         &self,
         credential_binding_id: Uuid,
         last_used_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
-        self.connection
+    ) -> Result<bool, StoreError> {
+        let changed = self
+            .connection
             .execute(
                 r#"
                 UPDATE mcp_upstream_credential_bindings
@@ -269,6 +270,6 @@ impl McpUpstreamCredentialRepository for LibsqlStore {
             )
             .await
             .map_err(to_write_error)?;
-        Ok(())
+        Ok(changed > 0)
     }
 }

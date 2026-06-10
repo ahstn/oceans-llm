@@ -228,8 +228,8 @@ impl McpUpstreamCredentialRepository for PostgresStore {
         &self,
         credential_binding_id: Uuid,
         last_used_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
-        sqlx::query(
+    ) -> Result<bool, StoreError> {
+        let result = sqlx::query(
             r#"
             UPDATE mcp_upstream_credential_bindings
             SET last_used_at = $1, updated_at = $1
@@ -241,6 +241,6 @@ impl McpUpstreamCredentialRepository for PostgresStore {
         .execute(&self.pool)
         .await
         .map_err(to_write_error)?;
-        Ok(())
+        Ok(result.rows_affected() > 0)
     }
 }

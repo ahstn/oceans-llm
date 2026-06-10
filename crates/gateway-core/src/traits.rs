@@ -652,7 +652,7 @@ pub trait McpUpstreamCredentialRepository: Send + Sync {
         &self,
         credential_binding_id: Uuid,
         last_used_at: OffsetDateTime,
-    ) -> Result<(), StoreError>;
+    ) -> Result<bool, StoreError>;
 }
 
 #[async_trait]

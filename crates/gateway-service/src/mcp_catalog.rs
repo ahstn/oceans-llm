@@ -333,6 +333,18 @@ fn score_record(record: &McpCatalogToolRecord, query_tokens: &[String]) -> i64 {
         record.server.server_key.as_str(),
         record.server.display_name.as_str(),
     ];
+    let name_tokens = name_fields
+        .iter()
+        .flat_map(|field| tokenize(field))
+        .collect::<Vec<_>>();
+    let description_tokens = description_fields
+        .iter()
+        .flat_map(|field| tokenize(field))
+        .collect::<Vec<_>>();
+    let server_tokens = server_fields
+        .iter()
+        .flat_map(|field| tokenize(field))
+        .collect::<Vec<_>>();
 
     let mut score = 0;
     for token in query_tokens {
@@ -341,28 +353,21 @@ fn score_record(record: &McpCatalogToolRecord, query_tokens: &[String]) -> i64 {
             .any(|field| field.eq_ignore_ascii_case(token))
         {
             score += 100;
-        } else if name_fields
+        } else if name_tokens.iter().any(|field_token| field_token == token) {
+            score += 60;
+        } else if name_tokens
             .iter()
-            .flat_map(|field| tokenize(field))
             .any(|field_token| field_token.starts_with(token))
         {
-            score += 60;
-        } else if name_fields
-            .iter()
-            .flat_map(|field| tokenize(field))
-            .any(|field_token| field_token == *token)
-        {
             score += 45;
-        } else if description_fields
+        } else if description_tokens
             .iter()
-            .flat_map(|field| tokenize(field))
-            .any(|field_token| field_token == *token)
+            .any(|field_token| field_token == token)
         {
             score += 20;
-        } else if server_fields
+        } else if server_tokens
             .iter()
-            .flat_map(|field| tokenize(field))
-            .any(|field_token| field_token == *token || field_token.starts_with(token))
+            .any(|field_token| field_token == token || field_token.starts_with(token))
         {
             score += 10;
         }

@@ -846,6 +846,16 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -876,6 +886,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Envelope_McpCredentialBindingPayload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAiErrorEnvelopeView"
                 }
               }
             }

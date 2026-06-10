@@ -2,7 +2,8 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use gateway_core::{
     AuthenticatedApiKey, ExternalMcpAuthMode, ExternalMcpServerRecord, ExternalMcpServerStatus,
-    GatewayError, McpRegistryRepository, McpUpstreamCredentialRepository, StoreError,
+    GatewayError, IdentityRepository, McpRegistryRepository, McpUpstreamCredentialRepository,
+    StoreError,
 };
 
 use crate::mcp_credentials::McpCredentialService;
@@ -56,7 +57,7 @@ where
 
 impl<R> McpGatewayService<R>
 where
-    R: McpRegistryRepository + McpUpstreamCredentialRepository,
+    R: McpRegistryRepository + McpUpstreamCredentialRepository + IdentityRepository,
 {
     pub async fn prepare_upstream_for_auth(
         &self,

@@ -2810,6 +2810,14 @@ export interface operations {
                     "application/json": components["schemas"]["Envelope_McpCredentialBindingsPayload"];
                 };
             };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
         };
     };
     upsert_mcp_credential_binding: {
@@ -2831,6 +2839,14 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_McpCredentialBindingPayload"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
                 };
             };
         };

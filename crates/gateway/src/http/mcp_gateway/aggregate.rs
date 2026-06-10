@@ -123,7 +123,7 @@ async fn handle_post(
                     "MCP session id is required",
                 );
             };
-            match validate_session(&state, &auth, &token_hash, false).await {
+            match validate_session(&state, &auth, &token_hash, false, None).await {
                 Ok(session) if session.session_id == session_id => {
                     match state
                         .store
@@ -182,7 +182,7 @@ async fn initialize_session(
     state: &AppState,
     auth: &AuthenticatedApiKey,
     id: JsonRpcId,
-    protocol_version: String,
+    _protocol_version: String,
 ) -> Response<Body> {
     let now = OffsetDateTime::now_utc();
     let session_id = Uuid::new_v4();
@@ -196,11 +196,7 @@ async fn initialize_session(
         owner_user_id: auth.owner_user_id,
         owner_team_id: auth.owner_team_id,
         owner_service_account_id: auth.owner_service_account_id,
-        protocol_version: if protocol_version.trim().is_empty() {
-            DEFAULT_PROTOCOL_VERSION.to_string()
-        } else {
-            protocol_version
-        },
+        protocol_version: DEFAULT_PROTOCOL_VERSION.to_string(),
         expires_at: now + Duration::hours(SESSION_TTL_HOURS),
         created_at: now,
     };
@@ -226,7 +222,7 @@ async fn handle_delete(
     let Some((session_id, token_hash)) = session_identity(headers) else {
         return session_http_error(StatusCode::BAD_REQUEST, None, "MCP session id is required");
     };
-    match validate_session(state, auth, &token_hash, false).await {
+    match validate_session(state, auth, &token_hash, false, None).await {
         Ok(session) if session.session_id == session_id => {
             match state
                 .store
@@ -258,7 +254,7 @@ async fn validate_request_session(
             "MCP session id is required",
         ));
     };
-    let session = validate_session(state, auth, &token_hash, true).await?;
+    let session = validate_session(state, auth, &token_hash, true, Some(id)).await?;
     if session.session_id != session_id {
         return Err(session_http_error(
             StatusCode::NOT_FOUND,
@@ -286,6 +282,7 @@ async fn validate_session(
     auth: &AuthenticatedApiKey,
     token_hash: &str,
     require_initialized: bool,
+    request_id: Option<&JsonRpcId>,
 ) -> Result<gateway_core::McpAggregateSessionRecord, Response<Body>> {
     let session = match state
         .store
@@ -296,7 +293,7 @@ async fn validate_session(
         Ok(None) => {
             return Err(session_http_error(
                 StatusCode::NOT_FOUND,
-                None,
+                request_id.cloned(),
                 "MCP session was not found",
             ));
         }
@@ -310,7 +307,7 @@ async fn validate_session(
     {
         return Err(session_http_error(
             StatusCode::NOT_FOUND,
-            None,
+            request_id.cloned(),
             "MCP session was not found",
         ));
     }
@@ -318,14 +315,14 @@ async fn validate_session(
     if session.revoked_at.is_some() || session.expires_at <= now {
         return Err(session_http_error(
             StatusCode::NOT_FOUND,
-            None,
+            request_id.cloned(),
             "MCP session was not found",
         ));
     }
     if require_initialized && !session.initialized {
         return Err(session_http_error(
             StatusCode::BAD_REQUEST,
-            None,
+            request_id.cloned(),
             "MCP session has not completed initialization",
         ));
     }
@@ -458,7 +455,7 @@ async fn call_catalog_tool(
                 None,
             );
         }
-        Err(error) => return mcp_error_response(error),
+        Err(error) => return aggregate_gateway_error(id, error, json!({"address": input.address})),
     };
     if let Some(schema_hash) = input.schema_hash.as_deref()
         && schema_hash != record.tool.schema_hash
@@ -503,7 +500,13 @@ async fn call_catalog_tool(
                 json!({"address": input.address, "server_key": record.server.server_key}),
             );
         }
-        Err(error) => return mcp_error_response(error),
+        Err(error) => {
+            return aggregate_gateway_error(
+                id,
+                error,
+                json!({"address": input.address, "server_key": record.server.server_key}),
+            );
+        }
     };
 
     let client =
@@ -511,7 +514,11 @@ async fn call_catalog_tool(
             Ok(client) => client,
             Err(error) => {
                 let gateway_error = map_mcp_client_error(error);
-                return mcp_error_response(gateway_error);
+                return aggregate_gateway_error(
+                    id,
+                    gateway_error,
+                    json!({"address": input.address, "server_key": record.server.server_key}),
+                );
             }
         };
     let arguments = if input.arguments.is_null() {
@@ -630,6 +637,14 @@ fn aggregate_tool_error(
             .unwrap_or_else(serialization_error),
         None,
     )
+}
+
+fn aggregate_gateway_error(
+    id: JsonRpcId,
+    error: GatewayError,
+    structured: Value,
+) -> Response<Body> {
+    aggregate_tool_error(id, error.to_string(), error.error_code(), structured)
 }
 
 fn upstream_timeout(upstream: &gateway_service::McpGatewayUpstream) -> StdDuration {

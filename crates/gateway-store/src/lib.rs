@@ -738,13 +738,15 @@ mod tests {
         assert_eq!(user_filtered.len(), 1);
 
         let last_used_at = now + Duration::minutes(5);
-        store
-            .touch_mcp_upstream_credential_binding_last_used(
-                binding.credential_binding_id,
-                last_used_at,
-            )
-            .await
-            .expect("touch last used");
+        assert!(
+            store
+                .touch_mcp_upstream_credential_binding_last_used(
+                    binding.credential_binding_id,
+                    last_used_at,
+                )
+                .await
+                .expect("touch last used")
+        );
         let touched = store
             .get_active_mcp_upstream_credential_binding(server.mcp_server_id, &scope_key)
             .await
@@ -770,6 +772,15 @@ mod tests {
                 .await
                 .expect("get revoked credential")
                 .is_none()
+        );
+        assert!(
+            !store
+                .touch_mcp_upstream_credential_binding_last_used(
+                    binding.credential_binding_id,
+                    now + Duration::minutes(15),
+                )
+                .await
+                .expect("touch revoked credential")
         );
         assert_eq!(
             store
