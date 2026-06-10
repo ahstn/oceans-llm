@@ -6,6 +6,8 @@ pub mod budget_guard;
 pub mod budget_scopes;
 pub mod icon_identity;
 pub mod mcp_access;
+pub mod mcp_catalog;
+pub mod mcp_credentials;
 pub mod mcp_gateway;
 pub mod mcp_invocation_logging;
 pub mod mcp_registry;
@@ -37,6 +39,16 @@ pub use icon_identity::{
     resolve_provider_display_from_parts,
 };
 pub use mcp_access::{McpAccess, grant_subjects};
+pub use mcp_catalog::{
+    CallMcpToolInput, DescribeMcpToolInput, DescribeMcpToolOutput, MAX_SEARCH_LIMIT,
+    MCP_CATALOG_RANKER, McpCatalog, McpCatalogSearchItem, McpCatalogServerView,
+    McpCatalogToolDescription, McpCatalogToolSummary, SearchMcpToolsInput, SearchMcpToolsOutput,
+    parse_tool_address, tool_address,
+};
+pub use mcp_credentials::{
+    McpCredentialService, RedactedMcpCredentialBinding, ResolvedMcpCredential,
+    UpsertMcpCredentialBindingInput, credential_owner_scope_key,
+};
 pub use mcp_gateway::{McpGatewayService, McpGatewayUpstream};
 pub use mcp_invocation_logging::{
     LoggedMcpToolInvocation, McpInvocationLogInput, McpInvocationLogging,

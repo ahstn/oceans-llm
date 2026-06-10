@@ -119,6 +119,10 @@ pub enum GatewayError {
     NotImplemented(String),
     #[error("MCP upstream auth requires user-scoped credentials for server `{server_key}`")]
     McpUpstreamAuthRequired { server_key: String },
+    #[error("MCP credential is required for server `{server_key}`")]
+    McpCredentialRequired { server_key: String },
+    #[error("MCP credential for server `{server_key}` is expired")]
+    McpCredentialExpired { server_key: String },
     #[error("internal error: {0}")]
     Internal(String),
 }
@@ -149,7 +153,9 @@ impl GatewayError {
             Self::Store(StoreError::Conflict(_)) => 409,
             Self::Route(RouteError::ModelNotFound(_)) => 404,
             Self::NotImplemented(_) | Self::Provider(ProviderError::NotImplemented(_)) => 501,
-            Self::McpUpstreamAuthRequired { .. } => 403,
+            Self::McpUpstreamAuthRequired { .. }
+            | Self::McpCredentialRequired { .. }
+            | Self::McpCredentialExpired { .. } => 403,
             Self::Provider(ProviderError::InvalidRequest(_)) => 400,
             Self::Provider(ProviderError::UpstreamHttp { status, .. }) => *status,
             Self::Provider(ProviderError::Timeout) => 504,
@@ -179,7 +185,9 @@ impl GatewayError {
             Self::PayloadTooLarge { .. } => "invalid_request_error",
             Self::Provider(_) => "upstream_error",
             Self::NotImplemented(_) => "not_implemented_error",
-            Self::McpUpstreamAuthRequired { .. } => "authentication_error",
+            Self::McpUpstreamAuthRequired { .. }
+            | Self::McpCredentialRequired { .. }
+            | Self::McpCredentialExpired { .. } => "authentication_error",
             Self::Internal(_) => "internal_error",
         }
     }
@@ -221,6 +229,8 @@ impl GatewayError {
             Self::PayloadTooLarge { .. } => "request_body_too_large",
             Self::NotImplemented(_) => "not_implemented",
             Self::McpUpstreamAuthRequired { .. } => "mcp_upstream_auth_required",
+            Self::McpCredentialRequired { .. } => "credential_required",
+            Self::McpCredentialExpired { .. } => "credential_expired",
             Self::Internal(_) => "internal_error",
         }
     }

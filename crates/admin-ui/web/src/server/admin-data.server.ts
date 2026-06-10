@@ -29,6 +29,9 @@ import type {
   McpInvocationFiltersInput,
   McpInvocationPageView,
   McpDiscoveryRefreshPayload,
+  McpCredentialBindingPayload,
+  McpCredentialBindingsPayload,
+  McpCredentialBindingsQuery,
   McpEffectiveAccessPayload,
   McpEffectiveAccessQuery,
   McpGrantPayload,
@@ -60,6 +63,7 @@ import type {
   UpsertBudgetInput,
   UpsertBudgetResultView,
   UpsertMcpGrantInput,
+  UpsertMcpCredentialBindingInput,
 } from '@/types/api'
 import {
   createGatewayApiClient,
@@ -444,6 +448,37 @@ export async function revokeMcpGrant(
 ): Promise<ApiEnvelope<McpGrantsPayload>> {
   const client = createGatewayApiClient()
   return unwrapGatewayResponse(await client.DELETE('/api/v1/admin/mcp/grants', { body: input }))
+}
+
+export async function listMcpCredentialBindings(
+  params?: McpCredentialBindingsQuery,
+): Promise<ApiEnvelope<McpCredentialBindingsPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.GET('/api/v1/admin/mcp/credential-bindings', {
+      params: { query: params },
+    }),
+  )
+}
+
+export async function upsertMcpCredentialBinding(
+  input: UpsertMcpCredentialBindingInput,
+): Promise<ApiEnvelope<McpCredentialBindingPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.PUT('/api/v1/admin/mcp/credential-bindings', { body: input }),
+  )
+}
+
+export async function revokeMcpCredentialBinding(
+  credentialBindingId: string,
+): Promise<ApiEnvelope<McpCredentialBindingsPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.DELETE('/api/v1/admin/mcp/credential-bindings/{credential_binding_id}', {
+      params: { path: { credential_binding_id: credentialBindingId } },
+    }),
+  )
 }
 
 export async function previewMcpEffectiveAccess(

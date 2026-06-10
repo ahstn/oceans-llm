@@ -28,6 +28,7 @@ import {
   listMcpInvocations,
   listMcpServers,
   listMcpServerTools,
+  listMcpCredentialBindings,
   listMcpGrants,
   listMcpToolsets,
   listSpendBudgets,
@@ -40,6 +41,7 @@ import {
   removeTeamMember,
   revokeApiKey,
   refreshMcpServerDiscovery,
+  revokeMcpCredentialBinding,
   replaceMcpToolsetTools,
   resendPasswordInvite,
   resetUserOnboarding,
@@ -50,6 +52,7 @@ import {
   updateMcpToolset,
   updateTeam,
   updateUser,
+  upsertMcpCredentialBinding,
   upsertMcpGrant,
   createMcpToolset,
   disableMcpToolset,
@@ -240,6 +243,24 @@ export const getMcpServerTools = createServerFn({ method: 'GET' }).handler(
 export const refreshExternalMcpServerDiscovery = createServerFn({ method: 'POST' }).handler(
   async ({ data }: { data: { serverId: string } }) => {
     return refreshMcpServerDiscovery(data.serverId)
+  },
+)
+
+export const getMcpCredentialBindings = createServerFn({ method: 'GET' }).handler(
+  async ({ data }: { data?: Parameters<typeof listMcpCredentialBindings>[0] }) => {
+    return listMcpCredentialBindings(data)
+  },
+)
+
+export const saveMcpCredentialBinding = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: Parameters<typeof upsertMcpCredentialBinding>[0] }) => {
+    return upsertMcpCredentialBinding(data)
+  },
+)
+
+export const removeMcpCredentialBinding = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: { credentialBindingId: string } }) => {
+    return revokeMcpCredentialBinding(data.credentialBindingId)
   },
 )
 

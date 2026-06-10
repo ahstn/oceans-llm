@@ -9,23 +9,35 @@ import { requireAdminSession } from '@/routes/-admin-guard'
 import {
   addMcpServer,
   disableExternalMcpServer,
+  getMcpCredentialBindings,
   getMcpServers,
   getMcpServerTools,
   getRecommendedMcpServers,
+  removeMcpCredentialBinding,
   refreshExternalMcpServerDiscovery,
   saveMcpServer,
+  saveMcpCredentialBinding,
 } from '@/server/admin-data.functions'
-import type { McpServerView, McpToolView, RecommendedMcpServerView } from '@/types/api'
+import type {
+  McpCredentialBindingView,
+  McpServerView,
+  McpToolView,
+  RecommendedMcpServerView,
+} from '@/types/api'
 import {
   MetricLabel,
+  CredentialBindingsPanel,
   ServerDetail,
   ServerFormDialog,
   ServerStatusBadge,
+  emptyCredentialBindingForm,
   emptyServerForm,
   formFromRecommended,
   formFromServer,
+  formToCredentialBindingInput,
   formToCreateInput,
   formToUpdateInput,
+  type CredentialBindingFormState,
   type ServerFormState,
 } from './-components'
 
@@ -60,6 +72,12 @@ export function McpServersPage() {
   const [tools, setTools] = useState<McpToolView[]>([])
   const [toolsPending, setToolsPending] = useState(false)
   const [toolsError, setToolsError] = useState<string | null>(null)
+  const [credentialBindings, setCredentialBindings] = useState<McpCredentialBindingView[]>([])
+  const [credentialBindingsPending, setCredentialBindingsPending] = useState(false)
+  const [credentialBindingsError, setCredentialBindingsError] = useState<string | null>(null)
+  const [credentialForm, setCredentialForm] = useState<CredentialBindingFormState>(() =>
+    emptyCredentialBindingForm(),
+  )
   const [refreshStatus, setRefreshStatus] = useState<string | null>(null)
   const [refreshErrorSummary, setRefreshErrorSummary] = useState<string | null>(null)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
@@ -105,6 +123,48 @@ export function McpServersPage() {
       cancelled = true
     }
   }, [selectedServer])
+
+  useEffect(() => {
+    if (!selectedServer) {
+      setCredentialBindings([])
+      setCredentialBindingsError(null)
+      setCredentialBindingsPending(false)
+      return
+    }
+
+    let cancelled = false
+    setCredentialBindingsPending(true)
+    setCredentialBindingsError(null)
+    void loadCredentialBindings(selectedServer.id)
+      .then((items) => {
+        if (!cancelled) {
+          setCredentialBindings(items)
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setCredentialBindingsError(
+            error instanceof Error ? error.message : 'Failed to load MCP credential bindings',
+          )
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setCredentialBindingsPending(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedServer])
+
+  async function loadCredentialBindings(serverId: string) {
+    const response = await getMcpCredentialBindings({
+      data: { server_id: serverId, include_revoked: true },
+    })
+    return response.data.items
+  }
 
   function selectServer(serverId: string) {
     setSelectedServerId(serverId)
@@ -231,6 +291,41 @@ export function McpServersPage() {
     })
   }
 
+  function handleCreateCredentialBinding(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!selectedServer) {
+      return
+    }
+    const input = formToCredentialBindingInput(selectedServer.id, credentialForm)
+    if (!input) {
+      return
+    }
+    startTransition(async () => {
+      try {
+        await saveMcpCredentialBinding({ data: input })
+        toast.success('Credential binding saved')
+        setCredentialForm(emptyCredentialBindingForm())
+        setCredentialBindings(await loadCredentialBindings(selectedServer.id))
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Failed to save credential binding')
+      }
+    })
+  }
+
+  function handleRevokeCredentialBinding(binding: McpCredentialBindingView) {
+    startTransition(async () => {
+      try {
+        await removeMcpCredentialBinding({ data: { credentialBindingId: binding.id } })
+        toast.success('Credential binding revoked')
+        if (selectedServer) {
+          setCredentialBindings(await loadCredentialBindings(selectedServer.id))
+        }
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Failed to revoke credential binding')
+      }
+    })
+  }
+
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <Card className="min-w-0">
@@ -253,18 +348,29 @@ export function McpServersPage() {
           />
           <div className="min-w-0">
             {selectedServer ? (
-              <ServerDetail
-                server={selectedServer}
-                tools={tools}
-                toolsPending={toolsPending}
-                toolsError={toolsError}
-                refreshStatus={refreshStatus}
-                refreshErrorSummary={refreshErrorSummary}
-                actionPending={isPending}
-                onEdit={openEditDialog}
-                onDisable={handleDisableServer}
-                onRefresh={handleRefreshDiscovery}
-              />
+              <div className="flex min-w-0 flex-col gap-4">
+                <ServerDetail
+                  server={selectedServer}
+                  tools={tools}
+                  toolsPending={toolsPending}
+                  toolsError={toolsError}
+                  refreshStatus={refreshStatus}
+                  refreshErrorSummary={refreshErrorSummary}
+                  actionPending={isPending}
+                  onEdit={openEditDialog}
+                  onDisable={handleDisableServer}
+                  onRefresh={handleRefreshDiscovery}
+                />
+                <CredentialBindingsPanel
+                  bindings={credentialBindings}
+                  form={credentialForm}
+                  pending={isPending || credentialBindingsPending}
+                  error={credentialBindingsError}
+                  onFormChange={setCredentialForm}
+                  onSubmit={handleCreateCredentialBinding}
+                  onRevoke={handleRevokeCredentialBinding}
+                />
+              </div>
             ) : (
               <Empty>
                 <EmptyHeader>

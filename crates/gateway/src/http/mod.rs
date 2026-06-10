@@ -186,6 +186,14 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
                 .delete(revoke_mcp_grant),
         )
         .route(
+            "/api/v1/admin/mcp/credential-bindings",
+            get(list_mcp_credential_bindings).put(upsert_mcp_credential_binding),
+        )
+        .route(
+            "/api/v1/admin/mcp/credential-bindings/{credential_binding_id}",
+            axum::routing::delete(revoke_mcp_credential_binding),
+        )
+        .route(
             "/api/v1/admin/mcp/effective-access",
             get(preview_mcp_effective_access),
         )
@@ -220,6 +228,12 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
         .route("/v1/chat/completions", post(v1_chat_completions))
         .route("/v1/responses", post(v1_responses))
         .route("/v1/embeddings", post(v1_embeddings))
+        .route(
+            "/mcp",
+            post(mcp_aggregate_streamable_http)
+                .get(mcp_aggregate_streamable_http)
+                .delete(mcp_aggregate_streamable_http),
+        )
         .route(
             "/mcp/{server_key}",
             post(mcp_streamable_http_proxy)

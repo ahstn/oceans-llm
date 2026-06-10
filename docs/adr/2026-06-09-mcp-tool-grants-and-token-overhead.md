@@ -40,4 +40,4 @@ Revoked and stale grants remain auditable. They do not imply compatibility fallb
 
 - Add richer admin UI controls for toolset and grant workflows.
 - Add tokenizer-backed high-confidence estimates for known model families.
-- Add user-scoped OAuth credentials before enabling `user_passthrough` and `oauth_obo` proxying.
+- Add execution-time upstream credentials before enabling `user_passthrough` and `oauth_obo` proxying. Completed by [ADR: MCP Upstream Credential Bindings And Aggregate Execution](./2026-06-09-mcp-upstream-credential-bindings-and-execution.md).

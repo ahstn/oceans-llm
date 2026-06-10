@@ -3,6 +3,8 @@ mod budget_alerts;
 mod budgets;
 mod identity;
 mod mcp_access;
+mod mcp_aggregate_sessions;
+mod mcp_credentials;
 mod mcp_registry;
 mod mcp_token_overhead;
 mod mcp_tool_invocations;
@@ -27,16 +29,20 @@ use gateway_core::{
     ExternalMcpDiscoveryStatus, ExternalMcpServerRecord, ExternalMcpServerStatus,
     ExternalMcpToolRecord, ExternalMcpTransport, FocusExportAggregateRecord,
     FocusExportDiagnosticsRecord, GatewayModel, GlobalRole, IdentityRepository, IdentityUserRecord,
-    MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, McpAccessRepository, McpAccessResolution, McpGrantSubject,
-    McpRegistryRepository, McpTokenEstimateConfidence, McpTokenEstimateSource,
-    McpTokenOverheadRepository, McpToolGrantRecord, McpToolGrantSubjectKind,
-    McpToolGrantTargetKind, McpToolInvocationDetail, McpToolInvocationPage,
-    McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
-    McpToolInvocationRepository, McpToolInvocationStatus, McpToolPolicyResult,
-    McpToolTokenEstimateRecord, McpToolsetRecord, McpToolsetStatus, McpToolsetToolRecord,
-    MembershipRole, ModelAccessMode, ModelPricingRecord, ModelRepository, ModelRoute, Money4,
-    NewApiKeyRecord, NewExternalMcpServerRecord, NewMcpToolsetRecord, OauthJitMembership,
-    OauthJitPolicy, OauthLoginStateRecord, OauthProviderRecord, OidcJitMembership, OidcJitPolicy,
+    MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, McpAccessRepository, McpAccessResolution,
+    McpAggregateSessionRecord, McpAggregateSessionRepository, McpCatalogAccessResolution,
+    McpCatalogToolRecord, McpGrantSubject, McpRegistryRepository, McpTokenEstimateConfidence,
+    McpTokenEstimateSource, McpTokenOverheadRepository, McpToolGrantRecord,
+    McpToolGrantSubjectKind, McpToolGrantTargetKind, McpToolInvocationDetail,
+    McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
+    McpToolInvocationRecord, McpToolInvocationRepository, McpToolInvocationStatus,
+    McpToolPolicyResult, McpToolTokenEstimateRecord, McpToolsetRecord, McpToolsetStatus,
+    McpToolsetToolRecord, McpUpstreamCredentialBindingRecord, McpUpstreamCredentialMaterialKind,
+    McpUpstreamCredentialOwnerScopeKind, McpUpstreamCredentialRepository,
+    McpUpstreamSecretStorageKind, MembershipRole, ModelAccessMode, ModelPricingRecord,
+    ModelRepository, ModelRoute, Money4, NewApiKeyRecord, NewExternalMcpServerRecord,
+    NewMcpAggregateSessionRecord, NewMcpToolsetRecord, OauthJitMembership, OauthJitPolicy,
+    OauthLoginStateRecord, OauthProviderRecord, OidcJitMembership, OidcJitPolicy,
     OidcLoginStateRecord, OidcProviderRecord, PasswordInvitationRecord, PricingCatalogCacheRecord,
     PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
     ProviderConnection, ProviderRepository, RequestAttemptRecord, RequestAttemptRepository,
@@ -46,9 +52,9 @@ use gateway_core::{
     SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord, StoreError,
     StoreHealth, TeamMembershipRecord, TeamRecord, UpdateExternalMcpServerRecord,
     UpdateMcpToolsetRecord, UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
-    UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord, UsageLedgerRecord,
-    UsagePricingStatus, UserOauthAuthRecord, UserOidcAuthRecord, UserPasswordAuthRecord,
-    UserRecord, UserSessionRecord, UserStatus,
+    UpsertMcpUpstreamCredentialBindingRecord, UsageLeaderboardBucketRecord,
+    UsageLeaderboardUserRecord, UsageLedgerRecord, UsagePricingStatus, UserOauthAuthRecord,
+    UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;

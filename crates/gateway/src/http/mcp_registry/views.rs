@@ -1,8 +1,11 @@
 use gateway_core::{
     ExternalMcpAuthMode, ExternalMcpServerRecord, ExternalMcpToolRecord, GatewayError,
     McpToolGrantRecord, McpToolGrantSubjectKind, McpToolGrantTargetKind, McpToolsetRecord,
+    McpUpstreamCredentialMaterialKind, McpUpstreamCredentialOwnerScopeKind,
 };
-use gateway_service::{McpDiscoveryResult, RecommendedMcpServerCatalogEntry};
+use gateway_service::{
+    McpDiscoveryResult, RecommendedMcpServerCatalogEntry, RedactedMcpCredentialBinding,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use utoipa::{IntoParams, ToSchema};
@@ -183,6 +186,45 @@ pub struct McpEffectiveAccessPayload {
     pub(super) tools: Vec<McpToolView>,
 }
 
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct McpCredentialBindingsQuery {
+    pub(super) server_id: Option<Uuid>,
+    pub(super) owner_scope_kind: Option<String>,
+    pub(super) owner_scope_id: Option<Uuid>,
+    #[serde(default)]
+    pub(super) include_revoked: bool,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct McpCredentialBindingsPayload {
+    pub(super) items: Vec<McpCredentialBindingView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct McpCredentialBindingPayload {
+    pub(super) binding: McpCredentialBindingView,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct McpCredentialBindingView {
+    id: String,
+    server_id: String,
+    owner_scope_kind: String,
+    owner_scope_key: String,
+    owner_user_id: Option<String>,
+    owner_team_id: Option<String>,
+    owner_service_account_id: Option<String>,
+    material_kind: String,
+    header_name: Option<String>,
+    storage_kind: String,
+    secret_ref: Option<String>,
+    expires_at: Option<String>,
+    created_at: String,
+    updated_at: String,
+    last_used_at: Option<String>,
+    revoked_at: Option<String>,
+}
+
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateMcpToolsetRequest {
     pub(super) toolset_key: String,
@@ -207,6 +249,24 @@ pub struct UpsertMcpGrantRequest {
     pub(super) subject_id: Uuid,
     pub(super) target_kind: String,
     pub(super) target_id: Uuid,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct UpsertMcpCredentialBindingRequest {
+    pub(super) credential_binding_id: Option<Uuid>,
+    pub(super) server_id: Uuid,
+    pub(super) owner_scope_kind: String,
+    pub(super) owner_user_id: Option<Uuid>,
+    pub(super) owner_team_id: Option<Uuid>,
+    pub(super) owner_service_account_id: Option<Uuid>,
+    pub(super) material_kind: String,
+    pub(super) header_name: Option<String>,
+    pub(super) secret: Option<String>,
+    pub(super) secret_ref: Option<String>,
+    pub(super) expires_at: Option<time::OffsetDateTime>,
+    #[serde(default)]
+    #[schema(additional_properties = true)]
+    pub(super) metadata: Map<String, Value>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -278,6 +338,31 @@ pub(super) fn map_server(server: ExternalMcpServerRecord) -> McpServerView {
     }
 }
 
+pub(super) fn map_credential_binding(
+    binding: RedactedMcpCredentialBinding,
+) -> McpCredentialBindingView {
+    McpCredentialBindingView {
+        id: binding.credential_binding_id.to_string(),
+        server_id: binding.mcp_server_id.to_string(),
+        owner_scope_kind: binding.owner_scope_kind.as_str().to_string(),
+        owner_scope_key: binding.owner_scope_key,
+        owner_user_id: binding.owner_user_id.map(|value| value.to_string()),
+        owner_team_id: binding.owner_team_id.map(|value| value.to_string()),
+        owner_service_account_id: binding
+            .owner_service_account_id
+            .map(|value| value.to_string()),
+        material_kind: binding.material_kind.as_str().to_string(),
+        header_name: binding.header_name,
+        storage_kind: binding.storage_kind.as_str().to_string(),
+        secret_ref: binding.secret_ref,
+        expires_at: binding.expires_at.map(format_timestamp),
+        created_at: format_timestamp(binding.created_at),
+        updated_at: format_timestamp(binding.updated_at),
+        last_used_at: binding.last_used_at.map(format_timestamp),
+        revoked_at: binding.revoked_at.map(format_timestamp),
+    }
+}
+
 pub(super) fn map_tool(tool: ExternalMcpToolRecord) -> McpToolView {
     McpToolView {
         id: tool.mcp_tool_id.to_string(),
@@ -345,6 +430,26 @@ pub(super) fn parse_grant_target_kind(value: &str) -> Result<McpToolGrantTargetK
     McpToolGrantTargetKind::from_db(value).ok_or_else(|| {
         GatewayError::InvalidRequest(format!(
             "invalid MCP grant target_kind `{value}`; expected tool or toolset"
+        ))
+    })
+}
+
+pub(super) fn parse_credential_owner_scope_kind(
+    value: &str,
+) -> Result<McpUpstreamCredentialOwnerScopeKind, GatewayError> {
+    McpUpstreamCredentialOwnerScopeKind::from_db(value).ok_or_else(|| {
+        GatewayError::InvalidRequest(format!(
+            "invalid MCP credential owner_scope_kind `{value}`; expected user, team, or service_account"
+        ))
+    })
+}
+
+pub(super) fn parse_credential_material_kind(
+    value: &str,
+) -> Result<McpUpstreamCredentialMaterialKind, GatewayError> {
+    McpUpstreamCredentialMaterialKind::from_db(value).ok_or_else(|| {
+        GatewayError::InvalidRequest(format!(
+            "invalid MCP credential material_kind `{value}`; expected static_header, bearer_token, or oauth_tokens"
         ))
     })
 }

@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
 use super::*;
-use crate::shared::{parse_uuid, unix_to_datetime};
+use crate::shared::{json_object_from_str, parse_uuid, unix_to_datetime};
 
 const TOOLSET_COLUMNS: &str = "toolset_id, toolset_key, display_name, description, status, created_at, updated_at, disabled_at";
 const TOOL_COLUMNS: &str = "t.mcp_tool_id, t.mcp_server_id, t.upstream_name, t.display_name, t.description, t.input_schema_json::text, t.schema_hash, t.schema_version, t.is_active, t.first_discovered_at, t.last_discovered_at, t.deactivated_at";
+const SERVER_COLUMNS: &str = "s.mcp_server_id, s.server_key, s.display_name, s.description, s.transport, s.server_url, s.auth_mode, s.auth_config_json::text, s.timeout_ms, s.status, s.last_discovery_status, s.last_discovery_at, s.last_successful_discovery_at, s.last_error_summary, s.last_tool_count, s.created_at, s.updated_at, s.disabled_at";
 
 fn decode_toolset(row: &PgRow) -> Result<McpToolsetRecord, StoreError> {
     let status: String = row.try_get(4).map_err(to_query_error)?;
@@ -69,6 +70,63 @@ fn decode_tool(row: &PgRow) -> Result<ExternalMcpToolRecord, StoreError> {
         first_discovered_at: unix_to_datetime(row.try_get(9).map_err(to_query_error)?)?,
         last_discovered_at: unix_to_datetime(row.try_get(10).map_err(to_query_error)?)?,
         deactivated_at: deactivated_at.map(unix_to_datetime).transpose()?,
+    })
+}
+
+fn decode_server_at(row: &PgRow, offset: usize) -> Result<ExternalMcpServerRecord, StoreError> {
+    let transport: String = row.try_get(offset + 4).map_err(to_query_error)?;
+    let auth_mode: String = row.try_get(offset + 6).map_err(to_query_error)?;
+    let auth_config_json: String = row.try_get(offset + 7).map_err(to_query_error)?;
+    let status: String = row.try_get(offset + 9).map_err(to_query_error)?;
+    let last_discovery_status: Option<String> = row.try_get(offset + 10).map_err(to_query_error)?;
+    let last_discovery_at: Option<i64> = row.try_get(offset + 11).map_err(to_query_error)?;
+    let last_successful_discovery_at: Option<i64> =
+        row.try_get(offset + 12).map_err(to_query_error)?;
+    let disabled_at: Option<i64> = row.try_get(offset + 17).map_err(to_query_error)?;
+
+    Ok(ExternalMcpServerRecord {
+        mcp_server_id: parse_uuid(&row.try_get::<String, _>(offset).map_err(to_query_error)?)?,
+        server_key: row.try_get(offset + 1).map_err(to_query_error)?,
+        display_name: row.try_get(offset + 2).map_err(to_query_error)?,
+        description: row.try_get(offset + 3).map_err(to_query_error)?,
+        transport: ExternalMcpTransport::from_db(&transport).ok_or_else(|| {
+            StoreError::Serialization(format!("invalid external MCP transport `{transport}`"))
+        })?,
+        server_url: row.try_get(offset + 5).map_err(to_query_error)?,
+        auth_mode: ExternalMcpAuthMode::from_db(&auth_mode).ok_or_else(|| {
+            StoreError::Serialization(format!("invalid external MCP auth mode `{auth_mode}`"))
+        })?,
+        auth_config: json_object_from_str(&auth_config_json)?,
+        timeout_ms: row.try_get(offset + 8).map_err(to_query_error)?,
+        status: ExternalMcpServerStatus::from_db(&status).ok_or_else(|| {
+            StoreError::Serialization(format!("invalid external MCP server status `{status}`"))
+        })?,
+        last_discovery_status: last_discovery_status
+            .as_deref()
+            .map(|value| {
+                ExternalMcpDiscoveryStatus::from_db(value).ok_or_else(|| {
+                    StoreError::Serialization(format!(
+                        "invalid external MCP discovery status `{value}`"
+                    ))
+                })
+            })
+            .transpose()?,
+        last_discovery_at: last_discovery_at.map(unix_to_datetime).transpose()?,
+        last_successful_discovery_at: last_successful_discovery_at
+            .map(unix_to_datetime)
+            .transpose()?,
+        last_error_summary: row.try_get(offset + 13).map_err(to_query_error)?,
+        last_tool_count: row.try_get(offset + 14).map_err(to_query_error)?,
+        created_at: unix_to_datetime(row.try_get(offset + 15).map_err(to_query_error)?)?,
+        updated_at: unix_to_datetime(row.try_get(offset + 16).map_err(to_query_error)?)?,
+        disabled_at: disabled_at.map(unix_to_datetime).transpose()?,
+    })
+}
+
+fn decode_catalog_tool(row: &PgRow) -> Result<McpCatalogToolRecord, StoreError> {
+    Ok(McpCatalogToolRecord {
+        tool: decode_tool(row)?,
+        server: decode_server_at(row, 12)?,
     })
 }
 
@@ -335,6 +393,43 @@ impl McpAccessRepository for PostgresStore {
         })
     }
 
+    async fn resolve_mcp_catalog_access_for_subjects(
+        &self,
+        subjects: &[McpGrantSubject],
+        server_key: Option<&str>,
+    ) -> Result<McpCatalogAccessResolution, StoreError> {
+        let exposed_tool_count = active_catalog_tool_count(&self.pool, server_key).await?;
+        let mut tools_by_id: HashMap<Uuid, McpCatalogToolRecord> = HashMap::new();
+
+        for subject in subjects {
+            collect_catalog_direct_tools(&self.pool, subject, server_key, &mut tools_by_id).await?;
+            collect_catalog_toolset_tools(&self.pool, subject, server_key, &mut tools_by_id)
+                .await?;
+        }
+
+        let mut allowed_tools: Vec<_> = tools_by_id.into_values().collect();
+        allowed_tools.sort_by(|a, b| {
+            a.server
+                .server_key
+                .cmp(&b.server.server_key)
+                .then_with(|| a.tool.upstream_name.cmp(&b.tool.upstream_name))
+                .then_with(|| a.tool.mcp_tool_id.cmp(&b.tool.mcp_tool_id))
+        });
+        let referenced_server_count = allowed_tools
+            .iter()
+            .map(|record| record.server.mcp_server_id)
+            .collect::<std::collections::HashSet<_>>()
+            .len() as i64;
+        let filtered_tool_count = exposed_tool_count.saturating_sub(allowed_tools.len() as i64);
+
+        Ok(McpCatalogAccessResolution {
+            allowed_tools,
+            referenced_server_count,
+            exposed_tool_count,
+            filtered_tool_count,
+        })
+    }
+
     async fn get_active_mcp_tool_by_name(
         &self,
         mcp_server_id: Uuid,
@@ -351,6 +446,25 @@ impl McpAccessRepository for PostgresStore {
             .map_err(to_query_error)?;
         row.as_ref().map(decode_tool).transpose()
     }
+}
+
+async fn active_catalog_tool_count(
+    pool: &PgPool,
+    server_key: Option<&str>,
+) -> Result<i64, StoreError> {
+    let row = sqlx::query(
+        r#"
+        SELECT COUNT(*)
+        FROM external_mcp_tools t
+        JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id
+        WHERE t.is_active = 1 AND s.status = 'active' AND ($1 IS NULL OR s.server_key = $1)
+        "#,
+    )
+    .bind(server_key)
+    .fetch_one(pool)
+    .await
+    .map_err(to_query_error)?;
+    row.try_get(0).map_err(to_query_error)
 }
 
 async fn active_tool_count(pool: &PgPool, mcp_server_id: Option<Uuid>) -> Result<i64, StoreError> {
@@ -411,6 +525,52 @@ async fn collect_toolset_tools(
     for row in rows {
         let tool = decode_tool(&row)?;
         out.insert(tool.mcp_tool_id, tool);
+    }
+    Ok(())
+}
+
+async fn collect_catalog_direct_tools(
+    pool: &PgPool,
+    subject: &McpGrantSubject,
+    server_key: Option<&str>,
+    out: &mut HashMap<Uuid, McpCatalogToolRecord>,
+) -> Result<(), StoreError> {
+    let sql = format!(
+        "SELECT {TOOL_COLUMNS}, {SERVER_COLUMNS} FROM mcp_tool_grants g JOIN external_mcp_tools t ON t.mcp_tool_id = g.target_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE g.is_active = 1 AND g.target_kind = 'tool' AND g.subject_kind = $1 AND g.subject_id = $2 AND t.is_active = 1 AND s.status = 'active' AND ($3 IS NULL OR s.server_key = $3)"
+    );
+    let rows = sqlx::query(&sql)
+        .bind(subject.subject_kind.as_str())
+        .bind(subject.subject_id.to_string())
+        .bind(server_key)
+        .fetch_all(pool)
+        .await
+        .map_err(to_query_error)?;
+    for row in rows {
+        let record = decode_catalog_tool(&row)?;
+        out.insert(record.tool.mcp_tool_id, record);
+    }
+    Ok(())
+}
+
+async fn collect_catalog_toolset_tools(
+    pool: &PgPool,
+    subject: &McpGrantSubject,
+    server_key: Option<&str>,
+    out: &mut HashMap<Uuid, McpCatalogToolRecord>,
+) -> Result<(), StoreError> {
+    let sql = format!(
+        "SELECT {TOOL_COLUMNS}, {SERVER_COLUMNS} FROM mcp_tool_grants g JOIN mcp_toolsets ts ON ts.toolset_id = g.target_id JOIN mcp_toolset_tools tst ON tst.toolset_id = ts.toolset_id JOIN external_mcp_tools t ON t.mcp_tool_id = tst.mcp_tool_id JOIN external_mcp_servers s ON s.mcp_server_id = t.mcp_server_id WHERE g.is_active = 1 AND g.target_kind = 'toolset' AND g.subject_kind = $1 AND g.subject_id = $2 AND ts.status = 'active' AND t.is_active = 1 AND s.status = 'active' AND ($3 IS NULL OR s.server_key = $3)"
+    );
+    let rows = sqlx::query(&sql)
+        .bind(subject.subject_kind.as_str())
+        .bind(subject.subject_id.to_string())
+        .bind(server_key)
+        .fetch_all(pool)
+        .await
+        .map_err(to_query_error)?;
+    for row in rows {
+        let record = decode_catalog_tool(&row)?;
+        out.insert(record.tool.mcp_tool_id, record);
     }
     Ok(())
 }

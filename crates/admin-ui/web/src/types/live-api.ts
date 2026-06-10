@@ -94,6 +94,14 @@ export type McpGrantView = components['schemas']['McpGrantView']
 export type McpGrantPayload = components['schemas']['McpGrantPayload']
 export type McpGrantsPayload = components['schemas']['McpGrantsPayload']
 export type UpsertMcpGrantInput = components['schemas']['UpsertMcpGrantRequest']
+export type McpCredentialBindingView = components['schemas']['McpCredentialBindingView']
+export type McpCredentialBindingPayload = components['schemas']['McpCredentialBindingPayload']
+export type McpCredentialBindingsPayload = components['schemas']['McpCredentialBindingsPayload']
+export type UpsertMcpCredentialBindingInput =
+  components['schemas']['UpsertMcpCredentialBindingRequest']
+export type McpCredentialBindingsQuery = NonNullable<
+  operations['list_mcp_credential_bindings']['parameters']['query']
+>
 export type McpEffectiveAccessPayload = components['schemas']['McpEffectiveAccessPayload']
 export type McpEffectiveAccessQuery = NonNullable<
   operations['preview_mcp_effective_access']['parameters']['query']

@@ -1,3 +1,4 @@
+mod aggregate;
 mod json_rpc;
 mod upstream;
 
@@ -76,12 +77,12 @@ pub async fn mcp_streamable_http_proxy(
     }
 
     let gateway = McpGatewayService::new(state.store.clone());
-    let upstream = match gateway.prepare_upstream(&server_key).await {
-        Ok(upstream) => upstream,
+    let server = match gateway.load_active_server(&server_key).await {
+        Ok(server) => server,
         Err(error) => return mcp_error_response(error),
     };
-    tracing::Span::current().record("mcp_server_id", upstream.server.mcp_server_id.to_string());
-    tracing::Span::current().record("upstream_auth_mode", upstream.server.auth_mode.as_str());
+    tracing::Span::current().record("mcp_server_id", server.mcp_server_id.to_string());
+    tracing::Span::current().record("upstream_auth_mode", server.auth_mode.as_str());
 
     let body = match to_bytes(request.into_body(), MAX_MCP_REQUEST_BODY_BYTES).await {
         Ok(body) => body,
@@ -104,7 +105,7 @@ pub async fn mcp_streamable_http_proxy(
     let response_result = match rpc_request {
         Ok(McpRpcRequest::ToolsList { id }) => {
             let access_resolution = match access
-                .effective_tools_for_api_key(&auth, Some(upstream.server.mcp_server_id))
+                .effective_tools_for_api_key(&auth, Some(server.mcp_server_id))
                 .await
             {
                 Ok(resolution) => resolution,
@@ -115,6 +116,13 @@ pub async fn mcp_streamable_http_proxy(
                 .iter()
                 .map(|tool| tool.upstream_name.as_str())
                 .collect::<std::collections::HashSet<_>>();
+            let upstream = match gateway
+                .prepare_upstream_for_auth(&auth, server.clone())
+                .await
+            {
+                Ok(upstream) => upstream,
+                Err(error) => return mcp_error_response(error),
+            };
             let outcome = proxy_tools_list(
                 &state.mcp_http_client,
                 &method,
@@ -153,24 +161,32 @@ pub async fn mcp_streamable_http_proxy(
             arguments,
         }) => {
             return handle_tools_call(
-                &state, &auth, &method, &headers, body, &upstream, started_at, id, tool_name,
+                &state, &auth, &method, &headers, body, server, started_at, id, tool_name,
                 arguments,
             )
             .await;
         }
         Ok(McpRpcRequest::Other) => {
+            let upstream = match gateway.prepare_upstream_for_auth(&auth, server).await {
+                Ok(upstream) => upstream,
+                Err(error) => return mcp_error_response(error),
+            };
             proxy_upstream(&state.mcp_http_client, &method, &headers, body, &upstream).await
         }
         Err(error) => {
+            let log_upstream = gateway_service::McpGatewayUpstream {
+                server: server.clone(),
+                headers: None,
+            };
             let _ = invocation_logger
                 .log_invocation(
                     &auth,
                     McpInvocationLogInput {
                         request_log_id: None,
                         request_id: Uuid::new_v4().to_string(),
-                        server_id: Some(upstream.server.mcp_server_id),
-                        server_display_key: upstream.server.server_key.clone(),
-                        server_display_name: upstream.server.display_name.clone(),
+                        server_id: Some(log_upstream.server.mcp_server_id),
+                        server_display_key: log_upstream.server.server_key.clone(),
+                        server_display_name: log_upstream.server.display_name.clone(),
                         tool_id: None,
                         tool_display_key: "unknown".to_string(),
                         tool_display_name: "unknown".to_string(),
@@ -207,6 +223,8 @@ pub async fn mcp_streamable_http_proxy(
     }
 }
 
+pub use aggregate::mcp_aggregate_streamable_http;
+
 fn body_read_exceeded_limit(error: &axum::Error) -> bool {
     error
         .source()
@@ -221,7 +239,7 @@ async fn handle_tools_call(
     method: &axum::http::Method,
     headers: &HeaderMap,
     body: Bytes,
-    upstream: &gateway_service::McpGatewayUpstream,
+    server: gateway_core::ExternalMcpServerRecord,
     started_at: Instant,
     id: Option<serde_json::Value>,
     tool_name: String,
@@ -229,8 +247,12 @@ async fn handle_tools_call(
 ) -> Response<Body> {
     let access = McpAccess::new(state.store.clone());
     let invocation_logger = McpInvocationLogging::new(state.store.clone());
+    let log_upstream = gateway_service::McpGatewayUpstream {
+        server: server.clone(),
+        headers: None,
+    };
     let allowed_tool = match access
-        .allowed_tool_for_call(auth, upstream.server.mcp_server_id, &tool_name)
+        .allowed_tool_for_call(auth, server.mcp_server_id, &tool_name)
         .await
     {
         Ok(tool) => tool,
@@ -241,7 +263,7 @@ async fn handle_tools_call(
             .log_invocation(
                 auth,
                 tool_invocation_log_input(
-                    upstream,
+                    &log_upstream,
                     &id,
                     None,
                     &tool_name,
@@ -263,13 +285,38 @@ async fn handle_tools_call(
         );
     };
 
-    let outcome = proxy_upstream(&state.mcp_http_client, method, headers, body, upstream).await;
+    let gateway = McpGatewayService::new(state.store.clone());
+    let upstream = match gateway.prepare_upstream_for_auth(auth, server).await {
+        Ok(upstream) => upstream,
+        Err(error) => {
+            let _ = invocation_logger
+                .log_invocation(
+                    auth,
+                    tool_invocation_log_input(
+                        &log_upstream,
+                        &id,
+                        Some(tool.mcp_tool_id),
+                        &tool.upstream_name,
+                        &tool.display_name,
+                        McpToolInvocationStatus::Unauthorized,
+                        McpToolPolicyResult::Allowed,
+                        Some(error.error_code().to_string()),
+                        arguments.clone(),
+                        None,
+                        started_at,
+                    ),
+                )
+                .await;
+            return mcp_error_response(error);
+        }
+    };
+    let outcome = proxy_upstream(&state.mcp_http_client, method, headers, body, &upstream).await;
     let (status, error_code) = response_outcome(&outcome);
     let _ = invocation_logger
         .log_invocation(
             auth,
             tool_invocation_log_input(
-                upstream,
+                &upstream,
                 &id,
                 Some(tool.mcp_tool_id),
                 &tool.upstream_name,

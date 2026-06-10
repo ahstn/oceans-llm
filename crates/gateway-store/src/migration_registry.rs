@@ -118,6 +118,22 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
             "../migrations/postgres/V29__mcp_tool_access_and_token_overhead.sql"
         ),
     },
+    MigrationManifest {
+        version: 30,
+        name: "mcp_aggregate_sessions",
+        checksum: "V30__mcp_aggregate_sessions.sql",
+        libsql_sql: include_str!("../migrations/V30__mcp_aggregate_sessions.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V30__mcp_aggregate_sessions.sql"),
+    },
+    MigrationManifest {
+        version: 31,
+        name: "mcp_upstream_credential_bindings",
+        checksum: "V31__mcp_upstream_credential_bindings.sql",
+        libsql_sql: include_str!("../migrations/V31__mcp_upstream_credential_bindings.sql"),
+        postgres_sql: include_str!(
+            "../migrations/postgres/V31__mcp_upstream_credential_bindings.sql"
+        ),
+    },
 ];
 
 #[cfg(test)]

@@ -1177,6 +1177,9 @@ pub struct RequestLogPayloadView {
         crate::http::mcp_registry::list_mcp_grants,
         crate::http::mcp_registry::upsert_mcp_grant,
         crate::http::mcp_registry::revoke_mcp_grant,
+        crate::http::mcp_registry::list_mcp_credential_bindings,
+        crate::http::mcp_registry::upsert_mcp_credential_binding,
+        crate::http::mcp_registry::revoke_mcp_credential_binding,
         crate::http::mcp_registry::preview_mcp_effective_access
     ),
     components(schemas(ObservabilityRangeQueryValue)),
@@ -1279,6 +1282,10 @@ mod tests {
         assert!(paths.contains_key("/api/v1/admin/mcp/toolsets/{toolset_id}/disable"));
         assert!(paths.contains_key("/api/v1/admin/mcp/toolsets/{toolset_id}/tools"));
         assert!(paths.contains_key("/api/v1/admin/mcp/grants"));
+        assert!(paths.contains_key("/api/v1/admin/mcp/credential-bindings"));
+        assert!(
+            paths.contains_key("/api/v1/admin/mcp/credential-bindings/{credential_binding_id}")
+        );
         assert!(paths.contains_key("/api/v1/admin/mcp/effective-access"));
         assert!(paths.contains_key("/api/v1/auth/session"));
         assert!(paths.contains_key("/api/v1/auth/logout"));
