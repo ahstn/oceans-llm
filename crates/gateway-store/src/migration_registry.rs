@@ -134,6 +134,15 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
             "../migrations/postgres/V31__mcp_upstream_credential_bindings.sql"
         ),
     },
+    MigrationManifest {
+        version: 32,
+        name: "mcp_code_mode_invocation_linkage",
+        checksum: "V32__mcp_code_mode_invocation_linkage.sql",
+        libsql_sql: include_str!("../migrations/V32__mcp_code_mode_invocation_linkage.sql"),
+        postgres_sql: include_str!(
+            "../migrations/postgres/V32__mcp_code_mode_invocation_linkage.sql"
+        ),
+    },
 ];
 
 #[cfg(test)]

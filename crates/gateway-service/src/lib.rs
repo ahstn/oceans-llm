@@ -7,6 +7,7 @@ pub mod budget_scopes;
 pub mod icon_identity;
 pub mod mcp_access;
 pub mod mcp_catalog;
+pub mod mcp_code_mode;
 pub mod mcp_credentials;
 pub mod mcp_gateway;
 pub mod mcp_invocation_logging;
@@ -41,15 +42,24 @@ pub use icon_identity::{
 pub use mcp_access::{McpAccess, grant_subjects};
 pub use mcp_catalog::{
     CallMcpToolInput, DescribeMcpToolInput, DescribeMcpToolOutput, MAX_SEARCH_LIMIT,
-    MCP_CATALOG_RANKER, McpCatalog, McpCatalogSearchItem, McpCatalogServerView,
-    McpCatalogToolDescription, McpCatalogToolSummary, SearchMcpToolsInput, SearchMcpToolsOutput,
-    parse_tool_address, tool_address,
+    MCP_CATALOG_RANKER, MCP_TOOL_NOT_GRANTED_MESSAGE, McpCatalog, McpCatalogSearchItem,
+    McpCatalogServerView, McpCatalogToolDescription, McpCatalogToolSummary, SearchMcpToolsInput,
+    SearchMcpToolsOutput, parse_tool_address, tool_address,
+};
+pub use mcp_code_mode::{
+    CODE_MODE_SERVER_DISPLAY_KEY, CODE_MODE_SERVER_DISPLAY_NAME, CapabilityProfile, CodeExecutor,
+    CodeModeLimits, CodeModeRunOutcome, CodeModeService, DeterministicTestExecutor,
+    ExecutionOutcome, ExecutorError, HOST_FN_CALL_TOOL, HOST_FN_DESCRIBE_TOOL,
+    HOST_FN_SEARCH_TOOLS, HostCallError, HostDispatcher, MAX_HOST_CALL_ARGUMENT_BYTES,
+    OCEANS_HOST_NAMESPACE, OceansHostDispatcher, apply_outcome_limits, host_call_envelope,
 };
 pub use mcp_credentials::{
     McpCredentialService, RedactedMcpCredentialBinding, ResolvedMcpCredential,
     UpsertMcpCredentialBindingInput, credential_owner_scope_key,
 };
-pub use mcp_gateway::{McpGatewayService, McpGatewayUpstream};
+pub use mcp_gateway::{
+    McpGatewayService, McpGatewayUpstream, invocation_status_for_error, map_mcp_client_error,
+};
 pub use mcp_invocation_logging::{
     LoggedMcpToolInvocation, McpInvocationLogInput, McpInvocationLogging,
     McpInvocationPayloadPolicy,

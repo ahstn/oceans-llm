@@ -2,11 +2,43 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use gateway_core::{
     AuthenticatedApiKey, ExternalMcpAuthMode, ExternalMcpServerRecord, ExternalMcpServerStatus,
-    GatewayError, McpRegistryRepository, McpUpstreamCredentialRepository, StoreError,
+    GatewayError, McpRegistryRepository, McpToolInvocationStatus,
+    McpUpstreamCredentialRepository, ProviderError, StoreError,
 };
+use gateway_mcp::McpClientError;
 
 use crate::mcp_credentials::McpCredentialService;
 use crate::mcp_upstream_auth::{gateway_mcp_upstream_headers, normalize_mcp_server_key};
+
+/// Maps an MCP client transport failure to the gateway error every MCP
+/// surface (aggregate `call_tool`, Code Mode `oceans.callTool`) reports.
+#[must_use]
+pub fn map_mcp_client_error(error: McpClientError) -> GatewayError {
+    match error {
+        McpClientError::Timeout => ProviderError::Timeout.into(),
+        McpClientError::Http { status, body } => {
+            ProviderError::UpstreamHttp { status, body }.into()
+        }
+        McpClientError::ResponseTooLarge { limit_bytes } => {
+            GatewayError::PayloadTooLarge { limit_bytes }
+        }
+        other => ProviderError::Transport(other.to_string()).into(),
+    }
+}
+
+/// Maps a gateway error from an upstream MCP call to its invocation-log
+/// status. Shared by the aggregate and Code Mode call paths.
+#[must_use]
+pub fn invocation_status_for_error(error: &GatewayError) -> McpToolInvocationStatus {
+    match error {
+        GatewayError::Provider(ProviderError::Timeout) => McpToolInvocationStatus::Timeout,
+        GatewayError::Provider(ProviderError::UpstreamHttp { .. })
+        | GatewayError::Provider(ProviderError::Transport(_)) => {
+            McpToolInvocationStatus::UpstreamError
+        }
+        _ => McpToolInvocationStatus::GatewayError,
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct McpGatewayUpstream {

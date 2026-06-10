@@ -903,6 +903,7 @@ pub struct McpToolInvocationListQuery {
     pub page: Option<u32>,
     pub page_size: Option<u32>,
     pub request_id: Option<String>,
+    pub parent_invocation_id: Option<String>,
     pub server_display_key: Option<String>,
     pub server_display_name: Option<String>,
     pub tool_display_key: Option<String>,
@@ -927,6 +928,7 @@ pub struct McpToolInvocationPageView {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct McpToolInvocationSummaryView {
     pub mcp_tool_invocation_id: String,
+    pub parent_invocation_id: Option<String>,
     pub request_log_id: Option<String>,
     pub request_id: String,
     pub api_key_id: Option<String>,

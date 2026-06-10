@@ -189,6 +189,142 @@ pub fn call_tool_error_result(
     }
 }
 
+pub const CODE_MODE_TRUNCATION_MARKER: &str = "--- TRUNCATED ---";
+
+const CODE_MODE_API_TYPINGS: &str = r#"The `code` argument is a JavaScript async arrow function body executed in a sandbox.
+The sandbox exposes a single `oceans` API (every call is re-authorized by the gateway):
+
+  declare const oceans: {
+    // Search MCP tools you are granted. Empty query lists everything granted.
+    searchTools(args: { query?: string; limit?: number; offset?: number; server_key?: string }):
+      Promise<{ items: { address: string; score: number; server: object; tool: object }[]; total: number; next_offset?: number }>;
+    // Describe one granted tool by canonical mcp://{server_key}/tools/{tool_name} address.
+    describeTool(args: { address: string }):
+      Promise<{ address: string; server: object; tool: { input_schema: object; schema_hash: string } }>;
+    // Call one granted tool by canonical address (execute profile only).
+    callTool(args: { address: string; arguments?: object; schema_hash?: string }): Promise<object>;
+  };
+
+Host calls complete synchronously from the sandbox's point of view (no event loop).
+Grant/capability denials and invalid arguments throw catchable exceptions. Structured
+tool errors (credential_required, credential_expired, tool_schema_changed) and upstream
+failures RESOLVE successfully with an aggregate-style result object:
+`{ content, isError: true, structuredContent: { error_code, ... } }` — check
+`result.isError` before using a callTool result. console.log/warn/error lines
+are captured into the response logs. Oversized output is truncated and marked with
+`--- TRUNCATED ---`."#;
+
+const EXPLORE_EXAMPLE: &str = r#"Example:
+  const { items } = await oceans.searchTools({ query: "github issues" });
+  const details = await Promise.all(items.slice(0, 3).map((item) => oceans.describeTool({ address: item.address })));
+  return details.map((d) => ({ address: d.address, required: d.tool.input_schema.required }));"#;
+
+const EXECUTE_EXAMPLE: &str = r#"Example:
+  const { items } = await oceans.searchTools({ query: "create issue", server_key: "github" });
+  const tool = await oceans.describeTool({ address: items[0].address });
+  const result = await oceans.callTool({
+    address: tool.address,
+    arguments: { title: "Bug report", body: "Details..." },
+    schema_hash: tool.tool.schema_hash,
+  });
+  if (result.isError) {
+    throw new Error(result.structuredContent.error_code + ": " + result.content[0].text);
+  }
+  return result;"#;
+
+#[must_use]
+pub fn code_mode_explore_definition() -> McpTool {
+    McpTool {
+        name: "explore".to_string(),
+        description: Some(format!(
+            "Run JavaScript that explores your granted MCP tools using oceans.searchTools and \
+             oceans.describeTool, then returns a small projection of the results. \
+             oceans.callTool is NOT available in explore.\n\n{CODE_MODE_API_TYPINGS}\n\n{EXPLORE_EXAMPLE}"
+        )),
+        input_schema: code_mode_input_schema(),
+    }
+}
+
+#[must_use]
+pub fn code_mode_execute_definition() -> McpTool {
+    McpTool {
+        name: "execute".to_string(),
+        description: Some(format!(
+            "Run JavaScript that searches, describes, and calls your granted MCP tools via the \
+             oceans API. Every oceans.callTool invocation is re-authorized and logged by the \
+             gateway.\n\n{CODE_MODE_API_TYPINGS}\n\n{EXECUTE_EXAMPLE}"
+        )),
+        input_schema: code_mode_input_schema(),
+    }
+}
+
+fn code_mode_input_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["code"],
+        "properties": {
+            "code": {
+                "type": "string",
+                "description": "JavaScript async arrow function body to execute in the sandbox."
+            }
+        },
+        "additionalProperties": false
+    })
+}
+
+/// Successful Code Mode result: text content plus the structured outcome.
+#[must_use]
+pub fn code_mode_result(
+    result: Option<Value>,
+    logs: Vec<String>,
+    truncated: bool,
+) -> CallToolResult {
+    let mut text = match &result {
+        Some(value) => serde_json::to_string_pretty(value)
+            .unwrap_or_else(|_| "<unserializable result>".to_string()),
+        None => "null".to_string(),
+    };
+    if truncated {
+        text.push('\n');
+        text.push_str(CODE_MODE_TRUNCATION_MARKER);
+    }
+    CallToolResult {
+        content: vec![ToolContent::Text { text }],
+        structured_content: Some(json!({
+            "result": result,
+            "logs": logs,
+            "truncated": truncated,
+        })),
+        is_error: Some(false),
+    }
+}
+
+/// Failed Code Mode result: `isError: true` with an `Error: ...` text line.
+#[must_use]
+pub fn code_mode_error_result(
+    message: impl Into<String>,
+    error_code: impl Into<String>,
+    logs: Vec<String>,
+    truncated: bool,
+) -> CallToolResult {
+    let message = message.into();
+    let mut text = format!("Error: {message}");
+    if truncated {
+        text.push('\n');
+        text.push_str(CODE_MODE_TRUNCATION_MARKER);
+    }
+    CallToolResult {
+        content: vec![ToolContent::Text { text }],
+        structured_content: Some(json!({
+            "error": message,
+            "error_code": error_code.into(),
+            "logs": logs,
+            "truncated": truncated,
+        })),
+        is_error: Some(true),
+    }
+}
+
 pub fn json_rpc_success<T: Serialize>(
     id: JsonRpcId,
     result: T,
@@ -236,6 +372,44 @@ mod tests {
     fn rejects_batches() {
         let error = parse_client_message(br#"[]"#).expect_err("batch rejected");
         assert_eq!(error.code, JSON_RPC_INVALID_REQUEST);
+    }
+
+    #[test]
+    fn code_mode_definitions_require_single_code_param() {
+        for tool in [
+            code_mode_explore_definition(),
+            code_mode_execute_definition(),
+        ] {
+            assert_eq!(tool.input_schema["required"], json!(["code"]));
+            assert_eq!(
+                tool.input_schema["properties"]
+                    .as_object()
+                    .expect("properties")
+                    .len(),
+                1
+            );
+            assert_eq!(tool.input_schema["additionalProperties"], json!(false));
+            let description = tool.description.expect("description");
+            assert!(description.contains("oceans.searchTools"));
+            assert!(description.contains("Example:"));
+        }
+        assert_eq!(code_mode_explore_definition().name, "explore");
+        assert_eq!(code_mode_execute_definition().name, "execute");
+    }
+
+    #[test]
+    fn code_mode_results_follow_marker_and_error_conventions() {
+        let ok = code_mode_result(Some(json!({"a": 1})), vec!["log".to_string()], true);
+        assert_eq!(ok.is_error, Some(false));
+        let ToolContent::Text { text } = &ok.content[0];
+        assert!(text.ends_with(CODE_MODE_TRUNCATION_MARKER));
+
+        let err = code_mode_error_result("boom", "code_execution_error", Vec::new(), false);
+        assert_eq!(err.is_error, Some(true));
+        let ToolContent::Text { text } = &err.content[0];
+        assert!(text.starts_with("Error: boom"));
+        let structured = err.structured_content.expect("structured");
+        assert_eq!(structured["error_code"], json!("code_execution_error"));
     }
 
     #[test]

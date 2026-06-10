@@ -34,6 +34,8 @@ pub struct GatewayConfig {
     #[serde(default)]
     pub request_logging: RequestLoggingConfig,
     #[serde(default)]
+    pub mcp: McpConfig,
+    #[serde(default)]
     pub providers: Vec<ProviderConfig>,
     #[serde(default)]
     pub models: Vec<ModelConfig>,
@@ -65,6 +67,7 @@ impl GatewayConfig {
         let _ = self.database.connection_options()?;
         self.budget_alerts.validate()?;
         self.request_logging.validate()?;
+        self.mcp.validate()?;
         self.auth.oidc.validate(&self.teams)?;
         self.auth.oauth.validate(&self.teams)?;
 
@@ -1389,6 +1392,144 @@ impl RequestLoggingConfig {
     }
 }
 
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct McpConfig {
+    #[serde(default)]
+    pub code_mode: McpCodeModeConfig,
+}
+
+impl McpConfig {
+    fn validate(&self) -> anyhow::Result<()> {
+        self.code_mode.validate()
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct McpCodeModeConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub sandbox_backend: McpCodeModeSandboxBackend,
+    #[serde(default)]
+    pub limits: McpCodeModeLimitsConfig,
+}
+
+impl McpCodeModeConfig {
+    fn validate(&self) -> anyhow::Result<()> {
+        self.limits.validate()
+    }
+
+    #[must_use]
+    pub fn code_mode_limits(&self) -> gateway_service::CodeModeLimits {
+        gateway_service::CodeModeLimits {
+            execution_timeout_ms: self.limits.execution_timeout_ms,
+            memory_limit_bytes: self.limits.memory_limit_bytes,
+            max_output_bytes: self.limits.max_output_bytes,
+            max_log_lines: self.limits.max_log_lines,
+            max_log_bytes: self.limits.max_log_bytes,
+            max_host_calls: self.limits.max_host_calls,
+            max_concurrent_executions: self.limits.max_concurrent_executions,
+        }
+    }
+}
+
+/// The deterministic test executor is intentionally not selectable from
+/// YAML; `wasmtime_quickjs` is the only production value. Unknown values are
+/// rejected at deserialization time.
+#[derive(Debug, Clone, Copy, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum McpCodeModeSandboxBackend {
+    #[default]
+    WasmtimeQuickjs,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct McpCodeModeLimitsConfig {
+    #[serde(default = "default_code_mode_execution_timeout_ms")]
+    pub execution_timeout_ms: u64,
+    #[serde(default = "default_code_mode_memory_limit_bytes")]
+    pub memory_limit_bytes: u64,
+    #[serde(default = "default_code_mode_max_output_bytes")]
+    pub max_output_bytes: usize,
+    #[serde(default = "default_code_mode_max_log_lines")]
+    pub max_log_lines: usize,
+    #[serde(default = "default_code_mode_max_log_bytes")]
+    pub max_log_bytes: usize,
+    #[serde(default = "default_code_mode_max_host_calls")]
+    pub max_host_calls: u32,
+    #[serde(default = "default_code_mode_max_concurrent_executions")]
+    pub max_concurrent_executions: usize,
+}
+
+impl Default for McpCodeModeLimitsConfig {
+    fn default() -> Self {
+        Self {
+            execution_timeout_ms: default_code_mode_execution_timeout_ms(),
+            memory_limit_bytes: default_code_mode_memory_limit_bytes(),
+            max_output_bytes: default_code_mode_max_output_bytes(),
+            max_log_lines: default_code_mode_max_log_lines(),
+            max_log_bytes: default_code_mode_max_log_bytes(),
+            max_host_calls: default_code_mode_max_host_calls(),
+            max_concurrent_executions: default_code_mode_max_concurrent_executions(),
+        }
+    }
+}
+
+impl McpCodeModeLimitsConfig {
+    fn validate(&self) -> anyhow::Result<()> {
+        if self.execution_timeout_ms == 0 {
+            bail!("mcp.code_mode.limits.execution_timeout_ms must be > 0");
+        }
+        if self.memory_limit_bytes == 0 {
+            bail!("mcp.code_mode.limits.memory_limit_bytes must be > 0");
+        }
+        if self.max_output_bytes == 0 {
+            bail!("mcp.code_mode.limits.max_output_bytes must be > 0");
+        }
+        if self.max_log_lines == 0 {
+            bail!("mcp.code_mode.limits.max_log_lines must be > 0");
+        }
+        if self.max_log_bytes == 0 {
+            bail!("mcp.code_mode.limits.max_log_bytes must be > 0");
+        }
+        if self.max_host_calls == 0 {
+            bail!("mcp.code_mode.limits.max_host_calls must be > 0");
+        }
+        if self.max_concurrent_executions == 0 {
+            bail!("mcp.code_mode.limits.max_concurrent_executions must be >= 1");
+        }
+        Ok(())
+    }
+}
+
+fn default_code_mode_execution_timeout_ms() -> u64 {
+    30_000
+}
+
+fn default_code_mode_memory_limit_bytes() -> u64 {
+    64 * 1024 * 1024
+}
+
+fn default_code_mode_max_output_bytes() -> usize {
+    32_768
+}
+
+fn default_code_mode_max_log_lines() -> usize {
+    100
+}
+
+fn default_code_mode_max_log_bytes() -> usize {
+    16_384
+}
+
+fn default_code_mode_max_host_calls() -> u32 {
+    50
+}
+
+fn default_code_mode_max_concurrent_executions() -> usize {
+    4
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct RequestLogPurgeConfig {
     #[serde(default)]
@@ -2394,6 +2535,136 @@ mod tests {
         assert_eq!(policy.request_max_bytes, 64 * 1024);
         assert_eq!(policy.response_max_bytes, 64 * 1024);
         assert_eq!(policy.stream_max_events, 128);
+    }
+
+    #[test]
+    fn code_mode_config_defaults_are_disabled_with_documented_limits() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(&config_path, "");
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let code_mode = &config.mcp.code_mode;
+
+        assert!(!code_mode.enabled);
+        assert_eq!(
+            code_mode.sandbox_backend,
+            super::McpCodeModeSandboxBackend::WasmtimeQuickjs
+        );
+        assert_eq!(code_mode.limits.execution_timeout_ms, 30_000);
+        assert_eq!(code_mode.limits.memory_limit_bytes, 67_108_864);
+        assert_eq!(code_mode.limits.max_output_bytes, 32_768);
+        assert_eq!(code_mode.limits.max_log_lines, 100);
+        assert_eq!(code_mode.limits.max_log_bytes, 16_384);
+        assert_eq!(code_mode.limits.max_host_calls, 50);
+        assert_eq!(code_mode.limits.max_concurrent_executions, 4);
+    }
+
+    #[test]
+    fn parses_code_mode_config_and_maps_limits() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+mcp:
+  code_mode:
+    enabled: true
+    sandbox_backend: wasmtime_quickjs
+    limits:
+      execution_timeout_ms: 5000
+      memory_limit_bytes: 1048576
+      max_output_bytes: 1024
+      max_log_lines: 5
+      max_log_bytes: 512
+      max_host_calls: 3
+      max_concurrent_executions: 2
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        assert!(config.mcp.code_mode.enabled);
+        let limits = config.mcp.code_mode.code_mode_limits();
+        assert_eq!(limits.execution_timeout_ms, 5_000);
+        assert_eq!(limits.memory_limit_bytes, 1_048_576);
+        assert_eq!(limits.max_output_bytes, 1_024);
+        assert_eq!(limits.max_log_lines, 5);
+        assert_eq!(limits.max_log_bytes, 512);
+        assert_eq!(limits.max_host_calls, 3);
+        assert_eq!(limits.max_concurrent_executions, 2);
+    }
+
+    #[test]
+    fn rejects_unknown_code_mode_sandbox_backend() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+mcp:
+  code_mode:
+    enabled: true
+    sandbox_backend: deterministic_test
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("unknown backend");
+        assert!(format!("{error:#}").contains("sandbox_backend"));
+    }
+
+    #[test]
+    fn rejects_zero_code_mode_limits() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        for field in [
+            "execution_timeout_ms",
+            "memory_limit_bytes",
+            "max_output_bytes",
+            "max_log_lines",
+            "max_log_bytes",
+            "max_host_calls",
+            "max_concurrent_executions",
+        ] {
+            write_config(
+                &config_path,
+                &format!(
+                    r#"
+mcp:
+  code_mode:
+    limits:
+      {field}: 0
+"#
+                ),
+            );
+            let error = GatewayConfig::from_path(&config_path).expect_err("zero limit rejected");
+            assert!(
+                format!("{error:#}").contains(field),
+                "expected validation error naming `{field}`"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_negative_code_mode_limits() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+mcp:
+  code_mode:
+    limits:
+      max_host_calls: -5
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("negative limit rejected");
+        assert!(format!("{error:#}").contains("max_host_calls"));
     }
 
     #[test]

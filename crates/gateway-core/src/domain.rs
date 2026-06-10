@@ -1754,10 +1754,40 @@ pub struct McpAccessResolution {
     pub filtered_tool_count: i64,
 }
 
+/// Gateway-owned MCP surface a durable session was initialized against.
+/// Sessions are bound to their surface: a session created at `/mcp` does not
+/// validate at `/code-mode-mcp` and vice versa.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum McpSessionSurface {
+    Aggregate,
+    CodeMode,
+}
+
+impl McpSessionSurface {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Aggregate => "aggregate",
+            Self::CodeMode => "code_mode",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "aggregate" => Some(Self::Aggregate),
+            "code_mode" => Some(Self::CodeMode),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpAggregateSessionRecord {
     pub session_id: Uuid,
     pub token_hash: String,
+    pub surface: McpSessionSurface,
     pub api_key_id: Uuid,
     pub owner_kind: ApiKeyOwnerKind,
     pub owner_user_id: Option<Uuid>,
@@ -1775,6 +1805,7 @@ pub struct McpAggregateSessionRecord {
 pub struct NewMcpAggregateSessionRecord {
     pub session_id: Uuid,
     pub token_hash: String,
+    pub surface: McpSessionSurface,
     pub api_key_id: Uuid,
     pub owner_kind: ApiKeyOwnerKind,
     pub owner_user_id: Option<Uuid>,
@@ -1881,6 +1912,7 @@ pub struct RequestMcpTokenOverheadRecord {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpToolInvocationRecord {
     pub mcp_tool_invocation_id: Uuid,
+    pub parent_invocation_id: Option<Uuid>,
     pub request_log_id: Option<Uuid>,
     pub request_id: String,
     pub api_key_id: Option<Uuid>,
@@ -1920,6 +1952,7 @@ pub struct McpToolInvocationQuery {
     pub page: u32,
     pub page_size: u32,
     pub request_id: Option<String>,
+    pub parent_invocation_id: Option<Uuid>,
     pub server_display_key: Option<String>,
     pub server_display_name: Option<String>,
     pub tool_display_key: Option<String>,

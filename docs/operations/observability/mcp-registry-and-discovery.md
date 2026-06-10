@@ -87,16 +87,22 @@ Rediscovery marks previously active tools inactive before upserting the newly di
 
 ## Gateway Data Plane
 
-The public data-plane route is:
+The public data-plane routes are:
 
 ```text
 POST /mcp
 GET /mcp/{server_key}
 POST /mcp/{server_key}
 DELETE /mcp/{server_key}
+POST /code-mode-mcp
+DELETE /code-mode-mcp
 ```
 
 `/mcp` is a gateway-owned aggregate MCP server. It handles Streamable HTTP `POST` messages, returns `405` for `GET`, issues durable `MCP-Session-Id` values during initialize, and exposes only `search_tools`, `describe_tool`, and `call_tool` over granted active catalog rows.
+
+`/code-mode-mcp` is the gateway-owned Code Mode MCP server. It shares the aggregate auth and durable session machinery, exposes only `explore` and `execute`, returns `405` for `GET`, and returns `404` when `mcp.code_mode.enabled` is false or absent.
+
+Registry validation rejects the reserved server keys `mcp` and `code-mode-mcp` on create (`RESERVED_MCP_SERVER_KEYS` in `crates/gateway-service/src/mcp_registry.rs`); the server key is immutable on update, so an upstream registration can never collide with gateway-owned routes.
 
 `/mcp/{server_key}` proxies Streamable HTTP requests to the active registered server URL. Runtime policy:
 

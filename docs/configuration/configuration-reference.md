@@ -24,6 +24,7 @@ This page owns config syntax and parse-time rules. It does not own the full runt
 - `auth`
 - `budget_alerts`
 - `request_logging`
+- `mcp`
 - `providers`
 - `models`
 - `teams`
@@ -418,6 +419,61 @@ SMTP transport fields:
   - defaults to `true`
 
 `username` and `password` must be set together when SMTP authentication is used. `password` supports the same secret-reference forms as other config secrets.
+
+## `mcp`
+
+`mcp.code_mode` controls the gateway-owned `/code-mode-mcp` data-plane surface. It is global-only and disabled by default.
+
+```yaml
+mcp:
+  code_mode:
+    enabled: false
+    sandbox_backend: wasmtime_quickjs
+    limits:
+      execution_timeout_ms: 30000
+      memory_limit_bytes: 67108864
+      max_output_bytes: 32768
+      max_log_lines: 100
+      max_log_bytes: 16384
+      max_host_calls: 50
+      max_concurrent_executions: 4
+```
+
+Important fields:
+
+- `enabled`
+  - defaults to `false`
+  - when `false` or when the block is absent, `/code-mode-mcp` returns `404` and no sandbox backend is constructed
+- `sandbox_backend`
+  - defaults to `wasmtime_quickjs`
+  - `wasmtime_quickjs` is the only accepted value; unknown values are rejected at config parse time
+  - the deterministic test executor is test-only wiring and is not selectable from YAML
+- `limits.execution_timeout_ms`
+  - defaults to `30000`
+  - wall-clock budget for one execution, including time spent in nested host calls
+- `limits.memory_limit_bytes`
+  - defaults to `67108864` (64 MiB)
+  - sandbox linear-memory cap per execution
+- `limits.max_output_bytes`
+  - defaults to `32768`
+  - larger results are truncated with an explicit marker
+- `limits.max_log_lines`
+  - defaults to `100`
+- `limits.max_log_bytes`
+  - defaults to `16384`
+- `limits.max_host_calls`
+  - defaults to `50`
+  - maximum nested `oceans.*` host-dispatch calls per execution
+- `limits.max_concurrent_executions`
+  - defaults to `4`
+  - gateway-wide cap on concurrently running sandbox executions; executions beyond the cap queue for a slot, and queue time counts against the execution's `execution_timeout_ms` wall clock
+
+Validation rules:
+
+- every `limits.*` value must be greater than zero (`max_concurrent_executions` must be at least 1)
+- an unknown `sandbox_backend` fails config deserialization
+
+When `enabled: true`, startup constructs the sandbox backend and fails loudly if the embedded guest module does not validate. Per-tenant or per-team enablement is not supported; the gate is global.
 
 ## Provider Types
 

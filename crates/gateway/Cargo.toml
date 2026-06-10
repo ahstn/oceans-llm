@@ -9,6 +9,7 @@ anyhow.workspace = true
 async-trait.workspace = true
 axum.workspace = true
 futures-util.workspace = true
+gateway-code-mode-wasmtime.workspace = true
 gateway-core.workspace = true
 gateway-mcp.workspace = true
 gateway-providers.workspace = true

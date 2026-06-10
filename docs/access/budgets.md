@@ -23,9 +23,11 @@ Teams are not budget principals. Teams group users, own service accounts, and pr
 
 MCP tool grants and toolsets are separate access controls. MCP token-overhead estimates report context-window pressure from tool definitions and results; they are not spend-budget accounting and do not create budget charges.
 
+MCP and Code Mode tool calls are not budgeted spend. They are recorded for observability only; see [MCP Invocations](../operations/observability/mcp-invocations.md).
+
 ## Hard And Soft Budgets
 
-Hard budgets reject new chargeable traffic when the active window is already exhausted or when the completed request would push spend past the budget.
+Hard budgets reject chargeable traffic at two points. Before the provider call, a request is rejected when the active window is already exhausted; no provider call happens in that case. After the provider call, when actual usage is priced, the request is rejected if its cost would push spend past the budget. In that second case the upstream provider call has already completed, but the caller receives a budget rejection and the over-limit cost is not recorded against the window. Operator-level enforcement detail lives in [Budgets and Spending](../operations/budgets-and-spending.md).
 
 Soft budgets never reject traffic. They are useful for alerting and reporting.
 

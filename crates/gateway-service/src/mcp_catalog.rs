@@ -13,6 +13,7 @@ use uuid::Uuid;
 use crate::mcp_access::McpAccess;
 
 pub const MCP_CATALOG_RANKER: &str = "lexical_v1";
+pub const MCP_TOOL_NOT_GRANTED_MESSAGE: &str = "MCP tool address is not granted";
 pub const MCP_TOOL_ADDRESS_SCHEME: &str = "mcp";
 pub const DEFAULT_SEARCH_LIMIT: usize = 10;
 pub const MAX_SEARCH_LIMIT: usize = 50;
@@ -219,9 +220,7 @@ where
             .allowed_tools
             .into_iter()
             .find(|record| record.tool.upstream_name == parsed.upstream_name)
-            .ok_or_else(|| {
-                GatewayError::InvalidRequest("MCP tool address is not granted".to_string())
-            })
+            .ok_or_else(|| GatewayError::InvalidRequest(MCP_TOOL_NOT_GRANTED_MESSAGE.to_string()))
     }
 }
 

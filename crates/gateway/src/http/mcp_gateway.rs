@@ -1,5 +1,9 @@
 mod aggregate;
+mod code_mode;
+#[cfg(test)]
+mod code_mode_tests;
 mod json_rpc;
+mod session;
 mod upstream;
 
 use std::{error::Error as _, time::Instant};
@@ -183,6 +187,7 @@ pub async fn mcp_streamable_http_proxy(
                     &auth,
                     McpInvocationLogInput {
                         request_log_id: None,
+                        parent_invocation_id: None,
                         request_id: Uuid::new_v4().to_string(),
                         server_id: Some(log_upstream.server.mcp_server_id),
                         server_display_key: log_upstream.server.server_key.clone(),
@@ -224,6 +229,7 @@ pub async fn mcp_streamable_http_proxy(
 }
 
 pub use aggregate::mcp_aggregate_streamable_http;
+pub use code_mode::code_mode_streamable_http;
 
 fn body_read_exceeded_limit(error: &axum::Error) -> bool {
     error
@@ -371,6 +377,7 @@ fn tool_invocation_log_input(
 ) -> McpInvocationLogInput {
     McpInvocationLogInput {
         request_log_id: None,
+        parent_invocation_id: None,
         request_id: mcp_request_id(id),
         server_id: Some(upstream.server.mcp_server_id),
         server_display_key: upstream.server.server_key.clone(),

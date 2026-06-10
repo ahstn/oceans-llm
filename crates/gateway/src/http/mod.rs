@@ -240,6 +240,12 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
                 .get(mcp_streamable_http_proxy)
                 .delete(mcp_streamable_http_proxy),
         )
+        .route(
+            "/code-mode-mcp",
+            post(code_mode_streamable_http)
+                .get(code_mode_streamable_http)
+                .delete(code_mode_streamable_http),
+        )
         .with_state(state)
         .layer(
             TraceLayer::new_for_http().make_span_with(|request: &http::Request<_>| {
