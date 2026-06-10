@@ -948,7 +948,25 @@ pub fn classify_agent_harness(user_agent: Option<&str>) -> AgentHarness {
             label: "Opencode",
         };
     }
-    if looks_like_pi_user_agent(user_agent, &lower) {
+    if lower.starts_with("claude-cli/") {
+        return AgentHarness {
+            key: "claude_cli",
+            label: "Claude CLI",
+        };
+    }
+    if lower.starts_with("dspy/") {
+        return AgentHarness {
+            key: "dspy",
+            label: "DSPy",
+        };
+    }
+    if lower.starts_with("curl/") {
+        return AgentHarness {
+            key: "curl",
+            label: "curl",
+        };
+    }
+    if lower.starts_with("pi/") {
         return AgentHarness {
             key: "pi",
             label: "Pi",
@@ -982,13 +1000,6 @@ pub fn classify_agent_harness(user_agent: Option<&str>) -> AgentHarness {
     }
 
     AgentHarness::UNKNOWN
-}
-
-fn looks_like_pi_user_agent(user_agent: &str, lower: &str) -> bool {
-    lower.starts_with("pi/")
-        && user_agent.contains(" (")
-        && user_agent.ends_with(')')
-        && (lower.contains("; bun/") || lower.contains("; node/"))
 }
 
 #[must_use]
@@ -1235,14 +1246,32 @@ mod tests {
         let cases = [
             ("opencode/1.2.3", "opencode", "Opencode"),
             ("opencode/1.2.3-beta.1", "opencode", "Opencode"),
+            (
+                "opencode/1.16.0 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14",
+                "opencode",
+                "Opencode",
+            ),
             ("pi/0.4.0 (darwin; bun/1.2.19; arm64)", "pi", "Pi"),
             ("pi/0.4.0 (linux; node/v22.14.0; x64)", "pi", "Pi"),
+            ("pi/0.4.0", "pi", "Pi"),
             ("claude-code/2.1.89 (cli)", "claude_code", "Claude Code"),
+            (
+                "claude-cli/2.1.170 (external, claude-vscode, agent-sdk/0.3.165)",
+                "claude_cli",
+                "Claude CLI",
+            ),
+            (
+                "claude-cli/2.1.158 (external, cli)",
+                "claude_cli",
+                "Claude CLI",
+            ),
             (
                 "Claude-User (claude-code/2.1.83; +https://support.anthropic.com/)",
                 "claude_code",
                 "Claude Code",
             ),
+            ("DSPy/3.2.1", "dspy", "DSPy"),
+            ("curl/8.7.1", "curl", "curl"),
             (
                 "GeminiCLI/0.37.0/gemini-pro (linux; x64; terminal)",
                 "gemini_cli",
