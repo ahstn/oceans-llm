@@ -36,9 +36,16 @@ Anthropic thinking policy currently relies on conservative model-name inference 
 
 The list payload becomes larger for supported rows because snippets are embedded. Each row includes only the clicked model's configurations, so the payload remains bounded by the visible page size and avoids another request path.
 
+## 2026-06-11 Update: Claude Code Multi-Block Snippets
+
+Claude Code is now implemented as another `ClientConfigTemplate`. Client configurations now contain one or more code blocks so a single client tab can expose related files or alternate settings without the UI understanding client-specific semantics. OpenCode and Pi still emit one block. Claude Code emits a gateway `settings.json` block and a separate lower-token-usage `settings.json` block.
+
+Claude Code uses an Anthropic-compatible gateway base URL and appends endpoints such as `/v1/messages` and `/v1/models`. The template derives that base from the OpenAI-compatible `/v1` gateway URL used by OpenCode and Pi so copied Claude Code settings do not point at the OpenAI client base.
+
 ## Follow-ups
 
 - Replace Anthropic model-name inference with typed provider/model metadata when available.
 - Consider validating OpenCode output against a pinned OpenCode config schema.
+- Consider validating Claude Code output against the SchemaStore `claude-code-settings.json` schema.
 - Add more client templates only through the `ClientConfigTemplate` boundary.
 - Revisit whether deployment-specific base URL/API key defaults should be configurable instead of fixed placeholders.

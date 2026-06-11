@@ -67,6 +67,10 @@ export default defineConfig({
             link: "/configuration/model-routing-and-api-behavior",
           },
           {
+            text: "Client Harness Configuration",
+            link: "/configuration/client-harness-configuration",
+          },
+          {
             text: "Pricing Catalog and Accounting",
             link: "/configuration/pricing-catalog-and-accounting",
           },

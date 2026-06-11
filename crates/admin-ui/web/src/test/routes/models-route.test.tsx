@@ -78,16 +78,45 @@ const modelPage: ModelPageView = {
         {
           key: 'opencode',
           label: 'OpenCode',
-          filename: 'opencode.json',
-          content: '{\n  "provider": "opencode"\n}',
+          blocks: [
+            {
+              label: 'opencode.json',
+              filename: 'opencode.json',
+              content: '{\n  "provider": "opencode"\n}',
+            },
+          ],
           notes: [],
         },
         {
           key: 'pi',
           label: 'Pi',
-          filename: 'models.json',
-          content: '{\n  "provider": "pi"\n}',
+          blocks: [
+            {
+              label: 'models.json',
+              filename: 'models.json',
+              content: '{\n  "provider": "pi"\n}',
+            },
+          ],
           notes: ['Manual note'],
+        },
+        {
+          key: 'claude-code',
+          label: 'Claude Code',
+          blocks: [
+            {
+              label: 'Gateway model settings',
+              filename: 'settings.json',
+              content:
+                '{\n  "$schema": "https://json.schemastore.org/claude-code-settings.json",\n  "env": {\n    "ANTHROPIC_MODEL": "claude-sonnet"\n  }\n}',
+            },
+            {
+              label: 'Lower token usage settings',
+              filename: 'settings.json',
+              content:
+                '{\n  "$schema": "https://json.schemastore.org/claude-code-settings.json",\n  "env": {\n    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "200000"\n  }\n}',
+            },
+          ],
+          notes: [],
         },
       ],
     },
@@ -184,7 +213,9 @@ describe('ModelsPage', () => {
     expect(backupRow).not.toBeNull()
     const backupCells = within(backupRow as HTMLElement).getAllByRole('cell')
 
-    expect(within(backupCells[1] as HTMLElement).getByText('google/gemini-2.0-flash')).toBeInTheDocument()
+    expect(
+      within(backupCells[1] as HTMLElement).getByText('google/gemini-2.0-flash'),
+    ).toBeInTheDocument()
     expect(within(backupCells[2] as HTMLElement).getByText('Google Vertex AI')).toBeInTheDocument()
     expect(within(backupCells[2] as HTMLElement).getByText('vertex-gemini')).toBeInTheDocument()
     expect(within(backupCells[3] as HTMLElement).getByText('Input')).toBeInTheDocument()
@@ -232,7 +263,9 @@ describe('ModelsPage', () => {
     const claudeRow = within(table).getByText('claude-sonnet').closest('tr')
     expect(claudeRow).not.toBeNull()
 
-    fireEvent.click(within(claudeRow as HTMLElement).getByRole('button', { name: /Client config/i }))
+    fireEvent.click(
+      within(claudeRow as HTMLElement).getByRole('button', { name: /Client config/i }),
+    )
     expect(screen.getByRole('dialog', { name: 'Client config' })).toBeInTheDocument()
     expect(screen.getByText('opencode.json')).toBeInTheDocument()
     expect(screen.getByText(/"provider": "opencode"/)).toBeInTheDocument()
@@ -243,5 +276,18 @@ describe('ModelsPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy JSON' }))
     expect(writeText).toHaveBeenCalledWith('{\n  "provider": "pi"\n}')
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Claude Code' }))
+    expect(screen.getAllByText('settings.json')).toHaveLength(2)
+    expect(screen.getByText('Gateway model settings')).toBeInTheDocument()
+    expect(screen.getByText('Lower token usage settings')).toBeInTheDocument()
+    expect(screen.getByText(/"ANTHROPIC_MODEL": "claude-sonnet"/)).toBeInTheDocument()
+    expect(screen.getByText(/"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "200000"/)).toBeInTheDocument()
+
+    const copyButtons = screen.getAllByRole('button', { name: 'Copy JSON' })
+    fireEvent.click(copyButtons[1] as HTMLElement)
+    expect(writeText).toHaveBeenLastCalledWith(
+      '{\n  "$schema": "https://json.schemastore.org/claude-code-settings.json",\n  "env": {\n    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "200000"\n  }\n}',
+    )
   })
 })

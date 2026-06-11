@@ -106,7 +106,9 @@ export function ModelsPage() {
   }
 
   const activeClientConfig =
-    configDialog?.model.client_configurations.find((config) => config.key === configDialog.activeKey) ??
+    configDialog?.model.client_configurations.find(
+      (config) => config.key === configDialog.activeKey,
+    ) ??
     configDialog?.model.client_configurations[0] ??
     null
 
@@ -456,24 +458,36 @@ function ClientConfigDialog({
                   </ToggleGroupItem>
                 ))}
               </ToggleGroup>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => onCopy(activeConfig.content)}
-              >
-                Copy JSON
-              </Button>
             </div>
 
-            <div className="text-muted-foreground flex flex-wrap items-center gap-2 text-sm">
-              <Badge variant="secondary">{activeConfig.filename}</Badge>
-              <span>{model.upstream_model ?? model.resolved_model_key}</span>
-            </div>
+            <div className="flex min-w-0 flex-col gap-4">
+              {activeConfig.blocks.map((block) => (
+                <div
+                  key={`${block.label}:${block.filename}`}
+                  className="flex min-w-0 flex-col gap-3"
+                >
+                  <div className="text-muted-foreground flex flex-wrap items-center justify-between gap-3 text-sm">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <Badge variant="secondary">{block.filename}</Badge>
+                      {block.label !== block.filename ? <span>{block.label}</span> : null}
+                      <span>{model.upstream_model ?? model.resolved_model_key}</span>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onCopy(block.content)}
+                    >
+                      Copy JSON
+                    </Button>
+                  </div>
 
-            <pre className="bg-muted text-muted-foreground max-h-[min(55vh,520px)] min-h-[320px] overflow-auto rounded-md border p-4 text-xs leading-6">
-              <code>{activeConfig.content}</code>
-            </pre>
+                  <pre className="bg-muted text-muted-foreground max-h-[min(42vh,420px)] min-h-[220px] overflow-auto rounded-md border p-4 text-xs leading-6">
+                    <code>{block.content}</code>
+                  </pre>
+                </div>
+              ))}
+            </div>
 
             {activeConfig.notes.length > 0 ? (
               <div className="text-muted-foreground flex flex-col gap-2 text-sm">
@@ -518,7 +532,9 @@ function MetricDetail({
 
 function ModelStatusIndicator({ status }: { status: string }) {
   const tone =
-    status === 'healthy' ? 'bg-emerald-500 shadow-emerald-500/30' : 'bg-amber-400 shadow-amber-400/30'
+    status === 'healthy'
+      ? 'bg-emerald-500 shadow-emerald-500/30'
+      : 'bg-amber-400 shadow-amber-400/30'
 
   return (
     <Tooltip>

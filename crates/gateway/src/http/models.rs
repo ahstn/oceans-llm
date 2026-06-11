@@ -8,8 +8,8 @@ use gateway_service::{AdminModelSummary, AdminModelsService};
 use crate::http::{
     admin_auth::require_platform_admin,
     admin_contract::{
-        AdminModelClientConfigView, AdminModelListQuery, AdminModelPageView, AdminModelView,
-        Envelope, envelope,
+        AdminModelClientConfigBlockView, AdminModelClientConfigView, AdminModelListQuery,
+        AdminModelPageView, AdminModelView, Envelope, envelope,
     },
     error::AppError,
     state::AppState,
@@ -90,8 +90,15 @@ fn map_model_summary(model: AdminModelSummary) -> AdminModelView {
             .map(|config| AdminModelClientConfigView {
                 key: config.key,
                 label: config.label,
-                filename: config.filename,
-                content: config.content,
+                blocks: config
+                    .blocks
+                    .into_iter()
+                    .map(|block| AdminModelClientConfigBlockView {
+                        label: block.label,
+                        filename: block.filename,
+                        content: block.content,
+                    })
+                    .collect(),
                 notes: config.notes,
             })
             .collect(),

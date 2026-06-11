@@ -4,6 +4,20 @@ use serde_json::{Map, Value, json};
 pub const DEFAULT_GATEWAY_BASE_URL: &str = "http://127.0.0.1:3000/v1";
 pub const DEFAULT_API_KEY_ENV_VAR: &str = "OCEANS_LLM_API_KEY";
 pub const DEFAULT_PROVIDER_ID: &str = "oceans-llm";
+const CLAUDE_CODE_SETTINGS_SCHEMA: &str = "https://json.schemastore.org/claude-code-settings.json";
+const CLAUDE_CODE_AUTH_TOKEN_PLACEHOLDER: &str = "<gateway api token>";
+const CLAUDE_CODE_LOWER_TOKEN_USAGE_ENV: [(&str, &str); 10] = [
+    ("CLAUDE_CODE_ENABLE_TELEMETRY", "0"),
+    ("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", "1"),
+    ("CLAUDE_CODE_DISABLE_1M_CONTEXT", "1"),
+    ("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "200000"),
+    ("ENABLE_TOOL_SEARCH", "auto"),
+    ("CLAUDE_CODE_NO_FLICKER", "1"),
+    ("CLAUDE_CODE_DISABLE_TERMINAL_TITLE", "1"),
+    ("CLAUDE_CODE_ATTRIBUTION_HEADER", "0"),
+    ("DISABLE_ERROR_REPORTING", "1"),
+    ("DISABLE_TELEMETRY", "1"),
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -87,9 +101,15 @@ impl Default for ClientConfigInput {
 pub struct ClientConfig {
     pub key: String,
     pub label: String,
+    pub blocks: Vec<ClientConfigCodeBlock>,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClientConfigCodeBlock {
+    pub label: String,
     pub filename: String,
     pub content: String,
-    pub notes: Vec<String>,
 }
 
 pub trait ClientConfigTemplate {
@@ -101,6 +121,9 @@ pub struct OpenCodeConfigTemplate;
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct PiConfigTemplate;
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct ClaudeCodeConfigTemplate;
 
 impl ClientConfigTemplate for OpenCodeConfigTemplate {
     fn render(&self, input: &ClientConfigInput) -> ClientConfig {
@@ -162,8 +185,11 @@ impl ClientConfigTemplate for OpenCodeConfigTemplate {
         ClientConfig {
             key: "opencode".to_string(),
             label: "OpenCode".to_string(),
-            filename: "opencode.json".to_string(),
-            content: to_pretty_json(&config),
+            blocks: vec![ClientConfigCodeBlock {
+                label: "opencode.json".to_string(),
+                filename: "opencode.json".to_string(),
+                content: to_pretty_json(&config),
+            }],
             notes: thinking_notes(input),
         }
     }
@@ -218,9 +244,36 @@ impl ClientConfigTemplate for PiConfigTemplate {
         ClientConfig {
             key: "pi".to_string(),
             label: "Pi".to_string(),
-            filename: "models.json".to_string(),
-            content: to_pretty_json(&config),
+            blocks: vec![ClientConfigCodeBlock {
+                label: "models.json".to_string(),
+                filename: "models.json".to_string(),
+                content: to_pretty_json(&config),
+            }],
             notes: thinking_notes(input),
+        }
+    }
+}
+
+impl ClientConfigTemplate for ClaudeCodeConfigTemplate {
+    fn render(&self, input: &ClientConfigInput) -> ClientConfig {
+        let config = claude_code_gateway_model_config(input);
+
+        ClientConfig {
+            key: "claude-code".to_string(),
+            label: "Claude Code".to_string(),
+            blocks: vec![
+                ClientConfigCodeBlock {
+                    label: "Gateway model settings".to_string(),
+                    filename: "settings.json".to_string(),
+                    content: to_pretty_json(&config),
+                },
+                ClientConfigCodeBlock {
+                    label: "Lower token usage settings".to_string(),
+                    filename: "settings.json".to_string(),
+                    content: to_pretty_json(&claude_code_minimal_experience_config()),
+                },
+            ],
+            notes: claude_code_notes(input),
         }
     }
 }
@@ -230,6 +283,7 @@ pub fn render_default_configs(input: &ClientConfigInput) -> Vec<ClientConfig> {
     vec![
         OpenCodeConfigTemplate.render(input),
         PiConfigTemplate.render(input),
+        ClaudeCodeConfigTemplate.render(input),
     ]
 }
 
@@ -315,6 +369,129 @@ fn thinking_notes(input: &ClientConfigInput) -> Vec<String> {
     }
 }
 
+fn claude_code_notes(input: &ClientConfigInput) -> Vec<String> {
+    let mut notes = thinking_notes(input);
+    notes.push(format!(
+        "Replace {CLAUDE_CODE_AUTH_TOKEN_PLACEHOLDER} with a gateway API key before using Claude Code settings."
+    ));
+    notes.push(format!(
+        "ANTHROPIC_BASE_URL is set to the Claude-compatible gateway base URL; Claude Code appends Anthropic endpoints such as /v1/messages and /v1/models. Keep the OpenAI-compatible base URL ({}) for OpenCode and Pi.",
+        input.gateway_base_url
+    ));
+    notes
+}
+
+fn claude_code_gateway_model_config(input: &ClientConfigInput) -> Value {
+    let model_override_key = claude_code_model_override_key(input);
+    json!({
+        "$schema": CLAUDE_CODE_SETTINGS_SCHEMA,
+        "env": Value::Object(claude_code_gateway_env(input)),
+        "modelOverrides": {
+            model_override_key.as_str(): input.model_id.as_str(),
+        },
+    })
+}
+
+fn claude_code_gateway_env(input: &ClientConfigInput) -> Map<String, Value> {
+    let mut env = Map::from_iter([
+        (
+            "ANTHROPIC_AUTH_TOKEN".to_string(),
+            json!(CLAUDE_CODE_AUTH_TOKEN_PLACEHOLDER),
+        ),
+        (
+            "ANTHROPIC_BASE_URL".to_string(),
+            json!(claude_code_gateway_base_url(input)),
+        ),
+        (
+            "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY".to_string(),
+            json!("1"),
+        ),
+        ("ANTHROPIC_MODEL".to_string(), json!(input.model_id)),
+        (
+            "ANTHROPIC_SMALL_FAST_MODEL".to_string(),
+            json!(input.model_id),
+        ),
+    ]);
+
+    if let Some(env_var) = claude_code_default_model_env_var(input) {
+        env.insert(env_var.to_string(), json!(input.model_id));
+    }
+
+    env
+}
+
+fn claude_code_gateway_base_url(input: &ClientConfigInput) -> String {
+    input
+        .gateway_base_url
+        .trim_end_matches('/')
+        .strip_suffix("/v1")
+        .unwrap_or_else(|| input.gateway_base_url.trim_end_matches('/'))
+        .to_string()
+}
+
+fn claude_code_model_override_key(input: &ClientConfigInput) -> String {
+    input
+        .upstream_model
+        .as_deref()
+        .and_then(canonical_claude_code_model_id)
+        .or_else(|| canonical_claude_code_model_id(&input.model_id))
+        .unwrap_or_else(|| input.model_id.clone())
+}
+
+fn canonical_claude_code_model_id(value: &str) -> Option<String> {
+    let model = value
+        .rsplit('/')
+        .next()
+        .unwrap_or(value)
+        .split('@')
+        .next()
+        .unwrap_or(value)
+        .trim()
+        .to_ascii_lowercase()
+        .replace('.', "-");
+
+    if model.starts_with("claude-") {
+        Some(model)
+    } else {
+        None
+    }
+}
+
+fn claude_code_default_model_env_var(input: &ClientConfigInput) -> Option<&'static str> {
+    let joined = [
+        input.model_id.as_str(),
+        input.upstream_model.as_deref().unwrap_or_default(),
+    ]
+    .join(" ")
+    .to_ascii_lowercase();
+
+    if joined.contains("opus") {
+        Some("ANTHROPIC_DEFAULT_OPUS_MODEL")
+    } else if joined.contains("sonnet") {
+        Some("ANTHROPIC_DEFAULT_SONNET_MODEL")
+    } else if joined.contains("haiku") {
+        Some("ANTHROPIC_DEFAULT_HAIKU_MODEL")
+    } else {
+        None
+    }
+}
+
+fn claude_code_minimal_experience_config() -> Value {
+    json!({
+        "$schema": CLAUDE_CODE_SETTINGS_SCHEMA,
+        "env": env_from_pairs(&CLAUDE_CODE_LOWER_TOKEN_USAGE_ENV),
+    })
+}
+
+fn env_from_pairs(pairs: &[(&str, &str)]) -> Value {
+    Value::Object(
+        pairs
+            .iter()
+            .map(|(key, value)| ((*key).to_string(), json!(value)))
+            .collect(),
+    )
+}
+
 fn to_pretty_json(value: &Value) -> String {
     serde_json::to_string_pretty(value).expect("client config JSON should serialize")
 }
@@ -324,14 +501,16 @@ mod tests {
     use serde_json::Value;
 
     use super::{
-        AnthropicThinkingPolicy, ClientConfigInput, ClientConfigTemplate, ClientModelCapabilities,
-        OpenCodeConfigTemplate, PiConfigTemplate, infer_anthropic_thinking_policy,
+        AnthropicThinkingPolicy, ClaudeCodeConfigTemplate, ClientConfigInput, ClientConfigTemplate,
+        ClientModelCapabilities, OpenCodeConfigTemplate, PiConfigTemplate,
+        infer_anthropic_thinking_policy,
     };
 
     fn input(policy: Option<AnthropicThinkingPolicy>) -> ClientConfigInput {
         ClientConfigInput {
             model_id: "claude-sonnet".to_string(),
             display_name: "Claude Sonnet".to_string(),
+            upstream_model: Some("anthropic/claude-sonnet-4-6".to_string()),
             input_cost_per_million_tokens_usd_10000: Some(30_000),
             output_cost_per_million_tokens_usd_10000: Some(150_000),
             cache_read_cost_per_million_tokens_usd_10000: Some(3_000),
@@ -351,7 +530,7 @@ mod tests {
     fn opencode_shape_includes_required_cost_and_limits() {
         let rendered =
             OpenCodeConfigTemplate.render(&input(Some(AnthropicThinkingPolicy::SafeEffort)));
-        let value: Value = serde_json::from_str(&rendered.content).expect("json");
+        let value: Value = serde_json::from_str(&rendered.blocks[0].content).expect("json");
         let model = &value["provider"]["oceans-llm"]["models"]["claude-sonnet"];
 
         assert_eq!(value["$schema"], "https://opencode.ai/config.json");
@@ -365,7 +544,7 @@ mod tests {
     #[test]
     fn pi_shape_includes_provider_model_cost_and_windows() {
         let rendered = PiConfigTemplate.render(&input(Some(AnthropicThinkingPolicy::SafeEffort)));
-        let value: Value = serde_json::from_str(&rendered.content).expect("json");
+        let value: Value = serde_json::from_str(&rendered.blocks[0].content).expect("json");
         let provider = &value["providers"]["oceans-llm"];
         let model = &provider["models"][0];
 
@@ -383,9 +562,10 @@ mod tests {
         input.cache_read_cost_per_million_tokens_usd_10000 = None;
 
         let opencode: Value =
-            serde_json::from_str(&OpenCodeConfigTemplate.render(&input).content).expect("json");
+            serde_json::from_str(&OpenCodeConfigTemplate.render(&input).blocks[0].content)
+                .expect("json");
         let pi: Value =
-            serde_json::from_str(&PiConfigTemplate.render(&input).content).expect("json");
+            serde_json::from_str(&PiConfigTemplate.render(&input).blocks[0].content).expect("json");
 
         assert!(
             opencode["provider"]["oceans-llm"]["models"]["claude-sonnet"]["cost"]
@@ -405,9 +585,10 @@ mod tests {
             infer_anthropic_thinking_policy(["anthropic/claude-sonnet-4-6", "Claude Sonnet 4.6"]);
         let input = input(policy);
         let opencode: Value =
-            serde_json::from_str(&OpenCodeConfigTemplate.render(&input).content).expect("json");
+            serde_json::from_str(&OpenCodeConfigTemplate.render(&input).blocks[0].content)
+                .expect("json");
         let pi: Value =
-            serde_json::from_str(&PiConfigTemplate.render(&input).content).expect("json");
+            serde_json::from_str(&PiConfigTemplate.render(&input).blocks[0].content).expect("json");
 
         assert_eq!(
             opencode["provider"]["oceans-llm"]["models"]["claude-sonnet"]["variants"]["high"]["reasoningEffort"],
@@ -423,7 +604,7 @@ mod tests {
     fn opencode_safe_effort_config_matches_expected_full_shape() {
         let rendered =
             OpenCodeConfigTemplate.render(&input(Some(AnthropicThinkingPolicy::SafeEffort)));
-        let value: Value = serde_json::from_str(&rendered.content).expect("json");
+        let value: Value = serde_json::from_str(&rendered.blocks[0].content).expect("json");
 
         assert_eq!(
             value,
@@ -472,7 +653,7 @@ mod tests {
     #[test]
     fn pi_safe_effort_config_matches_expected_full_shape() {
         let rendered = PiConfigTemplate.render(&input(Some(AnthropicThinkingPolicy::SafeEffort)));
-        let value: Value = serde_json::from_str(&rendered.content).expect("json");
+        let value: Value = serde_json::from_str(&rendered.blocks[0].content).expect("json");
 
         assert_eq!(
             value,
@@ -522,7 +703,7 @@ mod tests {
         let policy = infer_anthropic_thinking_policy(["anthropic/claude-sonnet-4-5@20250929"]);
         let input = input(policy);
         let rendered = OpenCodeConfigTemplate.render(&input);
-        let value: Value = serde_json::from_str(&rendered.content).expect("json");
+        let value: Value = serde_json::from_str(&rendered.blocks[0].content).expect("json");
 
         assert_eq!(policy, Some(AnthropicThinkingPolicy::ManualBudget));
         assert!(
@@ -531,5 +712,50 @@ mod tests {
                 .is_none()
         );
         assert!(!rendered.notes.is_empty());
+    }
+
+    #[test]
+    fn claude_code_shape_includes_gateway_env_and_model_override() {
+        let rendered =
+            ClaudeCodeConfigTemplate.render(&input(Some(AnthropicThinkingPolicy::SafeEffort)));
+        let gateway_settings: Value =
+            serde_json::from_str(&rendered.blocks[0].content).expect("json");
+        let lower_usage_settings: Value =
+            serde_json::from_str(&rendered.blocks[1].content).expect("json");
+
+        assert_eq!(rendered.key, "claude-code");
+        assert_eq!(rendered.blocks.len(), 2);
+        assert_eq!(
+            gateway_settings["$schema"],
+            "https://json.schemastore.org/claude-code-settings.json"
+        );
+        assert_eq!(
+            gateway_settings["env"]["ANTHROPIC_AUTH_TOKEN"],
+            "<gateway api token>"
+        );
+        assert_eq!(
+            gateway_settings["env"]["ANTHROPIC_BASE_URL"],
+            "http://127.0.0.1:3000"
+        );
+        assert_eq!(gateway_settings["env"]["ANTHROPIC_MODEL"], "claude-sonnet");
+        assert_eq!(
+            gateway_settings["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"],
+            "claude-sonnet"
+        );
+        assert_eq!(
+            gateway_settings["modelOverrides"]["claude-sonnet-4-6"],
+            "claude-sonnet"
+        );
+        assert_eq!(
+            lower_usage_settings["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"],
+            "200000"
+        );
+        assert_eq!(lower_usage_settings["env"]["ENABLE_TOOL_SEARCH"], "auto");
+        assert!(
+            rendered
+                .notes
+                .iter()
+                .any(|note| note.contains("/v1/messages"))
+        );
     }
 }

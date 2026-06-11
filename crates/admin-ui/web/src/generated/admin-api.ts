@@ -958,9 +958,13 @@ export interface components {
             team_name?: string | null;
             team_role?: string | null;
         };
-        AdminModelClientConfigView: {
+        AdminModelClientConfigBlockView: {
             content: string;
             filename: string;
+            label: string;
+        };
+        AdminModelClientConfigView: {
+            blocks: components["schemas"]["AdminModelClientConfigBlockView"][];
             key: string;
             label: string;
             notes: string[];
