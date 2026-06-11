@@ -4,6 +4,20 @@ use serde_json::{Map, Value, json};
 pub const DEFAULT_GATEWAY_BASE_URL: &str = "http://127.0.0.1:3000/v1";
 pub const DEFAULT_API_KEY_ENV_VAR: &str = "OCEANS_LLM_API_KEY";
 pub const DEFAULT_PROVIDER_ID: &str = "oceans-llm";
+const CLAUDE_CODE_SETTINGS_SCHEMA: &str = "https://json.schemastore.org/claude-code-settings.json";
+const CLAUDE_CODE_AUTH_TOKEN_PLACEHOLDER: &str = "<gateway api token>";
+const CLAUDE_CODE_LOWER_TOKEN_USAGE_ENV: [(&str, &str); 10] = [
+    ("CLAUDE_CODE_ENABLE_TELEMETRY", "0"),
+    ("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", "1"),
+    ("CLAUDE_CODE_DISABLE_1M_CONTEXT", "1"),
+    ("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "200000"),
+    ("ENABLE_TOOL_SEARCH", "auto"),
+    ("CLAUDE_CODE_NO_FLICKER", "1"),
+    ("CLAUDE_CODE_DISABLE_TERMINAL_TITLE", "1"),
+    ("CLAUDE_CODE_ATTRIBUTION_HEADER", "0"),
+    ("DISABLE_ERROR_REPORTING", "1"),
+    ("DISABLE_TELEMETRY", "1"),
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -242,39 +256,7 @@ impl ClientConfigTemplate for PiConfigTemplate {
 
 impl ClientConfigTemplate for ClaudeCodeConfigTemplate {
     fn render(&self, input: &ClientConfigInput) -> ClientConfig {
-        let model_override_key = claude_code_model_override_key(input);
-        let default_model_env_var = claude_code_default_model_env_var(input);
-        let mut env = Map::from_iter([
-            (
-                "ANTHROPIC_AUTH_TOKEN".to_string(),
-                json!(format!("<{}>", input.api_key_env_var)),
-            ),
-            (
-                "ANTHROPIC_BASE_URL".to_string(),
-                json!(input.gateway_base_url),
-            ),
-            (
-                "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY".to_string(),
-                json!("1"),
-            ),
-            ("ANTHROPIC_MODEL".to_string(), json!(input.model_id)),
-            (
-                "ANTHROPIC_SMALL_FAST_MODEL".to_string(),
-                json!(input.model_id),
-            ),
-        ]);
-
-        if let Some(env_var) = default_model_env_var {
-            env.insert(env_var.to_string(), json!(input.model_id));
-        }
-
-        let config = json!({
-            "$schema": "https://json.schemastore.org/claude-code-settings.json",
-            "env": Value::Object(env),
-            "modelOverrides": {
-                model_override_key.as_str(): input.model_id.as_str(),
-            },
-        });
+        let config = claude_code_gateway_model_config(input);
 
         ClientConfig {
             key: "claude-code".to_string(),
@@ -291,7 +273,7 @@ impl ClientConfigTemplate for ClaudeCodeConfigTemplate {
                     content: to_pretty_json(&claude_code_minimal_experience_config()),
                 },
             ],
-            notes: thinking_notes(input),
+            notes: claude_code_notes(input),
         }
     }
 }
@@ -387,6 +369,66 @@ fn thinking_notes(input: &ClientConfigInput) -> Vec<String> {
     }
 }
 
+fn claude_code_notes(input: &ClientConfigInput) -> Vec<String> {
+    let mut notes = thinking_notes(input);
+    notes.push(format!(
+        "Replace {CLAUDE_CODE_AUTH_TOKEN_PLACEHOLDER} with a gateway API key before using Claude Code settings."
+    ));
+    notes.push(format!(
+        "ANTHROPIC_BASE_URL is set to the Claude-compatible gateway base URL; Claude Code appends Anthropic endpoints such as /v1/messages and /v1/models. Keep the OpenAI-compatible base URL ({}) for OpenCode and Pi.",
+        input.gateway_base_url
+    ));
+    notes
+}
+
+fn claude_code_gateway_model_config(input: &ClientConfigInput) -> Value {
+    let model_override_key = claude_code_model_override_key(input);
+    json!({
+        "$schema": CLAUDE_CODE_SETTINGS_SCHEMA,
+        "env": Value::Object(claude_code_gateway_env(input)),
+        "modelOverrides": {
+            model_override_key.as_str(): input.model_id.as_str(),
+        },
+    })
+}
+
+fn claude_code_gateway_env(input: &ClientConfigInput) -> Map<String, Value> {
+    let mut env = Map::from_iter([
+        (
+            "ANTHROPIC_AUTH_TOKEN".to_string(),
+            json!(CLAUDE_CODE_AUTH_TOKEN_PLACEHOLDER),
+        ),
+        (
+            "ANTHROPIC_BASE_URL".to_string(),
+            json!(claude_code_gateway_base_url(input)),
+        ),
+        (
+            "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY".to_string(),
+            json!("1"),
+        ),
+        ("ANTHROPIC_MODEL".to_string(), json!(input.model_id)),
+        (
+            "ANTHROPIC_SMALL_FAST_MODEL".to_string(),
+            json!(input.model_id),
+        ),
+    ]);
+
+    if let Some(env_var) = claude_code_default_model_env_var(input) {
+        env.insert(env_var.to_string(), json!(input.model_id));
+    }
+
+    env
+}
+
+fn claude_code_gateway_base_url(input: &ClientConfigInput) -> String {
+    input
+        .gateway_base_url
+        .trim_end_matches('/')
+        .strip_suffix("/v1")
+        .unwrap_or_else(|| input.gateway_base_url.trim_end_matches('/'))
+        .to_string()
+}
+
 fn claude_code_model_override_key(input: &ClientConfigInput) -> String {
     input
         .upstream_model
@@ -436,20 +478,18 @@ fn claude_code_default_model_env_var(input: &ClientConfigInput) -> Option<&'stat
 
 fn claude_code_minimal_experience_config() -> Value {
     json!({
-        "$schema": "https://json.schemastore.org/claude-code-settings.json",
-        "env": {
-            "CLAUDE_CODE_ENABLE_TELEMETRY": "0",
-            "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1",
-            "CLAUDE_CODE_DISABLE_1M_CONTEXT": "1",
-            "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "200000",
-            "ENABLE_TOOL_SEARCH": "auto",
-            "CLAUDE_CODE_NO_FLICKER": "1",
-            "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1",
-            "CLAUDE_CODE_ATTRIBUTION_HEADER": "0",
-            "DISABLE_ERROR_REPORTING": "1",
-            "DISABLE_TELEMETRY": "1"
-        }
+        "$schema": CLAUDE_CODE_SETTINGS_SCHEMA,
+        "env": env_from_pairs(&CLAUDE_CODE_LOWER_TOKEN_USAGE_ENV),
     })
+}
+
+fn env_from_pairs(pairs: &[(&str, &str)]) -> Value {
+    Value::Object(
+        pairs
+            .iter()
+            .map(|(key, value)| ((*key).to_string(), json!(value)))
+            .collect(),
+    )
 }
 
 fn to_pretty_json(value: &Value) -> String {
@@ -689,6 +729,14 @@ mod tests {
             gateway_settings["$schema"],
             "https://json.schemastore.org/claude-code-settings.json"
         );
+        assert_eq!(
+            gateway_settings["env"]["ANTHROPIC_AUTH_TOKEN"],
+            "<gateway api token>"
+        );
+        assert_eq!(
+            gateway_settings["env"]["ANTHROPIC_BASE_URL"],
+            "http://127.0.0.1:3000"
+        );
         assert_eq!(gateway_settings["env"]["ANTHROPIC_MODEL"], "claude-sonnet");
         assert_eq!(
             gateway_settings["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"],
@@ -703,5 +751,11 @@ mod tests {
             "200000"
         );
         assert_eq!(lower_usage_settings["env"]["ENABLE_TOOL_SEARCH"], "auto");
+        assert!(
+            rendered
+                .notes
+                .iter()
+                .any(|note| note.contains("/v1/messages"))
+        );
     }
 }

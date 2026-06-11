@@ -18,11 +18,13 @@ The snippets use the gateway model id shown in the Models table. API keys are st
 
 The Claude Code tab emits `.claude/settings.json` content with the SchemaStore Claude Code schema URL. The gateway settings block includes:
 
-- `ANTHROPIC_AUTH_TOKEN`, set to the gateway API key placeholder
-- `ANTHROPIC_BASE_URL`, set to the gateway OpenAI-compatible base URL
+- `ANTHROPIC_AUTH_TOKEN`, set to a replaceable gateway API token placeholder
+- `ANTHROPIC_BASE_URL`, set to the Claude-compatible gateway base URL
 - `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY`, so Claude Code can discover gateway-routed models
 - `ANTHROPIC_MODEL`, `ANTHROPIC_SMALL_FAST_MODEL`, and the matching default model class variable
 - `modelOverrides`, mapping Claude Code's Anthropic model id to the selected gateway model id
+
+Claude Code appends Anthropic endpoints such as `/v1/messages` and `/v1/models` to `ANTHROPIC_BASE_URL`. Do not include `/v1/messages` in the value. OpenCode and Pi still use the OpenAI-compatible `/v1` base URL.
 
 The same dialog also shows a second `settings.json` block for a smaller local Claude Code experience. It disables telemetry, experimental betas, 1M context, and related UI/reporting behavior, and sets a lower auto-compact window.
 
