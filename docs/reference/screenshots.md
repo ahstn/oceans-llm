@@ -18,7 +18,7 @@ Shows configured models, provider identity, model metadata, and routing context.
 
 ## Model Client Config
 
-Shows generated client configuration snippets for a selected model.
+Shows generated client configuration snippets for a selected model, including multi-block clients such as Claude Code `settings.json`.
 
 ![Model client config](../public/images/screenshot-model-client-config.png)
 

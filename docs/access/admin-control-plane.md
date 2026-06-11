@@ -31,6 +31,7 @@ These areas are backed by real gateway APIs today:
 - request-log list and detail inspection
 - MCP invocation list and detail inspection
 - MCP server registry UI, recommended-server catalog, registry CRUD, soft-disable, tool list, and discovery refresh
+- generated client configuration snippets for supported model harnesses; see [Client Harness Configuration](../configuration/client-harness-configuration.md)
 
 ## Live But Still Maturing Surfaces
 

@@ -2844,14 +2844,12 @@
           }
         }
       },
-      "AdminModelClientConfigView": {
+      "AdminModelClientConfigBlockView": {
         "type": "object",
         "required": [
-          "key",
           "label",
           "filename",
-          "content",
-          "notes"
+          "content"
         ],
         "properties": {
           "content": {
@@ -2859,6 +2857,26 @@
           },
           "filename": {
             "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      },
+      "AdminModelClientConfigView": {
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "blocks",
+          "notes"
+        ],
+        "properties": {
+          "blocks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminModelClientConfigBlockView"
+            }
           },
           "key": {
             "type": "string"

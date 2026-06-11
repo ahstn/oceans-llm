@@ -7,7 +7,7 @@
 
 The admin Models page exposes the resolved model catalog, selected route metadata, pricing, token limits, and model capabilities that end users need when configuring local coding agents against the gateway's OpenAI-compatible endpoint.
 
-OpenCode and Pi both support custom provider/model configuration, but their file shapes and thinking controls differ. Anthropic models add another layer of policy: newer Claude safe-effort families can use effort-style thinking values, while older Claude models require caller-supplied manual budget tokens. Generating snippets directly in the browser would duplicate this policy in TypeScript and make it harder to keep client instructions aligned with gateway routing behavior.
+OpenCode, Pi, and Claude Code support custom model configuration, but their file shapes and thinking controls differ. Anthropic models add another layer of policy: newer Claude safe-effort families can use effort-style thinking values, while older Claude models require caller-supplied manual budget tokens. Generating snippets directly in the browser would duplicate this policy in TypeScript and make it harder to keep client instructions aligned with gateway routing behavior.
 
 ## Decision
 
@@ -17,7 +17,8 @@ Implementation points:
 
 - `crates/gateway-client-config` owns the config templating boundary.
 - `ClientConfigTemplate` is the shared interface for client-specific renderers.
-- OpenCode and Pi are implemented as separate templates with their own JSON shapes.
+- OpenCode, Pi, and Claude Code are implemented as separate templates with their own JSON shapes.
+- Each client configuration contains one or more code blocks. OpenCode and Pi currently emit one block. Claude Code emits a gateway `settings.json` block and a separate lower-token-usage `settings.json` block.
 - `AdminModelsService` builds snippets only for Anthropic-labeled rows.
 - The admin model list payload includes `client_configurations`, so the UI does not need a second endpoint.
 - The crate centralizes Anthropic thinking policy for this feature: safe-effort variants are emitted only for Claude 4.6/4.7/Mythos-style families, while manual-budget Claude models remain reasoning-capable without generated variants.
@@ -26,7 +27,7 @@ Implementation points:
 
 Server-side generation keeps pricing, model ids, token limits, route/provider labels, and thinking policy close to the source of truth. It also keeps the UI focused on presentation and copy behavior instead of embedding provider-specific config semantics in React code.
 
-A separate crate gives this feature a clear ownership boundary. Future clients can add another `ClientConfigTemplate` implementation without expanding the admin service with more JSON construction details.
+A separate crate gives this feature a clear ownership boundary. Future clients can add another `ClientConfigTemplate` implementation without expanding the admin service with more JSON construction details. Multi-block configs let one client tab expose related files or alternate settings without forcing the UI to understand client-specific semantics.
 
 ## Trade-offs
 
@@ -40,5 +41,6 @@ The list payload becomes larger for supported rows because snippets are embedded
 
 - Replace Anthropic model-name inference with typed provider/model metadata when available.
 - Consider validating OpenCode output against a pinned OpenCode config schema.
+- Consider validating Claude Code output against the SchemaStore `claude-code-settings.json` schema.
 - Add more client templates only through the `ClientConfigTemplate` boundary.
 - Revisit whether deployment-specific base URL/API key defaults should be configurable instead of fixed placeholders.

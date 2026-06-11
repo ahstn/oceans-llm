@@ -1061,23 +1061,35 @@ mod tests {
             items[0].cache_read_cost_per_million_tokens_usd_10000,
             Some(3_000)
         );
-        assert_eq!(items[0].client_configurations.len(), 2);
+        assert_eq!(items[0].client_configurations.len(), 3);
         assert_eq!(items[0].client_configurations[0].key, "opencode");
         assert!(
-            items[0].client_configurations[0]
+            items[0].client_configurations[0].blocks[0]
                 .content
                 .contains("\"cache_read\": 0.3")
         );
         assert!(
-            items[0].client_configurations[0]
+            items[0].client_configurations[0].blocks[0]
                 .content
                 .contains("\"variants\"")
         );
         assert_eq!(items[0].client_configurations[1].key, "pi");
         assert!(
-            items[0].client_configurations[1]
+            items[0].client_configurations[1].blocks[0]
                 .content
                 .contains("\"thinkingLevelMap\"")
+        );
+        assert_eq!(items[0].client_configurations[2].key, "claude-code");
+        assert_eq!(items[0].client_configurations[2].blocks.len(), 2);
+        assert!(
+            items[0].client_configurations[2].blocks[0]
+                .content
+                .contains("\"modelOverrides\"")
+        );
+        assert!(
+            items[0].client_configurations[2].blocks[1]
+                .content
+                .contains("\"CLAUDE_CODE_AUTO_COMPACT_WINDOW\": \"200000\"")
         );
     }
 }
