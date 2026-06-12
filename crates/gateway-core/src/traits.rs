@@ -313,6 +313,17 @@ pub trait BudgetRepository: Send + Sync {
         &self,
         event: &UsageLedgerRecord,
     ) -> Result<bool, StoreError>;
+
+    async fn delete_usage_ledger_events_by_request_ids(
+        &self,
+        request_ids: &[String],
+    ) -> Result<u64, StoreError> {
+        let _ = request_ids;
+        Err(StoreError::Unexpected(
+            "delete_usage_ledger_events_by_request_ids is not implemented for this repository"
+                .to_string(),
+        ))
+    }
 }
 
 #[async_trait]
@@ -433,6 +444,16 @@ pub trait RequestLogRepository: Send + Sync {
         cutoff: OffsetDateTime,
         dry_run: bool,
     ) -> Result<RequestLogPurgeResult, StoreError>;
+
+    async fn delete_request_logs_by_request_ids(
+        &self,
+        request_ids: &[String],
+    ) -> Result<u64, StoreError> {
+        let _ = request_ids;
+        Err(StoreError::Unexpected(
+            "delete_request_logs_by_request_ids is not implemented for this repository".to_string(),
+        ))
+    }
 }
 
 #[async_trait]

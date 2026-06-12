@@ -2635,6 +2635,525 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn libsql_deletes_request_logs_and_usage_events_by_request_ids() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+        store
+            .seed_from_inputs(&[SeedProvider {
+                    provider_key: "openai-prod".to_string(),
+                    provider_type: "openai_compat".to_string(),
+                    config: json!({}),
+                    secrets: None,
+                }], &[SeedModel {
+                    model_key: "fast".to_string(),
+                    alias_target_model_key: None,
+                    description: None,
+                    tags: Vec::new(),
+                    rank: 10,
+                    routes: Vec::new(),
+                }], &[SeedApiKey {
+                    name: "dev".to_string(),
+                    public_id: "dev123".to_string(),
+                    secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
+            service_account_key: "seed-workloads".to_string(),
+            service_account_name: "Seed Workloads".to_string(),
+            service_account_team_key: "seed-workloads".to_string(),
+            service_account_budget: SeedBudget {
+                cadence: BudgetCadence::Daily,
+                amount_usd: Money4::from_scaled(100_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            },
+                    allowed_models: vec!["fast".to_string()],
+                }], &[], &[], &seed_api_key_teams(), &[])
+            .await
+            .expect("seed");
+        let api_key = store
+            .get_api_key_by_public_id("dev123")
+            .await
+            .expect("query key")
+            .expect("api key should exist");
+
+        let now = OffsetDateTime::now_utc();
+        let seeded_log = RequestLogRecord {
+            request_log_id: Uuid::new_v4(),
+            request_id: "demo-req-001".to_string(),
+            api_key_id: api_key.id,
+            user_id: None,
+            team_id: api_key.owner_team_id,
+            service_account_id: None,
+            model_key: "fast".to_string(),
+            resolved_model_key: "fast".to_string(),
+            provider_key: "openai-prod".to_string(),
+            status_code: Some(200),
+            latency_ms: Some(42),
+            prompt_tokens: Some(1),
+            completion_tokens: Some(2),
+            total_tokens: Some(3),
+            error_code: None,
+            has_payload: true,
+            request_payload_truncated: false,
+            response_payload_truncated: false,
+            request_tags: RequestTags {
+                service: Some("svc".to_string()),
+                component: None,
+                env: None,
+                bespoke: vec![RequestTag {
+                    key: "tenant".to_string(),
+                    value: "alpha".to_string(),
+                }],
+            },
+            tool_cardinality: RequestToolCardinality::default(),
+            user_agent_raw: None,
+            agent_harness_key: "unknown".to_string(),
+            agent_harness_label: "Unknown".to_string(),
+            metadata: Map::new(),
+            occurred_at: now - Duration::hours(2),
+        };
+        let kept_log = RequestLogRecord {
+            request_log_id: Uuid::new_v4(),
+            request_id: "req-kept".to_string(),
+            has_payload: false,
+            request_tags: RequestTags::default(),
+            occurred_at: now,
+            ..seeded_log.clone()
+        };
+        let payload = RequestLogPayloadRecord {
+            request_log_id: seeded_log.request_log_id,
+            request_json: json!({"prompt": "seeded"}),
+            response_json: json!({"ok": true}),
+        };
+        let attempt = RequestAttemptRecord {
+            request_attempt_id: Uuid::new_v4(),
+            request_log_id: seeded_log.request_log_id,
+            request_id: seeded_log.request_id.clone(),
+            attempt_number: 1,
+            route_id: Uuid::new_v4(),
+            provider_key: "openai-prod".to_string(),
+            upstream_model: "gpt-4o-mini".to_string(),
+            status: RequestAttemptStatus::Success,
+            status_code: Some(200),
+            error_code: None,
+            error_detail: None,
+            error_detail_truncated: false,
+            retryable: false,
+            terminal: true,
+            produced_final_response: true,
+            stream: false,
+            started_at: seeded_log.occurred_at,
+            completed_at: Some(seeded_log.occurred_at + Duration::milliseconds(42)),
+            latency_ms: Some(42),
+            metadata: Map::new(),
+        };
+
+        store
+            .insert_request_log_with_attempts(&seeded_log, Some(&payload), &[attempt])
+            .await
+            .expect("insert seeded request log");
+        store
+            .insert_request_log(&kept_log, None)
+            .await
+            .expect("insert kept request log");
+
+        let seeded_event = build_usage_ledger_record(
+            "demo-req-001",
+            "user:scope-demo".to_string(),
+            api_key.id,
+            None,
+            None,
+            None,
+            None,
+            "gpt-4o-mini",
+            UsagePricingStatus::Priced,
+            1_000,
+            now - Duration::hours(2),
+        );
+        let kept_event = build_usage_ledger_record(
+            "req-kept",
+            "user:scope-kept".to_string(),
+            api_key.id,
+            None,
+            None,
+            None,
+            None,
+            "gpt-4o-mini",
+            UsagePricingStatus::Priced,
+            2_000,
+            now,
+        );
+        assert!(
+            store
+                .insert_usage_ledger_if_absent(&seeded_event)
+                .await
+                .expect("insert seeded usage event")
+        );
+        assert!(
+            store
+                .insert_usage_ledger_if_absent(&kept_event)
+                .await
+                .expect("insert kept usage event")
+        );
+
+        let request_ids = vec!["demo-req-001".to_string()];
+        assert_eq!(
+            store
+                .delete_request_logs_by_request_ids(&request_ids)
+                .await
+                .expect("delete seeded request logs"),
+            1
+        );
+        assert_eq!(
+            store
+                .delete_usage_ledger_events_by_request_ids(&request_ids)
+                .await
+                .expect("delete seeded usage events"),
+            1
+        );
+
+        assert!(
+            store
+                .get_request_log_detail(seeded_log.request_log_id)
+                .await
+                .is_err()
+        );
+        assert!(
+            store
+                .get_request_log_detail(kept_log.request_log_id)
+                .await
+                .is_ok()
+        );
+        assert!(
+            store
+                .get_usage_ledger_by_request_and_scope("demo-req-001", "user:scope-demo")
+                .await
+                .expect("seeded usage lookup")
+                .is_none()
+        );
+        assert!(
+            store
+                .get_usage_ledger_by_request_and_scope("req-kept", "user:scope-kept")
+                .await
+                .expect("kept usage lookup")
+                .is_some()
+        );
+
+        // Repeat deletes are no-ops, which is what makes reseeding idempotent.
+        assert_eq!(
+            store
+                .delete_request_logs_by_request_ids(&request_ids)
+                .await
+                .expect("repeat request log delete"),
+            0
+        );
+        assert_eq!(
+            store
+                .delete_usage_ledger_events_by_request_ids(&request_ids)
+                .await
+                .expect("repeat usage event delete"),
+            0
+        );
+        assert_eq!(
+            store
+                .delete_request_logs_by_request_ids(&[])
+                .await
+                .expect("empty request log delete"),
+            0
+        );
+
+        let db = libsql::Builder::new_local(db_path)
+            .build()
+            .await
+            .expect("libsql db");
+        let connection = db.connect().expect("libsql connection");
+        let mut rows = connection
+            .query(
+                r#"
+                SELECT
+                    (SELECT COUNT(*) FROM request_log_payloads),
+                    (SELECT COUNT(*) FROM request_log_tags),
+                    (SELECT COUNT(*) FROM request_log_attempts)
+                "#,
+                (),
+            )
+            .await
+            .expect("child counts");
+        let row = rows
+            .next()
+            .await
+            .expect("child count row")
+            .expect("child count row exists");
+        let payload_count: i64 = row.get(0).expect("payload count");
+        let tag_count: i64 = row.get(1).expect("tag count");
+        let attempt_count: i64 = row.get(2).expect("attempt count");
+        assert_eq!((payload_count, tag_count, attempt_count), (0, 0, 0));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_deletes_request_logs_and_usage_events_by_request_ids() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres request log delete test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options)
+            .await
+            .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+        store
+            .seed_from_inputs(&[SeedProvider {
+                    provider_key: "openai-prod".to_string(),
+                    provider_type: "openai_compat".to_string(),
+                    config: json!({}),
+                    secrets: None,
+                }], &[SeedModel {
+                    model_key: "fast".to_string(),
+                    alias_target_model_key: None,
+                    description: None,
+                    tags: Vec::new(),
+                    rank: 10,
+                    routes: Vec::new(),
+                }], &[SeedApiKey {
+                    name: "dev".to_string(),
+                    public_id: "dev123".to_string(),
+                    secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
+            service_account_key: "seed-workloads".to_string(),
+            service_account_name: "Seed Workloads".to_string(),
+            service_account_team_key: "seed-workloads".to_string(),
+            service_account_budget: SeedBudget {
+                cadence: BudgetCadence::Daily,
+                amount_usd: Money4::from_scaled(100_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            },
+                    allowed_models: vec!["fast".to_string()],
+                }], &[], &[], &seed_api_key_teams(), &[])
+            .await
+            .expect("seed");
+        let api_key = store
+            .get_api_key_by_public_id("dev123")
+            .await
+            .expect("query key")
+            .expect("api key should exist");
+
+        let now = OffsetDateTime::now_utc();
+        let seeded_log = RequestLogRecord {
+            request_log_id: Uuid::new_v4(),
+            request_id: "demo-req-pg-001".to_string(),
+            api_key_id: api_key.id,
+            user_id: None,
+            team_id: api_key.owner_team_id,
+            service_account_id: None,
+            model_key: "fast".to_string(),
+            resolved_model_key: "fast".to_string(),
+            provider_key: "openai-prod".to_string(),
+            status_code: Some(200),
+            latency_ms: Some(42),
+            prompt_tokens: Some(1),
+            completion_tokens: Some(2),
+            total_tokens: Some(3),
+            error_code: None,
+            has_payload: true,
+            request_payload_truncated: false,
+            response_payload_truncated: false,
+            request_tags: RequestTags {
+                service: Some("svc".to_string()),
+                component: None,
+                env: None,
+                bespoke: vec![RequestTag {
+                    key: "tenant".to_string(),
+                    value: "alpha".to_string(),
+                }],
+            },
+            tool_cardinality: RequestToolCardinality::default(),
+            user_agent_raw: None,
+            agent_harness_key: "unknown".to_string(),
+            agent_harness_label: "Unknown".to_string(),
+            metadata: Map::new(),
+            occurred_at: now - Duration::hours(2),
+        };
+        let kept_log = RequestLogRecord {
+            request_log_id: Uuid::new_v4(),
+            request_id: "req-kept-postgres".to_string(),
+            has_payload: false,
+            request_tags: RequestTags::default(),
+            occurred_at: now,
+            ..seeded_log.clone()
+        };
+        let payload = RequestLogPayloadRecord {
+            request_log_id: seeded_log.request_log_id,
+            request_json: json!({"prompt": "seeded"}),
+            response_json: json!({"ok": true}),
+        };
+        let attempt = RequestAttemptRecord {
+            request_attempt_id: Uuid::new_v4(),
+            request_log_id: seeded_log.request_log_id,
+            request_id: seeded_log.request_id.clone(),
+            attempt_number: 1,
+            route_id: Uuid::new_v4(),
+            provider_key: "openai-prod".to_string(),
+            upstream_model: "gpt-4o-mini".to_string(),
+            status: RequestAttemptStatus::Success,
+            status_code: Some(200),
+            error_code: None,
+            error_detail: None,
+            error_detail_truncated: false,
+            retryable: false,
+            terminal: true,
+            produced_final_response: true,
+            stream: false,
+            started_at: seeded_log.occurred_at,
+            completed_at: Some(seeded_log.occurred_at + Duration::milliseconds(42)),
+            latency_ms: Some(42),
+            metadata: Map::new(),
+        };
+
+        store
+            .insert_request_log_with_attempts(&seeded_log, Some(&payload), &[attempt])
+            .await
+            .expect("insert seeded request log");
+        store
+            .insert_request_log(&kept_log, None)
+            .await
+            .expect("insert kept request log");
+
+        let seeded_event = build_usage_ledger_record(
+            "demo-req-pg-001",
+            "user:scope-demo".to_string(),
+            api_key.id,
+            None,
+            None,
+            None,
+            None,
+            "gpt-4o-mini",
+            UsagePricingStatus::Priced,
+            1_000,
+            now - Duration::hours(2),
+        );
+        let kept_event = build_usage_ledger_record(
+            "req-kept-postgres",
+            "user:scope-kept".to_string(),
+            api_key.id,
+            None,
+            None,
+            None,
+            None,
+            "gpt-4o-mini",
+            UsagePricingStatus::Priced,
+            2_000,
+            now,
+        );
+        assert!(
+            store
+                .insert_usage_ledger_if_absent(&seeded_event)
+                .await
+                .expect("insert seeded usage event")
+        );
+        assert!(
+            store
+                .insert_usage_ledger_if_absent(&kept_event)
+                .await
+                .expect("insert kept usage event")
+        );
+
+        let request_ids = vec!["demo-req-pg-001".to_string()];
+        assert_eq!(
+            store
+                .delete_request_logs_by_request_ids(&request_ids)
+                .await
+                .expect("delete seeded request logs"),
+            1
+        );
+        assert_eq!(
+            store
+                .delete_usage_ledger_events_by_request_ids(&request_ids)
+                .await
+                .expect("delete seeded usage events"),
+            1
+        );
+
+        assert!(
+            store
+                .get_request_log_detail(seeded_log.request_log_id)
+                .await
+                .is_err()
+        );
+        assert!(
+            store
+                .get_request_log_detail(kept_log.request_log_id)
+                .await
+                .is_ok()
+        );
+        assert!(
+            store
+                .get_usage_ledger_by_request_and_scope("demo-req-pg-001", "user:scope-demo")
+                .await
+                .expect("seeded usage lookup")
+                .is_none()
+        );
+        assert!(
+            store
+                .get_usage_ledger_by_request_and_scope("req-kept-postgres", "user:scope-kept")
+                .await
+                .expect("kept usage lookup")
+                .is_some()
+        );
+
+        // Repeat deletes are no-ops, which is what makes reseeding idempotent.
+        assert_eq!(
+            store
+                .delete_request_logs_by_request_ids(&request_ids)
+                .await
+                .expect("repeat request log delete"),
+            0
+        );
+        assert_eq!(
+            store
+                .delete_usage_ledger_events_by_request_ids(&request_ids)
+                .await
+                .expect("repeat usage event delete"),
+            0
+        );
+
+        let pool = sqlx::PgPool::connect(&test_db.database_url)
+            .await
+            .expect("postgres pool");
+        let row = sqlx::query(
+            r#"
+            SELECT
+                (SELECT COUNT(*) FROM request_log_payloads),
+                (SELECT COUNT(*) FROM request_log_tags),
+                (SELECT COUNT(*) FROM request_log_attempts)
+            "#,
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("child counts");
+        let payload_count: i64 = row.try_get(0).expect("payload count");
+        let tag_count: i64 = row.try_get(1).expect("tag count");
+        let attempt_count: i64 = row.try_get(2).expect("attempt count");
+        assert_eq!((payload_count, tag_count, attempt_count), (0, 0, 0));
+
+        pool.close().await;
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn libsql_alias_backed_models_round_trip_through_store() {
         let tmp = tempdir().expect("tempdir");
         let db_path = tmp.path().join("gateway.db");

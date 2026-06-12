@@ -747,6 +747,60 @@ impl RequestLogRepository for LibsqlStore {
             deleted_count,
         })
     }
+
+    async fn delete_request_logs_by_request_ids(
+        &self,
+        request_ids: &[String],
+    ) -> Result<u64, StoreError> {
+        if request_ids.is_empty() {
+            return Ok(0);
+        }
+
+        let placeholders = (0..request_ids.len())
+            .map(|index| format!("?{}", index + 1))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let params = request_ids
+            .iter()
+            .map(|id| libsql::Value::Text(id.clone()))
+            .collect::<Vec<_>>();
+        let tx = self
+            .connection
+            .transaction()
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?;
+        for table in [
+            "request_log_payloads",
+            "request_log_tags",
+            "request_log_attempts",
+        ] {
+            tx.execute(
+                &format!(
+                    "DELETE FROM {table}
+                     WHERE request_log_id IN (
+                         SELECT request_log_id
+                         FROM request_logs
+                         WHERE request_id IN ({placeholders})
+                     )"
+                ),
+                params.clone(),
+            )
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?;
+        }
+        let deleted = tx
+            .execute(
+                &format!("DELETE FROM request_logs WHERE request_id IN ({placeholders})"),
+                params,
+            )
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?;
+        tx.commit()
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?;
+
+        Ok(deleted)
+    }
 }
 
 #[async_trait]

@@ -917,6 +917,24 @@ impl BudgetRepository for PostgresStore {
 
         Ok(result.rows_affected() > 0)
     }
+
+    async fn delete_usage_ledger_events_by_request_ids(
+        &self,
+        request_ids: &[String],
+    ) -> Result<u64, StoreError> {
+        if request_ids.is_empty() {
+            return Ok(0);
+        }
+
+        let deleted = sqlx::query("DELETE FROM usage_cost_events WHERE request_id = ANY($1)")
+            .bind(request_ids)
+            .execute(&self.pool)
+            .await
+            .map_err(to_query_error)?
+            .rows_affected();
+
+        Ok(deleted)
+    }
 }
 
 async fn sum_usage_cost_for_budget_scope(

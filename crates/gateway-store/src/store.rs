@@ -763,6 +763,13 @@ impl BudgetRepository for AnyStore {
     ) -> Result<bool, StoreError> {
         dispatch_store!(self, insert_usage_ledger_if_absent(event))
     }
+
+    async fn delete_usage_ledger_events_by_request_ids(
+        &self,
+        request_ids: &[String],
+    ) -> Result<u64, StoreError> {
+        dispatch_store!(self, delete_usage_ledger_events_by_request_ids(request_ids))
+    }
 }
 
 #[async_trait]
@@ -890,6 +897,13 @@ impl RequestLogRepository for AnyStore {
         dry_run: bool,
     ) -> Result<gateway_core::RequestLogPurgeResult, StoreError> {
         dispatch_store!(self, purge_request_logs_older_than(cutoff, dry_run))
+    }
+
+    async fn delete_request_logs_by_request_ids(
+        &self,
+        request_ids: &[String],
+    ) -> Result<u64, StoreError> {
+        dispatch_store!(self, delete_request_logs_by_request_ids(request_ids))
     }
 }
 
