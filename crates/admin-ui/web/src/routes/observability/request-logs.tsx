@@ -6,18 +6,26 @@ import { BrandIcon } from '@/components/icons/brand-icon'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import {
   Table,
   TableBody,
@@ -26,6 +34,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { cn } from '@/lib/utils'
 import { requireAdminSession } from '@/routes/-admin-guard'
 import { getObservabilityRequestLogDetail, getRequestLogs } from '@/server/admin-data.functions'
 import type {
@@ -396,119 +405,114 @@ export function RequestLogsPage() {
         </CardContent>
       </Card>
 
-      <Dialog
-        open={selectedLogId !== null}
-        onOpenChange={(open) => !open && setSelectedLogId(null)}
-      >
-        <DialogContent className="w-[min(960px,calc(100vw-32px))]">
-          <DialogHeader>
-            <DialogTitle>Request Log Detail</DialogTitle>
-            <DialogDescription>
+      <Sheet open={selectedLogId !== null} onOpenChange={(open) => !open && setSelectedLogId(null)}>
+        <SheetContent
+          side="right"
+          className="gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-[min(1280px,94vw)]"
+        >
+          <SheetHeader className="border-b border-[color:var(--color-border)]">
+            <SheetTitle>Request Log Detail</SheetTitle>
+            <SheetDescription>
               Review summary fields and sanitized request and response payloads.
-            </DialogDescription>
-          </DialogHeader>
+            </SheetDescription>
+          </SheetHeader>
 
-          {detailPending ? (
-            <DetailSkeleton />
-          ) : detailError ? (
-            <Alert variant="destructive">
-              <AlertTitle>Request log detail failed</AlertTitle>
-              <AlertDescription>{detailError}</AlertDescription>
-            </Alert>
-          ) : selectedDetail ? (
-            <div className="grid gap-4">
-              <div className="grid gap-3 rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4 md:grid-cols-2">
-                <DetailRow label="Request ID" value={selectedDetail.log.request_id} mono />
-                <DetailRow label="Request Log ID" value={selectedDetail.log.request_log_id} mono />
-                <DetailRow
-                  label="Model"
-                  value={
-                    <span className="inline-flex items-center gap-2">
-                      <BrandIcon iconKey={selectedDetail.log.model_icon_key} size={16} />
-                      <span>{selectedDetail.log.model_key}</span>
-                    </span>
-                  }
-                />
-                <DetailRow
-                  label="Resolved Model"
-                  value={
-                    <span className="inline-flex items-center gap-2">
-                      <BrandIcon iconKey={selectedDetail.log.model_icon_key} size={16} />
-                      <span>{selectedDetail.log.resolved_model_key}</span>
-                    </span>
-                  }
-                />
-                <DetailRow
-                  label="Provider"
-                  value={
-                    <span className="inline-flex items-center gap-2">
-                      <BrandIcon iconKey={selectedDetail.log.provider_icon_key} size={14} />
-                      <span>{selectedDetail.log.provider_key}</span>
-                    </span>
-                  }
-                />
-                <DetailRow label="Occurred At" value={selectedDetail.log.occurred_at} />
-                <DetailRow
-                  label="Status"
-                  value={
-                    selectedDetail.log.status_code !== null
-                      ? String(selectedDetail.log.status_code)
-                      : 'n/a'
-                  }
-                />
-                <DetailRow label="Latency" value={formatLatency(selectedDetail.log.latency_ms)} />
-                <DetailRow
-                  label="Tokens"
-                  value={formatTokenCount(selectedDetail.log.total_tokens)}
-                />
-                <OperationDetailRow item={selectedDetail.log} />
-                <DetailRow
-                  label="Stream"
-                  value={metadataBoolean(selectedDetail.log, 'stream') ? 'yes' : 'no'}
-                />
-                <DetailRow label="Agent Harness" value={selectedDetail.log.agent_harness_label} />
-                <DetailRow
-                  label="User-Agent"
-                  value={selectedDetail.user_agent_raw ?? 'n/a'}
-                  mono={Boolean(selectedDetail.user_agent_raw)}
-                />
+          <div className="flex-1 overflow-y-auto p-4">
+            {detailPending ? (
+              <DetailSkeleton />
+            ) : detailError ? (
+              <Alert variant="destructive">
+                <AlertTitle>Request log detail failed</AlertTitle>
+                <AlertDescription>{detailError}</AlertDescription>
+              </Alert>
+            ) : selectedDetail ? (
+              <div className="flex flex-col gap-4">
+                <div className="grid gap-3 rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4 sm:grid-cols-2 xl:grid-cols-4">
+                  <DetailRow label="Request ID" value={selectedDetail.log.request_id} mono />
+                  <DetailRow
+                    label="Request Log ID"
+                    value={selectedDetail.log.request_log_id}
+                    mono
+                  />
+                  <DetailRow
+                    label="Model"
+                    value={
+                      <span className="inline-flex items-center gap-2">
+                        <BrandIcon iconKey={selectedDetail.log.model_icon_key} size={16} />
+                        <span>{selectedDetail.log.model_key}</span>
+                      </span>
+                    }
+                  />
+                  <DetailRow
+                    label="Resolved Model"
+                    value={
+                      <span className="inline-flex items-center gap-2">
+                        <BrandIcon iconKey={selectedDetail.log.model_icon_key} size={16} />
+                        <span>{selectedDetail.log.resolved_model_key}</span>
+                      </span>
+                    }
+                  />
+                  <DetailRow
+                    label="Provider"
+                    value={
+                      <span className="inline-flex items-center gap-2">
+                        <BrandIcon iconKey={selectedDetail.log.provider_icon_key} size={14} />
+                        <span>{selectedDetail.log.provider_key}</span>
+                      </span>
+                    }
+                  />
+                  <DetailRow label="Occurred At" value={selectedDetail.log.occurred_at} />
+                  <DetailRow
+                    label="Status"
+                    value={
+                      selectedDetail.log.status_code !== null
+                        ? String(selectedDetail.log.status_code)
+                        : 'n/a'
+                    }
+                  />
+                  <DetailRow label="Latency" value={formatLatency(selectedDetail.log.latency_ms)} />
+                  <DetailRow
+                    label="Tokens"
+                    value={formatTokenCount(selectedDetail.log.total_tokens)}
+                  />
+                  <OperationDetailRow item={selectedDetail.log} />
+                  <DetailRow
+                    label="Stream"
+                    value={metadataBoolean(selectedDetail.log, 'stream') ? 'yes' : 'no'}
+                  />
+                  <DetailRow label="Agent Harness" value={selectedDetail.log.agent_harness_label} />
+                  <DetailRow
+                    label="User-Agent"
+                    value={selectedDetail.user_agent_raw ?? 'n/a'}
+                    mono={Boolean(selectedDetail.user_agent_raw)}
+                  />
+                </div>
+
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+                  <ToolCardinalityCard item={selectedDetail.log} />
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Request Tags</CardTitle>
+                    </CardHeader>
+                    <CardContent className="flex flex-wrap gap-2">
+                      <RequestTagBadges item={selectedDetail.log} />
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <McpTokenOverheadCard detail={selectedDetail} />
+
+                <AttemptsSection attempts={selectedDetail.attempts} />
+
+                <PayloadSection detail={selectedDetail} />
               </div>
-
-              <ToolCardinalityCard item={selectedDetail.log} />
-
-              <McpTokenOverheadCard detail={selectedDetail} />
-
-              <PayloadPolicyCard log={selectedDetail.log} />
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Request Tags</CardTitle>
-                </CardHeader>
-                <CardContent className="flex flex-wrap gap-2">
-                  <RequestTagBadges item={selectedDetail.log} />
-                </CardContent>
-              </Card>
-
-              <AttemptsSection attempts={selectedDetail.attempts} />
-
-              <div className="grid gap-4 lg:grid-cols-2">
-                <PayloadCard
-                  title="Request Payload"
-                  truncated={selectedDetail.log.request_payload_truncated}
-                  payload={selectedDetail.payload?.request_json}
-                />
-                <PayloadCard
-                  title="Response Payload"
-                  truncated={selectedDetail.log.response_payload_truncated}
-                  payload={selectedDetail.payload?.response_json}
-                />
-              </div>
-            </div>
-          ) : (
-            <DetailSkeleton />
-          )}
-        </DialogContent>
-      </Dialog>
+            ) : (
+              <DetailSkeleton />
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
     </>
   )
 }
@@ -587,43 +591,6 @@ function McpTokenOverheadCard({ detail }: { detail: RequestLogDetailView }) {
   )
 }
 
-function PayloadPolicyCard({ log }: { log: RequestLogView }) {
-  const policy = log.payload_policy
-  const hasTruncation = log.request_payload_truncated || log.response_payload_truncated
-
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex flex-col gap-1">
-            <CardTitle>Payload Policy</CardTitle>
-            <CardDescription>{payloadPolicyDescription(log)}</CardDescription>
-          </div>
-          <PayloadPolicyBadges item={log} />
-        </div>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3">
-        {hasTruncation || !log.has_payload ? (
-          <Alert>
-            <AlertTitle>Payload capture state</AlertTitle>
-            <AlertDescription>
-              {hasTruncation
-                ? 'One or more sanitized payloads were truncated before persistence.'
-                : `Capture mode is ${formatCaptureMode(policy.capture_mode)}, so no payload body is stored for this row.`}
-            </AlertDescription>
-          </Alert>
-        ) : null}
-        <dl className="grid gap-3 text-sm md:grid-cols-4">
-          <DetailRow label="Capture" value={formatCaptureMode(policy.capture_mode)} />
-          <DetailRow label="Request Limit" value={formatBytes(policy.request_max_bytes)} />
-          <DetailRow label="Response Limit" value={formatBytes(policy.response_max_bytes)} />
-          <DetailRow label="Stream Events" value={String(policy.stream_max_events)} />
-        </dl>
-      </CardContent>
-    </Card>
-  )
-}
-
 function ToolCardinalityInline({ item }: { item: RequestLogView }) {
   const counts = item.tool_cardinality
 
@@ -642,21 +609,18 @@ function ToolCardinalityCard({ item }: { item: RequestLogView }) {
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-start justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <CardTitle>MCP &amp; Tools</CardTitle>
-          <CardDescription>
-            Request-level tool cardinality, with request-linked MCP invocation drill-down.
-          </CardDescription>
-        </div>
-        <Button type="button" variant="outline" asChild>
-          <Link to="/observability/mcp-invocations" search={{ request_id: item.request_id }}>
-            View MCP Invocations
-          </Link>
-        </Button>
+      <CardHeader>
+        <CardTitle>MCP &amp; Tools</CardTitle>
+        <CardAction>
+          <Button type="button" variant="outline" size="sm" asChild>
+            <Link to="/observability/mcp-invocations" search={{ request_id: item.request_id }}>
+              View MCP Invocations
+            </Link>
+          </Button>
+        </CardAction>
       </CardHeader>
       <CardContent>
-        <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+        <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
           <DetailRow
             label="MCP Servers"
             value={formatToolCount(counts.referenced_mcp_server_count)}
@@ -767,6 +731,52 @@ function AttemptsSection({ attempts }: { attempts: RequestAttemptView[] }) {
   )
 }
 
+type PayloadView = 'request' | 'response' | 'split'
+
+function PayloadSection({ detail }: { detail: RequestLogDetailView }) {
+  const [view, setView] = useState<PayloadView>('split')
+
+  return (
+    <section className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold text-[var(--color-text)]">Payloads</h3>
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          size="sm"
+          aria-label="Payload view"
+          value={view}
+          onValueChange={(value) => {
+            if (value) {
+              setView(value as PayloadView)
+            }
+          }}
+        >
+          <ToggleGroupItem value="request">Request</ToggleGroupItem>
+          <ToggleGroupItem value="response">Response</ToggleGroupItem>
+          <ToggleGroupItem value="split">Split</ToggleGroupItem>
+        </ToggleGroup>
+      </div>
+      <div className={cn('grid gap-4', view === 'split' && 'xl:grid-cols-2')}>
+        {view !== 'response' ? (
+          <PayloadCard
+            title="Request Payload"
+            truncated={detail.log.request_payload_truncated}
+            payload={detail.payload?.request_json}
+          />
+        ) : null}
+        {view !== 'request' ? (
+          <PayloadCard
+            title="Response Payload"
+            truncated={detail.log.response_payload_truncated}
+            payload={detail.payload?.response_json}
+          />
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
 function PayloadCard({
   title,
   truncated,
@@ -779,25 +789,18 @@ function PayloadCard({
   return (
     <Card>
       <CardHeader>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex flex-col gap-1">
-            <CardTitle>{title}</CardTitle>
-            <CardDescription>
-              {truncated
-                ? 'Sanitized payload was truncated before persistence.'
-                : 'Sanitized payload.'}
-            </CardDescription>
-          </div>
+        <CardTitle>{title}</CardTitle>
+        <CardAction>
           {truncated ? (
             <Badge variant="warning">truncated</Badge>
           ) : (
             <Badge variant="outline">full</Badge>
           )}
-        </div>
+        </CardAction>
       </CardHeader>
       <CardContent>
         {payload ? (
-          <pre className="max-h-[360px] overflow-auto text-xs leading-6 text-[var(--color-text-muted)]">
+          <pre className="font-mono text-xs leading-6 break-words whitespace-pre-wrap text-[var(--color-text-muted)]">
             {JSON.stringify(payload, null, 2)}
           </pre>
         ) : (
@@ -939,13 +942,6 @@ function formatBytes(bytes: number) {
     return `${Math.round(bytes / 1024)} KiB`
   }
   return `${bytes} B`
-}
-
-function payloadPolicyDescription(log: RequestLogView) {
-  const policy = log.payload_policy
-  return `${formatCaptureMode(policy.capture_mode)} capture with ${formatBytes(
-    policy.request_max_bytes,
-  )} request and ${formatBytes(policy.response_max_bytes)} response budgets.`
 }
 
 function metadataBoolean(item: RequestLogView, key: string) {

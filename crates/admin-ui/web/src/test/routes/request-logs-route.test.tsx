@@ -210,7 +210,6 @@ describe('RequestLogsPage', () => {
     expect(screen.getByText('Tools Called')).toBeInTheDocument()
     expect(screen.getAllByText('0').length).toBeGreaterThan(0)
     expect(screen.getAllByText('n/a').length).toBeGreaterThan(0)
-    expect(screen.getByText('Payload Policy')).toBeInTheDocument()
     expect(screen.getByText('Provider Attempts')).toBeInTheDocument()
     expect(screen.getByText('#1')).toBeInTheDocument()
     expect(screen.getAllByText('success').length).toBeGreaterThan(0)
@@ -219,7 +218,19 @@ describe('RequestLogsPage', () => {
     expect(screen.getByText('terminal')).toBeInTheDocument()
     expect(screen.getByText('final response')).toBeInTheDocument()
     expect(screen.getAllByText('redacted payloads').length).toBeGreaterThan(0)
+    expect(screen.queryByText('Payload Policy')).not.toBeInTheDocument()
     expect(screen.getByText(/"prompt": "ping"/)).toBeInTheDocument()
+    expect(screen.getByText(/"output": "pong"/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Request' }))
+
+    expect(screen.getByText(/"prompt": "ping"/)).toBeInTheDocument()
+    expect(screen.queryByText(/"output": "pong"/)).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Response' }))
+
+    expect(screen.queryByText(/"prompt": "ping"/)).not.toBeInTheDocument()
+    expect(screen.getByText(/"output": "pong"/)).toBeInTheDocument()
   })
 
   it('renders the summary-only no-payload state in detail', async () => {
@@ -250,10 +261,9 @@ describe('RequestLogsPage', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Inspect' })[0])
 
     await waitFor(() => {
-      expect(screen.getByText('Payload capture state')).toBeInTheDocument()
+      expect(screen.getAllByText('No payload stored')).toHaveLength(2)
     })
 
-    expect(screen.getAllByText('No payload stored')).toHaveLength(2)
     expect(screen.getAllByText('summary only').length).toBeGreaterThan(0)
   })
 
