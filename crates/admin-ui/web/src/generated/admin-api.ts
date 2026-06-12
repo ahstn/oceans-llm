@@ -2025,6 +2025,7 @@ export interface components {
             agent_harness_key: string;
             agent_harness_label: string;
             api_key_id: string;
+            api_key_name?: string | null;
             /** Format: int64 */
             completion_tokens?: number | null;
             error_code?: string | null;
@@ -2049,13 +2050,16 @@ export interface components {
             resolved_model_key: string;
             response_payload_truncated: boolean;
             service_account_id?: string | null;
+            service_account_name?: string | null;
             /** Format: int64 */
             status_code?: number | null;
             team_id?: string | null;
             tool_cardinality: components["schemas"]["RequestToolCardinalityView"];
             /** Format: int64 */
             total_tokens?: number | null;
+            user_email?: string | null;
             user_id?: string | null;
+            user_name?: string | null;
         };
         RequestMcpTokenOverheadView: {
             /** Format: int64 */
