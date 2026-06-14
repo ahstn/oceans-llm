@@ -281,22 +281,18 @@ impl GatewayConfig {
             }
 
             for route in &model.routes {
-                if let Some(provider) = provider_by_id.get(route.provider.as_str())
-                    && matches!(provider, ProviderConfig::GcpVertex(_))
+                let provider = provider_by_id.get(route.provider.as_str()).copied();
+
+                if provider.is_some_and(|provider| matches!(provider, ProviderConfig::GcpVertex(_)))
                 {
                     validate_vertex_upstream_model_format(&route.upstream_model)?;
                 }
                 if let Some(openrouter) = &route.compatibility.openrouter {
                     validate_openrouter_route_compatibility(
-                        &model.id,
-                        route,
-                        provider_by_id.get(route.provider.as_str()).copied(),
-                        openrouter,
+                        &model.id, route, provider, openrouter,
                     )?;
                 }
-                if let Some(ProviderConfig::AwsBedrock(provider)) =
-                    provider_by_id.get(route.provider.as_str())
-                {
+                if let Some(ProviderConfig::AwsBedrock(provider)) = provider {
                     validate_aws_bedrock_route_compatibility(&model.id, route, provider)?;
                 }
             }
@@ -2044,7 +2040,7 @@ fn validate_openrouter_route_compatibility(
         );
     };
 
-    if !provider.base_url.contains("openrouter.ai") {
+    if !is_openrouter_endpoint(&provider.base_url) {
         bail!(
             "model `{model_id}` route for openai_compat provider `{}` uses compatibility.openrouter but provider base_url is not an OpenRouter endpoint",
             provider.id
@@ -2065,6 +2061,13 @@ fn validate_openrouter_route_compatibility(
             provider.id
         ),
     )
+}
+
+fn is_openrouter_endpoint(base_url: &str) -> bool {
+    let Ok(parsed) = url::Url::parse(base_url.trim()) else {
+        return false;
+    };
+    parsed.scheme() == "https" && parsed.host_str() == Some("openrouter.ai")
 }
 
 fn validate_openrouter_provider_routing(
@@ -3171,7 +3174,7 @@ models:
           openrouter:
             provider:
               zdr: true
-              only: [openai]
+              only: [openai, anthropic]
               ignore: [deepinfra]
               order: [openai, anthropic]
               preferred_max_latency:
@@ -3194,7 +3197,7 @@ models:
             .provider;
 
         assert_eq!(routing.zdr, Some(true));
-        assert_eq!(routing.only, vec!["openai"]);
+        assert_eq!(routing.only, vec!["openai", "anthropic"]);
         assert_eq!(routing.ignore, vec!["deepinfra"]);
         assert_eq!(routing.order, vec!["openai", "anthropic"]);
         match routing
@@ -3245,6 +3248,106 @@ models:
         let error_text = format!("{error:#}");
         assert!(
             error_text.contains("provider base_url is not an OpenRouter endpoint"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_openrouter_policy_on_openrouter_lookalike_provider_url() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openrouter-lookalike
+    type: openai_compat
+    base_url: https://openrouter.ai.evil.example/api/v1
+    pricing_provider_id: openai
+models:
+  - id: fast
+    routes:
+      - provider: openrouter-lookalike
+        upstream_model: openai/gpt-4o-mini
+        compatibility:
+          openrouter:
+            provider:
+              zdr: true
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("provider base_url is not an OpenRouter endpoint"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_openrouter_policy_on_non_https_provider_url() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openrouter-insecure
+    type: openai_compat
+    base_url: http://openrouter.ai/api/v1
+    pricing_provider_id: openai
+models:
+  - id: fast
+    routes:
+      - provider: openrouter-insecure
+        upstream_model: openai/gpt-4o-mini
+        compatibility:
+          openrouter:
+            provider:
+              zdr: true
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("provider base_url is not an OpenRouter endpoint"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_openrouter_policy_fields() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openrouter
+    type: openai_compat
+    base_url: https://openrouter.ai/api/v1
+    pricing_provider_id: openai
+models:
+  - id: fast
+    routes:
+      - provider: openrouter
+        upstream_model: openai/gpt-4o-mini
+        compatibility:
+          openrouter:
+            provider:
+              zdr: true
+              allow_fallbacks: false
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("unknown field `allow_fallbacks`"),
             "unexpected error: {error_text}"
         );
     }

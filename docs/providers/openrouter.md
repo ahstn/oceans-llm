@@ -40,7 +40,7 @@ models:
           openrouter:
             provider:
               zdr: true
-              only: [openai]
+              only: [openai, anthropic]
               ignore: [deepinfra]
               order: [openai, anthropic]
               preferred_max_latency:

@@ -2217,11 +2217,13 @@ pub struct RouteCompatibility {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct OpenRouterRouteCompatibility {
     pub provider: OpenRouterProviderRouting,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
 pub struct OpenRouterProviderRouting {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub zdr: Option<bool>,
@@ -2245,6 +2247,7 @@ pub enum OpenRouterPercentilePreference {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
 pub struct OpenRouterPercentileCutoffs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub p50: Option<f64>,
@@ -2257,6 +2260,7 @@ pub struct OpenRouterPercentileCutoffs {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
 pub struct OpenRouterMaxPrice {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt: Option<f64>,
