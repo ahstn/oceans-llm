@@ -25,6 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
@@ -138,7 +139,7 @@ export function ServerOverviewPanel({
   refreshErrorSummary: string | null
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-4">
+    <div className="flex min-w-0 flex-col gap-6">
       {refreshStatus && refreshStatus !== 'pending' ? (
         <Alert variant={refreshStatus === 'success' ? 'default' : 'destructive'}>
           <AlertTitle>Discovery {refreshStatus}</AlertTitle>
@@ -150,16 +151,40 @@ export function ServerOverviewPanel({
         </Alert>
       ) : null}
 
-      <div className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
-        <DetailMetric label="Server URL" value={server.server_url} mono />
-        <DetailMetric label="Auth mode" value={server.auth_mode} />
-        <DetailMetric label="Timeout" value={`${server.timeout_ms} ms`} />
-        <DetailMetric label="Last discovery" value={server.last_discovery_at ?? 'never'} />
-        <DetailMetric label="Last success" value={server.last_successful_discovery_at ?? 'never'} />
-        <DetailMetric label="Discovered tools" value={String(server.last_tool_count ?? 0)} />
-        <DetailMetric label="Created" value={server.created_at} />
-        <DetailMetric label="Updated" value={server.updated_at} />
+      <div className="flex min-w-0 flex-col gap-2">
+        <div className="text-xs font-medium tracking-wide text-[var(--color-text-muted)] uppercase">
+          Endpoint
+        </div>
+        <div className="min-w-0 truncate font-mono text-sm text-[var(--color-text)]">
+          {server.server_url}
+        </div>
       </div>
+
+      <Separator />
+
+      <dl className="grid text-sm sm:grid-cols-2">
+        <OverviewDetail label="Auth mode" value={formatOverviewValue(server.auth_mode)} />
+        <OverviewDetail label="Timeout" value={`${server.timeout_ms} ms`} />
+        <OverviewDetail label="Last discovery" value={server.last_discovery_at ?? 'never'} />
+        <OverviewDetail
+          label="Last success"
+          value={server.last_successful_discovery_at ?? 'never'}
+        />
+        <OverviewDetail label="Discovered tools" value={String(server.last_tool_count ?? 0)} />
+        <OverviewDetail label="Created" value={server.created_at} />
+        <OverviewDetail label="Updated" value={server.updated_at} />
+      </dl>
+    </div>
+  )
+}
+
+function OverviewDetail({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 border-t border-[color:var(--color-border)] py-3 sm:odd:pr-6 sm:even:pl-6">
+      <dt className="text-xs font-medium tracking-wide text-[var(--color-text-muted)] uppercase">
+        {label}
+      </dt>
+      <dd className="mt-1 truncate text-sm font-medium text-[var(--color-text)]">{value}</dd>
     </div>
   )
 }
@@ -742,23 +767,8 @@ export function DiscoveryStatusBadge({ status }: { status?: string | null }) {
   return <Badge variant={variant}>{label}</Badge>
 }
 
-function DetailMetric({
-  label,
-  value,
-  mono = false,
-}: {
-  label: string
-  value: string
-  mono?: boolean
-}) {
-  return (
-    <div className="min-w-0 rounded-md border bg-[var(--color-muted)] p-3">
-      <div className="text-xs text-[var(--color-text-muted)] uppercase">{label}</div>
-      <div className={`mt-1 truncate ${mono ? 'font-mono text-xs' : 'text-sm font-medium'}`}>
-        {value}
-      </div>
-    </div>
-  )
+function formatOverviewValue(value: string) {
+  return value.replaceAll('_', ' ')
 }
 
 export function emptyServerForm(): ServerFormState {

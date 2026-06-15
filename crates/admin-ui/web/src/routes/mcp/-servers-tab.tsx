@@ -1,4 +1,11 @@
-import { useEffect, useState, useTransition, type CSSProperties, type FormEvent } from 'react'
+import {
+  useEffect,
+  useState,
+  useTransition,
+  type CSSProperties,
+  type FormEvent,
+  type ReactNode,
+} from 'react'
 import {
   Cancel01Icon,
   Configuration01Icon,
@@ -43,6 +50,12 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import {
   addMcpServer,
   disableExternalMcpServer,
@@ -91,12 +104,14 @@ export function ServersTab({
   servers,
   recommended,
   selectedServerId,
+  workspaceHeader,
   onSelectServer,
   onAddToToolset,
 }: {
   servers: McpServerView[]
   recommended: RecommendedMcpServerView[]
   selectedServerId: string | null
+  workspaceHeader?: ReactNode
   onSelectServer: (serverId: string | null) => void
   onAddToToolset: (toolIds: string[]) => void
 }) {
@@ -366,16 +381,23 @@ export function ServersTab({
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <Card size="sm">
-        <CardHeader className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div className="flex min-w-0 flex-col gap-1">
-            <CardTitle>Servers</CardTitle>
-            <CardDescription>
-              {servers.length} registered · {activeCount} active
-            </CardDescription>
+        <CardHeader className="gap-5">
+          {workspaceHeader}
+          <div className="col-span-full grid gap-3 sm:grid-cols-[1fr_auto] sm:items-start">
+            <div className="flex min-w-0 flex-col gap-1">
+              <CardTitle>Servers</CardTitle>
+              <CardDescription>
+                {servers.length} registered · {activeCount} active
+              </CardDescription>
+            </div>
+            <Button
+              type="button"
+              className="justify-self-start sm:justify-self-end"
+              onClick={() => openCreateDialog()}
+            >
+              Add server
+            </Button>
           </div>
-          <Button type="button" onClick={() => openCreateDialog()}>
-            Add server
-          </Button>
         </CardHeader>
         <CardContent>
           <ServerTable
@@ -474,85 +496,113 @@ function ServerTable({
   }
 
   return (
-    <Table data-testid="mcp-server-list">
-      <TableHeader>
-        <TableRow>
-          <TableHead className="w-10" />
-          <TableHead>Server</TableHead>
-          <TableHead>URL</TableHead>
-          <TableHead>Auth type</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead className="text-right">Actions</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {servers.map((server) => (
-          <TableRow key={server.id}>
-            <TableCell>
-              <div className="flex size-8 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                <AppIcon icon={McpServerIcon} size={18} stroke={1.5} aria-hidden />
-              </div>
-            </TableCell>
-            <TableCell>
-              <button
-                type="button"
-                aria-label={`Open ${server.display_name}`}
-                className="flex min-w-0 flex-col gap-1 text-left"
-                onClick={() => onSelectServer(server.id)}
-              >
-                <span className="truncate font-medium">{server.display_name}</span>
-                <span className="truncate font-mono text-xs text-muted-foreground">
-                  {server.server_key}
-                </span>
-              </button>
-            </TableCell>
-            <TableCell className="max-w-[20rem] truncate font-mono text-xs text-muted-foreground">
-              {server.server_url}
-            </TableCell>
-            <TableCell>{formatAuthMode(server.auth_mode)}</TableCell>
-            <TableCell>
-              <ServerStatusBadge status={server.status} />
-            </TableCell>
-            <TableCell>
-              <div className="flex justify-end gap-1">
-                <Button
-                  type="button"
-                  size="icon-sm"
-                  variant="ghost"
-                  aria-label={`Refresh ${server.display_name}`}
-                  onClick={() => onRefresh(server)}
-                  disabled={actionPending || server.status !== 'active'}
-                >
-                  <AppIcon icon={RefreshIcon} stroke={1.5} aria-hidden />
-                </Button>
-                <Button
-                  type="button"
-                  size="icon-sm"
-                  variant="ghost"
-                  aria-label={`Edit ${server.display_name}`}
-                  onClick={() => onEdit(server)}
-                >
-                  <AppIcon icon={Edit02Icon} stroke={1.5} aria-hidden />
-                </Button>
-                <Button
-                  type="button"
-                  size="icon-sm"
-                  variant="destructive"
-                  aria-label={`Delete ${server.display_name}`}
-                  onClick={() => onDisable(server)}
-                  disabled={actionPending || server.status !== 'active'}
-                >
-                  <AppIcon icon={Delete02Icon} stroke={1.5} aria-hidden />
-                </Button>
-              </div>
-              {refreshStatus === 'pending' ? (
-                <span className="sr-only">Discovery refresh pending</span>
-              ) : null}
-            </TableCell>
+    <TooltipProvider>
+      <Table data-testid="mcp-server-list">
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-10" />
+            <TableHead>Server</TableHead>
+            <TableHead>URL</TableHead>
+            <TableHead>Auth type</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead className="text-right">Actions</TableHead>
           </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+        </TableHeader>
+        <TableBody>
+          {servers.map((server) => (
+            <TableRow key={server.id}>
+              <TableCell>
+                <div className="flex size-8 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                  <AppIcon icon={McpServerIcon} size={18} stroke={1.5} aria-hidden />
+                </div>
+              </TableCell>
+              <TableCell>
+                <button
+                  type="button"
+                  aria-label={`Open ${server.display_name}`}
+                  className="flex min-w-0 flex-col gap-1 text-left"
+                  onClick={() => onSelectServer(server.id)}
+                >
+                  <span className="truncate font-medium">{server.display_name}</span>
+                  <span className="truncate font-mono text-xs text-muted-foreground">
+                    {server.server_key}
+                  </span>
+                </button>
+              </TableCell>
+              <TableCell className="max-w-[20rem] truncate font-mono text-xs text-muted-foreground">
+                {server.server_url}
+              </TableCell>
+              <TableCell>{formatAuthMode(server.auth_mode)}</TableCell>
+              <TableCell>
+                <ServerStatusBadge status={server.status} />
+              </TableCell>
+              <TableCell>
+                <div className="flex justify-end gap-1">
+                  <ServerActionButton
+                    label={`Refresh ${server.display_name}`}
+                    tooltip="Refresh discovery"
+                    icon={RefreshIcon}
+                    onClick={() => onRefresh(server)}
+                    disabled={actionPending || server.status !== 'active'}
+                  />
+                  <ServerActionButton
+                    label={`Edit ${server.display_name}`}
+                    tooltip="Edit server"
+                    icon={Edit02Icon}
+                    onClick={() => onEdit(server)}
+                  />
+                  <ServerActionButton
+                    label={`Delete ${server.display_name}`}
+                    tooltip="Delete server"
+                    icon={Delete02Icon}
+                    variant="destructive"
+                    onClick={() => onDisable(server)}
+                    disabled={actionPending || server.status !== 'active'}
+                  />
+                </div>
+                {refreshStatus === 'pending' ? (
+                  <span className="sr-only">Discovery refresh pending</span>
+                ) : null}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </TooltipProvider>
+  )
+}
+
+function ServerActionButton({
+  label,
+  tooltip,
+  icon,
+  variant = 'secondary',
+  disabled = false,
+  onClick,
+}: {
+  label: string
+  tooltip: string
+  icon: typeof RefreshIcon
+  variant?: 'secondary' | 'destructive'
+  disabled?: boolean
+  onClick: () => void
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          size="icon-sm"
+          variant={variant}
+          aria-label={label}
+          onClick={onClick}
+          disabled={disabled}
+        >
+          <AppIcon icon={icon} stroke={1.5} aria-hidden />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{tooltip}</TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -795,7 +845,7 @@ function ServerDetailDialog({
   )
 }
 
-function RecommendedCatalog({
+export function RecommendedCatalog({
   recommended,
   pending,
   onCustomize,

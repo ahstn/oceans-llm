@@ -1,7 +1,14 @@
 import { useState } from 'react'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { requireAdminSession } from '@/routes/-admin-guard'
 import {
   getApiKeys,
@@ -74,33 +81,41 @@ export function McpWorkspacePage() {
     applySearch({ tab: 'toolsets' })
   }
 
+  const workspaceHeader = (
+    <>
+      <CardTitle>MCP</CardTitle>
+      <CardDescription>
+        Register servers, curate toolsets, and manage access in one workspace.
+      </CardDescription>
+      <CardAction>
+        <SegmentedTabs
+          ariaLabel="MCP workspace sections"
+          value={search.tab}
+          onValueChange={(value) => applySearch({ tab: value as McpTab })}
+          items={workspaceTabs}
+        />
+      </CardAction>
+    </>
+  )
+
+  if (search.tab === 'servers') {
+    return (
+      <ServersTab
+        servers={data.servers}
+        recommended={data.recommended}
+        selectedServerId={selectedServerId}
+        workspaceHeader={workspaceHeader}
+        onSelectServer={(serverId) => applySearch({ server_id: serverId ?? undefined })}
+        onAddToToolset={handleAddToToolset}
+      />
+    )
+  }
+
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <Card className="min-w-0">
-        <CardHeader className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div className="flex min-w-0 flex-col gap-1">
-            <CardTitle>MCP</CardTitle>
-            <CardDescription>
-              Register servers, curate toolsets, and manage access in one workspace.
-            </CardDescription>
-          </div>
-          <SegmentedTabs
-            ariaLabel="MCP workspace sections"
-            value={search.tab}
-            onValueChange={(value) => applySearch({ tab: value as McpTab })}
-            items={workspaceTabs}
-          />
-        </CardHeader>
+        <CardHeader>{workspaceHeader}</CardHeader>
         <CardContent className="min-w-0">
-          {search.tab === 'servers' ? (
-            <ServersTab
-              servers={data.servers}
-              recommended={data.recommended}
-              selectedServerId={selectedServerId}
-              onSelectServer={(serverId) => applySearch({ server_id: serverId ?? undefined })}
-              onAddToToolset={handleAddToToolset}
-            />
-          ) : null}
           {search.tab === 'toolsets' ? (
             <ToolsetsTab
               toolsets={data.toolsets}
