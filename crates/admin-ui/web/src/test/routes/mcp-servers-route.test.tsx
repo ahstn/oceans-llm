@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -6,18 +7,20 @@ import type { McpServerView, McpToolView, RecommendedMcpServerView } from '@/typ
 const navigateMock = vi.fn()
 const invalidateMock = vi.fn()
 const getMcpServerToolsMock = vi.fn()
+const getMcpCredentialBindingsMock = vi.fn()
 const addMcpServerMock = vi.fn()
 const saveMcpServerMock = vi.fn()
 const disableExternalMcpServerMock = vi.fn()
 const refreshExternalMcpServerDiscoveryMock = vi.fn()
 
-const routeMock = {
-  useLoaderData: vi.fn(),
-  useSearch: vi.fn(),
+class ResizeObserverMock {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
 }
 
 vi.mock('@tanstack/react-router', () => ({
-  createFileRoute: () => () => routeMock,
+  createFileRoute: () => () => ({ useLoaderData: vi.fn(), useSearch: vi.fn() }),
   useRouter: () => ({
     navigate: navigateMock,
     invalidate: invalidateMock,
@@ -34,11 +37,12 @@ vi.mock('sonner', () => ({
 vi.mock('@/server/admin-data.functions', () => ({
   addMcpServer: (...args: unknown[]) => addMcpServerMock(...args),
   disableExternalMcpServer: (...args: unknown[]) => disableExternalMcpServerMock(...args),
-  getMcpServers: vi.fn(),
+  getMcpCredentialBindings: (...args: unknown[]) => getMcpCredentialBindingsMock(...args),
   getMcpServerTools: (...args: unknown[]) => getMcpServerToolsMock(...args),
-  getRecommendedMcpServers: vi.fn(),
   refreshExternalMcpServerDiscovery: (...args: unknown[]) =>
     refreshExternalMcpServerDiscoveryMock(...args),
+  removeMcpCredentialBinding: vi.fn(),
+  saveMcpCredentialBinding: vi.fn(),
   saveMcpServer: (...args: unknown[]) => saveMcpServerMock(...args),
 }))
 
@@ -90,27 +94,54 @@ const recommended: RecommendedMcpServerView = {
   tags: ['tickets'],
 }
 
-describe('McpServersPage', () => {
+async function renderServersTab(initialSelectedServerId: string | null = null) {
+  const { ServersTab } = await import('@/routes/mcp/-servers-tab')
+  function ServersTabHarness() {
+    const [selectedServerId, setSelectedServerId] = useState<string | null>(initialSelectedServerId)
+    return (
+      <ServersTab
+        servers={[server]}
+        recommended={[recommended]}
+        selectedServerId={selectedServerId}
+        onSelectServer={setSelectedServerId}
+        onAddToToolset={vi.fn()}
+      />
+    )
+  }
+
+  render(<ServersTabHarness />)
+}
+
+describe('ServersTab', () => {
   afterEach(() => {
     cleanup()
   })
 
   beforeEach(() => {
-    routeMock.useLoaderData.mockReset()
-    routeMock.useSearch.mockReset()
+    vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+    // Force the inline (wide) master-detail layout so the detail renders in-grid.
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: true,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }))
+
     getMcpServerToolsMock.mockReset()
+    getMcpCredentialBindingsMock.mockReset()
     addMcpServerMock.mockReset()
     saveMcpServerMock.mockReset()
     disableExternalMcpServerMock.mockReset()
     refreshExternalMcpServerDiscoveryMock.mockReset()
     navigateMock.mockReset()
     invalidateMock.mockReset()
-    routeMock.useSearch.mockReturnValue({})
-    routeMock.useLoaderData.mockReturnValue({
-      servers: [server],
-      recommended: [recommended],
-    })
+
     getMcpServerToolsMock.mockResolvedValue({ data: { items: [tool] } })
+    getMcpCredentialBindingsMock.mockResolvedValue({ data: { items: [] } })
     addMcpServerMock.mockResolvedValue({ data: { server } })
     saveMcpServerMock.mockResolvedValue({ data: { server } })
     disableExternalMcpServerMock.mockResolvedValue({
@@ -122,13 +153,18 @@ describe('McpServersPage', () => {
   })
 
   it('renders server diagnostics and discovered tools', async () => {
-    const { McpServersPage } = await import('@/routes/mcp/servers')
+    await renderServersTab()
 
-    render(<McpServersPage />)
-
-    expect(screen.getByText('MCP Servers')).toBeInTheDocument()
+    expect(screen.getByText(/registered/)).toBeInTheDocument()
     expect(screen.getByTestId('mcp-server-list')).toBeInTheDocument()
+    expect(screen.getByText('https://api.githubcopilot.com/mcp/')).toBeInTheDocument()
+    expect(screen.getByText('gateway bearer token')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
     expect(screen.getByText('/mcp/github')).toBeInTheDocument()
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Tools' })[0])
+
     await waitFor(() => expect(screen.getByText('sha256:abc123')).toBeInTheDocument())
     expect(screen.getByText('Inactive')).toBeInTheDocument()
     const toolRow = screen
@@ -139,10 +175,8 @@ describe('McpServersPage', () => {
   })
 
   it('refreshes discovery and renders refresh feedback', async () => {
-    const { McpServersPage } = await import('@/routes/mcp/servers')
-
-    render(<McpServersPage />)
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    await renderServersTab('server_1')
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh GitHub' }))
 
     await waitFor(() => {
       expect(refreshExternalMcpServerDiscoveryMock).toHaveBeenCalledWith({
@@ -161,10 +195,8 @@ describe('McpServersPage', () => {
         tools: [],
       },
     })
-    const { McpServersPage } = await import('@/routes/mcp/servers')
-
-    render(<McpServersPage />)
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    await renderServersTab('server_1')
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh GitHub' }))
 
     await waitFor(() => expect(screen.getByText('Discovery failed')).toBeInTheDocument())
     expect(screen.getByText('new upstream failure')).toBeInTheDocument()
@@ -172,9 +204,7 @@ describe('McpServersPage', () => {
   })
 
   it('imports recommended servers through the server function', async () => {
-    const { McpServersPage } = await import('@/routes/mcp/servers')
-
-    render(<McpServersPage />)
+    await renderServersTab()
     fireEvent.click(screen.getByRole('button', { name: 'Import' }))
 
     await waitFor(() => {
@@ -185,9 +215,7 @@ describe('McpServersPage', () => {
   })
 
   it('submits custom add and edit flows', async () => {
-    const { McpServersPage } = await import('@/routes/mcp/servers')
-
-    render(<McpServersPage />)
+    await renderServersTab()
     fireEvent.click(screen.getByRole('button', { name: 'Add server' }))
     fireEvent.change(screen.getByLabelText('Server key'), { target: { value: 'slack' } })
     fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'Slack' } })
@@ -207,7 +235,7 @@ describe('McpServersPage', () => {
       })
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Edit GitHub' }))
     fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'GitHub MCP' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
 
@@ -222,10 +250,8 @@ describe('McpServersPage', () => {
   })
 
   it('disables active servers through the server function', async () => {
-    const { McpServersPage } = await import('@/routes/mcp/servers')
-
-    render(<McpServersPage />)
-    fireEvent.click(screen.getByRole('button', { name: 'Disable' }))
+    await renderServersTab()
+    fireEvent.click(screen.getByRole('button', { name: 'Delete GitHub' }))
 
     await waitFor(() => {
       expect(disableExternalMcpServerMock).toHaveBeenCalledWith({

@@ -1,6 +1,8 @@
 import type { FormEvent } from 'react'
+import { Copy01Icon } from '@hugeicons/core-free-icons'
 import { toast } from 'sonner'
 
+import { AppIcon } from '@/components/icons/app-icon'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -74,161 +76,237 @@ export type CredentialBindingFormState = {
   expires_at: string
 }
 
-export function ServerDetail({
+export function ServerDetailHeader({
   server,
-  tools,
-  toolsPending,
-  toolsError,
   refreshStatus,
-  refreshErrorSummary,
   actionPending,
   onEdit,
   onDisable,
   onRefresh,
 }: {
   server: McpServerView
-  tools: McpToolView[]
-  toolsPending: boolean
-  toolsError: string | null
   refreshStatus: string | null
-  refreshErrorSummary: string | null
   actionPending: boolean
   onEdit: (server: McpServerView) => void
   onDisable: (server: McpServerView) => void
   onRefresh: (server: McpServerView) => void
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-4" data-testid="mcp-server-detail">
-      <div className="flex min-w-0 flex-col gap-3 rounded-md border p-4">
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="truncate text-lg font-semibold">{server.display_name}</h2>
-              <ServerStatusBadge status={server.status} />
-              <DiscoveryStatusBadge status={server.last_discovery_status} />
-            </div>
-            <div className="mt-1 truncate font-mono text-xs text-[var(--color-text-muted)]">
-              /mcp/{server.server_key}
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onRefresh(server)}
-              disabled={actionPending || server.status !== 'active'}
-            >
-              {refreshStatus === 'pending' ? 'Refreshing...' : 'Refresh'}
-            </Button>
-            <Button type="button" variant="outline" onClick={() => onEdit(server)}>
-              Edit
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => onDisable(server)}
-              disabled={actionPending || server.status !== 'active'}
-            >
-              Disable
-            </Button>
-          </div>
+    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="truncate text-lg font-semibold">{server.display_name}</h2>
+          <ServerStatusBadge status={server.status} />
+          <DiscoveryStatusBadge status={server.last_discovery_status} />
         </div>
-
-        {refreshStatus && refreshStatus !== 'pending' ? (
-          <Alert variant={refreshStatus === 'success' ? 'default' : 'destructive'}>
-            <AlertTitle>Discovery {refreshStatus}</AlertTitle>
-            <AlertDescription>
-              {refreshErrorSummary ??
-                server.last_error_summary ??
-                'Discovery metadata has been refreshed.'}
-            </AlertDescription>
-          </Alert>
-        ) : null}
-
-        <div className="grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-4">
-          <DetailMetric label="Server URL" value={server.server_url} mono />
-          <DetailMetric label="Auth mode" value={server.auth_mode} />
-          <DetailMetric label="Timeout" value={`${server.timeout_ms} ms`} />
-          <DetailMetric label="Last discovery" value={server.last_discovery_at ?? 'never'} />
-          <DetailMetric
-            label="Last success"
-            value={server.last_successful_discovery_at ?? 'never'}
-          />
-          <DetailMetric label="Discovered tools" value={String(server.last_tool_count ?? 0)} />
-          <DetailMetric label="Created" value={server.created_at} />
-          <DetailMetric label="Updated" value={server.updated_at} />
+        <div className="mt-1 truncate font-mono text-xs text-[var(--color-text-muted)]">
+          /mcp/{server.server_key}
         </div>
       </div>
-
-      <div className="min-w-0 rounded-md border">
-        <div className="flex items-center justify-between gap-2 border-b p-4">
-          <div>
-            <h3 className="font-medium">Discovered tools</h3>
-            <p className="text-sm text-[var(--color-text-muted)]">
-              Active state, schema hash, schema version, and discovery timestamps.
-            </p>
-          </div>
-          <Badge variant="secondary">{tools.length}</Badge>
-        </div>
-        {toolsError ? (
-          <Alert variant="destructive" className="m-4">
-            <AlertTitle>Tool load failed</AlertTitle>
-            <AlertDescription>{toolsError}</AlertDescription>
-          </Alert>
-        ) : toolsPending ? (
-          <div className="grid gap-2 p-4">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-          </div>
-        ) : tools.length === 0 ? (
-          <Empty>
-            <EmptyHeader>
-              <EmptyTitle>No tools discovered</EmptyTitle>
-              <EmptyDescription>Run discovery after the server is reachable.</EmptyDescription>
-            </EmptyHeader>
-          </Empty>
-        ) : (
-          <div className="overflow-x-auto">
-            <Table className="min-w-[64rem]">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Tool</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Schema</TableHead>
-                  <TableHead>Version</TableHead>
-                  <TableHead>First seen</TableHead>
-                  <TableHead>Last seen</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {tools.map((tool) => (
-                  <TableRow key={tool.id}>
-                    <TableCell>
-                      <div className="flex min-w-0 flex-col gap-1">
-                        <span className="truncate font-medium">{tool.display_name}</span>
-                        <span className="truncate font-mono text-xs text-[var(--color-text-muted)]">
-                          {tool.upstream_name}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={tool.is_active ? 'default' : 'secondary'}>
-                        {tool.is_active ? 'Active' : 'Inactive'}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">{tool.schema_hash}</TableCell>
-                    <TableCell>{tool.schema_version}</TableCell>
-                    <TableCell>{tool.first_discovered_at}</TableCell>
-                    <TableCell>{tool.last_discovered_at}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => onRefresh(server)}
+          disabled={actionPending || server.status !== 'active'}
+        >
+          {refreshStatus === 'pending' ? 'Refreshing...' : 'Refresh'}
+        </Button>
+        <Button type="button" variant="outline" onClick={() => onEdit(server)}>
+          Edit
+        </Button>
+        <Button
+          type="button"
+          variant="destructive"
+          onClick={() => onDisable(server)}
+          disabled={actionPending || server.status !== 'active'}
+        >
+          Disable
+        </Button>
       </div>
     </div>
+  )
+}
+
+export function ServerOverviewPanel({
+  server,
+  refreshStatus,
+  refreshErrorSummary,
+}: {
+  server: McpServerView
+  refreshStatus: string | null
+  refreshErrorSummary: string | null
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-4">
+      {refreshStatus && refreshStatus !== 'pending' ? (
+        <Alert variant={refreshStatus === 'success' ? 'default' : 'destructive'}>
+          <AlertTitle>Discovery {refreshStatus}</AlertTitle>
+          <AlertDescription>
+            {refreshErrorSummary ??
+              server.last_error_summary ??
+              'Discovery metadata has been refreshed.'}
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      <div className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
+        <DetailMetric label="Server URL" value={server.server_url} mono />
+        <DetailMetric label="Auth mode" value={server.auth_mode} />
+        <DetailMetric label="Timeout" value={`${server.timeout_ms} ms`} />
+        <DetailMetric label="Last discovery" value={server.last_discovery_at ?? 'never'} />
+        <DetailMetric label="Last success" value={server.last_successful_discovery_at ?? 'never'} />
+        <DetailMetric label="Discovered tools" value={String(server.last_tool_count ?? 0)} />
+        <DetailMetric label="Created" value={server.created_at} />
+        <DetailMetric label="Updated" value={server.updated_at} />
+      </div>
+    </div>
+  )
+}
+
+export function ServerToolsPanel({
+  tools,
+  toolsPending,
+  toolsError,
+  selectedToolIds,
+  onToggleTool,
+  onClearSelection,
+  onAddToToolset,
+}: {
+  tools: McpToolView[]
+  toolsPending: boolean
+  toolsError: string | null
+  selectedToolIds: string[]
+  onToggleTool: (toolId: string) => void
+  onClearSelection: () => void
+  onAddToToolset: () => void
+}) {
+  const selected = new Set(selectedToolIds)
+
+  return (
+    <div className="min-w-0 rounded-md border" data-testid="mcp-server-tools">
+      <div className="flex items-center justify-between gap-2 border-b p-4">
+        <div>
+          <h3 className="font-medium">Discovered tools</h3>
+          <p className="text-sm text-[var(--color-text-muted)]">
+            Select tools to bundle into a toolset — no UUID copy-paste required.
+          </p>
+        </div>
+        <Badge variant="secondary">{tools.length}</Badge>
+      </div>
+
+      {selectedToolIds.length > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-[var(--color-muted)] px-4 py-3">
+          <span className="text-sm font-medium">
+            {selectedToolIds.length} tool{selectedToolIds.length === 1 ? '' : 's'} selected
+          </span>
+          <div className="flex gap-2">
+            <Button type="button" variant="ghost" size="sm" onClick={onClearSelection}>
+              Clear
+            </Button>
+            <Button type="button" size="sm" onClick={onAddToToolset}>
+              Add to toolset
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {toolsError ? (
+        <Alert variant="destructive" className="m-4">
+          <AlertTitle>Tool load failed</AlertTitle>
+          <AlertDescription>{toolsError}</AlertDescription>
+        </Alert>
+      ) : toolsPending ? (
+        <div className="grid gap-2 p-4">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </div>
+      ) : tools.length === 0 ? (
+        <Empty>
+          <EmptyHeader>
+            <EmptyTitle>No tools discovered</EmptyTitle>
+            <EmptyDescription>Run discovery after the server is reachable.</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      ) : (
+        <div className="overflow-x-auto">
+          <Table className="min-w-[72rem]">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-8" />
+                <TableHead>Tool</TableHead>
+                <TableHead>Tool ID</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Schema</TableHead>
+                <TableHead>Version</TableHead>
+                <TableHead>First seen</TableHead>
+                <TableHead>Last seen</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {tools.map((tool) => (
+                <TableRow key={tool.id} data-state={selected.has(tool.id) ? 'selected' : undefined}>
+                  <TableCell>
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${tool.display_name}`}
+                      className="size-4 cursor-pointer accent-[var(--color-primary)]"
+                      checked={selected.has(tool.id)}
+                      onChange={() => onToggleTool(tool.id)}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <span className="truncate font-medium">{tool.display_name}</span>
+                      <span className="truncate font-mono text-xs text-[var(--color-text-muted)]">
+                        {tool.upstream_name}
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1">
+                      <span className="max-w-[10rem] truncate font-mono text-xs text-[var(--color-text-muted)]">
+                        {tool.id}
+                      </span>
+                      <CopyButton value={tool.id} label={`Copy ${tool.display_name} ID`} />
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={tool.is_active ? 'default' : 'secondary'}>
+                      {tool.is_active ? 'Active' : 'Inactive'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">{tool.schema_hash}</TableCell>
+                  <TableCell>{tool.schema_version}</TableCell>
+                  <TableCell>{tool.first_discovered_at}</TableCell>
+                  <TableCell>{tool.last_discovered_at}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CopyButton({ value, label }: { value: string; label: string }) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-sm"
+      aria-label={label}
+      onClick={() => {
+        void navigator.clipboard
+          ?.writeText(value)
+          .then(() => toast.success('Tool ID copied'))
+          .catch(() => toast.error('Clipboard access failed'))
+      }}
+    >
+      <AppIcon icon={Copy01Icon} size={14} stroke={1.5} aria-hidden />
+    </Button>
   )
 }
 
@@ -429,7 +507,9 @@ export function CredentialBindingsPanel({
         <Empty>
           <EmptyHeader>
             <EmptyTitle>No credential bindings</EmptyTitle>
-            <EmptyDescription>Execution will use gateway-managed auth or require a binding.</EmptyDescription>
+            <EmptyDescription>
+              Execution will use gateway-managed auth or require a binding.
+            </EmptyDescription>
           </EmptyHeader>
         </Empty>
       ) : (
@@ -517,93 +597,17 @@ export function ServerFormDialog({
         <DialogHeader>
           <DialogTitle>{isCreate ? 'Add MCP server' : 'Edit MCP server'}</DialogTitle>
           <DialogDescription>
-            {isCreate ? 'Register a Streamable HTTP MCP endpoint.' : 'Update endpoint and auth settings.'}
+            {isCreate
+              ? 'Register a Streamable HTTP MCP endpoint.'
+              : 'Update endpoint and auth settings.'}
           </DialogDescription>
         </DialogHeader>
         <form className="flex flex-col gap-4" onSubmit={onSubmit}>
-          <FieldGroup className="grid gap-3 md:grid-cols-2">
-            {isCreate ? (
-              <Field>
-                <FieldLabel htmlFor="mcp-server-key">Server key</FieldLabel>
-                <Input
-                  id="mcp-server-key"
-                  value={form.server_key}
-                  onChange={(event) => onFormChange({ ...form, server_key: event.target.value })}
-                  placeholder="github"
-                  required
-                />
-              </Field>
-            ) : null}
-            <Field>
-              <FieldLabel htmlFor="mcp-display-name">Display name</FieldLabel>
-              <Input
-                id="mcp-display-name"
-                value={form.display_name}
-                onChange={(event) => onFormChange({ ...form, display_name: event.target.value })}
-                required
-              />
-            </Field>
-            <Field className="md:col-span-2">
-              <FieldLabel htmlFor="mcp-description">Description</FieldLabel>
-              <Textarea
-                id="mcp-description"
-                value={form.description}
-                onChange={(event) => onFormChange({ ...form, description: event.target.value })}
-                rows={2}
-              />
-            </Field>
-            <Field className="md:col-span-2">
-              <FieldLabel htmlFor="mcp-server-url">Server URL</FieldLabel>
-              <Input
-                id="mcp-server-url"
-                value={form.server_url}
-                onChange={(event) => onFormChange({ ...form, server_url: event.target.value })}
-                placeholder="https://example.com/mcp"
-                required
-              />
-            </Field>
-            <Field>
-              <FieldLabel>Auth mode</FieldLabel>
-              <Select
-                value={form.auth_mode}
-                onValueChange={(value) => onFormChange({ ...form, auth_mode: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {AUTH_MODES.map((authMode) => (
-                      <SelectItem key={authMode.value} value={authMode.value}>
-                        {authMode.label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="mcp-timeout-ms">Timeout ms</FieldLabel>
-              <Input
-                id="mcp-timeout-ms"
-                type="number"
-                min={1000}
-                max={120000}
-                value={form.timeout_ms}
-                onChange={(event) => onFormChange({ ...form, timeout_ms: event.target.value })}
-              />
-            </Field>
-            <Field className="md:col-span-2">
-              <FieldLabel htmlFor="mcp-auth-config">Auth config JSON</FieldLabel>
-              <Textarea
-                id="mcp-auth-config"
-                className="font-mono"
-                value={form.auth_config}
-                onChange={(event) => onFormChange({ ...form, auth_config: event.target.value })}
-                rows={5}
-              />
-            </Field>
-          </FieldGroup>
+          <ServerFormFields
+            mode={mode}
+            form={form}
+            onFormChange={onFormChange}
+          />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
@@ -618,6 +622,103 @@ export function ServerFormDialog({
   )
 }
 
+export function ServerFormFields({
+  mode,
+  form,
+  onFormChange,
+}: {
+  mode: 'create' | 'edit'
+  form: ServerFormState
+  onFormChange: (form: ServerFormState) => void
+}) {
+  const isCreate = mode === 'create'
+  return (
+    <FieldGroup className="grid gap-3 md:grid-cols-2">
+      {isCreate ? (
+        <Field>
+          <FieldLabel htmlFor="mcp-server-key">Server key</FieldLabel>
+          <Input
+            id="mcp-server-key"
+            value={form.server_key}
+            onChange={(event) => onFormChange({ ...form, server_key: event.target.value })}
+            placeholder="github"
+            required
+          />
+        </Field>
+      ) : null}
+      <Field>
+        <FieldLabel htmlFor="mcp-display-name">Display name</FieldLabel>
+        <Input
+          id="mcp-display-name"
+          value={form.display_name}
+          onChange={(event) => onFormChange({ ...form, display_name: event.target.value })}
+          required
+        />
+      </Field>
+      <Field className="md:col-span-2">
+        <FieldLabel htmlFor="mcp-description">Description</FieldLabel>
+        <Textarea
+          id="mcp-description"
+          value={form.description}
+          onChange={(event) => onFormChange({ ...form, description: event.target.value })}
+          rows={2}
+        />
+      </Field>
+      <Field className="md:col-span-2">
+        <FieldLabel htmlFor="mcp-server-url">Server URL</FieldLabel>
+        <Input
+          id="mcp-server-url"
+          value={form.server_url}
+          onChange={(event) => onFormChange({ ...form, server_url: event.target.value })}
+          placeholder="https://example.com/mcp"
+          required
+        />
+      </Field>
+      <Field>
+        <FieldLabel>Auth mode</FieldLabel>
+        <Select
+          value={form.auth_mode}
+          onValueChange={(value) => onFormChange({ ...form, auth_mode: value })}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              {AUTH_MODES.map((authMode) => (
+                <SelectItem key={authMode.value} value={authMode.value}>
+                  {authMode.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="mcp-timeout-ms">Timeout ms</FieldLabel>
+        <Input
+          id="mcp-timeout-ms"
+          type="number"
+          min={1000}
+          max={120000}
+          value={form.timeout_ms}
+          onChange={(event) => onFormChange({ ...form, timeout_ms: event.target.value })}
+        />
+      </Field>
+      <Field className="md:col-span-2">
+        <FieldLabel htmlFor="mcp-auth-config">Auth config JSON</FieldLabel>
+        <Textarea
+          id="mcp-auth-config"
+          className="font-mono"
+          value={form.auth_config}
+          onChange={(event) => onFormChange({ ...form, auth_config: event.target.value })}
+          rows={5}
+        />
+      </Field>
+    </FieldGroup>
+  )
+}
+
 export function ServerStatusBadge({ status }: { status: string }) {
   return (
     <Badge variant={status === 'active' ? 'default' : 'secondary'}>
@@ -629,13 +730,13 @@ export function ServerStatusBadge({ status }: { status: string }) {
 export function MetricLabel({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
-      <div className="uppercase tracking-wide">{label}</div>
+      <div className="tracking-wide uppercase">{label}</div>
       <div className="truncate font-medium text-[var(--color-text)]">{value}</div>
     </div>
   )
 }
 
-function DiscoveryStatusBadge({ status }: { status?: string | null }) {
+export function DiscoveryStatusBadge({ status }: { status?: string | null }) {
   const label = status ?? 'not run'
   const variant = status === 'success' ? 'default' : status ? 'secondary' : 'outline'
   return <Badge variant={variant}>{label}</Badge>
@@ -652,7 +753,7 @@ function DetailMetric({
 }) {
   return (
     <div className="min-w-0 rounded-md border bg-[var(--color-muted)] p-3">
-      <div className="text-xs uppercase text-[var(--color-text-muted)]">{label}</div>
+      <div className="text-xs text-[var(--color-text-muted)] uppercase">{label}</div>
       <div className={`mt-1 truncate ${mono ? 'font-mono text-xs' : 'text-sm font-medium'}`}>
         {value}
       </div>
