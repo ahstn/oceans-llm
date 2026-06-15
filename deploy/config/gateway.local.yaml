@@ -46,8 +46,8 @@ auth:
         scopes:
           - read:user
           - user:email
-        # Optional: restrict GitHub JIT/invite activation to verified primary
-        # email domains owned by your organization.
+        # Optional: restrict GitHub OAuth sign-in, invite activation, and JIT
+        # provisioning to verified primary email domains owned by your organization.
         # allowed_email_domains:
         #   - example.com
         enabled: false

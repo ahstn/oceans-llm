@@ -2483,15 +2483,7 @@ fn normalize_allowed_email_domains(
 }
 
 fn validate_allowed_email_domains(domains: &[String], context: &str) -> anyhow::Result<()> {
-    let mut seen = std::collections::BTreeSet::new();
-    for domain in domains {
-        let normalized = normalize_allowed_email_domain(domain)
-            .with_context(|| format!("{context} entry `{domain}`"))?;
-        if !seen.insert(normalized.clone()) {
-            bail!("{context} contains duplicate domain `{normalized}`");
-        }
-    }
-    Ok(())
+    normalize_allowed_email_domains(domains, context).map(|_| ())
 }
 
 fn normalize_allowed_email_domain(domain: &str) -> anyhow::Result<String> {

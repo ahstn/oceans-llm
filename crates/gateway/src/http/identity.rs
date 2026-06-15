@@ -3072,6 +3072,7 @@ mod tests {
         assert!(github_email_domain_allowed("alice@Test.com", &allowed));
         assert!(!github_email_domain_allowed("alice@not-test.com", &allowed));
         assert!(!github_email_domain_allowed("alice@eviltest.com", &allowed));
+        assert!(!github_email_domain_allowed("alice@sub.test.com", &allowed));
         assert!(!github_email_domain_allowed("invalid-email", &allowed));
     }
 }

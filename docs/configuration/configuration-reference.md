@@ -330,8 +330,8 @@ Important GitHub OAuth provider fields:
 - `allowed_email_domains`
   - optional
   - defaults to an empty list, which keeps the existing invite/JIT behavior without a domain restriction
-  - entries are normalized to lowercase
-  - empty entries, email addresses, URLs, wildcards, invalid domain names, and duplicates after normalization are rejected at startup
+  - entries are normalized by trimming whitespace, converting to lowercase, and removing trailing dots
+  - empty entries, email addresses, URLs, wildcards, single-label values, names with invalid DNS characters, and duplicates after normalization are rejected at startup
   - matching is case-insensitive and exact on the verified primary email's domain part
 - `enabled`
 - `jit`
