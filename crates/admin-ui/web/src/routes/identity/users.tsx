@@ -57,6 +57,14 @@ import {
   SidebarProvider,
 } from '@/components/ui/sidebar'
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import {
   deactivateIdentityUser,
   createIdentityUser,
   getUsers,
@@ -737,37 +745,48 @@ export function UsersPage() {
               </div>
 
               <div className="hidden overflow-hidden rounded-md border border-[color:var(--color-border)] md:block">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
-                    <tr>
-                      <th className="px-3 py-2 font-semibold">Name</th>
-                      <th className="px-3 py-2 font-semibold">Email</th>
-                      <th className="px-3 py-2 font-semibold">Global role</th>
-                      <th className="px-3 py-2 font-semibold">Team</th>
-                      <th className="px-3 py-2 font-semibold">Status</th>
-                      <th className="px-3 py-2 font-semibold">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                <Table className="text-left">
+                  <TableHeader className="bg-[color:var(--color-surface-muted)]">
+                    <TableRow>
+                      <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                        Name
+                      </TableHead>
+                      <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                        Email
+                      </TableHead>
+                      <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                        Global role
+                      </TableHead>
+                      <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                        Team
+                      </TableHead>
+                      <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                        Status
+                      </TableHead>
+                      <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                        Actions
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {users.map((user) => (
-                      <tr
-                        key={user.id}
-                        className="border-t border-[color:var(--color-border)] align-top"
-                      >
-                        <td className="px-3 py-3 text-[var(--color-text)]">
+                      <TableRow key={user.id}>
+                        <TableCell className="px-3 py-3 text-[var(--color-text)]">
                           <div className="flex min-w-0 items-center gap-3">
                             <GeneratedAvatar kind="user" name={user.name || user.email} size={32} />
                             <span className="truncate">{user.name}</span>
                           </div>
-                        </td>
-                        <td className="px-3 py-3 text-[var(--color-text-muted)]">{user.email}</td>
-                        <td className="px-3 py-3 text-[var(--color-text-muted)]">
+                        </TableCell>
+                        <TableCell className="px-3 py-3 text-[var(--color-text-muted)]">
+                          {user.email}
+                        </TableCell>
+                        <TableCell className="px-3 py-3 text-[var(--color-text-muted)]">
                           {user.global_role}
-                        </td>
-                        <td className="px-3 py-3 text-[var(--color-text-muted)]">
+                        </TableCell>
+                        <TableCell className="px-3 py-3 text-[var(--color-text-muted)]">
                           {user.team_name ?? '—'}
-                        </td>
-                        <td className="px-3 py-3">
+                        </TableCell>
+                        <TableCell className="px-3 py-3">
                           <Badge
                             variant={
                               user.status === 'active'
@@ -779,8 +798,8 @@ export function UsersPage() {
                           >
                             {user.status}
                           </Badge>
-                        </td>
-                        <td className="px-3 py-3">
+                        </TableCell>
+                        <TableCell className="px-3 py-3">
                           <Button
                             type="button"
                             size="sm"
@@ -789,11 +808,11 @@ export function UsersPage() {
                           >
                             Manage
                           </Button>
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             </div>
           )}

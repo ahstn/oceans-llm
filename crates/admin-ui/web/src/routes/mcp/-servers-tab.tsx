@@ -6,6 +6,17 @@ import {
   type FormEvent,
   type ReactNode,
 } from 'react'
+import awsIcon from '@lobehub/icons-static-svg/icons/aws.svg'
+import cloudflareIcon from '@lobehub/icons-static-svg/icons/cloudflare.svg'
+import exaIcon from '@lobehub/icons-static-svg/icons/exa.svg'
+import figmaIcon from '@lobehub/icons-static-svg/icons/figma.svg'
+import githubIcon from '@lobehub/icons-static-svg/icons/github.svg'
+import googleIcon from '@lobehub/icons-static-svg/icons/google.svg'
+import huggingFaceIcon from '@lobehub/icons-static-svg/icons/huggingface.svg'
+import n8nIcon from '@lobehub/icons-static-svg/icons/n8n.svg'
+import notionIcon from '@lobehub/icons-static-svg/icons/notion.svg'
+import obsidianIcon from '@lobehub/icons-static-svg/icons/obsidian.svg'
+import snowflakeIcon from '@lobehub/icons-static-svg/icons/snowflake.svg'
 import {
   Cancel01Icon,
   Configuration01Icon,
@@ -380,8 +391,8 @@ export function ServersTab({
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <Card size="sm">
-        <CardHeader className="gap-5">
+      <Card>
+        <CardHeader className="gap-4">
           {workspaceHeader}
           <div className="col-span-full grid gap-3 sm:grid-cols-[1fr_auto] sm:items-start">
             <div className="flex min-w-0 flex-col gap-1">
@@ -497,77 +508,86 @@ function ServerTable({
 
   return (
     <TooltipProvider>
-      <Table data-testid="mcp-server-list">
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-10" />
-            <TableHead>Server</TableHead>
-            <TableHead>URL</TableHead>
-            <TableHead>Auth type</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead className="text-right">Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {servers.map((server) => (
-            <TableRow key={server.id}>
-              <TableCell>
-                <div className="flex size-8 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                  <AppIcon icon={McpServerIcon} size={18} stroke={1.5} aria-hidden />
-                </div>
-              </TableCell>
-              <TableCell>
-                <button
-                  type="button"
-                  aria-label={`Open ${server.display_name}`}
-                  className="flex min-w-0 flex-col gap-1 text-left"
-                  onClick={() => onSelectServer(server.id)}
-                >
-                  <span className="truncate font-medium">{server.display_name}</span>
-                  <span className="truncate font-mono text-xs text-muted-foreground">
-                    {server.server_key}
-                  </span>
-                </button>
-              </TableCell>
-              <TableCell className="max-w-[20rem] truncate font-mono text-xs text-muted-foreground">
-                {server.server_url}
-              </TableCell>
-              <TableCell>{formatAuthMode(server.auth_mode)}</TableCell>
-              <TableCell>
-                <ServerStatusBadge status={server.status} />
-              </TableCell>
-              <TableCell>
-                <div className="flex justify-end gap-1">
-                  <ServerActionButton
-                    label={`Refresh ${server.display_name}`}
-                    tooltip="Refresh discovery"
-                    icon={RefreshIcon}
-                    onClick={() => onRefresh(server)}
-                    disabled={actionPending || server.status !== 'active'}
-                  />
-                  <ServerActionButton
-                    label={`Edit ${server.display_name}`}
-                    tooltip="Edit server"
-                    icon={Edit02Icon}
-                    onClick={() => onEdit(server)}
-                  />
-                  <ServerActionButton
-                    label={`Delete ${server.display_name}`}
-                    tooltip="Delete server"
-                    icon={Delete02Icon}
-                    variant="destructive"
-                    onClick={() => onDisable(server)}
-                    disabled={actionPending || server.status !== 'active'}
-                  />
-                </div>
-                {refreshStatus === 'pending' ? (
-                  <span className="sr-only">Discovery refresh pending</span>
-                ) : null}
-              </TableCell>
+      <div className="overflow-hidden rounded-md border border-[color:var(--color-border)]">
+        <Table className="text-left" data-testid="mcp-server-list">
+          <TableHeader className="bg-[color:var(--color-surface-muted)]">
+            <TableRow>
+              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                Server
+              </TableHead>
+              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                URL
+              </TableHead>
+              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                Auth type
+              </TableHead>
+              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                Status
+              </TableHead>
+              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                Actions
+              </TableHead>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {servers.map((server) => (
+              <TableRow key={server.id}>
+                <TableCell className="px-3 py-3">
+                  <button
+                    type="button"
+                    aria-label={`Open ${server.display_name}`}
+                    className="flex min-w-0 items-center gap-3 text-left"
+                    onClick={() => onSelectServer(server.id)}
+                  >
+                    <McpServerIconMark server={server} />
+                    <span className="flex min-w-0 flex-col gap-1">
+                      <span className="truncate font-medium">{server.display_name}</span>
+                      <span className="truncate font-mono text-xs text-muted-foreground">
+                        {server.server_key}
+                      </span>
+                    </span>
+                  </button>
+                </TableCell>
+                <TableCell className="max-w-[20rem] truncate px-3 py-3 font-mono text-xs text-muted-foreground">
+                  {server.server_url}
+                </TableCell>
+                <TableCell className="px-3 py-3">{formatAuthMode(server.auth_mode)}</TableCell>
+                <TableCell className="px-3 py-3">
+                  <ServerStatusBadge status={server.status} />
+                </TableCell>
+                <TableCell className="px-3 py-3">
+                  <div className="flex justify-start gap-1">
+                    <ServerActionButton
+                      label={`Refresh ${server.display_name}`}
+                      tooltip="Refresh discovery"
+                      icon={RefreshIcon}
+                      onClick={() => onRefresh(server)}
+                      disabled={actionPending || server.status !== 'active'}
+                    />
+                    <ServerActionButton
+                      label={`Edit ${server.display_name}`}
+                      tooltip="Edit server"
+                      icon={Edit02Icon}
+                      onClick={() => onEdit(server)}
+                    />
+                    <ServerActionButton
+                      label={`Delete ${server.display_name}`}
+                      tooltip="Delete server"
+                      icon={Delete02Icon}
+                      variant="destructive"
+                      onClick={() => onDisable(server)}
+                      disabled={actionPending || server.status !== 'active'}
+                    />
+                  </div>
+                  {refreshStatus === 'pending' ? (
+                    <span className="sr-only">Discovery refresh pending</span>
+                  ) : null}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
     </TooltipProvider>
   )
 }
@@ -717,7 +737,7 @@ function ServerDetailDialog({
               <header className="flex shrink-0 flex-col gap-4 border-b border-[color:var(--color-border)] px-6 py-5">
                 <div className="flex items-start gap-3">
                   <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                    <AppIcon icon={McpServerIcon} size={22} stroke={1.5} aria-hidden />
+                    <McpServerIconMark server={server} size={22} bare />
                   </div>
                   <div className="min-w-0 flex-1 pt-0.5">
                     <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -861,7 +881,7 @@ export function RecommendedCatalog({
   }
 
   return (
-    <Card size="sm">
+    <Card>
       <CardHeader>
         <CardTitle>Recommended catalog</CardTitle>
         <CardDescription>Import common MCP endpoints or customize before registration.</CardDescription>
@@ -873,10 +893,13 @@ export function RecommendedCatalog({
               key={server.catalog_key}
               className="flex min-w-0 items-center justify-between gap-2 rounded-md border p-3"
             >
-              <div className="min-w-0">
-                <div className="truncate text-sm font-medium">{server.display_name}</div>
-                <div className="truncate text-xs text-[var(--color-text-muted)]">
-                  {server.catalog_key}
+              <div className="flex min-w-0 items-center gap-3">
+                <McpServerIconMark server={server} />
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium">{server.display_name}</div>
+                  <div className="truncate text-xs text-[var(--color-text-muted)]">
+                    {server.catalog_key}
+                  </div>
                 </div>
               </div>
               <div className="flex shrink-0 gap-2">
@@ -902,4 +925,90 @@ export function RecommendedCatalog({
 
 function formatAuthMode(authMode: string) {
   return authMode.replaceAll('_', ' ')
+}
+
+type McpIconSubject = {
+  catalog_key?: string
+  display_name: string
+  server_key?: string
+  server_url?: string
+}
+
+const MCP_LOBE_ICON_MATCHERS = [
+  { aliases: ['github'], src: githubIcon },
+  { aliases: ['snowflake'], src: snowflakeIcon },
+  { aliases: ['notion'], src: notionIcon },
+  { aliases: ['google'], src: googleIcon },
+  { aliases: ['figma'], src: figmaIcon },
+  { aliases: ['aws', 'amazon web services'], src: awsIcon },
+  { aliases: ['cloudflare'], src: cloudflareIcon },
+  { aliases: ['exa'], src: exaIcon },
+  { aliases: ['huggingface', 'hugging face'], src: huggingFaceIcon },
+  { aliases: ['n8n'], src: n8nIcon },
+  { aliases: ['obsidian'], src: obsidianIcon },
+] as const
+
+function McpServerIconMark({
+  server,
+  size = 18,
+  bare = false,
+}: {
+  server: McpIconSubject
+  size?: number
+  bare?: boolean
+}) {
+  const iconSrc = resolveMcpLobeIcon(server)
+
+  const icon = iconSrc ? (
+    <img
+      alt=""
+      aria-hidden="true"
+      className="shrink-0 object-contain"
+      src={iconSrc}
+      style={{
+        filter: bare ? 'brightness(0) invert(1)' : 'brightness(0) invert(0.72)',
+        height: size,
+        width: size,
+      }}
+    />
+  ) : (
+    <AppIcon icon={McpServerIcon} size={size} stroke={1.5} aria-hidden />
+  )
+
+  if (bare) {
+    return icon
+  }
+
+  return (
+    <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+      {icon}
+    </span>
+  )
+}
+
+function resolveMcpLobeIcon(server: McpIconSubject) {
+  const searchableText = [
+    server.server_key,
+    server.catalog_key,
+    server.display_name,
+    server.server_url,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+
+  const normalizedText = searchableText.replace(/[^a-z0-9]+/g, ' ')
+  const compactText = normalizedText.replaceAll(' ', '')
+
+  return MCP_LOBE_ICON_MATCHERS.find(({ aliases }) =>
+    aliases.some((alias) => {
+      const normalizedAlias = alias.toLowerCase().replace(/[^a-z0-9]+/g, ' ')
+      const compactAlias = normalizedAlias.replaceAll(' ', '')
+
+      return (
+        normalizedText.includes(normalizedAlias) ||
+        (compactAlias.length > 0 && compactText.includes(compactAlias))
+      )
+    }),
+  )?.src
 }
