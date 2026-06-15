@@ -353,6 +353,7 @@ impl OpenAiCompatProvider {
         }
         if apply_compatibility_profile {
             apply_openai_compat_request_profile(&mut body, context);
+            apply_openrouter_routing_policy(&mut body, context)?;
         }
         if let Some(object) = body.as_object_mut()
             && enforce_stream
@@ -455,6 +456,23 @@ fn apply_openai_compat_request_profile(body: &mut Value, context: &ProviderReque
         return;
     };
     apply_openai_compat_profile_to_body(body, profile);
+}
+
+fn apply_openrouter_routing_policy(
+    body: &mut Value,
+    context: &ProviderRequestContext,
+) -> Result<(), ProviderError> {
+    let Some(openrouter) = context.compatibility.openrouter.as_ref() else {
+        return Ok(());
+    };
+    let Some(object) = body.as_object_mut() else {
+        return Ok(());
+    };
+
+    let provider = serde_json::to_value(&openrouter.provider)
+        .map_err(|error| ProviderError::Transport(error.to_string()))?;
+    object.insert("provider".to_string(), provider);
+    Ok(())
 }
 
 fn apply_openai_compat_profile_to_body(body: &mut Value, profile: &OpenAiCompatRouteCompatibility) {
@@ -614,7 +632,9 @@ mod tests {
     use gateway_core::{
         CoreChatMessage, CoreChatRequest, CoreResponsesRequest, OpenAiCompatDeveloperRole,
         OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
-        ProviderClient, ProviderError, ProviderRequestContext, RouteCompatibility,
+        OpenRouterMaxPrice, OpenRouterPercentileCutoffs, OpenRouterPercentilePreference,
+        OpenRouterProviderRouting, OpenRouterRouteCompatibility, ProviderClient, ProviderError,
+        ProviderRequestContext, RouteCompatibility,
     };
     use serde_json::{Map, Value, json};
     use tokio::net::TcpListener;
@@ -648,6 +668,18 @@ mod tests {
                 openai_compat: Some(profile),
                 ..Default::default()
             },
+        }
+    }
+
+    fn context_with_openrouter_policy(
+        routing: OpenRouterProviderRouting,
+    ) -> ProviderRequestContext {
+        ProviderRequestContext {
+            compatibility: RouteCompatibility {
+                openrouter: Some(OpenRouterRouteCompatibility { provider: routing }),
+                ..Default::default()
+            },
+            ..default_context()
         }
     }
 
@@ -998,6 +1030,92 @@ mod tests {
         );
         assert!(headers.get("authorization").is_none());
         assert_eq!(provider.provider_type(), "gcp_cloud_run_openai_compat");
+    }
+
+    #[test]
+    fn openrouter_policy_serializes_provider_object_for_chat_completions() {
+        let provider = provider();
+        let request = CoreChatRequest {
+            model: "fast".to_string(),
+            messages: vec![],
+            stream: false,
+            extra: BTreeMap::new(),
+        };
+        let context = context_with_openrouter_policy(OpenRouterProviderRouting {
+            zdr: Some(true),
+            only: vec!["openai".to_string()],
+            ignore: vec!["deepinfra".to_string()],
+            order: vec!["openai".to_string(), "anthropic".to_string()],
+            preferred_max_latency: Some(OpenRouterPercentilePreference::Percentiles(
+                OpenRouterPercentileCutoffs {
+                    p90: Some(2.5),
+                    ..Default::default()
+                },
+            )),
+            max_price: Some(OpenRouterMaxPrice {
+                prompt: Some(1.0),
+                completion: Some(2.0),
+                request: Some(0.01),
+                image: Some(0.05),
+            }),
+        });
+
+        let built = provider
+            .build_chat_request(&request, &context)
+            .expect("build request");
+        let body_json = request_body_json(&built);
+
+        assert_eq!(
+            body_json["provider"],
+            json!({
+                "zdr": true,
+                "only": ["openai"],
+                "ignore": ["deepinfra"],
+                "order": ["openai", "anthropic"],
+                "preferred_max_latency": {"p90": 2.5},
+                "max_price": {
+                    "prompt": 1.0,
+                    "completion": 2.0,
+                    "request": 0.01,
+                    "image": 0.05
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn ordinary_openai_compat_chat_request_does_not_add_provider_object() {
+        let provider = provider();
+        let request = CoreChatRequest {
+            model: "fast".to_string(),
+            messages: vec![],
+            stream: false,
+            extra: BTreeMap::new(),
+        };
+
+        let built = provider
+            .build_chat_request(&request, &default_context())
+            .expect("build request");
+        let body_json = request_body_json(&built);
+
+        assert!(body_json.get("provider").is_none());
+    }
+
+    #[test]
+    fn openrouter_policy_is_not_applied_to_responses_requests() {
+        let provider = provider();
+        let request = responses_request(false);
+        let context = context_with_openrouter_policy(OpenRouterProviderRouting {
+            zdr: Some(true),
+            ..Default::default()
+        });
+
+        let built = provider
+            .build_responses_request(&request, &context)
+            .expect("build request");
+        let body_json = request_body_json(&built);
+
+        assert!(body_json.get("provider").is_none());
     }
 
     #[test]

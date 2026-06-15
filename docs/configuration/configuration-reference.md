@@ -467,6 +467,8 @@ Validation rules that matter:
 - `pricing_provider_id` cannot be empty
 - `pricing_provider_id` must map to a supported internal pricing family
 
+OpenRouter uses this generic provider type with `base_url: https://openrouter.ai/api/v1`. Keep arbitrary OpenAI-compatible endpoints on plain `openai_compat`; add route-level `compatibility.openrouter` only when the route needs OpenRouter provider-selection policy such as ZDR, provider allow/deny lists, provider order, latency preference, or price ceilings. See [OpenRouter](../providers/openrouter.md).
+
 ### `gcp_cloud_run_openai_compat`
 
 Important fields:
@@ -627,6 +629,28 @@ models:
             supports_stream_usage: true
 ```
 
+OpenRouter route policy:
+
+```yaml
+models:
+  - id: openrouter-fast-zdr
+    routes:
+      - provider: openrouter
+        upstream_model: openai/gpt-4o-mini
+        compatibility:
+          openrouter:
+            provider:
+              zdr: true
+              only: [openai, anthropic]
+              ignore: [deepinfra]
+              order: [openai, anthropic]
+              preferred_max_latency:
+                p90: 2.5
+              max_price:
+                prompt: 1.0
+                completion: 2.0
+```
+
 AWS Bedrock route profile:
 
 ```yaml
@@ -668,6 +692,19 @@ OpenAI-compatible profile defaults:
 | `reasoning_effort` | `passthrough` | `passthrough`, `omit`, `reasoning_object` |
 | `supports_stream_usage` | `false` | `true`, `false` |
 
+OpenRouter policy fields:
+
+| Field | Default | Supported values |
+| --- | --- | --- |
+| `zdr` | unset | `true`, `false` |
+| `only` | `[]` | non-empty OpenRouter provider slugs |
+| `ignore` | `[]` | non-empty OpenRouter provider slugs |
+| `order` | `[]` | non-empty OpenRouter provider slugs in preferred order |
+| `preferred_max_latency` | unset | positive number, or object with positive `p50`, `p75`, `p90`, `p99` values in seconds |
+| `max_price` | unset | object with one or more non-negative `prompt`, `completion`, `request`, or `image` ceilings |
+
+`compatibility.openrouter` is valid only on OpenRouter `openai_compat` providers. Do not set both `compatibility.openrouter.provider` and `extra_body.provider` on the same route.
+
 The current `openai_compat` profile fields are Chat Completions transforms. `/v1/responses` is a separate supported API family and is not adapted by reusing Chat Completions compatibility shims.
 
 Do not use `extra_body` for compatibility transforms. `extra_body` remains for additive provider-specific overrides, and the typed compatibility profile remains authoritative when a declared transform conflicts with an additive override.
@@ -699,6 +736,25 @@ models:
             developer_role: system
             reasoning_effort: omit
             supports_stream_usage: true
+```
+
+OpenRouter routes can also declare upstream provider routing policy explicitly:
+
+```yaml
+models:
+  - id: openrouter-private
+    routes:
+      - provider: openrouter
+        upstream_model: anthropic/claude-sonnet-4.6
+        compatibility:
+          openrouter:
+            provider:
+              zdr: true
+              only: [anthropic]
+              preferred_max_latency: 3.0
+              max_price:
+                prompt: 3.0
+                completion: 15.0
 ```
 
 Vertex Google routes use the Vertex provider and a publisher-qualified upstream model:

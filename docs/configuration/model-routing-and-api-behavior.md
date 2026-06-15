@@ -126,6 +126,8 @@ Capabilities and compatibility have different jobs:
 
 OpenAI-compatible route profiles currently cover deterministic Chat Completions transforms such as `store` removal, token field renaming, `developer` role rewriting, `reasoning_effort` handling, and stream usage requests. Responses uses a separate typed request/provider path; Chat Completions transforms must not be used as Responses shims.
 
+OpenRouter routes can also define `compatibility.openrouter.provider` policy. That policy is serialized into the upstream Chat Completions request body as OpenRouter's `provider` object after Oceans has selected one gateway route. OpenRouter `order`, `only`, `ignore`, `zdr`, latency, and price settings affect OpenRouter's upstream provider selection for that one request; they do not change Oceans route `priority`, route `weight`, or the current single-route execution behavior.
+
 See [provider-api-compatibility.md](../reference/provider-api-compatibility.md) for the compatibility matrix and field-level contract.
 
 Cloud Run vLLM/Gemma controls such as `chat_template_kwargs.enable_thinking` and `skip_special_tokens` are additive upstream request fields. Put them in route `extra_body`, not in a compatibility profile.

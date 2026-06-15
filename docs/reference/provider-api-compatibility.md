@@ -218,6 +218,47 @@ These profile transforms apply to Chat Completions request-shape quirks unless e
 - default: `false`
 - when `true`, streaming Chat Completions requests include `stream_options.include_usage = true`
 
+## OpenRouter Routing Policy
+
+OpenRouter is configured as `type: openai_compat` for transport, but OpenRouter provider-selection policy is a separate route-level compatibility block:
+
+```yaml
+compatibility:
+  openrouter:
+    provider:
+      zdr: true
+      only: [openai, anthropic]
+      ignore: [deepinfra]
+      order: [openai, anthropic]
+      preferred_max_latency:
+        p90: 2.5
+      max_price:
+        prompt: 1.0
+        completion: 2.0
+```
+
+The gateway serializes that block into the upstream Chat Completions request body as `provider`. For example:
+
+```json
+{
+  "provider": {
+    "zdr": true,
+    "only": ["openai"],
+    "ignore": ["deepinfra"],
+    "order": ["openai", "anthropic"],
+    "preferred_max_latency": { "p90": 2.5 },
+    "max_price": {
+      "prompt": 1.0,
+      "completion": 2.0
+    }
+  }
+}
+```
+
+`zdr` restricts OpenRouter routing to zero-data-retention endpoints. `preferred_max_latency` is preference-shaped and supports a number or `p50`, `p75`, `p90`, and `p99` percentile cutoffs in seconds. `max_price` is a hard ceiling and supports `prompt`, `completion`, `request`, and `image` dimensions. Provider slug validation remains OpenRouter's responsibility; Oceans validates shape, empty values, duplicate slugs, contradictory `only`/`ignore` entries, and raw `extra_body.provider` conflicts.
+
+This policy is OpenRouter upstream behavior. It does not add Oceans-side multi-route fallback.
+
 ## Stream Normalization
 
 The Chat Completions stream adapter keeps the SSE transcript OpenAI-shaped while normalizing common provider variants:

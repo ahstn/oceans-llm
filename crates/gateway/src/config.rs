@@ -5,9 +5,11 @@ use gateway_core::{
     AuthMode, AwsBedrockApiStyle, AwsBedrockRouteCompatibility, BudgetCadence, GlobalRole,
     MembershipRole, Money4, OauthJitMembership, OauthJitPolicy, OidcJitMembership, OidcJitPolicy,
     OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
-    OpenAiCompatRouteCompatibility, ProviderCapabilities, RequestLogRetentionWindow,
-    RouteCompatibility, SeedApiKey, SeedBudget, SeedModel, SeedModelRoute, SeedOauthProvider,
-    SeedOidcProvider, SeedProvider, SeedTeam, SeedUser, SeedUserMembership, parse_gateway_api_key,
+    OpenAiCompatRouteCompatibility, OpenRouterMaxPrice, OpenRouterPercentileCutoffs,
+    OpenRouterPercentilePreference, OpenRouterProviderRouting, OpenRouterRouteCompatibility,
+    ProviderCapabilities, RequestLogRetentionWindow, RouteCompatibility, SeedApiKey, SeedBudget,
+    SeedModel, SeedModelRoute, SeedOauthProvider, SeedOidcProvider, SeedProvider, SeedTeam,
+    SeedUser, SeedUserMembership, parse_gateway_api_key,
 };
 use gateway_providers::{
     BedrockAuthConfig, BedrockEndpointKind, BedrockProviderConfig, CloudRunOpenAiCompatAuth,
@@ -338,14 +340,18 @@ impl GatewayConfig {
             }
 
             for route in &model.routes {
-                if let Some(provider) = provider_by_id.get(route.provider.as_str())
-                    && matches!(provider, ProviderConfig::GcpVertex(_))
+                let provider = provider_by_id.get(route.provider.as_str()).copied();
+
+                if provider.is_some_and(|provider| matches!(provider, ProviderConfig::GcpVertex(_)))
                 {
                     validate_vertex_upstream_model_format(&route.upstream_model)?;
                 }
-                if let Some(ProviderConfig::AwsBedrock(provider)) =
-                    provider_by_id.get(route.provider.as_str())
-                {
+                if let Some(openrouter) = &route.compatibility.openrouter {
+                    validate_openrouter_route_compatibility(
+                        &model.id, route, provider, openrouter,
+                    )?;
+                }
+                if let Some(ProviderConfig::AwsBedrock(provider)) = provider {
                     validate_aws_bedrock_route_compatibility(&model.id, route, provider)?;
                 }
             }
@@ -1946,6 +1952,8 @@ pub struct RouteCompatibilityConfig {
     #[serde(default)]
     pub openai_compat: Option<OpenAiCompatRouteCompatibilityConfig>,
     #[serde(default)]
+    pub openrouter: Option<OpenRouterRouteCompatibility>,
+    #[serde(default)]
     pub aws_bedrock: Option<AwsBedrockRouteCompatibilityConfig>,
 }
 
@@ -1955,6 +1963,7 @@ impl RouteCompatibilityConfig {
             openai_compat: self
                 .openai_compat
                 .map(OpenAiCompatRouteCompatibilityConfig::into_compatibility),
+            openrouter: self.openrouter,
             aws_bedrock: self
                 .aws_bedrock
                 .map(AwsBedrockRouteCompatibilityConfig::into_compatibility),
@@ -2054,6 +2063,85 @@ fn validate_vertex_upstream_model_format(value: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn validate_openrouter_route_compatibility(
+    model_id: &str,
+    route: &ModelRouteConfig,
+    provider: Option<&ProviderConfig>,
+    compatibility: &OpenRouterRouteCompatibility,
+) -> anyhow::Result<()> {
+    let Some(ProviderConfig::OpenAiCompat(provider)) = provider else {
+        bail!(
+            "model `{model_id}` route for provider `{}` uses compatibility.openrouter but OpenRouter routing policy requires an openai_compat provider",
+            route.provider
+        );
+    };
+
+    if !is_openrouter_endpoint(&provider.base_url) {
+        bail!(
+            "model `{model_id}` route for openai_compat provider `{}` uses compatibility.openrouter but provider base_url is not an OpenRouter endpoint",
+            provider.id
+        );
+    }
+
+    if route.extra_body.contains_key("provider") {
+        bail!(
+            "model `{model_id}` route for OpenRouter provider `{}` cannot set both compatibility.openrouter.provider and extra_body.provider",
+            provider.id
+        );
+    }
+
+    validate_openrouter_provider_routing(
+        &compatibility.provider,
+        &format!(
+            "model `{model_id}` route for OpenRouter provider `{}` compatibility.openrouter.provider",
+            provider.id
+        ),
+    )
+}
+
+fn is_openrouter_endpoint(base_url: &str) -> bool {
+    let Ok(parsed) = url::Url::parse(base_url.trim()) else {
+        return false;
+    };
+    parsed.scheme() == "https" && parsed.host_str() == Some("openrouter.ai")
+}
+
+fn validate_openrouter_provider_routing(
+    routing: &OpenRouterProviderRouting,
+    label: &str,
+) -> anyhow::Result<()> {
+    validate_non_empty_strings(&routing.only, &format!("{label}.only"))?;
+    validate_non_empty_strings(&routing.ignore, &format!("{label}.ignore"))?;
+    validate_non_empty_strings(&routing.order, &format!("{label}.order"))?;
+    validate_unique_strings(&routing.only, &format!("{label}.only"))?;
+    validate_unique_strings(&routing.ignore, &format!("{label}.ignore"))?;
+    validate_unique_strings(&routing.order, &format!("{label}.order"))?;
+    validate_openrouter_only_ignore_overlap(&routing.only, &routing.ignore, label)?;
+
+    if let Some(preference) = &routing.preferred_max_latency {
+        validate_openrouter_percentile_preference(
+            preference,
+            &format!("{label}.preferred_max_latency"),
+        )?;
+    }
+
+    if let Some(max_price) = &routing.max_price {
+        validate_openrouter_max_price(max_price, &format!("{label}.max_price"))?;
+    }
+
+    if routing.zdr.is_none()
+        && routing.only.is_empty()
+        && routing.ignore.is_empty()
+        && routing.order.is_empty()
+        && routing.preferred_max_latency.is_none()
+        && routing.max_price.is_none()
+    {
+        bail!("{label} must set at least one routing policy field");
+    }
+
+    Ok(())
+}
+
 fn validate_cloud_run_base_url(provider_id: &str, base_url: &str) -> anyhow::Result<()> {
     let trimmed = base_url.trim();
     if trimmed.is_empty() {
@@ -2078,6 +2166,113 @@ fn validate_cloud_run_base_url(provider_id: &str, base_url: &str) -> anyhow::Res
         bail!("gcp_cloud_run_openai_compat provider `{provider_id}` base_url must include a host");
     }
 
+    Ok(())
+}
+
+fn validate_openrouter_percentile_preference(
+    preference: &OpenRouterPercentilePreference,
+    label: &str,
+) -> anyhow::Result<()> {
+    match preference {
+        OpenRouterPercentilePreference::Number(value) => validate_positive_f64(*value, label),
+        OpenRouterPercentilePreference::Percentiles(percentiles) => {
+            validate_openrouter_percentile_cutoffs(percentiles, label)
+        }
+    }
+}
+
+fn validate_openrouter_percentile_cutoffs(
+    percentiles: &OpenRouterPercentileCutoffs,
+    label: &str,
+) -> anyhow::Result<()> {
+    let values = [
+        ("p50", percentiles.p50),
+        ("p75", percentiles.p75),
+        ("p90", percentiles.p90),
+        ("p99", percentiles.p99),
+    ];
+    if values.iter().all(|(_, value)| value.is_none()) {
+        bail!("{label} percentile object must set at least one of p50, p75, p90, or p99");
+    }
+    for (name, value) in values {
+        if let Some(value) = value {
+            validate_positive_f64(value, &format!("{label}.{name}"))?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_openrouter_max_price(
+    max_price: &OpenRouterMaxPrice,
+    label: &str,
+) -> anyhow::Result<()> {
+    let values = [
+        ("prompt", max_price.prompt),
+        ("completion", max_price.completion),
+        ("request", max_price.request),
+        ("image", max_price.image),
+    ];
+    if values.iter().all(|(_, value)| value.is_none()) {
+        bail!("{label} must set at least one of prompt, completion, request, or image");
+    }
+    for (name, value) in values {
+        if let Some(value) = value {
+            validate_non_negative_f64(value, &format!("{label}.{name}"))?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_non_empty_strings(values: &[String], label: &str) -> anyhow::Result<()> {
+    if values.iter().any(|value| value.trim().is_empty()) {
+        bail!("{label} entries cannot be empty");
+    }
+    Ok(())
+}
+
+fn validate_unique_strings(values: &[String], label: &str) -> anyhow::Result<()> {
+    let mut seen = std::collections::BTreeSet::new();
+    for value in values {
+        if !seen.insert(value.trim()) {
+            bail!(
+                "{label} entries must be unique; duplicate `{}`",
+                value.trim()
+            );
+        }
+    }
+    Ok(())
+}
+
+fn validate_openrouter_only_ignore_overlap(
+    only: &[String],
+    ignore: &[String],
+    label: &str,
+) -> anyhow::Result<()> {
+    let only_values = only
+        .iter()
+        .map(|value| value.trim())
+        .collect::<std::collections::BTreeSet<_>>();
+    if let Some(overlap) = ignore
+        .iter()
+        .map(|value| value.trim())
+        .find(|value| only_values.contains(value))
+    {
+        bail!("{label}.only and {label}.ignore cannot both include `{overlap}`");
+    }
+    Ok(())
+}
+
+fn validate_positive_f64(value: f64, label: &str) -> anyhow::Result<()> {
+    if !value.is_finite() || value <= 0.0 {
+        bail!("{label} must be a positive finite number");
+    }
+    Ok(())
+}
+
+fn validate_non_negative_f64(value: f64, label: &str) -> anyhow::Result<()> {
+    if !value.is_finite() || value < 0.0 {
+        bail!("{label} must be a non-negative finite number");
+    }
     Ok(())
 }
 
@@ -2437,7 +2632,7 @@ mod tests {
     use gateway_core::{
         AuthMode, AwsBedrockApiStyle, BudgetCadence, GlobalRole, MembershipRole, Money4,
         OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
-        RequestLogRetentionWindow,
+        OpenRouterPercentilePreference, RequestLogRetentionWindow,
     };
     use gateway_providers::{BearerAuthHeader, BedrockAuthConfig};
     use gateway_service::RequestLogPayloadCaptureMode;
@@ -3027,6 +3222,244 @@ models:
             OpenAiCompatReasoningEffort::ReasoningObject
         );
         assert!(profile.supports_stream_usage);
+    }
+
+    #[test]
+    fn parses_route_openrouter_policy_config_into_seed_models() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openrouter
+    type: openai_compat
+    base_url: https://openrouter.ai/api/v1
+    pricing_provider_id: openai
+models:
+  - id: fast
+    routes:
+      - provider: openrouter
+        upstream_model: openai/gpt-4o-mini
+        compatibility:
+          openrouter:
+            provider:
+              zdr: true
+              only: [openai, anthropic]
+              ignore: [deepinfra]
+              order: [openai, anthropic]
+              preferred_max_latency:
+                p90: 2.5
+              max_price:
+                prompt: 1.0
+                completion: 2.0
+                request: 0.01
+                image: 0.05
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let models = config.seed_models().expect("seed models");
+        let routing = &models[0].routes[0]
+            .compatibility
+            .openrouter
+            .as_ref()
+            .expect("openrouter policy")
+            .provider;
+
+        assert_eq!(routing.zdr, Some(true));
+        assert_eq!(routing.only, vec!["openai", "anthropic"]);
+        assert_eq!(routing.ignore, vec!["deepinfra"]);
+        assert_eq!(routing.order, vec!["openai", "anthropic"]);
+        match routing
+            .preferred_max_latency
+            .as_ref()
+            .expect("latency preference")
+        {
+            OpenRouterPercentilePreference::Percentiles(percentiles) => {
+                assert_eq!(percentiles.p90, Some(2.5));
+            }
+            OpenRouterPercentilePreference::Number(value) => {
+                panic!("expected percentile latency, got {value}");
+            }
+        }
+        let max_price = routing.max_price.as_ref().expect("max price");
+        assert_eq!(max_price.prompt, Some(1.0));
+        assert_eq!(max_price.completion, Some(2.0));
+        assert_eq!(max_price.request, Some(0.01));
+        assert_eq!(max_price.image, Some(0.05));
+    }
+
+    #[test]
+    fn rejects_openrouter_policy_on_non_openrouter_openai_compat_provider() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+models:
+  - id: fast
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-4o-mini
+        compatibility:
+          openrouter:
+            provider:
+              zdr: true
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("provider base_url is not an OpenRouter endpoint"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_openrouter_policy_on_openrouter_lookalike_provider_url() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openrouter-lookalike
+    type: openai_compat
+    base_url: https://openrouter.ai.evil.example/api/v1
+    pricing_provider_id: openai
+models:
+  - id: fast
+    routes:
+      - provider: openrouter-lookalike
+        upstream_model: openai/gpt-4o-mini
+        compatibility:
+          openrouter:
+            provider:
+              zdr: true
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("provider base_url is not an OpenRouter endpoint"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_openrouter_policy_on_non_https_provider_url() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openrouter-insecure
+    type: openai_compat
+    base_url: http://openrouter.ai/api/v1
+    pricing_provider_id: openai
+models:
+  - id: fast
+    routes:
+      - provider: openrouter-insecure
+        upstream_model: openai/gpt-4o-mini
+        compatibility:
+          openrouter:
+            provider:
+              zdr: true
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("provider base_url is not an OpenRouter endpoint"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_openrouter_policy_fields() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openrouter
+    type: openai_compat
+    base_url: https://openrouter.ai/api/v1
+    pricing_provider_id: openai
+models:
+  - id: fast
+    routes:
+      - provider: openrouter
+        upstream_model: openai/gpt-4o-mini
+        compatibility:
+          openrouter:
+            provider:
+              zdr: true
+              allow_fallbacks: false
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("unknown field `allow_fallbacks`"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_openrouter_policy_with_raw_extra_body_provider() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openrouter
+    type: openai_compat
+    base_url: https://openrouter.ai/api/v1
+    pricing_provider_id: openai
+models:
+  - id: fast
+    routes:
+      - provider: openrouter
+        upstream_model: openai/gpt-4o-mini
+        extra_body:
+          provider:
+            zdr: false
+        compatibility:
+          openrouter:
+            provider:
+              zdr: true
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains(
+                "cannot set both compatibility.openrouter.provider and extra_body.provider"
+            ),
+            "unexpected error: {error_text}"
+        );
     }
 
     #[test]
