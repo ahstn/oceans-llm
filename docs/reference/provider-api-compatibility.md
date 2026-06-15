@@ -115,8 +115,6 @@ For Cloud Run OpenAI-compatible routes, set capabilities to the endpoints expose
 
 The request/response body contract remains OpenAI-compatible. vLLM/Gemma fields such as `chat_template_kwargs.enable_thinking` and `skip_special_tokens` belong in route `extra_body`.
 
-For Bedrock, this foundation guarantees config load, validation, seeding, registration, deterministic region, endpoint kind, timeout, display, auth metadata, explicit Runtime and Mantle API style selection, and request/stream normalization for supported route styles. It also supports IAM/SigV4 signing for the `default_chain` and `static_credentials` auth modes. Runtime providers sign with service `bedrock`; Mantle providers sign with service `bedrock-mantle`. Bedrock `upstream_model` values should match the model identity accepted by the configured endpoint and API style.
-
 ## Google Vertex Anthropic Claude
 
 Vertex-hosted Claude models are selected when the Vertex `upstream_model` starts with `anthropic/`. The model ID after the slash is used in the Vertex endpoint path:
@@ -149,6 +147,8 @@ Vertex Claude route capabilities should stay aligned with tested gateway behavio
 Vertex Google publisher routes remain separate from Anthropic-on-Vertex. `google/*` upstream models use Vertex `generateContent` and `streamGenerateContent`; Anthropic Messages fields such as `thinking`, `output_config`, and `anthropic_version` do not apply to those routes.
 
 ## AWS Bedrock Runtime Anthropic Claude
+
+For Bedrock, this foundation guarantees config load, validation, seeding, registration, deterministic region, endpoint kind, timeout, display, auth metadata, explicit Runtime and Mantle API style selection, and request/stream normalization for supported route styles. It also supports IAM/SigV4 signing for the `default_chain` and `static_credentials` auth modes. Runtime providers sign with service `bedrock`; Mantle providers sign with service `bedrock-mantle`. Bedrock `upstream_model` values should match the model identity accepted by the configured endpoint and API style.
 
 Bedrock Runtime Anthropic `InvokeModel` is selected by `compatibility.aws_bedrock.api_style: runtime_anthropic_invoke`. Non-streaming Chat Completions for those routes use Bedrock Runtime `InvokeModel` (`/model/{modelId}/invoke`) with Anthropic's native Messages body instead of the generic Converse body.
 

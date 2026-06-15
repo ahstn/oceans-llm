@@ -29,7 +29,15 @@ E2E_GATEWAY_API_KEY="${E2E_GATEWAY_API_KEY:-gwk_e2e.secret-value}"
 E2E_ADMIN_EMAIL="${E2E_ADMIN_EMAIL:-admin@local}"
 E2E_ADMIN_PASSWORD="${E2E_ADMIN_PASSWORD:-admin}"
 E2E_ADMIN_NEW_PASSWORD="${E2E_ADMIN_NEW_PASSWORD:-s3cur3-passw0rd}"
-DEFAULT_CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT_DIR/target}"
+if [[ -n "${CARGO_TARGET_DIR:-}" ]]; then
+  DEFAULT_CARGO_TARGET_DIR="$CARGO_TARGET_DIR"
+else
+  DEFAULT_CARGO_TARGET_DIR="$("$MISE_BIN" exec -- sh -c 'printf "%s" "${CARGO_TARGET_DIR:-}"')"
+  DEFAULT_CARGO_TARGET_DIR="${DEFAULT_CARGO_TARGET_DIR:-$ROOT_DIR/target}"
+fi
+if [[ "$DEFAULT_CARGO_TARGET_DIR" != /* ]]; then
+  DEFAULT_CARGO_TARGET_DIR="$ROOT_DIR/$DEFAULT_CARGO_TARGET_DIR"
+fi
 E2E_GATEWAY_BIN="${E2E_GATEWAY_BIN:-${DEFAULT_CARGO_TARGET_DIR%/}/debug/gateway}"
 
 export E2E_GATEWAY_PORT
@@ -112,7 +120,7 @@ if [[ ! -x "$E2E_GATEWAY_BIN" ]]; then
   echo "Gateway binary not found at $E2E_GATEWAY_BIN; building it before starting the E2E stack."
   (
     cd "$ROOT_DIR"
-    "$MISE_BIN" exec -- cargo build -p gateway --bin gateway
+    "$MISE_BIN" exec -- cargo build -p gateway --bin gateway --target-dir "$DEFAULT_CARGO_TARGET_DIR"
   )
 fi
 

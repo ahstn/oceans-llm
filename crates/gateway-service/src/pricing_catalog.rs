@@ -864,7 +864,7 @@ mod tests {
         PricingCatalogRepository, PricingResolution, PricingUnpricedReason, ProviderCapabilities,
         ProviderConnection, StoreError,
     };
-    use serde_json::{Number, json, to_string_pretty};
+    use serde_json::{Number, Value, json, to_string_pretty};
     use time::OffsetDateTime;
     use tokio::net::TcpListener;
     use uuid::Uuid;
@@ -873,8 +873,8 @@ mod tests {
         PRICING_CATALOG_CACHE_KEY, PricingCatalog, PricingCatalogCostDocument,
         PricingCatalogDocument, PricingCatalogLimitDocument, PricingCatalogModalitiesDocument,
         PricingCatalogModelDocument, PricingCatalogProviderDocument, PricingCatalogSnapshot,
-        PricingCatalogSnapshotMetadata, REMOTE_SOURCE, VENDORED_SOURCE,
-        normalize_bedrock_pricing_model_id, normalize_models_dev_money,
+        PricingCatalogSnapshotMetadata, PricingTarget, REMOTE_SOURCE, VENDORED_SOURCE,
+        normalize_bedrock_pricing_model_id, normalize_models_dev_money, pricing_target_for_route,
     };
 
     #[derive(Clone, Default)]
@@ -990,6 +990,26 @@ mod tests {
                 "base_url": "https://api.openai.com/v1",
                 "pricing_provider_id": pricing_provider_id
             }),
+            secrets: None,
+        }
+    }
+
+    fn cloud_run_provider(pricing_provider_id: Option<&str>) -> ProviderConnection {
+        let mut config = serde_json::Map::from_iter([(
+            "base_url".to_string(),
+            json!("https://gemma-service.run.app/v1"),
+        )]);
+        if let Some(pricing_provider_id) = pricing_provider_id {
+            config.insert(
+                "pricing_provider_id".to_string(),
+                json!(pricing_provider_id),
+            );
+        }
+
+        ProviderConnection {
+            provider_key: "gemma-cloud-run".to_string(),
+            provider_type: "gcp_cloud_run_openai_compat".to_string(),
+            config: Value::Object(config),
             secrets: None,
         }
     }
@@ -1319,6 +1339,53 @@ mod tests {
                 assert_eq!(pricing.model_id, "openai.gpt-oss-120b-1:0");
             }
             other => panic!("unexpected gpt oss resolution: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cloud_run_openai_compat_routes_to_configured_pricing_provider() {
+        let target = pricing_target_for_route(
+            &cloud_run_provider(Some("google-vertex")),
+            &route("gemma-cloud-run", "gemini-2.5-flash"),
+        );
+
+        match target {
+            PricingTarget::Exact {
+                pricing_provider_id,
+                model_id,
+            } => {
+                assert_eq!(pricing_provider_id, "google-vertex");
+                assert_eq!(model_id, "gemini-2.5-flash");
+            }
+            other => panic!("unexpected pricing target: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cloud_run_openai_compat_without_pricing_provider_is_unpriced() {
+        let target = pricing_target_for_route(
+            &cloud_run_provider(None),
+            &route("gemma-cloud-run", "gemini-2.5-flash"),
+        );
+
+        match target {
+            PricingTarget::Unpriced(PricingUnpricedReason::ProviderPricingSourceMissing) => {}
+            other => panic!("unexpected pricing target: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cloud_run_openai_compat_with_unsupported_pricing_provider_is_unpriced() {
+        let target = pricing_target_for_route(
+            &cloud_run_provider(Some("local-gemma")),
+            &route("gemma-cloud-run", "gemini-2.5-flash"),
+        );
+
+        match target {
+            PricingTarget::Unpriced(PricingUnpricedReason::UnsupportedPricingProviderId(
+                provider_id,
+            )) => assert_eq!(provider_id, "local-gemma"),
+            other => panic!("unexpected pricing target: {other:?}"),
         }
     }
 

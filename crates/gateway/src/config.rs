@@ -10,16 +10,25 @@ use gateway_core::{
     SeedOidcProvider, SeedProvider, SeedTeam, SeedUser, SeedUserMembership, parse_gateway_api_key,
 };
 use gateway_providers::{
-    BearerAuthHeader, BedrockAuthConfig, BedrockEndpointKind, BedrockProviderConfig,
-    CloudRunOpenAiCompatAuth, OpenAiCompatConfig, VertexAuthConfig, VertexProviderConfig,
+    BedrockAuthConfig, BedrockEndpointKind, BedrockProviderConfig, CloudRunOpenAiCompatAuth,
+    OpenAiCompatConfig, VertexAuthConfig, VertexProviderConfig,
 };
 use gateway_service::{
     PayloadPath, ProviderIconKey, RequestLogPayloadCaptureMode, RequestLogPayloadPolicy,
     hash_gateway_key_secret, is_supported_pricing_provider_id, parse_payload_path,
 };
 use gateway_store::StoreConnectionOptions;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{Map, Value, json};
+
+mod providers;
+
+pub use providers::{
+    AwsBedrockAuthConfig, AwsBedrockProviderConfig, GcpCloudRunOpenAiCompatAuthConfig,
+    GcpCloudRunOpenAiCompatAuthHeaderConfig, GcpCloudRunOpenAiCompatProviderConfig,
+    GcpVertexAuthConfig, GcpVertexProviderConfig, OpenAiCompatAuthConfig,
+    OpenAiCompatProviderConfig, ProviderConfig, ProviderDisplayConfig, ProviderTimeouts,
+};
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct GatewayConfig {
@@ -1848,168 +1857,6 @@ impl BudgetConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum ProviderConfig {
-    #[serde(rename = "openai_compat")]
-    OpenAiCompat(OpenAiCompatProviderConfig),
-    #[serde(rename = "gcp_cloud_run_openai_compat")]
-    GcpCloudRunOpenAiCompat(GcpCloudRunOpenAiCompatProviderConfig),
-    GcpVertex(GcpVertexProviderConfig),
-    AwsBedrock(AwsBedrockProviderConfig),
-}
-
-impl ProviderConfig {
-    #[must_use]
-    pub fn id(&self) -> &str {
-        match self {
-            Self::OpenAiCompat(provider) => &provider.id,
-            Self::GcpCloudRunOpenAiCompat(provider) => &provider.id,
-            Self::GcpVertex(provider) => &provider.id,
-            Self::AwsBedrock(provider) => &provider.id,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct OpenAiCompatProviderConfig {
-    pub id: String,
-    pub base_url: String,
-    #[serde(default)]
-    pub pricing_provider_id: String,
-    #[serde(default)]
-    pub auth: Option<OpenAiCompatAuthConfig>,
-    #[serde(default)]
-    pub default_headers: BTreeMap<String, String>,
-    #[serde(default)]
-    pub timeouts: Option<ProviderTimeouts>,
-    #[serde(default)]
-    pub display: Option<ProviderDisplayConfig>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct OpenAiCompatAuthConfig {
-    pub kind: String,
-    #[serde(default)]
-    pub token: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct GcpCloudRunOpenAiCompatProviderConfig {
-    pub id: String,
-    pub base_url: String,
-    #[serde(default)]
-    pub audience: Option<String>,
-    pub pricing_provider_id: String,
-    pub auth: GcpCloudRunOpenAiCompatAuthConfig,
-    #[serde(default)]
-    pub auth_header: GcpCloudRunOpenAiCompatAuthHeaderConfig,
-    #[serde(default)]
-    pub default_headers: BTreeMap<String, String>,
-    #[serde(default)]
-    pub timeouts: Option<ProviderTimeouts>,
-    #[serde(default)]
-    pub display: Option<ProviderDisplayConfig>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
-pub enum GcpCloudRunOpenAiCompatAuthConfig {
-    Adc,
-    ServiceAccount { credentials_path: String },
-    Bearer { token: String },
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum GcpCloudRunOpenAiCompatAuthHeaderConfig {
-    #[default]
-    Authorization,
-    XServerlessAuthorization,
-}
-
-impl GcpCloudRunOpenAiCompatAuthHeaderConfig {
-    const fn into_provider_header(self) -> BearerAuthHeader {
-        match self {
-            Self::Authorization => BearerAuthHeader::Authorization,
-            Self::XServerlessAuthorization => BearerAuthHeader::XServerlessAuthorization,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ProviderDisplayConfig {
-    #[serde(default)]
-    pub label: Option<String>,
-    #[serde(default)]
-    pub icon_key: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct GcpVertexProviderConfig {
-    pub id: String,
-    pub project_id: String,
-    #[serde(default = "default_vertex_location")]
-    pub location: String,
-    #[serde(default = "default_vertex_api_host")]
-    pub api_host: String,
-    pub auth: GcpVertexAuthConfig,
-    #[serde(default)]
-    pub default_headers: BTreeMap<String, String>,
-    #[serde(default)]
-    pub timeouts: Option<ProviderTimeouts>,
-    #[serde(default)]
-    pub display: Option<ProviderDisplayConfig>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "mode", rename_all = "snake_case")]
-pub enum GcpVertexAuthConfig {
-    Adc,
-    ServiceAccount { credentials_path: String },
-    Bearer { token: String },
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct AwsBedrockProviderConfig {
-    pub id: String,
-    pub region: String,
-    pub endpoint_kind: BedrockEndpointKind,
-    #[serde(default)]
-    pub endpoint_url: Option<String>,
-    #[serde(default)]
-    pub auth: AwsBedrockAuthConfig,
-    #[serde(default)]
-    pub default_headers: BTreeMap<String, String>,
-    #[serde(default)]
-    pub timeouts: Option<ProviderTimeouts>,
-    #[serde(default)]
-    pub display: Option<ProviderDisplayConfig>,
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-#[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
-pub enum AwsBedrockAuthConfig {
-    #[default]
-    DefaultChain,
-    Bearer {
-        token: String,
-    },
-    StaticCredentials {
-        access_key_id: String,
-        secret_access_key: String,
-        #[serde(default)]
-        session_token: Option<String>,
-    },
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ProviderTimeouts {
-    #[serde(default = "default_provider_timeout_ms")]
-    pub total_ms: u64,
-}
-
-#[derive(Debug, Clone, Deserialize)]
 pub struct ModelConfig {
     pub id: String,
     #[serde(default)]
@@ -2212,8 +2059,13 @@ fn validate_cloud_run_base_url(provider_id: &str, base_url: &str) -> anyhow::Res
     if trimmed.is_empty() {
         bail!("gcp_cloud_run_openai_compat provider `{provider_id}` base_url cannot be empty");
     }
+    if trimmed.len() != base_url.len() {
+        bail!(
+            "gcp_cloud_run_openai_compat provider `{provider_id}` base_url cannot include leading or trailing whitespace"
+        );
+    }
 
-    let parsed = url::Url::parse(trimmed).map_err(|error| {
+    let parsed = url::Url::parse(base_url).map_err(|error| {
         anyhow::anyhow!(
             "gcp_cloud_run_openai_compat provider `{provider_id}` base_url `{base_url}` is invalid: {error}"
         )
@@ -2453,10 +2305,6 @@ const fn default_postgres_max_connections() -> u32 {
     10
 }
 
-const fn default_provider_timeout_ms() -> u64 {
-    120_000
-}
-
 const fn default_model_rank() -> i32 {
     100
 }
@@ -2582,14 +2430,6 @@ const fn default_budget_alert_smtp_starttls() -> bool {
     true
 }
 
-fn default_vertex_location() -> String {
-    "global".to_string()
-}
-
-fn default_vertex_api_host() -> String {
-    "aiplatform.googleapis.com".to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use std::{env, path::Path};
@@ -2599,10 +2439,11 @@ mod tests {
         OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
         RequestLogRetentionWindow,
     };
+    use gateway_providers::{BearerAuthHeader, BedrockAuthConfig};
     use gateway_service::RequestLogPayloadCaptureMode;
     use tempfile::tempdir;
 
-    use super::{BearerAuthHeader, BedrockAuthConfig, GatewayConfig};
+    use super::GatewayConfig;
 
     fn write_config(path: &Path, yaml: &str) {
         std::fs::write(path, yaml).expect("write config");
@@ -3792,6 +3633,32 @@ providers:
         let error_text = format!("{error:#}");
         assert!(
             error_text.contains("base_url must use https"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_cloud_run_openai_compat_whitespace_padded_base_url() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: gemma-cloud-run
+    type: gcp_cloud_run_openai_compat
+    base_url: " https://gemma-service.run.app/v1 "
+    pricing_provider_id: google-vertex
+    auth:
+      mode: adc
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("base_url cannot include leading or trailing whitespace"),
             "unexpected error: {error_text}"
         );
     }

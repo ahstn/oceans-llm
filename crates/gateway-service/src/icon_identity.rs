@@ -375,4 +375,32 @@ mod tests {
         assert_eq!(display.label, "Google Vertex AI");
         assert_eq!(display.icon_key, ProviderIconKey::VertexAI);
     }
+
+    #[test]
+    fn cloud_run_provider_type_defaults_to_vertex_ai_provider_icon() {
+        let provider = ProviderConnection {
+            provider_key: "gemma-run".to_string(),
+            provider_type: "gcp_cloud_run_openai_compat".to_string(),
+            config: json!({"base_url": "https://gemma-service.run.app/v1"}),
+            secrets: None,
+        };
+
+        let display = resolve_provider_display(&provider.provider_key, Some(&provider));
+        assert_eq!(display.label, "Google Vertex AI");
+        assert_eq!(display.icon_key, ProviderIconKey::VertexAI);
+    }
+
+    #[test]
+    fn cloud_run_provider_key_defaults_to_vertex_ai_provider_icon() {
+        let provider = ProviderConnection {
+            provider_key: "gemma-cloud-run".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: json!({"base_url": "https://inference.example.com/v1"}),
+            secrets: None,
+        };
+
+        let display = resolve_provider_display(&provider.provider_key, Some(&provider));
+        assert_eq!(display.label, "Google Vertex AI");
+        assert_eq!(display.icon_key, ProviderIconKey::VertexAI);
+    }
 }

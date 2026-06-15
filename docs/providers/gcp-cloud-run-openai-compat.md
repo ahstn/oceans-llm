@@ -61,7 +61,7 @@ auth:
   credentials_path: /var/run/secrets/gcp/service-account.json
 ```
 
-`bearer` is only for constrained debugging environments where an operator has already minted an ID token. The token is treated as static bearer material and is not refreshed.
+`bearer` is only for constrained debugging environments where an admin has already minted an ID token. The token is treated as static bearer material and is not refreshed.
 
 ```yaml
 auth:

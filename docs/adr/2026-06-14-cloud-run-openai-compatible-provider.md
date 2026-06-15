@@ -13,7 +13,7 @@ That auth shape is different from:
 - `openai_compat`, which uses static bearer tokens and default headers for arbitrary OpenAI-compatible endpoints
 - `gcp_vertex`, which uses OAuth access tokens with the `cloud-platform` scope and Vertex-specific transport paths
 
-Hiding Cloud Run IAM behind `openai_compat.default_headers` would encourage operators to inject short-lived ID tokens manually and would leave token refresh behavior undefined.
+Hiding Cloud Run IAM behind `openai_compat.default_headers` would encourage admins to inject short-lived ID tokens manually and would leave token refresh behavior undefined.
 
 ## Decision
 
@@ -41,7 +41,7 @@ The ID-token implementation uses:
 - `crates/gateway-providers/src/openai_compat.rs` accepts optional cached identity-token auth and configurable bearer header placement.
 - `crates/gateway/src/config.rs` parses and validates `gcp_cloud_run_openai_compat`.
 - `crates/gateway-service/src/pricing_catalog.rs` prices Cloud Run OpenAI-compatible routes like ordinary `openai_compat` routes by using `pricing_provider_id` plus `upstream_model`.
-- `docs/providers/gcp-cloud-run-openai-compat.md` owns operator examples and Cloud Run-specific caveats.
+- `docs/providers/gcp-cloud-run-openai-compat.md` owns admin examples and Cloud Run-specific caveats.
 
 ## Trade-Offs
 
@@ -53,6 +53,6 @@ Service-account JSON auth signs a JWT assertion locally, then exchanges it at th
 
 ## Follow-Ups
 
-- Add service-account impersonation for authorized-user ADC if local operator workflows need it.
+- Add service-account impersonation for authorized-user ADC if local admin workflows need it.
 - Add deployment examples for Workload Identity on Kubernetes.
 - Add exact self-hosted inference pricing support only when a durable cost model exists; do not guess Cloud Run model costs from provider type alone.
