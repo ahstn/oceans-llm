@@ -17,7 +17,6 @@ import {
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   Sheet,
   SheetContent,
@@ -266,6 +265,22 @@ export function RequestLogsPage() {
                     </div>
                     <div>
                       <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                        Caller
+                      </dt>
+                      <dd className="truncate text-[var(--color-text-muted)]">
+                        {callerPrimary(item) ?? 'Unknown'}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                        Key
+                      </dt>
+                      <dd className="truncate text-[var(--color-text-muted)]">
+                        {item.api_key_name ?? item.api_key_id}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
                         Latency
                       </dt>
                       <dd className="text-[var(--color-text-muted)]">
@@ -292,19 +307,13 @@ export function RequestLogsPage() {
                       <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
                         Timestamp
                       </dt>
-                      <dd className="text-[var(--color-text-muted)]">{item.occurred_at}</dd>
+                      <dd className="text-[var(--color-text-muted)]">
+                        {formatOccurredAt(item.occurred_at)}
+                      </dd>
                     </div>
                   </dl>
 
-                  <div className="mt-4 flex items-center justify-between gap-3">
-                    <div className="flex flex-wrap gap-2">
-                      <OperationBadge item={item} />
-                      {metadataBoolean(item, 'stream') ? (
-                        <Badge variant="outline">stream</Badge>
-                      ) : null}
-                      <PayloadPolicyBadges item={item} />
-                      <RequestTagBadges item={item} />
-                    </div>
+                  <div className="mt-4 flex justify-end">
                     <Button
                       type="button"
                       variant="secondary"
@@ -322,11 +331,12 @@ export function RequestLogsPage() {
             className="hidden min-w-0 overflow-x-auto rounded-md border border-[color:var(--color-border)] lg:block"
             data-testid="request-log-desktop-table"
           >
-            <div className="min-w-[78rem]">
-              <div className="grid grid-cols-[minmax(18rem,1.45fr)_minmax(12rem,1fr)_minmax(12rem,1fr)_88px_96px_88px_160px_120px] bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
+            <div className="min-w-[80rem]">
+              <div className="grid grid-cols-[minmax(13rem,1.2fr)_minmax(12rem,1.1fr)_minmax(11rem,1fr)_minmax(9rem,0.9fr)_80px_88px_80px_150px_110px] bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
                 <span className="px-3 py-2 font-semibold">Request</span>
                 <span className="px-3 py-2 font-semibold">Model</span>
-                <span className="px-3 py-2 font-semibold">Provider</span>
+                <span className="px-3 py-2 font-semibold">Caller</span>
+                <span className="px-3 py-2 font-semibold">Key</span>
                 <span className="px-3 py-2 font-semibold">Status</span>
                 <span className="px-3 py-2 font-semibold">Latency</span>
                 <span className="px-3 py-2 font-semibold">Tokens</span>
@@ -345,31 +355,42 @@ export function RequestLogsPage() {
                     return (
                       <div
                         key={item.request_log_id}
-                        className="absolute top-0 left-0 grid w-full grid-cols-[minmax(18rem,1.45fr)_minmax(12rem,1fr)_minmax(12rem,1fr)_88px_96px_88px_160px_120px] border-t border-[color:var(--color-border)] align-top text-sm"
+                        className="absolute top-0 left-0 grid w-full grid-cols-[minmax(13rem,1.2fr)_minmax(12rem,1.1fr)_minmax(11rem,1fr)_minmax(9rem,0.9fr)_80px_88px_80px_150px_110px] border-t border-[color:var(--color-border)] align-top text-sm"
                         style={{
                           height: `${virtualRow.size}px`,
                           transform: `translateY(${virtualRow.start}px)`,
                         }}
                       >
                         <div className="min-w-0 px-3 py-3">
-                          <div className="truncate font-mono text-xs text-[var(--color-text-soft)]">
+                          <div className="truncate font-mono text-xs text-[var(--color-text)]">
                             {item.request_id}
                           </div>
-                          <div className="truncate text-xs text-[var(--color-text-muted)]">
-                            {item.request_log_id}
-                          </div>
-                          <div className="mt-1 flex flex-wrap gap-1">
-                            <OperationBadge item={item} />
-                            <PayloadPolicyBadges item={item} />
+                          <div className="truncate text-xs text-[var(--color-text-soft)]">
+                            {formatOccurredAt(item.occurred_at)}
                           </div>
                         </div>
-                        <span className="flex items-center gap-2 truncate px-3 py-3 text-[var(--color-text)]">
-                          <BrandIcon iconKey={item.model_icon_key} size={16} />
-                          <span className="truncate">{item.model_key}</span>
-                        </span>
-                        <span className="flex items-center gap-2 truncate px-3 py-3 text-[var(--color-text-muted)]">
-                          <BrandIcon iconKey={item.provider_icon_key} size={14} />
-                          <span className="truncate">{item.provider_key}</span>
+                        <div className="min-w-0 px-3 py-3">
+                          <div className="flex items-center gap-2 truncate text-[var(--color-text)]">
+                            <BrandIcon iconKey={item.model_icon_key} size={16} />
+                            <span className="truncate">{item.model_key}</span>
+                          </div>
+                          <div className="mt-0.5 flex items-center gap-2 truncate text-xs text-[var(--color-text-soft)]">
+                            <BrandIcon iconKey={item.provider_icon_key} size={12} />
+                            <span className="truncate">{item.provider_key}</span>
+                          </div>
+                        </div>
+                        <div className="min-w-0 px-3 py-3">
+                          <div className="truncate text-[var(--color-text)]">
+                            {callerPrimary(item) ?? 'Unknown'}
+                          </div>
+                          {callerSecondary(item) ? (
+                            <div className="truncate text-xs text-[var(--color-text-soft)]">
+                              {callerSecondary(item)}
+                            </div>
+                          ) : null}
+                        </div>
+                        <span className="truncate px-3 py-3 text-[var(--color-text-muted)]">
+                          {item.api_key_name ?? item.api_key_id}
                         </span>
                         <span className="px-3 py-3">
                           <Badge variant={badgeVariant(item.status_code)}>
@@ -434,6 +455,12 @@ export function RequestLogsPage() {
                     value={selectedDetail.log.request_log_id}
                     mono
                   />
+                  <DetailRow
+                    label="API Key"
+                    value={selectedDetail.log.api_key_name ?? selectedDetail.log.api_key_id}
+                    mono={!selectedDetail.log.api_key_name}
+                  />
+                  <DetailRow label="Caller" value={callerLabel(selectedDetail.log)} />
                   <DetailRow
                     label="Model"
                     value={
@@ -818,33 +845,29 @@ function PayloadCard({
   )
 }
 
-function PayloadPolicyBadges({ item }: { item: RequestLogView }) {
-  const policy = item.payload_policy
-  const hasTruncation = item.request_payload_truncated || item.response_payload_truncated
+function callerPrimary(item: RequestLogView): string | null {
+  return item.user_name ?? item.service_account_name ?? null
+}
 
-  return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="inline-flex flex-wrap gap-1">
-            <Badge variant={item.has_payload ? 'secondary' : 'outline'}>
-              {formatCaptureMode(policy.capture_mode)}
-            </Badge>
-            {item.request_payload_truncated ? <Badge variant="warning">req truncated</Badge> : null}
-            {item.response_payload_truncated ? (
-              <Badge variant="warning">resp truncated</Badge>
-            ) : null}
-            {hasTruncation ? null : item.has_payload ? (
-              <Badge variant="outline">payload</Badge>
-            ) : null}
-          </span>
-        </TooltipTrigger>
-        <TooltipContent>
-          {`${formatBytes(policy.request_max_bytes)} request limit, ${formatBytes(policy.response_max_bytes)} response limit, ${policy.stream_max_events} stream events, ${policy.version}`}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  )
+function callerSecondary(item: RequestLogView): string | null {
+  if (item.user_name) {
+    return item.user_email ?? null
+  }
+  return item.service_account_name ? 'service account' : null
+}
+
+function callerLabel(item: RequestLogView): string {
+  const primary = callerPrimary(item)
+  if (!primary) {
+    return 'Unknown'
+  }
+  const secondary = callerSecondary(item)
+  return secondary ? `${primary} · ${secondary}` : primary
+}
+
+function formatOccurredAt(occurredAt: string) {
+  // RFC3339 from the gateway; trim to a compact minute-resolution display.
+  return occurredAt.replace('T', ' ').slice(0, 16)
 }
 
 function badgeVariant(statusCode: number | null): 'success' | 'warning' | 'outline' {
@@ -873,29 +896,6 @@ function formatBasisPoints(value: number | null) {
 
 function formatToolCount(value: number | null | undefined) {
   return value == null ? 'n/a' : String(value)
-}
-
-function formatCaptureMode(captureMode: string) {
-  switch (captureMode) {
-    case 'disabled':
-      return 'disabled'
-    case 'summary_only':
-      return 'summary only'
-    case 'redacted_payloads':
-      return 'redacted payloads'
-    default:
-      return captureMode
-  }
-}
-
-function OperationBadge({ item }: { item: RequestLogView }) {
-  const label = operationLabel(item)
-
-  if (!label) {
-    return null
-  }
-
-  return <Badge variant="secondary">{label}</Badge>
 }
 
 function OperationDetailRow({ item }: { item: RequestLogView }) {
@@ -932,16 +932,6 @@ function formatOperation(operation: string) {
       return formatted.length > 0 ? formatted : operation
     }
   }
-}
-
-function formatBytes(bytes: number) {
-  if (bytes >= 1024 * 1024) {
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`
-  }
-  if (bytes >= 1024) {
-    return `${Math.round(bytes / 1024)} KiB`
-  }
-  return `${bytes} B`
 }
 
 function metadataBoolean(item: RequestLogView, key: string) {

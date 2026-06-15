@@ -7874,6 +7874,12 @@
           "api_key_id": {
             "type": "string"
           },
+          "api_key_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "completion_tokens": {
             "type": [
               "integer",
@@ -7964,6 +7970,12 @@
               "null"
             ]
           },
+          "service_account_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "status_code": {
             "type": [
               "integer",
@@ -7987,7 +7999,19 @@
             ],
             "format": "int64"
           },
+          "user_email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "user_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "user_name": {
             "type": [
               "string",
               "null"

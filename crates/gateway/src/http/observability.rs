@@ -6,17 +6,18 @@ use axum::{
     http::HeaderMap,
 };
 use gateway_core::{
-    BudgetRepository, GatewayError, MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, McpTokenOverheadRepository,
-    McpToolInvocationDetail, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
-    McpToolInvocationRecord, McpToolInvocationStatus, McpToolPolicyResult, ProviderConnection,
-    ProviderRepository, RequestAttemptRecord, RequestLogDetail, RequestLogPayloadRecord,
-    RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestMcpTokenOverheadRecord,
-    RequestTag, RequestTags,
+    AdminApiKeyRepository, BudgetRepository, GatewayError, IdentityRepository,
+    MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, McpTokenOverheadRepository, McpToolInvocationDetail,
+    McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
+    McpToolInvocationStatus, McpToolPolicyResult, ProviderConnection, ProviderRepository,
+    RequestAttemptRecord, RequestLogDetail, RequestLogPayloadRecord, RequestLogQuery,
+    RequestLogRecord, RequestLogRepository, RequestMcpTokenOverheadRecord, RequestTag, RequestTags,
 };
 use gateway_service::{
     model_icon_key_from_metadata, provider_icon_key_from_metadata, resolve_model_icon_key,
     resolve_provider_display,
 };
+use gateway_store::GatewayStore;
 use serde_json::{Map, Value};
 use time::{Duration, OffsetDateTime, UtcOffset, format_description::well_known::Rfc3339};
 use uuid::Uuid;
@@ -306,10 +307,11 @@ pub async fn list_request_logs(
 
     let page = state.service.list_request_logs(&query).await?;
     let providers = provider_connections_by_key(&state, &page.items).await?;
+    let callers = request_caller_directory(&state, &page.items).await?;
     let items = page
         .items
         .iter()
-        .map(|log| summary_view(log, providers.get(log.provider_key.as_str())))
+        .map(|log| summary_view(log, providers.get(log.provider_key.as_str()), &callers))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(Json(envelope(RequestLogPageView {
         items,
@@ -338,6 +340,7 @@ pub async fn get_request_log_detail(
 
     let detail = state.service.get_request_log_detail(request_log_id).await?;
     let provider = provider_connection(&state, detail.log.provider_key.as_str()).await?;
+    let callers = request_caller_directory(&state, std::slice::from_ref(&detail.log)).await?;
     let mcp_token_overhead = state
         .store
         .get_request_mcp_token_overhead(&detail.log.request_id)
@@ -345,6 +348,7 @@ pub async fn get_request_log_detail(
     Ok(Json(envelope(detail_view(
         detail,
         provider.as_ref(),
+        &callers,
         mcp_token_overhead,
     )?)))
 }
@@ -454,6 +458,57 @@ async fn provider_connection(
         .map_err(|error| AppError(error.into()))
 }
 
+/// Display names for the api keys, users, and service accounts referenced by
+/// a page of request logs, resolved once per distinct id. Missing entries are
+/// expected: callers may have been deleted after the log was recorded.
+#[derive(Debug, Default)]
+struct RequestCallerDirectory {
+    api_key_names: HashMap<Uuid, String>,
+    users: HashMap<Uuid, (String, String)>,
+    service_account_names: HashMap<Uuid, String>,
+}
+
+async fn request_caller_directory(
+    state: &AppState,
+    logs: &[RequestLogRecord],
+) -> Result<RequestCallerDirectory, AppError> {
+    let mut directory = RequestCallerDirectory::default();
+
+    let api_key_ids: HashSet<Uuid> = logs.iter().map(|log| log.api_key_id).collect();
+    for api_key_id in api_key_ids {
+        if let Some(api_key) = state.store.get_api_key_by_id(api_key_id).await? {
+            directory.api_key_names.insert(api_key_id, api_key.name);
+        }
+    }
+
+    let user_ids: HashSet<Uuid> = logs.iter().filter_map(|log| log.user_id).collect();
+    for user_id in user_ids {
+        if let Some(identity_user) = state.store.get_identity_user(user_id).await? {
+            directory
+                .users
+                .insert(user_id, (identity_user.user.name, identity_user.user.email));
+        }
+    }
+
+    let service_account_ids: HashSet<Uuid> = logs
+        .iter()
+        .filter_map(|log| log.service_account_id)
+        .collect();
+    for service_account_id in service_account_ids {
+        if let Some(service_account) = state
+            .store
+            .get_service_account_by_id(service_account_id)
+            .await?
+        {
+            directory
+                .service_account_names
+                .insert(service_account_id, service_account.service_account_name);
+        }
+    }
+
+    Ok(directory)
+}
+
 fn mcp_invocation_detail_view(detail: McpToolInvocationDetail) -> McpToolInvocationDetailView {
     McpToolInvocationDetailView {
         invocation: mcp_invocation_summary_view(&detail.invocation),
@@ -504,6 +559,7 @@ fn mcp_invocation_summary_view(
 fn summary_view(
     log: &RequestLogRecord,
     provider: Option<&ProviderConnection>,
+    callers: &RequestCallerDirectory,
 ) -> Result<RequestLogSummaryView, AppError> {
     let provider_icon_key = provider_icon_key_from_metadata(&log.metadata)
         .or_else(|| Some(resolve_provider_display(log.provider_key.as_str(), provider).icon_key))
@@ -514,13 +570,21 @@ fn summary_view(
         })
         .map(Into::into);
 
+    let user = log.user_id.and_then(|user_id| callers.users.get(&user_id));
+
     Ok(RequestLogSummaryView {
         request_log_id: log.request_log_id.to_string(),
         request_id: log.request_id.clone(),
         api_key_id: log.api_key_id.to_string(),
+        api_key_name: callers.api_key_names.get(&log.api_key_id).cloned(),
         user_id: log.user_id.map(|value| value.to_string()),
+        user_name: user.map(|(name, _)| name.clone()),
+        user_email: user.map(|(_, email)| email.clone()),
         team_id: log.team_id.map(|value| value.to_string()),
         service_account_id: log.service_account_id.map(|value| value.to_string()),
+        service_account_name: log
+            .service_account_id
+            .and_then(|id| callers.service_account_names.get(&id).cloned()),
         model_key: log.model_key.clone(),
         resolved_model_key: log.resolved_model_key.clone(),
         model_icon_key,
@@ -612,10 +676,11 @@ fn payload_policy_contract_error(message: impl Into<String>) -> AppError {
 fn detail_view(
     detail: RequestLogDetail,
     provider: Option<&ProviderConnection>,
+    callers: &RequestCallerDirectory,
     mcp_token_overhead: Option<RequestMcpTokenOverheadRecord>,
 ) -> Result<RequestLogDetailView, AppError> {
     Ok(RequestLogDetailView {
-        log: summary_view(&detail.log, provider)?,
+        log: summary_view(&detail.log, provider, callers)?,
         user_agent_raw: detail.log.user_agent_raw,
         payload: detail.payload.map(payload_view),
         attempts: detail.attempts.into_iter().map(attempt_view).collect(),
@@ -847,7 +912,7 @@ mod tests {
             secrets: None,
         };
 
-        let summary = summary_view(&log, Some(&provider))
+        let summary = summary_view(&log, Some(&provider), &RequestCallerDirectory::default())
             .unwrap_or_else(|error| panic!("summary should succeed: {}", error.0));
 
         assert!(matches!(
@@ -860,7 +925,7 @@ mod tests {
     fn summary_view_falls_back_to_provider_key_when_provider_config_is_unavailable() {
         let log = request_log_record(payload_policy_metadata());
 
-        let summary = summary_view(&log, None)
+        let summary = summary_view(&log, None, &RequestCallerDirectory::default())
             .unwrap_or_else(|error| panic!("summary should succeed: {}", error.0));
 
         assert!(matches!(
@@ -890,7 +955,7 @@ mod tests {
             secrets: None,
         };
 
-        let summary = summary_view(&log, Some(&provider))
+        let summary = summary_view(&log, Some(&provider), &RequestCallerDirectory::default())
             .unwrap_or_else(|error| panic!("summary should succeed: {}", error.0));
 
         assert!(matches!(
@@ -903,7 +968,8 @@ mod tests {
     fn summary_view_requires_payload_policy_metadata() {
         let log = request_log_record(Map::new());
 
-        let error = summary_view(&log, None).expect_err("summary should fail");
+        let error = summary_view(&log, None, &RequestCallerDirectory::default())
+            .expect_err("summary should fail");
 
         assert!(
             error
@@ -922,7 +988,8 @@ mod tests {
             .insert("capture_mode".to_string(), json!("legacy"));
         let log = request_log_record(metadata);
 
-        let error = summary_view(&log, None).expect_err("summary should fail");
+        let error = summary_view(&log, None, &RequestCallerDirectory::default())
+            .expect_err("summary should fail");
 
         assert!(
             error
@@ -941,7 +1008,8 @@ mod tests {
             .insert("request_max_bytes".to_string(), json!("65536"));
         let log = request_log_record(metadata);
 
-        let error = summary_view(&log, None).expect_err("summary should fail");
+        let error = summary_view(&log, None, &RequestCallerDirectory::default())
+            .expect_err("summary should fail");
 
         assert!(
             error
@@ -960,7 +1028,8 @@ mod tests {
             .insert("stream_max_events".to_string(), json!(0));
         let log = request_log_record(metadata);
 
-        let error = summary_view(&log, None).expect_err("summary should fail");
+        let error = summary_view(&log, None, &RequestCallerDirectory::default())
+            .expect_err("summary should fail");
 
         assert!(
             error

@@ -12,16 +12,25 @@ use gateway_core::{
     SeedUser, SeedUserMembership, parse_gateway_api_key,
 };
 use gateway_providers::{
-    BedrockAuthConfig, BedrockEndpointKind, BedrockProviderConfig, OpenAiCompatConfig,
-    VertexAuthConfig, VertexProviderConfig,
+    BedrockAuthConfig, BedrockEndpointKind, BedrockProviderConfig, CloudRunOpenAiCompatAuth,
+    OpenAiCompatConfig, VertexAuthConfig, VertexProviderConfig,
 };
 use gateway_service::{
     PayloadPath, ProviderIconKey, RequestLogPayloadCaptureMode, RequestLogPayloadPolicy,
     hash_gateway_key_secret, is_supported_pricing_provider_id, parse_payload_path,
 };
 use gateway_store::StoreConnectionOptions;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{Map, Value, json};
+
+mod providers;
+
+pub use providers::{
+    AwsBedrockAuthConfig, AwsBedrockProviderConfig, GcpCloudRunOpenAiCompatAuthConfig,
+    GcpCloudRunOpenAiCompatAuthHeaderConfig, GcpCloudRunOpenAiCompatProviderConfig,
+    GcpVertexAuthConfig, GcpVertexProviderConfig, OpenAiCompatAuthConfig,
+    OpenAiCompatProviderConfig, ProviderConfig, ProviderDisplayConfig, ProviderTimeouts,
+};
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct GatewayConfig {
@@ -105,6 +114,56 @@ impl GatewayConfig {
                             provider.id,
                             provider.pricing_provider_id
                         );
+                    }
+                    validate_provider_display_config(
+                        provider.id.as_str(),
+                        provider.display.as_ref(),
+                    )?;
+                }
+                ProviderConfig::GcpCloudRunOpenAiCompat(provider) => {
+                    if provider.id.trim().is_empty() {
+                        bail!("gcp_cloud_run_openai_compat provider id cannot be empty");
+                    }
+                    validate_cloud_run_base_url(&provider.id, &provider.base_url)?;
+                    if provider.pricing_provider_id.trim().is_empty() {
+                        bail!(
+                            "gcp_cloud_run_openai_compat provider `{}` pricing_provider_id cannot be empty",
+                            provider.id
+                        );
+                    }
+                    if !is_supported_pricing_provider_id(&provider.pricing_provider_id) {
+                        bail!(
+                            "gcp_cloud_run_openai_compat provider `{}` pricing_provider_id `{}` is not supported",
+                            provider.id,
+                            provider.pricing_provider_id
+                        );
+                    }
+                    if let Some(audience) = provider.audience.as_deref()
+                        && audience.trim().is_empty()
+                    {
+                        bail!(
+                            "gcp_cloud_run_openai_compat provider `{}` audience cannot be empty",
+                            provider.id
+                        );
+                    }
+                    match &provider.auth {
+                        GcpCloudRunOpenAiCompatAuthConfig::Adc => {}
+                        GcpCloudRunOpenAiCompatAuthConfig::ServiceAccount { credentials_path } => {
+                            if credentials_path.trim().is_empty() {
+                                bail!(
+                                    "gcp_cloud_run_openai_compat provider `{}` service_account.credentials_path cannot be empty",
+                                    provider.id
+                                );
+                            }
+                        }
+                        GcpCloudRunOpenAiCompatAuthConfig::Bearer { token } => {
+                            if token.trim().is_empty() {
+                                bail!(
+                                    "gcp_cloud_run_openai_compat provider `{}` bearer.token cannot be empty",
+                                    provider.id
+                                );
+                            }
+                        }
                     }
                     validate_provider_display_config(
                         provider.id.as_str(),
@@ -507,6 +566,54 @@ impl GatewayConfig {
                         secrets,
                     });
                 }
+                ProviderConfig::GcpCloudRunOpenAiCompat(provider) => {
+                    match &provider.auth {
+                        GcpCloudRunOpenAiCompatAuthConfig::Adc => {}
+                        GcpCloudRunOpenAiCompatAuthConfig::ServiceAccount { credentials_path } => {
+                            validate_env_reference_if_needed(credentials_path)?;
+                        }
+                        GcpCloudRunOpenAiCompatAuthConfig::Bearer { token } => {
+                            validate_env_reference_if_needed(token)?;
+                        }
+                    }
+
+                    let audience = resolved_cloud_run_audience(
+                        provider.audience.as_deref(),
+                        &provider.base_url,
+                    )
+                    .with_context(|| {
+                        format!(
+                            "gcp_cloud_run_openai_compat provider `{}` audience",
+                            provider.id
+                        )
+                    })?;
+                    let config = json!({
+                        "base_url": provider.base_url,
+                        "audience": audience,
+                        "pricing_provider_id": provider.pricing_provider_id,
+                        "auth_header": provider.auth_header,
+                        "default_headers": provider.default_headers,
+                        "timeouts": provider.timeouts,
+                        "display": provider.display,
+                    });
+
+                    let secrets = Some(match &provider.auth {
+                        GcpCloudRunOpenAiCompatAuthConfig::Adc => json!({"mode": "adc"}),
+                        GcpCloudRunOpenAiCompatAuthConfig::ServiceAccount { credentials_path } => {
+                            json!({"mode": "service_account", "credentials_path": credentials_path})
+                        }
+                        GcpCloudRunOpenAiCompatAuthConfig::Bearer { token } => {
+                            json!({"mode": "bearer", "token": token})
+                        }
+                    });
+
+                    providers.push(SeedProvider {
+                        provider_key: provider.id.clone(),
+                        provider_type: "gcp_cloud_run_openai_compat".to_string(),
+                        config,
+                        secrets,
+                    });
+                }
                 ProviderConfig::GcpVertex(provider) => {
                     if let GcpVertexAuthConfig::Bearer { token } = &provider.auth {
                         validate_env_reference_if_needed(token)?;
@@ -750,30 +857,74 @@ impl GatewayConfig {
             .collect()
     }
 
-    pub fn openai_compat_provider_configs(&self) -> anyhow::Result<Vec<OpenAiCompatConfig>> {
+    pub fn openai_compatible_provider_configs(&self) -> anyhow::Result<Vec<OpenAiCompatConfig>> {
         let mut configs = Vec::new();
 
         for provider in &self.providers {
-            let ProviderConfig::OpenAiCompat(provider) = provider else {
-                continue;
-            };
+            match provider {
+                ProviderConfig::OpenAiCompat(provider) => {
+                    let mut config =
+                        OpenAiCompatConfig::new(provider.id.clone(), provider.base_url.clone());
+                    config.default_headers = provider.default_headers.clone();
+                    config.request_timeout_ms = provider
+                        .timeouts
+                        .as_ref()
+                        .map(|timeouts| timeouts.total_ms)
+                        .unwrap_or(120_000);
 
-            let mut config =
-                OpenAiCompatConfig::new(provider.id.clone(), provider.base_url.clone());
-            config.default_headers = provider.default_headers.clone();
-            config.request_timeout_ms = provider
-                .timeouts
-                .as_ref()
-                .map(|timeouts| timeouts.total_ms)
-                .unwrap_or(120_000);
+                    if let Some(auth) = &provider.auth
+                        && let Some(token) = &auth.token
+                    {
+                        config.bearer_token = Some(resolve_secret_reference(token)?);
+                    }
 
-            if let Some(auth) = &provider.auth
-                && let Some(token) = &auth.token
-            {
-                config.bearer_token = Some(resolve_secret_reference(token)?);
+                    configs.push(config);
+                }
+                ProviderConfig::GcpCloudRunOpenAiCompat(provider) => {
+                    let audience = resolved_cloud_run_audience(
+                        provider.audience.as_deref(),
+                        &provider.base_url,
+                    )
+                    .with_context(|| {
+                        format!(
+                            "gcp_cloud_run_openai_compat provider `{}` audience",
+                            provider.id
+                        )
+                    })?;
+                    let auth = match &provider.auth {
+                        GcpCloudRunOpenAiCompatAuthConfig::Adc => {
+                            CloudRunOpenAiCompatAuth::Adc { audience }
+                        }
+                        GcpCloudRunOpenAiCompatAuthConfig::ServiceAccount { credentials_path } => {
+                            CloudRunOpenAiCompatAuth::ServiceAccount {
+                                credentials_path: resolve_path_reference(credentials_path)?.into(),
+                                audience,
+                            }
+                        }
+                        GcpCloudRunOpenAiCompatAuthConfig::Bearer { token } => {
+                            CloudRunOpenAiCompatAuth::Bearer {
+                                token: resolve_secret_reference(token)?,
+                            }
+                        }
+                    };
+
+                    let mut config = OpenAiCompatConfig::new_cloud_run(
+                        provider.id.clone(),
+                        provider.base_url.clone(),
+                        provider.auth_header.into_provider_header(),
+                        auth,
+                    )?;
+                    config.default_headers = provider.default_headers.clone();
+                    config.request_timeout_ms = provider
+                        .timeouts
+                        .as_ref()
+                        .map(|timeouts| timeouts.total_ms)
+                        .unwrap_or(120_000);
+
+                    configs.push(config);
+                }
+                ProviderConfig::GcpVertex(_) | ProviderConfig::AwsBedrock(_) => {}
             }
-
-            configs.push(config);
         }
 
         Ok(configs)
@@ -1712,121 +1863,6 @@ impl BudgetConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum ProviderConfig {
-    #[serde(rename = "openai_compat")]
-    OpenAiCompat(OpenAiCompatProviderConfig),
-    GcpVertex(GcpVertexProviderConfig),
-    AwsBedrock(AwsBedrockProviderConfig),
-}
-
-impl ProviderConfig {
-    #[must_use]
-    pub fn id(&self) -> &str {
-        match self {
-            Self::OpenAiCompat(provider) => &provider.id,
-            Self::GcpVertex(provider) => &provider.id,
-            Self::AwsBedrock(provider) => &provider.id,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct OpenAiCompatProviderConfig {
-    pub id: String,
-    pub base_url: String,
-    #[serde(default)]
-    pub pricing_provider_id: String,
-    #[serde(default)]
-    pub auth: Option<OpenAiCompatAuthConfig>,
-    #[serde(default)]
-    pub default_headers: BTreeMap<String, String>,
-    #[serde(default)]
-    pub timeouts: Option<ProviderTimeouts>,
-    #[serde(default)]
-    pub display: Option<ProviderDisplayConfig>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct OpenAiCompatAuthConfig {
-    pub kind: String,
-    #[serde(default)]
-    pub token: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ProviderDisplayConfig {
-    #[serde(default)]
-    pub label: Option<String>,
-    #[serde(default)]
-    pub icon_key: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct GcpVertexProviderConfig {
-    pub id: String,
-    pub project_id: String,
-    #[serde(default = "default_vertex_location")]
-    pub location: String,
-    #[serde(default = "default_vertex_api_host")]
-    pub api_host: String,
-    pub auth: GcpVertexAuthConfig,
-    #[serde(default)]
-    pub default_headers: BTreeMap<String, String>,
-    #[serde(default)]
-    pub timeouts: Option<ProviderTimeouts>,
-    #[serde(default)]
-    pub display: Option<ProviderDisplayConfig>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "mode", rename_all = "snake_case")]
-pub enum GcpVertexAuthConfig {
-    Adc,
-    ServiceAccount { credentials_path: String },
-    Bearer { token: String },
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct AwsBedrockProviderConfig {
-    pub id: String,
-    pub region: String,
-    pub endpoint_kind: BedrockEndpointKind,
-    #[serde(default)]
-    pub endpoint_url: Option<String>,
-    #[serde(default)]
-    pub auth: AwsBedrockAuthConfig,
-    #[serde(default)]
-    pub default_headers: BTreeMap<String, String>,
-    #[serde(default)]
-    pub timeouts: Option<ProviderTimeouts>,
-    #[serde(default)]
-    pub display: Option<ProviderDisplayConfig>,
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-#[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
-pub enum AwsBedrockAuthConfig {
-    #[default]
-    DefaultChain,
-    Bearer {
-        token: String,
-    },
-    StaticCredentials {
-        access_key_id: String,
-        secret_access_key: String,
-        #[serde(default)]
-        session_token: Option<String>,
-    },
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ProviderTimeouts {
-    #[serde(default = "default_provider_timeout_ms")]
-    pub total_ms: u64,
-}
-
-#[derive(Debug, Clone, Deserialize)]
 pub struct ModelConfig {
     pub id: String,
     #[serde(default)]
@@ -2106,6 +2142,33 @@ fn validate_openrouter_provider_routing(
     Ok(())
 }
 
+fn validate_cloud_run_base_url(provider_id: &str, base_url: &str) -> anyhow::Result<()> {
+    let trimmed = base_url.trim();
+    if trimmed.is_empty() {
+        bail!("gcp_cloud_run_openai_compat provider `{provider_id}` base_url cannot be empty");
+    }
+    if trimmed.len() != base_url.len() {
+        bail!(
+            "gcp_cloud_run_openai_compat provider `{provider_id}` base_url cannot include leading or trailing whitespace"
+        );
+    }
+
+    let parsed = url::Url::parse(base_url).map_err(|error| {
+        anyhow::anyhow!(
+            "gcp_cloud_run_openai_compat provider `{provider_id}` base_url `{base_url}` is invalid: {error}"
+        )
+    })?;
+
+    if parsed.scheme() != "https" {
+        bail!("gcp_cloud_run_openai_compat provider `{provider_id}` base_url must use https");
+    }
+    if parsed.host().is_none() {
+        bail!("gcp_cloud_run_openai_compat provider `{provider_id}` base_url must include a host");
+    }
+
+    Ok(())
+}
+
 fn validate_openrouter_percentile_preference(
     preference: &OpenRouterPercentilePreference,
     label: &str,
@@ -2211,6 +2274,26 @@ fn validate_non_negative_f64(value: f64, label: &str) -> anyhow::Result<()> {
         bail!("{label} must be a non-negative finite number");
     }
     Ok(())
+}
+
+fn resolved_cloud_run_audience(
+    configured_audience: Option<&str>,
+    base_url: &str,
+) -> anyhow::Result<String> {
+    if let Some(audience) = configured_audience {
+        let trimmed = audience.trim();
+        if trimmed.is_empty() {
+            bail!("audience cannot be empty");
+        }
+        return Ok(trimmed.to_string());
+    }
+
+    let mut parsed = url::Url::parse(base_url.trim())
+        .with_context(|| format!("base_url `{base_url}` is invalid"))?;
+    parsed.set_path("/");
+    parsed.set_query(None);
+    parsed.set_fragment(None);
+    Ok(parsed.to_string())
 }
 
 fn validate_bedrock_endpoint_url(provider_id: &str, endpoint_url: &str) -> anyhow::Result<()> {
@@ -2417,10 +2500,6 @@ const fn default_postgres_max_connections() -> u32 {
     10
 }
 
-const fn default_provider_timeout_ms() -> u64 {
-    120_000
-}
-
 const fn default_model_rank() -> i32 {
     100
 }
@@ -2546,14 +2625,6 @@ const fn default_budget_alert_smtp_starttls() -> bool {
     true
 }
 
-fn default_vertex_location() -> String {
-    "global".to_string()
-}
-
-fn default_vertex_api_host() -> String {
-    "aiplatform.googleapis.com".to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use std::{env, path::Path};
@@ -2563,10 +2634,11 @@ mod tests {
         OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
         OpenRouterPercentilePreference, RequestLogRetentionWindow,
     };
+    use gateway_providers::{BearerAuthHeader, BedrockAuthConfig};
     use gateway_service::RequestLogPayloadCaptureMode;
     use tempfile::tempdir;
 
-    use super::{BedrockAuthConfig, GatewayConfig};
+    use super::GatewayConfig;
 
     fn write_config(path: &Path, yaml: &str) {
         std::fs::write(path, yaml).expect("write config");
@@ -3877,6 +3949,178 @@ providers:
         );
 
         GatewayConfig::from_path(&config_path).expect("config should parse");
+    }
+
+    #[test]
+    fn parses_cloud_run_openai_compat_provider_config() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: gemma-cloud-run
+    type: gcp_cloud_run_openai_compat
+    base_url: https://gemma-service-abc-uc.a.run.app/v1
+    pricing_provider_id: google-vertex
+    auth:
+      mode: bearer
+      token: literal.debug-id-token
+    auth_header: x_serverless_authorization
+models:
+  - id: gemma-cloud-run
+    routes:
+      - provider: gemma-cloud-run
+        upstream_model: google/gemma-4-12b-it
+        extra_body:
+          chat_template_kwargs:
+            enable_thinking: true
+          skip_special_tokens: false
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let providers = config.seed_providers().expect("seed providers");
+        assert_eq!(providers[0].provider_type, "gcp_cloud_run_openai_compat");
+        assert_eq!(
+            providers[0].config["audience"],
+            "https://gemma-service-abc-uc.a.run.app/"
+        );
+        assert_eq!(
+            providers[0].config["auth_header"],
+            "x_serverless_authorization"
+        );
+
+        let runtime_configs = config
+            .openai_compatible_provider_configs()
+            .expect("runtime provider configs");
+        assert_eq!(
+            runtime_configs[0].provider_type,
+            "gcp_cloud_run_openai_compat"
+        );
+        assert_eq!(
+            runtime_configs[0].bearer_auth_header,
+            BearerAuthHeader::XServerlessAuthorization
+        );
+        assert_eq!(
+            runtime_configs[0].bearer_token.as_deref(),
+            Some("debug-id-token")
+        );
+
+        let models = config.seed_models().expect("seed models");
+        assert_eq!(
+            models[0].routes[0].extra_body["chat_template_kwargs"]["enable_thinking"],
+            true
+        );
+        assert_eq!(models[0].routes[0].extra_body["skip_special_tokens"], false);
+    }
+
+    #[test]
+    fn accepts_cloud_run_openai_compat_custom_audience() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: gemma-cloud-run
+    type: gcp_cloud_run_openai_compat
+    base_url: https://gemma.example.com/v1
+    audience: https://custom-audience.example.com
+    pricing_provider_id: google-vertex
+    auth:
+      mode: bearer
+      token: literal.debug-id-token
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let providers = config.seed_providers().expect("seed providers");
+        assert_eq!(
+            providers[0].config["audience"],
+            "https://custom-audience.example.com"
+        );
+    }
+
+    #[test]
+    fn rejects_cloud_run_openai_compat_non_https_base_url() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: gemma-cloud-run
+    type: gcp_cloud_run_openai_compat
+    base_url: http://gemma-service.run.app/v1
+    pricing_provider_id: google-vertex
+    auth:
+      mode: adc
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("base_url must use https"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_cloud_run_openai_compat_whitespace_padded_base_url() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: gemma-cloud-run
+    type: gcp_cloud_run_openai_compat
+    base_url: " https://gemma-service.run.app/v1 "
+    pricing_provider_id: google-vertex
+    auth:
+      mode: adc
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("base_url cannot include leading or trailing whitespace"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_cloud_run_openai_compat_empty_service_account_path() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: gemma-cloud-run
+    type: gcp_cloud_run_openai_compat
+    base_url: https://gemma-service.run.app/v1
+    pricing_provider_id: google-vertex
+    auth:
+      mode: service_account
+      credentials_path: ""
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("service_account.credentials_path cannot be empty"),
+            "unexpected error: {error_text}"
+        );
     }
 
     #[test]

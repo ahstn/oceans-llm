@@ -5,6 +5,7 @@ use std::{
 };
 
 use async_trait::async_trait;
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use gateway_core::ProviderError;
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use serde::{Deserialize, Serialize};
@@ -16,6 +17,8 @@ use crate::http::map_reqwest_error;
 const DEFAULT_OAUTH_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 const METADATA_TOKEN_URL: &str =
     "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token";
+const METADATA_IDENTITY_TOKEN_URL: &str =
+    "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity";
 pub const CLOUD_PLATFORM_SCOPE: &str = "https://www.googleapis.com/auth/cloud-platform";
 
 #[derive(Debug, Clone)]
@@ -115,27 +118,7 @@ impl ServiceAccountTokenSource {
 #[async_trait]
 impl AccessTokenSource for ServiceAccountTokenSource {
     async fn fetch_token(&self) -> Result<AccessToken, ProviderError> {
-        let raw = fs::read_to_string(&self.credentials_path).map_err(|error| {
-            ProviderError::Transport(format!(
-                "failed to read service account credentials `{}`: {error}",
-                self.credentials_path.display()
-            ))
-        })?;
-
-        let credentials: ServiceAccountCredentials =
-            serde_json::from_str(&raw).map_err(|error| {
-                ProviderError::Transport(format!(
-                    "invalid service account credentials JSON: {error}"
-                ))
-            })?;
-
-        if credentials.kind != "service_account" {
-            return Err(ProviderError::InvalidRequest(format!(
-                "credentials file `{}` is not a service_account credential",
-                self.credentials_path.display()
-            )));
-        }
-
+        let credentials = read_service_account_credentials(&self.credentials_path)?;
         fetch_service_account_token(&self.client, &credentials, &self.scope).await
     }
 }
@@ -222,6 +205,112 @@ impl AdcTokenSource {
     }
 }
 
+pub struct AdcIdTokenSource {
+    audience: String,
+    client: reqwest::Client,
+}
+
+impl AdcIdTokenSource {
+    pub fn new(audience: String) -> Result<Self, ProviderError> {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(20))
+            .build()
+            .map_err(map_reqwest_error)?;
+
+        Ok(Self { audience, client })
+    }
+}
+
+#[async_trait]
+impl AccessTokenSource for AdcIdTokenSource {
+    async fn fetch_token(&self) -> Result<AccessToken, ProviderError> {
+        if let Some(path) = env::var("GOOGLE_APPLICATION_CREDENTIALS")
+            .ok()
+            .map(PathBuf::from)
+        {
+            return self.fetch_from_adc_file(&path).await;
+        }
+
+        if let Some(path) = default_adc_file_path() {
+            return self.fetch_from_adc_file(&path).await;
+        }
+
+        fetch_metadata_server_id_token(&self.client, &self.audience, METADATA_IDENTITY_TOKEN_URL)
+            .await
+    }
+}
+
+impl AdcIdTokenSource {
+    async fn fetch_from_adc_file(&self, path: &Path) -> Result<AccessToken, ProviderError> {
+        let raw = fs::read_to_string(path).map_err(|error| {
+            ProviderError::Transport(format!(
+                "failed to read ADC credentials file `{}`: {error}",
+                path.display()
+            ))
+        })?;
+
+        let detected_type = serde_json::from_str::<serde_json::Value>(&raw)
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("type")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string)
+            });
+
+        match detected_type.as_deref() {
+            Some("service_account") => {
+                let credentials: ServiceAccountCredentials =
+                    serde_json::from_str(&raw).map_err(|error| {
+                        ProviderError::Transport(format!(
+                            "invalid service account ADC credentials JSON: {error}"
+                        ))
+                    })?;
+                fetch_service_account_id_token(&self.client, &credentials, &self.audience).await
+            }
+            Some("authorized_user") => Err(ProviderError::InvalidRequest(
+                "authorized_user ADC cannot mint Cloud Run ID tokens without service-account impersonation; use auth.mode `service_account` or run on Google Cloud metadata credentials".to_string(),
+            )),
+            Some(other) => Err(ProviderError::InvalidRequest(format!(
+                "unsupported ADC credential type `{other}` for Cloud Run ID-token auth"
+            ))),
+            None => Err(ProviderError::InvalidRequest(format!(
+                "ADC credential file `{}` is missing `type`",
+                path.display()
+            ))),
+        }
+    }
+}
+
+pub struct ServiceAccountIdTokenSource {
+    credentials_path: PathBuf,
+    audience: String,
+    client: reqwest::Client,
+}
+
+impl ServiceAccountIdTokenSource {
+    pub fn new(credentials_path: PathBuf, audience: String) -> Result<Self, ProviderError> {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(20))
+            .build()
+            .map_err(map_reqwest_error)?;
+
+        Ok(Self {
+            credentials_path,
+            audience,
+            client,
+        })
+    }
+}
+
+#[async_trait]
+impl AccessTokenSource for ServiceAccountIdTokenSource {
+    async fn fetch_token(&self) -> Result<AccessToken, ProviderError> {
+        let credentials = read_service_account_credentials(&self.credentials_path)?;
+        fetch_service_account_id_token(&self.client, &credentials, &self.audience).await
+    }
+}
+
 fn default_adc_file_path() -> Option<PathBuf> {
     let home = env::var("HOME").ok()?;
     let path = PathBuf::from(home).join(".config/gcloud/application_default_credentials.json");
@@ -260,6 +349,15 @@ struct ServiceAccountClaims<'a> {
     exp: i64,
 }
 
+#[derive(Debug, Serialize)]
+struct ServiceAccountIdTokenClaims<'a> {
+    iss: &'a str,
+    aud: &'a str,
+    target_audience: &'a str,
+    iat: i64,
+    exp: i64,
+}
+
 #[derive(Debug, Deserialize)]
 struct OAuthAccessTokenResponse {
     access_token: String,
@@ -268,9 +366,43 @@ struct OAuthAccessTokenResponse {
 }
 
 #[derive(Debug, Deserialize)]
+struct OAuthIdTokenResponse {
+    id_token: String,
+}
+
+#[derive(Debug, Deserialize)]
 struct MetadataTokenResponse {
     access_token: String,
     expires_in: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct JwtExpirationClaims {
+    exp: i64,
+}
+
+fn read_service_account_credentials(
+    credentials_path: &Path,
+) -> Result<ServiceAccountCredentials, ProviderError> {
+    let raw = fs::read_to_string(credentials_path).map_err(|error| {
+        ProviderError::Transport(format!(
+            "failed to read service account credentials `{}`: {error}",
+            credentials_path.display()
+        ))
+    })?;
+
+    let credentials: ServiceAccountCredentials = serde_json::from_str(&raw).map_err(|error| {
+        ProviderError::Transport(format!("invalid service account credentials JSON: {error}"))
+    })?;
+
+    if credentials.kind != "service_account" {
+        return Err(ProviderError::InvalidRequest(format!(
+            "credentials file `{}` is not a service_account credential",
+            credentials_path.display()
+        )));
+    }
+
+    Ok(credentials)
 }
 
 async fn fetch_service_account_token(
@@ -292,20 +424,7 @@ async fn fetch_service_account_token(
         exp: (now + Duration::hours(1)).unix_timestamp(),
     };
 
-    let mut header = Header::new(Algorithm::RS256);
-    if let Some(key_id) = &credentials.private_key_id {
-        header.kid = Some(key_id.clone());
-    }
-
-    let key = EncodingKey::from_rsa_pem(credentials.private_key.as_bytes()).map_err(|error| {
-        ProviderError::Transport(format!(
-            "failed to parse service account private key: {error}"
-        ))
-    })?;
-
-    let assertion = jsonwebtoken::encode(&header, &claims, &key).map_err(|error| {
-        ProviderError::Transport(format!("failed to sign service account JWT: {error}"))
-    })?;
+    let assertion = sign_service_account_jwt(credentials, &claims)?;
 
     let response = client
         .post(&token_uri)
@@ -318,6 +437,40 @@ async fn fetch_service_account_token(
         .map_err(map_reqwest_error)?;
 
     parse_oauth_token_response(response).await
+}
+
+async fn fetch_service_account_id_token(
+    client: &reqwest::Client,
+    credentials: &ServiceAccountCredentials,
+    audience: &str,
+) -> Result<AccessToken, ProviderError> {
+    let token_uri = credentials
+        .token_uri
+        .clone()
+        .unwrap_or_else(|| DEFAULT_OAUTH_TOKEN_URL.to_string());
+    let now = OffsetDateTime::now_utc();
+
+    let claims = ServiceAccountIdTokenClaims {
+        iss: &credentials.client_email,
+        aud: &token_uri,
+        target_audience: audience,
+        iat: now.unix_timestamp(),
+        exp: (now + Duration::hours(1)).unix_timestamp(),
+    };
+
+    let assertion = sign_service_account_jwt(credentials, &claims)?;
+
+    let response = client
+        .post(&token_uri)
+        .form(&[
+            ("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer"),
+            ("assertion", assertion.as_str()),
+        ])
+        .send()
+        .await
+        .map_err(map_reqwest_error)?;
+
+    parse_oauth_id_token_response(response).await
 }
 
 async fn fetch_authorized_user_token(
@@ -383,6 +536,71 @@ async fn fetch_metadata_server_token(
     })
 }
 
+async fn fetch_metadata_server_id_token(
+    client: &reqwest::Client,
+    audience: &str,
+    metadata_identity_url: &str,
+) -> Result<AccessToken, ProviderError> {
+    let response = client
+        .get(metadata_identity_url)
+        .query(&[("audience", audience), ("format", "full")])
+        .header("Metadata-Flavor", "Google")
+        .send()
+        .await
+        .map_err(map_reqwest_error)?;
+
+    let status = response.status();
+    let text = response.text().await.map_err(map_reqwest_error)?;
+    if !status.is_success() {
+        return Err(ProviderError::UpstreamHttp {
+            status: status.as_u16(),
+            body: text,
+        });
+    }
+
+    id_token_access_token(text)
+}
+
+fn sign_service_account_jwt<T: Serialize>(
+    credentials: &ServiceAccountCredentials,
+    claims: &T,
+) -> Result<String, ProviderError> {
+    let mut header = Header::new(Algorithm::RS256);
+    if let Some(key_id) = &credentials.private_key_id {
+        header.kid = Some(key_id.clone());
+    }
+
+    let key = EncodingKey::from_rsa_pem(credentials.private_key.as_bytes()).map_err(|error| {
+        ProviderError::Transport(format!(
+            "failed to parse service account private key: {error}"
+        ))
+    })?;
+
+    jsonwebtoken::encode(&header, claims, &key).map_err(|error| {
+        ProviderError::Transport(format!("failed to sign service account JWT: {error}"))
+    })
+}
+
+fn id_token_access_token(token: String) -> Result<AccessToken, ProviderError> {
+    let expires_at = id_token_expires_at(&token)?;
+    Ok(AccessToken { token, expires_at })
+}
+
+fn id_token_expires_at(token: &str) -> Result<OffsetDateTime, ProviderError> {
+    let payload = token.split('.').nth(1).ok_or_else(|| {
+        ProviderError::Transport("invalid ID token: expected JWT payload segment".to_string())
+    })?;
+    let decoded = URL_SAFE_NO_PAD.decode(payload).map_err(|error| {
+        ProviderError::Transport(format!("invalid ID token payload encoding: {error}"))
+    })?;
+    let claims: JwtExpirationClaims = serde_json::from_slice(&decoded).map_err(|error| {
+        ProviderError::Transport(format!("invalid ID token expiration claims: {error}"))
+    })?;
+    OffsetDateTime::from_unix_timestamp(claims.exp).map_err(|error| {
+        ProviderError::Transport(format!("invalid ID token expiration timestamp: {error}"))
+    })
+}
+
 async fn parse_oauth_token_response(
     response: reqwest::Response,
 ) -> Result<AccessToken, ProviderError> {
@@ -407,6 +625,26 @@ async fn parse_oauth_token_response(
     })
 }
 
+async fn parse_oauth_id_token_response(
+    response: reqwest::Response,
+) -> Result<AccessToken, ProviderError> {
+    let status = response.status();
+    let text = response.text().await.map_err(map_reqwest_error)?;
+
+    if !status.is_success() {
+        return Err(ProviderError::UpstreamHttp {
+            status: status.as_u16(),
+            body: text,
+        });
+    }
+
+    let parsed: OAuthIdTokenResponse = serde_json::from_str(&text).map_err(|error| {
+        ProviderError::Transport(format!("invalid OAuth ID-token response: {error}"))
+    })?;
+
+    id_token_access_token(parsed.id_token)
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -419,7 +657,13 @@ mod tests {
     };
 
     use async_trait::async_trait;
-    use axum::{Json, Router, routing::post};
+    use axum::{
+        Form, Json, Router,
+        extract::Query,
+        http::{HeaderMap, StatusCode},
+        routing::{get, post},
+    };
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
     use serde_json::json;
     use serial_test::serial;
     use tempfile::tempdir;
@@ -427,7 +671,8 @@ mod tests {
 
     use super::{
         AccessToken, AccessTokenSource, AdcTokenSource, CachedAccessTokenSource, Duration,
-        OffsetDateTime, ServiceAccountTokenSource, StaticBearerTokenSource,
+        OffsetDateTime, ServiceAccountIdTokenSource, ServiceAccountTokenSource,
+        StaticBearerTokenSource, fetch_metadata_server_id_token, id_token_expires_at,
     };
     use crate::token::CLOUD_PLATFORM_SCOPE;
 
@@ -459,6 +704,13 @@ yPy48bBninSJZBa7aUm5PxbZLLG5FQoyBDZPUyOvsKJc7UBjpwDe0jMkJmjpvW+r
 GgkfTd4qdOaEI8ljZxJM7plf5ZHfJND9xz+SJ3PqpNejzDeD4xQkwKAzeMQyl1z6
 UQ2sSTSfuLHz2F1jr5+pRNL2
 -----END PRIVATE KEY-----"#;
+
+    fn fake_jwt(exp: i64) -> String {
+        let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"RS256","typ":"JWT"}"#);
+        let payload = URL_SAFE_NO_PAD
+            .encode(json!({"aud": "https://service.run.app/", "exp": exp}).to_string());
+        format!("{header}.{payload}.signature")
+    }
 
     #[tokio::test]
     async fn static_token_source_passthrough() {
@@ -563,6 +815,126 @@ UQ2sSTSfuLHz2F1jr5+pRNL2
         .expect("source");
         let token = source.fetch_token().await.expect("token");
         assert_eq!(token.token, "sa-token");
+    }
+
+    #[test]
+    fn parses_id_token_expiration() {
+        let exp = OffsetDateTime::now_utc() + Duration::hours(1);
+        let parsed = id_token_expires_at(&fake_jwt(exp.unix_timestamp())).expect("expiry");
+
+        assert_eq!(parsed.unix_timestamp(), exp.unix_timestamp());
+    }
+
+    #[tokio::test]
+    async fn metadata_identity_token_uses_target_audience() {
+        async fn identity(
+            Query(query): Query<std::collections::BTreeMap<String, String>>,
+            headers: HeaderMap,
+        ) -> Result<String, StatusCode> {
+            if headers
+                .get("Metadata-Flavor")
+                .and_then(|value| value.to_str().ok())
+                != Some("Google")
+            {
+                return Err(StatusCode::BAD_REQUEST);
+            }
+            if query.get("audience").map(String::as_str) != Some("https://service.run.app/")
+                || query.get("format").map(String::as_str) != Some("full")
+            {
+                return Err(StatusCode::BAD_REQUEST);
+            }
+            Ok(fake_jwt(
+                (OffsetDateTime::now_utc() + Duration::hours(1)).unix_timestamp(),
+            ))
+        }
+
+        let app = Router::new().route("/identity", get(identity));
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve");
+        });
+
+        let client = reqwest::Client::new();
+        let token = fetch_metadata_server_id_token(
+            &client,
+            "https://service.run.app/",
+            &format!("http://{addr}/identity"),
+        )
+        .await
+        .expect("id token");
+
+        assert!(token.token.contains("."));
+        assert!(token.expires_at > OffsetDateTime::now_utc());
+    }
+
+    #[tokio::test]
+    async fn service_account_id_token_uses_oauth_target_audience_grant() {
+        async fn token(
+            Form(body): Form<std::collections::BTreeMap<String, String>>,
+        ) -> Result<Json<serde_json::Value>, StatusCode> {
+            if body.get("grant_type").map(String::as_str)
+                != Some("urn:ietf:params:oauth:grant-type:jwt-bearer")
+            {
+                return Err(StatusCode::BAD_REQUEST);
+            }
+
+            let assertion = body.get("assertion").ok_or(StatusCode::BAD_REQUEST)?;
+            let payload = assertion.split('.').nth(1).ok_or(StatusCode::BAD_REQUEST)?;
+            let decoded = URL_SAFE_NO_PAD
+                .decode(payload)
+                .map_err(|_| StatusCode::BAD_REQUEST)?;
+            let claims: serde_json::Value =
+                serde_json::from_slice(&decoded).map_err(|_| StatusCode::BAD_REQUEST)?;
+            if claims
+                .get("aud")
+                .and_then(|value| value.as_str())
+                .is_none_or(|audience| !audience.ends_with("/token"))
+                || claims
+                    .get("target_audience")
+                    .and_then(|value| value.as_str())
+                    != Some("https://service.run.app/")
+                || claims.get("iss").and_then(|value| value.as_str())
+                    != Some("gateway-test@example.iam.gserviceaccount.com")
+            {
+                return Err(StatusCode::BAD_REQUEST);
+            }
+
+            Ok(Json(json!({
+                "id_token": fake_jwt((OffsetDateTime::now_utc() + Duration::hours(1)).unix_timestamp())
+            })))
+        }
+
+        let app = Router::new().route("/token", post(token));
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve");
+        });
+
+        let tmp = tempdir().expect("tempdir");
+        let credentials_path = tmp.path().join("service-account.json");
+        fs::write(
+            &credentials_path,
+            json!({
+                "type": "service_account",
+                "client_email": "gateway-test@example.iam.gserviceaccount.com",
+                "private_key": TEST_RSA_PRIVATE_KEY,
+                "token_uri": format!("http://{addr}/token")
+            })
+            .to_string(),
+        )
+        .expect("write credentials");
+
+        let source = ServiceAccountIdTokenSource::new(
+            PathBuf::from(&credentials_path),
+            "https://service.run.app/".to_string(),
+        )
+        .expect("source");
+        let token = source.fetch_token().await.expect("id token");
+
+        assert!(token.token.contains("."));
+        assert!(token.expires_at > OffsetDateTime::now_utc());
     }
 
     #[tokio::test]

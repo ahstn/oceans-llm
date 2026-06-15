@@ -113,6 +113,8 @@ Effective capability is the intersection of route metadata and provider runtime 
 
 For example, current Vertex routes support the chat path but not the Responses path. A Vertex chat route should keep `responses: false` so `/v1/responses` fails during capability filtering instead of later inside the provider adapter.
 
+Cloud Run OpenAI-compatible routes use the same route capability model as ordinary `openai_compat` routes. If the deployed vLLM service only exposes Chat Completions, keep `responses: false` and `embeddings: false` on that route even though the provider adapter can speak those OpenAI-compatible families when the upstream supports them.
+
 ## Compatibility Profiles
 
 Routes can also define provider API compatibility metadata.
@@ -127,6 +129,8 @@ OpenAI-compatible route profiles currently cover deterministic Chat Completions 
 OpenRouter routes can also define `compatibility.openrouter.provider` policy. That policy is serialized into the upstream Chat Completions request body as OpenRouter's `provider` object after Oceans has selected one gateway route. OpenRouter `order`, `only`, `ignore`, `zdr`, latency, and price settings affect OpenRouter's upstream provider selection for that one request; they do not change Oceans route `priority`, route `weight`, or the current single-route execution behavior.
 
 See [provider-api-compatibility.md](../reference/provider-api-compatibility.md) for the compatibility matrix and field-level contract.
+
+Cloud Run vLLM/Gemma controls such as `chat_template_kwargs.enable_thinking` and `skip_special_tokens` are additive upstream request fields. Put them in route `extra_body`, not in a compatibility profile.
 
 ## Worked Request Path
 
