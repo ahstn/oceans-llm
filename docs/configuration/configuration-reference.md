@@ -424,6 +424,7 @@ SMTP transport fields:
 Supported provider types in the checked-in configs:
 
 - `openai_compat`
+- `gcp_cloud_run_openai_compat`
 - `gcp_vertex`
 - `aws_bedrock`
 
@@ -432,6 +433,9 @@ Supported provider types in the checked-in configs:
 | Provider type | Auth field | Expected secret material |
 | --- | --- | --- |
 | `openai_compat` | `auth.token` | bearer-style token |
+| `gcp_cloud_run_openai_compat` | `auth.mode: adc` | Google ADC or metadata-server identity credentials that can mint Cloud Run ID tokens |
+| `gcp_cloud_run_openai_compat` | `auth.mode: service_account` | Google Cloud service-account JSON through `credentials_path` or an equivalent mounted secret path |
+| `gcp_cloud_run_openai_compat` | `auth.mode: bearer` | pre-minted Cloud Run ID token for constrained debugging only |
 | `gcp_vertex` | `auth.mode: adc` | ADC available in the runtime environment |
 | `gcp_vertex` | `auth.mode: service_account` | upstream Google Cloud service-account JSON through `credentials_path` or an equivalent mounted secret path |
 | `aws_bedrock` | `auth.mode: bearer` | Bedrock bearer token, often `env.AWS_BEARER_TOKEN_BEDROCK` |
@@ -462,6 +466,50 @@ Validation rules that matter:
 
 - `pricing_provider_id` cannot be empty
 - `pricing_provider_id` must map to a supported internal pricing family
+
+### `gcp_cloud_run_openai_compat`
+
+Important fields:
+
+- `id`
+- `base_url`
+- `audience`
+  - optional
+  - defaults to the HTTPS service origin from `base_url`
+- `pricing_provider_id`
+- `auth.mode`
+  - `adc`
+  - `service_account`
+  - `bearer`
+- `auth_header`
+  - optional
+  - `authorization`
+  - `x_serverless_authorization`
+- optional `display.label`
+- optional `display.icon_key`
+
+Example:
+
+```yaml
+providers:
+  - id: gemma-cloud-run
+    type: gcp_cloud_run_openai_compat
+    base_url: https://gemma-service-abc-uc.a.run.app/v1
+    pricing_provider_id: google-vertex
+    auth:
+      mode: adc
+```
+
+Validation rules that matter:
+
+- `base_url` must be an absolute HTTPS URL with a host
+- `audience`, when set, cannot be empty
+- `pricing_provider_id` cannot be empty
+- `pricing_provider_id` must map to a supported internal pricing family
+- `service_account.credentials_path` and `bearer.token` cannot be empty
+- unknown provider or auth fields are rejected
+
+Provider-specific examples live in [Google Cloud Run OpenAI-Compatible Models](../providers/gcp-cloud-run-openai-compat.md).
 
 ### `gcp_vertex`
 
@@ -665,6 +713,24 @@ models:
           chat_completions: true
           responses: false
           embeddings: false
+```
+
+Cloud Run vLLM routes use the Cloud Run OpenAI-compatible provider and can set tested vLLM/Gemma request controls through `extra_body`:
+
+```yaml
+models:
+  - id: gemma-cloud-run
+    routes:
+      - provider: gemma-cloud-run
+        upstream_model: google/gemma-4-12b-it
+        capabilities:
+          chat_completions: true
+          responses: false
+          embeddings: false
+        extra_body:
+          chat_template_kwargs:
+            enable_thinking: true
+          skip_special_tokens: false
 ```
 
 Bedrock routes can execute Chat Completions through Claude native Messages, Converse, and ConverseStream depending on the upstream model and request shape. Keep Responses and embeddings disabled:

@@ -1683,6 +1683,7 @@ dependencies = [
  "aws-sigv4",
  "aws-smithy-runtime-api",
  "axum 0.8.8",
+ "base64 0.22.1",
  "bytes",
  "futures-util",
  "gateway-core",

@@ -340,9 +340,11 @@ async fn ensure_bootstrap_admin(
 fn build_provider_registry(config: &GatewayConfig) -> anyhow::Result<ProviderRegistry> {
     let mut providers = ProviderRegistry::new();
 
-    for provider_config in config.openai_compat_provider_configs()? {
-        let provider = OpenAiCompatProvider::new(provider_config)
-            .map_err(|error| anyhow::anyhow!("failed building openai_compat provider: {error}"))?;
+    for provider_config in config.openai_compatible_provider_configs()? {
+        let provider_type = provider_config.provider_type.clone();
+        let provider = OpenAiCompatProvider::new(provider_config).map_err(|error| {
+            anyhow::anyhow!("failed building {provider_type} provider: {error}")
+        })?;
         providers.register(Arc::new(provider));
     }
 

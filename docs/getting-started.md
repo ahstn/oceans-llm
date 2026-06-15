@@ -62,6 +62,12 @@ This page is the admin, user, and maintainer map for the gateway.
 - [Pricing Catalog and Accounting](configuration/pricing-catalog-and-accounting.md)
 - [MCP Servers](configuration/mcp-servers.md)
 
+### Providers
+
+- [Google Cloud Run OpenAI-Compatible Models](providers/gcp-cloud-run-openai-compat.md)
+- [Google Vertex AI](providers/gcp-vertex.md)
+- [AWS Bedrock](providers/aws-bedrock.md)
+
 ### Operations
 
 - [Budgets and Spending](operations/budgets-and-spending.md)
