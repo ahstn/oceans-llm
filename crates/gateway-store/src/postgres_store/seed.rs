@@ -147,6 +147,7 @@ impl PostgresStore {
 
         for provider in oauth_providers {
             let scopes_json = serialize_json(&provider.scopes)?;
+            let allowed_email_domains_json = serialize_json(&provider.allowed_email_domains)?;
             let oauth_provider_id = crate::seed::oauth_provider_uuid(&provider.provider_key);
             sqlx::query(
                 r#"
@@ -154,8 +155,9 @@ impl PostgresStore {
                     oauth_provider_id, provider_key, provider_type, client_id,
                     scopes_json, enabled, label, client_secret_ref, jit_enabled,
                     jit_global_role, jit_team_key, jit_team_role,
-                    jit_request_logging_enabled, created_at, updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $14)
+                    jit_request_logging_enabled, allowed_email_domains_json,
+                    created_at, updated_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $15)
                 ON CONFLICT(provider_key) DO UPDATE SET
                     provider_type = excluded.provider_type,
                     client_id = excluded.client_id,
@@ -168,6 +170,7 @@ impl PostgresStore {
                     jit_team_key = excluded.jit_team_key,
                     jit_team_role = excluded.jit_team_role,
                     jit_request_logging_enabled = excluded.jit_request_logging_enabled,
+                    allowed_email_domains_json = excluded.allowed_email_domains_json,
                     updated_at = excluded.updated_at
                 "#,
             )
@@ -200,6 +203,7 @@ impl PostgresStore {
             } else {
                 0_i64
             })
+            .bind(allowed_email_domains_json)
             .bind(now_unix)
             .execute(&self.pool)
             .await

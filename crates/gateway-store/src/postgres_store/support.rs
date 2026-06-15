@@ -309,8 +309,9 @@ pub(super) fn decode_oauth_provider_record(row: &PgRow) -> Result<OauthProviderR
     let jit_team_key: Option<String> = row.try_get(10).map_err(to_query_error)?;
     let jit_team_role: Option<String> = row.try_get(11).map_err(to_query_error)?;
     let jit_request_logging_enabled: i64 = row.try_get(12).map_err(to_query_error)?;
-    let created_at: i64 = row.try_get(13).map_err(to_query_error)?;
-    let updated_at: i64 = row.try_get(14).map_err(to_query_error)?;
+    let allowed_email_domains_json: String = row.try_get(13).map_err(to_query_error)?;
+    let created_at: i64 = row.try_get(14).map_err(to_query_error)?;
+    let updated_at: i64 = row.try_get(15).map_err(to_query_error)?;
     let provider_key: String = row.try_get(1).map_err(to_query_error)?;
     let label: Option<String> = row.try_get(6).map_err(to_query_error)?;
 
@@ -325,6 +326,8 @@ pub(super) fn decode_oauth_provider_record(row: &PgRow) -> Result<OauthProviderR
         client_id: row.try_get(3).map_err(to_query_error)?,
         client_secret_ref: row.try_get(7).map_err(to_query_error)?,
         scopes: serde_json::from_str(&scopes_json)
+            .map_err(|error| StoreError::Serialization(error.to_string()))?,
+        allowed_email_domains: serde_json::from_str(&allowed_email_domains_json)
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
         enabled: enabled == 1,
         jit: OauthJitPolicy {

@@ -101,11 +101,6 @@ providers:
 teams:
   - key: platform
     name: Platform
-    budget:
-      cadence: monthly
-      amount_usd: "500.0000"
-      hard_limit: true
-      timezone: UTC
 
 users:
   - name: Platform Admin
@@ -317,10 +312,29 @@ auth:
         client_id: env.GITHUB_OAUTH_CLIENT_ID
         client_secret: env.GITHUB_OAUTH_CLIENT_SECRET
         scopes: [read:user, user:email]
+        allowed_email_domains:
+          - example.com
         enabled: true
         jit:
           enabled: false
 ```
+
+Important GitHub OAuth provider fields:
+
+- `key`: gateway-local provider key used by invited OAuth users
+- `label`: admin-login display label
+- `provider_type`: must be `github`
+- `client_id`
+- `client_secret`
+- `scopes`: must include `user:email`
+- `allowed_email_domains`
+  - optional
+  - defaults to an empty list, which keeps the existing invite/JIT behavior without a domain restriction
+  - entries are normalized by trimming whitespace, converting to lowercase, and removing trailing dots
+  - empty entries, email addresses, URLs, wildcards, single-label values, names with invalid DNS characters, and duplicates after normalization are rejected at startup
+  - matching is case-insensitive and exact on the verified primary email's domain part
+- `enabled`
+- `jit`
 
 For GitHub setup steps and callback URL rules, see [GitHub OAuth SSO Setup for Admins](../access/github-oauth-admin-setup.md).
 
@@ -334,7 +348,6 @@ Important `teams` fields:
 
 - `key`
 - `name`
-- `budget`
 
 Important `users` fields:
 
@@ -361,14 +374,15 @@ Validation rules that matter:
 - membership roles can be `admin` or `member`
 - membership role `owner` is rejected
 - budget amounts must be non-negative
+- teams are not budget principals
 
 Seed semantics that matter:
 
 - listed teams are upserted by `teams[*].key`
 - listed users are upserted by normalized email
 - new config-seeded users are created as `invited`
-- listed membership and active-budget state is reconciled for listed users and teams
-- omitting a `budget` block for a listed user or team deactivates that owner's active budget
+- listed membership and active-budget state is reconciled for listed users
+- omitting a `budget` block for a listed user deactivates that user's active budget
 - unlisted teams and users are left untouched
 
 OIDC and OAuth provider existence is validated at seed time against enabled runtime providers, not YAML parse time.

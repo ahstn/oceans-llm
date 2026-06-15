@@ -48,6 +48,8 @@ auth:
         scopes:
           - read:user
           - user:email
+        allowed_email_domains:
+          - example.com
         enabled: true
         jit:
           enabled: false
@@ -55,17 +57,23 @@ auth:
           request_logging_enabled: true
 ```
 
+`allowed_email_domains` is optional. Leave it empty or omit it to allow the existing invite/JIT rules to decide access without an email-domain guardrail. When it is set, GitHub OAuth can only complete for accounts whose verified primary email domain exactly matches one of the configured domains.
+
 ## Identity Mapping Behavior
 
 Direct GitHub OAuth uses:
 
 - provider subject: GitHub numeric user id (`/user`)
 - email for invite/JIT matching: verified primary email (`/user/emails`)
+- optional domain restriction: exact domain part of the verified primary email
 
 Oceans does **not** auto-link existing password users by email.
 
 ## Security Notes
 
 - Keep `jit.enabled: false` unless you explicitly want auto-provisioning.
+- When `jit.enabled: true`, set `allowed_email_domains` unless every verified GitHub email address should be eligible for JIT provisioning.
+- Domain checks run after GitHub returns the verified primary email and before OAuth link creation, invited-user activation, JIT user creation, or session cookie issuance.
+- Domain matching is case-insensitive and exact on the email domain. `alice@example.com` matches `example.com`; `alice@evil-example.com` does not.
 - Do not grant broad admin roles through JIT unless constrained by your org policy.
 - Rotate GitHub client secrets if leaked.

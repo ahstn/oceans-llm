@@ -46,6 +46,10 @@ auth:
         scopes:
           - read:user
           - user:email
+        # Optional: restrict GitHub OAuth sign-in, invite activation, and JIT
+        # provisioning to verified primary email domains owned by your organization.
+        # allowed_email_domains:
+        #   - example.com
         enabled: false
         jit:
           enabled: false
@@ -63,11 +67,6 @@ request_logging:
 teams:
   - key: platform
     name: Platform
-    budget:
-      cadence: monthly
-      amount_usd: "500.0000"
-      hard_limit: true
-      timezone: UTC
 
 users:
   - name: Platform Admin
