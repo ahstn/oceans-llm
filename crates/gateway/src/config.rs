@@ -1309,7 +1309,7 @@ impl AuthOauthConfig {
             if !provider.scopes.iter().any(|scope| scope == "user:email") {
                 bail!("oauth provider `{provider_key}` scopes must include `user:email`");
             }
-            let _ = normalize_allowed_email_domains(
+            validate_allowed_email_domains(
                 &provider.allowed_email_domains,
                 &format!("oauth provider `{provider_key}` allowed_email_domains"),
             )?;
@@ -2480,6 +2480,18 @@ fn normalize_allowed_email_domains(
     }
 
     Ok(normalized_domains)
+}
+
+fn validate_allowed_email_domains(domains: &[String], context: &str) -> anyhow::Result<()> {
+    let mut seen = std::collections::BTreeSet::new();
+    for domain in domains {
+        let normalized = normalize_allowed_email_domain(domain)
+            .with_context(|| format!("{context} entry `{domain}`"))?;
+        if !seen.insert(normalized.clone()) {
+            bail!("{context} contains duplicate domain `{normalized}`");
+        }
+    }
+    Ok(())
 }
 
 fn normalize_allowed_email_domain(domain: &str) -> anyhow::Result<String> {

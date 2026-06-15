@@ -4301,20 +4301,30 @@ mod tests {
         let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
             .await
             .expect("store");
-        let initial_provider = SeedOauthProvider {
-            provider_key: "github".to_string(),
-            provider_type: "github".to_string(),
-            label: "GitHub".to_string(),
-            client_id: "client-id".to_string(),
-            client_secret_ref: "literal.secret".to_string(),
-            scopes: vec!["read:user".to_string(), "user:email".to_string()],
-            allowed_email_domains: vec!["test.com".to_string()],
-            enabled: true,
-            jit: OauthJitPolicy::default(),
-        };
+        fn github_provider_with_domains(domains: Vec<&str>) -> SeedOauthProvider {
+            SeedOauthProvider {
+                provider_key: "github".to_string(),
+                provider_type: "github".to_string(),
+                label: "GitHub".to_string(),
+                client_id: "client-id".to_string(),
+                client_secret_ref: "literal.secret".to_string(),
+                scopes: vec!["read:user".to_string(), "user:email".to_string()],
+                allowed_email_domains: domains.into_iter().map(str::to_string).collect(),
+                enabled: true,
+                jit: OauthJitPolicy::default(),
+            }
+        }
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[initial_provider], &[], &[])
+            .seed_from_inputs(
+                &[],
+                &[],
+                &[],
+                &[],
+                &[github_provider_with_domains(vec!["test.com"])],
+                &[],
+                &[],
+            )
             .await
             .expect("seed provider");
         let providers = store
@@ -4327,20 +4337,19 @@ mod tests {
             vec!["test.com".to_string()]
         );
 
-        let updated_provider = SeedOauthProvider {
-            provider_key: "github".to_string(),
-            provider_type: "github".to_string(),
-            label: "GitHub".to_string(),
-            client_id: "client-id".to_string(),
-            client_secret_ref: "literal.secret".to_string(),
-            scopes: vec!["read:user".to_string(), "user:email".to_string()],
-            allowed_email_domains: vec!["example.com".to_string(), "team.example.com".to_string()],
-            enabled: true,
-            jit: OauthJitPolicy::default(),
-        };
-
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[updated_provider], &[], &[])
+            .seed_from_inputs(
+                &[],
+                &[],
+                &[],
+                &[],
+                &[github_provider_with_domains(vec![
+                    "example.com",
+                    "team.example.com",
+                ])],
+                &[],
+                &[],
+            )
             .await
             .expect("update provider");
         let provider = store
