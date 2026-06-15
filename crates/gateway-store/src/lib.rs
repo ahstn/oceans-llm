@@ -42,16 +42,17 @@ mod tests {
         McpToolPolicyResult, McpUpstreamCredentialMaterialKind,
         McpUpstreamCredentialOwnerScopeKind, McpUpstreamCredentialRepository,
         McpUpstreamSecretStorageKind, MembershipRole, ModelPricingRecord, ModelRepository, Money4,
-        NewExternalMcpServerRecord, OidcLoginStateRecord, OpenAiCompatDeveloperRole,
-        OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
-        PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
-        PricingProvenance, ProviderCapabilities, RequestAttemptRecord, RequestAttemptStatus,
-        RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository,
-        RequestTag, RequestTags, RequestToolCardinality, RouteCompatibility, SeedApiKey,
-        SeedBudget, SeedModel, SeedModelRoute, SeedProvider, SeedTeam, SeedUser,
-        SeedUserMembership, StoreError, StoreHealth, UpdateExternalMcpServerRecord,
-        UpsertExternalMcpToolRecord, UpsertMcpUpstreamCredentialBindingRecord, UsageLedgerRecord,
-        UsagePricingStatus, UserStatus,
+        NewExternalMcpServerRecord, OauthJitPolicy, OidcLoginStateRecord,
+        OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
+        OpenAiCompatRouteCompatibility, PricingCatalogCacheRecord, PricingCatalogRepository,
+        PricingLimits, PricingModalities, PricingProvenance, ProviderCapabilities,
+        RequestAttemptRecord, RequestAttemptStatus, RequestLogPayloadRecord, RequestLogQuery,
+        RequestLogRecord, RequestLogRepository, RequestTag, RequestTags, RequestToolCardinality,
+        RouteCompatibility, SeedApiKey, SeedBudget, SeedModel, SeedModelRoute, SeedOauthProvider,
+        SeedProvider, SeedTeam, SeedUser, SeedUserMembership, StoreError, StoreHealth,
+        UpdateExternalMcpServerRecord, UpsertExternalMcpToolRecord,
+        UpsertMcpUpstreamCredentialBindingRecord, UsageLedgerRecord, UsagePricingStatus,
+        UserStatus,
     };
     use serde_json::{Map, json};
     use serial_test::serial;
@@ -4288,6 +4289,69 @@ mod tests {
             .expect("reload user")
             .expect("user should exist");
         assert!(!refreshed.must_change_password);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_seed_round_trips_oauth_provider_allowed_email_domains() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+        let initial_provider = SeedOauthProvider {
+            provider_key: "github".to_string(),
+            provider_type: "github".to_string(),
+            label: "GitHub".to_string(),
+            client_id: "client-id".to_string(),
+            client_secret_ref: "literal.secret".to_string(),
+            scopes: vec!["read:user".to_string(), "user:email".to_string()],
+            allowed_email_domains: vec!["test.com".to_string()],
+            enabled: true,
+            jit: OauthJitPolicy::default(),
+        };
+
+        store
+            .seed_from_inputs(&[], &[], &[], &[], &[initial_provider], &[], &[])
+            .await
+            .expect("seed provider");
+        let providers = store
+            .list_enabled_oauth_providers()
+            .await
+            .expect("list oauth providers");
+        assert_eq!(providers.len(), 1);
+        assert_eq!(
+            providers[0].allowed_email_domains,
+            vec!["test.com".to_string()]
+        );
+
+        let updated_provider = SeedOauthProvider {
+            provider_key: "github".to_string(),
+            provider_type: "github".to_string(),
+            label: "GitHub".to_string(),
+            client_id: "client-id".to_string(),
+            client_secret_ref: "literal.secret".to_string(),
+            scopes: vec!["read:user".to_string(), "user:email".to_string()],
+            allowed_email_domains: vec!["example.com".to_string(), "team.example.com".to_string()],
+            enabled: true,
+            jit: OauthJitPolicy::default(),
+        };
+
+        store
+            .seed_from_inputs(&[], &[], &[], &[], &[updated_provider], &[], &[])
+            .await
+            .expect("update provider");
+        let provider = store
+            .get_enabled_oauth_provider_by_key("github")
+            .await
+            .expect("get oauth provider")
+            .expect("provider exists");
+        assert_eq!(
+            provider.allowed_email_domains,
+            vec!["example.com".to_string(), "team.example.com".to_string()]
+        );
     }
 
     #[tokio::test]

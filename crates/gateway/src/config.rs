@@ -1309,6 +1309,10 @@ impl AuthOauthConfig {
             if !provider.scopes.iter().any(|scope| scope == "user:email") {
                 bail!("oauth provider `{provider_key}` scopes must include `user:email`");
             }
+            let _ = normalize_allowed_email_domains(
+                &provider.allowed_email_domains,
+                &format!("oauth provider `{provider_key}` allowed_email_domains"),
+            )?;
             if let Some(membership) = provider.jit.membership.as_ref() {
                 let team_key = normalize_config_team_key(&membership.team)
                     .with_context(|| format!("oauth provider `{provider_key}` jit team"))?;
@@ -1397,6 +1401,8 @@ pub struct OauthProviderConfig {
     pub client_secret: String,
     #[serde(default = "default_github_oauth_scopes")]
     pub scopes: Vec<String>,
+    #[serde(default)]
+    pub allowed_email_domains: Vec<String>,
     #[serde(default = "default_enabled")]
     pub enabled: bool,
     #[serde(default)]
@@ -1421,6 +1427,10 @@ impl OauthProviderConfig {
             },
             client_secret_ref: self.client_secret.clone(),
             scopes: self.scopes.clone(),
+            allowed_email_domains: normalize_allowed_email_domains(
+                &self.allowed_email_domains,
+                "auth.oauth.providers[].allowed_email_domains",
+            )?,
             enabled: self.enabled,
             jit: self.jit.seed_policy()?,
         })
@@ -2450,6 +2460,63 @@ fn normalize_config_oauth_provider_key(provider_key: &str) -> anyhow::Result<Str
     if normalized.is_empty() {
         bail!("cannot be empty");
     }
+    Ok(normalized)
+}
+
+fn normalize_allowed_email_domains(
+    domains: &[String],
+    context: &str,
+) -> anyhow::Result<Vec<String>> {
+    let mut normalized_domains = Vec::with_capacity(domains.len());
+    let mut seen = std::collections::BTreeSet::new();
+
+    for domain in domains {
+        let normalized = normalize_allowed_email_domain(domain)
+            .with_context(|| format!("{context} entry `{domain}`"))?;
+        if !seen.insert(normalized.clone()) {
+            bail!("{context} contains duplicate domain `{normalized}`");
+        }
+        normalized_domains.push(normalized);
+    }
+
+    Ok(normalized_domains)
+}
+
+fn normalize_allowed_email_domain(domain: &str) -> anyhow::Result<String> {
+    let normalized = domain.trim().trim_end_matches('.').to_ascii_lowercase();
+    if normalized.is_empty() {
+        bail!("cannot be empty");
+    }
+    if normalized.contains('@')
+        || normalized.contains('/')
+        || normalized.contains(':')
+        || normalized.contains('*')
+        || normalized.chars().any(char::is_whitespace)
+    {
+        bail!("must be a domain name, not an email address, URL, or wildcard");
+    }
+    if normalized.starts_with('.') || normalized.ends_with('.') || normalized.contains("..") {
+        bail!("must be a valid domain name");
+    }
+
+    let mut label_count = 0;
+    for label in normalized.split('.') {
+        label_count += 1;
+        if label.is_empty() || label.starts_with('-') || label.ends_with('-') {
+            bail!("must be a valid domain name");
+        }
+        if !label
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-')
+        {
+            bail!("must be a valid domain name");
+        }
+    }
+
+    if label_count < 2 {
+        bail!("must be a valid domain name");
+    }
+
     Ok(normalized)
 }
 
@@ -4489,6 +4556,101 @@ auth:
         let error_text = format!("{error:#}");
         assert!(
             error_text.contains("must include `user:email`"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn parses_github_oauth_allowed_email_domains_into_seed() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+auth:
+  oauth:
+    public_base_url: literal.https://gateway.example.com
+    providers:
+      - key: github
+        label: GitHub
+        provider_type: github
+        client_id: github-client-id
+        client_secret: literal.secret
+        scopes: [read:user, user:email]
+        allowed_email_domains:
+          - Test.com
+          - Engineering.Example.com.
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let oauth_providers = config.seed_oauth_providers().expect("seed oauth providers");
+        assert_eq!(
+            oauth_providers[0].allowed_email_domains,
+            vec!["test.com", "engineering.example.com"]
+        );
+    }
+
+    #[test]
+    fn rejects_github_oauth_duplicate_allowed_email_domains() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+auth:
+  oauth:
+    public_base_url: literal.https://gateway.example.com
+    providers:
+      - key: github
+        label: GitHub
+        provider_type: github
+        client_id: github-client-id
+        client_secret: literal.secret
+        scopes: [read:user, user:email]
+        allowed_email_domains:
+          - Test.com
+          - test.com
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("contains duplicate domain `test.com`"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_github_oauth_invalid_allowed_email_domain() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+auth:
+  oauth:
+    public_base_url: literal.https://gateway.example.com
+    providers:
+      - key: github
+        label: GitHub
+        provider_type: github
+        client_id: github-client-id
+        client_secret: literal.secret
+        scopes: [read:user, user:email]
+        allowed_email_domains:
+          - alice@test.com
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("must be a domain name"),
             "unexpected error: {error_text}"
         );
     }

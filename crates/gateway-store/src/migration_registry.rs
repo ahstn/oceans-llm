@@ -134,6 +134,15 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
             "../migrations/postgres/V31__mcp_upstream_credential_bindings.sql"
         ),
     },
+    MigrationManifest {
+        version: 32,
+        name: "oauth_provider_allowed_email_domains",
+        checksum: "V32__oauth_provider_allowed_email_domains.sql",
+        libsql_sql: include_str!("../migrations/V32__oauth_provider_allowed_email_domains.sql"),
+        postgres_sql: include_str!(
+            "../migrations/postgres/V32__oauth_provider_allowed_email_domains.sql"
+        ),
+    },
 ];
 
 #[cfg(test)]

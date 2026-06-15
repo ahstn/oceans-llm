@@ -1567,6 +1567,14 @@ pub async fn oauth_callback_github(
             return Ok(oidc_error_redirect("unmatched_identity"));
         }
     };
+    if !github_email_domain_allowed(&email, &provider.allowed_email_domains) {
+        tracing::warn!(
+            provider_key = %provider.provider_key,
+            email_domain = %email_domain_for_log(&email),
+            "github oauth email domain is not allowed"
+        );
+        return Ok(oidc_error_redirect("unmatched_identity"));
+    }
 
     let user = if let Some(oauth_auth) = state
         .store
@@ -1804,6 +1812,26 @@ async fn github_primary_verified_email(access_token: &str) -> Result<String, App
         })?;
 
     normalize_email(&selected.email)
+}
+
+fn github_email_domain_allowed(email: &str, allowed_domains: &[String]) -> bool {
+    if allowed_domains.is_empty() {
+        return true;
+    }
+
+    let Some(domain) = email.rsplit_once('@').map(|(_, domain)| domain) else {
+        return false;
+    };
+    allowed_domains
+        .iter()
+        .any(|allowed| domain.eq_ignore_ascii_case(allowed))
+}
+
+fn email_domain_for_log(email: &str) -> String {
+    email
+        .rsplit_once('@')
+        .map(|(_, domain)| domain.to_string())
+        .unwrap_or_else(|| "<invalid>".to_string())
 }
 
 async fn create_jit_oidc_user(
@@ -3020,4 +3048,24 @@ pub async fn list_public_oauth_providers(
             })
             .collect(),
     })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::github_email_domain_allowed;
+
+    #[test]
+    fn github_email_domain_policy_allows_empty_policy() {
+        assert!(github_email_domain_allowed("alice@anywhere.example", &[]));
+    }
+
+    #[test]
+    fn github_email_domain_policy_matches_exact_domain_case_insensitively() {
+        let allowed = vec!["test.com".to_string()];
+
+        assert!(github_email_domain_allowed("alice@Test.com", &allowed));
+        assert!(!github_email_domain_allowed("alice@not-test.com", &allowed));
+        assert!(!github_email_domain_allowed("alice@eviltest.com", &allowed));
+        assert!(!github_email_domain_allowed("invalid-email", &allowed));
+    }
 }
