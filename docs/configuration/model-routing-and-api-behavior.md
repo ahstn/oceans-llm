@@ -113,6 +113,8 @@ Effective capability is the intersection of route metadata and provider runtime 
 
 For example, current Vertex routes support the chat path but not the Responses path. A Vertex chat route should keep `responses: false` so `/v1/responses` fails during capability filtering instead of later inside the provider adapter.
 
+Cloud Run OpenAI-compatible routes use the same route capability model as ordinary `openai_compat` routes. If the deployed vLLM service only exposes Chat Completions, keep `responses: false` and `embeddings: false` on that route even though the provider adapter can speak those OpenAI-compatible families when the upstream supports them.
+
 ## Compatibility Profiles
 
 Routes can also define provider API compatibility metadata.
@@ -125,6 +127,8 @@ Capabilities and compatibility have different jobs:
 OpenAI-compatible route profiles currently cover deterministic Chat Completions transforms such as `store` removal, token field renaming, `developer` role rewriting, `reasoning_effort` handling, and stream usage requests. Responses uses a separate typed request/provider path; Chat Completions transforms must not be used as Responses shims.
 
 See [provider-api-compatibility.md](../reference/provider-api-compatibility.md) for the compatibility matrix and field-level contract.
+
+Cloud Run vLLM/Gemma controls such as `chat_template_kwargs.enable_thinking` and `skip_special_tokens` are additive upstream request fields. Put them in route `extra_body`, not in a compatibility profile.
 
 ## Worked Request Path
 

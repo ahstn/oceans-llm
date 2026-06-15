@@ -81,6 +81,10 @@ export default defineConfig({
         text: "Providers",
         items: [
           { text: "AWS Bedrock", link: "/providers/aws-bedrock" },
+          {
+            text: "Google Cloud Run OpenAI-Compatible",
+            link: "/providers/gcp-cloud-run-openai-compat",
+          },
           { text: "Google Vertex AI", link: "/providers/gcp-vertex" },
         ],
       },

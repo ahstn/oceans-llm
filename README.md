@@ -119,6 +119,9 @@ Use the docs site instead of treating this file as the full admin and maintainer
   - [Model Routing and API Behavior](docs/configuration/model-routing-and-api-behavior.md)
 - provider API compatibility:
   - [Provider API Compatibility](docs/reference/provider-api-compatibility.md)
+- provider setup:
+  - [Google Cloud Run OpenAI-Compatible Models](docs/providers/gcp-cloud-run-openai-compat.md)
+  - [Google Vertex AI](docs/providers/gcp-vertex.md)
 - cross-cutting request flow:
   - [Request Lifecycle and Failure Modes](docs/reference/request-lifecycle-and-failure-modes.md)
 - pricing and spend:

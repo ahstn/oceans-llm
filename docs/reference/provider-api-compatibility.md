@@ -33,6 +33,7 @@ This matrix is about current execution support, not provider marketing claims.
 | Provider type | `/v1/chat/completions` | `/v1/responses` | `/v1/embeddings` |
 | --- | --- | --- | --- |
 | `openai_compat` | Supported. Chat Completions route profiles can rewrite known request-shape quirks. | Supported through the distinct Responses request/provider path. Chat Completions profile transforms do not apply. | Supported. No route compatibility transforms apply in this slice. |
+| `gcp_cloud_run_openai_compat` | Supported through the OpenAI-compatible adapter with Cloud Run ID-token auth. | Supported when the deployed service exposes an OpenAI-compatible Responses endpoint. Chat Completions profile transforms do not apply. | Supported when the deployed service exposes an OpenAI-compatible embeddings endpoint. |
 | `gcp_vertex` with `google/*` upstream models | Supported for the current Vertex chat path when route capabilities allow it. | Not implemented; keep route `responses: false`. | Not implemented in this slice; keep route `embeddings: false`. |
 | `gcp_vertex` with `anthropic/*` upstream models | Supported for the current Vertex chat path when route capabilities allow it. | Not implemented; keep route `responses: false`. | Not applicable. |
 | `aws_bedrock` | Supported through explicit `compatibility.aws_bedrock.api_style`: Runtime Converse, Runtime Anthropic InvokeModel, Runtime OpenAI Chat, Mantle OpenAI Chat, or Mantle Anthropic Messages. Streaming uses the configured style's stream contract. | Supported for `api_style: mantle_openai_responses` with an OpenAI base path such as `/openai/v1`. | Not implemented; keep route `embeddings: false`. |
@@ -99,6 +100,20 @@ Effective capability is the intersection of configured route metadata and provid
 - Capability defaults are permissive, so routes for partial providers should set unsupported API families to `false`.
 
 For example, a Vertex Google chat route should normally set `responses: false` and `embeddings: false` until those provider paths are implemented. Otherwise the route may look viable from config alone and still fail when the provider adapter rejects the unsupported API family.
+
+For Cloud Run OpenAI-compatible routes, set capabilities to the endpoints exposed by the deployed service. The gateway adapter can construct Chat Completions, Responses, embeddings, and streams through the OpenAI-compatible path, but a vLLM deployment might only enable some of those endpoints.
+
+## Cloud Run OpenAI-Compatible Auth
+
+`gcp_cloud_run_openai_compat` is an auth-specific provider boundary around the OpenAI-compatible adapter.
+
+- `auth.mode: adc` mints Cloud Run ID tokens from metadata-server credentials on Google Cloud, or from service-account ADC files with a signed JWT assertion that includes `target_audience`.
+- `auth.mode: service_account` reads a mounted service-account JSON file and exchanges a signed JWT assertion for a Google-issued ID token whose audience is the Cloud Run service.
+- `auth.mode: bearer` sends static bearer material and does not refresh; reserve it for constrained debugging.
+- `audience` defaults to the HTTPS service origin from `base_url`, and can be set explicitly for Cloud Run custom audiences.
+- `auth_header` defaults to `authorization`; set `x_serverless_authorization` when Cloud Run should consume the ID token without replacing application-level `Authorization`.
+
+The request/response body contract remains OpenAI-compatible. vLLM/Gemma fields such as `chat_template_kwargs.enable_thinking` and `skip_special_tokens` belong in route `extra_body`.
 
 For Bedrock, this foundation guarantees config load, validation, seeding, registration, deterministic region, endpoint kind, timeout, display, auth metadata, explicit Runtime and Mantle API style selection, and request/stream normalization for supported route styles. It also supports IAM/SigV4 signing for the `default_chain` and `static_credentials` auth modes. Runtime providers sign with service `bedrock`; Mantle providers sign with service `bedrock-mantle`. Bedrock `upstream_model` values should match the model identity accepted by the configured endpoint and API style.
 

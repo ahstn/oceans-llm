@@ -187,7 +187,10 @@ fn infer_provider_icon_key(
     provider_type: Option<&str>,
     provider_config: Option<&Value>,
 ) -> ProviderIconKey {
-    if provider_type == Some("gcp_vertex") {
+    if matches!(
+        provider_type,
+        Some("gcp_vertex" | "gcp_cloud_run_openai_compat")
+    ) {
         return ProviderIconKey::VertexAI;
     }
 
@@ -215,7 +218,7 @@ fn infer_provider_icon_key(
         ProviderIconKey::OpenRouter
     } else if provider_key.contains("anthropic") {
         ProviderIconKey::Anthropic
-    } else if provider_key.contains("vertex") {
+    } else if provider_key.contains("vertex") || provider_key.contains("cloud-run") {
         ProviderIconKey::VertexAI
     } else if is_aws_provider_candidate(&provider_key) {
         ProviderIconKey::AWS

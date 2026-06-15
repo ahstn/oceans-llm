@@ -362,7 +362,7 @@ fn pricing_target_for_route(provider: &ProviderConnection, route: &ModelRoute) -
     }
 
     match provider.provider_type.as_str() {
-        "openai_compat" => {
+        "openai_compat" | "gcp_cloud_run_openai_compat" => {
             let Some(pricing_provider_id) = provider
                 .config
                 .get("pricing_provider_id")
