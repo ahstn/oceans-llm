@@ -4432,6 +4432,9 @@ mod tests {
             provider.allowed_email_domains,
             vec!["example.com".to_string(), "team.example.com".to_string()]
         );
+
+        store.pool().close().await;
+        drop_postgres_test_database(&test_db).await;
     }
 
     #[tokio::test]

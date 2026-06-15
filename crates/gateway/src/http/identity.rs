@@ -1837,7 +1837,9 @@ fn github_email_domain_allowed_domain(
 }
 
 fn github_email_domain(email: &str) -> Option<&str> {
-    email.rsplit_once('@').map(|(_, domain)| domain)
+    email
+        .rsplit_once('@')
+        .and_then(|(_, domain)| (!domain.is_empty()).then_some(domain))
 }
 
 async fn create_jit_oidc_user(
@@ -3073,6 +3075,7 @@ mod tests {
         assert!(!github_email_domain_allowed("alice@not-test.com", &allowed));
         assert!(!github_email_domain_allowed("alice@eviltest.com", &allowed));
         assert!(!github_email_domain_allowed("alice@sub.test.com", &allowed));
+        assert!(!github_email_domain_allowed("alice@", &allowed));
         assert!(!github_email_domain_allowed("invalid-email", &allowed));
     }
 }
