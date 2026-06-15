@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, time::Duration};
+use std::{collections::BTreeMap, path::PathBuf, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use gateway_core::{
@@ -12,7 +12,7 @@ use serde_json::{Map, Value, json};
 
 use crate::http::{join_base_url, map_reqwest_error};
 use crate::streaming::{normalize_openai_compat_responses_stream, normalize_openai_compat_stream};
-use crate::token::CachedAccessTokenSource;
+use crate::token::{AdcIdTokenSource, CachedAccessTokenSource, ServiceAccountIdTokenSource};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BearerAuthHeader {
@@ -29,6 +29,20 @@ impl BearerAuthHeader {
             }
         }
     }
+}
+
+#[derive(Clone)]
+pub enum CloudRunOpenAiCompatAuth {
+    Adc {
+        audience: String,
+    },
+    ServiceAccount {
+        credentials_path: PathBuf,
+        audience: String,
+    },
+    Bearer {
+        token: String,
+    },
 }
 
 #[derive(Clone)]
@@ -56,6 +70,43 @@ impl OpenAiCompatConfig {
             default_headers: BTreeMap::new(),
             request_timeout_ms: 120_000,
         }
+    }
+
+    pub fn new_cloud_run(
+        provider_key: String,
+        base_url: String,
+        bearer_auth_header: BearerAuthHeader,
+        auth: CloudRunOpenAiCompatAuth,
+    ) -> Result<Self, ProviderError> {
+        let mut config = Self::new(provider_key, base_url);
+        config.provider_type = "gcp_cloud_run_openai_compat".to_string();
+        config.bearer_auth_header = bearer_auth_header;
+        config.apply_cloud_run_auth(auth)?;
+        Ok(config)
+    }
+
+    fn apply_cloud_run_auth(
+        &mut self,
+        auth: CloudRunOpenAiCompatAuth,
+    ) -> Result<(), ProviderError> {
+        match auth {
+            CloudRunOpenAiCompatAuth::Adc { audience } => {
+                let source = AdcIdTokenSource::new(audience)?;
+                self.identity_token_source = Some(CachedAccessTokenSource::new(Arc::new(source)));
+            }
+            CloudRunOpenAiCompatAuth::ServiceAccount {
+                credentials_path,
+                audience,
+            } => {
+                let source = ServiceAccountIdTokenSource::new(credentials_path, audience)?;
+                self.identity_token_source = Some(CachedAccessTokenSource::new(Arc::new(source)));
+            }
+            CloudRunOpenAiCompatAuth::Bearer { token } => {
+                self.bearer_token = Some(token);
+            }
+        }
+
+        Ok(())
     }
 }
 

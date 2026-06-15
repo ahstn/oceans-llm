@@ -6,6 +6,7 @@ mod token;
 mod vertex;
 
 pub use bedrock::{BedrockAuthConfig, BedrockEndpointKind, BedrockProvider, BedrockProviderConfig};
-pub use openai_compat::{BearerAuthHeader, OpenAiCompatConfig, OpenAiCompatProvider};
-pub use token::{AdcIdTokenSource, CachedAccessTokenSource, ServiceAccountIdTokenSource};
+pub use openai_compat::{
+    BearerAuthHeader, CloudRunOpenAiCompatAuth, OpenAiCompatConfig, OpenAiCompatProvider,
+};
 pub use vertex::{VertexAuthConfig, VertexProvider, VertexProviderConfig};

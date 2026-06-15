@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, env, fs, path::Path, sync::Arc};
+use std::{collections::BTreeMap, env, fs, path::Path};
 
 use anyhow::{Context, bail};
 use gateway_core::{
@@ -10,9 +10,8 @@ use gateway_core::{
     SeedOidcProvider, SeedProvider, SeedTeam, SeedUser, SeedUserMembership, parse_gateway_api_key,
 };
 use gateway_providers::{
-    AdcIdTokenSource, BearerAuthHeader, BedrockAuthConfig, BedrockEndpointKind,
-    BedrockProviderConfig, CachedAccessTokenSource, OpenAiCompatConfig,
-    ServiceAccountIdTokenSource, VertexAuthConfig, VertexProviderConfig,
+    BearerAuthHeader, BedrockAuthConfig, BedrockEndpointKind, BedrockProviderConfig,
+    CloudRunOpenAiCompatAuth, OpenAiCompatConfig, VertexAuthConfig, VertexProviderConfig,
 };
 use gateway_service::{
     PayloadPath, ProviderIconKey, RequestLogPayloadCaptureMode, RequestLogPayloadPolicy,
@@ -843,7 +842,7 @@ impl GatewayConfig {
             .collect()
     }
 
-    pub fn openai_compat_provider_configs(&self) -> anyhow::Result<Vec<OpenAiCompatConfig>> {
+    pub fn openai_compatible_provider_configs(&self) -> anyhow::Result<Vec<OpenAiCompatConfig>> {
         let mut configs = Vec::new();
 
         for provider in &self.providers {
@@ -877,35 +876,35 @@ impl GatewayConfig {
                             provider.id
                         )
                     })?;
-                    let mut config =
-                        OpenAiCompatConfig::new(provider.id.clone(), provider.base_url.clone());
-                    config.provider_type = "gcp_cloud_run_openai_compat".to_string();
-                    config.bearer_auth_header = provider.auth_header.into_provider_header();
+                    let auth = match &provider.auth {
+                        GcpCloudRunOpenAiCompatAuthConfig::Adc => {
+                            CloudRunOpenAiCompatAuth::Adc { audience }
+                        }
+                        GcpCloudRunOpenAiCompatAuthConfig::ServiceAccount { credentials_path } => {
+                            CloudRunOpenAiCompatAuth::ServiceAccount {
+                                credentials_path: resolve_path_reference(credentials_path)?.into(),
+                                audience,
+                            }
+                        }
+                        GcpCloudRunOpenAiCompatAuthConfig::Bearer { token } => {
+                            CloudRunOpenAiCompatAuth::Bearer {
+                                token: resolve_secret_reference(token)?,
+                            }
+                        }
+                    };
+
+                    let mut config = OpenAiCompatConfig::new_cloud_run(
+                        provider.id.clone(),
+                        provider.base_url.clone(),
+                        provider.auth_header.into_provider_header(),
+                        auth,
+                    )?;
                     config.default_headers = provider.default_headers.clone();
                     config.request_timeout_ms = provider
                         .timeouts
                         .as_ref()
                         .map(|timeouts| timeouts.total_ms)
                         .unwrap_or(120_000);
-
-                    match &provider.auth {
-                        GcpCloudRunOpenAiCompatAuthConfig::Adc => {
-                            let source = AdcIdTokenSource::new(audience)?;
-                            config.identity_token_source =
-                                Some(CachedAccessTokenSource::new(Arc::new(source)));
-                        }
-                        GcpCloudRunOpenAiCompatAuthConfig::ServiceAccount { credentials_path } => {
-                            let source = ServiceAccountIdTokenSource::new(
-                                resolve_path_reference(credentials_path)?.into(),
-                                audience,
-                            )?;
-                            config.identity_token_source =
-                                Some(CachedAccessTokenSource::new(Arc::new(source)));
-                        }
-                        GcpCloudRunOpenAiCompatAuthConfig::Bearer { token } => {
-                            config.bearer_token = Some(resolve_secret_reference(token)?);
-                        }
-                    }
 
                     configs.push(config);
                 }
@@ -3720,7 +3719,7 @@ models:
         );
 
         let runtime_configs = config
-            .openai_compat_provider_configs()
+            .openai_compatible_provider_configs()
             .expect("runtime provider configs");
         assert_eq!(
             runtime_configs[0].provider_type,
