@@ -28,6 +28,30 @@ Shows API key ownership, access grants, lifecycle state, and management actions.
 
 ![API key detail](../public/images/screenshot-api-keys.png)
 
+## MCP Servers
+
+Shows registered MCP servers and the recommended catalog.
+
+![MCP servers page](../public/images/mcp-servers-page.png)
+
+## MCP Server Tools
+
+Shows the server detail dialog with discovered tools and an expanded JSON schema.
+
+![MCP server tools dialog](../public/images/mcp-server-tools-dialog.png)
+
+## MCP Toolsets
+
+Shows named bundles of discovered MCP tools used for reusable grants.
+
+![MCP toolsets page](../public/images/mcp-toolsets-page.png)
+
+## MCP Access Grants
+
+Shows tool and toolset grants plus effective-access preview.
+
+![MCP access grants page](../public/images/mcp-access-page.png)
+
 ## Request Logs
 
 Shows recent gateway requests with request status, routing, and observability context.

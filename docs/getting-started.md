@@ -18,6 +18,8 @@ This page is the admin, user, and maintainer map for the gateway.
   - [Configuration Reference](configuration/configuration-reference.md)
 - MCP server registration and upstream auth modes:
   - [MCP Servers](configuration/mcp-servers.md)
+- MCP toolsets, grants, and effective access:
+  - [MCP Tool Access](access/mcp-tool-access.md)
 - MCP client connection examples:
   - [MCP Client Setup](setup/mcp-client-setup.md)
 - Identity lifecycle, team rules, and current admin access overlays:
@@ -61,6 +63,7 @@ This page is the admin, user, and maintainer map for the gateway.
 - [Model Routing and API Behavior](configuration/model-routing-and-api-behavior.md)
 - [Pricing Catalog and Accounting](configuration/pricing-catalog-and-accounting.md)
 - [MCP Servers](configuration/mcp-servers.md)
+- [MCP Tool Access](access/mcp-tool-access.md)
 
 ### Providers
 
@@ -114,4 +117,9 @@ This page is the admin, user, and maintainer map for the gateway.
 - MCP client cannot connect:
   - [MCP Client Setup](setup/mcp-client-setup.md)
   - [MCP Servers](configuration/mcp-servers.md)
+  - [MCP Tool Access](access/mcp-tool-access.md)
   - [Identity and Access](access/identity-and-access.md)
+- MCP client connects but sees no tools:
+  - [MCP Tool Access](access/mcp-tool-access.md)
+  - [MCP Servers](configuration/mcp-servers.md)
+  - [MCP Client Setup](setup/mcp-client-setup.md)
