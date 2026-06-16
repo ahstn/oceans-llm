@@ -94,11 +94,12 @@ async function renderAccessTab() {
 describe('AccessTab', () => {
   afterEach(() => {
     cleanup()
+    vi.unstubAllGlobals()
   })
 
   beforeEach(() => {
     vi.stubGlobal('ResizeObserver', ResizeObserverMock)
-    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({
       matches: true,
       media: query,
       onchange: null,
@@ -107,7 +108,7 @@ describe('AccessTab', () => {
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
       dispatchEvent: vi.fn(),
-    }))
+    })))
 
     invalidateMock.mockReset()
     getMcpServerToolsMock.mockReset()

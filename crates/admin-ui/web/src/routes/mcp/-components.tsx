@@ -83,58 +83,6 @@ export type CredentialBindingFormState = {
   expires_at: string
 }
 
-export function ServerDetailHeader({
-  server,
-  refreshStatus,
-  actionPending,
-  onEdit,
-  onDisable,
-  onRefresh,
-}: {
-  server: McpServerView
-  refreshStatus: string | null
-  actionPending: boolean
-  onEdit: (server: McpServerView) => void
-  onDisable: (server: McpServerView) => void
-  onRefresh: (server: McpServerView) => void
-}) {
-  return (
-    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="truncate text-lg font-semibold">{server.display_name}</h2>
-          <ServerStatusBadge status={server.status} />
-          <DiscoveryStatusBadge status={server.last_discovery_status} />
-        </div>
-        <div className="mt-1 truncate font-mono text-xs text-[var(--color-text-muted)]">
-          /mcp/{server.server_key}
-        </div>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => onRefresh(server)}
-          disabled={actionPending || server.status !== 'active'}
-        >
-          {refreshStatus === 'pending' ? 'Refreshing...' : 'Refresh'}
-        </Button>
-        <Button type="button" variant="outline" onClick={() => onEdit(server)}>
-          Edit
-        </Button>
-        <Button
-          type="button"
-          variant="destructive"
-          onClick={() => onDisable(server)}
-          disabled={actionPending || server.status !== 'active'}
-        >
-          Disable
-        </Button>
-      </div>
-    </div>
-  )
-}
-
 export function ServerOverviewPanel({
   server,
   refreshStatus,
@@ -420,18 +368,25 @@ function formatToolSchema(schema: unknown) {
 }
 
 function CopyButton({ value, label }: { value: string; label: string }) {
+  async function handleCopy() {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('Clipboard API unavailable')
+      }
+      await navigator.clipboard.writeText(value)
+      toast.success('Tool ID copied')
+    } catch {
+      toast.error('Clipboard access failed')
+    }
+  }
+
   return (
     <Button
       type="button"
       variant="ghost"
       size="icon-sm"
       aria-label={label}
-      onClick={() => {
-        void navigator.clipboard
-          ?.writeText(value)
-          .then(() => toast.success('Tool ID copied'))
-          .catch(() => toast.error('Clipboard access failed'))
-      }}
+      onClick={() => void handleCopy()}
     >
       <AppIcon icon={Copy01Icon} size={14} stroke={1.5} aria-hidden />
     </Button>
@@ -852,15 +807,6 @@ export function ServerStatusBadge({ status }: { status: string }) {
     <Badge variant={status === 'active' ? 'default' : 'secondary'}>
       {status === 'active' ? 'Active' : 'Disabled'}
     </Badge>
-  )
-}
-
-export function MetricLabel({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0">
-      <div className="tracking-wide uppercase">{label}</div>
-      <div className="truncate font-medium text-[var(--color-text)]">{value}</div>
-    </div>
   )
 }
 

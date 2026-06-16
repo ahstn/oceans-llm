@@ -571,8 +571,8 @@ function ServerTable({
                       onClick={() => onEdit(server)}
                     />
                     <ServerActionButton
-                      label={`Delete ${server.display_name}`}
-                      tooltip="Delete server"
+                      label={`Disable ${server.display_name}`}
+                      tooltip="Disable server"
                       icon={Delete02Icon}
                       variant="destructive"
                       onClick={() => onDisable(server)}
@@ -775,7 +775,7 @@ function ServerDetailDialog({
                       type="button"
                       size="icon-sm"
                       variant="destructive"
-                      aria-label={`Delete ${server.display_name}`}
+                      aria-label={`Disable ${server.display_name}`}
                       onClick={() => onDisable(server)}
                       disabled={actionPending || server.status !== 'active'}
                     >
@@ -998,17 +998,17 @@ function resolveMcpLobeIcon(server: McpIconSubject) {
     .toLowerCase()
 
   const normalizedText = searchableText.replace(/[^a-z0-9]+/g, ' ')
-  const compactText = normalizedText.replaceAll(' ', '')
 
   return MCP_LOBE_ICON_MATCHERS.find(({ aliases }) =>
     aliases.some((alias) => {
-      const normalizedAlias = alias.toLowerCase().replace(/[^a-z0-9]+/g, ' ')
-      const compactAlias = normalizedAlias.replaceAll(' ', '')
-
-      return (
-        normalizedText.includes(normalizedAlias) ||
-        (compactAlias.length > 0 && compactText.includes(compactAlias))
-      )
+      const normalizedAlias = alias.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+      if (!normalizedAlias) {
+        return false
+      }
+      const escapedAlias = normalizedAlias
+        .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        .replace(/\s+/g, '\\s+')
+      return new RegExp(`(^|\\s)${escapedAlias}(\\s|$)`).test(normalizedText)
     }),
   )?.src
 }

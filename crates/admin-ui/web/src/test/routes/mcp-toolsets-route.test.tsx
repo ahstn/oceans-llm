@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -63,6 +64,13 @@ const toolset: McpToolsetView = {
   disabled_at: null,
 }
 
+const secondToolset: McpToolsetView = {
+  ...toolset,
+  id: 'toolset_2',
+  toolset_key: 'docs-bundle',
+  display_name: 'Docs bundle',
+}
+
 async function renderToolsetsTab(seedToolIds: string[] = []) {
   const { ToolsetsTab } = await import('@/routes/mcp/-toolsets-tab')
   render(
@@ -80,11 +88,12 @@ async function renderToolsetsTab(seedToolIds: string[] = []) {
 describe('ToolsetsTab', () => {
   afterEach(() => {
     cleanup()
+    vi.unstubAllGlobals()
   })
 
   beforeEach(() => {
     vi.stubGlobal('ResizeObserver', ResizeObserverMock)
-    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({
       matches: true,
       media: query,
       onchange: null,
@@ -93,7 +102,7 @@ describe('ToolsetsTab', () => {
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
       dispatchEvent: vi.fn(),
-    }))
+    })))
 
     invalidateMock.mockReset()
     getMcpServerToolsMock.mockReset()
@@ -121,6 +130,35 @@ describe('ToolsetsTab', () => {
     await waitFor(() => {
       expect(saveMcpToolsetToolsMock).toHaveBeenCalledWith({
         data: { toolsetId: 'toolset_1', toolIds: ['tool_1'] },
+      })
+    })
+  })
+
+  it('clears staged membership when switching toolsets', async () => {
+    const { ToolsetsTab } = await import('@/routes/mcp/-toolsets-tab')
+
+    function ToolsetsHarness() {
+      const [selectedToolsetId, setSelectedToolsetId] = useState('toolset_1')
+      return (
+        <ToolsetsTab
+          toolsets={[toolset, secondToolset]}
+          servers={[server]}
+          selectedToolsetId={selectedToolsetId}
+          onSelectToolset={setSelectedToolsetId}
+          seedToolIds={['tool_1']}
+          onSeedConsumed={vi.fn()}
+        />
+      )
+    }
+
+    render(<ToolsetsHarness />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Docs bundle/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Replace membership' }))
+
+    await waitFor(() => {
+      expect(saveMcpToolsetToolsMock).toHaveBeenCalledWith({
+        data: { toolsetId: 'toolset_2', toolIds: [] },
       })
     })
   })

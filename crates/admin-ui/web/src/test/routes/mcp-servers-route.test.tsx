@@ -143,12 +143,13 @@ async function renderServersTab(initialSelectedServerId: string | null = null) {
 describe('ServersTab', () => {
   afterEach(() => {
     cleanup()
+    vi.unstubAllGlobals()
   })
 
   beforeEach(() => {
     vi.stubGlobal('ResizeObserver', ResizeObserverMock)
     // Force the inline (wide) master-detail layout so the detail renders in-grid.
-    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({
       matches: true,
       media: query,
       onchange: null,
@@ -157,7 +158,7 @@ describe('ServersTab', () => {
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
       dispatchEvent: vi.fn(),
-    }))
+    })))
 
     getMcpServerToolsMock.mockReset()
     getMcpCredentialBindingsMock.mockReset()
@@ -226,6 +227,7 @@ describe('ServersTab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add to toolset' }))
 
     expect(onAddToToolset).toHaveBeenCalledTimes(1)
+    expect(onAddToToolset).toHaveBeenCalledWith(['tool_2'])
   })
 
   it('contains expanded JSON schema overflow inside the tools panel', async () => {
@@ -339,7 +341,7 @@ describe('ServersTab', () => {
 
   it('disables active servers through the server function', async () => {
     await renderServersTab()
-    fireEvent.click(screen.getByRole('button', { name: 'Delete GitHub' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Disable GitHub' }))
 
     await waitFor(() => {
       expect(disableExternalMcpServerMock).toHaveBeenCalledWith({

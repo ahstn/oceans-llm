@@ -55,6 +55,7 @@ export function useToolCatalog(servers: McpServerView[]): ToolCatalog {
       })
       .catch((cause: unknown) => {
         if (!cancelled) {
+          setTools([])
           setError(cause instanceof Error ? cause.message : 'Failed to load MCP tools')
         }
       })

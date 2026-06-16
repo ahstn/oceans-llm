@@ -1,4 +1,4 @@
-import { useEffect, useState, useTransition, type FormEvent } from 'react'
+import { useEffect, useRef, useState, useTransition, type FormEvent } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
@@ -47,6 +47,7 @@ export function ToolsetsTab({
   const catalog = useToolCatalog(servers)
   const [isPending, startTransition] = useTransition()
   const [createOpen, setCreateOpen] = useState(false)
+  const seedAppliedRef = useRef(false)
   const [createForm, setCreateForm] = useState({
     toolset_key: '',
     display_name: '',
@@ -69,11 +70,20 @@ export function ToolsetsTab({
 
   useEffect(() => {
     if (seedToolIds.length > 0) {
-      setMemberIds((current) => (current.length === 0 ? seedToolIds : current))
+      seedAppliedRef.current = true
+      setMemberIds(seedToolIds)
       onSeedConsumed()
     }
     // Apply the Servers-tab hand-off once on mount; tabs remount on switch.
   }, [])
+
+  useEffect(() => {
+    if (seedAppliedRef.current) {
+      seedAppliedRef.current = false
+      return
+    }
+    setMemberIds([])
+  }, [selectedToolset?.id])
 
   useEffect(() => {
     if (selectedToolset) {
