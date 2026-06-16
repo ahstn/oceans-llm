@@ -22,6 +22,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(gateway)* Add MCP gateway auth and diagnostics by @ahstn in [#162](https://github.com/ahstn/oceans-llm/pull/162)
 - *(gateway)* Implement budget principal taxonomy by @ahstn
 - *(gateway)* Implement budget principal taxonomy by @ahstn in [#163](https://github.com/ahstn/oceans-llm/pull/163)
+- *(gateway)* Add bedrock mantle support by @ahstn
+- *(gateway)* Add bedrock mantle support by @ahstn in [#164](https://github.com/ahstn/oceans-llm/pull/164)
+- *(mcp)* Add grants and token overhead telemetry by @ahstn in [#165](https://github.com/ahstn/oceans-llm/pull/165)
+- *(gateway)* Track additional agent harness user agents by @ahstn
+- *(gateway)* Track additional agent harness user agents by @ahstn in [#174](https://github.com/ahstn/oceans-llm/pull/174)
+- *(gateway)* Add aggregate MCP discovery endpoint by @ahstn
+- *(gateway)* Add MCP credential execution by @ahstn
+- *(gateway)* Add aggregate MCP discovery and execution by @ahstn in [#171](https://github.com/ahstn/oceans-llm/pull/171)
+- *(admin-ui)* Add Claude Code client config snippets by @ahstn
+- *(admin-ui)* Add Claude Code client config snippets by @ahstn in [#176](https://github.com/ahstn/oceans-llm/pull/176)
+- Use central cargo build dirs by @ahstn
+- *(admin-ui)* Redesign request log detail as wide inspect drawer by @ahstn
+- *(gateway)* Re-anchor local demo seed on every run with richer fixtures by @ahstn
+- *(gateway)* Add OpenRouter routing policy controls by @ahstn
+- *(admin-ui)* Surface api key and caller in the request logs table by @ahstn
+- *(admin-ui)* Surface api key and caller in request logs table by @ahstn in [#177](https://github.com/ahstn/oceans-llm/pull/177)
+- *(gateway)* Support Cloud Run OpenAI-compatible providers by @ahstn
+- *(gateway)* Support Cloud Run OpenAI-compatible providers by @ahstn in [#181](https://github.com/ahstn/oceans-llm/pull/181)
+- *(gateway)* Add OpenRouter routing policy controls by @ahstn in [#180](https://github.com/ahstn/oceans-llm/pull/180)
+- *(gateway)* Restrict github oauth email domains by @ahstn
+- *(gateway)* Restrict github oauth email domains by @ahstn in [#183](https://github.com/ahstn/oceans-llm/pull/183)
 
 ### :bug: Bug fixes
 - *(gateway)* Harden oidc review findings by @ahstn
@@ -43,25 +64,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Address budget taxonomy PR feedback by @ahstn
 - Resolve budget review edge cases by @ahstn
 - Bind libsql budget query parameters conditionally by @ahstn
+- *(gateway)* Tighten bedrock responses routing by @ahstn
+- *(gateway)* Validate bedrock route capabilities by @ahstn
+- *(e2e)* Seed service account in gateway config by @ahstn
+- *(gateway)* Harden MCP credential resolution by @ahstn
+- *(gateway)* Address MCP PR review findings by @ahstn
+- *(client-config)* Correct Claude Code gateway settings by @ahstn
+- *(gateway)* Harden OpenRouter policy validation by @ahstn
+- *(gateway)* Keep Cloud Run auth inside provider boundary by @ahstn
+- Fix cloud run provider review findings by @ahstn
+- *(gateway)* Handle oauth review followups by @ahstn
 
 ### Build
 - Post release tasks - v0.8.0 by @ahstn
+- Post release tasks - v0.9.0 by @ahstn
 
 ### Changed
 - Add hosted MCP recommendations by @ahstn
 - Record MCP gateway auth alignment interview by @ahstn
+- *(providers)* Share openai stream normalization by @ahstn
+- Implement MCP grants and token overhead telemetry by @ahstn
+- Address MCP PR review findings by @ahstn
+- Merge remote-tracking branch 'origin/main' into codex/openrouter-routing-policy by @ahstn
+- *(gateway)* Simplify oauth domain policy helpers by @ahstn
 
 ### Documentation
 - Adding more screenshots by @ahstn
 - Adding more screenshots by @ahstn
 - Address FOCUS export review notes by @ahstn
 - Updating screenshots by @ahstn
+- *(bedrock)* Make projects snippet loadable by @ahstn
 
 ### Miscellaneous
 - Upgrade bun deps by @ahstn
+- Refresh shadcn skill lock hash by @ahstn
 
 ### Testing
 - *(gateway)* Preserve env vars in MCP guards by @ahstn
+- *(gateway)* Address oauth domain review feedback by @ahstn
 
 
 
