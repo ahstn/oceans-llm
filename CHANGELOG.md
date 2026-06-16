@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(gateway)* Add OpenRouter routing policy controls by @ahstn in [#180](https://github.com/ahstn/oceans-llm/pull/180)
 - *(gateway)* Restrict github oauth email domains by @ahstn
 - *(gateway)* Restrict github oauth email domains by @ahstn in [#183](https://github.com/ahstn/oceans-llm/pull/183)
+- *(admin-ui)* Polish MCP management UI by @ahstn in [#184](https://github.com/ahstn/oceans-llm/pull/184)
 
 ### :bug: Bug fixes
 - *(gateway)* Harden oidc review findings by @ahstn
@@ -74,10 +75,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(gateway)* Keep Cloud Run auth inside provider boundary by @ahstn
 - Fix cloud run provider review findings by @ahstn
 - *(gateway)* Handle oauth review followups by @ahstn
+- *(admin-ui)* Address MCP review findings by @ahstn
 
 ### Build
 - Post release tasks - v0.8.0 by @ahstn
 - Post release tasks - v0.9.0 by @ahstn
+- Post release tasks - v0.10.0 by @ahstn
 
 ### Changed
 - Add hosted MCP recommendations by @ahstn
@@ -87,6 +90,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Address MCP PR review findings by @ahstn
 - Merge remote-tracking branch 'origin/main' into codex/openrouter-routing-policy by @ahstn
 - *(gateway)* Simplify oauth domain policy helpers by @ahstn
+- Polish admin MCP workspace UI by @ahstn
+- Refine admin MCP server cards by @ahstn
+- Align admin identity and MCP tables by @ahstn
+- Polish MCP tools dialog by @ahstn
+- Document MCP admin workflows by @ahstn
 
 ### Documentation
 - Adding more screenshots by @ahstn
