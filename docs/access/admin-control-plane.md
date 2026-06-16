@@ -142,7 +142,8 @@ Admins can:
 - manage MCP servers from `/admin/mcp/servers`
 - inspect MCP discovery status as the current server health signal
 - refresh MCP discovery and see bounded failure feedback
-- inspect discovered MCP tool schema hashes, schema versions, active state, and discovery timestamps
+- inspect discovered MCP tools, active state, stable tool ids, schema versions, and JSON schemas
+- manage MCP toolsets, grants, upstream credential bindings, and effective-access previews from the MCP workspace
 
 Request-log payload policy is read-only in the admin UI. Admins configure it through `gateway.yaml`; see [observability-and-request-logs.md](../operations/observability-and-request-logs.md).
 
@@ -152,7 +153,7 @@ Current limits:
 - admin mutation audit logs are still tracked separately in [issue #99](https://github.com/ahstn/oceans-llm/issues/99)
 - request-log detail missing rows return `404 not_found`
 - request-log filtering ergonomics still have follow-up work
-- MCP toolsets, grants, upstream credential bindings, and effective-access previews are managed under the MCP admin API; OAuth browser setup and token refresh remain future work
+- OAuth browser setup and token refresh for MCP upstream credentials remain future work
 
 ## Service Callers Today
 

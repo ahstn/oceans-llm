@@ -1,12 +1,15 @@
 # MCP Registry and Discovery
 
-`See also`: [MCP Servers](../../configuration/mcp-servers.md), [MCP Tool Access](../../access/mcp-tool-access.md), [MCP Client Setup](../../setup/mcp-client-setup.md), [Observability and Request Logs](../observability-and-request-logs.md), [MCP Invocations](mcp-invocations.md), [Request Logs](request-logs.md), [Data Relationships](../../reference/data-relationships.md), [Admin API Contract Workflow](../../reference/admin-api-contract-workflow.md), [ADR: External MCP Registry and Discovery Boundary](../../adr/2026-05-26-external-mcp-registry-and-discovery.md), [ADR: MCP Tool Grants and Token Overhead](../../adr/2026-06-09-mcp-tool-grants-and-token-overhead.md)
+`See also`: [MCP Servers](../../configuration/mcp-servers.md), [MCP Tool Access](../../access/mcp-tool-access.md), [MCP Client Setup](../../setup/mcp-client-setup.md), [Observability and Request Logs](../observability-and-request-logs.md), [MCP Invocations](mcp-invocations.md), [Request Logs](request-logs.md), [Data Relationships](../../reference/data-relationships.md), [Admin API Contract Workflow](../../reference/admin-api-contract-workflow.md), [ADR: External MCP Registry and Discovery Boundary](../../adr/2026-05-26-external-mcp-registry-and-discovery.md), [ADR: MCP Tool Grants and Token Overhead](../../adr/2026-06-09-mcp-tool-grants-and-token-overhead.md), [ADR: Aggregate MCP Gateway Endpoint](../../adr/2026-06-09-aggregate-mcp-gateway.md), [MCP Upstream Credential Bindings and Aggregate Execution](../../adr/2026-06-09-mcp-upstream-credential-bindings-and-execution.md)
 
 The external MCP registry is the control-plane record of MCP servers that Oceans LLM can discover and expose through the MCP gateway. It stores user-added server records in the database, keeps recommended server suggestions in a checked-in static catalog, discovers tool metadata through Streamable HTTP, and powers the admin diagnostics page at `/admin/mcp/servers`.
 
 This page is maintainer and admin documentation for registry diagnostics. User-facing server setup lives in [MCP Servers](../../configuration/mcp-servers.md), and client setup lives in [MCP Client Setup](../../setup/mcp-client-setup.md).
 
-Tool grants and toolsets are now part of the MCP access layer. OAuth token exchange runtime and stdio MCP servers remain out of scope.
+Tool grants and toolsets are now part of the MCP access layer. Aggregate
+`call_tool` execution and principal-bound upstream credential bindings are part
+of the current gateway path. OAuth browser setup, token refresh UX, stdio MCP
+servers, and Code Mode remain out of scope.
 
 ## Admin API
 
@@ -42,17 +45,57 @@ The admin UI route is:
 /admin/mcp/servers
 ```
 
-The page shows:
+The MCP workspace has three top-level tabs:
+
+- **Servers**: registered server rows, recommended catalog, server detail dialog,
+  discovery refresh, edit/disable actions, and credential bindings
+- **Toolsets**: named bundles of discovered tools used for reusable access grants
+- **Access**: tool or toolset grants plus effective-access preview
+
+The Servers tab shows:
 
 - registered servers, active/disabled state, discovery status, tool count, and bounded last error
-- selected server diagnostics, URL, auth mode, timeout, and discovery timestamps
-- discovered tools with active state, schema hash, schema version, and first/last discovered timestamps
+- selected server diagnostics in an Overview dialog tab, including URL, auth mode,
+  timeout, and discovery timestamps
+- a Tools dialog tab where each discovered tool is an expandable row with stable
+  tool id, upstream name, schema version, and persisted JSON schema
 - recommended catalog import
 - custom server creation
 - edit, disable, and discovery refresh actions
 - redacted upstream credential bindings for user, team, and service-account execution
 
 Keep this page separate from `/admin/observability/mcp-invocations`. The registry page describes configured upstream servers and discovery status; the invocation page describes request-linked tool calls.
+
+## Implementation Trail
+
+The MCP surface intentionally landed in slices:
+
+- registry/discovery foundation: [issues #109](https://github.com/ahstn/oceans-llm/issues/109),
+  [#110](https://github.com/ahstn/oceans-llm/issues/110), and
+  [#111](https://github.com/ahstn/oceans-llm/issues/111); merged in
+  [PR #161](https://github.com/ahstn/oceans-llm/pull/161)
+- direct gateway auth, proxying, and admin diagnostics:
+  [issue #112](https://github.com/ahstn/oceans-llm/issues/112) and
+  [issue #116](https://github.com/ahstn/oceans-llm/issues/116); merged in
+  [PR #162](https://github.com/ahstn/oceans-llm/pull/162)
+- grants, toolsets, token-overhead telemetry, and policy filtering:
+  [issue #114](https://github.com/ahstn/oceans-llm/issues/114) and
+  [issue #122](https://github.com/ahstn/oceans-llm/issues/122); merged in
+  [PR #165](https://github.com/ahstn/oceans-llm/pull/165)
+- aggregate search/describe/call execution and upstream credential bindings:
+  [issues #166](https://github.com/ahstn/oceans-llm/issues/166),
+  [#167](https://github.com/ahstn/oceans-llm/issues/167),
+  [#168](https://github.com/ahstn/oceans-llm/issues/168),
+  [#169](https://github.com/ahstn/oceans-llm/issues/169), and
+  [#170](https://github.com/ahstn/oceans-llm/issues/170); merged in
+  [PR #171](https://github.com/ahstn/oceans-llm/pull/171)
+- future Code Mode: [issue #172](https://github.com/ahstn/oceans-llm/issues/172)
+  reserves `/code-mode-mcp` as a separate planned surface; do not document it as
+  part of current `/mcp` behavior until it ships
+
+When updating MCP docs, keep the public workflow pages focused on admin and
+client behavior. Keep protocol boundaries, storage contracts, and historical
+rationale here or in ADRs.
 
 ## Recommended Catalog
 

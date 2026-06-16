@@ -29,8 +29,7 @@ export const adminNavSections: AdminNavSection[] = [
     items: [
       { label: 'API Keys', to: '/api-keys', icon: SearchIcon },
       { label: 'Models', to: '/models', icon: HomeIcon },
-      { label: 'MCP Servers', to: '/mcp/servers', icon: McpServerIcon },
-      { label: 'MCP Access', to: '/mcp/access', icon: McpServerIcon },
+      { label: 'MCP', to: '/mcp', icon: McpServerIcon },
     ],
   },
   {
@@ -102,5 +101,12 @@ export function getActiveNavItem(currentPath: string) {
 }
 
 export function matchesAdminPath(currentPath: string, to: string) {
-  return currentPath === to
+  const current = stripTrailingSlash(currentPath)
+  const target = stripTrailingSlash(to)
+  // Exact match, or a deeper subpath (e.g. /mcp stays active on /mcp/servers).
+  return current === target || current.startsWith(`${target}/`)
+}
+
+function stripTrailingSlash(path: string) {
+  return path.length > 1 ? path.replace(/\/+$/, '') : path
 }

@@ -14,6 +14,23 @@ The aggregate endpoint exposes a small discovery surface:
 - `describe_tool`: fetch the persisted schema and metadata for one granted tool address
 - `call_tool`: call one granted tool by canonical `mcp://{server_key}/tools/{tool_name}` address
 
+This is intentional. Oceans does not expose every granted upstream tool directly
+from aggregate `tools/list`; that would make large registries noisy and expensive
+for agents. Clients search first, describe the specific tool they intend to use,
+and then call the canonical address.
+
+Example aggregate call target:
+
+```json
+{
+  "address": "mcp://context7/tools/query-docs",
+  "arguments": {
+    "libraryId": "/tanstack/router",
+    "query": "How do route loaders work?"
+  }
+}
+```
+
 Direct per-server proxying remains available when a client should talk to one upstream server:
 
 ```text
@@ -21,6 +38,19 @@ https://<gateway-origin>/mcp/{server_key}
 ```
 
 Use an Oceans API key for inbound auth. The gateway does not accept provider tokens, upstream MCP tokens, or query-string credentials at this endpoint.
+
+## Before Connecting A Client
+
+Ask an admin to confirm:
+
+- the upstream MCP server is registered and discovery is successful
+- the required tools are active in the server's **Tools** dialog
+- a toolset or direct tool grant exists for the API key owner
+- any required upstream credential binding exists for the user, team, or service
+  account that owns the API key
+
+If any of those steps are missing, the client may connect successfully but see no
+matching tools, or receive `credential_required` when it tries to execute one.
 
 ## Inbound Auth
 
@@ -101,6 +131,23 @@ MCP-Protocol-Version: 2025-03-26
 The aggregate endpoint issues an `MCP-Session-Id` during `initialize`. Clients must send that header on later aggregate requests. The session is bound to the authenticated Oceans API key, so a session id copied to another principal is treated as not found.
 
 For direct proxying, send requests to `/mcp/{server_key}`. The gateway preserves MCP response status, content type, and upstream MCP session headers. It strips inbound `Authorization` and `x-oceans-api-key` before proxying upstream.
+
+## Aggregate Versus Direct Proxy
+
+Use aggregate `/mcp` when:
+
+- an agent should search across multiple registered MCP servers
+- admins want a small, stable tool surface for clients
+- the client can call `search_tools`, `describe_tool`, and `call_tool`
+
+Use direct `/mcp/{server_key}` when:
+
+- the client must speak to one upstream server's normal MCP tool surface
+- you are validating a single server's `tools/list` or `tools/call` behavior
+- a client does not work well with the aggregate search/describe/call pattern
+
+Both routes enforce the same Oceans API-key ownership model, grant checks, server
+disablement, active-tool filtering, and upstream credential separation.
 
 ## Upstream Credentials
 
