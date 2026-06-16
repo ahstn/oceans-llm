@@ -1,11 +1,16 @@
-import type { FormEvent } from 'react'
-import { Copy01Icon } from '@hugeicons/core-free-icons'
+import { useState, type FormEvent } from 'react'
+import { ArrowDown01Icon, ArrowRight01Icon, Copy01Icon } from '@hugeicons/core-free-icons'
 import { toast } from 'sonner'
 
 import { AppIcon } from '@/components/icons/app-icon'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
 import {
   Dialog,
   DialogContent,
@@ -36,6 +41,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
+import { cn } from '@/lib/utils'
 import type {
   CreateMcpServerInput,
   McpCredentialBindingView,
@@ -207,9 +213,22 @@ export function ServerToolsPanel({
   onAddToToolset: () => void
 }) {
   const selected = new Set(selectedToolIds)
+  const [expandedToolIds, setExpandedToolIds] = useState<Set<string>>(() => new Set())
+
+  function toggleExpanded(toolId: string) {
+    setExpandedToolIds((current) => {
+      const next = new Set(current)
+      if (next.has(toolId)) {
+        next.delete(toolId)
+      } else {
+        next.add(toolId)
+      }
+      return next
+    })
+  }
 
   return (
-    <div className="min-w-0 rounded-md border" data-testid="mcp-server-tools">
+    <div className="min-w-0 max-w-full overflow-hidden rounded-md border" data-testid="mcp-server-tools">
       <div className="flex items-center justify-between gap-2 border-b p-4">
         <div>
           <h3 className="font-medium">Discovered tools</h3>
@@ -255,65 +274,149 @@ export function ServerToolsPanel({
           </EmptyHeader>
         </Empty>
       ) : (
-        <div className="overflow-x-auto">
-          <Table className="min-w-[72rem]">
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-8" />
-                <TableHead>Tool</TableHead>
-                <TableHead>Tool ID</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Schema</TableHead>
-                <TableHead>Version</TableHead>
-                <TableHead>First seen</TableHead>
-                <TableHead>Last seen</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {tools.map((tool) => (
-                <TableRow key={tool.id} data-state={selected.has(tool.id) ? 'selected' : undefined}>
-                  <TableCell>
-                    <input
-                      type="checkbox"
-                      aria-label={`Select ${tool.display_name}`}
-                      className="size-4 cursor-pointer accent-[var(--color-primary)]"
-                      checked={selected.has(tool.id)}
-                      onChange={() => onToggleTool(tool.id)}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex min-w-0 flex-col gap-1">
-                      <span className="truncate font-medium">{tool.display_name}</span>
-                      <span className="truncate font-mono text-xs text-[var(--color-text-muted)]">
-                        {tool.upstream_name}
-                      </span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1">
-                      <span className="max-w-[10rem] truncate font-mono text-xs text-[var(--color-text-muted)]">
-                        {tool.id}
-                      </span>
-                      <CopyButton value={tool.id} label={`Copy ${tool.display_name} ID`} />
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={tool.is_active ? 'default' : 'secondary'}>
-                      {tool.is_active ? 'Active' : 'Inactive'}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">{tool.schema_hash}</TableCell>
-                  <TableCell>{tool.schema_version}</TableCell>
-                  <TableCell>{tool.first_discovered_at}</TableCell>
-                  <TableCell>{tool.last_discovered_at}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+        <div className="flex flex-col">
+          {tools.map((tool) => (
+            <ToolDisclosureRow
+              key={tool.id}
+              tool={tool}
+              selected={selected.has(tool.id)}
+              expanded={expandedToolIds.has(tool.id)}
+              onToggleExpanded={() => toggleExpanded(tool.id)}
+              onToggleTool={() => {
+                if (tool.is_active) {
+                  onToggleTool(tool.id)
+                }
+              }}
+            />
+          ))}
         </div>
       )}
     </div>
   )
+}
+
+function ToolDisclosureRow({
+  tool,
+  selected,
+  expanded,
+  onToggleExpanded,
+  onToggleTool,
+}: {
+  tool: McpToolView
+  selected: boolean
+  expanded: boolean
+  onToggleExpanded: () => void
+  onToggleTool: () => void
+}) {
+  const schema = formatToolSchema(tool.input_schema)
+  const description = tool.description?.trim()
+
+  return (
+    <Collapsible className="min-w-0 max-w-full" open={expanded} onOpenChange={onToggleExpanded}>
+      <div
+        className={cn(
+          'min-w-0 max-w-full overflow-hidden border-t transition-colors hover:bg-[var(--color-muted)]/40',
+          selected && 'bg-[var(--color-muted)]',
+        )}
+      >
+        <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-3 px-4 py-3">
+          <input
+            type="checkbox"
+            aria-label={`Select ${tool.display_name}`}
+            className="size-4 cursor-pointer accent-[var(--color-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+            checked={selected}
+            disabled={!tool.is_active}
+            onChange={onToggleTool}
+          />
+          <div className="min-w-0">
+            <div className="truncate font-medium">{tool.display_name}</div>
+            {description ? (
+              <div className="truncate text-sm text-[var(--color-text-muted)]">{description}</div>
+            ) : null}
+          </div>
+          <Badge variant={tool.is_active ? 'default' : 'secondary'}>
+            {tool.is_active ? 'Active' : 'Inactive'}
+          </Badge>
+          <CollapsibleTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label={`${expanded ? 'Hide' : 'Show'} ${tool.display_name} schema`}
+            >
+              <AppIcon
+                icon={expanded ? ArrowDown01Icon : ArrowRight01Icon}
+                size={14}
+                stroke={1.5}
+                aria-hidden
+              />
+            </Button>
+          </CollapsibleTrigger>
+        </div>
+        <CollapsibleContent className="min-w-0 max-w-full overflow-hidden">
+          <div className="min-w-0 max-w-full overflow-hidden border-t bg-[var(--color-background)] px-4 py-4">
+            <dl className="grid gap-3 text-sm md:grid-cols-3">
+              <div className="min-w-0">
+                <dt className="text-xs font-medium text-[var(--color-text-muted)]">Tool ID</dt>
+                <dd className="mt-1 flex min-w-0 items-center gap-1">
+                  <span className="truncate font-mono text-xs">{tool.id}</span>
+                  <CopyButton value={tool.id} label={`Copy ${tool.display_name} ID`} />
+                </dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-xs font-medium text-[var(--color-text-muted)]">
+                  Upstream name
+                </dt>
+                <dd className="mt-1 truncate font-mono text-xs">{tool.upstream_name}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium text-[var(--color-text-muted)]">Version</dt>
+                <dd className="mt-1">{tool.schema_version}</dd>
+              </div>
+            </dl>
+            <div className="mt-4 min-w-0 max-w-full">
+              <div className="mb-2 text-xs font-medium text-[var(--color-text-muted)]">
+                JSON schema
+              </div>
+              {schema ? (
+                <div
+                  className="min-w-0 max-w-full overflow-hidden rounded-md border bg-[var(--color-muted)]"
+                  data-testid="mcp-tool-schema-scroll"
+                >
+                  <pre
+                    className="max-h-72 max-w-full overflow-x-auto overflow-y-auto p-3 text-xs leading-relaxed"
+                    data-testid="mcp-tool-schema-code"
+                  >
+                    <code className="block min-w-max">{schema}</code>
+                  </pre>
+                </div>
+              ) : (
+                <div className="rounded-md border bg-[var(--color-muted)] p-3 text-sm text-[var(--color-text-muted)]">
+                  No JSON schema available.
+                </div>
+              )}
+            </div>
+          </div>
+        </CollapsibleContent>
+      </div>
+    </Collapsible>
+  )
+}
+
+function formatToolSchema(schema: unknown) {
+  if (schema == null) {
+    return null
+  }
+
+  if (typeof schema === 'string') {
+    return schema
+  }
+
+  try {
+    return JSON.stringify(schema, null, 2)
+  } catch {
+    return String(schema)
+  }
 }
 
 function CopyButton({ value, label }: { value: string; label: string }) {

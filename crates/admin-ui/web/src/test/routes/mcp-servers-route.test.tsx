@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { McpServerView, McpToolView, RecommendedMcpServerView } from '@/types/api'
@@ -82,6 +82,30 @@ const tool: McpToolView = {
   deactivated_at: '2026-05-27T10:00:00Z',
 }
 
+const activeTool: McpToolView = {
+  ...tool,
+  id: 'tool_2',
+  upstream_name: 'query_docs',
+  display_name: 'query_docs',
+  description:
+    'Retrieves and queries up-to-date documentation and code examples from Context7 for any programming library.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      query: {
+        type: 'string',
+        description:
+          'The question or task you need help with. Be specific and include relevant details.',
+      },
+    },
+    required: ['query'],
+  },
+  schema_hash: 'sha256:def456',
+  schema_version: 3,
+  is_active: true,
+  deactivated_at: null,
+}
+
 const recommended: RecommendedMcpServerView = {
   catalog_key: 'linear',
   display_name: 'Linear',
@@ -96,6 +120,8 @@ const recommended: RecommendedMcpServerView = {
 
 async function renderServersTab(initialSelectedServerId: string | null = null) {
   const { ServersTab } = await import('@/routes/mcp/-servers-tab')
+  const onAddToToolset = vi.fn()
+
   function ServersTabHarness() {
     const [selectedServerId, setSelectedServerId] = useState<string | null>(initialSelectedServerId)
     return (
@@ -104,12 +130,14 @@ async function renderServersTab(initialSelectedServerId: string | null = null) {
         recommended={[recommended]}
         selectedServerId={selectedServerId}
         onSelectServer={setSelectedServerId}
-        onAddToToolset={vi.fn()}
+        onAddToToolset={onAddToToolset}
       />
     )
   }
 
   render(<ServersTabHarness />)
+
+  return { onAddToToolset }
 }
 
 describe('ServersTab', () => {
@@ -165,13 +193,73 @@ describe('ServersTab', () => {
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Tools' })[0])
 
-    await waitFor(() => expect(screen.getByText('sha256:abc123')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Create issue')).toBeInTheDocument())
     expect(screen.getByText('Inactive')).toBeInTheDocument()
-    const toolRow = screen
-      .getAllByRole('row')
-      .find((row) => within(row).queryByText('sha256:abc123') !== null)
-    expect(toolRow).toBeDefined()
-    expect(within(toolRow as HTMLTableRowElement).getByText('2')).toBeInTheDocument()
+    expect(screen.queryByText('sha256:abc123')).not.toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Select create_issue' })).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show create_issue schema' }))
+
+    expect(screen.queryByText('sha256:abc123')).not.toBeInTheDocument()
+    expect(screen.getByText('Upstream name')).toBeInTheDocument()
+    expect(screen.getByText('2')).toBeInTheDocument()
+    expect(screen.getByText('{}')).toBeInTheDocument()
+  })
+
+  it('keeps selected tool actions visible without hiding the tool rows', async () => {
+    getMcpServerToolsMock.mockResolvedValueOnce({ data: { items: [activeTool, tool] } })
+    const { onAddToToolset } = await renderServersTab()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Tools' })[0])
+
+    await waitFor(() => expect(screen.getByText('query_docs')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select query_docs' }))
+
+    expect(screen.getByText('1 tool selected')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Clear' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add to toolset' })).toBeInTheDocument()
+    expect(screen.getByText('query_docs')).toBeInTheDocument()
+    expect(screen.getByText('Create issue')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add to toolset' }))
+
+    expect(onAddToToolset).toHaveBeenCalledTimes(1)
+  })
+
+  it('contains expanded JSON schema overflow inside the tools panel', async () => {
+    getMcpServerToolsMock.mockResolvedValueOnce({ data: { items: [activeTool] } })
+    await renderServersTab()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open GitHub' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Tools' })[0])
+
+    await waitFor(() => expect(screen.getByText('query_docs')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'Show query_docs schema' }))
+
+    expect(screen.getByTestId('mcp-server-tools')).toHaveClass(
+      'min-w-0',
+      'max-w-full',
+      'overflow-hidden',
+    )
+    expect(screen.getByTestId('mcp-tool-schema-scroll')).toHaveClass(
+      'min-w-0',
+      'max-w-full',
+      'overflow-hidden',
+    )
+    expect(screen.getByTestId('mcp-tool-schema-code')).toHaveClass(
+      'max-w-full',
+      'overflow-x-auto',
+      'overflow-y-auto',
+    )
+    expect(screen.getByText('Tool ID')).toBeInTheDocument()
+    expect(screen.getByText('Upstream name')).toBeInTheDocument()
+    expect(screen.getByText('Version')).toBeInTheDocument()
+    expect(screen.getByText('JSON schema')).toBeInTheDocument()
+    expect(screen.queryByText('sha256:def456')).not.toBeInTheDocument()
+    expect(screen.queryByText('First seen')).not.toBeInTheDocument()
+    expect(screen.queryByText('Last seen')).not.toBeInTheDocument()
   })
 
   it('refreshes discovery and renders refresh feedback', async () => {

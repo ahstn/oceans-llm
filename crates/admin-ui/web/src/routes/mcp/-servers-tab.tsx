@@ -703,7 +703,7 @@ function ServerDetailDialog({
 
         {server ? (
           <SidebarProvider
-            className="min-h-0 items-start"
+            className="min-h-0 min-w-0 max-w-full items-start overflow-hidden"
             style={{ '--sidebar-width': '14rem' } as CSSProperties}
           >
             <Sidebar
@@ -733,7 +733,7 @@ function ServerDetailDialog({
               </SidebarContent>
             </Sidebar>
 
-            <main className="flex max-h-[720px] min-h-[560px] flex-1 flex-col overflow-hidden">
+            <main className="flex max-h-[720px] min-h-[560px] min-w-0 flex-1 flex-col overflow-hidden">
               <header className="flex shrink-0 flex-col gap-4 border-b border-[color:var(--color-border)] px-6 py-5">
                 <div className="flex items-start gap-3">
                   <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
@@ -805,7 +805,7 @@ function ServerDetailDialog({
                 </div>
               </header>
 
-              <div className="min-h-0 flex-1 overflow-y-auto p-6" data-testid="mcp-server-detail">
+              <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-6" data-testid="mcp-server-detail">
                 {section === 'overview' ? (
                   <ServerOverviewPanel
                     server={server}
