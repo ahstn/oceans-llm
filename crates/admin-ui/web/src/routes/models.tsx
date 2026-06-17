@@ -478,7 +478,7 @@ function ClientConfigDialog({
                       size="sm"
                       onClick={() => onCopy(block.content)}
                     >
-                      Copy JSON
+                      {copyConfigLabel(block.filename)}
                     </Button>
                   </div>
 
@@ -501,6 +501,16 @@ function ClientConfigDialog({
       </DialogContent>
     </Dialog>
   )
+}
+
+function copyConfigLabel(filename: string) {
+  if (filename.endsWith('.json')) {
+    return 'Copy JSON'
+  }
+  if (filename.endsWith('.toml')) {
+    return 'Copy TOML'
+  }
+  return 'Copy config'
 }
 
 function MetricDetail({

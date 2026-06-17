@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
@@ -28,6 +30,8 @@ pub enum AnthropicThinkingPolicy {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct ClientModelCapabilities {
+    #[serde(default)]
+    pub responses: bool,
     pub tool_calling: bool,
     pub attachments: bool,
     pub vision: bool,
@@ -124,6 +128,9 @@ pub struct PiConfigTemplate;
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ClaudeCodeConfigTemplate;
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct CodexConfigTemplate;
 
 impl ClientConfigTemplate for OpenCodeConfigTemplate {
     fn render(&self, input: &ClientConfigInput) -> ClientConfig {
@@ -278,13 +285,51 @@ impl ClientConfigTemplate for ClaudeCodeConfigTemplate {
     }
 }
 
+impl ClientConfigTemplate for CodexConfigTemplate {
+    fn render(&self, input: &ClientConfigInput) -> ClientConfig {
+        let mut model_providers = BTreeMap::new();
+        model_providers.insert(
+            input.provider_id.clone(),
+            CodexModelProviderConfig {
+                name: input.provider_name.clone(),
+                base_url: input.gateway_base_url.clone(),
+                env_key: input.api_key_env_var.clone(),
+                wire_api: "responses",
+            },
+        );
+
+        let config = CodexConfigToml {
+            model: input.model_id.clone(),
+            model_provider: input.provider_id.clone(),
+            model_providers,
+        };
+
+        ClientConfig {
+            key: "codex".to_string(),
+            label: "Codex".to_string(),
+            blocks: vec![ClientConfigCodeBlock {
+                label: "config.toml".to_string(),
+                filename: "config.toml".to_string(),
+                content: to_pretty_toml(&config),
+            }],
+            notes: codex_notes(input),
+        }
+    }
+}
+
 #[must_use]
 pub fn render_default_configs(input: &ClientConfigInput) -> Vec<ClientConfig> {
-    vec![
+    let mut configs = vec![
         OpenCodeConfigTemplate.render(input),
         PiConfigTemplate.render(input),
         ClaudeCodeConfigTemplate.render(input),
-    ]
+    ];
+
+    if input.capabilities.responses {
+        configs.push(CodexConfigTemplate.render(input));
+    }
+
+    configs
 }
 
 #[must_use]
@@ -379,6 +424,34 @@ fn claude_code_notes(input: &ClientConfigInput) -> Vec<String> {
         input.gateway_base_url
     ));
     notes
+}
+
+fn codex_notes(input: &ClientConfigInput) -> Vec<String> {
+    let mut notes = thinking_notes(input);
+    notes.push(
+        "Add this provider configuration to user-level ~/.codex/config.toml; Codex ignores provider and auth keys in project-local .codex/config.toml files."
+            .to_string(),
+    );
+    notes.push(format!(
+        "Set {} to a gateway API key before using this Codex config.",
+        input.api_key_env_var
+    ));
+    notes
+}
+
+#[derive(Debug, Serialize)]
+struct CodexConfigToml {
+    model: String,
+    model_provider: String,
+    model_providers: BTreeMap<String, CodexModelProviderConfig>,
+}
+
+#[derive(Debug, Serialize)]
+struct CodexModelProviderConfig {
+    name: String,
+    base_url: String,
+    env_key: String,
+    wire_api: &'static str,
 }
 
 fn claude_code_gateway_model_config(input: &ClientConfigInput) -> Value {
@@ -496,13 +569,17 @@ fn to_pretty_json(value: &Value) -> String {
     serde_json::to_string_pretty(value).expect("client config JSON should serialize")
 }
 
+fn to_pretty_toml<T: Serialize>(value: &T) -> String {
+    toml::to_string_pretty(value).expect("client config TOML should serialize")
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::Value;
 
     use super::{
         AnthropicThinkingPolicy, ClaudeCodeConfigTemplate, ClientConfigInput, ClientConfigTemplate,
-        ClientModelCapabilities, OpenCodeConfigTemplate, PiConfigTemplate,
+        ClientModelCapabilities, CodexConfigTemplate, OpenCodeConfigTemplate, PiConfigTemplate,
         infer_anthropic_thinking_policy,
     };
 
@@ -517,6 +594,7 @@ mod tests {
             context_window_tokens: Some(200_000),
             output_window_tokens: Some(64_000),
             capabilities: ClientModelCapabilities {
+                responses: true,
                 tool_calling: true,
                 attachments: true,
                 vision: true,
@@ -757,5 +835,75 @@ mod tests {
                 .iter()
                 .any(|note| note.contains("/v1/messages"))
         );
+    }
+
+    #[test]
+    fn codex_shape_includes_custom_responses_provider() {
+        let rendered =
+            CodexConfigTemplate.render(&input(Some(AnthropicThinkingPolicy::SafeEffort)));
+
+        assert_eq!(rendered.key, "codex");
+        assert_eq!(rendered.label, "Codex");
+        assert_eq!(rendered.blocks.len(), 1);
+        assert_eq!(rendered.blocks[0].filename, "config.toml");
+        assert!(
+            rendered.blocks[0]
+                .content
+                .contains("model = \"claude-sonnet\"")
+        );
+        assert!(
+            rendered.blocks[0]
+                .content
+                .contains("model_provider = \"oceans-llm\"")
+        );
+        assert!(
+            rendered.blocks[0]
+                .content
+                .contains("[model_providers.oceans-llm]")
+        );
+        assert!(
+            rendered.blocks[0]
+                .content
+                .contains("base_url = \"http://127.0.0.1:3000/v1\"")
+        );
+        assert!(
+            rendered.blocks[0]
+                .content
+                .contains("env_key = \"OCEANS_LLM_API_KEY\"")
+        );
+        assert!(
+            rendered.blocks[0]
+                .content
+                .contains("wire_api = \"responses\"")
+        );
+        assert!(
+            rendered
+                .notes
+                .iter()
+                .any(|note| note.contains("~/.codex/config.toml"))
+        );
+    }
+
+    #[test]
+    fn default_configs_include_codex_only_for_responses_capable_models() {
+        let responses_input = input(Some(AnthropicThinkingPolicy::SafeEffort));
+        let response_keys = super::render_default_configs(&responses_input)
+            .into_iter()
+            .map(|config| config.key)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            response_keys,
+            vec!["opencode", "pi", "claude-code", "codex"]
+        );
+
+        let mut chat_only_input = responses_input;
+        chat_only_input.capabilities.responses = false;
+        let chat_only_keys = super::render_default_configs(&chat_only_input)
+            .into_iter()
+            .map(|config| config.key)
+            .collect::<Vec<_>>();
+
+        assert_eq!(chat_only_keys, vec!["opencode", "pi", "claude-code"]);
     }
 }
