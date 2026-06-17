@@ -118,6 +118,19 @@ const modelPage: ModelPageView = {
           ],
           notes: [],
         },
+        {
+          key: 'codex',
+          label: 'Codex',
+          blocks: [
+            {
+              label: 'config.toml',
+              filename: 'config.toml',
+              content:
+                'model = "claude-sonnet"\nmodel_provider = "oceans-llm"\n\n[model_providers.oceans-llm]\nname = "oceans-llm"\nbase_url = "http://127.0.0.1:3000/v1"\nenv_key = "OCEANS_LLM_API_KEY"\nwire_api = "responses"\n',
+            },
+          ],
+          notes: ['Add this provider configuration to user-level ~/.codex/config.toml.'],
+        },
       ],
     },
     {
@@ -288,6 +301,17 @@ describe('ModelsPage', () => {
     fireEvent.click(copyButtons[1] as HTMLElement)
     expect(writeText).toHaveBeenLastCalledWith(
       '{\n  "$schema": "https://json.schemastore.org/claude-code-settings.json",\n  "env": {\n    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "200000"\n  }\n}',
+    )
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Codex' }))
+    expect(screen.getByText('config.toml')).toBeInTheDocument()
+    expect(screen.getByText(/model = "claude-sonnet"/)).toBeInTheDocument()
+    expect(screen.getByText(/\[model_providers.oceans-llm\]/)).toBeInTheDocument()
+    expect(screen.getByText(/wire_api = "responses"/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy TOML' }))
+    expect(writeText).toHaveBeenLastCalledWith(
+      'model = "claude-sonnet"\nmodel_provider = "oceans-llm"\n\n[model_providers.oceans-llm]\nname = "oceans-llm"\nbase_url = "http://127.0.0.1:3000/v1"\nenv_key = "OCEANS_LLM_API_KEY"\nwire_api = "responses"\n',
     )
   })
 })

@@ -270,7 +270,8 @@ fn build_client_configurations(context: ClientConfigContext<'_>) -> Vec<ClientCo
             ]),
     );
 
-    let capabilities = context.route_capabilities.unwrap_or_default();
+    let capabilities =
+        effective_provider_route_capabilities(context.route_capabilities, context.primary_provider);
     let input = ClientConfigInput {
         model_id: context.model.model_key.clone(),
         display_name: context
@@ -315,6 +316,7 @@ fn build_client_configurations(context: ClientConfigContext<'_>) -> Vec<ClientCo
             .pricing_record
             .and_then(|record| record.limits.output),
         capabilities: ClientModelCapabilities {
+            responses: capabilities.responses,
             tool_calling: capabilities.tools,
             attachments: context
                 .pricing_record
@@ -325,6 +327,36 @@ fn build_client_configurations(context: ClientConfigContext<'_>) -> Vec<ClientCo
     };
 
     render_default_configs(&input)
+}
+
+fn effective_provider_route_capabilities(
+    route_capabilities: Option<ProviderCapabilities>,
+    provider: Option<&ProviderConnection>,
+) -> ProviderCapabilities {
+    provider
+        .map(provider_capabilities)
+        .unwrap_or_default()
+        .intersect(route_capabilities.unwrap_or_default())
+}
+
+fn provider_capabilities(provider: &ProviderConnection) -> ProviderCapabilities {
+    match provider.provider_type.as_str() {
+        "openai_compat" | "gcp_cloud_run_openai_compat" => {
+            ProviderCapabilities::openai_compat_baseline()
+        }
+        "gcp_vertex" => ProviderCapabilities::chat_only_streaming(),
+        "aws_bedrock" => ProviderCapabilities {
+            chat_completions: true,
+            responses: true,
+            stream: true,
+            embeddings: false,
+            tools: true,
+            vision: true,
+            json_schema: true,
+            developer_role: true,
+        },
+        _ => ProviderCapabilities::all_enabled(),
+    }
 }
 
 fn is_anthropic_labeled(
@@ -1005,56 +1037,59 @@ mod tests {
         pricing.cache_read_cost_per_million_tokens =
             Some(Money4::from_decimal_str("0.3000").expect("cache read cost"));
 
-        let repo = Arc::new(CountingRepo {
-            models: vec![GatewayModel {
-                id: model_id,
-                model_key: "claude-sonnet".to_string(),
-                alias_target_model_key: None,
-                description: Some("Claude Sonnet".to_string()),
-                tags: vec!["anthropic".to_string()],
-                rank: 1,
-            }],
-            routes_by_model: HashMap::from([(
-                model_id,
-                vec![ModelRoute {
-                    id: route_id,
-                    model_id,
-                    provider_key: "anthropic-prod".to_string(),
-                    upstream_model: "anthropic/claude-sonnet-4-6".to_string(),
-                    priority: 0,
-                    weight: 1.0,
-                    enabled: true,
-                    extra_headers: Default::default(),
-                    extra_body: Default::default(),
-                    capabilities: ProviderCapabilities::with_dimensions(
-                        true, false, true, true, true, true, true,
-                    ),
-                    compatibility: Default::default(),
+        let build_repo = |provider_type: &str, capabilities: ProviderCapabilities| {
+            Arc::new(CountingRepo {
+                models: vec![GatewayModel {
+                    id: model_id,
+                    model_key: "claude-sonnet".to_string(),
+                    alias_target_model_key: None,
+                    description: Some("Claude Sonnet".to_string()),
+                    tags: vec!["anthropic".to_string()],
+                    rank: 1,
                 }],
-            )]),
-            providers_by_key: HashMap::from([(
-                "anthropic-prod".to_string(),
-                ProviderConnection {
-                    provider_key: "anthropic-prod".to_string(),
-                    provider_type: "gcp_vertex".to_string(),
-                    config: json!({
-                        "display": {"label": "Anthropic", "icon_key": "anthropic"},
-                        "location": "global"
-                    }),
-                    secrets: None,
-                },
-            )]),
-            pricing_by_key: HashMap::from([(
-                (
-                    "google-vertex-anthropic".to_string(),
-                    "claude-sonnet-4-6@default".to_string(),
-                ),
-                pricing,
-            )]),
-            ..Default::default()
-        });
+                routes_by_model: HashMap::from([(
+                    model_id,
+                    vec![ModelRoute {
+                        id: route_id,
+                        model_id,
+                        provider_key: "anthropic-prod".to_string(),
+                        upstream_model: "anthropic/claude-sonnet-4-6".to_string(),
+                        priority: 0,
+                        weight: 1.0,
+                        enabled: true,
+                        extra_headers: Default::default(),
+                        extra_body: Default::default(),
+                        capabilities,
+                        compatibility: Default::default(),
+                    }],
+                )]),
+                providers_by_key: HashMap::from([(
+                    "anthropic-prod".to_string(),
+                    ProviderConnection {
+                        provider_key: "anthropic-prod".to_string(),
+                        provider_type: provider_type.to_string(),
+                        config: json!({
+                            "display": {"label": "Anthropic", "icon_key": "anthropic"},
+                            "location": "global"
+                        }),
+                        secrets: None,
+                    },
+                )]),
+                pricing_by_key: HashMap::from([(
+                    (
+                        "google-vertex-anthropic".to_string(),
+                        "claude-sonnet-4-6@default".to_string(),
+                    ),
+                    pricing.clone(),
+                )]),
+                ..Default::default()
+            })
+        };
 
-        let service = AdminModelsService::new(repo);
+        let service = AdminModelsService::new(build_repo(
+            "gcp_vertex",
+            ProviderCapabilities::with_dimensions(true, false, true, true, true, true, true),
+        ));
         let items = service.list_models().await.expect("admin models");
 
         assert_eq!(
@@ -1090,6 +1125,57 @@ mod tests {
             items[0].client_configurations[2].blocks[1]
                 .content
                 .contains("\"CLAUDE_CODE_AUTO_COMPACT_WINDOW\": \"200000\"")
+        );
+
+        let service = AdminModelsService::new(build_repo(
+            "gcp_vertex",
+            ProviderCapabilities {
+                chat_completions: true,
+                responses: true,
+                stream: false,
+                embeddings: true,
+                tools: true,
+                vision: true,
+                json_schema: true,
+                developer_role: true,
+            },
+        ));
+        let items = service.list_models().await.expect("admin models");
+
+        assert_eq!(items[0].client_configurations.len(), 3);
+        assert!(
+            !items[0]
+                .client_configurations
+                .iter()
+                .any(|config| config.key == "codex")
+        );
+
+        let service = AdminModelsService::new(build_repo(
+            "openai_compat",
+            ProviderCapabilities {
+                chat_completions: true,
+                responses: true,
+                stream: false,
+                embeddings: true,
+                tools: true,
+                vision: true,
+                json_schema: true,
+                developer_role: true,
+            },
+        ));
+        let items = service.list_models().await.expect("admin models");
+
+        assert_eq!(items[0].client_configurations.len(), 4);
+        assert_eq!(items[0].client_configurations[3].key, "codex");
+        assert!(
+            items[0].client_configurations[3].blocks[0]
+                .content
+                .contains("[model_providers.oceans-llm]")
+        );
+        assert!(
+            items[0].client_configurations[3].blocks[0]
+                .content
+                .contains("wire_api = \"responses\"")
         );
     }
 }
