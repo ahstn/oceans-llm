@@ -30,10 +30,7 @@ export default defineConfig({
       { text: "Home", link: "/" },
       { text: "Getting Started", link: "/getting-started" },
       { text: "Setup", link: "/setup/runtime-bootstrap-and-access" },
-      {
-        text: "Reference",
-        link: "/reference/request-lifecycle-and-failure-modes",
-      },
+      { text: "Contributing & Internal", link: "/reference/release-process" },
     ],
     sidebar: [
       {
@@ -81,7 +78,7 @@ export default defineConfig({
           { text: "OpenRouter", link: "/providers/openrouter" },
           { text: "AWS Bedrock", link: "/providers/aws-bedrock" },
           {
-            text: "Google Cloud Run OpenAI-Compatible",
+            text: "Google Cloud Run",
             link: "/providers/gcp-cloud-run-openai-compat",
           },
           { text: "Google Vertex AI", link: "/providers/gcp-vertex" },
@@ -90,12 +87,12 @@ export default defineConfig({
       {
         text: "MCP",
         items: [
-          { text: "MCP Client Setup", link: "/setup/mcp-client-setup" },
+          { text: "Client Setup", link: "/mcp/mcp-client-setup" },
           { text: "MCP Servers", link: "/configuration/mcp-servers" },
-          { text: "MCP Tool Access", link: "/access/mcp-tool-access" },
-          { text: "MCP Invocations", link: "/mcp/mcp-invocations" },
+          { text: "MCP Tool Access", link: "/mcp/mcp-tool-access" },
+          { text: "Invocation Logs", link: "/mcp/mcp-invocations" },
           {
-            text: "MCP Registry and Discovery",
+            text: "Registry and Discovery",
             link: "/mcp/mcp-registry-and-discovery",
           },
         ],

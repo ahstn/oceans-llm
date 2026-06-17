@@ -1,6 +1,6 @@
 # MCP Servers
 
-`See also`: [MCP Client Setup](../setup/mcp-client-setup.md), [MCP Tool Access](../access/mcp-tool-access.md), [Identity and Access](../access/identity-and-access.md), [Admin Control Plane](../access/admin-control-plane.md), [MCP Registry and Discovery](../mcp/mcp-registry-and-discovery.md)
+`See also`: [MCP Client Setup](../mcp/mcp-client-setup.md), [MCP Tool Access](../mcp/mcp-tool-access.md), [Identity and Access](../access/identity-and-access.md), [Admin Control Plane](../access/admin-control-plane.md), [MCP Registry and Discovery](../mcp/mcp-registry-and-discovery.md)
 
 
 ![MCP Servers Page](../public/images/mcp-servers-page.png)
@@ -16,7 +16,7 @@ Oceans can register external Streamable HTTP MCP servers and expose them to MCP 
 
 `/mcp/{server_key}` is the direct proxy endpoint. The gateway authenticates the caller with an Oceans API key, looks up the active registered server, applies any gateway-managed upstream credential, and proxies the MCP Streamable HTTP request to the registered server URL.
 
-Discovered tools are not automatically callable. Configure explicit MCP tool or toolset grants before clients can see tools in `tools/list` or call them with `tools/call`; see [MCP Tool Access](../access/mcp-tool-access.md).
+Discovered tools are not automatically callable. Configure explicit MCP tool or toolset grants before clients can see tools in `tools/list` or call them with `tools/call`; see [MCP Tool Access](../mcp/mcp-tool-access.md).
 
 ## Add a Server
 
