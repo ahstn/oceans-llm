@@ -1,6 +1,6 @@
 # MCP Tool Access
 
-`See also`: [MCP Servers](../configuration/mcp-servers.md), [MCP Client Setup](../setup/mcp-client-setup.md), [Identity and Access](identity-and-access.md), [Budgets](budgets.md), [MCP Invocations](../operations/observability/mcp-invocations.md)
+`See also`: [MCP Servers](../configuration/mcp-servers.md), [MCP Client Setup](../setup/mcp-client-setup.md), [Identity and Access](identity-and-access.md), [Budgets](budgets.md), [MCP Invocations](../mcp/mcp-invocations.md)
 
 MCP tool access controls which discovered tools an Oceans API key can find through `/mcp` and see or call through `/mcp/{server_key}`.
 

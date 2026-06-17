@@ -51,7 +51,6 @@ export default defineConfig({
             text: "Deploy and Operations",
             link: "/setup/deploy-and-operations",
           },
-          { text: "MCP Client Setup", link: "/setup/mcp-client-setup" },
           { text: "Kubernetes and Helm", link: "/setup/kubernetes-and-helm" },
         ],
       },
@@ -74,7 +73,6 @@ export default defineConfig({
             text: "Pricing Catalog and Accounting",
             link: "/configuration/pricing-catalog-and-accounting",
           },
-          { text: "MCP Servers", link: "/configuration/mcp-servers" },
         ],
       },
       {
@@ -87,6 +85,19 @@ export default defineConfig({
             link: "/providers/gcp-cloud-run-openai-compat",
           },
           { text: "Google Vertex AI", link: "/providers/gcp-vertex" },
+        ],
+      },
+      {
+        text: "MCP",
+        items: [
+          { text: "MCP Client Setup", link: "/setup/mcp-client-setup" },
+          { text: "MCP Servers", link: "/configuration/mcp-servers" },
+          { text: "MCP Tool Access", link: "/access/mcp-tool-access" },
+          { text: "MCP Invocations", link: "/mcp/mcp-invocations" },
+          {
+            text: "MCP Registry and Discovery",
+            link: "/mcp/mcp-registry-and-discovery",
+          },
         ],
       },
       {
@@ -105,14 +116,6 @@ export default defineConfig({
                 text: "Request Logs",
                 link: "/operations/observability/request-logs",
               },
-              {
-                text: "MCP Invocations",
-                link: "/operations/observability/mcp-invocations",
-              },
-              {
-                text: "MCP Registry and Discovery",
-                link: "/operations/observability/mcp-registry-and-discovery",
-              },
             ],
           },
           {
@@ -127,7 +130,6 @@ export default defineConfig({
         items: [
           { text: "Identity and Access", link: "/access/identity-and-access" },
           { text: "Service Accounts", link: "/access/service-accounts" },
-          { text: "MCP Tool Access", link: "/access/mcp-tool-access" },
           { text: "Budgets", link: "/access/budgets" },
           { text: "OIDC and SSO", link: "/access/oidc-and-sso-status" },
           {

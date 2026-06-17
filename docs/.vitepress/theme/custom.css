@@ -8,7 +8,7 @@
     --vp-c-bg-soft: oklch(94% 0.018 218);
     --vp-c-border: oklch(82% 0.025 218);
     --vp-c-divider: oklch(86% 0.022 218);
-    --vp-font-family-base: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+    --vp-font-family-base: "Geist Variable", ui-sans-serif, sans-serif;
     --vp-font-family-mono:
         "SFMono-Regular", Consolas, "Liberation Mono", monospace;
     --vp-home-hero-name-color: oklch(56% 0.13 218);
@@ -177,6 +177,7 @@
     font-size: 12px;
     font-weight: 760;
     letter-spacing: 0.04em;
+    margin-left: 28px;
     text-transform: uppercase;
 }
 
@@ -192,6 +193,32 @@
 
 .VPSidebarItem.level-1.is-active > .item > .link > .text {
     color: var(--vp-c-brand-1);
+}
+
+.VPSidebarItem :is(.link, .VPLink.link) {
+    --docs-sidebar-icon: none;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.VPSidebarItem :is(.link, .VPLink.link)::before {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    background: currentColor;
+    content: "";
+    mask: var(--docs-sidebar-icon) center / contain no-repeat;
+    opacity: 0.82;
+}
+
+.VPSidebarItem.level-2 :is(.link, .VPLink.link)::before {
+    width: 16px;
+    height: 16px;
+}
+
+.VPSidebarItem.is-active :is(.link, .VPLink.link)::before {
+    opacity: 1;
 }
 
 @keyframes oceans-hero-gradient {

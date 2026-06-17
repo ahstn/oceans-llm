@@ -1,6 +1,6 @@
 # Request Logs
 
-`See also`: [Observability and Request Logs](../observability-and-request-logs.md), [MCP Invocations](mcp-invocations.md), [MCP Registry and Discovery](mcp-registry-and-discovery.md), [Tagging](../tagging.md), [Request Lifecycle and Failure Modes](../../reference/request-lifecycle-and-failure-modes.md), [Data Relationships](../../reference/data-relationships.md), [Admin Control Plane](../../access/admin-control-plane.md)
+`See also`: [Observability and Request Logs](../observability-and-request-logs.md), [MCP Invocations](../../mcp/mcp-invocations.md), [MCP Registry and Discovery](../../mcp/mcp-registry-and-discovery.md), [Tagging](../tagging.md), [Request Lifecycle and Failure Modes](../../reference/request-lifecycle-and-failure-modes.md), [Data Relationships](../../reference/data-relationships.md), [Admin Control Plane](../../access/admin-control-plane.md)
 
 Request logs are the primary admin view for one gateway request. They are request-scoped, not tool-scoped: each row describes the user-visible API outcome, selected model route, owner context, payload capture state, and bounded tool cardinality.
 
@@ -63,7 +63,7 @@ Missing detail rows return `404 not_found`.
 
 ## What This Page Does Not Own
 
-- MCP per-tool invocation records: [mcp-invocations.md](mcp-invocations.md)
+- MCP per-tool invocation records: [MCP Invocations](../../mcp/mcp-invocations.md)
 - request and identity tag rules: [Tagging](../tagging.md)
 - payload redaction policy details: [Observability and Request Logs](../observability-and-request-logs.md)
 - request path and failure classes: [Request Lifecycle and Failure Modes](../../reference/request-lifecycle-and-failure-modes.md)

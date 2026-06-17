@@ -1,10 +1,10 @@
 # MCP Registry and Discovery
 
-`See also`: [MCP Servers](../../configuration/mcp-servers.md), [MCP Tool Access](../../access/mcp-tool-access.md), [MCP Client Setup](../../setup/mcp-client-setup.md), [Observability and Request Logs](../observability-and-request-logs.md), [MCP Invocations](mcp-invocations.md), [Request Logs](request-logs.md), [Data Relationships](../../reference/data-relationships.md), [Admin API Contract Workflow](../../reference/admin-api-contract-workflow.md), [ADR: External MCP Registry and Discovery Boundary](../../adr/2026-05-26-external-mcp-registry-and-discovery.md), [ADR: MCP Tool Grants and Token Overhead](../../adr/2026-06-09-mcp-tool-grants-and-token-overhead.md), [ADR: Aggregate MCP Gateway Endpoint](../../adr/2026-06-09-aggregate-mcp-gateway.md), [MCP Upstream Credential Bindings and Aggregate Execution](../../adr/2026-06-09-mcp-upstream-credential-bindings-and-execution.md)
+`See also`: [MCP Servers](../configuration/mcp-servers.md), [MCP Tool Access](../access/mcp-tool-access.md), [MCP Client Setup](../setup/mcp-client-setup.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [MCP Invocations](mcp-invocations.md), [Request Logs](../operations/observability/request-logs.md), [Data Relationships](../reference/data-relationships.md), [Admin API Contract Workflow](../reference/admin-api-contract-workflow.md), [ADR: External MCP Registry and Discovery Boundary](../adr/2026-05-26-external-mcp-registry-and-discovery.md), [ADR: MCP Tool Grants and Token Overhead](../adr/2026-06-09-mcp-tool-grants-and-token-overhead.md), [ADR: Aggregate MCP Gateway Endpoint](../adr/2026-06-09-aggregate-mcp-gateway.md), [MCP Upstream Credential Bindings and Aggregate Execution](../adr/2026-06-09-mcp-upstream-credential-bindings-and-execution.md)
 
 The external MCP registry is the control-plane record of MCP servers that Oceans LLM can discover and expose through the MCP gateway. It stores user-added server records in the database, keeps recommended server suggestions in a checked-in static catalog, discovers tool metadata through Streamable HTTP, and powers the admin diagnostics page at `/admin/mcp/servers`.
 
-This page is maintainer and admin documentation for registry diagnostics. User-facing server setup lives in [MCP Servers](../../configuration/mcp-servers.md), and client setup lives in [MCP Client Setup](../../setup/mcp-client-setup.md).
+This page is maintainer and admin documentation for registry diagnostics. User-facing server setup lives in [MCP Servers](../configuration/mcp-servers.md), and client setup lives in [MCP Client Setup](../setup/mcp-client-setup.md).
 
 Tool grants and toolsets are now part of the MCP access layer. Aggregate
 `call_tool` execution and principal-bound upstream credential bindings are part
@@ -156,7 +156,7 @@ DELETE /mcp/{server_key}
 
 Aggregate sessions are stored in `mcp_aggregate_sessions` as hashed signed tokens bound to the authenticated API key and owner metadata. Session ids are not portable across principals; cross-principal reuse is returned as not found.
 
-Inbound credential contract details live in [Identity and Access](../../access/identity-and-access.md).
+Inbound credential contract details live in [Identity and Access](../access/identity-and-access.md).
 
 ## Discovery Transport
 

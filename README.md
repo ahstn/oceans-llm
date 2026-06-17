@@ -129,7 +129,7 @@ Use the docs site instead of treating this file as the full admin and maintainer
   - [Budgets and Spending](docs/operations/budgets-and-spending.md)
 - observability:
   - [Observability and Request Logs](docs/operations/observability-and-request-logs.md)
-  - [MCP Registry and Discovery](docs/operations/observability/mcp-registry-and-discovery.md)
+  - [MCP Registry and Discovery](docs/mcp/mcp-registry-and-discovery.md)
 - admin UI:
   - [Admin Control Plane](docs/access/admin-control-plane.md)
 - maintainer-facing docs source notes:

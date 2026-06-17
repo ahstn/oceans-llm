@@ -1,6 +1,6 @@
 # MCP Servers
 
-`See also`: [MCP Client Setup](../setup/mcp-client-setup.md), [MCP Tool Access](../access/mcp-tool-access.md), [Identity and Access](../access/identity-and-access.md), [Admin Control Plane](../access/admin-control-plane.md), [MCP Registry and Discovery](../operations/observability/mcp-registry-and-discovery.md)
+`See also`: [MCP Client Setup](../setup/mcp-client-setup.md), [MCP Tool Access](../access/mcp-tool-access.md), [Identity and Access](../access/identity-and-access.md), [Admin Control Plane](../access/admin-control-plane.md), [MCP Registry and Discovery](../mcp/mcp-registry-and-discovery.md)
 
 
 ![MCP Servers Page](../public/images/mcp-servers-page.png)
@@ -40,7 +40,7 @@ The page supports:
 - opening a server detail dialog to inspect overview, configuration, discovered
   tools, and credential bindings
 
-The corresponding admin API surface is documented for maintainers in [MCP Registry and Discovery](../operations/observability/mcp-registry-and-discovery.md).
+The corresponding admin API surface is documented for maintainers in [MCP Registry and Discovery](../mcp/mcp-registry-and-discovery.md).
 
 ## View Discovered Tools
 
