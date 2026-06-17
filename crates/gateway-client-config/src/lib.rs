@@ -6,6 +6,7 @@ use serde_json::{Map, Value, json};
 pub const DEFAULT_GATEWAY_BASE_URL: &str = "http://127.0.0.1:3000/v1";
 pub const DEFAULT_API_KEY_ENV_VAR: &str = "OCEANS_LLM_API_KEY";
 pub const DEFAULT_PROVIDER_ID: &str = "oceans-llm";
+const CODEX_WIRE_API_RESPONSES: &str = "responses";
 const CLAUDE_CODE_SETTINGS_SCHEMA: &str = "https://json.schemastore.org/claude-code-settings.json";
 const CLAUDE_CODE_AUTH_TOKEN_PLACEHOLDER: &str = "<gateway api token>";
 const CLAUDE_CODE_LOWER_TOKEN_USAGE_ENV: [(&str, &str); 10] = [
@@ -294,7 +295,7 @@ impl ClientConfigTemplate for CodexConfigTemplate {
                 name: input.provider_name.clone(),
                 base_url: input.gateway_base_url.clone(),
                 env_key: input.api_key_env_var.clone(),
-                wire_api: "responses",
+                wire_api: CODEX_WIRE_API_RESPONSES,
             },
         );
 
@@ -427,7 +428,7 @@ fn claude_code_notes(input: &ClientConfigInput) -> Vec<String> {
 }
 
 fn codex_notes(input: &ClientConfigInput) -> Vec<String> {
-    let mut notes = thinking_notes(input);
+    let mut notes = Vec::new();
     notes.push(
         "Add this provider configuration to user-level ~/.codex/config.toml; Codex ignores provider and auth keys in project-local .codex/config.toml files."
             .to_string(),
@@ -882,6 +883,20 @@ mod tests {
                 .iter()
                 .any(|note| note.contains("~/.codex/config.toml"))
         );
+    }
+
+    #[test]
+    fn codex_notes_do_not_include_thinking_variant_guidance() {
+        let rendered =
+            CodexConfigTemplate.render(&input(Some(AnthropicThinkingPolicy::ManualBudget)));
+
+        assert!(
+            rendered
+                .notes
+                .iter()
+                .all(|note| !note.contains("thinking variants"))
+        );
+        assert_eq!(rendered.notes.len(), 2);
     }
 
     #[test]

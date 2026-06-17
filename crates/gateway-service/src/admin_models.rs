@@ -270,7 +270,8 @@ fn build_client_configurations(context: ClientConfigContext<'_>) -> Vec<ClientCo
             ]),
     );
 
-    let capabilities = context.route_capabilities.unwrap_or_default();
+    let capabilities =
+        effective_provider_route_capabilities(context.route_capabilities, context.primary_provider);
     let input = ClientConfigInput {
         model_id: context.model.model_key.clone(),
         display_name: context
@@ -326,6 +327,36 @@ fn build_client_configurations(context: ClientConfigContext<'_>) -> Vec<ClientCo
     };
 
     render_default_configs(&input)
+}
+
+fn effective_provider_route_capabilities(
+    route_capabilities: Option<ProviderCapabilities>,
+    provider: Option<&ProviderConnection>,
+) -> ProviderCapabilities {
+    provider
+        .map(provider_capabilities)
+        .unwrap_or_default()
+        .intersect(route_capabilities.unwrap_or_default())
+}
+
+fn provider_capabilities(provider: &ProviderConnection) -> ProviderCapabilities {
+    match provider.provider_type.as_str() {
+        "openai_compat" | "gcp_cloud_run_openai_compat" => {
+            ProviderCapabilities::openai_compat_baseline()
+        }
+        "gcp_vertex" => ProviderCapabilities::chat_only_streaming(),
+        "aws_bedrock" => ProviderCapabilities {
+            chat_completions: true,
+            responses: true,
+            stream: true,
+            embeddings: false,
+            tools: true,
+            vision: true,
+            json_schema: true,
+            developer_role: true,
+        },
+        _ => ProviderCapabilities::all_enabled(),
+    }
 }
 
 fn is_anthropic_labeled(
@@ -1006,7 +1037,7 @@ mod tests {
         pricing.cache_read_cost_per_million_tokens =
             Some(Money4::from_decimal_str("0.3000").expect("cache read cost"));
 
-        let build_repo = |capabilities: ProviderCapabilities| {
+        let build_repo = |provider_type: &str, capabilities: ProviderCapabilities| {
             Arc::new(CountingRepo {
                 models: vec![GatewayModel {
                     id: model_id,
@@ -1036,7 +1067,7 @@ mod tests {
                     "anthropic-prod".to_string(),
                     ProviderConnection {
                         provider_key: "anthropic-prod".to_string(),
-                        provider_type: "gcp_vertex".to_string(),
+                        provider_type: provider_type.to_string(),
                         config: json!({
                             "display": {"label": "Anthropic", "icon_key": "anthropic"},
                             "location": "global"
@@ -1055,9 +1086,10 @@ mod tests {
             })
         };
 
-        let service = AdminModelsService::new(build_repo(ProviderCapabilities::with_dimensions(
-            true, false, true, true, true, true, true,
-        )));
+        let service = AdminModelsService::new(build_repo(
+            "gcp_vertex",
+            ProviderCapabilities::with_dimensions(true, false, true, true, true, true, true),
+        ));
         let items = service.list_models().await.expect("admin models");
 
         assert_eq!(
@@ -1095,16 +1127,42 @@ mod tests {
                 .contains("\"CLAUDE_CODE_AUTO_COMPACT_WINDOW\": \"200000\"")
         );
 
-        let service = AdminModelsService::new(build_repo(ProviderCapabilities {
-            chat_completions: true,
-            responses: true,
-            stream: false,
-            embeddings: true,
-            tools: true,
-            vision: true,
-            json_schema: true,
-            developer_role: true,
-        }));
+        let service = AdminModelsService::new(build_repo(
+            "gcp_vertex",
+            ProviderCapabilities {
+                chat_completions: true,
+                responses: true,
+                stream: false,
+                embeddings: true,
+                tools: true,
+                vision: true,
+                json_schema: true,
+                developer_role: true,
+            },
+        ));
+        let items = service.list_models().await.expect("admin models");
+
+        assert_eq!(items[0].client_configurations.len(), 3);
+        assert!(
+            !items[0]
+                .client_configurations
+                .iter()
+                .any(|config| config.key == "codex")
+        );
+
+        let service = AdminModelsService::new(build_repo(
+            "openai_compat",
+            ProviderCapabilities {
+                chat_completions: true,
+                responses: true,
+                stream: false,
+                embeddings: true,
+                tools: true,
+                vision: true,
+                json_schema: true,
+                developer_role: true,
+            },
+        ));
         let items = service.list_models().await.expect("admin models");
 
         assert_eq!(items[0].client_configurations.len(), 4);
