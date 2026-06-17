@@ -52,20 +52,26 @@ providers:
 Avoid putting service-account JSON or short-lived ID tokens directly in `gateway.yaml`. Use mounted files or environment references, see [Kubernetes and Helm - Secrets].
 :::
 
-`adc` uses Application Default Credentials. In Google Cloud runtimes with an attached service account, the gateway uses the metadata server identity endpoint to mint an audience-scoped ID token. When ADC points at a service-account JSON file, the gateway uses the service account's OAuth token URI with a signed JWT assertion that includes `target_audience`.
+### Application Default Credentials
+
+In Google Cloud runtimes with an attached service account, the gateway uses the metadata server identity endpoint to mint an audience-scoped ID token. When ADC points at a service-account JSON file, the gateway uses the service account's OAuth token URI with a signed JWT assertion that includes `target_audience`.
 
 ```yaml
 auth:
   mode: adc
 ```
 
-`service_account` reads a mounted service-account JSON file and uses the service account's OAuth token URI with a signed JWT assertion that includes `target_audience` for the configured or derived audience.
+### Service Account JSON
+
+Uses the service account's OAuth token URI with a signed JWT assertion that includes `target_audience` for the configured or derived audience.
 
 ```yaml
 auth:
   mode: service_account
   credentials_path: /var/run/secrets/gcp/service-account.json
 ```
+
+### Bearer Token
 
 `bearer` should only be used in constrained, debugging environments where an admin has already minted an ID token. The token is treated as static and is not refreshed.
 

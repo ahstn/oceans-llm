@@ -76,7 +76,11 @@ export default defineConfig({
         text: "Providers",
         items: [
           { text: "OpenRouter", link: "/providers/openrouter" },
-          { text: "AWS Bedrock", link: "/providers/aws-bedrock" },
+          {
+            text: "AWS Bedrock", link: "/providers/aws-bedrock", items: [
+              { text: "OpenAI Models", link: "/providers/aws-bedrock-openai-gpt-55" },
+            ]
+          },
           {
             text: "Google Cloud Run",
             link: "/providers/gcp-cloud-run-openai-compat",

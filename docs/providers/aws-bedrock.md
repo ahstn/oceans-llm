@@ -22,13 +22,15 @@ Supported route API styles:
 - `mantle_openai_chat`
 - `mantle_anthropic_messages`
 
-OpenAI-shaped styles also require `compatibility.aws_bedrock.openai_base_path`, for example `/openai/v1`.
+For OpenAI specific guidance, see [OpenAI GPT-5.5 on Bedrock Mantle](aws-bedrock-openai-gpt-55.md).
 
 Only `mantle_openai_responses` routes can enable the route `responses` and `json_schema` capabilities. Those Responses routes must set `capabilities.chat_completions: false`. For Runtime routes, Mantle Chat Completions routes, and Mantle Anthropic Messages routes, set `capabilities.responses: false` and `capabilities.json_schema: false` so requests cannot select an incompatible wire API.
 
-For OpenAI GPT-5.5 on Bedrock Mantle, start with [OpenAI GPT-5.5 on Bedrock Mantle](aws-bedrock-openai-gpt-55.md).
+## Authentication
 
-The provider adapter supports bearer-token auth and IAM SigV4 request signing. AWS documents `AWS_BEARER_TOKEN_BEDROCK` as the environment variable recognized by Bedrock API-key auth and direct HTTP calls can pass the same value as `Authorization: Bearer ...`: [Use an Amazon Bedrock API key](https://docs.aws.amazon.com/en_us/bedrock/latest/userguide/api-keys-use.html).
+Currently both bearer-token auth and IAM SigV4 request signing are supported.
+
+AWS documents `AWS_BEARER_TOKEN_BEDROCK` as the environment variable recognized by Bedrock API-key auth and direct HTTP calls can pass the same value as `Authorization: Bearer ${TOKEN}`: [Use an Amazon Bedrock API key](https://docs.aws.amazon.com/en_us/bedrock/latest/userguide/api-keys-use.html).
 
 For IAM auth, `auth.mode: default_chain` uses the AWS SDK default credential provider chain. In EKS, IRSA works through that chain when the pod environment includes `AWS_ROLE_ARN`, `AWS_WEB_IDENTITY_TOKEN_FILE`, and optional `AWS_ROLE_SESSION_NAME`; earlier sources in the default chain can still win, matching AWS SDK behavior. `auth.mode: static_credentials` signs with the configured access key, secret key, and optional session token.
 
