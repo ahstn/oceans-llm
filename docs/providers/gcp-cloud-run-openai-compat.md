@@ -8,11 +8,13 @@ This page owns provider-specific configuration examples for private Cloud Run se
 
 Use `gcp_cloud_run_openai_compat` when the upstream service:
 
-- is deployed on Cloud Run
+- is deployed on [Cloud Run | Google Cloud]
 - exposes OpenAI-compatible endpoints such as `/v1/chat/completions`
 - requires Cloud Run IAM authentication with a Google-signed OIDC ID token
 
-Use `openai_compat` for arbitrary OpenAI-compatible endpoints with static bearer-token auth. Use `gcp_vertex` for Vertex AI publisher endpoints. Cloud Run OpenAI-compatible routes reuse the OpenAI-compatible request, response, and stream normalization path; only upstream authentication is Cloud Run-specific.
+Use `provider: openai_compat` for arbitrary OpenAI-compatible endpoints with static bearer-token auth.
+
+Use `provider: gcp_vertex` for Vertex AI publisher endpoints.
 
 ## Provider
 
@@ -46,6 +48,10 @@ providers:
 
 ## Auth Modes
 
+::: warning
+Avoid putting service-account JSON or short-lived ID tokens directly in `gateway.yaml`. Use mounted files or environment references, see [Kubernetes and Helm - Secrets].
+:::
+
 `adc` uses Application Default Credentials. In Google Cloud runtimes with an attached service account, the gateway uses the metadata server identity endpoint to mint an audience-scoped ID token. When ADC points at a service-account JSON file, the gateway uses the service account's OAuth token URI with a signed JWT assertion that includes `target_audience`.
 
 ```yaml
@@ -61,15 +67,13 @@ auth:
   credentials_path: /var/run/secrets/gcp/service-account.json
 ```
 
-`bearer` is only for constrained debugging environments where an admin has already minted an ID token. The token is treated as static bearer material and is not refreshed.
+`bearer` should only be used in constrained, debugging environments where an admin has already minted an ID token. The token is treated as static and is not refreshed.
 
 ```yaml
 auth:
   mode: bearer
   token: env.CLOUD_RUN_ID_TOKEN
 ```
-
-Do not put service-account JSON or short-lived ID tokens directly in `gateway.yaml`. Use mounted files or environment references.
 
 ## Auth Header
 
@@ -137,3 +141,7 @@ cargo test -p gateway cloud_run_openai_compat
 mise run lint
 mise run docs:check
 ```
+
+[Kubernetes and Helm - Secrets]: ../setup/kubernetes-and-helm.md#secrets
+
+[Cloud Run | Google Cloud]: https://cloud.google.com/run
