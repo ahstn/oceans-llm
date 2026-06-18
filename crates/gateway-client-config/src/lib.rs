@@ -390,6 +390,9 @@ fn uses_anthropic_messages_api(input: &ClientConfigInput) -> bool {
     joined.contains("anthropic") || joined.contains("claude")
 }
 
+// When multi-model config rendering lands, group models by this client API style first.
+// OpenCode and Pi put the API adapter at provider scope, so a mixed Anthropic
+// Messages + OpenAI-compatible selection needs one generated provider per style.
 fn opencode_provider_package(input: &ClientConfigInput) -> &'static str {
     if uses_anthropic_messages_api(input) {
         "@ai-sdk/anthropic"
