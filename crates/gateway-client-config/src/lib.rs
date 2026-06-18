@@ -176,7 +176,7 @@ impl ClientConfigTemplate for OpenCodeConfigTemplate {
             "$schema": "https://opencode.ai/config.json",
             "provider": {
                 input.provider_id.as_str(): {
-                    "npm": "@ai-sdk/openai-compatible",
+                    "npm": opencode_provider_package(input),
                     "name": input.provider_name,
                     "options": {
                         "baseURL": input.gateway_base_url,
@@ -232,20 +232,19 @@ impl ClientConfigTemplate for PiConfigTemplate {
             );
         }
 
+        let mut provider = Map::from_iter([
+            ("baseUrl".to_string(), json!(input.gateway_base_url)),
+            ("api".to_string(), json!(pi_provider_api(input))),
+            ("apiKey".to_string(), json!(pi_api_key_env_reference(input))),
+            ("models".to_string(), json!([Value::Object(model)])),
+        ]);
+        if let Some(compat) = pi_provider_compat(input) {
+            provider.insert("compat".to_string(), compat);
+        }
+
         let config = json!({
             "providers": {
-                input.provider_id.as_str(): {
-                    "baseUrl": input.gateway_base_url,
-                    "api": "openai-completions",
-                    "apiKey": input.api_key_env_var,
-                    "compat": {
-                        "supportsDeveloperRole": true,
-                        "supportsReasoningEffort": true,
-                        "supportsUsageInStreaming": true,
-                        "maxTokensField": "max_completion_tokens",
-                    },
-                    "models": [Value::Object(model)],
-                },
+                input.provider_id.as_str(): Value::Object(provider),
             },
         });
 
@@ -379,6 +378,52 @@ fn opencode_cost(input: &ClientConfigInput) -> Value {
     Value::Object(cost)
 }
 
+fn uses_anthropic_messages_api(input: &ClientConfigInput) -> bool {
+    let joined = [
+        input.model_id.as_str(),
+        input.display_name.as_str(),
+        input.upstream_model.as_deref().unwrap_or_default(),
+    ]
+    .join(" ")
+    .to_ascii_lowercase();
+
+    joined.contains("anthropic") || joined.contains("claude")
+}
+
+fn opencode_provider_package(input: &ClientConfigInput) -> &'static str {
+    if uses_anthropic_messages_api(input) {
+        "@ai-sdk/anthropic"
+    } else {
+        "@ai-sdk/openai-compatible"
+    }
+}
+
+fn pi_provider_api(input: &ClientConfigInput) -> &'static str {
+    if uses_anthropic_messages_api(input) {
+        "anthropic-messages"
+    } else {
+        "openai-completions"
+    }
+}
+
+fn pi_api_key_env_reference(input: &ClientConfigInput) -> String {
+    format!("${}", input.api_key_env_var)
+}
+
+fn pi_provider_compat(input: &ClientConfigInput) -> Option<Value> {
+    if uses_anthropic_messages_api(input) {
+        return (input.thinking_policy == Some(AnthropicThinkingPolicy::SafeEffort))
+            .then(|| json!({"forceAdaptiveThinking": true}));
+    }
+
+    Some(json!({
+        "supportsDeveloperRole": true,
+        "supportsReasoningEffort": true,
+        "supportsUsageInStreaming": true,
+        "maxTokensField": "max_completion_tokens",
+    }))
+}
+
 fn pi_cost(input: &ClientConfigInput) -> Value {
     let mut cost = Map::from_iter([
         (
@@ -420,10 +465,17 @@ fn claude_code_notes(input: &ClientConfigInput) -> Vec<String> {
     notes.push(format!(
         "Replace {CLAUDE_CODE_AUTH_TOKEN_PLACEHOLDER} with a gateway API key before using Claude Code settings."
     ));
-    notes.push(format!(
-        "ANTHROPIC_BASE_URL is set to the Claude-compatible gateway base URL; Claude Code appends Anthropic endpoints such as /v1/messages and /v1/models. Keep the OpenAI-compatible base URL ({}) for OpenCode and Pi.",
-        input.gateway_base_url
-    ));
+    if uses_anthropic_messages_api(input) {
+        notes.push(format!(
+            "ANTHROPIC_BASE_URL is set to the Claude-compatible gateway base URL; Claude Code appends Anthropic endpoints such as /v1/messages and /v1/models. OpenCode and Pi also use Anthropic Messages for this model via {}.",
+            input.gateway_base_url
+        ));
+    } else {
+        notes.push(format!(
+            "ANTHROPIC_BASE_URL is set to the Claude-compatible gateway base URL; Claude Code appends Anthropic endpoints such as /v1/messages and /v1/models. Keep the OpenAI-compatible base URL ({}) for OpenCode and Pi.",
+            input.gateway_base_url
+        ));
+    }
     notes
 }
 
@@ -605,6 +657,21 @@ mod tests {
         }
     }
 
+    fn non_anthropic_input() -> ClientConfigInput {
+        ClientConfigInput {
+            model_id: "qwen-coder".to_string(),
+            display_name: "Qwen Coder".to_string(),
+            upstream_model: Some("qwen/qwen3-coder".to_string()),
+            capabilities: ClientModelCapabilities {
+                responses: false,
+                tool_calling: true,
+                attachments: false,
+                vision: false,
+            },
+            ..ClientConfigInput::default()
+        }
+    }
+
     #[test]
     fn opencode_shape_includes_required_cost_and_limits() {
         let rendered =
@@ -628,7 +695,9 @@ mod tests {
         let model = &provider["models"][0];
 
         assert_eq!(provider["baseUrl"], "http://127.0.0.1:3000/v1");
-        assert_eq!(provider["api"], "openai-completions");
+        assert_eq!(provider["api"], "anthropic-messages");
+        assert_eq!(provider["apiKey"], "$OCEANS_LLM_API_KEY");
+        assert_eq!(provider["compat"]["forceAdaptiveThinking"], true);
         assert_eq!(model["id"], "claude-sonnet");
         assert_eq!(model["contextWindow"], 200_000);
         assert_eq!(model["maxTokens"], 64_000);
@@ -718,7 +787,7 @@ mod tests {
                             }
                         },
                         "name": "oceans-llm",
-                        "npm": "@ai-sdk/openai-compatible",
+                        "npm": "@ai-sdk/anthropic",
                         "options": {
                             "apiKey": "{env:OCEANS_LLM_API_KEY}",
                             "baseURL": "http://127.0.0.1:3000/v1"
@@ -739,14 +808,11 @@ mod tests {
             serde_json::json!({
                 "providers": {
                     "oceans-llm": {
-                        "api": "openai-completions",
-                        "apiKey": "OCEANS_LLM_API_KEY",
+                        "api": "anthropic-messages",
+                        "apiKey": "$OCEANS_LLM_API_KEY",
                         "baseUrl": "http://127.0.0.1:3000/v1",
                         "compat": {
-                            "maxTokensField": "max_completion_tokens",
-                            "supportsDeveloperRole": true,
-                            "supportsReasoningEffort": true,
-                            "supportsUsageInStreaming": true
+                            "forceAdaptiveThinking": true
                         },
                         "models": [
                             {
@@ -791,6 +857,30 @@ mod tests {
                 .is_none()
         );
         assert!(!rendered.notes.is_empty());
+    }
+
+    #[test]
+    fn non_anthropic_models_use_openai_compatible_client_surfaces() {
+        let input = non_anthropic_input();
+        let opencode: Value =
+            serde_json::from_str(&OpenCodeConfigTemplate.render(&input).blocks[0].content)
+                .expect("json");
+        let pi: Value =
+            serde_json::from_str(&PiConfigTemplate.render(&input).blocks[0].content).expect("json");
+
+        assert_eq!(
+            opencode["provider"]["oceans-llm"]["npm"],
+            "@ai-sdk/openai-compatible"
+        );
+        assert_eq!(pi["providers"]["oceans-llm"]["api"], "openai-completions");
+        assert_eq!(
+            pi["providers"]["oceans-llm"]["apiKey"],
+            "$OCEANS_LLM_API_KEY"
+        );
+        assert_eq!(
+            pi["providers"]["oceans-llm"]["compat"]["maxTokensField"],
+            "max_completion_tokens"
+        );
     }
 
     #[test]
