@@ -107,14 +107,14 @@ models:
           responses: false
           embeddings: false
           stream: true
-          tools: false
+          tools: true
           vision: false
           json_schema: false
 ```
 
 Native Claude invocation requires `max_tokens`. If callers omit it, the gateway currently supplies `max_tokens: 1024` for Anthropic-on-Vertex routes.
 
-Keep `tools: false` and `vision: false` for Anthropic-on-Vertex routes in this slice. Upstream Claude-on-Vertex uses an Anthropic Messages-like API and current model cards advertise broader agent, computer-use, image, and document capabilities for some Claude models, but the gateway's current Anthropic-on-Vertex mapper is intentionally narrower. Function tools, tool-result continuations, image blocks, document blocks, and their stream behavior remain capability-gated until request mapping and fixtures are added in [issue #141](https://github.com/ahstn/oceans-llm/issues/141).
+Anthropic-on-Vertex routes can enable `tools: true` when the upstream Claude model supports tool use. The gateway maps OpenAI Chat Completions function tools, assistant `tool_calls`, tool-result continuations, and streaming tool-use deltas to and from the Anthropic Messages shape used by Vertex. Keep `vision: false` unless you have tested image/document content blocks for the exact route; the Anthropic-on-Vertex mapper still rejects non-text content blocks in this slice.
 
 ### Claude Thinking Compatibility
 
@@ -223,7 +223,7 @@ Vertex Google multimodal inputs currently accept `gs://` image and file URIs thr
 - Vertex AI limits Anthropic request payloads to 30 MB. Large documents and many images can hit that byte limit before the model token limit.
 - Keep `json_schema: false` unless a route has explicit provider-specific overrides and tests.
 - Use `extra_body` only for additive provider fields you have tested for the exact publisher and model family.
-- Keep Anthropic-on-Vertex `tools: false` and `vision: false` unless you have gateway fixtures for that route. Upstream Claude model capability is not enough by itself; route capability flags should reflect the gateway mapper and tests.
+- Anthropic-on-Vertex routes may set `tools: true` for tested Claude tool-use models. Keep `vision: false` unless you have gateway fixtures for multimodal Anthropic content blocks. Upstream Claude model capability is not enough by itself; route capability flags should reflect the gateway mapper and tests.
 - Check Anthropic and Google Cloud model pages before adding a new Claude route; model IDs, endpoint availability, context windows, and retirement dates vary by model and location.
 
 ## Validation

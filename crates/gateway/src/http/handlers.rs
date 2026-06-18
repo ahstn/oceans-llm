@@ -5,18 +5,20 @@ use axum::{
     body::Body,
     extract::{Extension, State},
     http::{
-        HeaderMap, HeaderValue,
+        HeaderMap, HeaderValue, StatusCode,
         header::{AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE},
     },
     response::{IntoResponse, Response},
 };
-use futures_util::{StreamExt, stream};
+use futures_util::{StreamExt, stream as futures_stream};
 use gateway_core::{
-    AuthenticatedApiKey, ChatCompletionsRequest, CoreRequestRequirements, EmbeddingsRequest,
-    GatewayError, ModelsListResponse, ProviderCapabilities, ProviderClient, ProviderError,
-    ProviderRequestContext, RequestAttemptRecord, RequestAttemptStatus, RequestToolCardinality,
-    ResponsesRequest, openai_chat_request_to_core, openai_embeddings_request_to_core,
-    openai_responses_request_to_core, protocol::openai::ModelCard,
+    AnthropicMessagesRequest, AuthenticatedApiKey, ChatCompletionsRequest, CoreChatRequest,
+    CoreRequestRequirements, EmbeddingsRequest, GatewayError, ModelsListResponse,
+    ProviderCapabilities, ProviderClient, ProviderError, ProviderRequestContext,
+    RequestAttemptRecord, RequestAttemptStatus, RequestToolCardinality, ResponsesRequest,
+    anthropic_messages_request_to_core, core_chat_request_to_openai, openai_chat_request_to_core,
+    openai_embeddings_request_to_core, openai_responses_request_to_core,
+    protocol::{anthropic::anthropic_message_from_openai_chat, openai::ModelCard},
 };
 use gateway_service::{
     McpAccess, McpTokenOverhead, McpTokenOverheadInput, RequestLogContext, RequestLogIconMetadata,
@@ -28,6 +30,7 @@ use tower_http::request_id::RequestId;
 use tracing::{Instrument, Span, field};
 
 use crate::http::{
+    anthropic_stream::anthropic_messages_stream_from_openai,
     error::AppError,
     request_tags::extract_request_tags,
     state::{AppGatewayService, AppState},
@@ -55,7 +58,7 @@ pub async fn v1_models(
 ) -> Result<Json<ModelsListResponse>, AppError> {
     let auth = state
         .service
-        .authenticate(extract_authorization_header(&headers))
+        .authenticate(extract_anthropic_authorization_header(&headers).as_deref())
         .await?;
 
     let models = state.service.list_models_for_api_key(&auth).await?;
@@ -73,6 +76,244 @@ pub async fn v1_models(
         object: "list".to_string(),
         data,
     }))
+}
+
+pub async fn v1_messages(
+    State(state): State<AppState>,
+    request_id: Option<Extension<RequestId>>,
+    headers: HeaderMap,
+    Json(request): Json<AnthropicMessagesRequest>,
+) -> Response {
+    match v1_messages_inner(state, request_id, headers, request).await {
+        Ok(response) => response,
+        Err(error) => anthropic_error_response(error.0),
+    }
+}
+
+async fn v1_messages_inner(
+    state: AppState,
+    request_id: Option<Extension<RequestId>>,
+    headers: HeaderMap,
+    request: AnthropicMessagesRequest,
+) -> Result<Response, AppError> {
+    let request_started_at = Instant::now();
+    let request_id = canonical_request_id(request_id)?;
+    let authorization = extract_anthropic_authorization_header(&headers);
+    let auth = state.service.authenticate(authorization.as_deref()).await?;
+    let core_request = anthropic_messages_request_to_core(&request);
+    let log_request = core_chat_request_to_openai(&core_request);
+    let requirements = core_request.requirements();
+    let resolved = state
+        .service
+        .resolve_request(&auth, &core_request.model)
+        .await?;
+
+    let request_headers = extract_request_headers(&headers);
+    let request_tags = extract_request_tags(&headers)?;
+    let mut request_log_context = state.service.begin_chat_request_log(
+        &request_id,
+        &resolved.selection.requested_model.model_key,
+        &resolved.selection.execution_model.model_key,
+        &log_request,
+        &request_headers,
+        request_tags,
+    );
+    let request_span = Span::current();
+    record_request_span_fields(
+        &request_span,
+        &auth,
+        &resolved,
+        core_request.stream,
+        "/v1/messages",
+    );
+    let (eligible_route_count, selected) =
+        select_first_eligible_route(&state.providers, &resolved.routes, requirements);
+
+    tracing::info!(
+        request_model = %core_request.model,
+        resolved_model = %resolved.selection.execution_model.model_key,
+        route_count = resolved.routes.len(),
+        eligible_route_count,
+        stream = core_request.stream,
+        required_capabilities = ?requirements.required_capability_names(),
+        "anthropic messages request resolved"
+    );
+
+    let (route, provider) = match selected {
+        Some(selection) => selection,
+        None => {
+            let error = no_compatible_route_error(requirements);
+            return Err(AppError(error));
+        }
+    };
+
+    let icon_metadata = request_log_icon_metadata(
+        &route,
+        resolved.provider_connections.get(&route.provider_key),
+        &resolved.selection.execution_model.model_key,
+        &resolved.selection.requested_model.model_key,
+    );
+    best_effort_record_mcp_request_telemetry(
+        &state,
+        &auth,
+        &mut request_log_context,
+        &route,
+        resolved.provider_connections.get(&route.provider_key),
+    )
+    .await;
+    let labels = ChatMetricLabels {
+        requested_model: &resolved.selection.requested_model.model_key,
+        resolved_model: &resolved.selection.execution_model.model_key,
+        provider_key: &route.provider_key,
+        stream: core_request.stream,
+    };
+    record_provider_execution_span_fields(&request_span, &route.provider_key);
+
+    if let Err(error) = state
+        .service
+        .enforce_pre_provider_budget(
+            &auth,
+            &request_id,
+            Some(resolved.selection.execution_model.id),
+            Some(route.upstream_model.as_str()),
+            OffsetDateTime::now_utc(),
+        )
+        .await
+    {
+        return Err(AppError(error));
+    }
+
+    let context = build_provider_context(
+        &request_id,
+        &resolved.selection.requested_model.model_key,
+        &route,
+        request_headers,
+    );
+
+    if core_request.stream {
+        return anthropic_messages_stream_response(
+            &state,
+            &auth,
+            request_started_at,
+            &request_id,
+            &resolved,
+            &request_log_context,
+            &route,
+            provider,
+            &core_request,
+            &context,
+            icon_metadata,
+            requirements,
+        )
+        .await;
+    }
+
+    let provider_execution_span = tracing::info_span!(
+        "provider_execution",
+        request_id = %request_id,
+        requested_model = %resolved.selection.requested_model.model_key,
+        resolved_model = %resolved.selection.execution_model.model_key,
+        provider = %route.provider_key,
+        stream = false,
+        ownership_kind = %auth.owner_kind.as_str(),
+    );
+    let attempt_started_at = gateway_service::offset_now();
+    let openai_value = match provider
+        .chat_completions(&core_request, &context)
+        .instrument(provider_execution_span)
+        .await
+    {
+        Ok(value) => normalize_response_model(value, &resolved.selection.requested_model.model_key),
+        Err(error) => {
+            let (error, attempt) = provider_error_attempt(
+                &request_log_context,
+                &route,
+                RequestAttemptStatus::ProviderError,
+                false,
+                attempt_started_at,
+                error,
+                requirements,
+            );
+            best_effort_log_non_stream_failure(
+                &state.service,
+                &auth,
+                &request_log_context,
+                &route.provider_key,
+                icon_metadata.clone(),
+                latency_ms_since(request_started_at),
+                &error,
+                vec![attempt],
+            )
+            .await;
+            state.metrics.record_chat_request(&ChatRequestMetric {
+                labels: labels.clone(),
+                status_code: i64::from(error.http_status_code()),
+                outcome: error.error_type(),
+                latency_seconds: latency_seconds_since(request_started_at),
+            });
+            return Err(AppError(error));
+        }
+    };
+    let value = anthropic_message_from_openai_chat(
+        &openai_value,
+        &resolved.selection.requested_model.model_key,
+    );
+    let attempt = success_attempt(&request_log_context, &route, false, attempt_started_at);
+    let tool_cardinality = tool_cardinality_with_invoked(&request_log_context, &openai_value);
+    finalize_successful_usage_accounting(
+        &state,
+        UsageAccountingContext {
+            auth: &auth,
+            model: &resolved.selection.execution_model,
+            route: &route,
+            request_id: &request_id,
+            labels: labels.clone(),
+            operation: "anthropic_messages",
+        },
+        usage_value_from_response(&openai_value),
+    )
+    .await;
+    best_effort_log_non_stream_success(
+        &state.service,
+        &auth,
+        &request_log_context,
+        &route.provider_key,
+        icon_metadata,
+        latency_ms_since(request_started_at),
+        tool_cardinality.invoked_tool_count.unwrap_or(0),
+        &openai_value,
+        vec![attempt],
+    )
+    .await;
+    state.metrics.record_chat_request(&ChatRequestMetric {
+        labels,
+        status_code: 200,
+        outcome: "success",
+        latency_seconds: latency_seconds_since(request_started_at),
+    });
+    let mut response = Json(value).into_response();
+    if let Ok(request_id_header) = HeaderValue::from_str(&request_id) {
+        response
+            .headers_mut()
+            .insert("x-request-id", request_id_header);
+    }
+    Ok(response)
+}
+
+fn anthropic_error_response(error: GatewayError) -> Response {
+    let status =
+        StatusCode::from_u16(error.http_status_code()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    let mut response = Json(json!({
+        "type": "error",
+        "error": {
+            "type": error.error_type(),
+            "message": error.to_string(),
+            "code": error.error_code(),
+        }
+    }))
+    .into_response();
+    *response.status_mut() = status;
+    response
 }
 
 pub async fn v1_chat_completions(
@@ -890,7 +1131,9 @@ fn select_first_eligible_route(
         let Some(provider) = providers.get(&route.provider_key) else {
             continue;
         };
-        let effective_capabilities = provider.capabilities().intersect(route.capabilities);
+        let effective_capabilities =
+            route_effective_provider_capabilities(provider.as_ref(), route)
+                .intersect(route.capabilities);
         if supports_requirements(effective_capabilities, requirements) {
             eligible_route_count += 1;
             if selected.is_none() {
@@ -900,6 +1143,17 @@ fn select_first_eligible_route(
     }
 
     (eligible_route_count, selected)
+}
+
+fn route_effective_provider_capabilities(
+    provider: &dyn ProviderClient,
+    route: &gateway_core::ModelRoute,
+) -> ProviderCapabilities {
+    let mut capabilities = provider.capabilities();
+    if provider.provider_type() == "gcp_vertex" && !route.upstream_model.starts_with("anthropic/") {
+        capabilities.tools = false;
+    }
+    capabilities
 }
 
 fn provider_error_attempt(
@@ -1048,10 +1302,105 @@ struct UsageAccountingContext<'a> {
     operation: &'static str,
 }
 
+#[allow(clippy::too_many_arguments)]
+async fn anthropic_messages_stream_response(
+    state: &AppState,
+    auth: &AuthenticatedApiKey,
+    request_started_at: Instant,
+    request_id: &str,
+    resolved: &gateway_service::ResolvedGatewayRequest,
+    request_log_context: &RequestLogContext,
+    route: &gateway_core::ModelRoute,
+    provider: Arc<dyn ProviderClient>,
+    core_request: &CoreChatRequest,
+    context: &ProviderRequestContext,
+    icon_metadata: RequestLogIconMetadata,
+    requirements: CoreRequestRequirements,
+) -> Result<Response, AppError> {
+    let provider_execution_span = tracing::info_span!(
+        "provider_execution",
+        request_id = %request_id,
+        requested_model = %resolved.selection.requested_model.model_key,
+        resolved_model = %resolved.selection.execution_model.model_key,
+        provider = %route.provider_key,
+        stream = true,
+        ownership_kind = %auth.owner_kind.as_str(),
+    );
+    let attempt_started_at = gateway_service::offset_now();
+    let stream = match provider
+        .chat_completions_stream(core_request, context)
+        .instrument(provider_execution_span)
+        .await
+    {
+        Ok(stream) => anthropic_messages_stream_from_openai(
+            stream,
+            resolved.selection.requested_model.model_key.clone(),
+        ),
+        Err(error) => {
+            let (gateway_error, attempt) = provider_error_attempt(
+                request_log_context,
+                route,
+                RequestAttemptStatus::StreamStartError,
+                true,
+                attempt_started_at,
+                error,
+                requirements,
+            );
+            best_effort_log_stream_result(
+                &state.service,
+                auth,
+                request_log_context,
+                gateway_service::StreamLogResultInput {
+                    provider_key: route.provider_key.clone(),
+                    icon_metadata,
+                    latency_ms: latency_ms_since(request_started_at),
+                    collector: state.service.new_stream_response_collector(),
+                    failure: Some(gateway_service::StreamFailureSummary {
+                        status_code: gateway_error.http_status_code().into(),
+                        error_code: gateway_error.error_code().to_string(),
+                    }),
+                    attempts: vec![attempt],
+                },
+            )
+            .await;
+            return Err(AppError(gateway_error));
+        }
+    };
+
+    let body_stream = wrap_stream_with_request_logging(LoggingBodyStreamState {
+        upstream: stream,
+        service: state.service.clone(),
+        metrics: state.metrics.clone(),
+        auth: auth.clone(),
+        request_log_context: request_log_context.clone(),
+        requested_model_key: resolved.selection.requested_model.model_key.clone(),
+        resolved_model_key: resolved.selection.execution_model.model_key.clone(),
+        execution_model: resolved.selection.execution_model.clone(),
+        route: route.clone(),
+        provider_key: route.provider_key.clone(),
+        icon_metadata,
+        started_at: request_started_at,
+        attempt_started_at,
+        finished: false,
+        collector: state.service.new_stream_response_collector(),
+    });
+
+    Response::builder()
+        .status(axum::http::StatusCode::OK)
+        .header(CONTENT_TYPE, "text/event-stream; charset=utf-8")
+        .header(CACHE_CONTROL, "no-cache")
+        .body(Body::from_stream(body_stream))
+        .map_err(|error| {
+            AppError(GatewayError::Internal(format!(
+                "failed to build anthropic messages streaming response: {error}"
+            )))
+        })
+}
+
 fn wrap_stream_with_request_logging(
     state: LoggingBodyStreamState,
 ) -> impl futures_util::Stream<Item = Result<axum::body::Bytes, std::io::Error>> {
-    stream::unfold(state, |mut state| async move {
+    futures_stream::unfold(state, |mut state| async move {
         if state.finished {
             return None;
         }
@@ -1505,6 +1854,16 @@ fn extract_authorization_header(headers: &HeaderMap) -> Option<&str> {
         .and_then(|value| value.to_str().ok())
 }
 
+fn extract_anthropic_authorization_header(headers: &HeaderMap) -> Option<String> {
+    if let Some(value) = extract_authorization_header(headers) {
+        return Some(value.to_string());
+    }
+    headers
+        .get("x-api-key")
+        .and_then(|value| value.to_str().ok())
+        .map(|value| format!("Bearer {value}"))
+}
+
 fn canonical_request_id(request_id: Option<Extension<RequestId>>) -> Result<String, AppError> {
     let Some(Extension(request_id)) = request_id else {
         tracing::error!("canonical request id extension was missing from provider handler");
@@ -1540,11 +1899,15 @@ fn extract_request_headers(headers: &HeaderMap) -> BTreeMap<String, String> {
 #[cfg(test)]
 mod tests {
     use axum::Extension;
-    use axum::http::HeaderValue;
+    use axum::body::to_bytes;
+    use axum::http::{HeaderMap, HeaderValue};
     use gateway_core::GatewayError;
+    use serde_json::Value;
     use tower_http::request_id::RequestId;
 
-    use super::canonical_request_id;
+    use super::{
+        anthropic_error_response, canonical_request_id, extract_anthropic_authorization_header,
+    };
 
     #[test]
     fn canonical_request_id_returns_gateway_internal_error_when_extension_is_missing() {
@@ -1577,5 +1940,37 @@ mod tests {
         };
 
         assert_eq!(value, "req-provided");
+    }
+
+    #[test]
+    fn anthropic_authorization_accepts_x_api_key() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-api-key", HeaderValue::from_static("gw-test-key"));
+
+        assert_eq!(
+            extract_anthropic_authorization_header(&headers).as_deref(),
+            Some("Bearer gw-test-key")
+        );
+    }
+
+    #[tokio::test]
+    async fn anthropic_error_response_uses_messages_error_shape() {
+        let response = anthropic_error_response(GatewayError::InvalidRequest(
+            "bad messages request".to_string(),
+        ));
+        let status = response.status();
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        let value: Value = serde_json::from_slice(&body).expect("json");
+
+        assert_eq!(status.as_u16(), 400);
+        assert_eq!(value["type"], "error");
+        assert_eq!(value["error"]["type"], "invalid_request_error");
+        assert_eq!(value["error"]["code"], "invalid_request");
+        assert_eq!(
+            value["error"]["message"],
+            "invalid request: bad messages request"
+        );
     }
 }

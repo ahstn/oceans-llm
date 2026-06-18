@@ -23,6 +23,8 @@ The live public endpoints are:
 
 - `GET /v1/models`
 - `POST /v1/chat/completions`
+- `POST /v1/messages`
+- `POST /messages`
 - `POST /v1/responses`
 - `POST /v1/embeddings`
 
@@ -177,6 +179,12 @@ Current behavior highlights:
 - budget checks run before provider execution
 - successful requests write usage when usage can be normalized
 - request logs store both requested and resolved model identity
+
+## `/v1/messages`
+
+`POST /v1/messages` and the unversioned `POST /messages` alias accept Anthropic Messages-compatible request bodies for chat-capable routes. The gateway authenticates Anthropic-style `x-api-key` headers, converts the Messages request into the internal chat request boundary for model resolution and provider execution, then returns Anthropic-compatible response payloads or Messages SSE events.
+
+For Anthropic-on-Vertex Claude routes, the Messages path supports text messages, `system`, `max_tokens`, `stream`, `tools`, `tool_choice`, and `thinking` fields that are compatible with the Vertex Anthropic mapper. OpenAI Chat Completions requests with function tools use the same Vertex tool mapping. Routes that cannot support tools should keep `tools: false` so capability filtering fails at the gateway edge.
 
 ## `/v1/responses`
 

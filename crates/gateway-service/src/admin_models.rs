@@ -270,8 +270,11 @@ fn build_client_configurations(context: ClientConfigContext<'_>) -> Vec<ClientCo
             ]),
     );
 
-    let capabilities =
-        effective_provider_route_capabilities(context.route_capabilities, context.primary_provider);
+    let capabilities = effective_provider_route_capabilities(
+        context.route_capabilities,
+        context.primary_provider,
+        context.primary_route,
+    );
     let input = ClientConfigInput {
         model_id: context.model.model_key.clone(),
         display_name: context
@@ -332,17 +335,26 @@ fn build_client_configurations(context: ClientConfigContext<'_>) -> Vec<ClientCo
 fn effective_provider_route_capabilities(
     route_capabilities: Option<ProviderCapabilities>,
     provider: Option<&ProviderConnection>,
+    route: Option<&ModelRoute>,
 ) -> ProviderCapabilities {
     provider
-        .map(provider_capabilities)
+        .map(|provider| provider_capabilities(provider, route))
         .unwrap_or_default()
         .intersect(route_capabilities.unwrap_or_default())
 }
 
-fn provider_capabilities(provider: &ProviderConnection) -> ProviderCapabilities {
+fn provider_capabilities(
+    provider: &ProviderConnection,
+    route: Option<&ModelRoute>,
+) -> ProviderCapabilities {
     match provider.provider_type.as_str() {
         "openai_compat" | "gcp_cloud_run_openai_compat" => {
             ProviderCapabilities::openai_compat_baseline()
+        }
+        "gcp_vertex"
+            if route.is_some_and(|route| route.upstream_model.starts_with("anthropic/")) =>
+        {
+            ProviderCapabilities::with_dimensions(true, true, false, true, true, false, true)
         }
         "gcp_vertex" => ProviderCapabilities::chat_only_streaming(),
         "aws_bedrock" => ProviderCapabilities {
@@ -484,7 +496,7 @@ mod tests {
     use time::OffsetDateTime;
     use uuid::Uuid;
 
-    use super::{AdminModelStatus, AdminModelsService};
+    use super::{AdminModelStatus, AdminModelsService, provider_capabilities};
 
     #[derive(Default)]
     struct CountingRepo {
@@ -1096,6 +1108,7 @@ mod tests {
             items[0].cache_read_cost_per_million_tokens_usd_10000,
             Some(3_000)
         );
+        assert_eq!(items[0].supports_tool_calling, Some(true));
         assert_eq!(items[0].client_configurations.len(), 3);
         assert_eq!(items[0].client_configurations[0].key, "opencode");
         assert!(
@@ -1107,6 +1120,11 @@ mod tests {
             items[0].client_configurations[0].blocks[0]
                 .content
                 .contains("\"variants\"")
+        );
+        assert!(
+            items[0].client_configurations[0].blocks[0]
+                .content
+                .contains("\"tool_call\": true")
         );
         assert_eq!(items[0].client_configurations[1].key, "pi");
         assert!(
@@ -1177,5 +1195,33 @@ mod tests {
                 .content
                 .contains("wire_api = \"responses\"")
         );
+    }
+
+    #[test]
+    fn vertex_provider_capabilities_are_tool_capable_only_for_anthropic_routes() {
+        let provider = ProviderConnection {
+            provider_key: "vertex-prod".to_string(),
+            provider_type: "gcp_vertex".to_string(),
+            config: json!({}),
+            secrets: None,
+        };
+        let anthropic_route = ModelRoute {
+            id: Uuid::new_v4(),
+            model_id: Uuid::new_v4(),
+            provider_key: "vertex-prod".to_string(),
+            upstream_model: "anthropic/claude-sonnet-4-6".to_string(),
+            priority: 0,
+            weight: 1.0,
+            enabled: true,
+            extra_headers: Default::default(),
+            extra_body: Default::default(),
+            capabilities: ProviderCapabilities::all_enabled(),
+            compatibility: Default::default(),
+        };
+        let mut google_route = anthropic_route.clone();
+        google_route.upstream_model = "google/gemini-2.0-flash".to_string();
+
+        assert!(provider_capabilities(&provider, Some(&anthropic_route)).tools);
+        assert!(!provider_capabilities(&provider, Some(&google_route)).tools);
     }
 }

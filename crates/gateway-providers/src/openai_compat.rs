@@ -242,6 +242,7 @@ impl OpenAiCompatProvider {
                 "model".to_string(),
                 Value::String(context.upstream_model.clone()),
             );
+            normalize_anthropic_messages_tools_for_openai(object);
         }
         self.build_request("chat/completions", body, context, false, true, bearer_token)
     }
@@ -263,6 +264,7 @@ impl OpenAiCompatProvider {
                 "model".to_string(),
                 Value::String(context.upstream_model.clone()),
             );
+            normalize_anthropic_messages_tools_for_openai(object);
         }
         self.build_request("chat/completions", body, context, true, true, bearer_token)
     }
@@ -448,6 +450,63 @@ impl OpenAiCompatProvider {
         }
 
         Ok(response)
+    }
+}
+
+fn normalize_anthropic_messages_tools_for_openai(body: &mut serde_json::Map<String, Value>) {
+    if let Some(tools) = body.get_mut("tools").and_then(Value::as_array_mut) {
+        for tool in tools {
+            normalize_anthropic_messages_tool_for_openai(tool);
+        }
+    }
+
+    if let Some(tool_choice) = body.get_mut("tool_choice") {
+        normalize_anthropic_messages_tool_choice_for_openai(tool_choice);
+    }
+}
+
+fn normalize_anthropic_messages_tool_for_openai(tool: &mut Value) {
+    let Some(object) = tool.as_object_mut() else {
+        return;
+    };
+    if object.contains_key("type") || !object.contains_key("input_schema") {
+        return;
+    }
+    let Some(name) = object.get("name").cloned() else {
+        return;
+    };
+    let mut function = serde_json::Map::from_iter([
+        ("name".to_string(), name),
+        (
+            "parameters".to_string(),
+            object
+                .get("input_schema")
+                .cloned()
+                .unwrap_or_else(|| json!({"type":"object","properties":{}})),
+        ),
+    ]);
+    if let Some(description) = object.get("description").cloned() {
+        function.insert("description".to_string(), description);
+    }
+    *tool = json!({
+        "type": "function",
+        "function": Value::Object(function)
+    });
+}
+
+fn normalize_anthropic_messages_tool_choice_for_openai(tool_choice: &mut Value) {
+    let Some(object) = tool_choice.as_object() else {
+        return;
+    };
+    match object.get("type").and_then(Value::as_str) {
+        Some("auto") => *tool_choice = Value::String("auto".to_string()),
+        Some("any") => *tool_choice = Value::String("required".to_string()),
+        Some("tool") => {
+            if let Some(name) = object.get("name").and_then(Value::as_str) {
+                *tool_choice = json!({"type":"function","function":{"name":name}});
+            }
+        }
+        _ => {}
     }
 }
 
@@ -1166,6 +1225,61 @@ mod tests {
             .expect("bytes body");
         let body_json: Value = serde_json::from_slice(body).expect("json body");
         assert_eq!(body_json["stream"], Value::Bool(true));
+    }
+
+    #[test]
+    fn build_chat_request_translates_anthropic_messages_tools_for_openai_compat() {
+        let provider = provider_with_base_url("https://api.openai.com/v1".to_string());
+        let mut request = CoreChatRequest {
+            model: "fast".to_string(),
+            messages: vec![CoreChatMessage {
+                role: "user".to_string(),
+                content: Value::String("use a tool".to_string()),
+                name: None,
+                extra: BTreeMap::new(),
+            }],
+            stream: false,
+            extra: BTreeMap::new(),
+        };
+        request.extra.insert(
+            "tools".to_string(),
+            json!([{
+                "name": "lookup",
+                "description": "Look up weather",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"city": {"type": "string"}}
+                }
+            }]),
+        );
+        request.extra.insert(
+            "tool_choice".to_string(),
+            json!({"type":"tool","name":"lookup"}),
+        );
+
+        let built = provider
+            .build_chat_request(&request, &default_context())
+            .expect("build request");
+        let body_json = request_body_json(&built);
+
+        assert_eq!(
+            body_json["tools"][0],
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "lookup",
+                    "description": "Look up weather",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"city": {"type": "string"}}
+                    }
+                }
+            })
+        );
+        assert_eq!(
+            body_json["tool_choice"],
+            json!({"type":"function","function":{"name":"lookup"}})
+        );
     }
 
     #[test]
