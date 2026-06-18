@@ -225,6 +225,8 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
             get(oauth_callback_github),
         )
         .route("/v1/models", get(v1_models))
+        .route("/v1/messages", post(v1_messages))
+        .route("/messages", post(v1_messages))
         .route("/v1/chat/completions", post(v1_chat_completions))
         .route("/v1/responses", post(v1_responses))
         .route("/v1/embeddings", post(v1_embeddings))

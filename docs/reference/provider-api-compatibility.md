@@ -22,7 +22,7 @@ The Responses API is a first-class API family. It is not translated through Chat
 | OpenAI Chat Completions | Supported for `openai_compat` providers | `crates/gateway-providers/src/openai_compat.rs` | Route-level `openai_compat` profile can declare request-shape quirks and streaming usage support. |
 | OpenAI Responses API | Supported for `openai_compat` providers | `crates/gateway-providers/src/openai_compat.rs` | Uses a distinct typed request/core/provider boundary and preserves Responses event-stream semantics. |
 | OpenAI Embeddings | Supported for `openai_compat` providers | `crates/gateway-providers/src/openai_compat.rs` | Uses the same route/provider resolution path; no compatibility transforms are applied in this slice. |
-| Anthropic Messages | Not implemented as a native public API | Follow-up issue | Vertex Anthropic transport exists, but native Messages semantics need explicit mapping and tests. |
+| Anthropic Messages | Supported for `/v1/messages` and `/messages` through the chat execution boundary | `crates/gateway/src/http/handlers.rs`, `crates/gateway-providers/src/vertex.rs` | Accepts Anthropic Messages request shape and returns Anthropic Messages response/SSE for chat-capable routes such as Anthropic-on-Vertex. |
 | Google Generative AI | Not implemented as a direct API-key provider path | Follow-up issue | Vertex Google transport exists; direct Google native API needs separate auth, request, and stream mapping. |
 | Cross-provider multimodal files/images | Partial, provider-dependent | Follow-up issue | Needs explicit request body and accounting semantics across OpenAI-compatible, Vertex Google, Anthropic, and Google native APIs. |
 
@@ -35,7 +35,7 @@ This matrix is about current execution support, not provider marketing claims.
 | `openai_compat` | Supported. Chat Completions route profiles can rewrite known request-shape quirks. | Supported through the distinct Responses request/provider path. Chat Completions profile transforms do not apply. | Supported. No route compatibility transforms apply in this slice. |
 | `gcp_cloud_run_openai_compat` | Supported through the OpenAI-compatible adapter with Cloud Run ID-token auth. | Supported when the deployed service exposes an OpenAI-compatible Responses endpoint. Chat Completions profile transforms do not apply. | Supported when the deployed service exposes an OpenAI-compatible embeddings endpoint. |
 | `gcp_vertex` with `google/*` upstream models | Supported for the current Vertex chat path when route capabilities allow it. | Not implemented; keep route `responses: false`. | Not implemented in this slice; keep route `embeddings: false`. |
-| `gcp_vertex` with `anthropic/*` upstream models | Supported for the current Vertex chat path when route capabilities allow it. | Not implemented; keep route `responses: false`. | Not applicable. |
+| `gcp_vertex` with `anthropic/*` upstream models | Supported for Chat Completions and Anthropic Messages when route capabilities allow it. Tool use is supported for text/tool workflows. | Not implemented; keep route `responses: false`. | Not applicable. |
 | `aws_bedrock` | Supported through explicit `compatibility.aws_bedrock.api_style`: Runtime Converse, Runtime Anthropic InvokeModel, Runtime OpenAI Chat, Mantle OpenAI Chat, or Mantle Anthropic Messages. Streaming uses the configured style's stream contract. | Supported for `api_style: mantle_openai_responses` with an OpenAI base path such as `/openai/v1`. | Not implemented; keep route `embeddings: false`. |
 
 Route capability flags are still useful when a provider implementation does not support a public API family. They make failures happen at the gateway edge instead of later inside the provider adapter.
@@ -142,7 +142,7 @@ Chat Completions response policy matches the Bedrock Claude policy. Native Anthr
 
 Provider metadata preservation is not yet request-side replay. The current Vertex Anthropic mapper does not rehydrate preserved `thinking`, `signature`, or `redacted_thinking` blocks into later assistant content when callers send tool results. Tool-use continuations that require exact thinking block round-trip are tracked by [issue #140](https://github.com/ahstn/oceans-llm/issues/140).
 
-Vertex Claude route capabilities should stay aligned with tested gateway behavior, not only upstream model capability. Function tools, tool-result continuations, image/document content blocks, and related stream behavior for Anthropic-on-Vertex are tracked by [issue #141](https://github.com/ahstn/oceans-llm/issues/141). The broader cross-provider tool and multimodal matrices remain tracked by [issue #91](https://github.com/ahstn/oceans-llm/issues/91) and [issue #93](https://github.com/ahstn/oceans-llm/issues/93).
+Vertex Claude route capabilities should stay aligned with tested gateway behavior, not only upstream model capability. Function tools, tool-result continuations, and streaming tool-use deltas are supported for Anthropic-on-Vertex text/tool workflows. Image/document content blocks remain unsupported in the current mapper and should keep `vision: false`; broader multimodal matrices remain tracked by [issue #91](https://github.com/ahstn/oceans-llm/issues/91) and [issue #93](https://github.com/ahstn/oceans-llm/issues/93).
 
 Vertex Google publisher routes remain separate from Anthropic-on-Vertex. `google/*` upstream models use Vertex `generateContent` and `streamGenerateContent`; Anthropic Messages fields such as `thinking`, `output_config`, and `anthropic_version` do not apply to those routes.
 
@@ -180,7 +180,7 @@ For Bedrock Converse and ConverseStream, Claude thinking controls are written to
 
 Vision is supported only for Bedrock-compatible base64 image payloads. Remote image URLs are rejected because Bedrock Anthropic Messages requires base64 image sources. Tools and tool-result turns are supported for Claude 3+ models, subject to the model's Bedrock feature availability.
 
-Chat Completions response policy for Anthropic thinking is deliberately conservative. Native Anthropic `thinking` and `redacted_thinking` blocks, plus Bedrock Converse `reasoningContent` text, signatures, and redacted data, are never concatenated into `choices[*].message.content` or streamed as `delta.content`. The visible Chat Completions content remains answer text and tool calls only. Reasoning state that providers require for debugging or tool-use continuity is preserved under `choices[*].message.provider_metadata.aws_bedrock.reasoning` for non-streaming responses, and under `choices[*].delta.provider_metadata.aws_bedrock.reasoning` for ConverseStream chunks. Direct Anthropic Messages routes should follow the same split when added: hidden or summarized thinking metadata may be preserved explicitly, but it must not leak through ordinary Chat Completions text fields.
+Chat Completions response policy for Anthropic thinking is deliberately conservative. Native Anthropic `thinking` and `redacted_thinking` blocks, plus Bedrock Converse `reasoningContent` text, signatures, and redacted data, are never concatenated into `choices[*].message.content` or streamed as `delta.content`. The visible Chat Completions content remains answer text and tool calls only. Reasoning state that providers require for debugging or tool-use continuity is preserved under `choices[*].message.provider_metadata.aws_bedrock.reasoning` for non-streaming responses, and under `choices[*].delta.provider_metadata.aws_bedrock.reasoning` for ConverseStream chunks. The public Anthropic Messages route keeps the same non-leaking split when it uses chat-backed provider execution.
 
 Anthropic documents that Claude 4 models can return summarized thinking, encrypted signatures, and `redacted_thinking` blocks. Claude Opus 4.7 defaults thinking display to `omitted`, so a stream can open an empty thinking block, emit only a signature delta, and then begin normal text. Bedrock Converse represents equivalent state as `reasoningContent`, including `reasoningText.text`, `reasoningText.signature`, and redacted content. The gateway preserves those fields as provider metadata and treats billed output token counts as provider usage until exact reasoning accounting is implemented.
 
@@ -304,7 +304,7 @@ The route-profile design follows the same broad lesson visible in mature adapter
 These items are intentionally outside this first slice:
 
 - provider compatibility umbrella: [issue #53](https://github.com/ahstn/oceans-llm/issues/53)
-- native Anthropic Messages public/API-family mapping: [issue #89](https://github.com/ahstn/oceans-llm/issues/89)
+- broader native Anthropic Messages parity beyond chat-backed Vertex Claude routing: [issue #89](https://github.com/ahstn/oceans-llm/issues/89)
 - direct Google Generative AI provider/API-key path: [issue #90](https://github.com/ahstn/oceans-llm/issues/90)
 - cross-provider tool-call streaming normalization fixtures: [issue #91](https://github.com/ahstn/oceans-llm/issues/91)
 - cache, reasoning, and modality token accounting: [issue #92](https://github.com/ahstn/oceans-llm/issues/92)
@@ -312,5 +312,5 @@ These items are intentionally outside this first slice:
 - Vertex embeddings provider support: [issue #103](https://github.com/ahstn/oceans-llm/issues/103)
 - Bedrock Runtime Anthropic streaming over `InvokeModelWithResponseStream`: [issue #139](https://github.com/ahstn/oceans-llm/issues/139)
 - Anthropic thinking block replay for tool-use continuations: [issue #140](https://github.com/ahstn/oceans-llm/issues/140)
-- Vertex Claude tool and multimodal parity: [issue #141](https://github.com/ahstn/oceans-llm/issues/141)
+- Vertex Claude multimodal parity: [issue #141](https://github.com/ahstn/oceans-llm/issues/141)
 - route readiness diagnostics: [issue #98](https://github.com/ahstn/oceans-llm/issues/98)

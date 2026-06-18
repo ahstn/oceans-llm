@@ -1,8 +1,9 @@
 use std::{collections::BTreeMap, sync::Arc, time::Instant};
 
+use async_stream::stream;
 use axum::{
     Json,
-    body::Body,
+    body::{Body, Bytes},
     extract::{Extension, State},
     http::{
         HeaderMap, HeaderValue,
@@ -10,13 +11,16 @@ use axum::{
     },
     response::{IntoResponse, Response},
 };
-use futures_util::{StreamExt, stream};
+use futures_util::{StreamExt, stream as futures_stream};
 use gateway_core::{
-    AuthenticatedApiKey, ChatCompletionsRequest, CoreRequestRequirements, EmbeddingsRequest,
-    GatewayError, ModelsListResponse, ProviderCapabilities, ProviderClient, ProviderError,
-    ProviderRequestContext, RequestAttemptRecord, RequestAttemptStatus, RequestToolCardinality,
-    ResponsesRequest, openai_chat_request_to_core, openai_embeddings_request_to_core,
-    openai_responses_request_to_core, protocol::openai::ModelCard,
+    AnthropicMessagesRequest, AuthenticatedApiKey, ChatCompletionsRequest, CoreChatRequest,
+    CoreRequestRequirements, EmbeddingsRequest, GatewayError, ModelsListResponse,
+    ProviderCapabilities, ProviderClient, ProviderError, ProviderRequestContext, ProviderStream,
+    RequestAttemptRecord, RequestAttemptStatus, RequestToolCardinality, ResponsesRequest,
+    SseEventParser, anthropic_messages_request_to_core, core_chat_request_to_openai,
+    openai_chat_request_to_core, openai_embeddings_request_to_core,
+    openai_responses_request_to_core,
+    protocol::{anthropic::anthropic_message_from_openai_chat, openai::ModelCard},
 };
 use gateway_service::{
     McpAccess, McpTokenOverhead, McpTokenOverheadInput, RequestLogContext, RequestLogIconMetadata,
@@ -73,6 +77,210 @@ pub async fn v1_models(
         object: "list".to_string(),
         data,
     }))
+}
+
+pub async fn v1_messages(
+    State(state): State<AppState>,
+    request_id: Option<Extension<RequestId>>,
+    headers: HeaderMap,
+    Json(request): Json<AnthropicMessagesRequest>,
+) -> Result<Response, AppError> {
+    let request_started_at = Instant::now();
+    let request_id = canonical_request_id(request_id)?;
+    let authorization = extract_anthropic_authorization_header(&headers);
+    let auth = state.service.authenticate(authorization.as_deref()).await?;
+    let core_request = anthropic_messages_request_to_core(&request);
+    let log_request = core_chat_request_to_openai(&core_request);
+    let requirements = core_request.requirements();
+    let resolved = state
+        .service
+        .resolve_request(&auth, &core_request.model)
+        .await?;
+
+    let request_headers = extract_request_headers(&headers);
+    let request_tags = extract_request_tags(&headers)?;
+    let mut request_log_context = state.service.begin_chat_request_log(
+        &request_id,
+        &resolved.selection.requested_model.model_key,
+        &resolved.selection.execution_model.model_key,
+        &log_request,
+        &request_headers,
+        request_tags,
+    );
+    let request_span = Span::current();
+    record_request_span_fields(
+        &request_span,
+        &auth,
+        &resolved,
+        core_request.stream,
+        "/v1/messages",
+    );
+    let (eligible_route_count, selected) =
+        select_first_eligible_route(&state.providers, &resolved.routes, requirements);
+
+    tracing::info!(
+        request_model = %core_request.model,
+        resolved_model = %resolved.selection.execution_model.model_key,
+        route_count = resolved.routes.len(),
+        eligible_route_count,
+        stream = core_request.stream,
+        required_capabilities = ?requirements.required_capability_names(),
+        "anthropic messages request resolved"
+    );
+
+    let (route, provider) = match selected {
+        Some(selection) => selection,
+        None => {
+            let error = no_compatible_route_error(requirements);
+            return Err(AppError(error));
+        }
+    };
+
+    let icon_metadata = request_log_icon_metadata(
+        &route,
+        resolved.provider_connections.get(&route.provider_key),
+        &resolved.selection.execution_model.model_key,
+        &resolved.selection.requested_model.model_key,
+    );
+    best_effort_record_mcp_request_telemetry(
+        &state,
+        &auth,
+        &mut request_log_context,
+        &route,
+        resolved.provider_connections.get(&route.provider_key),
+    )
+    .await;
+    let labels = ChatMetricLabels {
+        requested_model: &resolved.selection.requested_model.model_key,
+        resolved_model: &resolved.selection.execution_model.model_key,
+        provider_key: &route.provider_key,
+        stream: core_request.stream,
+    };
+    record_provider_execution_span_fields(&request_span, &route.provider_key);
+
+    if let Err(error) = state
+        .service
+        .enforce_pre_provider_budget(
+            &auth,
+            &request_id,
+            Some(resolved.selection.execution_model.id),
+            Some(route.upstream_model.as_str()),
+            OffsetDateTime::now_utc(),
+        )
+        .await
+    {
+        return Err(AppError(error));
+    }
+
+    let context = build_provider_context(
+        &request_id,
+        &resolved.selection.requested_model.model_key,
+        &route,
+        request_headers,
+    );
+
+    if core_request.stream {
+        return anthropic_messages_stream_response(
+            &state,
+            &auth,
+            request_started_at,
+            &request_id,
+            &resolved,
+            &request_log_context,
+            &route,
+            provider,
+            &core_request,
+            &context,
+            icon_metadata,
+            requirements,
+        )
+        .await;
+    }
+
+    let provider_execution_span = tracing::info_span!(
+        "provider_execution",
+        request_id = %request_id,
+        requested_model = %resolved.selection.requested_model.model_key,
+        resolved_model = %resolved.selection.execution_model.model_key,
+        provider = %route.provider_key,
+        stream = false,
+        ownership_kind = %auth.owner_kind.as_str(),
+    );
+    let attempt_started_at = gateway_service::offset_now();
+    let openai_value = match provider
+        .chat_completions(&core_request, &context)
+        .instrument(provider_execution_span)
+        .await
+    {
+        Ok(value) => normalize_response_model(value, &resolved.selection.requested_model.model_key),
+        Err(error) => {
+            let (error, attempt) = provider_error_attempt(
+                &request_log_context,
+                &route,
+                RequestAttemptStatus::ProviderError,
+                false,
+                attempt_started_at,
+                error,
+                requirements,
+            );
+            best_effort_log_non_stream_failure(
+                &state.service,
+                &auth,
+                &request_log_context,
+                &route.provider_key,
+                icon_metadata.clone(),
+                latency_ms_since(request_started_at),
+                &error,
+                vec![attempt],
+            )
+            .await;
+            return Err(AppError(error));
+        }
+    };
+    let value = anthropic_message_from_openai_chat(
+        &openai_value,
+        &resolved.selection.requested_model.model_key,
+    );
+    let attempt = success_attempt(&request_log_context, &route, false, attempt_started_at);
+    let tool_cardinality = tool_cardinality_with_invoked(&request_log_context, &openai_value);
+    finalize_successful_usage_accounting(
+        &state,
+        UsageAccountingContext {
+            auth: &auth,
+            model: &resolved.selection.execution_model,
+            route: &route,
+            request_id: &request_id,
+            labels: labels.clone(),
+            operation: "anthropic_messages",
+        },
+        usage_value_from_response(&openai_value),
+    )
+    .await;
+    best_effort_log_non_stream_success(
+        &state.service,
+        &auth,
+        &request_log_context,
+        &route.provider_key,
+        icon_metadata,
+        latency_ms_since(request_started_at),
+        tool_cardinality.invoked_tool_count.unwrap_or(0),
+        &openai_value,
+        vec![attempt],
+    )
+    .await;
+    state.metrics.record_chat_request(&ChatRequestMetric {
+        labels,
+        status_code: 200,
+        outcome: "success",
+        latency_seconds: latency_seconds_since(request_started_at),
+    });
+    let mut response = Json(value).into_response();
+    if let Ok(request_id_header) = HeaderValue::from_str(&request_id) {
+        response
+            .headers_mut()
+            .insert("x-request-id", request_id_header);
+    }
+    Ok(response)
 }
 
 pub async fn v1_chat_completions(
@@ -1048,10 +1256,338 @@ struct UsageAccountingContext<'a> {
     operation: &'static str,
 }
 
+#[allow(clippy::too_many_arguments)]
+async fn anthropic_messages_stream_response(
+    state: &AppState,
+    auth: &AuthenticatedApiKey,
+    request_started_at: Instant,
+    request_id: &str,
+    resolved: &gateway_service::ResolvedGatewayRequest,
+    request_log_context: &RequestLogContext,
+    route: &gateway_core::ModelRoute,
+    provider: Arc<dyn ProviderClient>,
+    core_request: &CoreChatRequest,
+    context: &ProviderRequestContext,
+    icon_metadata: RequestLogIconMetadata,
+    requirements: CoreRequestRequirements,
+) -> Result<Response, AppError> {
+    let provider_execution_span = tracing::info_span!(
+        "provider_execution",
+        request_id = %request_id,
+        requested_model = %resolved.selection.requested_model.model_key,
+        resolved_model = %resolved.selection.execution_model.model_key,
+        provider = %route.provider_key,
+        stream = true,
+        ownership_kind = %auth.owner_kind.as_str(),
+    );
+    let attempt_started_at = gateway_service::offset_now();
+    let stream = match provider
+        .chat_completions_stream(core_request, context)
+        .instrument(provider_execution_span)
+        .await
+    {
+        Ok(stream) => anthropic_messages_stream_from_openai(
+            stream,
+            resolved.selection.requested_model.model_key.clone(),
+        ),
+        Err(error) => {
+            let (gateway_error, attempt) = provider_error_attempt(
+                request_log_context,
+                route,
+                RequestAttemptStatus::StreamStartError,
+                true,
+                attempt_started_at,
+                error,
+                requirements,
+            );
+            best_effort_log_stream_result(
+                &state.service,
+                auth,
+                request_log_context,
+                gateway_service::StreamLogResultInput {
+                    provider_key: route.provider_key.clone(),
+                    icon_metadata,
+                    latency_ms: latency_ms_since(request_started_at),
+                    collector: state.service.new_stream_response_collector(),
+                    failure: Some(gateway_service::StreamFailureSummary {
+                        status_code: gateway_error.http_status_code().into(),
+                        error_code: gateway_error.error_code().to_string(),
+                    }),
+                    attempts: vec![attempt],
+                },
+            )
+            .await;
+            return Err(AppError(gateway_error));
+        }
+    };
+
+    let body_stream = wrap_stream_with_request_logging(LoggingBodyStreamState {
+        upstream: stream,
+        service: state.service.clone(),
+        metrics: state.metrics.clone(),
+        auth: auth.clone(),
+        request_log_context: request_log_context.clone(),
+        requested_model_key: resolved.selection.requested_model.model_key.clone(),
+        resolved_model_key: resolved.selection.execution_model.model_key.clone(),
+        execution_model: resolved.selection.execution_model.clone(),
+        route: route.clone(),
+        provider_key: route.provider_key.clone(),
+        icon_metadata,
+        started_at: request_started_at,
+        attempt_started_at,
+        finished: false,
+        collector: state.service.new_stream_response_collector(),
+    });
+
+    Response::builder()
+        .status(axum::http::StatusCode::OK)
+        .header(CONTENT_TYPE, "text/event-stream; charset=utf-8")
+        .header(CACHE_CONTROL, "no-cache")
+        .body(Body::from_stream(body_stream))
+        .map_err(|error| {
+            AppError(GatewayError::Internal(format!(
+                "failed to build anthropic messages streaming response: {error}"
+            )))
+        })
+}
+
+#[derive(Debug, Default)]
+struct AnthropicStreamState {
+    message_started: bool,
+    next_block_index: i64,
+    text_block_index: Option<i64>,
+    tool_block_indexes: BTreeMap<i64, i64>,
+}
+
+fn anthropic_messages_stream_from_openai(
+    upstream: ProviderStream,
+    model: String,
+) -> ProviderStream {
+    Box::pin(stream! {
+        let mut parser = SseEventParser::default();
+        let mut state = AnthropicStreamState::default();
+        let mut failed = false;
+        futures_util::pin_mut!(upstream);
+
+        while let Some(chunk) = upstream.next().await {
+            let chunk = match chunk {
+                Ok(chunk) => chunk,
+                Err(error) => {
+                    yield Err(error);
+                    failed = true;
+                    break;
+                }
+            };
+            let events = match parser.push_bytes(&chunk) {
+                Ok(events) => events,
+                Err(error) => {
+                    yield Err(error);
+                    failed = true;
+                    break;
+                }
+            };
+
+            for event in events {
+                let payload = event.data.trim();
+                if payload.is_empty() || payload == "[DONE]" {
+                    continue;
+                }
+                let Ok(value) = serde_json::from_str::<Value>(payload) else {
+                    continue;
+                };
+                for outbound in anthropic_events_from_openai_chunk(&value, &model, &mut state) {
+                    yield Ok(outbound);
+                }
+            }
+        }
+
+        if !failed {
+            if let Err(error) = parser.finish() {
+                yield Err(error);
+            } else {
+                for outbound in finish_anthropic_stream_blocks(&mut state) {
+                    yield Ok(outbound);
+                }
+                yield Ok(anthropic_sse_chunk("message_stop", json!({"type":"message_stop"})));
+            }
+        }
+    })
+}
+
+fn anthropic_events_from_openai_chunk(
+    value: &Value,
+    model: &str,
+    state: &mut AnthropicStreamState,
+) -> Vec<Bytes> {
+    let mut events = Vec::new();
+    if !state.message_started {
+        let message = json!({
+            "id": value.get("id").and_then(Value::as_str).unwrap_or("msg_oceans_stream"),
+            "type": "message",
+            "role": "assistant",
+            "model": model,
+            "content": [],
+            "stop_reason": null,
+            "stop_sequence": null,
+            "usage": {"input_tokens": 0, "output_tokens": 0}
+        });
+        events.push(anthropic_sse_chunk(
+            "message_start",
+            json!({"type":"message_start","message":message}),
+        ));
+        state.message_started = true;
+    }
+
+    let Some(choice) = value
+        .get("choices")
+        .and_then(Value::as_array)
+        .and_then(|choices| choices.first())
+    else {
+        return events;
+    };
+    let delta = choice.get("delta").and_then(Value::as_object);
+
+    if let Some(content) = delta
+        .and_then(|delta| delta.get("content"))
+        .and_then(Value::as_str)
+        .filter(|content| !content.is_empty())
+    {
+        let index = *state.text_block_index.get_or_insert_with(|| {
+            let index = state.next_block_index;
+            state.next_block_index += 1;
+            events.push(anthropic_sse_chunk(
+                "content_block_start",
+                json!({
+                    "type":"content_block_start",
+                    "index": index,
+                    "content_block": {"type":"text","text":""}
+                }),
+            ));
+            index
+        });
+        events.push(anthropic_sse_chunk(
+            "content_block_delta",
+            json!({
+                "type":"content_block_delta",
+                "index": index,
+                "delta": {"type":"text_delta","text":content}
+            }),
+        ));
+    }
+
+    if let Some(tool_calls) = delta
+        .and_then(|delta| delta.get("tool_calls"))
+        .and_then(Value::as_array)
+    {
+        for tool_call in tool_calls {
+            append_anthropic_tool_delta(tool_call, state, &mut events);
+        }
+    }
+
+    if let Some(reason) = choice.get("finish_reason").and_then(Value::as_str) {
+        events.extend(finish_anthropic_stream_blocks(state));
+        events.push(anthropic_sse_chunk(
+            "message_delta",
+            json!({
+                "type":"message_delta",
+                "delta": {
+                    "stop_reason": openai_finish_reason_to_anthropic(reason),
+                    "stop_sequence": null
+                }
+            }),
+        ));
+    }
+
+    events
+}
+
+fn append_anthropic_tool_delta(
+    tool_call: &Value,
+    state: &mut AnthropicStreamState,
+    events: &mut Vec<Bytes>,
+) {
+    let openai_index = tool_call.get("index").and_then(Value::as_i64).unwrap_or(0);
+    if !state.tool_block_indexes.contains_key(&openai_index) {
+        let index = state.next_block_index;
+        state.next_block_index += 1;
+        state.tool_block_indexes.insert(openai_index, index);
+        events.push(anthropic_sse_chunk(
+            "content_block_start",
+            json!({
+                "type":"content_block_start",
+                "index": index,
+                "content_block": {
+                    "type":"tool_use",
+                    "id": tool_call.get("id").and_then(Value::as_str).unwrap_or("toolu_oceans"),
+                    "name": tool_call
+                        .get("function")
+                        .and_then(Value::as_object)
+                        .and_then(|function| function.get("name"))
+                        .and_then(Value::as_str)
+                        .unwrap_or("tool"),
+                    "input": {}
+                }
+            }),
+        ));
+    }
+    let Some(index) = state.tool_block_indexes.get(&openai_index).copied() else {
+        return;
+    };
+    if let Some(arguments) = tool_call
+        .get("function")
+        .and_then(Value::as_object)
+        .and_then(|function| function.get("arguments"))
+        .and_then(Value::as_str)
+        .filter(|arguments| !arguments.is_empty())
+    {
+        events.push(anthropic_sse_chunk(
+            "content_block_delta",
+            json!({
+                "type":"content_block_delta",
+                "index": index,
+                "delta": {"type":"input_json_delta","partial_json":arguments}
+            }),
+        ));
+    }
+}
+
+fn finish_anthropic_stream_blocks(state: &mut AnthropicStreamState) -> Vec<Bytes> {
+    let mut events = Vec::new();
+    if let Some(index) = state.text_block_index.take() {
+        events.push(anthropic_sse_chunk(
+            "content_block_stop",
+            json!({"type":"content_block_stop","index":index}),
+        ));
+    }
+    let indexes = std::mem::take(&mut state.tool_block_indexes)
+        .into_values()
+        .collect::<Vec<_>>();
+    for index in indexes {
+        events.push(anthropic_sse_chunk(
+            "content_block_stop",
+            json!({"type":"content_block_stop","index":index}),
+        ));
+    }
+    events
+}
+
+fn anthropic_sse_chunk(event: &str, value: Value) -> Bytes {
+    Bytes::from(format!("event: {event}\ndata: {value}\n\n"))
+}
+
+fn openai_finish_reason_to_anthropic(reason: &str) -> &'static str {
+    match reason {
+        "length" => "max_tokens",
+        "tool_calls" => "tool_use",
+        "content_filter" => "refusal",
+        _ => "end_turn",
+    }
+}
+
 fn wrap_stream_with_request_logging(
     state: LoggingBodyStreamState,
 ) -> impl futures_util::Stream<Item = Result<axum::body::Bytes, std::io::Error>> {
-    stream::unfold(state, |mut state| async move {
+    futures_stream::unfold(state, |mut state| async move {
         if state.finished {
             return None;
         }
@@ -1505,6 +2041,16 @@ fn extract_authorization_header(headers: &HeaderMap) -> Option<&str> {
         .and_then(|value| value.to_str().ok())
 }
 
+fn extract_anthropic_authorization_header(headers: &HeaderMap) -> Option<String> {
+    if let Some(value) = extract_authorization_header(headers) {
+        return Some(value.to_string());
+    }
+    headers
+        .get("x-api-key")
+        .and_then(|value| value.to_str().ok())
+        .map(|value| format!("Bearer {value}"))
+}
+
 fn canonical_request_id(request_id: Option<Extension<RequestId>>) -> Result<String, AppError> {
     let Some(Extension(request_id)) = request_id else {
         tracing::error!("canonical request id extension was missing from provider handler");
@@ -1540,11 +2086,16 @@ fn extract_request_headers(headers: &HeaderMap) -> BTreeMap<String, String> {
 #[cfg(test)]
 mod tests {
     use axum::Extension;
-    use axum::http::HeaderValue;
-    use gateway_core::GatewayError;
+    use axum::body::Bytes;
+    use axum::http::{HeaderMap, HeaderValue};
+    use futures_util::{StreamExt, stream};
+    use gateway_core::{GatewayError, ProviderStream};
     use tower_http::request_id::RequestId;
 
-    use super::canonical_request_id;
+    use super::{
+        anthropic_messages_stream_from_openai, canonical_request_id,
+        extract_anthropic_authorization_header,
+    };
 
     #[test]
     fn canonical_request_id_returns_gateway_internal_error_when_extension_is_missing() {
@@ -1577,5 +2128,41 @@ mod tests {
         };
 
         assert_eq!(value, "req-provided");
+    }
+
+    #[test]
+    fn anthropic_authorization_accepts_x_api_key() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-api-key", HeaderValue::from_static("gw-test-key"));
+
+        assert_eq!(
+            extract_anthropic_authorization_header(&headers).as_deref(),
+            Some("Bearer gw-test-key")
+        );
+    }
+
+    #[tokio::test]
+    async fn anthropic_messages_stream_adapter_emits_messages_sse() {
+        let upstream: ProviderStream = Box::pin(stream::iter(vec![Ok(Bytes::from(concat!(
+            "data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\n",
+            "data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n\n",
+            "data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"toolu_1\",\"type\":\"function\",\"function\":{\"name\":\"noop\",\"arguments\":\"{}\"}}]},\"finish_reason\":null}]}\n\n",
+            "data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n",
+            "data: [DONE]\n\n"
+        )))]));
+        let rendered = anthropic_messages_stream_from_openai(upstream, "claude".to_string())
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .map(|item| String::from_utf8(item.expect("chunk").to_vec()).expect("utf8"))
+            .collect::<String>();
+
+        assert!(rendered.contains("event: message_start"));
+        assert!(rendered.contains("\"text\":\"hi\""));
+        assert!(rendered.contains("\"type\":\"text_delta\""));
+        assert!(rendered.contains("\"type\":\"tool_use\""));
+        assert!(rendered.contains("\"partial_json\":\"{}\""));
+        assert!(rendered.contains("\"stop_reason\":\"tool_use\""));
+        assert!(rendered.contains("event: message_stop"));
     }
 }

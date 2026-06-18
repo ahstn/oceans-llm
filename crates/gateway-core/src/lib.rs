@@ -54,6 +54,7 @@ pub use domain::{
     UserRecord, UserSessionRecord, UserStatus, budget_window_utc,
 };
 pub use error::{AuthError, GatewayError, ProviderError, RouteError, StoreError};
+pub use protocol::anthropic::{AnthropicMessage, AnthropicMessagesRequest};
 pub use protocol::core::{
     ChatMessage as CoreChatMessage, ChatRequest as CoreChatRequest,
     EmbeddingsRequest as CoreEmbeddingsRequest, RequestRequirements as CoreRequestRequirements,
@@ -65,9 +66,10 @@ pub use protocol::openai::{
     ResponsesStreamEvent,
 };
 pub use protocol::translate::{
-    core_chat_request_to_openai, core_embeddings_request_to_openai,
-    core_responses_request_to_openai, openai_chat_request_to_core,
-    openai_embeddings_request_to_core, openai_responses_request_to_core,
+    anthropic_messages_request_to_core, core_chat_request_to_openai,
+    core_embeddings_request_to_openai, core_responses_request_to_openai,
+    openai_chat_request_to_core, openai_embeddings_request_to_core,
+    openai_responses_request_to_core,
 };
 pub use streaming::{ParsedSseEvent, SseEventParser, Utf8ChunkDecoder};
 pub use traits::{

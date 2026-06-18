@@ -5,9 +5,9 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use futures_util::StreamExt;
 use gateway_core::{
-    CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest, ProviderCapabilities,
-    ProviderClient, ProviderError, ProviderRequestContext, ProviderStream, SseEventParser,
-    Utf8ChunkDecoder,
+    CoreChatMessage, CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest,
+    ProviderCapabilities, ProviderClient, ProviderError, ProviderRequestContext, ProviderStream,
+    SseEventParser, Utf8ChunkDecoder,
 };
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
@@ -163,7 +163,7 @@ impl ProviderClient for VertexProvider {
     }
 
     fn capabilities(&self) -> ProviderCapabilities {
-        ProviderCapabilities::chat_only_streaming()
+        ProviderCapabilities::with_dimensions(true, true, false, true, true, false, true)
     }
 
     async fn chat_completions(
@@ -387,10 +387,16 @@ fn map_anthropic_request(
                 instructions.push(message_content_as_text(&message.content)?);
             }
             "user" | "assistant" => {
-                let content = map_anthropic_content(&message.content)?;
+                let content = map_anthropic_message_content(message)?;
                 messages.push(json!({
                     "role": message.role,
                     "content": content
+                }));
+            }
+            "tool" => {
+                messages.push(json!({
+                    "role": "user",
+                    "content": [map_openai_tool_result(message)?]
                 }));
             }
             other => {
@@ -431,6 +437,7 @@ fn map_anthropic_request(
     }
 
     merge_object_overrides(&mut body, &context.extra_body);
+    convert_openai_tools_for_anthropic(&mut body)?;
     apply_vertex_anthropic_thinking_compatibility(&mut body, &context.upstream_model)?;
     validate_vertex_anthropic_sampling_fields(&mut body, &context.upstream_model)?;
     Ok(Value::Object(body))
@@ -976,8 +983,30 @@ fn map_google_parts(content: &Value) -> Result<Vec<Value>, ProviderError> {
     }
 }
 
+fn map_anthropic_message_content(message: &CoreChatMessage) -> Result<Value, ProviderError> {
+    let mut content = match map_anthropic_content(&message.content)? {
+        Value::String(text) if text.is_empty() => Vec::new(),
+        Value::String(text) => vec![json!({"type":"text","text":text})],
+        Value::Array(items) => items,
+        _ => Vec::new(),
+    };
+    content.extend(map_openai_assistant_tool_uses(message)?);
+
+    if content.is_empty() {
+        Ok(Value::String(String::new()))
+    } else if content.len() == 1 && content[0].get("type").and_then(Value::as_str) == Some("text") {
+        Ok(content[0]
+            .get("text")
+            .cloned()
+            .unwrap_or_else(|| Value::String(String::new())))
+    } else {
+        Ok(Value::Array(content))
+    }
+}
+
 fn map_anthropic_content(content: &Value) -> Result<Value, ProviderError> {
     match content {
+        Value::Null => Ok(Value::String(String::new())),
         Value::String(value) => Ok(Value::String(value.clone())),
         Value::Array(items) => {
             let mut mapped = Vec::new();
@@ -1001,6 +1030,9 @@ fn map_anthropic_content(content: &Value) -> Result<Value, ProviderError> {
                         })?;
                         mapped.push(json!({"type":"text","text":text}));
                     }
+                    "tool_use" | "tool_result" => {
+                        mapped.push(Value::Object(object.clone()));
+                    }
                     other => {
                         return Err(ProviderError::InvalidRequest(format!(
                             "unsupported content type `{other}` for anthropic vertex mapping"
@@ -1014,6 +1046,159 @@ fn map_anthropic_content(content: &Value) -> Result<Value, ProviderError> {
             "message content must be a string or typed content array".to_string(),
         )),
     }
+}
+
+fn map_openai_assistant_tool_uses(message: &CoreChatMessage) -> Result<Vec<Value>, ProviderError> {
+    let Some(tool_calls) = message.extra.get("tool_calls") else {
+        return Ok(Vec::new());
+    };
+    let calls = tool_calls.as_array().ok_or_else(|| {
+        ProviderError::InvalidRequest("assistant tool_calls must be an array".to_string())
+    })?;
+    let mut mapped = Vec::new();
+    for call in calls {
+        let object = call.as_object().ok_or_else(|| {
+            ProviderError::InvalidRequest(
+                "assistant tool_calls entries must be objects".to_string(),
+            )
+        })?;
+        if object.get("type").and_then(Value::as_str) != Some("function") {
+            return Err(ProviderError::InvalidRequest(
+                "only function tool_calls are supported for anthropic vertex mapping".to_string(),
+            ));
+        }
+        let id = object.get("id").and_then(Value::as_str).ok_or_else(|| {
+            ProviderError::InvalidRequest(
+                "assistant tool_calls entries must include `id`".to_string(),
+            )
+        })?;
+        let function = object
+            .get("function")
+            .and_then(Value::as_object)
+            .ok_or_else(|| {
+                ProviderError::InvalidRequest(
+                    "assistant function tool_calls must include `function`".to_string(),
+                )
+            })?;
+        let name = function
+            .get("name")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                ProviderError::InvalidRequest(
+                    "assistant function tool_calls must include function.name".to_string(),
+                )
+            })?;
+        let input = function
+            .get("arguments")
+            .and_then(Value::as_str)
+            .and_then(|arguments| serde_json::from_str::<Value>(arguments).ok())
+            .unwrap_or_else(|| Value::Object(Map::new()));
+        mapped.push(json!({
+            "type": "tool_use",
+            "id": id,
+            "name": name,
+            "input": input
+        }));
+    }
+    Ok(mapped)
+}
+
+fn map_openai_tool_result(message: &CoreChatMessage) -> Result<Value, ProviderError> {
+    let tool_use_id = message
+        .extra
+        .get("tool_call_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            ProviderError::InvalidRequest("tool messages must include `tool_call_id`".to_string())
+        })?;
+    Ok(json!({
+        "type": "tool_result",
+        "tool_use_id": tool_use_id,
+        "content": message_content_as_text(&message.content)?
+    }))
+}
+
+fn convert_openai_tools_for_anthropic(body: &mut Map<String, Value>) -> Result<(), ProviderError> {
+    if let Some(tools) = body.get_mut("tools") {
+        convert_openai_function_tools(tools)?;
+    }
+    if let Some(tool_choice) = body.get_mut("tool_choice") {
+        convert_openai_tool_choice(tool_choice)?;
+    }
+    Ok(())
+}
+
+fn convert_openai_function_tools(value: &mut Value) -> Result<(), ProviderError> {
+    let Some(tools) = value.as_array_mut() else {
+        return Err(ProviderError::InvalidRequest(
+            "tools must be an array for anthropic vertex mapping".to_string(),
+        ));
+    };
+    for tool in tools {
+        let Some(object) = tool.as_object_mut() else {
+            return Err(ProviderError::InvalidRequest(
+                "tools entries must be objects for anthropic vertex mapping".to_string(),
+            ));
+        };
+        if object.get("type").and_then(Value::as_str) != Some("function") {
+            continue;
+        }
+        let function = object.remove("function").ok_or_else(|| {
+            ProviderError::InvalidRequest("function tools must include `function`".to_string())
+        })?;
+        let function = function.as_object().ok_or_else(|| {
+            ProviderError::InvalidRequest(
+                "function tools must include an object `function`".to_string(),
+            )
+        })?;
+        let name = function.get("name").cloned().ok_or_else(|| {
+            ProviderError::InvalidRequest("function tools must include function.name".to_string())
+        })?;
+        let input_schema = function
+            .get("parameters")
+            .cloned()
+            .unwrap_or_else(|| json!({"type":"object","properties":{}}));
+        object.remove("type");
+        object.insert("name".to_string(), name);
+        if let Some(description) = function.get("description").cloned() {
+            object.insert("description".to_string(), description);
+        }
+        object.insert("input_schema".to_string(), input_schema);
+    }
+    Ok(())
+}
+
+fn convert_openai_tool_choice(value: &mut Value) -> Result<(), ProviderError> {
+    match value {
+        Value::String(choice) if choice == "required" => {
+            *value = json!({"type":"any"});
+        }
+        Value::String(choice) if choice == "auto" || choice == "none" => {
+            *value = json!({"type":choice});
+        }
+        Value::Object(object) if object.get("type").and_then(Value::as_str) == Some("function") => {
+            let name = object
+                .get("function")
+                .and_then(Value::as_object)
+                .and_then(|function| function.get("name"))
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    ProviderError::InvalidRequest(
+                        "function tool_choice must include function.name".to_string(),
+                    )
+                })?
+                .to_string();
+            *value = json!({"type":"tool","name":name});
+        }
+        Value::Object(_) => {}
+        Value::Null => {}
+        _ => {
+            return Err(ProviderError::InvalidRequest(
+                "unsupported tool_choice for anthropic vertex mapping".to_string(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn extract_google_generation_config(extra: &mut BTreeMap<String, Value>) -> Map<String, Value> {
@@ -1182,6 +1367,10 @@ fn normalize_anthropic_response(value: &Value, context: &ProviderRequestContext)
             vertex_reasoning_metadata("anthropic_messages", thinking_blocks),
         );
     }
+    let tool_calls = extract_anthropic_tool_calls(blocks);
+    if !tool_calls.is_empty() {
+        message.insert("tool_calls".to_string(), Value::Array(tool_calls));
+    }
 
     let mut completion = Map::new();
     completion.insert("id".to_string(), Value::String(id));
@@ -1241,6 +1430,32 @@ fn extract_anthropic_thinking_blocks(blocks: &[Value]) -> Vec<Value> {
                 Some(Value::Object(normalized))
             }
             _ => None,
+        })
+        .collect()
+}
+
+fn extract_anthropic_tool_calls(blocks: &[Value]) -> Vec<Value> {
+    blocks
+        .iter()
+        .filter_map(|block| {
+            if block.get("type").and_then(Value::as_str) != Some("tool_use") {
+                return None;
+            }
+            let id = block.get("id").and_then(Value::as_str)?;
+            let name = block.get("name").and_then(Value::as_str)?;
+            let arguments = block
+                .get("input")
+                .cloned()
+                .unwrap_or_else(|| Value::Object(Map::new()))
+                .to_string();
+            Some(json!({
+                "id": id,
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "arguments": arguments
+                }
+            }))
         })
         .collect()
 }
@@ -1519,6 +1734,7 @@ where
         let mut role_emitted = false;
         let mut finish_emitted = false;
         let mut stream_failed = false;
+        let mut tool_block_indexes = BTreeMap::<i64, i64>::new();
         futures_util::pin_mut!(upstream);
 
         'stream_loop: while let Some(chunk) = upstream.next().await {
@@ -1569,6 +1785,7 @@ where
                         role_emitted = true;
                     }
                     "content_block_delta" => {
+                        let block_index = payload.get("index").and_then(Value::as_i64);
                         let delta = payload.get("delta").and_then(Value::as_object);
                         let delta_type = delta
                             .and_then(|delta| delta.get("type"))
@@ -1585,6 +1802,39 @@ where
                                 &model,
                                 Some("assistant").filter(|_| !role_emitted),
                                 Some(text),
+                                None,
+                            );
+                            yield Ok(openai_sse_chunk(&chunk));
+                            role_emitted = true;
+                        } else if delta_type == Some("input_json_delta")
+                            && let (Some(block_index), Some(tool_call_index), Some(partial_json)) = (
+                                block_index,
+                                block_index.and_then(|index| tool_block_indexes.get(&index).copied()),
+                                delta
+                                    .and_then(|delta| delta.get("partial_json"))
+                                    .and_then(Value::as_str),
+                            )
+                        {
+                            let _ = block_index;
+                            let mut outbound_delta = Map::new();
+                            if !role_emitted {
+                                outbound_delta.insert(
+                                    "role".to_string(),
+                                    Value::String("assistant".to_string()),
+                                );
+                            }
+                            outbound_delta.insert(
+                                "tool_calls".to_string(),
+                                json!([{
+                                    "index": tool_call_index,
+                                    "function": {"arguments": partial_json}
+                                }]),
+                            );
+                            let chunk = openai_delta_chunk(
+                                &stream_id,
+                                created,
+                                &model,
+                                Value::Object(outbound_delta),
                                 None,
                             );
                             yield Ok(openai_sse_chunk(&chunk));
@@ -1618,7 +1868,49 @@ where
                         }
                     }
                     "content_block_start" => {
-                        if let Some(block) = payload
+                        if let Some(content_block) = payload
+                            .get("content_block")
+                            .and_then(Value::as_object)
+                            && content_block.get("type").and_then(Value::as_str) == Some("tool_use")
+                        {
+                            let block_index = payload.get("index").and_then(Value::as_i64).unwrap_or(0);
+                            let tool_call_index = i64::try_from(tool_block_indexes.len()).unwrap_or(i64::MAX);
+                            tool_block_indexes.insert(block_index, tool_call_index);
+                            let mut outbound_delta = Map::new();
+                            if !role_emitted {
+                                outbound_delta.insert(
+                                    "role".to_string(),
+                                    Value::String("assistant".to_string()),
+                                );
+                            }
+                            outbound_delta.insert(
+                                "tool_calls".to_string(),
+                                json!([{
+                                    "index": tool_call_index,
+                                    "id": content_block
+                                        .get("id")
+                                        .and_then(Value::as_str)
+                                        .unwrap_or("toolu_vertex"),
+                                    "type": "function",
+                                    "function": {
+                                        "name": content_block
+                                            .get("name")
+                                            .and_then(Value::as_str)
+                                            .unwrap_or("tool"),
+                                        "arguments": ""
+                                    }
+                                }]),
+                            );
+                            let chunk = openai_delta_chunk(
+                                &stream_id,
+                                created,
+                                &model,
+                                Value::Object(outbound_delta),
+                                None,
+                            );
+                            yield Ok(openai_sse_chunk(&chunk));
+                            role_emitted = true;
+                        } else if let Some(block) = payload
                             .get("content_block")
                             .and_then(Value::as_object)
                             .and_then(normalize_anthropic_thinking_start)
@@ -2036,6 +2328,141 @@ mod tests {
     }
 
     #[test]
+    fn vertex_provider_advertises_tool_capable_chat() {
+        let provider = vertex_provider_for_test("http://127.0.0.1:1".to_string());
+        let capabilities = provider.capabilities();
+
+        assert!(capabilities.chat_completions);
+        assert!(capabilities.stream);
+        assert!(capabilities.tools);
+        assert!(capabilities.developer_role);
+    }
+
+    #[test]
+    fn maps_openai_tools_tool_calls_and_tool_results_to_anthropic_payload() {
+        let mut assistant_extra = BTreeMap::new();
+        assistant_extra.insert(
+            "tool_calls".to_string(),
+            json!([{
+                "id": "call_123",
+                "type": "function",
+                "function": {
+                    "name": "lookup",
+                    "arguments": "{\"city\":\"London\"}"
+                }
+            }]),
+        );
+        let mut tool_extra = BTreeMap::new();
+        tool_extra.insert("tool_call_id".to_string(), json!("call_123"));
+        let mut request = chat_request(vec![
+            CoreChatMessage {
+                role: "user".to_string(),
+                content: Value::String("weather?".to_string()),
+                name: None,
+                extra: BTreeMap::new(),
+            },
+            CoreChatMessage {
+                role: "assistant".to_string(),
+                content: Value::Null,
+                name: None,
+                extra: assistant_extra,
+            },
+            CoreChatMessage {
+                role: "tool".to_string(),
+                content: Value::String("sunny".to_string()),
+                name: Some("lookup".to_string()),
+                extra: tool_extra,
+            },
+        ]);
+        request.extra.insert(
+            "tools".to_string(),
+            json!([{
+                "type": "function",
+                "function": {
+                    "name": "lookup",
+                    "description": "Look up weather",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"city": {"type": "string"}},
+                        "required": ["city"]
+                    }
+                }
+            }]),
+        );
+        request.extra.insert(
+            "tool_choice".to_string(),
+            json!({"type":"function","function":{"name":"lookup"}}),
+        );
+
+        let mapped =
+            map_anthropic_request(&request, &context("anthropic/claude-sonnet-4-6"), false)
+                .expect("mapped");
+
+        assert_eq!(
+            mapped["tools"][0],
+            json!({
+                "name": "lookup",
+                "description": "Look up weather",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"city": {"type": "string"}},
+                    "required": ["city"]
+                }
+            })
+        );
+        assert_eq!(
+            mapped["tool_choice"],
+            json!({"type":"tool","name":"lookup"})
+        );
+        assert_eq!(
+            mapped["messages"][1]["content"][0],
+            json!({
+                "type": "tool_use",
+                "id": "call_123",
+                "name": "lookup",
+                "input": {"city": "London"}
+            })
+        );
+        assert_eq!(
+            mapped["messages"][2]["content"][0],
+            json!({
+                "type": "tool_result",
+                "tool_use_id": "call_123",
+                "content": "sunny"
+            })
+        );
+    }
+
+    #[test]
+    fn preserves_native_anthropic_tools_for_messages_requests() {
+        let mut request = chat_request(vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: json!([
+                {"type":"text","text":"use the tool"},
+                {"type":"tool_result","tool_use_id":"toolu_1","content":"ok"}
+            ]),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+        request.extra.insert(
+            "tools".to_string(),
+            json!([{
+                "name": "lookup",
+                "description": "Look up weather",
+                "input_schema": {"type": "object", "properties": {}}
+            }]),
+        );
+
+        let mapped =
+            map_anthropic_request(&request, &context("anthropic/claude-sonnet-4-6"), false)
+                .expect("mapped");
+
+        assert_eq!(mapped["tools"][0]["name"], "lookup");
+        assert_eq!(mapped["tools"][0]["input_schema"]["type"], "object");
+        assert_eq!(mapped["messages"][0]["content"][1]["type"], "tool_result");
+    }
+
+    #[test]
     fn maps_vertex_opus_4_7_reasoning_effort_to_adaptive_thinking() {
         let mut request = chat_request(vec![CoreChatMessage {
             role: "user".to_string(),
@@ -2403,6 +2830,36 @@ mod tests {
     }
 
     #[test]
+    fn normalizes_anthropic_tool_use_response_into_openai_tool_calls() {
+        let response = json!({
+            "id":"msg_123",
+            "content":[{
+                "type":"tool_use",
+                "id":"toolu_123",
+                "name":"lookup",
+                "input":{"city":"London"}
+            }],
+            "stop_reason":"tool_use",
+            "usage":{"input_tokens":5,"output_tokens":7}
+        });
+        let normalized =
+            normalize_anthropic_response(&response, &context("anthropic/claude-sonnet-4-6"));
+
+        assert_eq!(normalized["choices"][0]["finish_reason"], "tool_calls");
+        assert_eq!(
+            normalized["choices"][0]["message"]["tool_calls"][0],
+            json!({
+                "id": "toolu_123",
+                "type": "function",
+                "function": {
+                    "name": "lookup",
+                    "arguments": "{\"city\":\"London\"}"
+                }
+            })
+        );
+    }
+
+    #[test]
     fn normalizes_anthropic_thinking_metadata_without_leaking_into_content() {
         let response = json!({
             "id":"msg_123",
@@ -2645,6 +3102,41 @@ data: {"type":"vertex_event"}
         assert!(rendered.contains("\"redacted_thinking\""));
         assert!(rendered.contains("\"encrypted-redacted\""));
         assert_eq!(rendered.matches("\"role\":\"assistant\"").count(), 1);
+        assert!(rendered.contains("data: [DONE]"));
+    }
+
+    #[tokio::test]
+    async fn anthropic_stream_normalizes_tool_use_deltas() {
+        let upstream = stream::iter(vec![Ok(Bytes::from(concat!(
+            "event: message_start\n",
+            "data: {\"type\":\"message_start\"}\n\n",
+            "event: content_block_start\n",
+            "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_123\",\"name\":\"lookup\",\"input\":{}}}\n\n",
+            "event: content_block_delta\n",
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"city\\\":\"}}\n\n",
+            "event: content_block_delta\n",
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"\\\"London\\\"}\"}}\n\n",
+            "event: message_delta\n",
+            "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"}}\n\n"
+        )))]);
+        let stream = super::normalize_anthropic_stream(
+            upstream,
+            "chatcmpl-test".to_string(),
+            1,
+            "fast".to_string(),
+        );
+        let bytes: Vec<_> = stream.collect().await;
+        let rendered = bytes
+            .into_iter()
+            .map(|item| String::from_utf8(item.expect("chunk").to_vec()).expect("utf8"))
+            .collect::<String>();
+
+        assert!(rendered.contains("\"tool_calls\""));
+        assert!(rendered.contains("\"id\":\"toolu_123\""));
+        assert!(rendered.contains("\"name\":\"lookup\""));
+        assert!(rendered.contains("\"arguments\":\"{\\\"city\\\":\""));
+        assert!(rendered.contains("\"arguments\":\"\\\"London\\\"}\""));
+        assert!(rendered.contains("\"finish_reason\":\"tool_calls\""));
         assert!(rendered.contains("data: [DONE]"));
     }
 

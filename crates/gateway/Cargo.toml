@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 admin-ui.workspace = true
 anyhow.workspace = true
+async-stream = "0.3"
 async-trait.workspace = true
 axum.workspace = true
 futures-util.workspace = true
