@@ -1395,9 +1395,17 @@ fn anthropic_messages_stream_from_openai(
                 let Ok(value) = serde_json::from_str::<Value>(payload) else {
                     continue;
                 };
+                if let Some(outbound) = anthropic_error_event_from_openai_chunk(&value) {
+                    yield Ok(outbound);
+                    failed = true;
+                    break;
+                }
                 for outbound in anthropic_events_from_openai_chunk(&value, &model, &mut state) {
                     yield Ok(outbound);
                 }
+            }
+            if failed {
+                break;
             }
         }
 
@@ -1420,6 +1428,18 @@ fn anthropic_events_from_openai_chunk(
     state: &mut AnthropicStreamState,
 ) -> Vec<Bytes> {
     let mut events = Vec::new();
+    let usage = anthropic_stream_usage_from_openai(value.get("usage"));
+    let Some(choice) = value
+        .get("choices")
+        .and_then(Value::as_array)
+        .and_then(|choices| choices.first())
+    else {
+        if state.message_started {
+            append_anthropic_usage_delta(usage, &mut events);
+        }
+        return events;
+    };
+
     if !state.message_started {
         let message = json!({
             "id": value.get("id").and_then(Value::as_str).unwrap_or("msg_oceans_stream"),
@@ -1437,14 +1457,6 @@ fn anthropic_events_from_openai_chunk(
         ));
         state.message_started = true;
     }
-
-    let Some(choice) = value
-        .get("choices")
-        .and_then(Value::as_array)
-        .and_then(|choices| choices.first())
-    else {
-        return events;
-    };
     let delta = choice.get("delta").and_then(Value::as_object);
 
     if let Some(content) = delta
@@ -1486,19 +1498,81 @@ fn anthropic_events_from_openai_chunk(
 
     if let Some(reason) = choice.get("finish_reason").and_then(Value::as_str) {
         events.extend(finish_anthropic_stream_blocks(state));
-        events.push(anthropic_sse_chunk(
-            "message_delta",
-            json!({
+        let mut message_delta = json!({
                 "type":"message_delta",
                 "delta": {
                     "stop_reason": openai_finish_reason_to_anthropic(reason),
                     "stop_sequence": null
                 }
-            }),
-        ));
+        });
+        if let Some(usage) = usage {
+            message_delta["usage"] = usage;
+        }
+        events.push(anthropic_sse_chunk("message_delta", message_delta));
+    } else {
+        append_anthropic_usage_delta(usage, &mut events);
     }
 
     events
+}
+
+fn anthropic_error_event_from_openai_chunk(value: &Value) -> Option<Bytes> {
+    let error = value.get("error")?.as_object()?;
+    let error_type = error
+        .get("type")
+        .or_else(|| error.get("code"))
+        .and_then(Value::as_str)
+        .unwrap_or("api_error");
+    let message = error
+        .get("message")
+        .and_then(Value::as_str)
+        .unwrap_or("stream failed");
+    let code = error
+        .get("code")
+        .and_then(Value::as_str)
+        .unwrap_or(error_type);
+
+    Some(anthropic_sse_chunk(
+        "error",
+        json!({
+            "type": "error",
+            "error": {
+                "type": error_type,
+                "message": message,
+                "code": code
+            }
+        }),
+    ))
+}
+
+fn append_anthropic_usage_delta(usage: Option<Value>, events: &mut Vec<Bytes>) {
+    let Some(usage) = usage else {
+        return;
+    };
+    events.push(anthropic_sse_chunk(
+        "message_delta",
+        json!({
+            "type": "message_delta",
+            "delta": {},
+            "usage": usage
+        }),
+    ));
+}
+
+fn anthropic_stream_usage_from_openai(value: Option<&Value>) -> Option<Value> {
+    let usage = value?.as_object()?;
+    let mut anthropic_usage = serde_json::Map::new();
+    if let Some(input_tokens) = usage.get("prompt_tokens").and_then(Value::as_i64) {
+        anthropic_usage.insert("input_tokens".to_string(), json!(input_tokens));
+    }
+    if let Some(output_tokens) = usage.get("completion_tokens").and_then(Value::as_i64) {
+        anthropic_usage.insert("output_tokens".to_string(), json!(output_tokens));
+    }
+    if anthropic_usage.is_empty() {
+        None
+    } else {
+        Some(Value::Object(anthropic_usage))
+    }
 }
 
 fn append_anthropic_tool_delta(
@@ -2090,6 +2164,8 @@ mod tests {
     use axum::http::{HeaderMap, HeaderValue};
     use futures_util::{StreamExt, stream};
     use gateway_core::{GatewayError, ProviderStream};
+    use gateway_service::StreamResponseCollector;
+    use serde_json::json;
     use tower_http::request_id::RequestId;
 
     use super::{
@@ -2164,5 +2240,52 @@ mod tests {
         assert!(rendered.contains("\"partial_json\":\"{}\""));
         assert!(rendered.contains("\"stop_reason\":\"tool_use\""));
         assert!(rendered.contains("event: message_stop"));
+    }
+
+    #[tokio::test]
+    async fn anthropic_messages_stream_adapter_emits_error_without_success_stop() {
+        let upstream: ProviderStream = Box::pin(stream::iter(vec![Ok(Bytes::from(
+            "data: {\"error\":{\"message\":\"upstream failed\",\"type\":\"upstream_error\",\"code\":\"upstream_bad\"}}\n\n",
+        ))]));
+
+        let rendered = anthropic_messages_stream_from_openai(upstream, "claude".to_string())
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .map(|item| String::from_utf8(item.expect("chunk").to_vec()).expect("utf8"))
+            .collect::<String>();
+
+        assert!(rendered.contains("event: error"));
+        assert!(rendered.contains("\"message\":\"upstream failed\""));
+        assert!(rendered.contains("\"code\":\"upstream_bad\""));
+        assert!(!rendered.contains("event: message_start"));
+        assert!(!rendered.contains("event: message_stop"));
+    }
+
+    #[tokio::test]
+    async fn anthropic_messages_stream_adapter_preserves_usage_for_collector() {
+        let upstream: ProviderStream = Box::pin(stream::iter(vec![Ok(Bytes::from(concat!(
+            "data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n\n",
+            "data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            "data: {\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":4,\"total_tokens\":7}}\n\n",
+            "data: [DONE]\n\n"
+        )))]));
+
+        let rendered = anthropic_messages_stream_from_openai(upstream, "claude".to_string())
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .map(|item| String::from_utf8(item.expect("chunk").to_vec()).expect("utf8"))
+            .collect::<String>();
+        let mut collector = StreamResponseCollector::default();
+        collector.observe_chunk(rendered.as_bytes());
+
+        assert!(rendered.contains("event: message_delta"));
+        assert!(rendered.contains("\"input_tokens\":3"));
+        assert!(rendered.contains("\"output_tokens\":4"));
+        assert_eq!(
+            collector.usage(),
+            Some(&json!({"input_tokens": 3, "output_tokens": 4}))
+        );
     }
 }
