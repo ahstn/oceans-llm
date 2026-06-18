@@ -229,7 +229,8 @@ fn manual_budget_models_do_not_emit_variants() {
 
 #[test]
 fn non_anthropic_models_use_openai_compatible_client_surfaces() {
-    let input = non_anthropic_input();
+    let mut input = non_anthropic_input();
+    input.display_name = "Claude-compatible Qwen Coder".to_string();
     let opencode: Value =
         serde_json::from_str(&OpenCodeConfigTemplate.render(&input).blocks[0].content)
             .expect("json");

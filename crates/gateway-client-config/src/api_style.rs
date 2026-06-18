@@ -5,7 +5,6 @@ use crate::types::{AnthropicThinkingPolicy, ClientConfigInput};
 pub(crate) fn uses_anthropic_messages_api(input: &ClientConfigInput) -> bool {
     let joined = [
         input.model_id.as_str(),
-        input.display_name.as_str(),
         input.upstream_model.as_deref().unwrap_or_default(),
     ]
     .join(" ")

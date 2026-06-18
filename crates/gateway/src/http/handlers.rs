@@ -5,7 +5,7 @@ use axum::{
     body::Body,
     extract::{Extension, State},
     http::{
-        HeaderMap, HeaderValue,
+        HeaderMap, HeaderValue, StatusCode,
         header::{AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE},
     },
     response::{IntoResponse, Response},
@@ -83,6 +83,18 @@ pub async fn v1_messages(
     request_id: Option<Extension<RequestId>>,
     headers: HeaderMap,
     Json(request): Json<AnthropicMessagesRequest>,
+) -> Response {
+    match v1_messages_inner(state, request_id, headers, request).await {
+        Ok(response) => response,
+        Err(error) => anthropic_error_response(error.0),
+    }
+}
+
+async fn v1_messages_inner(
+    state: AppState,
+    request_id: Option<Extension<RequestId>>,
+    headers: HeaderMap,
+    request: AnthropicMessagesRequest,
 ) -> Result<Response, AppError> {
     let request_started_at = Instant::now();
     let request_id = canonical_request_id(request_id)?;
@@ -286,6 +298,22 @@ pub async fn v1_messages(
             .insert("x-request-id", request_id_header);
     }
     Ok(response)
+}
+
+fn anthropic_error_response(error: GatewayError) -> Response {
+    let status =
+        StatusCode::from_u16(error.http_status_code()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    let mut response = Json(json!({
+        "type": "error",
+        "error": {
+            "type": error.error_type(),
+            "message": error.to_string(),
+            "code": error.error_code(),
+        }
+    }))
+    .into_response();
+    *response.status_mut() = status;
+    response
 }
 
 pub async fn v1_chat_completions(
@@ -1871,11 +1899,15 @@ fn extract_request_headers(headers: &HeaderMap) -> BTreeMap<String, String> {
 #[cfg(test)]
 mod tests {
     use axum::Extension;
+    use axum::body::to_bytes;
     use axum::http::{HeaderMap, HeaderValue};
     use gateway_core::GatewayError;
+    use serde_json::Value;
     use tower_http::request_id::RequestId;
 
-    use super::{canonical_request_id, extract_anthropic_authorization_header};
+    use super::{
+        anthropic_error_response, canonical_request_id, extract_anthropic_authorization_header,
+    };
 
     #[test]
     fn canonical_request_id_returns_gateway_internal_error_when_extension_is_missing() {
@@ -1918,6 +1950,27 @@ mod tests {
         assert_eq!(
             extract_anthropic_authorization_header(&headers).as_deref(),
             Some("Bearer gw-test-key")
+        );
+    }
+
+    #[tokio::test]
+    async fn anthropic_error_response_uses_messages_error_shape() {
+        let response = anthropic_error_response(GatewayError::InvalidRequest(
+            "bad messages request".to_string(),
+        ));
+        let status = response.status();
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        let value: Value = serde_json::from_slice(&body).expect("json");
+
+        assert_eq!(status.as_u16(), 400);
+        assert_eq!(value["type"], "error");
+        assert_eq!(value["error"]["type"], "invalid_request_error");
+        assert_eq!(value["error"]["code"], "invalid_request");
+        assert_eq!(
+            value["error"]["message"],
+            "invalid request: bad messages request"
         );
     }
 }
