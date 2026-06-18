@@ -44,6 +44,16 @@ pub fn anthropic_message_from_openai_chat(value: &Value, model_key: &str) -> Val
     let message = choice.and_then(|choice| choice.get("message"));
 
     let mut content = Vec::new();
+    if let Some(thinking_blocks) = message
+        .and_then(|message| message.get("provider_metadata"))
+        .and_then(|metadata| metadata.get("gcp_vertex"))
+        .and_then(|metadata| metadata.get("reasoning"))
+        .and_then(|reasoning| reasoning.get("blocks"))
+        .and_then(Value::as_array)
+    {
+        content.extend(thinking_blocks.iter().cloned());
+    }
+
     if let Some(text) = message
         .and_then(|message| message.get("content"))
         .and_then(Value::as_str)
@@ -86,7 +96,7 @@ fn anthropic_tool_use_from_openai(value: &Value) -> Option<Value> {
     let input = function
         .get("arguments")
         .and_then(Value::as_str)
-        .and_then(|arguments| serde_json::from_str::<Value>(arguments).ok())
+        .map(parse_openai_tool_arguments_for_anthropic)
         .unwrap_or_else(|| Value::Object(Map::new()));
 
     Some(json!({
@@ -113,11 +123,85 @@ fn anthropic_usage_from_openai(value: Option<&Value>) -> Value {
     })
 }
 
-fn openai_finish_reason_to_anthropic(value: &str) -> &'static str {
+fn parse_openai_tool_arguments_for_anthropic(arguments: &str) -> Value {
+    serde_json::from_str::<Value>(arguments)
+        .unwrap_or_else(|_| json!({"_raw_arguments": arguments}))
+}
+
+pub fn openai_finish_reason_to_anthropic(value: &str) -> &'static str {
     match value {
         "length" => "max_tokens",
         "tool_calls" => "tool_use",
         "content_filter" => "refusal",
         _ => "end_turn",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::anthropic_message_from_openai_chat;
+
+    #[test]
+    fn message_conversion_preserves_vertex_thinking_blocks() {
+        let value = json!({
+            "id": "chatcmpl_1",
+            "choices": [{
+                "finish_reason": "stop",
+                "message": {
+                    "role": "assistant",
+                    "content": "visible",
+                    "provider_metadata": {
+                        "gcp_vertex": {
+                            "reasoning": {
+                                "blocks": [
+                                    {"type": "thinking", "thinking": "hidden", "signature": "sig"}
+                                ]
+                            }
+                        }
+                    }
+                }
+            }],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 2}
+        });
+
+        let converted = anthropic_message_from_openai_chat(&value, "claude");
+
+        assert_eq!(
+            converted["content"],
+            json!([
+                {"type": "thinking", "thinking": "hidden", "signature": "sig"},
+                {"type": "text", "text": "visible"}
+            ])
+        );
+    }
+
+    #[test]
+    fn message_conversion_preserves_malformed_tool_arguments_as_raw_input() {
+        let value = json!({
+            "id": "chatcmpl_1",
+            "choices": [{
+                "finish_reason": "tool_calls",
+                "message": {
+                    "role": "assistant",
+                    "tool_calls": [{
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {
+                            "name": "lookup",
+                            "arguments": "{\"city\":"
+                        }
+                    }]
+                }
+            }]
+        });
+
+        let converted = anthropic_message_from_openai_chat(&value, "claude");
+
+        assert_eq!(
+            converted["content"][0]["input"],
+            json!({"_raw_arguments": "{\"city\":"})
+        );
     }
 }

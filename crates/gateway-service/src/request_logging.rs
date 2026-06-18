@@ -349,6 +349,7 @@ fn tool_call_identities_from_value(value: &Value) -> Vec<ToolCallIdentity> {
     let mut identities = Vec::new();
     collect_chat_tool_call_identities(value, &mut identities);
     collect_responses_tool_call_identities(value, &mut identities);
+    collect_anthropic_messages_tool_call_identities(value, &mut identities);
     identities
 }
 
@@ -391,6 +392,26 @@ fn collect_responses_tool_call_identities(value: &Value, identities: &mut Vec<To
 
     if let Some(delta) = value.get("delta") {
         collect_tool_call_item_identity(delta, identities, false);
+    }
+}
+
+fn collect_anthropic_messages_tool_call_identities(
+    value: &Value,
+    identities: &mut Vec<ToolCallIdentity>,
+) {
+    if value.get("type").and_then(Value::as_str) == Some("content_block_start")
+        && let Some(content_block) = value.get("content_block")
+        && content_block.get("type").and_then(Value::as_str) == Some("tool_use")
+    {
+        push_tool_call_identity(content_block, identities, true);
+    }
+
+    if let Some(content) = value.get("content").and_then(Value::as_array) {
+        for item in content {
+            if item.get("type").and_then(Value::as_str) == Some("tool_use") {
+                push_tool_call_identity(item, identities, true);
+            }
+        }
     }
 }
 
@@ -2277,6 +2298,27 @@ data: {"output":[{"id":"call_2","type":"function_call"}]}
 data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"city\""}}]}}]}
 
 data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":":\"London\"}"}}]}}]}
+
+"#,
+        );
+        collector.finish();
+
+        assert_eq!(collector.invoked_tool_count(), 1);
+    }
+
+    #[test]
+    fn stream_collector_counts_anthropic_messages_tool_use_starts() {
+        let mut collector = StreamResponseCollector::default();
+
+        collector.observe_chunk(
+            br#"event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"lookup","input":{}}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{}"}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_1","name":"lookup","input":{}}}
 
 "#,
         );

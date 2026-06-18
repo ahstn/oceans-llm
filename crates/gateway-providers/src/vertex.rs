@@ -994,7 +994,7 @@ fn map_anthropic_message_content(message: &CoreChatMessage) -> Result<Value, Pro
 
     if content.is_empty() {
         Ok(Value::String(String::new()))
-    } else if content.len() == 1 && content[0].get("type").and_then(Value::as_str) == Some("text") {
+    } else if content.len() == 1 && is_plain_anthropic_text_block(&content[0]) {
         Ok(content[0]
             .get("text")
             .cloned()
@@ -1028,7 +1028,11 @@ fn map_anthropic_content(content: &Value) -> Result<Value, ProviderError> {
                                 "text content entries must include a string `text`".to_string(),
                             )
                         })?;
-                        mapped.push(json!({"type":"text","text":text}));
+                        if kind == "text" {
+                            mapped.push(Value::Object(object.clone()));
+                        } else {
+                            mapped.push(json!({"type":"text","text":text}));
+                        }
                     }
                     "tool_use" | "tool_result" => {
                         mapped.push(Value::Object(object.clone()));
@@ -1046,6 +1050,15 @@ fn map_anthropic_content(content: &Value) -> Result<Value, ProviderError> {
             "message content must be a string or typed content array".to_string(),
         )),
     }
+}
+
+fn is_plain_anthropic_text_block(value: &Value) -> bool {
+    let Some(object) = value.as_object() else {
+        return false;
+    };
+    object.len() == 2
+        && object.get("type").and_then(Value::as_str) == Some("text")
+        && object.get("text").and_then(Value::as_str).is_some()
 }
 
 fn map_openai_assistant_tool_uses(message: &CoreChatMessage) -> Result<Vec<Value>, ProviderError> {
@@ -1088,11 +1101,7 @@ fn map_openai_assistant_tool_uses(message: &CoreChatMessage) -> Result<Vec<Value
                     "assistant function tool_calls must include function.name".to_string(),
                 )
             })?;
-        let input = function
-            .get("arguments")
-            .and_then(Value::as_str)
-            .and_then(|arguments| serde_json::from_str::<Value>(arguments).ok())
-            .unwrap_or_else(|| Value::Object(Map::new()));
+        let input = parse_openai_tool_arguments(function)?;
         mapped.push(json!({
             "type": "tool_use",
             "id": id,
@@ -1101,6 +1110,22 @@ fn map_openai_assistant_tool_uses(message: &CoreChatMessage) -> Result<Vec<Value
         }));
     }
     Ok(mapped)
+}
+
+fn parse_openai_tool_arguments(function: &Map<String, Value>) -> Result<Value, ProviderError> {
+    let Some(arguments) = function.get("arguments") else {
+        return Ok(Value::Object(Map::new()));
+    };
+    let arguments = arguments.as_str().ok_or_else(|| {
+        ProviderError::InvalidRequest(
+            "assistant function tool_calls arguments must be a JSON string".to_string(),
+        )
+    })?;
+    serde_json::from_str::<Value>(arguments).map_err(|error| {
+        ProviderError::InvalidRequest(format!(
+            "assistant function tool_calls arguments must contain valid JSON: {error}"
+        ))
+    })
 }
 
 fn map_openai_tool_result(message: &CoreChatMessage) -> Result<Value, ProviderError> {
@@ -1122,7 +1147,13 @@ fn convert_openai_tools_for_anthropic(body: &mut Map<String, Value>) -> Result<(
     if let Some(tools) = body.get_mut("tools") {
         convert_openai_function_tools(tools)?;
     }
-    if let Some(tool_choice) = body.get_mut("tool_choice") {
+    if body
+        .get("tool_choice")
+        .and_then(Value::as_str)
+        .is_some_and(|choice| choice == "none")
+    {
+        body.remove("tool_choice");
+    } else if let Some(tool_choice) = body.get_mut("tool_choice") {
         convert_openai_tool_choice(tool_choice)?;
     }
     Ok(())
@@ -1173,7 +1204,7 @@ fn convert_openai_tool_choice(value: &mut Value) -> Result<(), ProviderError> {
         Value::String(choice) if choice == "required" => {
             *value = json!({"type":"any"});
         }
-        Value::String(choice) if choice == "auto" || choice == "none" => {
+        Value::String(choice) if choice == "auto" => {
             *value = json!({"type":choice});
         }
         Value::Object(object) if object.get("type").and_then(Value::as_str) == Some("function") => {
@@ -1807,7 +1838,7 @@ where
                             yield Ok(openai_sse_chunk(&chunk));
                             role_emitted = true;
                         } else if delta_type == Some("input_json_delta")
-                            && let (Some(block_index), Some(tool_call_index), Some(partial_json)) = (
+                            && let (Some(_block_index), Some(tool_call_index), Some(partial_json)) = (
                                 block_index,
                                 block_index.and_then(|index| tool_block_indexes.get(&index).copied()),
                                 delta
@@ -1815,7 +1846,6 @@ where
                                     .and_then(Value::as_str),
                             )
                         {
-                            let _ = block_index;
                             let mut outbound_delta = Map::new();
                             if !role_emitted {
                                 outbound_delta.insert(
@@ -2430,6 +2460,83 @@ mod tests {
                 "tool_use_id": "call_123",
                 "content": "sunny"
             })
+        );
+    }
+
+    #[test]
+    fn omits_openai_none_tool_choice_for_anthropic_payload() {
+        let mut request = chat_request(vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: Value::String("do not use tools".to_string()),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+        request
+            .extra
+            .insert("tool_choice".to_string(), json!("none"));
+
+        let mapped =
+            map_anthropic_request(&request, &context("anthropic/claude-sonnet-4-6"), false)
+                .expect("mapped");
+
+        assert!(mapped.get("tool_choice").is_none());
+    }
+
+    #[test]
+    fn rejects_malformed_openai_tool_call_arguments_for_anthropic_payload() {
+        let mut assistant_extra = BTreeMap::new();
+        assistant_extra.insert(
+            "tool_calls".to_string(),
+            json!([{
+                "id": "call_123",
+                "type": "function",
+                "function": {
+                    "name": "lookup",
+                    "arguments": "{\"city\":"
+                }
+            }]),
+        );
+        let request = chat_request(vec![
+            CoreChatMessage {
+                role: "user".to_string(),
+                content: Value::String("weather?".to_string()),
+                name: None,
+                extra: BTreeMap::new(),
+            },
+            CoreChatMessage {
+                role: "assistant".to_string(),
+                content: Value::Null,
+                name: None,
+                extra: assistant_extra,
+            },
+        ]);
+
+        let error = map_anthropic_request(&request, &context("anthropic/claude-sonnet-4-6"), false)
+            .expect_err("malformed arguments should fail");
+
+        assert!(error.to_string().contains("valid JSON"));
+    }
+
+    #[test]
+    fn preserves_anthropic_text_block_metadata_for_prompt_caching() {
+        let request = chat_request(vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: json!([{
+                "type": "text",
+                "text": "cached prompt",
+                "cache_control": {"type": "ephemeral"}
+            }]),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+
+        let mapped =
+            map_anthropic_request(&request, &context("anthropic/claude-sonnet-4-6"), false)
+                .expect("mapped");
+
+        assert_eq!(
+            mapped["messages"][0]["content"][0]["cache_control"],
+            json!({"type": "ephemeral"})
         );
     }
 
