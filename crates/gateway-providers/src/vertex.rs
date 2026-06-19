@@ -1609,6 +1609,45 @@ fn map_anthropic_stream_usage(value: &Value) -> Option<Value> {
     }
 }
 
+fn merge_openai_stream_usage(latest: &mut Option<Value>, usage: &Value) -> Value {
+    let usage = openai_usage_with_known_fields(usage.clone(), latest.as_ref());
+    *latest = Some(usage.clone());
+    usage
+}
+
+fn openai_usage_with_known_fields(usage: Value, latest: Option<&Value>) -> Value {
+    let prompt_tokens = merged_usage_counter(&usage, latest, "prompt_tokens");
+    let completion_tokens = merged_usage_counter(&usage, latest, "completion_tokens");
+    let total_tokens = match (prompt_tokens, completion_tokens) {
+        (Some(prompt), Some(completion)) => prompt.saturating_add(completion),
+        _ => merged_usage_counter(&usage, latest, "total_tokens").unwrap_or(0),
+    };
+
+    let mut object = usage.as_object().cloned().unwrap_or_default();
+    if let Some(prompt_tokens) = prompt_tokens {
+        object.insert("prompt_tokens".to_string(), json!(prompt_tokens));
+    }
+    if let Some(completion_tokens) = completion_tokens {
+        object.insert("completion_tokens".to_string(), json!(completion_tokens));
+    }
+    object.insert("total_tokens".to_string(), json!(total_tokens));
+    Value::Object(object)
+}
+
+fn merged_usage_counter(usage: &Value, latest: Option<&Value>, field: &str) -> Option<i64> {
+    let incoming = usage.get(field).and_then(Value::as_i64);
+    let previous = latest
+        .and_then(|latest| latest.get(field))
+        .and_then(Value::as_i64);
+
+    match (incoming, previous) {
+        (Some(incoming), Some(previous)) => Some(incoming.max(previous)),
+        (Some(incoming), None) => Some(incoming),
+        (None, Some(previous)) => Some(previous),
+        (None, None) => None,
+    }
+}
+
 fn extract_google_candidate_text(candidate: &Value) -> String {
     candidate
         .get("content")
@@ -1792,12 +1831,15 @@ fn normalize_anthropic_stream<S>(
 where
     S: futures_util::stream::Stream<Item = Result<Bytes, reqwest::Error>> + Send + 'static,
 {
+    // Split plan: move Anthropic SSE state, usage merging, and event mapping into
+    // a focused Vertex Anthropic stream module when this normalizer next grows.
     Box::pin(stream! {
         let mut parser = SseEventParser::default();
         let mut role_emitted = false;
         let mut finish_emitted = false;
         let mut stream_failed = false;
         let mut tool_block_indexes = BTreeMap::<i64, i64>::new();
+        let mut latest_usage = None;
         futures_util::pin_mut!(upstream);
 
         'stream_loop: while let Some(chunk) = upstream.next().await {
@@ -1845,6 +1887,7 @@ where
                             None,
                         );
                         if let Some(usage) = map_anthropic_stream_usage(&payload) {
+                            let usage = merge_openai_stream_usage(&mut latest_usage, &usage);
                             delta["usage"] = usage;
                         }
                         yield Ok(openai_sse_chunk(&delta));
@@ -2006,7 +2049,8 @@ where
                         }
                     }
                     "message_delta" => {
-                        let usage = map_anthropic_stream_usage(&payload);
+                        let usage = map_anthropic_stream_usage(&payload)
+                            .map(|usage| merge_openai_stream_usage(&mut latest_usage, &usage));
                         if let Some(reason) = payload
                             .get("delta")
                             .and_then(Value::as_object)
@@ -3334,7 +3378,9 @@ data: {"type":"vertex_event"}
         }));
         assert!(events.iter().any(|event| {
             event["choices"][0]["finish_reason"] == json!("stop")
+                && event["usage"]["prompt_tokens"] == json!(9)
                 && event["usage"]["completion_tokens"] == json!(2)
+                && event["usage"]["total_tokens"] == json!(11)
         }));
     }
 

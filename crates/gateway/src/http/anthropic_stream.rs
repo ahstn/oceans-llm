@@ -26,6 +26,7 @@ pub(super) fn anthropic_messages_stream_from_openai(
         let mut parser = SseEventParser::default();
         let mut state = AnthropicStreamState::default();
         let mut failed = false;
+        let mut completed = false;
         futures_util::pin_mut!(upstream);
 
         while let Some(chunk) = upstream.next().await {
@@ -48,8 +49,12 @@ pub(super) fn anthropic_messages_stream_from_openai(
 
             for event in events {
                 let payload = event.data.trim();
-                if payload.is_empty() || payload == "[DONE]" {
+                if payload.is_empty() {
                     continue;
+                }
+                if payload == "[DONE]" {
+                    completed = true;
+                    break;
                 }
                 let Ok(value) = serde_json::from_str::<Value>(payload) else {
                     continue;
@@ -63,7 +68,7 @@ pub(super) fn anthropic_messages_stream_from_openai(
                     yield Ok(outbound);
                 }
             }
-            if failed {
+            if failed || completed {
                 break;
             }
         }
@@ -243,29 +248,26 @@ fn merge_anthropic_stream_usage(latest: &mut Option<Value>, usage: &Value) {
 }
 
 fn usage_with_known_fields(usage: Value, latest: Option<&Value>) -> Value {
-    let input_tokens = usage
-        .get("input_tokens")
-        .and_then(Value::as_i64)
-        .or_else(|| {
-            latest
-                .and_then(|latest| latest.get("input_tokens"))
-                .and_then(Value::as_i64)
-        })
-        .unwrap_or(0);
-    let output_tokens = usage
-        .get("output_tokens")
-        .and_then(Value::as_i64)
-        .or_else(|| {
-            latest
-                .and_then(|latest| latest.get("output_tokens"))
-                .and_then(Value::as_i64)
-        })
-        .unwrap_or(0);
-
+    let input_tokens = merged_counter(&usage, latest, "input_tokens");
+    let output_tokens = merged_counter(&usage, latest, "output_tokens");
     let mut object = usage.as_object().cloned().unwrap_or_default();
     object.insert("input_tokens".to_string(), json!(input_tokens));
     object.insert("output_tokens".to_string(), json!(output_tokens));
     Value::Object(object)
+}
+
+fn merged_counter(usage: &Value, latest: Option<&Value>, field: &str) -> i64 {
+    let incoming = usage.get(field).and_then(Value::as_i64);
+    let previous = latest
+        .and_then(|latest| latest.get(field))
+        .and_then(Value::as_i64);
+
+    match (incoming, previous) {
+        (Some(incoming), Some(previous)) => incoming.max(previous),
+        (Some(incoming), None) => incoming,
+        (None, Some(previous)) => previous,
+        (None, None) => 0,
+    }
 }
 
 fn fallback_anthropic_stream_usage() -> Value {
@@ -490,11 +492,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn anthropic_messages_stream_adapter_finalizes_on_done_marker() {
+        let upstream: ProviderStream = Box::pin(
+            stream::iter(vec![Ok(Bytes::from(concat!(
+                "data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hello\"},\"finish_reason\":null}]}\n\n",
+                "data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+                "data: [DONE]\n\n"
+            )))])
+            .chain(stream::pending()),
+        );
+
+        let rendered = tokio::time::timeout(
+            std::time::Duration::from_millis(250),
+            render_stream(upstream),
+        )
+        .await
+        .expect("adapter should finalize on [DONE]");
+
+        assert!(rendered.contains("event: message_delta"));
+        assert!(rendered.contains("event: message_stop"));
+    }
+
+    #[tokio::test]
     async fn anthropic_messages_stream_adapter_merges_partial_usage_for_final_delta() {
         let upstream: ProviderStream = Box::pin(stream::iter(vec![Ok(Bytes::from(concat!(
             "data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}],\"usage\":{\"prompt_tokens\":11,\"completion_tokens\":0,\"total_tokens\":11}}\n\n",
             "data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n\n",
-            "data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"completion_tokens\":3}}\n\n",
+            "data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":0,\"completion_tokens\":3}}\n\n",
             "data: [DONE]\n\n"
         )))]));
 
