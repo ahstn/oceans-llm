@@ -44,6 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(gateway)* Restrict github oauth email domains by @ahstn
 - *(gateway)* Restrict github oauth email domains by @ahstn in [#183](https://github.com/ahstn/oceans-llm/pull/183)
 - *(admin-ui)* Polish MCP management UI by @ahstn in [#184](https://github.com/ahstn/oceans-llm/pull/184)
+- *(gateway)* Add Codex client config by @ahstn
+- *(gateway)* Add Codex client config by @ahstn in [#185](https://github.com/ahstn/oceans-llm/pull/185)
+- *(gateway)* Add Anthropic messages for Vertex Claude tools by @ahstn
+- *(gateway)* Add Anthropic messages for Vertex Claude tools by @ahstn in [#186](https://github.com/ahstn/oceans-llm/pull/186)
 
 ### :bug: Bug fixes
 - *(gateway)* Harden oidc review findings by @ahstn
@@ -76,11 +80,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix cloud run provider review findings by @ahstn
 - *(gateway)* Handle oauth review followups by @ahstn
 - *(admin-ui)* Address MCP review findings by @ahstn
+- *(gateway)* Refine Codex config availability by @ahstn
+- *(gateway)* Preserve Anthropic stream errors and usage by @ahstn
+- *(client-config)* Use Anthropic APIs for Claude models by @ahstn
+- *(gateway)* Address Anthropic messages PR review findings by @ahstn
+- *(gateway)* Align Messages errors and config API inference by @ahstn
 
 ### Build
 - Post release tasks - v0.8.0 by @ahstn
 - Post release tasks - v0.9.0 by @ahstn
 - Post release tasks - v0.10.0 by @ahstn
+- Post release tasks - v0.10.1 by @ahstn
 
 ### Changed
 - Add hosted MCP recommendations by @ahstn
@@ -95,6 +105,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Align admin identity and MCP tables by @ahstn
 - Polish MCP tools dialog by @ahstn
 - Document MCP admin workflows by @ahstn
+- *(client-config)* Split client renderers by concern by @ahstn
 
 ### Documentation
 - Adding more screenshots by @ahstn
@@ -102,6 +113,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Address FOCUS export review notes by @ahstn
 - Updating screenshots by @ahstn
 - *(bedrock)* Make projects snippet loadable by @ahstn
+- *(client-config)* Note mixed API provider split by @ahstn
 
 ### Miscellaneous
 - Upgrade bun deps by @ahstn
