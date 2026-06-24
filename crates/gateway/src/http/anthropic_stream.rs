@@ -14,6 +14,8 @@ struct AnthropicStreamState {
     next_block_index: i64,
     text_block_index: Option<i64>,
     tool_block_indexes: BTreeMap<i64, i64>,
+    latest_usage: Option<Value>,
+    pending_stop_reason: Option<String>,
 }
 
 pub(super) fn anthropic_messages_stream_from_openai(
@@ -24,6 +26,7 @@ pub(super) fn anthropic_messages_stream_from_openai(
         let mut parser = SseEventParser::default();
         let mut state = AnthropicStreamState::default();
         let mut failed = false;
+        let mut completed = false;
         futures_util::pin_mut!(upstream);
 
         while let Some(chunk) = upstream.next().await {
@@ -46,8 +49,12 @@ pub(super) fn anthropic_messages_stream_from_openai(
 
             for event in events {
                 let payload = event.data.trim();
-                if payload.is_empty() || payload == "[DONE]" {
+                if payload.is_empty() {
                     continue;
+                }
+                if payload == "[DONE]" {
+                    completed = true;
+                    break;
                 }
                 let Ok(value) = serde_json::from_str::<Value>(payload) else {
                     continue;
@@ -61,7 +68,7 @@ pub(super) fn anthropic_messages_stream_from_openai(
                     yield Ok(outbound);
                 }
             }
-            if failed {
+            if failed || completed {
                 break;
             }
         }
@@ -71,6 +78,9 @@ pub(super) fn anthropic_messages_stream_from_openai(
                 yield Err(error);
             } else {
                 for outbound in finish_anthropic_stream_blocks(&mut state) {
+                    yield Ok(outbound);
+                }
+                if let Some(outbound) = pending_anthropic_message_delta(&mut state) {
                     yield Ok(outbound);
                 }
                 yield Ok(anthropic_sse_chunk("message_stop", json!({"type":"message_stop"})));
@@ -86,13 +96,16 @@ fn anthropic_events_from_openai_chunk(
 ) -> Vec<Bytes> {
     let mut events = Vec::new();
     let usage = anthropic_stream_usage_from_openai(value.get("usage"));
+    if let Some(usage) = usage.as_ref() {
+        merge_anthropic_stream_usage(&mut state.latest_usage, usage);
+    }
     let Some(choice) = value
         .get("choices")
         .and_then(Value::as_array)
         .and_then(|choices| choices.first())
     else {
         if state.message_started {
-            append_anthropic_usage_delta(usage, &mut events);
+            append_anthropic_usage_delta(usage, state, &mut events);
         }
         return events;
     };
@@ -155,19 +168,9 @@ fn anthropic_events_from_openai_chunk(
 
     if let Some(reason) = choice.get("finish_reason").and_then(Value::as_str) {
         events.extend(finish_anthropic_stream_blocks(state));
-        let mut message_delta = json!({
-                "type":"message_delta",
-                "delta": {
-                    "stop_reason": openai_finish_reason_to_anthropic(reason),
-                    "stop_sequence": null
-                }
-        });
-        if let Some(usage) = usage {
-            message_delta["usage"] = usage;
-        }
-        events.push(anthropic_sse_chunk("message_delta", message_delta));
+        state.pending_stop_reason = Some(openai_finish_reason_to_anthropic(reason).to_string());
     } else {
-        append_anthropic_usage_delta(usage, &mut events);
+        append_anthropic_usage_delta(usage, state, &mut events);
     }
 
     events
@@ -202,16 +205,23 @@ fn anthropic_error_event_from_openai_chunk(value: &Value) -> Option<Bytes> {
     ))
 }
 
-fn append_anthropic_usage_delta(usage: Option<Value>, events: &mut Vec<Bytes>) {
+fn append_anthropic_usage_delta(
+    usage: Option<Value>,
+    state: &AnthropicStreamState,
+    events: &mut Vec<Bytes>,
+) {
     let Some(usage) = usage else {
         return;
     };
+    if state.pending_stop_reason.is_some() {
+        return;
+    }
     events.push(anthropic_sse_chunk(
         "message_delta",
         json!({
             "type": "message_delta",
             "delta": {},
-            "usage": usage
+            "usage": usage_with_known_fields(usage, state.latest_usage.as_ref())
         }),
     ));
 }
@@ -230,6 +240,56 @@ fn anthropic_stream_usage_from_openai(value: Option<&Value>) -> Option<Value> {
     } else {
         Some(Value::Object(anthropic_usage))
     }
+}
+
+fn merge_anthropic_stream_usage(latest: &mut Option<Value>, usage: &Value) {
+    let usage = usage_with_known_fields(usage.clone(), latest.as_ref());
+    *latest = Some(usage);
+}
+
+fn usage_with_known_fields(usage: Value, latest: Option<&Value>) -> Value {
+    let input_tokens = merged_counter(&usage, latest, "input_tokens");
+    let output_tokens = merged_counter(&usage, latest, "output_tokens");
+    let mut object = usage.as_object().cloned().unwrap_or_default();
+    object.insert("input_tokens".to_string(), json!(input_tokens));
+    object.insert("output_tokens".to_string(), json!(output_tokens));
+    Value::Object(object)
+}
+
+fn merged_counter(usage: &Value, latest: Option<&Value>, field: &str) -> i64 {
+    let incoming = usage.get(field).and_then(Value::as_i64);
+    let previous = latest
+        .and_then(|latest| latest.get(field))
+        .and_then(Value::as_i64);
+
+    match (incoming, previous) {
+        (Some(incoming), Some(previous)) => incoming.max(previous),
+        (Some(incoming), None) => incoming,
+        (None, Some(previous)) => previous,
+        (None, None) => 0,
+    }
+}
+
+fn fallback_anthropic_stream_usage() -> Value {
+    json!({
+        "input_tokens": 0,
+        "output_tokens": 0
+    })
+}
+
+fn pending_anthropic_message_delta(state: &mut AnthropicStreamState) -> Option<Bytes> {
+    let stop_reason = state.pending_stop_reason.take()?;
+    Some(anthropic_sse_chunk(
+        "message_delta",
+        json!({
+            "type":"message_delta",
+            "delta": {
+                "stop_reason": stop_reason,
+                "stop_sequence": null
+            },
+            "usage": state.latest_usage.clone().unwrap_or_else(fallback_anthropic_stream_usage)
+        }),
+    ))
 }
 
 fn append_anthropic_tool_delta(
@@ -414,6 +474,57 @@ mod tests {
             collector.usage(),
             Some(&json!({"input_tokens": 3, "output_tokens": 4}))
         );
+    }
+
+    #[tokio::test]
+    async fn anthropic_messages_stream_adapter_final_delta_has_fallback_usage() {
+        let upstream: ProviderStream = Box::pin(stream::iter(vec![Ok(Bytes::from(concat!(
+            "data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hello\"},\"finish_reason\":null}]}\n\n",
+            "data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            "data: [DONE]\n\n"
+        )))]));
+
+        let rendered = render_stream(upstream).await;
+
+        assert!(rendered.contains("event: message_delta"));
+        assert!(rendered.contains("\"stop_reason\":\"end_turn\""));
+        assert!(rendered.contains("\"usage\":{\"input_tokens\":0,\"output_tokens\":0}"));
+    }
+
+    #[tokio::test]
+    async fn anthropic_messages_stream_adapter_finalizes_on_done_marker() {
+        let upstream: ProviderStream = Box::pin(
+            stream::iter(vec![Ok(Bytes::from(concat!(
+                "data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hello\"},\"finish_reason\":null}]}\n\n",
+                "data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+                "data: [DONE]\n\n"
+            )))])
+            .chain(stream::pending()),
+        );
+
+        let rendered = tokio::time::timeout(
+            std::time::Duration::from_millis(250),
+            render_stream(upstream),
+        )
+        .await
+        .expect("adapter should finalize on [DONE]");
+
+        assert!(rendered.contains("event: message_delta"));
+        assert!(rendered.contains("event: message_stop"));
+    }
+
+    #[tokio::test]
+    async fn anthropic_messages_stream_adapter_merges_partial_usage_for_final_delta() {
+        let upstream: ProviderStream = Box::pin(stream::iter(vec![Ok(Bytes::from(concat!(
+            "data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}],\"usage\":{\"prompt_tokens\":11,\"completion_tokens\":0,\"total_tokens\":11}}\n\n",
+            "data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n\n",
+            "data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":0,\"completion_tokens\":3}}\n\n",
+            "data: [DONE]\n\n"
+        )))]));
+
+        let rendered = render_stream(upstream).await;
+
+        assert!(rendered.contains("\"usage\":{\"input_tokens\":11,\"output_tokens\":3}"));
     }
 
     async fn render_stream(upstream: ProviderStream) -> String {

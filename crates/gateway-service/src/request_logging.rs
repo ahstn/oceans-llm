@@ -298,11 +298,31 @@ fn stream_failure_from_value(value: &Value) -> Option<StreamFailureSummary> {
 }
 
 fn usage_value_from_stream_event(value: &Value) -> Option<&Value> {
-    value.get("usage").or_else(|| {
+    let usage = value.get("usage").or_else(|| {
         value
             .get("response")
             .and_then(|response| response.get("usage"))
-    })
+    })?;
+    if is_synthetic_anthropic_zero_usage(value, usage) {
+        return None;
+    }
+    Some(usage)
+}
+
+fn is_synthetic_anthropic_zero_usage(value: &Value, usage: &Value) -> bool {
+    value.get("type").and_then(Value::as_str) == Some("message_delta")
+        && value
+            .get("delta")
+            .and_then(|delta| delta.get("stop_reason"))
+            .and_then(Value::as_str)
+            .is_some()
+        && usage.get("input_tokens").and_then(Value::as_i64) == Some(0)
+        && usage.get("output_tokens").and_then(Value::as_i64) == Some(0)
+        && usage
+            .get("total_tokens")
+            .and_then(Value::as_i64)
+            .unwrap_or(0)
+            == 0
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2149,6 +2169,24 @@ data: {"usage":{"prompt_tokens":4,"completion_tokens":5,"total_tokens":9}}
                 "total_tokens": 9
             }))
         );
+    }
+
+    #[test]
+    fn collector_ignores_synthetic_anthropic_zero_usage_fallback() {
+        let mut collector = StreamResponseCollector::default();
+
+        collector.observe_chunk(
+            br#"event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":0,"output_tokens":0}}
+
+event: message_stop
+data: {"type":"message_stop"}
+
+"#,
+        );
+        collector.finish();
+
+        assert_eq!(collector.usage(), None);
     }
 
     #[test]

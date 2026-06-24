@@ -1577,6 +1577,77 @@ fn map_anthropic_usage(value: &Value) -> Option<Value> {
     }))
 }
 
+fn map_anthropic_stream_usage(value: &Value) -> Option<Value> {
+    let usage = value
+        .get("usage")
+        .or_else(|| {
+            value
+                .get("message")
+                .and_then(|message| message.get("usage"))
+        })?
+        .as_object()?;
+    let mut mapped = Map::new();
+    if let Some(prompt) = usage.get("input_tokens").and_then(Value::as_i64) {
+        mapped.insert("prompt_tokens".to_string(), json!(prompt));
+    }
+    if let Some(completion) = usage.get("output_tokens").and_then(Value::as_i64) {
+        mapped.insert("completion_tokens".to_string(), json!(completion));
+    }
+    if let Some(total) = usage.get("total_tokens").and_then(Value::as_i64) {
+        mapped.insert("total_tokens".to_string(), json!(total));
+    } else if let (Some(prompt), Some(completion)) = (
+        mapped.get("prompt_tokens").and_then(Value::as_i64),
+        mapped.get("completion_tokens").and_then(Value::as_i64),
+    ) {
+        mapped.insert("total_tokens".to_string(), json!(prompt + completion));
+    }
+
+    if mapped.is_empty() {
+        None
+    } else {
+        Some(Value::Object(mapped))
+    }
+}
+
+fn merge_openai_stream_usage(latest: &mut Option<Value>, usage: &Value) -> Value {
+    let usage = openai_usage_with_known_fields(usage.clone(), latest.as_ref());
+    *latest = Some(usage.clone());
+    usage
+}
+
+fn openai_usage_with_known_fields(usage: Value, latest: Option<&Value>) -> Value {
+    let prompt_tokens = merged_usage_counter(&usage, latest, "prompt_tokens");
+    let completion_tokens = merged_usage_counter(&usage, latest, "completion_tokens");
+    let total_tokens = match (prompt_tokens, completion_tokens) {
+        (Some(prompt), Some(completion)) => prompt.saturating_add(completion),
+        _ => merged_usage_counter(&usage, latest, "total_tokens").unwrap_or(0),
+    };
+
+    let mut object = usage.as_object().cloned().unwrap_or_default();
+    if let Some(prompt_tokens) = prompt_tokens {
+        object.insert("prompt_tokens".to_string(), json!(prompt_tokens));
+    }
+    if let Some(completion_tokens) = completion_tokens {
+        object.insert("completion_tokens".to_string(), json!(completion_tokens));
+    }
+    object.insert("total_tokens".to_string(), json!(total_tokens));
+    Value::Object(object)
+}
+
+fn merged_usage_counter(usage: &Value, latest: Option<&Value>, field: &str) -> Option<i64> {
+    let incoming = usage.get(field).and_then(Value::as_i64);
+    let previous = latest
+        .and_then(|latest| latest.get(field))
+        .and_then(Value::as_i64);
+
+    match (incoming, previous) {
+        (Some(incoming), Some(previous)) => Some(incoming.max(previous)),
+        (Some(incoming), None) => Some(incoming),
+        (None, Some(previous)) => Some(previous),
+        (None, None) => None,
+    }
+}
+
 fn extract_google_candidate_text(candidate: &Value) -> String {
     candidate
         .get("content")
@@ -1760,12 +1831,15 @@ fn normalize_anthropic_stream<S>(
 where
     S: futures_util::stream::Stream<Item = Result<Bytes, reqwest::Error>> + Send + 'static,
 {
+    // Split plan: move Anthropic SSE state, usage merging, and event mapping into
+    // a focused Vertex Anthropic stream module when this normalizer next grows.
     Box::pin(stream! {
         let mut parser = SseEventParser::default();
         let mut role_emitted = false;
         let mut finish_emitted = false;
         let mut stream_failed = false;
         let mut tool_block_indexes = BTreeMap::<i64, i64>::new();
+        let mut latest_usage = None;
         futures_util::pin_mut!(upstream);
 
         'stream_loop: while let Some(chunk) = upstream.next().await {
@@ -1804,7 +1878,7 @@ where
 
                 match kind {
                     "message_start" if !role_emitted => {
-                        let delta = openai_chunk(
+                        let mut delta = openai_chunk(
                             &stream_id,
                             created,
                             &model,
@@ -1812,6 +1886,10 @@ where
                             None,
                             None,
                         );
+                        if let Some(usage) = map_anthropic_stream_usage(&payload) {
+                            let usage = merge_openai_stream_usage(&mut latest_usage, &usage);
+                            delta["usage"] = usage;
+                        }
                         yield Ok(openai_sse_chunk(&delta));
                         role_emitted = true;
                     }
@@ -1971,13 +2049,15 @@ where
                         }
                     }
                     "message_delta" => {
+                        let usage = map_anthropic_stream_usage(&payload)
+                            .map(|usage| merge_openai_stream_usage(&mut latest_usage, &usage));
                         if let Some(reason) = payload
                             .get("delta")
                             .and_then(Value::as_object)
                             .and_then(|delta| delta.get("stop_reason"))
                             .and_then(Value::as_str)
                         {
-                            let finish = openai_chunk(
+                            let mut finish = openai_chunk(
                                 &stream_id,
                                 created,
                                 &model,
@@ -1985,8 +2065,18 @@ where
                                 None,
                                 Some(map_anthropic_finish_reason(reason)),
                             );
+                            if let Some(usage) = usage {
+                                finish["usage"] = usage;
+                            }
                             yield Ok(openai_sse_chunk(&finish));
                             finish_emitted = true;
+                        } else if let Some(usage) = usage {
+                            yield Ok(openai_sse_chunk(&openai_usage_chunk(
+                                &stream_id,
+                                created,
+                                &model,
+                                usage,
+                            )));
                         }
                     }
                     "message_stop" if !finish_emitted => {
@@ -2158,6 +2248,17 @@ fn openai_delta_chunk(
             "delta": delta,
             "finish_reason": finish_reason
         }]
+    })
+}
+
+fn openai_usage_chunk(id: &str, created: i64, model: &str, usage: Value) -> Value {
+    json!({
+        "id": id,
+        "object": "chat.completion.chunk",
+        "created": created,
+        "model": model,
+        "choices": [],
+        "usage": usage
     })
 }
 
@@ -3247,6 +3348,42 @@ data: {"type":"vertex_event"}
         assert!(rendered.contains("data: [DONE]"));
     }
 
+    #[tokio::test]
+    async fn anthropic_stream_preserves_usage_events() {
+        let upstream = stream::iter(vec![Ok(Bytes::from(concat!(
+            "event: message_start\n",
+            "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":9,\"output_tokens\":0}}}\n\n",
+            "event: content_block_delta\n",
+            "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"hello\"}}\n\n",
+            "event: message_delta\n",
+            "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":2}}\n\n"
+        )))]);
+        let stream = super::normalize_anthropic_stream(
+            upstream,
+            "chatcmpl-test".to_string(),
+            1,
+            "fast".to_string(),
+        );
+        let bytes: Vec<_> = stream.collect().await;
+        let rendered = bytes
+            .into_iter()
+            .map(|item| String::from_utf8(item.expect("chunk").to_vec()).expect("utf8"))
+            .collect::<String>();
+        let events = openai_stream_events(&rendered);
+
+        assert!(events.iter().any(|event| {
+            event["usage"]["prompt_tokens"] == json!(9)
+                && event["usage"]["completion_tokens"] == json!(0)
+                && event["usage"]["total_tokens"] == json!(9)
+        }));
+        assert!(events.iter().any(|event| {
+            event["choices"][0]["finish_reason"] == json!("stop")
+                && event["usage"]["prompt_tokens"] == json!(9)
+                && event["usage"]["completion_tokens"] == json!(2)
+                && event["usage"]["total_tokens"] == json!(11)
+        }));
+    }
+
     fn vertex_provider_for_test(api_host: String) -> VertexProvider {
         VertexProvider::new(VertexProviderConfig {
             provider_key: "vertex-prod".to_string(),
@@ -3278,6 +3415,19 @@ data: {"type":"vertex_event"}
             axum::serve(listener, app).await.expect("serve");
         });
         addr.to_string()
+    }
+
+    fn openai_stream_events(rendered: &str) -> Vec<Value> {
+        rendered
+            .split("\n\n")
+            .filter_map(|frame| {
+                frame
+                    .lines()
+                    .find_map(|line| line.strip_prefix("data: "))
+                    .filter(|data| *data != "[DONE]")
+                    .and_then(|data| serde_json::from_str::<Value>(data).ok())
+            })
+            .collect()
     }
 
     #[tokio::test]
