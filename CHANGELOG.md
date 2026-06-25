@@ -85,12 +85,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(client-config)* Use Anthropic APIs for Claude models by @ahstn
 - *(gateway)* Address Anthropic messages PR review findings by @ahstn
 - *(gateway)* Align Messages errors and config API inference by @ahstn
+- *(gateway)* Include usage in Anthropic stream deltas by @ahstn
+- *(gateway)* Harden Anthropic stream usage accounting by @ahstn
+- *(gateway)* Include usage in Anthropic stream deltas by @ahstn in [#187](https://github.com/ahstn/oceans-llm/pull/187)
 
 ### Build
 - Post release tasks - v0.8.0 by @ahstn
 - Post release tasks - v0.9.0 by @ahstn
 - Post release tasks - v0.10.0 by @ahstn
 - Post release tasks - v0.10.1 by @ahstn
+- Post release tasks - v0.11.0 by @ahstn
 
 ### Changed
 - Add hosted MCP recommendations by @ahstn
