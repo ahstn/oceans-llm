@@ -50,6 +50,10 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
         )
         .route("/api/v1/admin/models", get(list_models))
         .route(
+            "/api/v1/admin/models/client-configs",
+            post(generate_model_client_configs),
+        )
+        .route(
             "/api/v1/admin/identity/users",
             get(list_identity_users).post(create_identity_user),
         )

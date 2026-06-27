@@ -62,6 +62,28 @@ impl ClientConfigInput {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClientConfigInputSet {
+    pub models: Vec<ClientConfigInput>,
+}
+
+impl ClientConfigInputSet {
+    #[must_use]
+    pub fn new(models: Vec<ClientConfigInput>) -> Self {
+        Self { models }
+    }
+
+    #[must_use]
+    pub fn first(&self) -> Option<&ClientConfigInput> {
+        self.models.first()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.models.is_empty()
+    }
+}
+
 impl Default for ClientConfigInput {
     fn default() -> Self {
         Self {
@@ -88,6 +110,7 @@ impl Default for ClientConfigInput {
 pub struct ClientConfig {
     pub key: String,
     pub label: String,
+    pub model_ids: Vec<String>,
     pub blocks: Vec<ClientConfigCodeBlock>,
     pub notes: Vec<String>,
 }

@@ -2,6 +2,12 @@ use serde_json::{Value, json};
 
 use crate::types::{AnthropicThinkingPolicy, ClientConfigInput};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum ClientApiStyle {
+    OpenAiCompatible,
+    AnthropicMessages,
+}
+
 pub(crate) fn uses_anthropic_messages_api(input: &ClientConfigInput) -> bool {
     let joined = [
         input.model_id.as_str(),
@@ -13,22 +19,25 @@ pub(crate) fn uses_anthropic_messages_api(input: &ClientConfigInput) -> bool {
     joined.contains("anthropic") || joined.contains("claude")
 }
 
-// When multi-model config rendering lands, group models by this client API style first.
-// OpenCode and Pi put the API adapter at provider scope, so a mixed Anthropic
-// Messages + OpenAI-compatible selection needs one generated provider per style.
-pub(crate) fn opencode_provider_package(input: &ClientConfigInput) -> &'static str {
+pub(crate) fn client_api_style(input: &ClientConfigInput) -> ClientApiStyle {
     if uses_anthropic_messages_api(input) {
-        "@ai-sdk/anthropic"
+        ClientApiStyle::AnthropicMessages
     } else {
-        "@ai-sdk/openai-compatible"
+        ClientApiStyle::OpenAiCompatible
     }
 }
 
-pub(crate) fn pi_provider_api(input: &ClientConfigInput) -> &'static str {
-    if uses_anthropic_messages_api(input) {
-        "anthropic-messages"
-    } else {
-        "openai-completions"
+pub(crate) const fn opencode_provider_package_for_style(style: ClientApiStyle) -> &'static str {
+    match style {
+        ClientApiStyle::OpenAiCompatible => "@ai-sdk/openai-compatible",
+        ClientApiStyle::AnthropicMessages => "@ai-sdk/anthropic",
+    }
+}
+
+pub(crate) const fn pi_provider_api_for_style(style: ClientApiStyle) -> &'static str {
+    match style {
+        ClientApiStyle::OpenAiCompatible => "openai-completions",
+        ClientApiStyle::AnthropicMessages => "anthropic-messages",
     }
 }
 
@@ -37,7 +46,7 @@ pub(crate) fn pi_api_key_env_reference(input: &ClientConfigInput) -> String {
 }
 
 pub(crate) fn pi_provider_compat(input: &ClientConfigInput) -> Option<Value> {
-    if uses_anthropic_messages_api(input) {
+    if client_api_style(input) == ClientApiStyle::AnthropicMessages {
         return (input.thinking_policy == Some(AnthropicThinkingPolicy::SafeEffort))
             .then(|| json!({"forceAdaptiveThinking": true}));
     }

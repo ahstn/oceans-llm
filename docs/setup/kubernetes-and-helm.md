@@ -42,6 +42,15 @@ All public HTTP traffic enters through the gateway service. The admin UI service
 
 The chart intentionally has no raw YAML fallback value. Keep deploy-specific config in values files and let the chart render the gateway config.
 
+Set `gateway.clientConfigGatewayBaseUrl` to the public gateway API base URL that users should copy into generated client snippets. This value is rendered as `GATEWAY_CLIENT_CONFIG_BASE_URL` on the gateway pod. Use the externally reachable OpenAI-compatible base URL, including `/v1`, for example:
+
+```yaml
+gateway:
+  clientConfigGatewayBaseUrl: https://gateway.example.com/v1
+```
+
+Do not rely on the admin UI browser origin for this value. The admin UI may be served through a different ingress path or internal proxy than the API endpoint used by local harnesses.
+
 ## Secrets
 
 The gateway config supports `env.*` and `literal.*` secret references. Kubernetes installs should use env-backed references for deploy-time secrets because Helm renders `gateway.config` into a ConfigMap.

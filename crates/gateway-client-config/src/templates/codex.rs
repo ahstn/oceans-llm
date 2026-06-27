@@ -35,6 +35,7 @@ impl ClientConfigTemplate for CodexConfigTemplate {
         ClientConfig {
             key: "codex".to_string(),
             label: "Codex".to_string(),
+            model_ids: vec![input.model_id.clone()],
             blocks: vec![ClientConfigCodeBlock {
                 label: "config.toml".to_string(),
                 filename: "config.toml".to_string(),

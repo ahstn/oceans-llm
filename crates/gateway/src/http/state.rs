@@ -18,4 +18,5 @@ pub struct AppState {
     pub identity_token_secret: Arc<String>,
     pub oidc_public_base_url: Arc<Option<String>>,
     pub oauth_public_base_url: Arc<Option<String>>,
+    pub client_config_gateway_base_url: Arc<Option<String>>,
 }

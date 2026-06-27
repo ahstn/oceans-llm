@@ -1,9 +1,13 @@
 use serde_json::{Map, Value, json};
 
 use crate::{
+    api_style::uses_anthropic_messages_api,
     format::to_pretty_json,
-    templates::notes::claude_code_notes,
-    types::{ClientConfig, ClientConfigCodeBlock, ClientConfigInput, ClientConfigTemplate},
+    templates::notes::{claude_code_notes, thinking_notes},
+    types::{
+        ClientConfig, ClientConfigCodeBlock, ClientConfigInput, ClientConfigInputSet,
+        ClientConfigTemplate,
+    },
 };
 
 pub(crate) const CLAUDE_CODE_AUTH_TOKEN_PLACEHOLDER: &str = "<gateway api token>";
@@ -27,11 +31,26 @@ pub struct ClaudeCodeConfigTemplate;
 
 impl ClientConfigTemplate for ClaudeCodeConfigTemplate {
     fn render(&self, input: &ClientConfigInput) -> ClientConfig {
-        let config = claude_code_gateway_model_config(input);
+        self.render_many(&ClientConfigInputSet::new(vec![input.clone()]))
+            .expect("single Claude Code rendering requires an Anthropic Messages model")
+    }
+}
 
-        ClientConfig {
+impl ClaudeCodeConfigTemplate {
+    #[must_use]
+    pub fn render_many(&self, input_set: &ClientConfigInputSet) -> Option<ClientConfig> {
+        let inputs = input_set
+            .models
+            .iter()
+            .filter(|input| uses_anthropic_messages_api(input))
+            .collect::<Vec<_>>();
+        let first = inputs.first()?;
+        let config = claude_code_gateway_model_config(&inputs);
+
+        Some(ClientConfig {
             key: "claude-code".to_string(),
             label: "Claude Code".to_string(),
+            model_ids: inputs.iter().map(|input| input.model_id.clone()).collect(),
             blocks: vec![
                 ClientConfigCodeBlock {
                     label: "Gateway model settings".to_string(),
@@ -44,23 +63,21 @@ impl ClientConfigTemplate for ClaudeCodeConfigTemplate {
                     content: to_pretty_json(&claude_code_minimal_experience_config()),
                 },
             ],
-            notes: claude_code_notes(input),
-        }
+            notes: claude_code_notes_for_models(&inputs, first),
+        })
     }
 }
 
-fn claude_code_gateway_model_config(input: &ClientConfigInput) -> Value {
-    let model_override_key = claude_code_model_override_key(input);
+fn claude_code_gateway_model_config(inputs: &[&ClientConfigInput]) -> Value {
     json!({
         "$schema": CLAUDE_CODE_SETTINGS_SCHEMA,
-        "env": Value::Object(claude_code_gateway_env(input)),
-        "modelOverrides": {
-            model_override_key.as_str(): input.model_id.as_str(),
-        },
+        "env": Value::Object(claude_code_gateway_env(inputs)),
+        "modelOverrides": Value::Object(claude_code_model_overrides(inputs)),
     })
 }
 
-fn claude_code_gateway_env(input: &ClientConfigInput) -> Map<String, Value> {
+fn claude_code_gateway_env(inputs: &[&ClientConfigInput]) -> Map<String, Value> {
+    let input = inputs[0];
     let mut env = Map::from_iter([
         (
             "ANTHROPIC_AUTH_TOKEN".to_string(),
@@ -81,11 +98,26 @@ fn claude_code_gateway_env(input: &ClientConfigInput) -> Map<String, Value> {
         ),
     ]);
 
-    if let Some(env_var) = claude_code_default_model_env_var(input) {
-        env.insert(env_var.to_string(), json!(input.model_id));
+    for input in inputs {
+        if let Some(env_var) = claude_code_default_model_env_var(input) {
+            env.entry(env_var.to_string())
+                .or_insert_with(|| json!(input.model_id));
+        }
     }
 
     env
+}
+
+fn claude_code_model_overrides(inputs: &[&ClientConfigInput]) -> Map<String, Value> {
+    inputs
+        .iter()
+        .map(|input| {
+            (
+                claude_code_model_override_key(input),
+                json!(input.model_id.as_str()),
+            )
+        })
+        .collect()
 }
 
 fn claude_code_gateway_base_url(input: &ClientConfigInput) -> String {
@@ -149,6 +181,22 @@ fn claude_code_minimal_experience_config() -> Value {
         "$schema": CLAUDE_CODE_SETTINGS_SCHEMA,
         "env": env_from_pairs(&CLAUDE_CODE_LOWER_TOKEN_USAGE_ENV),
     })
+}
+
+fn claude_code_notes_for_models(
+    inputs: &[&ClientConfigInput],
+    first: &ClientConfigInput,
+) -> Vec<String> {
+    let mut notes = inputs
+        .iter()
+        .flat_map(|input| thinking_notes(input))
+        .collect::<Vec<_>>();
+    notes.extend(
+        claude_code_notes(first)
+            .into_iter()
+            .filter(|note| !note.contains("thinking variants")),
+    );
+    notes
 }
 
 fn env_from_pairs(pairs: &[(&str, &str)]) -> Value {

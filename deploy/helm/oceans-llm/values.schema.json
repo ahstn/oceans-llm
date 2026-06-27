@@ -12,6 +12,10 @@
         "containerPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
         "configMountPath": { "type": "string", "minLength": 1 },
         "allowLiteralSecretsInConfig": { "type": "boolean" },
+        "clientConfigGatewayBaseUrl": {
+          "type": "string",
+          "description": "Public gateway API base URL used in generated client config snippets, for example https://gateway.example.com/v1."
+        },
         "config": {
           "type": "object",
           "description": "Structured gateway.yaml content rendered into the ConfigMap."

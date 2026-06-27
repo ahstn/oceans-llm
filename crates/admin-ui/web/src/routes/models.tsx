@@ -42,7 +42,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { requireAdminSession } from '@/routes/-admin-guard'
-import { getModels } from '@/server/admin-data.functions'
+import { getModelClientConfigs, getModels } from '@/server/admin-data.functions'
 import type { ModelView } from '@/types/api'
 
 const DEFAULT_PAGE = 1
@@ -72,10 +72,18 @@ export function ModelsPage() {
   const search = Route.useSearch()
   const router = useRouter()
   const [configDialog, setConfigDialog] = useState<{
-    model: ModelView
+    models: ModelView[]
     activeKey: string
+    clientConfigurations: ModelView['client_configurations']
   } | null>(null)
+  const [selectedModelIds, setSelectedModelIds] = useState<string[]>([])
+  const [isGeneratingConfig, setIsGeneratingConfig] = useState(false)
   const totalPages = Math.max(1, Math.ceil(modelPage.total / modelPage.page_size))
+  const selectableModels = modelPage.items.filter((model) => model.client_configurations.length > 0)
+  const selectedModels = modelPage.items.filter((model) => selectedModelIds.includes(model.id))
+  const selectedModelIdSet = new Set(selectedModelIds)
+  const allSelectableSelected =
+    selectableModels.length > 0 && selectableModels.every((model) => selectedModelIdSet.has(model.id))
 
   function navigateToPage(page: number) {
     void router.navigate({
@@ -97,19 +105,62 @@ export function ModelsPage() {
     }
   }
 
-  function openClientConfig(model: ModelView) {
-    const firstConfig = model.client_configurations[0]
-    if (!firstConfig) {
+  function toggleModelSelection(model: ModelView) {
+    if (model.client_configurations.length === 0) {
       return
     }
-    setConfigDialog({ model, activeKey: firstConfig.key })
+    setSelectedModelIds((current) =>
+      current.includes(model.id) ? current.filter((id) => id !== model.id) : [...current, model.id],
+    )
+  }
+
+  function toggleAllSelectableModels() {
+    setSelectedModelIds((current) => {
+      const selectableIds = selectableModels.map((model) => model.id)
+      if (selectableIds.every((id) => current.includes(id))) {
+        return current.filter((id) => !selectableIds.includes(id))
+      }
+
+      return Array.from(new Set([...current, ...selectableIds]))
+    })
+  }
+
+  async function openClientConfig(models: ModelView[]) {
+    const modelKeys = models.map((model) => model.id)
+    if (modelKeys.length === 0) {
+      return
+    }
+    setIsGeneratingConfig(true)
+    try {
+      const response = await getModelClientConfigs({ data: { model_keys: modelKeys } })
+      const firstConfig = response.data.client_configurations[0]
+      if (!firstConfig) {
+        toast.error('No client config is available for the selected models')
+        return
+      }
+      setConfigDialog({
+        models,
+        activeKey: firstConfig.key,
+        clientConfigurations: response.data.client_configurations,
+      })
+    } catch {
+      toast.error('Client config generation failed')
+    } finally {
+      setIsGeneratingConfig(false)
+    }
+  }
+
+  function openSelectedClientConfig() {
+    void openClientConfig(selectedModels)
+  }
+
+  function openSingleClientConfig(model: ModelView) {
+    void openClientConfig([model])
   }
 
   const activeClientConfig =
-    configDialog?.model.client_configurations.find(
-      (config) => config.key === configDialog.activeKey,
-    ) ??
-    configDialog?.model.client_configurations[0] ??
+    configDialog?.clientConfigurations.find((config) => config.key === configDialog.activeKey) ??
+    configDialog?.clientConfigurations[0] ??
     null
 
   return (
@@ -129,6 +180,33 @@ export function ModelsPage() {
             <span>
               Page {modelPage.page} of {totalPages}
             </span>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[color:var(--color-border)] px-3 py-2">
+            <span className="text-sm text-[var(--color-text-muted)]">
+              {selectedModelIds.length} selected for client config
+            </span>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setSelectedModelIds([])}
+                disabled={selectedModelIds.length === 0 || isGeneratingConfig}
+              >
+                Clear
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="gap-2"
+                onClick={openSelectedClientConfig}
+                disabled={selectedModelIds.length === 0 || isGeneratingConfig}
+              >
+                <AppIcon icon={CodeIcon} size={14} stroke={1.5} />
+                Generate config
+              </Button>
+            </div>
           </div>
 
           {modelPage.items.length === 0 ? (
@@ -156,31 +234,64 @@ export function ModelsPage() {
                     key={model.id}
                     model={model}
                     onCopy={(modelId) => handleCopyValue(modelId, 'Model ID copied')}
-                    onOpenClientConfig={openClientConfig}
+                    onOpenClientConfig={openSingleClientConfig}
                   />
                 ))}
               </div>
 
-              <div className="hidden min-w-0 md:block" data-testid="models-desktop-table">
+              <div
+                className="hidden min-w-0 overflow-hidden rounded-md border border-[color:var(--color-border)] md:block"
+                data-testid="models-desktop-table"
+              >
                 <Table className="min-w-[92rem] table-fixed">
-                  <TableHeader>
+                  <TableHeader className="bg-[color:var(--color-surface-muted)]">
                     <TableRow>
-                      <TableHead className="bg-card sticky left-0 z-20 w-[16rem] min-w-[16rem] px-4">
-                        Model ID
+                      <TableHead className="w-[3rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                        <input
+                          type="checkbox"
+                          aria-label="Select all configurable models"
+                          checked={allSelectableSelected}
+                          disabled={selectableModels.length === 0}
+                          onChange={toggleAllSelectableModels}
+                        />
                       </TableHead>
-                      <TableHead className="w-[16rem] px-4">Upstream Model</TableHead>
-                      <TableHead className="w-[16rem] px-4">Provider</TableHead>
-                      <TableHead className="w-[12rem] px-4">Cost / 1M Tokens</TableHead>
-                      <TableHead className="w-[12rem] px-4">Context Window</TableHead>
-                      <TableHead className="w-[18rem] px-4">Capabilities</TableHead>
-                      <TableHead className="w-[10rem] px-4">Client Config</TableHead>
+                      <TableHead className="sticky left-[3rem] z-20 w-[16rem] min-w-[16rem] bg-[color:var(--color-surface-muted)] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                        Model id
+                      </TableHead>
+                      <TableHead className="w-[16rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                        Upstream model
+                      </TableHead>
+                      <TableHead className="w-[16rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                        Provider
+                      </TableHead>
+                      <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                        Cost / 1M tokens
+                      </TableHead>
+                      <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                        Context window
+                      </TableHead>
+                      <TableHead className="w-[18rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                        Capabilities
+                      </TableHead>
+                      <TableHead className="w-[10rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                        Client config
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {modelPage.items.map((model) => (
-                      <TableRow key={model.id} className="align-top">
+                      <TableRow key={model.id} className="align-middle">
+                        <TableCell className="px-3 py-3">
+                          <input
+                            type="checkbox"
+                            aria-label={`Select model ${model.id}`}
+                            checked={selectedModelIdSet.has(model.id)}
+                            disabled={model.client_configurations.length === 0}
+                            onChange={() => toggleModelSelection(model)}
+                          />
+                        </TableCell>
                         <TableCell
-                          className="bg-card sticky left-0 z-10 px-4 shadow-[8px_0_12px_-12px_rgba(0,0,0,0.8)]"
+                          className="bg-card sticky left-[3rem] z-10 px-3 py-3 shadow-[8px_0_12px_-12px_rgba(0,0,0,0.8)]"
                           data-testid={`models-desktop-cell-${model.id}`}
                         >
                           <div className="flex min-w-0 flex-col gap-2 py-1">
@@ -216,7 +327,7 @@ export function ModelsPage() {
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell className="px-4">
+                        <TableCell className="px-3 py-3">
                           <div className="flex min-w-0 flex-col gap-2 py-1">
                             <div className="flex min-w-0 items-center gap-2">
                               <BrandIcon iconKey={model.model_icon_key} size={14} />
@@ -226,7 +337,7 @@ export function ModelsPage() {
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell className="px-4">
+                        <TableCell className="px-3 py-3">
                           <div className="flex min-w-0 flex-col gap-2 py-1">
                             <div className="flex min-w-0 items-center gap-2">
                               <BrandIcon iconKey={model.provider_icon_key} size={14} />
@@ -241,7 +352,7 @@ export function ModelsPage() {
                             ) : null}
                           </div>
                         </TableCell>
-                        <TableCell className="px-4 whitespace-normal">
+                        <TableCell className="px-3 py-3 whitespace-normal">
                           <StackedMetric
                             topLabel="Input"
                             topValue={formatCost(model.input_cost_per_million_tokens_usd_10000)}
@@ -249,7 +360,7 @@ export function ModelsPage() {
                             bottomValue={formatCost(model.output_cost_per_million_tokens_usd_10000)}
                           />
                         </TableCell>
-                        <TableCell className="px-4 whitespace-normal">
+                        <TableCell className="px-3 py-3 whitespace-normal">
                           <StackedMetric
                             topLabel="Input"
                             topValue={formatWindow(
@@ -259,11 +370,11 @@ export function ModelsPage() {
                             bottomValue={formatWindow(model.output_window_tokens)}
                           />
                         </TableCell>
-                        <TableCell className="px-4 whitespace-normal">
+                        <TableCell className="px-3 py-3 whitespace-normal">
                           <CapabilityBadges model={model} />
                         </TableCell>
-                        <TableCell className="px-4 whitespace-normal">
-                          <ClientConfigButton model={model} onOpen={openClientConfig} />
+                        <TableCell className="px-3 py-3 whitespace-normal">
+                          <ClientConfigButton model={model} onOpen={openSingleClientConfig} compact />
                         </TableCell>
                       </TableRow>
                     ))}
@@ -295,9 +406,10 @@ export function ModelsPage() {
       </Card>
 
       <ClientConfigDialog
-        model={configDialog?.model ?? null}
+        models={configDialog?.models ?? []}
         activeKey={configDialog?.activeKey ?? null}
         activeConfig={activeClientConfig}
+        clientConfigurations={configDialog?.clientConfigurations ?? []}
         onActiveKeyChange={(activeKey) =>
           setConfigDialog((current) => (current ? { ...current, activeKey } : current))
         }
@@ -387,9 +499,11 @@ function ModelCard({
 }
 
 function ClientConfigButton({
+  compact = false,
   model,
   onOpen,
 }: {
+  compact?: boolean
   model: ModelView
   onOpen: (model: ModelView) => void
 }) {
@@ -397,47 +511,76 @@ function ClientConfigButton({
     return <span className="text-[var(--color-text-soft)]">—</span>
   }
 
+  const label = `Generate client config for ${model.id}`
+
   return (
-    <Button
-      type="button"
-      variant="outline"
-      size="sm"
-      className="gap-2"
-      onClick={() => onOpen(model)}
-    >
-      <AppIcon icon={CodeIcon} size={14} stroke={1.5} />
-      Client config
-    </Button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant={compact ? 'secondary' : 'outline'}
+          size={compact ? 'icon-sm' : 'sm'}
+          className={compact ? '' : 'gap-2'}
+          aria-label={compact ? label : undefined}
+          onClick={() => onOpen(model)}
+        >
+          <AppIcon icon={CodeIcon} size={14} stroke={1.5} />
+          {compact ? null : 'Client config'}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent sideOffset={6}>{label}</TooltipContent>
+    </Tooltip>
   )
 }
 
 function ClientConfigDialog({
-  model,
+  models,
   activeKey,
   activeConfig,
+  clientConfigurations,
   onActiveKeyChange,
   onCopy,
   onOpenChange,
 }: {
-  model: ModelView | null
+  models: ModelView[]
   activeKey: string | null
   activeConfig: ModelView['client_configurations'][number] | null
+  clientConfigurations: ModelView['client_configurations']
   onActiveKeyChange: (key: string) => void
   onCopy: (content: string) => void
   onOpenChange: (open: boolean) => void
 }) {
+  const isOpen = models.length > 0
+  const firstModel = models[0] ?? null
+  const description =
+    models.length === 1 && firstModel
+      ? `${firstModel.id} via ${providerTypeLabel(firstModel)}`
+      : `${models.length} selected models`
+  const activeModelCount = activeConfig?.model_ids.length ?? 0
+  const activeModelSummary =
+    activeModelCount === 1
+      ? activeConfig?.model_ids[0]
+      : activeModelCount > 1
+        ? `${activeModelCount} models`
+        : 'No applicable models'
+
   return (
-    <Dialog open={model !== null} onOpenChange={onOpenChange}>
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-[min(920px,calc(100vw-2rem))] md:min-w-[35vw]">
         <DialogHeader>
           <DialogTitle>Client config</DialogTitle>
-          <DialogDescription>
-            {model ? `${model.id} via ${providerTypeLabel(model)}` : 'Local client configuration'}
-          </DialogDescription>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
 
-        {model && activeConfig ? (
+        {isOpen && activeConfig ? (
           <div className="flex min-w-0 flex-col gap-4">
+            <div className="flex flex-wrap gap-2">
+              {models.map((model) => (
+                <Badge key={model.id} variant="secondary">
+                  {model.id}
+                </Badge>
+              ))}
+            </div>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <ToggleGroup
                 type="single"
@@ -452,7 +595,7 @@ function ClientConfigDialog({
                 spacing={0}
                 aria-label="Client config"
               >
-                {model.client_configurations.map((config) => (
+                {clientConfigurations.map((config) => (
                   <ToggleGroupItem key={config.key} value={config.key} aria-label={config.label}>
                     {config.label}
                   </ToggleGroupItem>
@@ -470,7 +613,7 @@ function ClientConfigDialog({
                     <div className="flex min-w-0 flex-wrap items-center gap-2">
                       <Badge variant="secondary">{block.filename}</Badge>
                       {block.label !== block.filename ? <span>{block.label}</span> : null}
-                      <span>{model.upstream_model ?? model.resolved_model_key}</span>
+                      <span>{activeModelSummary}</span>
                     </div>
                     <Button
                       type="button"
