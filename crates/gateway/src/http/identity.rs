@@ -1560,13 +1560,21 @@ pub async fn oauth_callback_github(
             return Ok(oidc_error_redirect("provider_failure"));
         }
     };
-    let email = match github_primary_verified_email(&access_token).await {
-        Ok(email) => email,
-        Err(error) => {
-            tracing::warn!(error = %error.0, "github oauth email lookup failed");
-            return Ok(oidc_error_redirect("unmatched_identity"));
-        }
-    };
+    let email =
+        match github_primary_email(&access_token, provider.sso_email_verification_enabled).await {
+            Ok(email) => email,
+            Err(GithubEmailLookupError::NoPrimaryVerifiedEmail) => {
+                tracing::warn!(
+                    error = "github account has no primary verified email",
+                    "github oauth email lookup failed"
+                );
+                return Ok(oidc_error_redirect("github_unverified_email"));
+            }
+            Err(error) => {
+                tracing::warn!(error = %error, "github oauth email lookup failed");
+                return Ok(oidc_error_redirect("unmatched_identity"));
+            }
+        };
     let email_domain = github_email_domain(&email);
     if !github_email_domain_allowed_domain(email_domain, &provider.allowed_email_domains) {
         tracing::warn!(
@@ -1702,6 +1710,36 @@ struct GithubEmailResponse {
     verified: bool,
 }
 
+enum GithubEmailLookupError {
+    Provider(AppError),
+    NoPrimaryEmail,
+    NoPrimaryVerifiedEmail,
+}
+
+impl std::fmt::Display for GithubEmailLookupError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Provider(error) => write!(formatter, "{}", error.0),
+            Self::NoPrimaryEmail => formatter.write_str("github account has no primary email"),
+            Self::NoPrimaryVerifiedEmail => {
+                formatter.write_str("github account has no primary verified email")
+            }
+        }
+    }
+}
+
+impl std::fmt::Debug for GithubEmailLookupError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(self, formatter)
+    }
+}
+
+impl From<AppError> for GithubEmailLookupError {
+    fn from(error: AppError) -> Self {
+        Self::Provider(error)
+    }
+}
+
 async fn github_exchange_oauth_code(
     provider: &OauthProviderRecord,
     code: &str,
@@ -1779,7 +1817,10 @@ async fn github_user_subject(access_token: &str) -> Result<String, AppError> {
     Ok(payload.id.to_string())
 }
 
-async fn github_primary_verified_email(access_token: &str) -> Result<String, AppError> {
+async fn github_primary_email(
+    access_token: &str,
+    sso_email_verification_enabled: bool,
+) -> Result<String, GithubEmailLookupError> {
     let client = oidc_http_client()?;
     let response = client
         .get("https://api.github.com/user/emails")
@@ -1789,30 +1830,44 @@ async fn github_primary_verified_email(access_token: &str) -> Result<String, App
         .bearer_auth(access_token)
         .send()
         .await
-        .map_err(|error| AppError(GatewayError::InvalidRequest(error.to_string())))?;
-
-    if !response.status().is_success() {
-        return Err(AppError(GatewayError::InvalidRequest(format!(
-            "github emails endpoint returned status {}",
-            response.status()
-        ))));
-    }
-
-    let emails: Vec<GithubEmailResponse> = response
-        .json()
-        .await
-        .map_err(|error| AppError(GatewayError::InvalidRequest(error.to_string())))?;
-
-    let selected = emails
-        .iter()
-        .find(|email| email.primary && email.verified)
-        .ok_or_else(|| {
-            AppError(GatewayError::InvalidRequest(
-                "github account has no primary verified email".to_string(),
-            ))
+        .map_err(|error| {
+            GithubEmailLookupError::Provider(AppError(GatewayError::InvalidRequest(
+                error.to_string(),
+            )))
         })?;
 
-    normalize_email(&selected.email)
+    if !response.status().is_success() {
+        return Err(GithubEmailLookupError::Provider(AppError(
+            GatewayError::InvalidRequest(format!(
+                "github emails endpoint returned status {}",
+                response.status()
+            )),
+        )));
+    }
+
+    let emails: Vec<GithubEmailResponse> = response.json().await.map_err(|error| {
+        GithubEmailLookupError::Provider(AppError(GatewayError::InvalidRequest(error.to_string())))
+    })?;
+
+    select_github_primary_email(&emails, sso_email_verification_enabled)
+}
+
+fn select_github_primary_email(
+    emails: &[GithubEmailResponse],
+    sso_email_verification_enabled: bool,
+) -> Result<String, GithubEmailLookupError> {
+    let selected = emails
+        .iter()
+        .find(|email| email.primary && (!sso_email_verification_enabled || email.verified))
+        .ok_or({
+            if sso_email_verification_enabled {
+                GithubEmailLookupError::NoPrimaryVerifiedEmail
+            } else {
+                GithubEmailLookupError::NoPrimaryEmail
+            }
+        })?;
+
+    normalize_email(&selected.email).map_err(GithubEmailLookupError::Provider)
 }
 
 #[cfg(test)]
@@ -3060,7 +3115,10 @@ pub async fn list_public_oauth_providers(
 
 #[cfg(test)]
 mod tests {
-    use super::github_email_domain_allowed;
+    use super::{
+        GithubEmailLookupError, GithubEmailResponse, github_email_domain_allowed,
+        select_github_primary_email,
+    };
 
     #[test]
     fn github_email_domain_policy_allows_empty_policy() {
@@ -3077,5 +3135,34 @@ mod tests {
         assert!(!github_email_domain_allowed("alice@sub.test.com", &allowed));
         assert!(!github_email_domain_allowed("alice@", &allowed));
         assert!(!github_email_domain_allowed("invalid-email", &allowed));
+    }
+
+    #[test]
+    fn github_email_selection_requires_verified_primary_email_by_default() {
+        let emails = vec![GithubEmailResponse {
+            email: "Alice@Example.com".to_string(),
+            primary: true,
+            verified: false,
+        }];
+
+        let error = select_github_primary_email(&emails, true).expect_err("email should fail");
+
+        assert!(matches!(
+            error,
+            GithubEmailLookupError::NoPrimaryVerifiedEmail
+        ));
+    }
+
+    #[test]
+    fn github_email_selection_accepts_primary_email_when_verification_disabled() {
+        let emails = vec![GithubEmailResponse {
+            email: "Alice@Example.com".to_string(),
+            primary: true,
+            verified: false,
+        }];
+
+        let email = select_github_primary_email(&emails, false).expect("email should be selected");
+
+        assert_eq!(email, "alice@example.com");
     }
 }

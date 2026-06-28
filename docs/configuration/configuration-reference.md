@@ -312,6 +312,7 @@ auth:
         client_id: env.GITHUB_OAUTH_CLIENT_ID
         client_secret: env.GITHUB_OAUTH_CLIENT_SECRET
         scopes: [read:user, user:email]
+        sso_email_verification_enabled: true
         allowed_email_domains:
           - example.com
         enabled: true
@@ -327,12 +328,17 @@ Important GitHub OAuth provider fields:
 - `client_id`
 - `client_secret`
 - `scopes`: must include `user:email`
+- `sso_email_verification_enabled`
+  - optional
+  - defaults to `true`
+  - when `true`, GitHub OAuth requires the account's primary email to be verified by GitHub
+  - when `false`, Oceans accepts GitHub's primary email even when GitHub has not verified it
 - `allowed_email_domains`
   - optional
   - defaults to an empty list, which keeps the existing invite/JIT behavior without a domain restriction
   - entries are normalized by trimming whitespace, converting to lowercase, and removing trailing dots
   - empty entries, email addresses, URLs, wildcards, single-label values, names with invalid DNS characters, and duplicates after normalization are rejected at startup
-  - matching is case-insensitive and exact on the verified primary email's domain part
+  - matching is case-insensitive and exact on the selected primary email's domain part
 - `enabled`
 - `jit`
 

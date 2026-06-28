@@ -569,6 +569,7 @@ pub struct OauthProviderRecord {
     pub client_secret_ref: String,
     pub scopes: Vec<String>,
     pub allowed_email_domains: Vec<String>,
+    pub sso_email_verification_enabled: bool,
     pub enabled: bool,
     pub jit: OauthJitPolicy,
     pub created_at: OffsetDateTime,
@@ -2441,6 +2442,7 @@ pub struct SeedOauthProvider {
     pub client_secret_ref: String,
     pub scopes: Vec<String>,
     pub allowed_email_domains: Vec<String>,
+    pub sso_email_verification_enabled: bool,
     pub enabled: bool,
     pub jit: OauthJitPolicy,
 }
