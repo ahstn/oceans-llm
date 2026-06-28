@@ -177,6 +177,10 @@ app.kubernetes.io/component: {{ .component }}
   value: "false"
 - name: GATEWAY_SEED_CONFIG
   value: "false"
+{{- with .Values.gateway.clientConfigGatewayBaseUrl }}
+- name: GATEWAY_CLIENT_CONFIG_BASE_URL
+  value: {{ . | quote }}
+{{- end }}
 {{- if eq .Values.database.mode "external" }}
 {{- with .Values.database.external.existingSecret.name }}
 - name: POSTGRES_URL

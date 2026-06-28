@@ -37,6 +37,10 @@ For production installs, provide at least:
 - `GATEWAY_IDENTITY_TOKEN_SECRET`
 - provider credentials referenced by `gateway.config.providers`
 
+Set `gateway.clientConfigGatewayBaseUrl` when users will copy generated client
+configuration snippets from `/admin/models`. Use the public gateway API base URL,
+including `/v1`, for example `https://gateway.example.com/v1`.
+
 By default, the chart rejects `literal.*` references in `gateway.config` because
 the config is rendered into a ConfigMap. Use `env.*` references backed by
 Kubernetes Secrets. Set `gateway.allowLiteralSecretsInConfig=true` only for an

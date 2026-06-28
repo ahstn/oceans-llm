@@ -1731,6 +1731,41 @@
         ]
       }
     },
+    "/api/v1/admin/models/client-configs": {
+      "post": {
+        "tags": [
+          "crate::http::models"
+        ],
+        "operationId": "generate_model_client_configs",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateModelClientConfigsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_GenerateModelClientConfigsResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/observability/harness-usage": {
       "get": {
         "tags": [
@@ -3426,6 +3461,7 @@
         "required": [
           "key",
           "label",
+          "model_ids",
           "blocks",
           "notes"
         ],
@@ -3441,6 +3477,12 @@
           },
           "label": {
             "type": "string"
+          },
+          "model_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "notes": {
             "type": "array",
@@ -5342,6 +5384,32 @@
           }
         }
       },
+      "Envelope_GenerateModelClientConfigsResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "client_configurations"
+            ],
+            "properties": {
+              "client_configurations": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AdminModelClientConfigView"
+                }
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
       "Envelope_HarnessUsageView": {
         "type": "object",
         "required": [
@@ -6356,6 +6424,34 @@
           },
           "meta": {
             "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "GenerateModelClientConfigsRequest": {
+        "type": "object",
+        "required": [
+          "model_keys"
+        ],
+        "properties": {
+          "model_keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "GenerateModelClientConfigsResponse": {
+        "type": "object",
+        "required": [
+          "client_configurations"
+        ],
+        "properties": {
+          "client_configurations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminModelClientConfigView"
+            }
           }
         }
       },

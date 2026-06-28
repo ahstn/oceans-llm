@@ -9,7 +9,8 @@ use crate::http::{
     admin_auth::require_platform_admin,
     admin_contract::{
         AdminModelClientConfigBlockView, AdminModelClientConfigView, AdminModelListQuery,
-        AdminModelPageView, AdminModelView, Envelope, envelope,
+        AdminModelPageView, AdminModelView, Envelope, GenerateModelClientConfigsRequest,
+        GenerateModelClientConfigsResponse, envelope,
     },
     error::AppError,
     state::AppState,
@@ -39,7 +40,7 @@ pub async fn list_models(
         .unwrap_or(DEFAULT_PAGE_SIZE)
         .clamp(1, MAX_PAGE_SIZE);
 
-    let service = AdminModelsService::new(state.store.clone());
+    let service = admin_models_service(&state);
     let models = service.list_models().await?;
     let total = models.len() as u64;
     let start = page.saturating_sub(1).saturating_mul(page_size) as usize;
@@ -56,6 +57,57 @@ pub async fn list_models(
         page_size,
         total,
     })))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/admin/models/client-configs",
+    request_body = GenerateModelClientConfigsRequest,
+    responses((status = 200, body = Envelope<GenerateModelClientConfigsResponse>)),
+    security(("session_cookie" = []))
+)]
+pub async fn generate_model_client_configs(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<GenerateModelClientConfigsRequest>,
+) -> Result<Json<Envelope<GenerateModelClientConfigsResponse>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+
+    let service = admin_models_service(&state);
+    let client_configurations = service
+        .render_client_configurations(&request.model_keys)
+        .await?
+        .into_iter()
+        .map(|config| AdminModelClientConfigView {
+            key: config.key,
+            label: config.label,
+            model_ids: config.model_ids,
+            blocks: config
+                .blocks
+                .into_iter()
+                .map(|block| AdminModelClientConfigBlockView {
+                    label: block.label,
+                    filename: block.filename,
+                    content: block.content,
+                })
+                .collect(),
+            notes: config.notes,
+        })
+        .collect();
+
+    Ok(Json(envelope(GenerateModelClientConfigsResponse {
+        client_configurations,
+    })))
+}
+
+fn admin_models_service(state: &AppState) -> AdminModelsService<gateway_store::AnyStore> {
+    let service = AdminModelsService::new(state.store.clone());
+    match state.client_config_gateway_base_url.as_ref().as_deref() {
+        Some(gateway_base_url) => {
+            service.with_client_config_gateway_base_url(gateway_base_url.to_string())
+        }
+        None => service,
+    }
 }
 
 fn map_model_summary(model: AdminModelSummary) -> AdminModelView {
@@ -90,6 +142,7 @@ fn map_model_summary(model: AdminModelSummary) -> AdminModelView {
             .map(|config| AdminModelClientConfigView {
                 key: config.key,
                 label: config.label,
+                model_ids: config.model_ids,
                 blocks: config
                     .blocks
                     .into_iter()

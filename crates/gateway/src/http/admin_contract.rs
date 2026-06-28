@@ -287,6 +287,7 @@ pub struct AdminModelView {
 pub struct AdminModelClientConfigView {
     pub key: String,
     pub label: String,
+    pub model_ids: Vec<String>,
     pub blocks: Vec<AdminModelClientConfigBlockView>,
     pub notes: Vec<String>,
 }
@@ -296,6 +297,16 @@ pub struct AdminModelClientConfigBlockView {
     pub label: String,
     pub filename: String,
     pub content: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct GenerateModelClientConfigsRequest {
+    pub model_keys: Vec<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct GenerateModelClientConfigsResponse {
+    pub client_configurations: Vec<AdminModelClientConfigView>,
 }
 
 #[derive(Debug, Deserialize, Default, IntoParams)]
@@ -1132,6 +1143,7 @@ pub struct RequestLogPayloadView {
         crate::http::identity::list_identity_users,
         crate::http::identity::list_identity_teams,
         crate::http::models::list_models,
+        crate::http::models::generate_model_client_configs,
         crate::http::identity::create_identity_team,
         crate::http::identity::update_identity_team,
         crate::http::identity::add_identity_team_members,

@@ -6,13 +6,19 @@
 
 Oceans generates client configuration snippets from the live model catalog so users can point local agent harnesses at the gateway without hand-writing model metadata.
 
-Open `/admin/models`, choose a model, then click **Client config**. Supported Anthropic-backed models show snippets for:
+Open `/admin/models`, select one or more configurable models, then click **Generate config**. You can also use the row-level client config action to generate a one-model snippet.
+
+Generated snippets are available for:
 
 - [OpenCode]
 - [Pi]
 - [Claude Code]
 
-The snippets use the gateway model id shown in the Models table. API keys are still created and governed in Oceans; the local client config only tells the harness which gateway URL, key variable, and model id to use.
+The snippets use the gateway model ids shown in the Models table. API keys are still created and governed in Oceans; the local client config only tells the harness which gateway URL, key variable, and model ids to use.
+
+By default, snippets use the local development gateway base URL `http://127.0.0.1:3000/v1`. Production deployments should set `GATEWAY_CLIENT_CONFIG_BASE_URL` on the gateway process, or `gateway.clientConfigGatewayBaseUrl` in the Helm chart, to the public gateway API base URL users can reach, for example `https://gateway.example.com/v1`.
+
+OpenCode and Pi can include multiple selected models in one generated file. When the selection mixes Anthropic Messages models and OpenAI-compatible models, Oceans emits separate provider entries so each provider keeps the correct client adapter. Claude Code only includes selected models that use Anthropic Messages; non-Anthropic selections are ignored for the Claude Code tab instead of generating invalid overrides.
 
 ## Claude Code
 
@@ -22,9 +28,9 @@ The Claude Code tab emits `.claude/settings.json` content with the SchemaStore C
 - `ANTHROPIC_BASE_URL`, set to the Claude-compatible gateway base URL
 - `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY`, so Claude Code can discover gateway-routed models
 - `ANTHROPIC_MODEL`, `ANTHROPIC_SMALL_FAST_MODEL`, and the matching default model class variable
-- `modelOverrides`, mapping Claude Code's Anthropic model id to the selected gateway model id
+- `modelOverrides`, mapping Claude Code's Anthropic model ids to the selected gateway model ids
 
-Claude Code appends Anthropic endpoints such as `/v1/messages` and `/v1/models` to `ANTHROPIC_BASE_URL`. Do not include `/v1/messages` in the value. OpenCode and Pi still use the OpenAI-compatible `/v1` base URL.
+Claude Code appends Anthropic endpoints such as `/v1/messages` and `/v1/models` to `ANTHROPIC_BASE_URL`. Do not include `/v1/messages` in the configured gateway URL. OpenCode and Pi still use the OpenAI-compatible `/v1` base URL, grouped by client API style when needed.
 
 The same dialog also shows a second `settings.json` block for a smaller local Claude Code experience. It disables telemetry, experimental betas, 1M context, and related UI/reporting behavior, and sets a lower auto-compact window.
 
