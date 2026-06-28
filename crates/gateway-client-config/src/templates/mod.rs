@@ -33,6 +33,13 @@ pub fn render_default_configs_for_models(input_set: ClientConfigInputSet) -> Vec
 
     if let Some(input) = codex_input(&input_set) {
         configs.push(CodexConfigTemplate.render(input));
+    } else if codex_requires_single_model_selection(&input_set) {
+        for config in &mut configs {
+            config.notes.push(
+                "Codex config snippets require a single responses-capable model selection; select one model and generate config again to include Codex."
+                    .to_string(),
+            );
+        }
     }
 
     configs
@@ -42,4 +49,12 @@ fn codex_input(input_set: &ClientConfigInputSet) -> Option<&ClientConfigInput> {
     input_set
         .first()
         .filter(|input| input_set.models.len() == 1 && input.capabilities.responses)
+}
+
+fn codex_requires_single_model_selection(input_set: &ClientConfigInputSet) -> bool {
+    input_set.models.len() > 1
+        && input_set
+            .models
+            .iter()
+            .any(|input| input.capabilities.responses)
 }

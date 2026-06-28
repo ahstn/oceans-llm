@@ -13,7 +13,10 @@
         "configMountPath": { "type": "string", "minLength": 1 },
         "allowLiteralSecretsInConfig": { "type": "boolean" },
         "clientConfigGatewayBaseUrl": {
-          "type": "string",
+          "oneOf": [
+            { "type": "string", "maxLength": 0 },
+            { "type": "string", "pattern": "^https?://\\S+$" }
+          ],
           "description": "Public gateway API base URL used in generated client config snippets, for example https://gateway.example.com/v1."
         },
         "config": {

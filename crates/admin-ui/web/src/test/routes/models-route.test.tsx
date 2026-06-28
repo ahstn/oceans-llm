@@ -445,4 +445,87 @@ describe('ModelsPage', () => {
     expect(within(dialog).getByText(/claude-sonnet-4-6/)).toBeInTheDocument()
     expect(within(dialog).getAllByText('claude-sonnet')).toHaveLength(2)
   })
+
+  it('keeps selected models available when generating after pagination', async () => {
+    const configurableFast = {
+      ...(modelPage.items[0] as ModelPageView['items'][number]),
+      client_configurations: [
+        {
+          key: 'opencode',
+          label: 'OpenCode',
+          model_ids: ['fast'],
+          blocks: [
+            {
+              label: 'opencode.json',
+              filename: 'opencode.json',
+              content: '{\n  "provider": "fast-only"\n}',
+            },
+          ],
+          notes: [],
+        },
+      ],
+    }
+    const pageOne: ModelPageView = {
+      ...modelPage,
+      items: [modelPage.items[1] as ModelPageView['items'][number]],
+      page: 1,
+      page_size: 1,
+      total: 2,
+    }
+    const pageTwo: ModelPageView = {
+      ...modelPage,
+      items: [configurableFast],
+      page: 2,
+      page_size: 1,
+      total: 2,
+    }
+    getModelClientConfigsMock.mockResolvedValue({
+      data: {
+        client_configurations: [
+          {
+            key: 'opencode',
+            label: 'OpenCode',
+            model_ids: ['claude-sonnet', 'fast'],
+            blocks: [
+              {
+                label: 'opencode.json',
+                filename: 'opencode.json',
+                content: '{\n  "provider": "mixed"\n}',
+              },
+            ],
+            notes: [],
+          },
+        ],
+      },
+      meta: {},
+    })
+    routeMock.useLoaderData.mockReturnValue({ data: pageOne })
+
+    const { ModelsPage } = await import('@/routes/models')
+
+    const { rerender } = render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+
+    fireEvent.click(screen.getByLabelText('Select model claude-sonnet'))
+    routeMock.useLoaderData.mockReturnValue({ data: pageTwo })
+    rerender(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+    fireEvent.click(screen.getByLabelText('Select model fast'))
+
+    expect(screen.getByText('2 selected for client config')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Generate config' }))
+
+    expect(getModelClientConfigsMock).toHaveBeenCalledWith({
+      data: { model_keys: ['claude-sonnet', 'fast'] },
+    })
+    const dialog = await screen.findByRole('dialog', { name: 'Client config' })
+    expect(within(dialog).getByText('claude-sonnet')).toBeInTheDocument()
+    expect(within(dialog).getByText('fast')).toBeInTheDocument()
+  })
 })

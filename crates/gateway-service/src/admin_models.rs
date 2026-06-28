@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use gateway_client_config::{
     ClientConfig, ClientConfigInput, ClientConfigInputSet, ClientModelCapabilities,
@@ -117,7 +120,14 @@ where
             .collect::<HashMap<_, _>>();
 
         let mut inputs = Vec::with_capacity(model_keys.len());
+        let mut seen_model_keys = HashSet::with_capacity(model_keys.len());
         for model_key in model_keys {
+            if !seen_model_keys.insert(model_key) {
+                return Err(GatewayError::InvalidRequest(format!(
+                    "model_key `{model_key}` cannot be repeated"
+                )));
+            }
+
             let input = inputs_by_key.get(model_key).ok_or_else(|| {
                 GatewayError::InvalidRequest(format!(
                     "model_key `{model_key}` is not available for client config generation"
@@ -516,7 +526,7 @@ mod tests {
 
     use async_trait::async_trait;
     use gateway_core::{
-        GatewayModel, ModelPricingRecord, ModelRepository, ModelRoute, Money4,
+        GatewayError, GatewayModel, ModelPricingRecord, ModelRepository, ModelRoute, Money4,
         PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
         PricingProvenance, ProviderCapabilities, ProviderConnection, ProviderRepository,
         StoreError,
@@ -844,6 +854,15 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["opencode", "pi", "codex"]
         );
+
+        let duplicate_error = service
+            .render_client_configurations(&[
+                "friendly-alias".to_string(),
+                "friendly-alias".to_string(),
+            ])
+            .await
+            .expect_err("duplicate model keys should be rejected");
+        assert!(matches!(duplicate_error, GatewayError::InvalidRequest(_)));
     }
 
     #[tokio::test]

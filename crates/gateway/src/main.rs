@@ -378,8 +378,12 @@ fn load_admin_ui_config() -> AdminUiConfig {
 }
 
 fn load_client_config_gateway_base_url() -> anyhow::Result<Option<String>> {
-    let Ok(raw_url) = env::var("GATEWAY_CLIENT_CONFIG_BASE_URL") else {
-        return Ok(None);
+    let raw_url = match env::var("GATEWAY_CLIENT_CONFIG_BASE_URL") {
+        Ok(raw_url) => raw_url,
+        Err(env::VarError::NotPresent) => return Ok(None),
+        Err(env::VarError::NotUnicode(_)) => {
+            anyhow::bail!("GATEWAY_CLIENT_CONFIG_BASE_URL must be valid Unicode")
+        }
     };
     let trimmed = raw_url.trim();
     if trimmed.is_empty() {

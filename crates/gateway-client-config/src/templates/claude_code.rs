@@ -1,9 +1,11 @@
+use std::collections::{BTreeSet, HashSet};
+
 use serde_json::{Map, Value, json};
 
 use crate::{
     api_style::uses_anthropic_messages_api,
     format::to_pretty_json,
-    templates::notes::{claude_code_notes, thinking_notes},
+    templates::notes::{ClientConfigNote, claude_code_note_items, thinking_note_items},
     types::{
         ClientConfig, ClientConfigCodeBlock, ClientConfigInput, ClientConfigInputSet,
         ClientConfigTemplate,
@@ -31,8 +33,7 @@ pub struct ClaudeCodeConfigTemplate;
 
 impl ClientConfigTemplate for ClaudeCodeConfigTemplate {
     fn render(&self, input: &ClientConfigInput) -> ClientConfig {
-        self.render_many(&ClientConfigInputSet::new(vec![input.clone()]))
-            .expect("single Claude Code rendering requires an Anthropic Messages model")
+        self.render_inputs(vec![input])
     }
 }
 
@@ -44,10 +45,19 @@ impl ClaudeCodeConfigTemplate {
             .iter()
             .filter(|input| uses_anthropic_messages_api(input))
             .collect::<Vec<_>>();
-        let first = inputs.first()?;
+        if inputs.is_empty() {
+            return None;
+        }
+
+        Some(self.render_inputs(inputs))
+    }
+
+    fn render_inputs(&self, inputs: Vec<&ClientConfigInput>) -> ClientConfig {
+        let inputs = unique_claude_code_inputs(inputs);
+        let first = inputs[0];
         let config = claude_code_gateway_model_config(&inputs);
 
-        Some(ClientConfig {
+        ClientConfig {
             key: "claude-code".to_string(),
             label: "Claude Code".to_string(),
             model_ids: inputs.iter().map(|input| input.model_id.clone()).collect(),
@@ -64,8 +74,16 @@ impl ClaudeCodeConfigTemplate {
                 },
             ],
             notes: claude_code_notes_for_models(&inputs, first),
-        })
+        }
     }
+}
+
+fn unique_claude_code_inputs(inputs: Vec<&ClientConfigInput>) -> Vec<&ClientConfigInput> {
+    let mut seen_override_keys = BTreeSet::new();
+    inputs
+        .into_iter()
+        .filter(|input| seen_override_keys.insert(claude_code_model_override_key(input)))
+        .collect()
 }
 
 fn claude_code_gateway_model_config(inputs: &[&ClientConfigInput]) -> Value {
@@ -187,16 +205,24 @@ fn claude_code_notes_for_models(
     inputs: &[&ClientConfigInput],
     first: &ClientConfigInput,
 ) -> Vec<String> {
-    let mut notes = inputs
+    let mut note_items = inputs
         .iter()
-        .flat_map(|input| thinking_notes(input))
+        .flat_map(|input| thinking_note_items(input))
         .collect::<Vec<_>>();
-    notes.extend(
-        claude_code_notes(first)
+
+    let mut seen_kinds = note_items
+        .iter()
+        .map(ClientConfigNote::kind)
+        .collect::<HashSet<_>>();
+    note_items.extend(
+        claude_code_note_items(first)
             .into_iter()
-            .filter(|note| !note.contains("thinking variants")),
+            .filter(|note| seen_kinds.insert(note.kind())),
     );
-    notes
+    note_items
+        .into_iter()
+        .map(ClientConfigNote::into_message)
+        .collect()
 }
 
 fn env_from_pairs(pairs: &[(&str, &str)]) -> Value {

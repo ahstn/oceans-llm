@@ -76,14 +76,16 @@ export function ModelsPage() {
     activeKey: string
     clientConfigurations: ModelView['client_configurations']
   } | null>(null)
-  const [selectedModelIds, setSelectedModelIds] = useState<string[]>([])
+  const [selectedModelsById, setSelectedModelsById] = useState<Record<string, ModelView>>({})
   const [isGeneratingConfig, setIsGeneratingConfig] = useState(false)
   const totalPages = Math.max(1, Math.ceil(modelPage.total / modelPage.page_size))
   const selectableModels = modelPage.items.filter((model) => model.client_configurations.length > 0)
-  const selectedModels = modelPage.items.filter((model) => selectedModelIds.includes(model.id))
+  const selectedModels = Object.values(selectedModelsById)
+  const selectedModelIds = Object.keys(selectedModelsById)
   const selectedModelIdSet = new Set(selectedModelIds)
   const allSelectableSelected =
-    selectableModels.length > 0 && selectableModels.every((model) => selectedModelIdSet.has(model.id))
+    selectableModels.length > 0 &&
+    selectableModels.every((model) => selectedModelIdSet.has(model.id))
 
   function navigateToPage(page: number) {
     void router.navigate({
@@ -109,19 +111,30 @@ export function ModelsPage() {
     if (model.client_configurations.length === 0) {
       return
     }
-    setSelectedModelIds((current) =>
-      current.includes(model.id) ? current.filter((id) => id !== model.id) : [...current, model.id],
-    )
+    setSelectedModelsById((current) => {
+      if (current[model.id]) {
+        const { [model.id]: _removed, ...remaining } = current
+        return remaining
+      }
+
+      return { ...current, [model.id]: model }
+    })
   }
 
   function toggleAllSelectableModels() {
-    setSelectedModelIds((current) => {
-      const selectableIds = selectableModels.map((model) => model.id)
-      if (selectableIds.every((id) => current.includes(id))) {
-        return current.filter((id) => !selectableIds.includes(id))
+    setSelectedModelsById((current) => {
+      if (selectableModels.every((model) => current[model.id])) {
+        return Object.fromEntries(
+          Object.entries(current).filter(
+            ([id]) => !selectableModels.some((model) => model.id === id),
+          ),
+        )
       }
 
-      return Array.from(new Set([...current, ...selectableIds]))
+      return Object.fromEntries([
+        ...Object.entries(current),
+        ...selectableModels.map((model) => [model.id, model] as const),
+      ])
     })
   }
 
@@ -181,7 +194,7 @@ export function ModelsPage() {
               Page {modelPage.page} of {totalPages}
             </span>
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[color:var(--color-border)] px-3 py-2">
+          <div className="hidden flex-wrap items-center justify-between gap-3 rounded-md border border-[color:var(--color-border)] px-3 py-2 md:flex">
             <span className="text-sm text-[var(--color-text-muted)]">
               {selectedModelIds.length} selected for client config
             </span>
@@ -190,7 +203,7 @@ export function ModelsPage() {
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => setSelectedModelIds([])}
+                onClick={() => setSelectedModelsById({})}
                 disabled={selectedModelIds.length === 0 || isGeneratingConfig}
               >
                 Clear

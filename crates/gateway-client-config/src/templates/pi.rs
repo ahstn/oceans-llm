@@ -32,18 +32,19 @@ impl PiConfigTemplate {
         let has_multiple_styles = groups.len() > 1;
         let mut providers = Map::new();
 
-        for (style, inputs) in &groups {
-            let provider_id = provider_id_for_style(inputs[0], *style, has_multiple_styles);
+        for (group, inputs) in &groups {
+            let style = group.api_style();
+            let provider_id = provider_id_for_group(inputs[0], *group, has_multiple_styles);
             let mut provider = Map::from_iter([
                 ("baseUrl".to_string(), json!(inputs[0].gateway_base_url)),
-                ("api".to_string(), json!(pi_provider_api_for_style(*style))),
+                ("api".to_string(), json!(pi_provider_api_for_style(style))),
                 (
                     "apiKey".to_string(),
                     json!(pi_api_key_env_reference(inputs[0])),
                 ),
                 ("models".to_string(), Value::Array(pi_models(inputs))),
             ]);
-            if let Some(compat) = pi_group_compat(*style, inputs) {
+            if let Some(compat) = pi_group_compat(*group, inputs) {
                 provider.insert("compat".to_string(), compat);
             }
             providers.insert(provider_id, Value::Object(provider));
@@ -71,13 +72,43 @@ impl PiConfigTemplate {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum PiProviderGroup {
+    OpenAiCompatible,
+    AnthropicMessages,
+    AnthropicMessagesAdaptiveThinking,
+}
+
+impl PiProviderGroup {
+    fn for_input(input: &ClientConfigInput) -> Self {
+        match client_api_style(input) {
+            ClientApiStyle::OpenAiCompatible => Self::OpenAiCompatible,
+            ClientApiStyle::AnthropicMessages
+                if input.thinking_policy == Some(AnthropicThinkingPolicy::SafeEffort) =>
+            {
+                Self::AnthropicMessagesAdaptiveThinking
+            }
+            ClientApiStyle::AnthropicMessages => Self::AnthropicMessages,
+        }
+    }
+
+    const fn api_style(self) -> ClientApiStyle {
+        match self {
+            Self::OpenAiCompatible => ClientApiStyle::OpenAiCompatible,
+            Self::AnthropicMessages | Self::AnthropicMessagesAdaptiveThinking => {
+                ClientApiStyle::AnthropicMessages
+            }
+        }
+    }
+}
+
 fn grouped_models(
     input_set: &ClientConfigInputSet,
-) -> BTreeMap<ClientApiStyle, Vec<&ClientConfigInput>> {
-    let mut groups: BTreeMap<ClientApiStyle, Vec<&ClientConfigInput>> = BTreeMap::new();
+) -> BTreeMap<PiProviderGroup, Vec<&ClientConfigInput>> {
+    let mut groups: BTreeMap<PiProviderGroup, Vec<&ClientConfigInput>> = BTreeMap::new();
     for input in &input_set.models {
         groups
-            .entry(client_api_style(input))
+            .entry(PiProviderGroup::for_input(input))
             .or_default()
             .push(input);
     }
@@ -122,27 +153,29 @@ fn pi_model(input: &ClientConfigInput) -> Map<String, Value> {
     model
 }
 
-fn pi_group_compat(style: ClientApiStyle, inputs: &[&ClientConfigInput]) -> Option<Value> {
-    match style {
-        ClientApiStyle::OpenAiCompatible => pi_provider_compat(inputs[0]),
-        ClientApiStyle::AnthropicMessages => inputs
-            .iter()
-            .find(|input| input.thinking_policy == Some(AnthropicThinkingPolicy::SafeEffort))
-            .and_then(|input| pi_provider_compat(input)),
+fn pi_group_compat(group: PiProviderGroup, inputs: &[&ClientConfigInput]) -> Option<Value> {
+    match group {
+        PiProviderGroup::OpenAiCompatible | PiProviderGroup::AnthropicMessagesAdaptiveThinking => {
+            pi_provider_compat(inputs[0])
+        }
+        PiProviderGroup::AnthropicMessages => None,
     }
 }
 
-fn provider_id_for_style(
+fn provider_id_for_group(
     input: &ClientConfigInput,
-    style: ClientApiStyle,
+    group: PiProviderGroup,
     has_multiple_styles: bool,
 ) -> String {
     if !has_multiple_styles {
         return input.provider_id.clone();
     }
 
-    match style {
-        ClientApiStyle::OpenAiCompatible => format!("{}-openai-compatible", input.provider_id),
-        ClientApiStyle::AnthropicMessages => format!("{}-anthropic-messages", input.provider_id),
+    match group {
+        PiProviderGroup::OpenAiCompatible => format!("{}-openai-compatible", input.provider_id),
+        PiProviderGroup::AnthropicMessages => format!("{}-anthropic-messages", input.provider_id),
+        PiProviderGroup::AnthropicMessagesAdaptiveThinking => {
+            format!("{}-anthropic-messages-adaptive-thinking", input.provider_id)
+        }
     }
 }
