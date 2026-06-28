@@ -1854,18 +1854,16 @@ async fn github_primary_email(
 
 fn select_github_primary_email(
     emails: &[GithubEmailResponse],
-    sso_email_verification_enabled: bool,
+    require_verified_primary_email: bool,
 ) -> Result<String, GithubEmailLookupError> {
     let selected = emails
         .iter()
-        .find(|email| email.primary && (!sso_email_verification_enabled || email.verified))
-        .ok_or({
-            if sso_email_verification_enabled {
-                GithubEmailLookupError::NoPrimaryVerifiedEmail
-            } else {
-                GithubEmailLookupError::NoPrimaryEmail
-            }
-        })?;
+        .find(|email| email.primary)
+        .ok_or(GithubEmailLookupError::NoPrimaryEmail)?;
+
+    if require_verified_primary_email && !selected.verified {
+        return Err(GithubEmailLookupError::NoPrimaryVerifiedEmail);
+    }
 
     normalize_email(&selected.email).map_err(GithubEmailLookupError::Provider)
 }
@@ -3151,6 +3149,19 @@ mod tests {
             error,
             GithubEmailLookupError::NoPrimaryVerifiedEmail
         ));
+    }
+
+    #[test]
+    fn github_email_selection_reports_missing_primary_email_before_verification() {
+        let emails = vec![GithubEmailResponse {
+            email: "Alice@Example.com".to_string(),
+            primary: false,
+            verified: true,
+        }];
+
+        let error = select_github_primary_email(&emails, true).expect_err("email should fail");
+
+        assert!(matches!(error, GithubEmailLookupError::NoPrimaryEmail));
     }
 
     #[test]

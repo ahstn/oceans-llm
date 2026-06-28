@@ -10,11 +10,11 @@ Create a GitHub **OAuth App** for the specific self-hosted Oceans LLM install.
 
 Required GitHub OAuth App fields:
 
-- **Application name**: your operator-visible name (for example, `Oceans LLM`)
+- **Application name**: your admin-visible name (for example, `Oceans LLM`)
 - **Homepage URL**: `https://<your-oceans-host>`
 - **Authorization callback URL**: `https://<your-oceans-host>/api/v1/auth/oauth/callback/github`
 
-> For self-hosted installs, this callback URL should match each operator's public Oceans LLM URL.
+> For self-hosted installs, this callback URL should match the deployment's public Oceans LLM URL.
 
 ## GitHub Keys to Store
 
@@ -60,9 +60,9 @@ auth:
 
 `allowed_email_domains` is optional. Leave it empty or omit it to allow the existing invite/JIT rules to decide access without an email-domain guardrail. When it is set, GitHub OAuth can only complete for accounts whose selected primary email domain exactly matches one of the configured domains.
 
-`sso_email_verification_enabled` defaults to `true`. With the default, Oceans only accepts the GitHub account's primary email when GitHub marks that email as verified. If GitHub returns no primary verified email, sign-in fails with `github account has no primary verified email`; ask the user to verify their primary email in [GitHub email settings](https://github.com/settings/emails), then retry sign-in.
+`sso_email_verification_enabled` defaults to `true`. With the default, Oceans only accepts the GitHub account's primary email when GitHub marks that email as verified. If GitHub returns no primary verified email, sign-in redirects with `github_unverified_email` and the gateway logs `github account has no primary verified email`; ask the user to verify their primary email in [GitHub email settings](https://github.com/settings/emails), then retry sign-in.
 
-Set `sso_email_verification_enabled: false` only as an operator escape hatch when you intentionally want Oceans to accept GitHub's primary email even if GitHub has not verified it. Domain restrictions still run against the selected primary email domain.
+Set `sso_email_verification_enabled: false` only as an admin escape hatch when you intentionally want Oceans to accept GitHub's primary email even if GitHub has not verified it. Domain restrictions still run against the selected primary email domain.
 
 ## Identity Mapping Behavior
 
