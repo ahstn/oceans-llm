@@ -1403,6 +1403,8 @@ pub struct OauthProviderConfig {
     pub scopes: Vec<String>,
     #[serde(default)]
     pub allowed_email_domains: Vec<String>,
+    #[serde(default = "default_sso_email_verification_enabled")]
+    pub sso_email_verification_enabled: bool,
     #[serde(default = "default_enabled")]
     pub enabled: bool,
     #[serde(default)]
@@ -1431,6 +1433,7 @@ impl OauthProviderConfig {
                 &self.allowed_email_domains,
                 "auth.oauth.providers[].allowed_email_domains",
             )?,
+            sso_email_verification_enabled: self.sso_email_verification_enabled,
             enabled: self.enabled,
             jit: self.jit.seed_policy()?,
         })
@@ -2601,6 +2604,10 @@ fn default_oidc_scopes() -> Vec<String> {
 
 fn default_oauth_provider_type() -> String {
     "github".to_string()
+}
+
+fn default_sso_email_verification_enabled() -> bool {
+    true
 }
 
 fn default_github_oauth_scopes() -> Vec<String> {
@@ -4477,6 +4484,7 @@ auth:
         let config = GatewayConfig::from_path(&config_path).expect("config should parse");
         let oauth_providers = config.seed_oauth_providers().expect("seed oauth providers");
         assert_eq!(oauth_providers[0].client_id, "github-client-id");
+        assert!(oauth_providers[0].sso_email_verification_enabled);
     }
 
     #[test]
@@ -4594,6 +4602,33 @@ auth:
             oauth_providers[0].allowed_email_domains,
             vec!["test.com", "engineering.example.com"]
         );
+    }
+
+    #[test]
+    fn parses_github_oauth_sso_email_verification_escape_hatch() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+auth:
+  oauth:
+    public_base_url: literal.https://gateway.example.com
+    providers:
+      - key: github
+        label: GitHub
+        provider_type: github
+        client_id: github-client-id
+        client_secret: literal.secret
+        scopes: [read:user, user:email]
+        sso_email_verification_enabled: false
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let oauth_providers = config.seed_oauth_providers().expect("seed oauth providers");
+        assert!(!oauth_providers[0].sso_email_verification_enabled);
     }
 
     #[test]

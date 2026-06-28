@@ -46,8 +46,11 @@ auth:
         scopes:
           - read:user
           - user:email
+        # Keep true unless you intentionally accept GitHub primary emails that
+        # GitHub has not verified.
+        sso_email_verification_enabled: true
         # Optional: restrict GitHub OAuth sign-in, invite activation, and JIT
-        # provisioning to verified primary email domains owned by your organization.
+        # provisioning to primary email domains owned by your organization.
         # allowed_email_domains:
         #   - example.com
         enabled: false

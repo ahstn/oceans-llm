@@ -85,8 +85,8 @@ Compatibility metadata is not a provider config fallback and is not an `extra_bo
   - Key columns: `user_id`, `oidc_provider_id`, `subject`, `email_claim`
   - Notes: unique `(oidc_provider_id, subject)`
 - `oauth_providers`
-  - Key columns: `oauth_provider_id`, `provider_key`, `provider_type`, `client_id`, `scopes_json`, `allowed_email_domains_json`, `enabled`
-  - Notes: direct OAuth currently supports GitHub; `allowed_email_domains_json` stores the normalized verified-email-domain allowlist enforced before OAuth link creation, invite activation, JIT creation, or session issuance
+  - Key columns: `oauth_provider_id`, `provider_key`, `provider_type`, `client_id`, `scopes_json`, `allowed_email_domains_json`, `sso_email_verification_enabled`, `enabled`
+  - Notes: direct OAuth currently supports GitHub; `sso_email_verification_enabled` controls whether GitHub primary emails must be verified, and `allowed_email_domains_json` stores the normalized email-domain allowlist enforced before OAuth link creation, invite activation, JIT creation, or session issuance
 - `user_oauth_links`
   - Purpose: pre-provisioned relationship between a user and the OAuth provider they are allowed to activate against
 - `user_oauth_auth`

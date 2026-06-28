@@ -143,6 +143,15 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
             "../migrations/postgres/V32__oauth_provider_allowed_email_domains.sql"
         ),
     },
+    MigrationManifest {
+        version: 33,
+        name: "oauth_provider_sso_email_verification",
+        checksum: "V33__oauth_provider_sso_email_verification.sql",
+        libsql_sql: include_str!("../migrations/V33__oauth_provider_sso_email_verification.sql"),
+        postgres_sql: include_str!(
+            "../migrations/postgres/V33__oauth_provider_sso_email_verification.sql"
+        ),
+    },
 ];
 
 #[cfg(test)]

@@ -99,6 +99,7 @@ mod tests {
             client_secret_ref: "literal.secret".to_string(),
             scopes: vec!["read:user".to_string(), "user:email".to_string()],
             allowed_email_domains: domains.into_iter().map(str::to_string).collect(),
+            sso_email_verification_enabled: true,
             enabled: true,
             jit: OauthJitPolicy::default(),
         }
@@ -4337,20 +4338,13 @@ mod tests {
             providers[0].allowed_email_domains,
             vec!["test.com".to_string()]
         );
+        assert!(providers[0].sso_email_verification_enabled);
 
+        let mut updated_provider =
+            seed_github_oauth_provider_with_domains(vec!["example.com", "team.example.com"]);
+        updated_provider.sso_email_verification_enabled = false;
         store
-            .seed_from_inputs(
-                &[],
-                &[],
-                &[],
-                &[],
-                &[seed_github_oauth_provider_with_domains(vec![
-                    "example.com",
-                    "team.example.com",
-                ])],
-                &[],
-                &[],
-            )
+            .seed_from_inputs(&[], &[], &[], &[], &[updated_provider], &[], &[])
             .await
             .expect("update provider");
         let provider = store
@@ -4362,6 +4356,7 @@ mod tests {
             provider.allowed_email_domains,
             vec!["example.com".to_string(), "team.example.com".to_string()]
         );
+        assert!(!provider.sso_email_verification_enabled);
     }
 
     #[tokio::test]
@@ -4407,20 +4402,13 @@ mod tests {
             providers[0].allowed_email_domains,
             vec!["test.com".to_string()]
         );
+        assert!(providers[0].sso_email_verification_enabled);
 
+        let mut updated_provider =
+            seed_github_oauth_provider_with_domains(vec!["example.com", "team.example.com"]);
+        updated_provider.sso_email_verification_enabled = false;
         store
-            .seed_from_inputs(
-                &[],
-                &[],
-                &[],
-                &[],
-                &[seed_github_oauth_provider_with_domains(vec![
-                    "example.com",
-                    "team.example.com",
-                ])],
-                &[],
-                &[],
-            )
+            .seed_from_inputs(&[], &[], &[], &[], &[updated_provider], &[], &[])
             .await
             .expect("update provider");
         let provider = store
@@ -4432,6 +4420,7 @@ mod tests {
             provider.allowed_email_domains,
             vec!["example.com".to_string(), "team.example.com".to_string()]
         );
+        assert!(!provider.sso_email_verification_enabled);
 
         store.pool().close().await;
         drop_postgres_test_database(&test_db).await;

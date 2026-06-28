@@ -2,12 +2,13 @@ import { createFileRoute } from '@tanstack/react-router'
 
 import { AuthLayout } from '@/components/layout/auth-layout'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
 
 export const Route = createFileRoute('/account-ready')({
   component: AccountReadyPage,
 })
 
-function AccountReadyPage() {
+export function AccountReadyPage() {
   const search = Route.useSearch() as { mode?: string; email?: string }
 
   return (
@@ -26,6 +27,11 @@ function AccountReadyPage() {
           You can close this page and return to the gateway control-plane workflow.
         </AlertDescription>
       </Alert>
+      <div className="flex justify-end">
+        <Button asChild>
+          <a href="/admin">Open control plane</a>
+        </Button>
+      </div>
     </AuthLayout>
   )
 }

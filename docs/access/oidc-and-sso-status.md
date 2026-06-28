@@ -14,10 +14,10 @@ The OIDC/OAuth flow includes:
 - `/api/v1/auth/oidc/start` performs provider discovery and redirects with state, nonce, and PKCE
 - `/api/v1/auth/oidc/callback` consumes one-time state, exchanges the authorization code, verifies the ID token and nonce, and issues the existing `ogw_session` cookie
 - `/api/v1/auth/oauth/start` redirects to the OAuth provider with one-time state and PKCE
-- `/api/v1/auth/oauth/callback/github` consumes one-time state, exchanges the code with GitHub, resolves verified email + numeric subject, and issues `ogw_session`
+- `/api/v1/auth/oauth/callback/github` consumes one-time state, exchanges the code with GitHub, resolves numeric subject plus the selected primary email, and issues `ogw_session`
 - invited/config-declared OIDC users activate on first successful provider login
 - provider-specific JIT user creation can assign explicit global role, team membership, and request logging defaults
-- direct GitHub OAuth can restrict sign-in and JIT provisioning to configured verified email domains
+- direct GitHub OAuth requires a GitHub-verified primary email by default, can use `sso_email_verification_enabled: false` as an admin escape hatch, and can restrict sign-in and JIT provisioning to configured email domains
 - local Authentik compose profiles provide a repeatable manual IdP fixture
 
 ## Security Boundary
@@ -29,7 +29,7 @@ Account linking is intentionally conservative:
 - existing `(provider, sub)` links win
 - invited/config-declared OIDC users with matching normalized email and provider link are activated and linked
 - unmatched identities use the provider's explicit JIT policy
-- GitHub OAuth `allowed_email_domains` is enforced before account linking, invite activation, JIT creation, or session issuance
+- GitHub OAuth `sso_email_verification_enabled` and `allowed_email_domains` are enforced before account linking, invite activation, JIT creation, or session issuance
 - existing password/local users with the same email are rejected instead of auto-linked
 
 ## Practical Admin Impact

@@ -156,8 +156,8 @@ impl PostgresStore {
                     scopes_json, enabled, label, client_secret_ref, jit_enabled,
                     jit_global_role, jit_team_key, jit_team_role,
                     jit_request_logging_enabled, allowed_email_domains_json,
-                    created_at, updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $15)
+                    sso_email_verification_enabled, created_at, updated_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16)
                 ON CONFLICT(provider_key) DO UPDATE SET
                     provider_type = excluded.provider_type,
                     client_id = excluded.client_id,
@@ -171,6 +171,7 @@ impl PostgresStore {
                     jit_team_role = excluded.jit_team_role,
                     jit_request_logging_enabled = excluded.jit_request_logging_enabled,
                     allowed_email_domains_json = excluded.allowed_email_domains_json,
+                    sso_email_verification_enabled = excluded.sso_email_verification_enabled,
                     updated_at = excluded.updated_at
                 "#,
             )
@@ -204,6 +205,11 @@ impl PostgresStore {
                 0_i64
             })
             .bind(allowed_email_domains_json)
+            .bind(if provider.sso_email_verification_enabled {
+                1_i64
+            } else {
+                0_i64
+            })
             .bind(now_unix)
             .execute(&self.pool)
             .await

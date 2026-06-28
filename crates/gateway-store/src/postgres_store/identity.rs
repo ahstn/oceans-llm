@@ -436,7 +436,7 @@ impl PostgresStore {
                    scopes_json, enabled, label, client_secret_ref, jit_enabled,
                    jit_global_role, jit_team_key, jit_team_role,
                    jit_request_logging_enabled, allowed_email_domains_json,
-                   created_at, updated_at
+                   sso_email_verification_enabled, created_at, updated_at
             FROM oauth_providers
             WHERE enabled = 1
             ORDER BY provider_key ASC
@@ -459,7 +459,7 @@ impl PostgresStore {
                    scopes_json, enabled, label, client_secret_ref, jit_enabled,
                    jit_global_role, jit_team_key, jit_team_role,
                    jit_request_logging_enabled, allowed_email_domains_json,
-                   created_at, updated_at
+                   sso_email_verification_enabled, created_at, updated_at
             FROM oauth_providers
             WHERE provider_key = $1 AND enabled = 1
             LIMIT 1
