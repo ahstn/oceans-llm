@@ -88,6 +88,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(gateway)* Include usage in Anthropic stream deltas by @ahstn
 - *(gateway)* Harden Anthropic stream usage accounting by @ahstn
 - *(gateway)* Include usage in Anthropic stream deltas by @ahstn in [#187](https://github.com/ahstn/oceans-llm/pull/187)
+- *(auth)* Improve github oauth email verification handling by @ahstn
+- *(auth)* Address github oauth review feedback by @ahstn
+- *(auth)* Improve github oauth email verification handling by @ahstn in [#191](https://github.com/ahstn/oceans-llm/pull/191)
 
 ### Build
 - Post release tasks - v0.8.0 by @ahstn
@@ -95,6 +98,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Post release tasks - v0.10.0 by @ahstn
 - Post release tasks - v0.10.1 by @ahstn
 - Post release tasks - v0.11.0 by @ahstn
+- Post release tasks - v0.11.1 by @ahstn
 
 ### Changed
 - Add hosted MCP recommendations by @ahstn
