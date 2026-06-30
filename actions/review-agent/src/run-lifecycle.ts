@@ -88,15 +88,23 @@ export async function run(): Promise<void> {
       dryRun: inputs.dryRun
     });
     const metrics = completeMetrics(result, publishMetrics);
-    await client.completeRun(started.run.id, metrics);
     await core.summary.addRaw(buildJobSummary(result, result.degradedFeatures)).write();
+    await client.completeRun(started.run.id, metrics);
   } catch (error) {
-    const metrics = result ? completeMetrics(result, {}) : { status: "failed" as const };
+    const metrics = result ? failureMetrics(result) : { status: "failed" as const };
     await client.failRun(started.run.id, redactor.errorSummary(error), metrics).catch((failError) => {
       core.warning(redactor.errorSummary(failError));
     });
     throw error;
   }
+}
+
+function failureMetrics(result: ReviewResult): RunMetrics {
+  return {
+    ...result.metrics,
+    status: "failed",
+    degraded_features_json: result.degradedFeatures.length > 0 ? result.degradedFeatures : undefined
+  };
 }
 
 function hasEffectiveModel(config: EffectiveConfig): boolean {

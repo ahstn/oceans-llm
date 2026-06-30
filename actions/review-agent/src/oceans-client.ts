@@ -22,7 +22,8 @@ export class OceansClient {
   constructor(
     private readonly baseUrl: string,
     private readonly apiKey: string,
-    private readonly fetchImpl: typeof fetch = fetch
+    private readonly fetchImpl: typeof fetch = fetch,
+    private readonly timeoutMs = 30_000
   ) {}
 
   resolveConfig(input: {
@@ -82,6 +83,7 @@ export class OceansClient {
         authorization: `Bearer ${this.apiKey}`,
         "content-type": "application/json"
       },
+      signal: AbortSignal.timeout(this.timeoutMs),
       body: JSON.stringify(body)
     });
 

@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -18,13 +18,12 @@ export function resolvePiBinary(explicit?: string): string {
   }
   const candidates = [
     resolve(__dirname, "../vendor/pi/bin/pi"),
-    resolve(__dirname, "../node_modules/.bin/pi"),
-    resolve(process.cwd(), "actions/review-agent/vendor/pi/bin/pi")
+    resolve(__dirname, "../node_modules/.bin/pi")
   ];
   const found = candidates.find((candidate) => existsSync(candidate));
   if (!found) {
     throw new Error(
-      "Pi runtime is not packaged with this action yet. Provide the pi-binary input or vendor a Pi runtime artifact under actions/review-agent/vendor/pi/bin/pi."
+      "Pi runtime is not packaged with this action yet. Provide the pi-binary input or vendor a Pi runtime artifact in the packaged action bundle."
     );
   }
   return found;
@@ -51,7 +50,7 @@ export function preparePiInvocation(input: {
 
 export function invokePi(invocation: PiInvocation, timeoutMinutes: number): ReviewResult {
   execFileSync(invocation.binary, invocation.args, {
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["ignore", "ignore", "ignore"],
     timeout: timeoutMinutes * 60_000,
     env: {
       PATH: process.env.PATH ?? "",
@@ -75,5 +74,4 @@ fs.writeFileSync(process.argv[outputIndex + 1], ${JSON.stringify(JSON.stringify(
 `;
   writeFileSync(path, script);
   chmodSync(path, 0o755);
-  readFileSync(path, "utf8");
 }

@@ -13,7 +13,9 @@ describe("result artifact", () => {
       raw_diff: "must not be reported",
       findings: [
         { path: "src/lib.ts", line: 9, message: "Fix this", severity: "high" },
-        { path: "missing-message.ts", line: 10 }
+        { path: "missing-message.ts", line: 10 },
+        { path: "bad-line.ts", line: 0, message: "Invalid line" },
+        { path: "", line: 3, message: "Invalid path" }
       ],
       metrics: {
         files_changed: 5,

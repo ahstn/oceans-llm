@@ -19782,10 +19782,12 @@ var OceansClient = class {
 	baseUrl;
 	apiKey;
 	fetchImpl;
-	constructor(baseUrl, apiKey, fetchImpl = fetch) {
+	timeoutMs;
+	constructor(baseUrl, apiKey, fetchImpl = fetch, timeoutMs = 3e4) {
 		this.baseUrl = baseUrl;
 		this.apiKey = apiKey;
 		this.fetchImpl = fetchImpl;
+		this.timeoutMs = timeoutMs;
 	}
 	resolveConfig(input) {
 		return this.post("/api/v1/review-agent/action/config/resolve", {
@@ -19827,6 +19829,7 @@ var OceansClient = class {
 				authorization: `Bearer ${this.apiKey}`,
 				"content-type": "application/json"
 			},
+			signal: AbortSignal.timeout(this.timeoutMs),
 			body: JSON.stringify(body)
 		});
 		const text = await response.text();
@@ -19881,12 +19884,14 @@ function sanitizeMetrics(input) {
 	};
 }
 function sanitizeFinding(input) {
-	if (typeof input?.path !== "string" || !Number.isInteger(input?.line) || typeof input?.message !== "string") return;
+	if (typeof input?.path !== "string" || input.path.trim().length === 0 || !Number.isInteger(input?.line) || input.line <= 0 || typeof input?.message !== "string") return;
+	const startLine = Number.isInteger(input.start_line) && input.start_line > 0 ? input.start_line : void 0;
+	const endLine = Number.isInteger(input.end_line) && input.end_line >= input.line ? input.end_line : void 0;
 	return {
 		path: input.path,
 		line: input.line,
-		start_line: Number.isInteger(input.start_line) ? input.start_line : void 0,
-		end_line: Number.isInteger(input.end_line) ? input.end_line : void 0,
+		start_line: startLine,
+		end_line: endLine,
 		side: input.side === "LEFT" ? "LEFT" : "RIGHT",
 		severity: typeof input.severity === "string" ? input.severity : void 0,
 		message: input.message.slice(0, 12e3)
@@ -19905,12 +19910,8 @@ function countUniqueFiles(findings) {
 //#region src/pi.ts
 function resolvePiBinary(explicit) {
 	if (explicit) return explicit;
-	const found = [
-		(0, node_path.resolve)(__dirname, "../vendor/pi/bin/pi"),
-		(0, node_path.resolve)(__dirname, "../node_modules/.bin/pi"),
-		(0, node_path.resolve)(process.cwd(), "actions/review-agent/vendor/pi/bin/pi")
-	].find((candidate) => (0, node_fs.existsSync)(candidate));
-	if (!found) throw new Error("Pi runtime is not packaged with this action yet. Provide the pi-binary input or vendor a Pi runtime artifact under actions/review-agent/vendor/pi/bin/pi.");
+	const found = [(0, node_path.resolve)(__dirname, "../vendor/pi/bin/pi"), (0, node_path.resolve)(__dirname, "../node_modules/.bin/pi")].find((candidate) => (0, node_fs.existsSync)(candidate));
+	if (!found) throw new Error("Pi runtime is not packaged with this action yet. Provide the pi-binary input or vendor a Pi runtime artifact in the packaged action bundle.");
 	return found;
 }
 function preparePiInvocation(input) {
@@ -19939,8 +19940,8 @@ function invokePi(invocation, timeoutMinutes) {
 	(0, node_child_process.execFileSync)(invocation.binary, invocation.args, {
 		stdio: [
 			"ignore",
-			"pipe",
-			"pipe"
+			"ignore",
+			"ignore"
 		],
 		timeout: timeoutMinutes * 6e4,
 		env: {
@@ -20023,12 +20024,13 @@ var GitHubPublisher = class {
 				body: `[${finding.severity ?? "medium"}] ${finding.message}`
 			}));
 			const event = input.requestChangesOnHighSeverity && input.result.findings.some(isHighSeverity) ? "REQUEST_CHANGES" : "COMMENT";
-			if (comments.length > 0) await this.octokit.rest.pulls.createReview({
+			if (comments.length > 0 || event === "REQUEST_CHANGES") await this.octokit.rest.pulls.createReview({
 				owner: input.owner,
 				repo: input.repo,
 				pull_number: input.prNumber,
 				commit_id: input.headSha,
 				event,
+				body: buildManagedComment(input.result),
 				comments
 			});
 			metrics.inline_comments_created = comments.length;
@@ -20040,12 +20042,7 @@ var GitHubPublisher = class {
 };
 async function upsertManagedComment(octokit, input) {
 	const body = buildManagedComment(input.result);
-	const existing = (await octokit.paginate(octokit.rest.issues.listComments, {
-		owner: input.owner,
-		repo: input.repo,
-		issue_number: input.prNumber,
-		per_page: 100
-	})).find((comment) => typeof comment.body === "string" && comment.body.includes(MARKER));
+	const existing = await findManagedComment(octokit, input);
 	if (existing) {
 		await octokit.rest.issues.updateComment({
 			owner: input.owner,
@@ -20067,6 +20064,19 @@ async function upsertManagedComment(octokit, input) {
 		})).data.id,
 		action: "created"
 	};
+}
+async function findManagedComment(octokit, input) {
+	for (let page = 1;; page += 1) {
+		const response = await octokit.rest.issues.listComments({
+			owner: input.owner,
+			repo: input.repo,
+			issue_number: input.prNumber,
+			per_page: 100,
+			page
+		});
+		const existing = response.data.find((comment) => typeof comment.body === "string" && comment.body.includes(MARKER));
+		if (existing || response.data.length < 100) return existing;
+	}
 }
 //#endregion
 //#region src/run-lifecycle.ts
@@ -20150,15 +20160,22 @@ async function run() {
 			dryRun: inputs.dryRun
 		});
 		const metrics = completeMetrics(result, publishMetrics);
-		await client.completeRun(started.run.id, metrics);
 		await summary.addRaw(buildJobSummary(result, result.degradedFeatures)).write();
+		await client.completeRun(started.run.id, metrics);
 	} catch (error) {
-		const metrics = result ? completeMetrics(result, {}) : { status: "failed" };
+		const metrics = result ? failureMetrics(result) : { status: "failed" };
 		await client.failRun(started.run.id, redactor.errorSummary(error), metrics).catch((failError) => {
 			warning(redactor.errorSummary(failError));
 		});
 		throw error;
 	}
+}
+function failureMetrics(result) {
+	return {
+		...result.metrics,
+		status: "failed",
+		degraded_features_json: result.degradedFeatures.length > 0 ? result.degradedFeatures : void 0
+	};
 }
 function hasEffectiveModel(config) {
 	return typeof config.model_id === "string" && config.model_id.length > 0;

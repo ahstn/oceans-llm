@@ -26,7 +26,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS review_agent_repositories_external_id_uidx
   WHERE external_repository_id IS NOT NULL;
 
 CREATE UNIQUE INDEX IF NOT EXISTS review_agent_repositories_active_owner_name_uidx
-  ON review_agent_repositories (provider, owner, name)
+  ON review_agent_repositories (provider, lower(owner), lower(name))
   WHERE status = 'active';
 
 CREATE INDEX IF NOT EXISTS review_agent_repositories_service_account_idx

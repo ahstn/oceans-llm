@@ -216,7 +216,7 @@ Local runner tests:
 ## Verification
 
 ```sh
-eval "$(/Users/ahstn/.local/bin/mise activate zsh)"
+eval "$(mise activate zsh)"
 mise run review-agent-action-install
 mise run review-agent-action-build
 mise run review-agent-action-test

@@ -33,6 +33,27 @@ impl ReviewAgentRepository for AnyStore {
         }
     }
 
+    async fn list_review_agent_repositories_for_team(
+        &self,
+        team_id: Uuid,
+        status: Option<ReviewAgentRepositoryStatus>,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<ReviewAgentRepositoryRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .list_review_agent_repositories_for_team(team_id, status, limit, offset)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .list_review_agent_repositories_for_team(team_id, status, limit, offset)
+                    .await
+            }
+        }
+    }
+
     async fn get_review_agent_repository(
         &self,
         repository_id: Uuid,

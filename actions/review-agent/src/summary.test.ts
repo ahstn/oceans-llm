@@ -19,10 +19,11 @@ describe("summary publishing", () => {
   test("updates an existing managed comment", async () => {
     const calls: string[] = [];
     const publisher = new GitHubPublisher({
-      paginate: async () => [{ id: 99, body: "old\n<!-- oceans-llm-review-agent -->" }],
       rest: {
         issues: {
-          listComments: {},
+          listComments: async () => ({
+            data: [{ id: 99, body: "old\n<!-- oceans-llm-review-agent -->" }]
+          }),
           updateComment: async () => calls.push("update"),
           createComment: async () => {
             calls.push("create");
@@ -51,5 +52,39 @@ describe("summary publishing", () => {
     expect(calls).toEqual(["update"]);
     expect(metrics.managed_comment_id).toBe("99");
     expect(metrics.managed_comment_action).toBe("updated");
+  });
+
+  test("requests changes even when no inline comments are emitted", async () => {
+    const reviews: any[] = [];
+    const publisher = new GitHubPublisher({
+      rest: {
+        issues: {
+          listComments: async () => ({ data: [] }),
+          updateComment: async () => undefined,
+          createComment: async () => ({ data: { id: 100 } })
+        },
+        pulls: {
+          createReview: async (input: any) => reviews.push(input)
+        }
+      }
+    });
+
+    await publisher.publish({
+      owner: "octo",
+      repo: "repo",
+      prNumber: 1,
+      headSha: "abc",
+      result,
+      inlineReview: true,
+      prSummary: false,
+      maxInlineComments: 0,
+      requestChangesOnHighSeverity: true,
+      dryRun: false
+    });
+
+    expect(reviews).toHaveLength(1);
+    expect(reviews[0].event).toBe("REQUEST_CHANGES");
+    expect(reviews[0].comments).toEqual([]);
+    expect(reviews[0].body).toContain("High severity findings: 1");
   });
 });

@@ -74,13 +74,14 @@ export class GitHubPublisher implements Publisher {
       }));
       const event =
         input.requestChangesOnHighSeverity && input.result.findings.some(isHighSeverity) ? "REQUEST_CHANGES" : "COMMENT";
-      if (comments.length > 0) {
+      if (comments.length > 0 || event === "REQUEST_CHANGES") {
         await this.octokit.rest.pulls.createReview({
           owner: input.owner,
           repo: input.repo,
           pull_number: input.prNumber,
           commit_id: input.headSha,
           event,
+          body: buildManagedComment(input.result),
           comments
         });
       }
@@ -94,13 +95,7 @@ export class GitHubPublisher implements Publisher {
 
 async function upsertManagedComment(octokit: any, input: PublishInput): Promise<{ id: number; action: string }> {
   const body = buildManagedComment(input.result);
-  const comments = await octokit.paginate(octokit.rest.issues.listComments, {
-    owner: input.owner,
-    repo: input.repo,
-    issue_number: input.prNumber,
-    per_page: 100
-  });
-  const existing = comments.find((comment: any) => typeof comment.body === "string" && comment.body.includes(MARKER));
+  const existing = await findManagedComment(octokit, input);
   if (existing) {
     await octokit.rest.issues.updateComment({
       owner: input.owner,
@@ -117,4 +112,22 @@ async function upsertManagedComment(octokit: any, input: PublishInput): Promise<
     body
   });
   return { id: created.data.id, action: "created" };
+}
+
+async function findManagedComment(octokit: any, input: PublishInput): Promise<any | undefined> {
+  for (let page = 1; ; page += 1) {
+    const response = await octokit.rest.issues.listComments({
+      owner: input.owner,
+      repo: input.repo,
+      issue_number: input.prNumber,
+      per_page: 100,
+      page
+    });
+    const existing = response.data.find(
+      (comment: any) => typeof comment.body === "string" && comment.body.includes(MARKER)
+    );
+    if (existing || response.data.length < 100) {
+      return existing;
+    }
+  }
 }

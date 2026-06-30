@@ -89,6 +89,14 @@ pub trait ReviewAgentRepository: Send + Sync {
         offset: i64,
     ) -> Result<Vec<ReviewAgentRepositoryRecord>, StoreError>;
 
+    async fn list_review_agent_repositories_for_team(
+        &self,
+        team_id: Uuid,
+        status: Option<ReviewAgentRepositoryStatus>,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<ReviewAgentRepositoryRecord>, StoreError>;
+
     async fn get_review_agent_repository(
         &self,
         repository_id: Uuid,

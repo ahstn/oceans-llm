@@ -43,14 +43,22 @@ export function sanitizeMetrics(input: Record<string, unknown>): RunMetrics {
 }
 
 function sanitizeFinding(input: any): Finding | undefined {
-  if (typeof input?.path !== "string" || !Number.isInteger(input?.line) || typeof input?.message !== "string") {
+  if (
+    typeof input?.path !== "string" ||
+    input.path.trim().length === 0 ||
+    !Number.isInteger(input?.line) ||
+    input.line <= 0 ||
+    typeof input?.message !== "string"
+  ) {
     return undefined;
   }
+  const startLine = Number.isInteger(input.start_line) && input.start_line > 0 ? input.start_line : undefined;
+  const endLine = Number.isInteger(input.end_line) && input.end_line >= input.line ? input.end_line : undefined;
   return {
     path: input.path,
     line: input.line,
-    start_line: Number.isInteger(input.start_line) ? input.start_line : undefined,
-    end_line: Number.isInteger(input.end_line) ? input.end_line : undefined,
+    start_line: startLine,
+    end_line: endLine,
     side: input.side === "LEFT" ? "LEFT" : "RIGHT",
     severity: typeof input.severity === "string" ? input.severity : undefined,
     message: input.message.slice(0, 12000)

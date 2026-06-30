@@ -15,7 +15,7 @@ use gateway_service::{
     UpdateReviewAgentRepositoryInput, WorkflowRenderInput,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
@@ -295,18 +295,28 @@ pub async fn list_review_agent_repositories(
 ) -> Result<Json<Envelope<ReviewAgentRepositoriesPayload>>, AppError> {
     let scope = require_review_agent_admin_scope(&state, &headers).await?;
     let service = review_agent_service(&state);
-    let repositories = service
-        .list_repositories(
-            query
-                .status
-                .as_deref()
-                .map(parse_repository_status)
-                .transpose()?,
-            query.limit.unwrap_or(50),
-            query.offset.unwrap_or(0),
-        )
-        .await?;
-    let items = filter_repositories_for_scope(&state, repositories, &scope).await?;
+    let status = query
+        .status
+        .as_deref()
+        .map(parse_repository_status)
+        .transpose()?;
+    let items = match scope {
+        ReviewAgentAdminScope::Platform => {
+            service
+                .list_repositories(status, query.limit.unwrap_or(50), query.offset.unwrap_or(0))
+                .await?
+        }
+        ReviewAgentAdminScope::Team(team_id) => {
+            service
+                .list_repositories_for_team(
+                    team_id,
+                    status,
+                    query.limit.unwrap_or(50),
+                    query.offset.unwrap_or(0),
+                )
+                .await?
+        }
+    };
     Ok(Json(envelope(ReviewAgentRepositoriesPayload {
         items: items.into_iter().map(map_repository).collect(),
     })))
@@ -327,6 +337,11 @@ pub async fn create_review_agent_repository(
     let scope = require_review_agent_admin_scope(&state, &headers).await?;
     let service_account_id = parse_uuid(&request.service_account_id, "service_account_id")?;
     authorize_service_account_scope(&state, &scope, service_account_id).await?;
+    let settings = request
+        .settings
+        .map(settings_from_view)
+        .transpose()?
+        .unwrap_or_default();
     let repository = review_agent_service(&state)
         .create_repository(CreateReviewAgentRepositoryInput {
             provider: parse_provider(&request.provider)?,
@@ -335,8 +350,8 @@ pub async fn create_review_agent_repository(
             name: request.name,
             full_name: request.full_name,
             service_account_id,
-            settings: request.settings.map(settings_from_view).unwrap_or_default(),
-            settings_json: request.settings_json.unwrap_or_else(|| json!({})),
+            settings,
+            settings_json: validate_settings_json(request.settings_json)?,
         })
         .await?;
     Ok(Json(envelope(ReviewAgentRepositoryPayload {
@@ -384,6 +399,7 @@ pub async fn update_review_agent_repository(
     require_visible_repository(&state, &scope, repository_id).await?;
     let service_account_id = parse_uuid(&request.service_account_id, "service_account_id")?;
     authorize_service_account_scope(&state, &scope, service_account_id).await?;
+    let settings = settings_from_view(request.settings)?;
     let repository = review_agent_service(&state)
         .update_repository(UpdateReviewAgentRepositoryInput {
             repository_id,
@@ -393,8 +409,8 @@ pub async fn update_review_agent_repository(
             full_name: request.full_name,
             service_account_id,
             status: parse_repository_status(&request.status)?,
-            settings: settings_from_view(request.settings),
-            settings_json: request.settings_json.unwrap_or_else(|| json!({})),
+            settings,
+            settings_json: validate_settings_json(request.settings_json)?,
         })
         .await?;
     Ok(Json(envelope(ReviewAgentRepositoryPayload {
@@ -745,30 +761,6 @@ async fn require_visible_repository(
     Ok(repository)
 }
 
-async fn filter_repositories_for_scope(
-    state: &AppState,
-    repositories: Vec<ReviewAgentRepositoryRecord>,
-    scope: &ReviewAgentAdminScope,
-) -> Result<Vec<ReviewAgentRepositoryRecord>, AppError> {
-    let ReviewAgentAdminScope::Team(team_id) = scope else {
-        return Ok(repositories);
-    };
-    let mut visible = Vec::new();
-    for repository in repositories {
-        let Some(service_account) = state
-            .store
-            .get_service_account_by_id(repository.service_account_id)
-            .await?
-        else {
-            continue;
-        };
-        if service_account.team_id == *team_id {
-            visible.push(repository);
-        }
-    }
-    Ok(visible)
-}
-
 fn map_config_resolve_request(
     request: ActionConfigResolveRequest,
 ) -> Result<ActionConfigResolveInput, AppError> {
@@ -790,7 +782,7 @@ fn map_run_start_request(request: ActionRunStartRequest) -> Result<ActionRunStar
         model_execution_mode: request.model_execution_mode,
         provider_key: request.provider_key,
         model_key: request.model_key,
-        effective_config_json: request.effective_config_json,
+        effective_config_json: sanitize_effective_config_json(request.effective_config_json)?,
     })
 }
 
@@ -862,8 +854,123 @@ fn map_complete_request(
         diagram_status: request.diagram_status,
         linked_issue_count: request.linked_issue_count,
         linked_issue_status: request.linked_issue_status,
-        degraded_features_json: request.degraded_features_json,
+        degraded_features_json: request
+            .degraded_features_json
+            .map(sanitize_degraded_features_json)
+            .transpose()?,
     })
+}
+
+fn sanitize_effective_config_json(value: Value) -> Result<Value, AppError> {
+    let Value::Object(map) = value else {
+        return invalid_json_blob("effective_config_json must be an object");
+    };
+
+    let mut sanitized = Map::new();
+    for (key, value) in map {
+        let clean = match key.as_str() {
+            "model_id" | "model_execution_mode" | "provider_key" => {
+                optional_string_value(&key, value, 200)?
+            }
+            "oceans_base_url" => optional_string_value(&key, value, 2048)?,
+            "inline_review_enabled"
+            | "pr_summary_enabled"
+            | "diagrams_enabled"
+            | "linked_issue_detection_enabled"
+            | "linked_issue_assessment_enabled"
+            | "request_changes_on_high_severity" => optional_bool_value(&key, value)?,
+            "max_inline_comments" => optional_non_negative_i64_value(&key, value)?,
+            _ => {
+                return invalid_json_blob(&format!(
+                    "effective_config_json contains unsupported field `{key}`"
+                ));
+            }
+        };
+        sanitized.insert(key, clean);
+    }
+    Ok(Value::Object(sanitized))
+}
+
+fn sanitize_degraded_features_json(value: Value) -> Result<Value, AppError> {
+    let Value::Array(items) = value else {
+        return invalid_json_blob("degraded_features_json must be an array of strings");
+    };
+    if items.len() > 20 {
+        return invalid_json_blob("degraded_features_json cannot contain more than 20 items");
+    }
+    let mut sanitized = Vec::with_capacity(items.len());
+    for item in items {
+        let Value::String(feature) = item else {
+            return invalid_json_blob("degraded_features_json must contain only strings");
+        };
+        if feature.len() > 100 || feature.chars().any(char::is_control) {
+            return invalid_json_blob(
+                "degraded_features_json entries must be single-line strings up to 100 bytes",
+            );
+        }
+        sanitized.push(Value::String(feature));
+    }
+    Ok(Value::Array(sanitized))
+}
+
+fn validate_settings_json(value: Option<Value>) -> Result<Value, AppError> {
+    let Some(value) = value else {
+        return Ok(json!({}));
+    };
+    let Value::Object(map) = &value else {
+        return invalid_json_blob("settings_json must be an object");
+    };
+    const TYPED_SETTINGS: &[&str] = &[
+        "inline_review_enabled",
+        "pr_summary_enabled",
+        "diagrams_enabled",
+        "linked_issue_detection_enabled",
+        "linked_issue_assessment_enabled",
+        "default_model_key",
+        "max_inline_comments",
+        "request_changes_on_high_severity",
+    ];
+    if let Some(key) = TYPED_SETTINGS.iter().find(|key| map.contains_key(**key)) {
+        return invalid_json_blob(&format!(
+            "settings_json cannot override typed setting `{key}`"
+        ));
+    }
+    Ok(value)
+}
+
+fn optional_string_value(field: &str, value: Value, max_len: usize) -> Result<Value, AppError> {
+    match value {
+        Value::Null => Ok(Value::Null),
+        Value::String(text) if text.len() <= max_len && !text.chars().any(char::is_control) => {
+            Ok(Value::String(text))
+        }
+        _ => invalid_json_blob(&format!(
+            "{field} must be a bounded single-line string or null"
+        )),
+    }
+}
+
+fn optional_bool_value(field: &str, value: Value) -> Result<Value, AppError> {
+    match value {
+        Value::Null | Value::Bool(_) => Ok(value),
+        _ => invalid_json_blob(&format!("{field} must be a boolean or null")),
+    }
+}
+
+fn optional_non_negative_i64_value(field: &str, value: Value) -> Result<Value, AppError> {
+    match value {
+        Value::Null => Ok(Value::Null),
+        Value::Number(number) if number.as_i64().is_some_and(|value| value >= 0) => {
+            Ok(Value::Number(number))
+        }
+        _ => invalid_json_blob(&format!("{field} must be a non-negative integer or null")),
+    }
+}
+
+fn invalid_json_blob<T>(message: &str) -> Result<T, AppError> {
+    Err(AppError(GatewayError::UnprocessableEntity(
+        message.to_string(),
+    )))
 }
 
 fn parse_uuid(raw: &str, field: &str) -> Result<Uuid, AppError> {
@@ -898,8 +1005,13 @@ fn parse_run_status(raw: &str) -> Result<ReviewAgentRunStatus, AppError> {
     })
 }
 
-fn settings_from_view(view: ReviewAgentSettingsView) -> ReviewAgentSettings {
-    ReviewAgentSettings {
+fn settings_from_view(view: ReviewAgentSettingsView) -> Result<ReviewAgentSettings, AppError> {
+    if view.max_inline_comments.is_some_and(|value| value < 0) {
+        return Err(AppError(GatewayError::UnprocessableEntity(
+            "max_inline_comments must be non-negative".to_string(),
+        )));
+    }
+    Ok(ReviewAgentSettings {
         inline_review_enabled: view.inline_review_enabled,
         pr_summary_enabled: view.pr_summary_enabled,
         diagrams_enabled: view.diagrams_enabled,
@@ -908,7 +1020,7 @@ fn settings_from_view(view: ReviewAgentSettingsView) -> ReviewAgentSettings {
         default_model_key: view.default_model_key,
         max_inline_comments: view.max_inline_comments,
         request_changes_on_high_severity: view.request_changes_on_high_severity,
-    }
+    })
 }
 
 fn settings_to_view(settings: ReviewAgentSettings) -> ReviewAgentSettingsView {
@@ -1026,6 +1138,50 @@ mod tests {
         let error = serde_json::from_value::<ActionRunMetricsRequest>(request)
             .expect_err("unknown metric fields should be rejected");
         assert!(error.to_string().contains("unknown field"));
+    }
+
+    #[test]
+    fn run_start_rejects_unbounded_effective_config_json() {
+        assert!(
+            sanitize_effective_config_json(json!({
+                "model_id": "fast",
+                "inline_review_enabled": true,
+                "max_inline_comments": 10
+            }))
+            .is_ok()
+        );
+        assert!(
+            sanitize_effective_config_json(json!({
+                "model_id": "fast",
+                "raw_diff": "do not persist"
+            }))
+            .is_err()
+        );
+        assert!(sanitize_effective_config_json(json!({"max_inline_comments": -1})).is_err());
+    }
+
+    #[test]
+    fn run_metrics_rejects_unbounded_degraded_features_json() {
+        assert!(sanitize_degraded_features_json(json!(["summary", "diagrams"])).is_ok());
+        assert!(sanitize_degraded_features_json(json!({"raw": "object"})).is_err());
+        assert!(sanitize_degraded_features_json(json!(["line\nbreak"])).is_err());
+    }
+
+    #[test]
+    fn admin_settings_reject_negative_limits_and_shadow_json() {
+        let settings = ReviewAgentSettingsView {
+            inline_review_enabled: true,
+            pr_summary_enabled: true,
+            diagrams_enabled: false,
+            linked_issue_detection_enabled: true,
+            linked_issue_assessment_enabled: false,
+            default_model_key: None,
+            max_inline_comments: Some(-1),
+            request_changes_on_high_severity: false,
+        };
+        assert!(settings_from_view(settings).is_err());
+        assert!(validate_settings_json(Some(json!({"notes": "enabled"}))).is_ok());
+        assert!(validate_settings_json(Some(json!({"max_inline_comments": 3}))).is_err());
     }
 
     #[test]

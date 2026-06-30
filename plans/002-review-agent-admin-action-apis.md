@@ -125,7 +125,7 @@ only documents session cookies.
 Regenerate and verify:
 
 ```sh
-eval "$(/Users/ahstn/.local/bin/mise activate zsh)"
+eval "$(mise activate zsh)"
 mise run admin-contract-generate
 mise run admin-contract-check
 ```
@@ -185,7 +185,7 @@ Contract tests:
 ## Verification
 
 ```sh
-eval "$(/Users/ahstn/.local/bin/mise activate zsh)"
+eval "$(mise activate zsh)"
 mise run admin-contract-generate
 mise run admin-contract-check
 cargo test -p gateway-service review_agent

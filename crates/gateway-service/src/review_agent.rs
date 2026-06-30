@@ -43,6 +43,24 @@ where
             .map_err(Into::into)
     }
 
+    pub async fn list_repositories_for_team(
+        &self,
+        team_id: Uuid,
+        status: Option<ReviewAgentRepositoryStatus>,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<ReviewAgentRepositoryRecord>, GatewayError> {
+        self.store
+            .list_review_agent_repositories_for_team(
+                team_id,
+                status,
+                limit.clamp(1, 100),
+                offset.max(0),
+            )
+            .await
+            .map_err(Into::into)
+    }
+
     pub async fn create_repository(
         &self,
         input: CreateReviewAgentRepositoryInput,
@@ -133,18 +151,16 @@ where
             .unwrap_or_else(|| "main".to_string())
             .trim()
             .to_string();
-        if action_ref.is_empty() {
-            return Err(GatewayError::UnprocessableEntity(
-                "action_ref cannot be empty".to_string(),
-            ));
-        }
+        validate_action_ref(&action_ref)?;
         let oceans_url = input
             .oceans_url
             .or_else(|| self.oceans_base_url.clone())
             .unwrap_or_else(|| "https://oceans.example.com".to_string());
+        validate_workflow_url(&oceans_url)?;
         let api_key_secret_name = input
             .api_key_secret_name
             .unwrap_or_else(|| "OCEANS_REVIEW_AGENT_API_KEY".to_string());
+        validate_secret_name(&api_key_secret_name)?;
 
         Ok(RenderedWorkflow {
             file_name: "oceans-review-agent.yml".to_string(),
@@ -246,10 +262,12 @@ where
         let run = self
             .require_action_run_access(run_id, service_account_id)
             .await?;
+        let status = input.status.unwrap_or(run.status);
+        validate_heartbeat_status(status)?;
         self.store
             .update_review_agent_run(&UpdateReviewAgentRunRecord {
                 run_id: run.run_id,
-                status: input.status.unwrap_or(run.status),
+                status,
                 heartbeat_at: Some(OffsetDateTime::now_utc()),
                 finished_at: run.finished_at,
                 duration_ms: run.duration_ms,
@@ -287,11 +305,13 @@ where
         let service_account_id = require_service_account_auth(auth)?;
         self.require_action_run_access(run_id, service_account_id)
             .await?;
+        let status = input.status.unwrap_or(ReviewAgentRunStatus::Succeeded);
+        validate_complete_status(status)?;
         let now = OffsetDateTime::now_utc();
         self.store
             .update_review_agent_run(&UpdateReviewAgentRunRecord {
                 run_id,
-                status: input.status.unwrap_or(ReviewAgentRunStatus::Succeeded),
+                status,
                 heartbeat_at: Some(now),
                 finished_at: Some(now),
                 duration_ms: input.duration_ms,
@@ -329,11 +349,13 @@ where
         let service_account_id = require_service_account_auth(auth)?;
         self.require_action_run_access(run_id, service_account_id)
             .await?;
+        let status = input.metrics.status.unwrap_or(ReviewAgentRunStatus::Failed);
+        validate_fail_status(status)?;
         let now = OffsetDateTime::now_utc();
         self.store
             .update_review_agent_run(&UpdateReviewAgentRunRecord {
                 run_id,
-                status: input.metrics.status.unwrap_or(ReviewAgentRunStatus::Failed),
+                status,
                 heartbeat_at: Some(now),
                 finished_at: Some(now),
                 duration_ms: input.metrics.duration_ms,
@@ -699,6 +721,18 @@ async fn resolve_effective_config(
     if overrides.provider_key.is_some() {
         applied.push(applied_override("provider_key"));
     }
+    if overrides.max_inline_comments.is_some() {
+        if overrides.max_inline_comments.is_some_and(|value| value < 0) {
+            rejected.push(OverrideDiagnostic {
+                field: "max_inline_comments".to_string(),
+                reason: "value must be non-negative".to_string(),
+            });
+            return Err(GatewayError::UnprocessableEntity(
+                "max_inline_comments must be non-negative".to_string(),
+            ));
+        }
+        applied.push(applied_override("max_inline_comments"));
+    }
 
     let config = EffectiveReviewAgentConfig {
         model_id,
@@ -749,18 +783,6 @@ async fn resolve_effective_config(
             &mut applied,
         ),
     };
-    if overrides.max_inline_comments.is_some() {
-        if overrides.max_inline_comments.is_some_and(|value| value < 0) {
-            rejected.push(OverrideDiagnostic {
-                field: "max_inline_comments".to_string(),
-                reason: "value must be non-negative".to_string(),
-            });
-            return Err(GatewayError::UnprocessableEntity(
-                "max_inline_comments must be non-negative".to_string(),
-            ));
-        }
-        applied.push(applied_override("max_inline_comments"));
-    }
 
     Ok((config, applied, rejected))
 }
@@ -816,6 +838,88 @@ fn sanitize_error_summary(summary: &str) -> String {
         .collect()
 }
 
+fn validate_action_ref(value: &str) -> Result<(), GatewayError> {
+    if value.is_empty()
+        || value.len() > 200
+        || !value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-' | '/'))
+    {
+        return Err(GatewayError::UnprocessableEntity(
+            "action_ref must be a non-empty Git ref containing only letters, numbers, '.', '_', '-' or '/'".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_workflow_url(value: &str) -> Result<(), GatewayError> {
+    let parsed = url::Url::parse(value).map_err(|error| {
+        GatewayError::UnprocessableEntity(format!("oceans_url must be a valid URL: {error}"))
+    })?;
+    if !matches!(parsed.scheme(), "http" | "https")
+        || value
+            .chars()
+            .any(|ch| ch.is_control() || ch.is_whitespace() || ch == '\'')
+    {
+        return Err(GatewayError::UnprocessableEntity(
+            "oceans_url must be a single-line http(s) URL".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_secret_name(value: &str) -> Result<(), GatewayError> {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return Err(GatewayError::UnprocessableEntity(
+            "api_key_secret_name cannot be empty".to_string(),
+        ));
+    };
+    if !(first.is_ascii_alphabetic() || first == '_')
+        || !chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+    {
+        return Err(GatewayError::UnprocessableEntity(
+            "api_key_secret_name must contain only letters, numbers and underscores, and cannot start with a number".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_heartbeat_status(status: ReviewAgentRunStatus) -> Result<(), GatewayError> {
+    if matches!(
+        status,
+        ReviewAgentRunStatus::Queued | ReviewAgentRunStatus::InProgress
+    ) {
+        return Ok(());
+    }
+    Err(GatewayError::UnprocessableEntity(
+        "heartbeat status must be queued or in_progress".to_string(),
+    ))
+}
+
+fn validate_complete_status(status: ReviewAgentRunStatus) -> Result<(), GatewayError> {
+    if matches!(
+        status,
+        ReviewAgentRunStatus::Succeeded
+            | ReviewAgentRunStatus::Skipped
+            | ReviewAgentRunStatus::Cancelled
+    ) {
+        return Ok(());
+    }
+    Err(GatewayError::UnprocessableEntity(
+        "complete status must be succeeded, skipped or cancelled".to_string(),
+    ))
+}
+
+fn validate_fail_status(status: ReviewAgentRunStatus) -> Result<(), GatewayError> {
+    if status == ReviewAgentRunStatus::Failed {
+        return Ok(());
+    }
+    Err(GatewayError::UnprocessableEntity(
+        "fail status must be failed".to_string(),
+    ))
+}
+
 fn render_workflow_yaml(
     repo_full_name: &str,
     action_ref: &str,
@@ -834,7 +938,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
-  issues: read
+  issues: write
 
 concurrency:
   group: oceans-review-agent-${{{{ github.repository }}}}-${{{{ github.event.pull_request.number }}}}
@@ -900,10 +1004,31 @@ mod tests {
         assert!(yaml.contains("github.event.pull_request.draft == false"));
         assert!(yaml.contains("permissions:"));
         assert!(yaml.contains("pull-requests: write"));
+        assert!(yaml.contains("issues: write"));
         assert!(yaml.contains("actions/checkout@v4"));
         assert!(yaml.contains("ref: ${{ github.event.pull_request.head.sha }}"));
         assert!(yaml.contains("ahstn/oceans-llm/actions/review-agent@main"));
         assert!(yaml.contains("${{ secrets.OCEANS_REVIEW_AGENT_API_KEY }}"));
+    }
+
+    #[test]
+    fn workflow_inputs_reject_yaml_injection_shapes() {
+        assert!(validate_action_ref("feature/review-agent").is_ok());
+        assert!(validate_action_ref("main\npermissions: write-all").is_err());
+        assert!(validate_workflow_url("https://oceans.example.com").is_ok());
+        assert!(validate_workflow_url("https://oceans.example.com'\nfoo: bar").is_err());
+        assert!(validate_secret_name("OCEANS_REVIEW_AGENT_API_KEY").is_ok());
+        assert!(validate_secret_name("OCEANS-REVIEW-AGENT-API-KEY").is_err());
+    }
+
+    #[test]
+    fn lifecycle_statuses_are_endpoint_specific() {
+        assert!(validate_heartbeat_status(ReviewAgentRunStatus::InProgress).is_ok());
+        assert!(validate_heartbeat_status(ReviewAgentRunStatus::Succeeded).is_err());
+        assert!(validate_complete_status(ReviewAgentRunStatus::Succeeded).is_ok());
+        assert!(validate_complete_status(ReviewAgentRunStatus::InProgress).is_err());
+        assert!(validate_fail_status(ReviewAgentRunStatus::Failed).is_ok());
+        assert!(validate_fail_status(ReviewAgentRunStatus::Succeeded).is_err());
     }
 
     #[test]

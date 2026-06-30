@@ -2,6 +2,7 @@ use super::*;
 use crate::shared::{parse_uuid, serialize_json, unix_to_datetime};
 
 const REPOSITORY_COLUMNS: &str = "repository_id, provider, external_repository_id, owner, name, full_name, service_account_id, status, inline_review_enabled, pr_summary_enabled, diagrams_enabled, linked_issue_detection_enabled, linked_issue_assessment_enabled, default_model_key, max_inline_comments, request_changes_on_high_severity, settings_json, created_at, updated_at";
+const ALIASED_REPOSITORY_COLUMNS: &str = "r.repository_id, r.provider, r.external_repository_id, r.owner, r.name, r.full_name, r.service_account_id, r.status, r.inline_review_enabled, r.pr_summary_enabled, r.diagrams_enabled, r.linked_issue_detection_enabled, r.linked_issue_assessment_enabled, r.default_model_key, r.max_inline_comments, r.request_changes_on_high_severity, r.settings_json, r.created_at, r.updated_at";
 const PULL_REQUEST_COLUMNS: &str = "pull_request_id, repository_id, provider_pr_id, pr_number, title, author_login, state, head_sha, base_sha, head_repository_full_name, base_repository_full_name, is_draft, created_at, updated_at";
 const RUN_COLUMNS: &str = "run_id, repository_id, pull_request_id, head_sha, github_run_id, github_run_attempt, status, started_at, heartbeat_at, finished_at, duration_ms, files_changed, additions, deletions, changed_loc, inline_comments_created, inline_comments_updated, inline_comments_skipped, inline_comments_failed, stale_comments_deleted, managed_comment_id, managed_comment_action, managed_comment_status, review_event_status, summary_status, diagram_status, linked_issue_count, linked_issue_status, model_execution_mode, provider_key, model_key, effective_config_json, degraded_features_json, error_summary, created_at, updated_at";
 const ALIASED_RUN_COLUMNS: &str = "r.run_id, r.repository_id, r.pull_request_id, r.head_sha, r.github_run_id, r.github_run_attempt, r.status, r.started_at, r.heartbeat_at, r.finished_at, r.duration_ms, r.files_changed, r.additions, r.deletions, r.changed_loc, r.inline_comments_created, r.inline_comments_updated, r.inline_comments_skipped, r.inline_comments_failed, r.stale_comments_deleted, r.managed_comment_id, r.managed_comment_action, r.managed_comment_status, r.review_event_status, r.summary_status, r.diagram_status, r.linked_issue_count, r.linked_issue_status, r.model_execution_mode, r.provider_key, r.model_key, r.effective_config_json, r.degraded_features_json, r.error_summary, r.created_at, r.updated_at";
@@ -193,6 +194,27 @@ impl ReviewAgentRepository for PostgresStore {
         rows.iter().map(decode_repository).collect()
     }
 
+    async fn list_review_agent_repositories_for_team(
+        &self,
+        team_id: Uuid,
+        status: Option<ReviewAgentRepositoryStatus>,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<ReviewAgentRepositoryRecord>, StoreError> {
+        let sql = format!(
+            "SELECT {ALIASED_REPOSITORY_COLUMNS} FROM review_agent_repositories r INNER JOIN service_accounts sa ON sa.service_account_id = r.service_account_id WHERE sa.team_id = $1 AND ($2 IS NULL OR r.status = $2) ORDER BY r.updated_at DESC, r.full_name ASC LIMIT $3 OFFSET $4"
+        );
+        let rows = sqlx::query(&sql)
+            .bind(team_id.to_string())
+            .bind(status.map(|value| value.as_str().to_string()))
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(to_query_error)?;
+        rows.iter().map(decode_repository).collect()
+    }
+
     async fn get_review_agent_repository(
         &self,
         repository_id: Uuid,
@@ -216,7 +238,7 @@ impl ReviewAgentRepository for PostgresStore {
         name: &str,
     ) -> Result<Option<ReviewAgentRepositoryRecord>, StoreError> {
         let sql = format!(
-            "SELECT {REPOSITORY_COLUMNS} FROM review_agent_repositories WHERE provider = $1 AND (($2 IS NOT NULL AND external_repository_id = $2) OR ($2 IS NULL AND owner = $3 AND name = $4)) ORDER BY status = 'active' DESC, updated_at DESC LIMIT 1"
+            "SELECT {REPOSITORY_COLUMNS} FROM review_agent_repositories WHERE provider = $1 AND (($2 IS NOT NULL AND external_repository_id = $2) OR (lower(owner) = lower($3) AND lower(name) = lower($4))) ORDER BY status = 'active' DESC, CASE WHEN $2 IS NOT NULL AND external_repository_id = $2 THEN 0 ELSE 1 END, updated_at DESC LIMIT 1"
         );
         let row = sqlx::query(&sql)
             .bind(provider.as_str())
@@ -415,28 +437,16 @@ impl ReviewAgentRepository for PostgresStore {
         &self,
         input: &NewReviewAgentRunRecord,
     ) -> Result<ReviewAgentRunRecord, StoreError> {
-        if let (Some(github_run_id), Some(github_run_attempt)) =
-            (&input.github_run_id, input.github_run_attempt)
-            && let Some(existing) = self
-                .get_review_agent_run_by_github_attempt(
-                    input.repository_id,
-                    github_run_id,
-                    github_run_attempt,
-                )
-                .await?
-        {
-            return Ok(existing);
-        }
-
         let run_id = Uuid::new_v4();
         let effective_config_json = serialize_json(&input.effective_config_json)?;
-        sqlx::query(
+        let result = sqlx::query(
             r#"
             INSERT INTO review_agent_runs (
                 run_id, repository_id, pull_request_id, head_sha, github_run_id,
                 github_run_attempt, status, started_at, model_execution_mode, provider_key,
                 model_key, effective_config_json, created_at, updated_at
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13)
+            ON CONFLICT DO NOTHING
             "#,
         )
         .bind(run_id.to_string())
@@ -455,6 +465,24 @@ impl ReviewAgentRepository for PostgresStore {
         .execute(&self.pool)
         .await
         .map_err(to_write_error)?;
+        if result.rows_affected() == 0
+            && let (Some(github_run_id), Some(github_run_attempt)) =
+                (&input.github_run_id, input.github_run_attempt)
+            && let Some(existing) = self
+                .get_review_agent_run_by_github_attempt(
+                    input.repository_id,
+                    github_run_id,
+                    github_run_attempt,
+                )
+                .await?
+        {
+            return Ok(existing);
+        }
+        if result.rows_affected() == 0 {
+            return Err(StoreError::Conflict(
+                "review agent run conflicts with an existing record".to_string(),
+            ));
+        }
         load_run(&self.pool, run_id).await
     }
 

@@ -201,7 +201,7 @@ this MVP migration.
 Run through `mise`:
 
 ```sh
-eval "$(/Users/ahstn/.local/bin/mise activate zsh)"
+eval "$(mise activate zsh)"
 cargo test -p gateway-store review_agent
 cargo test -p gateway-store migration_registry
 cargo clippy --workspace --all-targets -- -D warnings
