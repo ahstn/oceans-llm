@@ -21,15 +21,18 @@ use crate::{
         McpToolTokenEstimateRecord, McpToolsetRecord, McpToolsetToolRecord,
         McpUpstreamCredentialBindingRecord, McpUpstreamCredentialOwnerScopeKind,
         ModelPricingRecord, ModelRoute, Money4, NewApiKeyRecord, NewExternalMcpServerRecord,
-        NewMcpAggregateSessionRecord, NewMcpToolsetRecord, PricingCatalogCacheRecord,
-        ProviderCapabilities, ProviderConnection, ProviderRequestContext, RequestAttemptRecord,
-        RequestLogDetail, RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult,
-        RequestLogQuery, RequestLogRecord, RequestMcpTokenOverheadRecord, ServiceAccountRecord,
-        SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord,
-        TeamMembershipRecord, TeamRecord, UpdateExternalMcpServerRecord, UpdateMcpToolsetRecord,
-        UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
-        UpsertMcpUpstreamCredentialBindingRecord, UsageLeaderboardBucketRecord,
-        UsageLeaderboardUserRecord, UsageLedgerRecord, UserRecord,
+        NewMcpAggregateSessionRecord, NewMcpToolsetRecord, NewReviewAgentRepositoryRecord,
+        NewReviewAgentRunRecord, PricingCatalogCacheRecord, ProviderCapabilities,
+        ProviderConnection, ProviderRequestContext, RequestAttemptRecord, RequestLogDetail,
+        RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult, RequestLogQuery,
+        RequestLogRecord, RequestMcpTokenOverheadRecord, ReviewAgentProvider,
+        ReviewAgentPullRequestRecord, ReviewAgentRepositoryRecord, ReviewAgentRepositoryStatus,
+        ReviewAgentRunRecord, ServiceAccountRecord, SpendDailyAggregateRecord,
+        SpendModelAggregateRecord, SpendOwnerAggregateRecord, TeamMembershipRecord, TeamRecord,
+        UpdateExternalMcpServerRecord, UpdateMcpToolsetRecord, UpdateReviewAgentRepositoryRecord,
+        UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
+        UpsertMcpUpstreamCredentialBindingRecord, UpsertReviewAgentPullRequestRecord,
+        UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord, UsageLedgerRecord, UserRecord,
     },
     error::{ProviderError, RouteError, StoreError},
     protocol::core::{ChatRequest, EmbeddingsRequest, ResponsesRequest},
@@ -75,6 +78,87 @@ pub trait AdminApiKeyRepository: Send + Sync {
         api_key_id: Uuid,
         revoked_at: OffsetDateTime,
     ) -> Result<bool, StoreError>;
+}
+
+#[async_trait]
+pub trait ReviewAgentRepository: Send + Sync {
+    async fn list_review_agent_repositories(
+        &self,
+        status: Option<ReviewAgentRepositoryStatus>,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<ReviewAgentRepositoryRecord>, StoreError>;
+
+    async fn get_review_agent_repository(
+        &self,
+        repository_id: Uuid,
+    ) -> Result<Option<ReviewAgentRepositoryRecord>, StoreError>;
+
+    async fn get_review_agent_repository_by_identity(
+        &self,
+        provider: ReviewAgentProvider,
+        external_repository_id: Option<&str>,
+        owner: &str,
+        name: &str,
+    ) -> Result<Option<ReviewAgentRepositoryRecord>, StoreError>;
+
+    async fn create_review_agent_repository(
+        &self,
+        input: &NewReviewAgentRepositoryRecord,
+    ) -> Result<ReviewAgentRepositoryRecord, StoreError>;
+
+    async fn update_review_agent_repository(
+        &self,
+        input: &UpdateReviewAgentRepositoryRecord,
+    ) -> Result<ReviewAgentRepositoryRecord, StoreError>;
+
+    async fn set_review_agent_repository_status(
+        &self,
+        repository_id: Uuid,
+        status: ReviewAgentRepositoryStatus,
+        updated_at: OffsetDateTime,
+    ) -> Result<ReviewAgentRepositoryRecord, StoreError>;
+
+    async fn upsert_review_agent_pull_request(
+        &self,
+        input: &UpsertReviewAgentPullRequestRecord,
+    ) -> Result<ReviewAgentPullRequestRecord, StoreError>;
+
+    async fn get_review_agent_pull_request(
+        &self,
+        repository_id: Uuid,
+        pr_number: i64,
+    ) -> Result<Option<ReviewAgentPullRequestRecord>, StoreError>;
+
+    async fn start_review_agent_run(
+        &self,
+        input: &NewReviewAgentRunRecord,
+    ) -> Result<ReviewAgentRunRecord, StoreError>;
+
+    async fn get_review_agent_run(
+        &self,
+        run_id: Uuid,
+    ) -> Result<Option<ReviewAgentRunRecord>, StoreError>;
+
+    async fn get_review_agent_run_by_github_attempt(
+        &self,
+        repository_id: Uuid,
+        github_run_id: &str,
+        github_run_attempt: i64,
+    ) -> Result<Option<ReviewAgentRunRecord>, StoreError>;
+
+    async fn update_review_agent_run(
+        &self,
+        input: &UpdateReviewAgentRunRecord,
+    ) -> Result<ReviewAgentRunRecord, StoreError>;
+
+    async fn list_review_agent_runs_for_repository(
+        &self,
+        repository_id: Uuid,
+        pr_number: Option<i64>,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<ReviewAgentRunRecord>, StoreError>;
 }
 
 #[async_trait]

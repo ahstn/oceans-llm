@@ -12,6 +12,7 @@ mod models;
 mod pricing_catalog;
 mod providers;
 mod request_logs;
+mod review_agent;
 mod seed;
 mod support;
 
@@ -41,20 +42,26 @@ use gateway_core::{
     McpUpstreamCredentialOwnerScopeKind, McpUpstreamCredentialRepository,
     McpUpstreamSecretStorageKind, MembershipRole, ModelAccessMode, ModelPricingRecord,
     ModelRepository, ModelRoute, Money4, NewApiKeyRecord, NewExternalMcpServerRecord,
-    NewMcpAggregateSessionRecord, NewMcpToolsetRecord, OauthJitMembership, OauthJitPolicy,
-    OauthLoginStateRecord, OauthProviderRecord, OidcJitMembership, OidcJitPolicy,
-    OidcLoginStateRecord, OidcProviderRecord, PasswordInvitationRecord, PricingCatalogCacheRecord,
+    NewMcpAggregateSessionRecord, NewMcpToolsetRecord, NewReviewAgentRepositoryRecord,
+    NewReviewAgentRunRecord, OauthJitMembership, OauthJitPolicy, OauthLoginStateRecord,
+    OauthProviderRecord, OidcJitMembership, OidcJitPolicy, OidcLoginStateRecord,
+    OidcProviderRecord, PasswordInvitationRecord, PricingCatalogCacheRecord,
     PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
     ProviderConnection, ProviderRepository, RequestAttemptRecord, RequestAttemptRepository,
     RequestAttemptStatus, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
     RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestMcpTokenOverheadRecord,
-    RequestTag, SYSTEM_BOOTSTRAP_ADMIN_USER_ID, ServiceAccountRecord, ServiceAccountStatus,
+    RequestTag, ReviewAgentProvider, ReviewAgentPullRequestRecord, ReviewAgentPullRequestState,
+    ReviewAgentRepository, ReviewAgentRepositoryRecord, ReviewAgentRepositoryStatus,
+    ReviewAgentRunRecord, ReviewAgentRunStatus, ReviewAgentSettings,
+    SYSTEM_BOOTSTRAP_ADMIN_USER_ID, ServiceAccountRecord, ServiceAccountStatus,
     SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord, StoreError,
     StoreHealth, TeamMembershipRecord, TeamRecord, UpdateExternalMcpServerRecord,
-    UpdateMcpToolsetRecord, UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
-    UpsertMcpUpstreamCredentialBindingRecord, UsageLeaderboardBucketRecord,
-    UsageLeaderboardUserRecord, UsageLedgerRecord, UsagePricingStatus, UserOauthAuthRecord,
-    UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
+    UpdateMcpToolsetRecord, UpdateReviewAgentRepositoryRecord, UpdateReviewAgentRunRecord,
+    UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
+    UpsertMcpUpstreamCredentialBindingRecord, UpsertReviewAgentPullRequestRecord,
+    UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord, UsageLedgerRecord,
+    UsagePricingStatus, UserOauthAuthRecord, UserOidcAuthRecord, UserPasswordAuthRecord,
+    UserRecord, UserSessionRecord, UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;

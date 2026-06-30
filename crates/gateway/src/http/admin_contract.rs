@@ -1172,6 +1172,19 @@ pub struct RequestLogPayloadView {
         crate::http::identity::oauth_start,
         crate::http::identity::oauth_callback_github,
         crate::http::spend::get_spend_report,
+        crate::http::review_agent::list_review_agent_repositories,
+        crate::http::review_agent::create_review_agent_repository,
+        crate::http::review_agent::get_review_agent_repository,
+        crate::http::review_agent::update_review_agent_repository,
+        crate::http::review_agent::disable_review_agent_repository,
+        crate::http::review_agent::reactivate_review_agent_repository,
+        crate::http::review_agent::list_review_agent_runs,
+        crate::http::review_agent::render_review_agent_workflow,
+        crate::http::review_agent::resolve_review_agent_action_config,
+        crate::http::review_agent::start_review_agent_action_run,
+        crate::http::review_agent::heartbeat_review_agent_action_run,
+        crate::http::review_agent::complete_review_agent_action_run,
+        crate::http::review_agent::fail_review_agent_action_run,
         crate::http::spend::get_admin_focus_export,
         crate::http::spend::get_my_focus_export,
         crate::http::spend::list_spend_budgets,
@@ -1218,6 +1231,10 @@ impl Modify for AdminApiSecurity {
             "session_cookie",
             SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::new("ogw_session"))),
         );
+        let mut gateway_api_key =
+            utoipa::openapi::security::Http::new(utoipa::openapi::security::HttpAuthScheme::Bearer);
+        gateway_api_key.bearer_format = Some("Gateway API key".to_string());
+        components.add_security_scheme("gateway_api_key", SecurityScheme::Http(gateway_api_key));
     }
 }
 

@@ -152,6 +152,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
             "../migrations/postgres/V33__oauth_provider_sso_email_verification.sql"
         ),
     },
+    MigrationManifest {
+        version: 34,
+        name: "review_agent",
+        checksum: "V34__review_agent.sql",
+        libsql_sql: include_str!("../migrations/V34__review_agent.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V34__review_agent.sql"),
+    },
 ];
 
 #[cfg(test)]

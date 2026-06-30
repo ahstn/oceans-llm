@@ -18,6 +18,7 @@ pub mod model_resolution;
 pub mod pricing_catalog;
 pub mod redaction;
 pub mod request_logging;
+pub mod review_agent;
 pub mod route_planner;
 pub mod service;
 
@@ -76,6 +77,13 @@ pub use request_logging::{
     StreamLogResultInput, StreamResponseCollector, UsageSummary, build_request_attempt,
     failed_attempt_outcome, invoked_tool_count_from_response_body, offset_now,
     successful_attempt_outcome,
+};
+pub use review_agent::{
+    ActionConfigResolveInput, ActionConfigResolveOutput, ActionPullRequestInput,
+    ActionReportingHints, ActionRepositoryIdentity, ActionRunCompleteInput, ActionRunFailInput,
+    ActionRunHeartbeatInput, ActionRunStartInput, CreateReviewAgentRepositoryInput,
+    EffectiveReviewAgentConfig, OverrideDiagnostic, RenderedWorkflow, ReviewAgentConfigOverrides,
+    ReviewAgentService, UpdateReviewAgentRepositoryInput, WorkflowRenderInput,
 };
 pub use route_planner::WeightedRoutePlanner;
 pub use service::{GatewayService, RecordedChatUsage};

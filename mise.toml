@@ -86,8 +86,8 @@ diff -u crates/admin-ui/web/src/generated/admin-api.ts "$tmpdir/admin-api.ts"
 
 [tasks.lint]
 description = "Run Rust and admin UI linting"
-depends = ["ui-install"]
-run = "cargo clippy --workspace --all-targets -- -D warnings && bun run --cwd crates/admin-ui/web lint"
+depends = ["ui-install", "review-agent-action-install"]
+run = "cargo clippy --workspace --all-targets -- -D warnings && bun run --cwd crates/admin-ui/web lint && mise run review-agent-action-check"
 
 [tasks.build]
 description = "Build Rust crates and admin UI bundle"
@@ -100,8 +100,8 @@ run = "cargo run -p gateway --bin gateway -- serve"
 
 [tasks.test]
 description = "Run Rust and admin UI tests"
-depends = ["ui-install"]
-run = "cargo test --workspace && bun run --cwd crates/admin-ui/web test"
+depends = ["ui-install", "review-agent-action-install"]
+run = "cargo test --workspace && bun run --cwd crates/admin-ui/web test && mise run review-agent-action-test"
 
 [tasks.gateway-serve]
 description = "Run local `gateway serve` against `gateway.yaml`"
@@ -256,6 +256,30 @@ run = "bun run --cwd crates/admin-ui/web fmt"
 [tasks.ui-test]
 description = "Run admin UI tests"
 run = "bun run --cwd crates/admin-ui/web test"
+
+[tasks.review-agent-action-install]
+description = "Install review agent action dependencies"
+run = "bun install --cwd actions/review-agent --frozen-lockfile"
+
+[tasks.review-agent-action-build]
+description = "Build the checked-in review agent action dist bundle"
+depends = ["review-agent-action-install"]
+run = "bun run --cwd actions/review-agent build"
+
+[tasks.review-agent-action-test]
+description = "Run review agent action unit tests"
+depends = ["review-agent-action-install"]
+run = "bun run --cwd actions/review-agent test"
+
+[tasks.review-agent-action-check]
+description = "Typecheck, test, verify dist, and smoke test the review agent action"
+depends = ["review-agent-action-install"]
+run = """
+bun run --cwd actions/review-agent typecheck
+bun run --cwd actions/review-agent test
+bun run --cwd actions/review-agent check:dist
+bun run --cwd actions/review-agent smoke:no-install
+"""
 
 [tasks.e2e-install]
 description = "Install Playwright Chromium for the end-to-end suite"

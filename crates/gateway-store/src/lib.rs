@@ -8,6 +8,7 @@ mod any_store_mcp_aggregate_sessions;
 mod any_store_mcp_credentials;
 mod any_store_mcp_registry;
 mod any_store_mcp_token_overhead;
+mod any_store_review_agent;
 mod libsql_store;
 mod migrate;
 mod migration_registry;
@@ -42,17 +43,20 @@ mod tests {
         McpToolPolicyResult, McpUpstreamCredentialMaterialKind,
         McpUpstreamCredentialOwnerScopeKind, McpUpstreamCredentialRepository,
         McpUpstreamSecretStorageKind, MembershipRole, ModelPricingRecord, ModelRepository, Money4,
-        NewExternalMcpServerRecord, OauthJitPolicy, OidcLoginStateRecord,
-        OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
-        OpenAiCompatRouteCompatibility, PricingCatalogCacheRecord, PricingCatalogRepository,
-        PricingLimits, PricingModalities, PricingProvenance, ProviderCapabilities,
-        RequestAttemptRecord, RequestAttemptStatus, RequestLogPayloadRecord, RequestLogQuery,
-        RequestLogRecord, RequestLogRepository, RequestTag, RequestTags, RequestToolCardinality,
-        RouteCompatibility, SeedApiKey, SeedBudget, SeedModel, SeedModelRoute, SeedOauthProvider,
-        SeedProvider, SeedTeam, SeedUser, SeedUserMembership, StoreError, StoreHealth,
-        UpdateExternalMcpServerRecord, UpsertExternalMcpToolRecord,
-        UpsertMcpUpstreamCredentialBindingRecord, UsageLedgerRecord, UsagePricingStatus,
-        UserStatus,
+        NewExternalMcpServerRecord, NewReviewAgentRepositoryRecord, NewReviewAgentRunRecord,
+        OauthJitPolicy, OidcLoginStateRecord, OpenAiCompatDeveloperRole,
+        OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
+        PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
+        PricingProvenance, ProviderCapabilities, RequestAttemptRecord, RequestAttemptStatus,
+        RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository,
+        RequestTag, RequestTags, RequestToolCardinality, ReviewAgentProvider,
+        ReviewAgentPullRequestState, ReviewAgentRepository, ReviewAgentRepositoryStatus,
+        ReviewAgentRunStatus, ReviewAgentSettings, RouteCompatibility, SeedApiKey, SeedBudget,
+        SeedModel, SeedModelRoute, SeedOauthProvider, SeedProvider, SeedTeam, SeedUser,
+        SeedUserMembership, StoreError, StoreHealth, UpdateExternalMcpServerRecord,
+        UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord,
+        UpsertMcpUpstreamCredentialBindingRecord, UpsertReviewAgentPullRequestRecord,
+        UsageLedgerRecord, UsagePricingStatus, UserStatus,
     };
     use serde_json::{Map, json};
     use serial_test::serial;
@@ -158,6 +162,268 @@ mod tests {
             computed_cost_usd: Money4::from_scaled(computed_cost_10000),
             occurred_at,
         }
+    }
+
+    async fn exercise_review_agent_repository<S>(store: &S)
+    where
+        S: GatewayStore + ReviewAgentRepository,
+    {
+        let unique = Uuid::new_v4().to_string();
+        let suffix = &unique[..8];
+        let now = OffsetDateTime::now_utc();
+        let team = store
+            .create_team(
+                &format!("review-agent-{suffix}"),
+                &format!("Review Agent {suffix}"),
+            )
+            .await
+            .expect("create review agent team");
+        let service_account = store
+            .create_service_account(
+                team.team_id,
+                &format!("review-agent-{suffix}"),
+                &format!("Review Agent {suffix}"),
+                now,
+            )
+            .await
+            .expect("create review agent service account");
+
+        let repository = store
+            .create_review_agent_repository(&NewReviewAgentRepositoryRecord {
+                provider: ReviewAgentProvider::Github,
+                external_repository_id: Some(format!("repo-{suffix}")),
+                owner: "ahstn".to_string(),
+                name: format!("review-agent-{suffix}"),
+                full_name: format!("ahstn/review-agent-{suffix}"),
+                service_account_id: service_account.service_account_id,
+                settings: ReviewAgentSettings {
+                    default_model_key: Some("fast".to_string()),
+                    max_inline_comments: Some(25),
+                    ..ReviewAgentSettings::default()
+                },
+                settings_json: json!({"review_profile": "default"}),
+                created_at: now,
+            })
+            .await
+            .expect("create review agent repository");
+
+        assert_eq!(repository.status, ReviewAgentRepositoryStatus::Active);
+        assert_eq!(
+            repository.service_account_id,
+            service_account.service_account_id
+        );
+        assert!(repository.settings.inline_review_enabled);
+        assert!(repository.settings.pr_summary_enabled);
+        assert!(!repository.settings.diagrams_enabled);
+        assert!(repository.settings.linked_issue_detection_enabled);
+        assert!(!repository.settings.linked_issue_assessment_enabled);
+        assert!(!repository.settings.request_changes_on_high_severity);
+        assert_eq!(
+            repository.settings.default_model_key.as_deref(),
+            Some("fast")
+        );
+
+        let by_identity = store
+            .get_review_agent_repository_by_identity(
+                ReviewAgentProvider::Github,
+                repository.external_repository_id.as_deref(),
+                &repository.owner,
+                &repository.name,
+            )
+            .await
+            .expect("load repository by identity")
+            .expect("repository by identity");
+        assert_eq!(by_identity.repository_id, repository.repository_id);
+
+        let duplicate_active = store
+            .create_review_agent_repository(&NewReviewAgentRepositoryRecord {
+                provider: ReviewAgentProvider::Github,
+                external_repository_id: None,
+                owner: repository.owner.clone(),
+                name: repository.name.clone(),
+                full_name: repository.full_name.clone(),
+                service_account_id: service_account.service_account_id,
+                settings: ReviewAgentSettings::default(),
+                settings_json: json!({}),
+                created_at: now,
+            })
+            .await;
+        assert!(duplicate_active.is_err());
+
+        let pull_request = store
+            .upsert_review_agent_pull_request(&UpsertReviewAgentPullRequestRecord {
+                repository_id: repository.repository_id,
+                provider_pr_id: Some(format!("pr-{suffix}-42")),
+                pr_number: 42,
+                title: Some("Add Review Agent persistence".to_string()),
+                author_login: Some("octocat".to_string()),
+                state: ReviewAgentPullRequestState::Open,
+                head_sha: Some("abc123".to_string()),
+                base_sha: Some("def456".to_string()),
+                head_repository_full_name: Some(repository.full_name.clone()),
+                base_repository_full_name: Some(repository.full_name.clone()),
+                is_draft: false,
+                updated_at: now,
+            })
+            .await
+            .expect("upsert pull request");
+        assert_eq!(pull_request.pr_number, 42);
+        assert_eq!(pull_request.state, ReviewAgentPullRequestState::Open);
+
+        let updated_pull_request = store
+            .upsert_review_agent_pull_request(&UpsertReviewAgentPullRequestRecord {
+                title: Some("Updated title".to_string()),
+                state: ReviewAgentPullRequestState::Merged,
+                updated_at: now + Duration::seconds(5),
+                ..UpsertReviewAgentPullRequestRecord {
+                    repository_id: repository.repository_id,
+                    provider_pr_id: Some(format!("pr-{suffix}-42")),
+                    pr_number: 42,
+                    title: Some("Add Review Agent persistence".to_string()),
+                    author_login: Some("octocat".to_string()),
+                    state: ReviewAgentPullRequestState::Open,
+                    head_sha: Some("abc123".to_string()),
+                    base_sha: Some("def456".to_string()),
+                    head_repository_full_name: Some(repository.full_name.clone()),
+                    base_repository_full_name: Some(repository.full_name.clone()),
+                    is_draft: false,
+                    updated_at: now,
+                }
+            })
+            .await
+            .expect("update pull request");
+        assert_eq!(
+            updated_pull_request.pull_request_id,
+            pull_request.pull_request_id
+        );
+        assert_eq!(updated_pull_request.title.as_deref(), Some("Updated title"));
+        assert_eq!(
+            updated_pull_request.state,
+            ReviewAgentPullRequestState::Merged
+        );
+
+        let run = store
+            .start_review_agent_run(&NewReviewAgentRunRecord {
+                repository_id: repository.repository_id,
+                pull_request_id: Some(pull_request.pull_request_id),
+                head_sha: Some("abc123".to_string()),
+                github_run_id: Some(format!("run-{suffix}")),
+                github_run_attempt: Some(1),
+                status: ReviewAgentRunStatus::InProgress,
+                started_at: Some(now),
+                model_execution_mode: Some("oceans".to_string()),
+                provider_key: Some("openai-prod".to_string()),
+                model_key: Some("fast".to_string()),
+                effective_config_json: json!({
+                    "inline_review_enabled": true,
+                    "pr_summary_enabled": true,
+                    "diagrams_enabled": false,
+                    "linked_issue_detection_enabled": true,
+                    "linked_issue_assessment_enabled": false
+                }),
+                created_at: now,
+            })
+            .await
+            .expect("start review run");
+        assert_eq!(run.status, ReviewAgentRunStatus::InProgress);
+
+        let duplicate_run = store
+            .start_review_agent_run(&NewReviewAgentRunRecord {
+                status: ReviewAgentRunStatus::Queued,
+                created_at: now + Duration::seconds(10),
+                ..NewReviewAgentRunRecord {
+                    repository_id: repository.repository_id,
+                    pull_request_id: Some(pull_request.pull_request_id),
+                    head_sha: Some("abc123".to_string()),
+                    github_run_id: Some(format!("run-{suffix}")),
+                    github_run_attempt: Some(1),
+                    status: ReviewAgentRunStatus::InProgress,
+                    started_at: Some(now),
+                    model_execution_mode: Some("oceans".to_string()),
+                    provider_key: Some("openai-prod".to_string()),
+                    model_key: Some("fast".to_string()),
+                    effective_config_json: json!({}),
+                    created_at: now,
+                }
+            })
+            .await
+            .expect("duplicate github attempt is idempotent");
+        assert_eq!(duplicate_run.run_id, run.run_id);
+
+        let finished_at = now + Duration::seconds(30);
+        let completed = store
+            .update_review_agent_run(&UpdateReviewAgentRunRecord {
+                run_id: run.run_id,
+                status: ReviewAgentRunStatus::Succeeded,
+                heartbeat_at: Some(finished_at),
+                finished_at: Some(finished_at),
+                duration_ms: Some(30_000),
+                files_changed: Some(3),
+                additions: Some(120),
+                deletions: Some(15),
+                changed_loc: Some(135),
+                inline_comments_created: Some(2),
+                inline_comments_updated: Some(1),
+                inline_comments_skipped: Some(4),
+                inline_comments_failed: Some(0),
+                stale_comments_deleted: Some(1),
+                managed_comment_id: Some("issue-comment-1".to_string()),
+                managed_comment_action: Some("updated".to_string()),
+                managed_comment_status: Some("published".to_string()),
+                review_event_status: Some("comment".to_string()),
+                summary_status: Some("published".to_string()),
+                diagram_status: Some("disabled".to_string()),
+                linked_issue_count: Some(2),
+                linked_issue_status: Some("detected".to_string()),
+                degraded_features_json: Some(json!(["diagrams"])),
+                error_summary: None,
+                updated_at: finished_at,
+            })
+            .await
+            .expect("complete review run");
+
+        assert_eq!(completed.status, ReviewAgentRunStatus::Succeeded);
+        assert_eq!(completed.files_changed, Some(3));
+        assert_eq!(completed.inline_comments_created, Some(2));
+        assert_eq!(
+            completed.managed_comment_id.as_deref(),
+            Some("issue-comment-1")
+        );
+        assert_eq!(completed.linked_issue_count, Some(2));
+        assert_eq!(completed.degraded_features_json, Some(json!(["diagrams"])));
+
+        let runs = store
+            .list_review_agent_runs_for_repository(repository.repository_id, Some(42), 10, 0)
+            .await
+            .expect("list repository runs");
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].run_id, run.run_id);
+
+        let disabled = store
+            .set_review_agent_repository_status(
+                repository.repository_id,
+                ReviewAgentRepositoryStatus::Disabled,
+                finished_at,
+            )
+            .await
+            .expect("disable repository");
+        assert_eq!(disabled.status, ReviewAgentRepositoryStatus::Disabled);
+
+        let replacement = store
+            .create_review_agent_repository(&NewReviewAgentRepositoryRecord {
+                provider: ReviewAgentProvider::Github,
+                external_repository_id: None,
+                owner: repository.owner,
+                name: repository.name,
+                full_name: repository.full_name,
+                service_account_id: service_account.service_account_id,
+                settings: ReviewAgentSettings::default(),
+                settings_json: json!({}),
+                created_at: finished_at,
+            })
+            .await
+            .expect("same owner/name can be configured after disabling prior repo");
+        assert_eq!(replacement.status, ReviewAgentRepositoryStatus::Active);
     }
 
     async fn assert_focus_export_aggregates<S>(
@@ -1422,6 +1688,112 @@ mod tests {
             .await
             .expect("consume reused state");
         assert!(reused.is_none());
+
+        store.pool().close().await;
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_review_agent_repository_persists_prs_runs_and_metrics() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        exercise_review_agent_repository(&store).await;
+
+        let mut tables = store
+            .connection()
+            .query(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'review_agent_%'",
+                (),
+            )
+            .await
+            .expect("list review agent tables");
+        let mut table_names = Vec::new();
+        while let Some(row) = tables.next().await.expect("next table") {
+            table_names.push(row.get::<String>(0).expect("table name"));
+        }
+        assert!(!table_names.contains(&"review_agent_tokens".to_string()));
+
+        let mut columns = store
+            .connection()
+            .query("PRAGMA table_info(review_agent_runs)", ())
+            .await
+            .expect("review agent run columns");
+        let mut column_names = Vec::new();
+        while let Some(row) = columns.next().await.expect("next column") {
+            column_names.push(row.get::<String>(1).expect("column name"));
+        }
+        for prohibited in [
+            "raw_diff",
+            "code_snapshot",
+            "prompt",
+            "transcript",
+            "model_output",
+        ] {
+            assert!(
+                column_names
+                    .iter()
+                    .all(|column| !column.contains(prohibited)),
+                "review_agent_runs should not persist {prohibited}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_review_agent_repository_persists_prs_runs_and_metrics() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!("skipping postgres review agent test because TEST_POSTGRES_URL is not set");
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options)
+            .await
+            .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        exercise_review_agent_repository(&store).await;
+
+        let token_table_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'review_agent_tokens'",
+        )
+        .fetch_one(store.pool())
+        .await
+        .expect("check token table");
+        assert_eq!(token_table_count, 0);
+
+        let column_names: Vec<String> = sqlx::query_scalar(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'review_agent_runs'",
+        )
+        .fetch_all(store.pool())
+        .await
+        .expect("review agent run columns");
+        for prohibited in [
+            "raw_diff",
+            "code_snapshot",
+            "prompt",
+            "transcript",
+            "model_output",
+        ] {
+            assert!(
+                column_names
+                    .iter()
+                    .all(|column| !column.contains(prohibited)),
+                "review_agent_runs should not persist {prohibited}"
+            );
+        }
 
         store.pool().close().await;
         drop_postgres_test_database(&test_db).await;
