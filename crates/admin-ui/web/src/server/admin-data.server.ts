@@ -44,6 +44,8 @@ import type {
   McpToolsetToolsPayload,
   McpToolsPayload,
   RecommendedMcpServersPayload,
+  GenerateModelClientConfigsInput,
+  GenerateModelClientConfigsResponse,
   ModelPageView,
   PasswordInviteResult,
   PasswordLoginInput,
@@ -134,6 +136,17 @@ export async function listModels(params?: {
           page_size: params?.page_size,
         },
       },
+    }),
+  )
+}
+
+export async function generateModelClientConfigs(
+  input: GenerateModelClientConfigsInput,
+): Promise<ApiEnvelope<GenerateModelClientConfigsResponse>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.POST('/api/v1/admin/models/client-configs', {
+      body: input,
     }),
   )
 }

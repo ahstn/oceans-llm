@@ -56,6 +56,10 @@ export type DeactivateBudgetResultView = components['schemas']['DeactivateBudget
 export type ModelView = components['schemas']['AdminModelView']
 export type ModelPageView = components['schemas']['AdminModelPageView']
 export type ModelListQuery = NonNullable<operations['list_models']['parameters']['query']>
+export type GenerateModelClientConfigsInput =
+  components['schemas']['GenerateModelClientConfigsRequest']
+export type GenerateModelClientConfigsResponse =
+  components['schemas']['GenerateModelClientConfigsResponse']
 export type RequestTagView = components['schemas']['RequestTagView']
 export type RequestLogTagsView = components['schemas']['RequestTagsView']
 export type RequestLogView = components['schemas']['RequestLogSummaryView']

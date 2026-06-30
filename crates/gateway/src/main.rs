@@ -204,6 +204,10 @@ async fn run_serve_with_store(
                     .resolved_public_base_url()
                     .context("failed resolving OAuth public base URL")?,
             ),
+            client_config_gateway_base_url: Arc::new(
+                load_client_config_gateway_base_url()
+                    .context("failed resolving client config gateway base URL")?,
+            ),
         },
         load_admin_ui_config(),
     );
@@ -371,6 +375,39 @@ fn load_admin_ui_config() -> AdminUiConfig {
         connect_timeout_ms: env_u64("ADMIN_UI_CONNECT_TIMEOUT_MS", 750),
         request_timeout_ms: env_u64("ADMIN_UI_REQUEST_TIMEOUT_MS", 10_000),
     }
+}
+
+fn load_client_config_gateway_base_url() -> anyhow::Result<Option<String>> {
+    let raw_url = match env::var("GATEWAY_CLIENT_CONFIG_BASE_URL") {
+        Ok(raw_url) => raw_url,
+        Err(env::VarError::NotPresent) => return Ok(None),
+        Err(env::VarError::NotUnicode(_)) => {
+            anyhow::bail!("GATEWAY_CLIENT_CONFIG_BASE_URL must be valid Unicode")
+        }
+    };
+    let trimmed = raw_url.trim();
+    if trimmed.is_empty() {
+        anyhow::bail!("GATEWAY_CLIENT_CONFIG_BASE_URL cannot be empty");
+    }
+    if trimmed.len() != raw_url.len() {
+        anyhow::bail!(
+            "GATEWAY_CLIENT_CONFIG_BASE_URL cannot include leading or trailing whitespace"
+        );
+    }
+
+    let parsed = url::Url::parse(trimmed)
+        .context("GATEWAY_CLIENT_CONFIG_BASE_URL must be an absolute URL")?;
+    match parsed.scheme() {
+        "http" | "https" => {}
+        scheme => {
+            anyhow::bail!("GATEWAY_CLIENT_CONFIG_BASE_URL scheme `{scheme}` is not supported")
+        }
+    }
+    if parsed.host().is_none() {
+        anyhow::bail!("GATEWAY_CLIENT_CONFIG_BASE_URL must include a host");
+    }
+
+    Ok(Some(trimmed.trim_end_matches('/').to_string()))
 }
 
 fn spawn_pricing_catalog_refresh_loop(

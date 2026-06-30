@@ -2,6 +2,7 @@ import { createServerFn } from '@tanstack/react-start'
 
 import {
   addTeamMembers,
+  generateModelClientConfigs,
   listApiKeys,
   listModels,
   deactivateUser,
@@ -92,6 +93,12 @@ export const updateGatewayApiKey = createServerFn({ method: 'POST' }).handler(
 export const getModels = createServerFn({ method: 'GET' }).handler(
   async ({ data }: { data?: Parameters<typeof listModels>[0] }) => {
     return listModels(data)
+  },
+)
+
+export const getModelClientConfigs = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: Parameters<typeof generateModelClientConfigs>[0] }) => {
+    return generateModelClientConfigs(data)
   },
 )
 

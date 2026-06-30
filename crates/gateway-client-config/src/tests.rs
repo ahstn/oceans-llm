@@ -1,9 +1,10 @@
 use serde_json::Value;
 
 use crate::{
-    AnthropicThinkingPolicy, ClaudeCodeConfigTemplate, ClientConfigInput, ClientConfigTemplate,
-    ClientModelCapabilities, CodexConfigTemplate, OpenCodeConfigTemplate, PiConfigTemplate,
-    infer_anthropic_thinking_policy, render_default_configs,
+    AnthropicThinkingPolicy, ClaudeCodeConfigTemplate, ClientConfigInput, ClientConfigInputSet,
+    ClientConfigTemplate, ClientModelCapabilities, CodexConfigTemplate, OpenCodeConfigTemplate,
+    PiConfigTemplate, infer_anthropic_thinking_policy, render_default_configs,
+    render_default_configs_for_models,
 };
 
 fn input(policy: Option<AnthropicThinkingPolicy>) -> ClientConfigInput {
@@ -253,6 +254,163 @@ fn non_anthropic_models_use_openai_compatible_client_surfaces() {
 }
 
 #[test]
+fn opencode_and_pi_group_mixed_api_styles_into_separate_providers() {
+    let rendered = render_default_configs_for_models(ClientConfigInputSet::new(vec![
+        input(Some(AnthropicThinkingPolicy::SafeEffort)),
+        non_anthropic_input(),
+    ]));
+
+    let opencode_config = rendered
+        .iter()
+        .find(|config| config.key == "opencode")
+        .expect("opencode config");
+    let opencode: Value = serde_json::from_str(&opencode_config.blocks[0].content).expect("json");
+    assert_eq!(
+        opencode["provider"]["oceans-llm-anthropic-messages"]["npm"],
+        "@ai-sdk/anthropic"
+    );
+    assert_eq!(
+        opencode["provider"]["oceans-llm-openai-compatible"]["npm"],
+        "@ai-sdk/openai-compatible"
+    );
+    assert!(
+        opencode["provider"]["oceans-llm-anthropic-messages"]["models"]
+            .get("claude-sonnet")
+            .is_some()
+    );
+    assert!(
+        opencode["provider"]["oceans-llm-openai-compatible"]["models"]
+            .get("qwen-coder")
+            .is_some()
+    );
+
+    let pi_config = rendered
+        .iter()
+        .find(|config| config.key == "pi")
+        .expect("pi config");
+    let pi: Value = serde_json::from_str(&pi_config.blocks[0].content).expect("json");
+    assert_eq!(
+        pi["providers"]["oceans-llm-anthropic-messages-adaptive-thinking"]["api"],
+        "anthropic-messages"
+    );
+    assert_eq!(
+        pi["providers"]["oceans-llm-openai-compatible"]["api"],
+        "openai-completions"
+    );
+    assert_eq!(
+        pi["providers"]["oceans-llm-anthropic-messages-adaptive-thinking"]["models"][0]["id"],
+        "claude-sonnet"
+    );
+    assert_eq!(
+        pi["providers"]["oceans-llm-openai-compatible"]["models"][0]["id"],
+        "qwen-coder"
+    );
+}
+
+#[test]
+fn pi_splits_anthropic_models_by_thinking_compatibility() {
+    let safe_effort = input(Some(AnthropicThinkingPolicy::SafeEffort));
+    let mut manual_budget = input(Some(AnthropicThinkingPolicy::ManualBudget));
+    manual_budget.model_id = "claude-haiku".to_string();
+    manual_budget.upstream_model = Some("anthropic/claude-haiku-3-5".to_string());
+
+    let rendered =
+        PiConfigTemplate.render_many(&ClientConfigInputSet::new(vec![safe_effort, manual_budget]));
+    let pi: Value = serde_json::from_str(&rendered.blocks[0].content).expect("json");
+
+    assert_eq!(
+        pi["providers"]["oceans-llm-anthropic-messages-adaptive-thinking"]["compat"]["forceAdaptiveThinking"],
+        true
+    );
+    assert!(
+        pi["providers"]["oceans-llm-anthropic-messages"]
+            .get("compat")
+            .is_none()
+    );
+    assert_eq!(
+        pi["providers"]["oceans-llm-anthropic-messages-adaptive-thinking"]["models"][0]["id"],
+        "claude-sonnet"
+    );
+    assert_eq!(
+        pi["providers"]["oceans-llm-anthropic-messages"]["models"][0]["id"],
+        "claude-haiku"
+    );
+}
+
+#[test]
+fn claude_code_filters_non_anthropic_models_from_mixed_selection() {
+    let rendered = ClaudeCodeConfigTemplate
+        .render_many(&ClientConfigInputSet::new(vec![
+            input(Some(AnthropicThinkingPolicy::SafeEffort)),
+            non_anthropic_input(),
+        ]))
+        .expect("claude code config");
+    let gateway_settings: Value = serde_json::from_str(&rendered.blocks[0].content).expect("json");
+
+    assert_eq!(
+        gateway_settings["modelOverrides"]["claude-sonnet-4-6"],
+        "claude-sonnet"
+    );
+    assert!(
+        gateway_settings["modelOverrides"]
+            .get("qwen/qwen3-coder")
+            .is_none()
+    );
+    assert_eq!(gateway_settings["env"]["ANTHROPIC_MODEL"], "claude-sonnet");
+}
+
+#[test]
+fn claude_code_deduplicates_duplicate_override_keys() {
+    let first = input(Some(AnthropicThinkingPolicy::SafeEffort));
+    let mut alias = input(Some(AnthropicThinkingPolicy::SafeEffort));
+    alias.model_id = "claude-sonnet-alias".to_string();
+
+    let rendered = ClaudeCodeConfigTemplate
+        .render_many(&ClientConfigInputSet::new(vec![first, alias]))
+        .expect("claude code config");
+    let gateway_settings: Value = serde_json::from_str(&rendered.blocks[0].content).expect("json");
+
+    assert_eq!(rendered.model_ids, vec!["claude-sonnet"]);
+    assert_eq!(
+        gateway_settings["modelOverrides"]
+            .as_object()
+            .expect("model overrides")
+            .len(),
+        1
+    );
+    assert_eq!(
+        gateway_settings["modelOverrides"]["claude-sonnet-4-6"],
+        "claude-sonnet"
+    );
+}
+
+#[test]
+fn claude_code_is_omitted_when_no_anthropic_models_are_selected() {
+    let rendered =
+        render_default_configs_for_models(ClientConfigInputSet::new(vec![non_anthropic_input()]));
+    let keys = rendered
+        .iter()
+        .map(|config| config.key.as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(keys, vec!["opencode", "pi"]);
+    assert!(
+        ClaudeCodeConfigTemplate
+            .render_many(&ClientConfigInputSet::new(vec![non_anthropic_input()]))
+            .is_none()
+    );
+}
+
+#[test]
+fn claude_code_render_does_not_panic_for_non_anthropic_input() {
+    let rendered = ClaudeCodeConfigTemplate.render(&non_anthropic_input());
+    let gateway_settings: Value = serde_json::from_str(&rendered.blocks[0].content).expect("json");
+
+    assert_eq!(rendered.model_ids, vec!["qwen-coder"]);
+    assert_eq!(gateway_settings["env"]["ANTHROPIC_MODEL"], "qwen-coder");
+}
+
+#[test]
 fn claude_code_shape_includes_gateway_env_and_model_override() {
     let rendered =
         ClaudeCodeConfigTemplate.render(&input(Some(AnthropicThinkingPolicy::SafeEffort)));
@@ -376,4 +534,20 @@ fn default_configs_include_codex_only_for_responses_capable_models() {
         .collect::<Vec<_>>();
 
     assert_eq!(chat_only_keys, vec!["opencode", "pi", "claude-code"]);
+}
+
+#[test]
+fn multi_model_configs_explain_codex_single_model_requirement() {
+    let rendered = render_default_configs_for_models(ClientConfigInputSet::new(vec![
+        input(Some(AnthropicThinkingPolicy::SafeEffort)),
+        non_anthropic_input(),
+    ]));
+
+    assert!(!rendered.iter().any(|config| config.key == "codex"));
+    assert!(rendered.iter().any(|config| {
+        config
+            .notes
+            .iter()
+            .any(|note| note.contains("Codex config snippets require a single"))
+    }));
 }

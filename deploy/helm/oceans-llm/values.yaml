@@ -19,6 +19,7 @@ gateway:
   containerPort: 8080
   configMountPath: /app/gateway.yaml
   allowLiteralSecretsInConfig: false
+  clientConfigGatewayBaseUrl: ""
   config:
     server:
       bind: "0.0.0.0:8080"
