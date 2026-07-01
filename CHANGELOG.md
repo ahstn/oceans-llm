@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [Unreleased]
+## [0.12.0] - 2026-07-01
 ### :rocket: New features
 - *(gateway)* Implement oidc sso by @ahstn
 - *(auth)* Add direct GitHub OAuth SSO by @ahstn
@@ -48,6 +48,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(gateway)* Add Codex client config by @ahstn in [#185](https://github.com/ahstn/oceans-llm/pull/185)
 - *(gateway)* Add Anthropic messages for Vertex Claude tools by @ahstn
 - *(gateway)* Add Anthropic messages for Vertex Claude tools by @ahstn in [#186](https://github.com/ahstn/oceans-llm/pull/186)
+- Add multi-model client config generation by @ahstn
+- *(gateway)* Add multi-model client configs by @ahstn in [#189](https://github.com/ahstn/oceans-llm/pull/189)
+- *(review-agent)* Add GitHub review agent foundation by @ahstn
+- *(review-agent)* Add GitHub review agent foundation by @ahstn in [#200](https://github.com/ahstn/oceans-llm/pull/200)
+- *(client-config)* Add Fable 5 adaptive config by @ahstn
+- *(client-config)* Add Fable 5 adaptive config by @ahstn in [#202](https://github.com/ahstn/oceans-llm/pull/202)
 
 ### :bug: Bug fixes
 - *(gateway)* Harden oidc review findings by @ahstn
@@ -91,6 +97,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(auth)* Improve github oauth email verification handling by @ahstn
 - *(auth)* Address github oauth review feedback by @ahstn
 - *(auth)* Improve github oauth email verification handling by @ahstn in [#191](https://github.com/ahstn/oceans-llm/pull/191)
+- Address client config review findings by @ahstn
+- *(review-agent)* Address PR review findings by @ahstn
+- *(providers)* Align adaptive Claude policy by @ahstn
+- *(providers)* Address adaptive Claude review by @ahstn
 
 ### Build
 - Post release tasks - v0.8.0 by @ahstn
@@ -99,6 +109,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Post release tasks - v0.10.1 by @ahstn
 - Post release tasks - v0.11.0 by @ahstn
 - Post release tasks - v0.11.1 by @ahstn
+- Post release tasks - v0.11.2 by @ahstn
+- Bump web-ui dependencies by @ahstn
 
 ### Changed
 - Add hosted MCP recommendations by @ahstn
@@ -126,6 +138,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Miscellaneous
 - Upgrade bun deps by @ahstn
 - Refresh shadcn skill lock hash by @ahstn
+- *(version)* V0.12.0
 
 ### Testing
 - *(gateway)* Preserve env vars in MCP guards by @ahstn
@@ -509,7 +522,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
-[unreleased]: https://github.com/ahstn/oceans-llm/compare/v0.8.0...HEAD
+[0.12.0]: https://github.com/ahstn/oceans-llm/compare/v0.8.0...v0.12.0
 [0.8.0]: https://github.com/ahstn/oceans-llm/compare/v0.6.0...v0.8.0
 [0.6.0]: https://github.com/ahstn/oceans-llm/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/ahstn/oceans-llm/compare/v0.4.0...v0.5.0
