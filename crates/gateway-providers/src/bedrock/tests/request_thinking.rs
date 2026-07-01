@@ -215,6 +215,7 @@ fn maps_claude_converse_reasoning_effort_to_additional_model_request_fields() {
 fn maps_adaptive_only_claude_converse_reasoning_effort() {
     for upstream_model in [
         "global.anthropic.claude-fable-5",
+        "global.anthropic.claude-opus-4-7",
         "global.anthropic.claude-opus-4-8",
         "global.anthropic.claude-sonnet-5",
     ] {
@@ -425,6 +426,7 @@ fn rejects_opus_4_7_converse_additional_model_top_k_without_inference_config() {
 fn rejects_adaptive_only_manual_thinking_budget() {
     for upstream_model in [
         "global.anthropic.claude-fable-5",
+        "global.anthropic.claude-opus-4-7",
         "global.anthropic.claude-opus-4-8",
         "global.anthropic.claude-sonnet-5",
     ] {
@@ -448,6 +450,112 @@ fn rejects_adaptive_only_manual_thinking_budget() {
         assert!(error.contains("thinking.type: enabled"));
         assert!(error.contains(upstream_model));
     }
+}
+
+#[test]
+fn rejects_near_match_adaptive_only_claude_ids() {
+    let request = CoreChatRequest {
+        model: "claude".to_string(),
+        messages: vec![message("user", "Think carefully")],
+        stream: false,
+        extra: BTreeMap::from([
+            ("max_tokens".to_string(), json!(4096)),
+            ("reasoning_effort".to_string(), json!("high")),
+        ]),
+    };
+
+    let error = map_chat_request_to_anthropic_messages(
+        &request,
+        &context("global.anthropic.claude-sonnet-50"),
+    )
+    .expect_err("near-match model should not be adaptive-only")
+    .to_string();
+
+    assert!(error.contains("manual thinking budget"));
+}
+
+#[test]
+fn rejects_anthropic_messages_extra_body_incompatible_with_adaptive_only_policy() {
+    let request = CoreChatRequest {
+        model: "claude".to_string(),
+        messages: vec![message("user", "Think carefully")],
+        stream: false,
+        extra: BTreeMap::from([("max_tokens".to_string(), json!(4096))]),
+    };
+    let mut context = context("global.anthropic.claude-sonnet-5");
+    context.extra_body.insert(
+        "thinking".to_string(),
+        json!({ "type": "enabled", "budget_tokens": 1024 }),
+    );
+
+    let error = map_chat_request_to_anthropic_messages(&request, &context)
+        .expect_err("extra_body manual thinking rejected")
+        .to_string();
+
+    assert!(error.contains("thinking.type: enabled"));
+}
+
+#[test]
+fn rejects_anthropic_messages_extra_body_non_default_sampling() {
+    let request = CoreChatRequest {
+        model: "claude".to_string(),
+        messages: vec![message("user", "Hello")],
+        stream: false,
+        extra: BTreeMap::from([("max_tokens".to_string(), json!(64))]),
+    };
+    let mut context = context("global.anthropic.claude-sonnet-5");
+    context
+        .extra_body
+        .insert("temperature".to_string(), json!(0.2));
+
+    let error = map_chat_request_to_anthropic_messages(&request, &context)
+        .expect_err("extra_body sampling rejected")
+        .to_string();
+
+    assert!(error.contains("temperature"));
+    assert!(error.contains("adaptive-only Claude models"));
+}
+
+#[test]
+fn rejects_converse_extra_body_incompatible_with_adaptive_only_policy() {
+    let request = CoreChatRequest {
+        model: "claude".to_string(),
+        messages: vec![message("user", "Think carefully")],
+        stream: true,
+        extra: BTreeMap::from([("max_tokens".to_string(), json!(4096))]),
+    };
+    let mut context = context("global.anthropic.claude-sonnet-5");
+    context.extra_body.insert(
+        "additionalModelRequestFields".to_string(),
+        json!({ "thinking": { "type": "enabled", "budget_tokens": 1024 } }),
+    );
+
+    let error = map_chat_request_to_converse(&request, &context)
+        .expect_err("extra_body manual thinking rejected")
+        .to_string();
+
+    assert!(error.contains("additionalModelRequestFields.thinking.type: enabled"));
+}
+
+#[test]
+fn rejects_converse_extra_body_non_default_sampling() {
+    let request = CoreChatRequest {
+        model: "claude".to_string(),
+        messages: vec![message("user", "Hello")],
+        stream: true,
+        extra: BTreeMap::from([("max_tokens".to_string(), json!(64))]),
+    };
+    let mut context = context("global.anthropic.claude-sonnet-5");
+    context
+        .extra_body
+        .insert("inferenceConfig".to_string(), json!({ "temperature": 0.2 }));
+
+    let error = map_chat_request_to_converse(&request, &context)
+        .expect_err("extra_body sampling rejected")
+        .to_string();
+
+    assert!(error.contains("temperature"));
+    assert!(error.contains("adaptive-only Claude models"));
 }
 
 #[test]

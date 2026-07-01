@@ -26,8 +26,16 @@ pub(super) fn claude_thinking_policy(upstream_model: &str) -> ClaudeThinkingPoli
 
 pub(super) fn is_adaptive_only_claude(model: &str) -> bool {
     is_opus_4_7_or_later(model)
-        || model.contains("claude-fable-5")
-        || model.contains("claude-sonnet-5")
+        || contains_exact_claude_model_marker(model, "claude-fable-5")
+        || contains_exact_claude_model_marker(model, "claude-sonnet-5")
+}
+
+pub(super) fn contains_exact_claude_model_marker(model: &str, marker: &str) -> bool {
+    model.split(marker).skip(1).any(|rest| {
+        rest.chars().next().is_none_or(|ch| {
+            ch.is_ascii_whitespace() || matches!(ch, '/' | ':' | '@' | ',' | ')' | ']')
+        })
+    })
 }
 
 pub(super) fn is_opus_4_7_or_later(model: &str) -> bool {
@@ -637,6 +645,19 @@ pub(super) fn validate_converse_anthropic_sampling_fields(
     {
         return Err(ProviderError::InvalidRequest(format!(
             "`top_k` is not supported for `{upstream_model}`; omit the field for adaptive-only Claude models"
+        )));
+    }
+
+    for field in ["temperature", "top_p", "top_k"] {
+        let Some(value) = body.get(field) else {
+            continue;
+        };
+        if value.is_null() || is_default_anthropic_sampling_value(field, value) {
+            body.remove(field);
+            continue;
+        }
+        return Err(ProviderError::InvalidRequest(format!(
+            "`{field}` is not supported with non-default values for `{upstream_model}`; omit the field for adaptive-only Claude models"
         )));
     }
 

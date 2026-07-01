@@ -1,7 +1,6 @@
 use crate::types::AnthropicThinkingPolicy;
 
 const SAFE_EFFORT_MODEL_MARKERS: &[&str] = &[
-    "claude-fable-5",
     "claude-mythos-preview",
     "claude-opus-4-6",
     "claude-opus-4-7",
@@ -10,8 +9,9 @@ const SAFE_EFFORT_MODEL_MARKERS: &[&str] = &[
     "claude-opus-5",
     "claude-opus-6",
     "claude-sonnet-4-6",
-    "claude-sonnet-5",
 ];
+
+const SAFE_EFFORT_EXACT_MODEL_MARKERS: &[&str] = &["claude-fable-5", "claude-sonnet-5"];
 
 #[must_use]
 pub fn infer_anthropic_thinking_policy(
@@ -26,6 +26,9 @@ pub fn infer_anthropic_thinking_policy(
     if SAFE_EFFORT_MODEL_MARKERS
         .iter()
         .any(|marker| joined.contains(marker))
+        || SAFE_EFFORT_EXACT_MODEL_MARKERS
+            .iter()
+            .any(|marker| contains_exact_model_marker(&joined, marker))
     {
         return Some(AnthropicThinkingPolicy::SafeEffort);
     }
@@ -35,4 +38,12 @@ pub fn infer_anthropic_thinking_policy(
     }
 
     None
+}
+
+fn contains_exact_model_marker(value: &str, marker: &str) -> bool {
+    value.split(marker).skip(1).any(|rest| {
+        rest.chars().next().is_none_or(|ch| {
+            ch.is_ascii_whitespace() || matches!(ch, '/' | ':' | '@' | ',' | ')' | ']')
+        })
+    })
 }

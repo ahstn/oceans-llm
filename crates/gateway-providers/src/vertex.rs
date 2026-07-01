@@ -469,8 +469,16 @@ fn claude_thinking_policy(upstream_model: &str) -> ClaudeThinkingPolicy {
 
 fn is_adaptive_only_claude(model: &str) -> bool {
     is_opus_4_7_or_later(model)
-        || model.contains("claude-fable-5")
-        || model.contains("claude-sonnet-5")
+        || contains_exact_claude_model_marker(model, "claude-fable-5")
+        || contains_exact_claude_model_marker(model, "claude-sonnet-5")
+}
+
+fn contains_exact_claude_model_marker(model: &str, marker: &str) -> bool {
+    model.split(marker).skip(1).any(|rest| {
+        rest.chars().next().is_none_or(|ch| {
+            ch.is_ascii_whitespace() || matches!(ch, '/' | ':' | '@' | ',' | ')' | ']')
+        })
+    })
 }
 
 fn is_opus_4_7_or_later(model: &str) -> bool {
@@ -2920,6 +2928,7 @@ mod tests {
     fn rejects_vertex_adaptive_only_manual_thinking_budget() {
         for upstream_model in [
             "anthropic/claude-fable-5",
+            "anthropic/claude-opus-4-7",
             "anthropic/claude-opus-4-8",
             "anthropic/claude-sonnet-5",
         ] {
@@ -2944,6 +2953,25 @@ mod tests {
                 other => panic!("unexpected error: {other}"),
             }
         }
+    }
+
+    #[test]
+    fn rejects_vertex_near_match_adaptive_only_claude_ids() {
+        let mut request = chat_request(vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: Value::String("think carefully".to_string()),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+        request
+            .extra
+            .insert("reasoning_effort".to_string(), json!("high"));
+
+        let error = map_anthropic_request(&request, &context("anthropic/claude-sonnet-50"), false)
+            .expect_err("near-match model should not be adaptive-only")
+            .to_string();
+
+        assert!(error.contains("manual thinking budget"));
     }
 
     #[test]

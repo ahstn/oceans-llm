@@ -184,7 +184,9 @@ fn claude_code_default_model_env_var(input: &ClientConfigInput) -> Option<&'stat
     .join(" ")
     .to_ascii_lowercase();
 
-    if joined.contains("opus") {
+    if joined.contains("fable") {
+        Some("ANTHROPIC_DEFAULT_FABLE_MODEL")
+    } else if joined.contains("opus") {
         Some("ANTHROPIC_DEFAULT_OPUS_MODEL")
     } else if joined.contains("sonnet") {
         Some("ANTHROPIC_DEFAULT_SONNET_MODEL")
