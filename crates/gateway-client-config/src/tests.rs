@@ -98,18 +98,22 @@ fn cache_read_is_omitted_when_missing() {
 }
 
 #[test]
-fn safe_thinking_variants_are_emitted_for_newer_claude_models() {
+fn infers_safe_effort_for_newer_claude_models() {
     for model in [
+        "anthropic/claude-fable-5",
+        "anthropic/claude-opus-4-8",
         "anthropic/claude-sonnet-4-6",
         "anthropic/claude-sonnet-5",
-        "anthropic/claude-fable-5",
     ] {
         assert_eq!(
             infer_anthropic_thinking_policy([model]),
             Some(AnthropicThinkingPolicy::SafeEffort)
         );
     }
+}
 
+#[test]
+fn safe_thinking_variants_are_emitted_for_newer_claude_models() {
     let input = input(infer_anthropic_thinking_policy([
         "anthropic/claude-sonnet-4-6",
         "Claude Sonnet 4.6",

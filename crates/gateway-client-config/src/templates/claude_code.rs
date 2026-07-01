@@ -15,7 +15,7 @@ use crate::{
 pub(crate) const CLAUDE_CODE_AUTH_TOKEN_PLACEHOLDER: &str = "<gateway api token>";
 
 const CLAUDE_CODE_SETTINGS_SCHEMA: &str = "https://json.schemastore.org/claude-code-settings.json";
-const CLAUDE_CODE_LOWER_TOKEN_USAGE_ENV: [(&str, &str); 11] = [
+const CLAUDE_CODE_LOWER_TOKEN_USAGE_ENV: &[(&str, &str)] = &[
     ("CLAUDE_CODE_ENABLE_TELEMETRY", "0"),
     ("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", "1"),
     ("CLAUDE_CODE_DISABLE_1M_CONTEXT", "1"),
@@ -198,7 +198,7 @@ fn claude_code_default_model_env_var(input: &ClientConfigInput) -> Option<&'stat
 fn claude_code_minimal_experience_config() -> Value {
     json!({
         "$schema": CLAUDE_CODE_SETTINGS_SCHEMA,
-        "env": env_from_pairs(&CLAUDE_CODE_LOWER_TOKEN_USAGE_ENV),
+        "env": env_from_pairs(CLAUDE_CODE_LOWER_TOKEN_USAGE_ENV),
     })
 }
 
