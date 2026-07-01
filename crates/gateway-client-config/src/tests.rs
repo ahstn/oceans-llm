@@ -99,9 +99,21 @@ fn cache_read_is_omitted_when_missing() {
 
 #[test]
 fn safe_thinking_variants_are_emitted_for_newer_claude_models() {
-    let policy =
-        infer_anthropic_thinking_policy(["anthropic/claude-sonnet-4-6", "Claude Sonnet 4.6"]);
-    let input = input(policy);
+    for model in [
+        "anthropic/claude-sonnet-4-6",
+        "anthropic/claude-sonnet-5",
+        "anthropic/claude-fable-5",
+    ] {
+        assert_eq!(
+            infer_anthropic_thinking_policy([model]),
+            Some(AnthropicThinkingPolicy::SafeEffort)
+        );
+    }
+
+    let input = input(infer_anthropic_thinking_policy([
+        "anthropic/claude-sonnet-4-6",
+        "Claude Sonnet 4.6",
+    ]));
     let opencode: Value =
         serde_json::from_str(&OpenCodeConfigTemplate.render(&input).blocks[0].content)
             .expect("json");
@@ -444,6 +456,10 @@ fn claude_code_shape_includes_gateway_env_and_model_override() {
     assert_eq!(
         lower_usage_settings["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"],
         "200000"
+    );
+    assert_eq!(
+        lower_usage_settings["env"]["CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT"],
+        "1"
     );
     assert_eq!(lower_usage_settings["env"]["ENABLE_TOOL_SEARCH"], "auto");
     assert!(

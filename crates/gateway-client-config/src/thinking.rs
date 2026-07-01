@@ -16,7 +16,9 @@ pub fn infer_anthropic_thinking_policy(
         || joined.contains("claude-opus-4-9")
         || joined.contains("claude-opus-5")
         || joined.contains("claude-opus-6")
+        || joined.contains("claude-sonnet-5")
         || joined.contains("claude-sonnet-4-6")
+        || joined.contains("claude-fable-5")
         || joined.contains("claude-opus-4-6")
     {
         return Some(AnthropicThinkingPolicy::SafeEffort);
