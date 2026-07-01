@@ -15,10 +15,11 @@ use crate::{
 pub(crate) const CLAUDE_CODE_AUTH_TOKEN_PLACEHOLDER: &str = "<gateway api token>";
 
 const CLAUDE_CODE_SETTINGS_SCHEMA: &str = "https://json.schemastore.org/claude-code-settings.json";
-const CLAUDE_CODE_LOWER_TOKEN_USAGE_ENV: [(&str, &str); 10] = [
+const CLAUDE_CODE_LOWER_TOKEN_USAGE_ENV: &[(&str, &str)] = &[
     ("CLAUDE_CODE_ENABLE_TELEMETRY", "0"),
     ("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", "1"),
     ("CLAUDE_CODE_DISABLE_1M_CONTEXT", "1"),
+    ("CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT", "1"),
     ("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "200000"),
     ("ENABLE_TOOL_SEARCH", "auto"),
     ("CLAUDE_CODE_NO_FLICKER", "1"),
@@ -183,7 +184,9 @@ fn claude_code_default_model_env_var(input: &ClientConfigInput) -> Option<&'stat
     .join(" ")
     .to_ascii_lowercase();
 
-    if joined.contains("opus") {
+    if joined.contains("fable") {
+        Some("ANTHROPIC_DEFAULT_FABLE_MODEL")
+    } else if joined.contains("opus") {
         Some("ANTHROPIC_DEFAULT_OPUS_MODEL")
     } else if joined.contains("sonnet") {
         Some("ANTHROPIC_DEFAULT_SONNET_MODEL")
@@ -197,7 +200,7 @@ fn claude_code_default_model_env_var(input: &ClientConfigInput) -> Option<&'stat
 fn claude_code_minimal_experience_config() -> Value {
     json!({
         "$schema": CLAUDE_CODE_SETTINGS_SCHEMA,
-        "env": env_from_pairs(&CLAUDE_CODE_LOWER_TOKEN_USAGE_ENV),
+        "env": env_from_pairs(CLAUDE_CODE_LOWER_TOKEN_USAGE_ENV),
     })
 }
 

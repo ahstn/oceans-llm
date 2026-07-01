@@ -86,6 +86,7 @@ pub(super) fn map_chat_request_to_converse(
     if let Some(additional) = passthrough.remove("additional_model_request_fields") {
         body.insert("additionalModelRequestFields".to_string(), additional);
     }
+    merge_object_overrides(&mut body, &context.extra_body);
     apply_converse_anthropic_thinking_compatibility(
         &mut body,
         &mut passthrough,
@@ -99,7 +100,6 @@ pub(super) fn map_chat_request_to_converse(
 
     reject_openai_only_fields(&passthrough)?;
     reject_unknown_converse_fields(&passthrough)?;
-    merge_object_overrides(&mut body, &context.extra_body);
     Ok(Value::Object(body))
 }
 
@@ -251,12 +251,12 @@ pub(super) fn map_chat_request_to_anthropic_messages(
         body.extend(tools);
     }
     extract_anthropic_passthrough_fields(&mut body, &mut passthrough);
+    merge_object_overrides(&mut body, &context.extra_body);
     apply_anthropic_thinking_compatibility(&mut body, &mut passthrough, &context.upstream_model)?;
     reject_openai_only_fields(&passthrough)?;
     reject_unknown_anthropic_messages_fields(&passthrough)?;
     validate_anthropic_sampling_fields(&mut body, &context.upstream_model)?;
 
-    merge_object_overrides(&mut body, &context.extra_body);
     if !body.contains_key("max_tokens") {
         return Err(ProviderError::InvalidRequest(
             "aws_bedrock Anthropic Claude Messages requires `max_tokens` or `max_completion_tokens`"

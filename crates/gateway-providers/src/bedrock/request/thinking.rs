@@ -13,7 +13,7 @@ pub(super) fn claude_thinking_policy(upstream_model: &str) -> ClaudeThinkingPoli
     let model = upstream_model.to_ascii_lowercase();
     if model.contains("claude-mythos-preview") {
         ClaudeThinkingPolicy::MythosPreview
-    } else if is_opus_4_7_or_later(&model) {
+    } else if is_adaptive_only_claude(&model) {
         ClaudeThinkingPolicy::AdaptiveOnly
     } else if model.contains("claude-opus-4-6") || model.contains("claude-sonnet-4-6") {
         ClaudeThinkingPolicy::AdaptivePreferred
@@ -22,6 +22,20 @@ pub(super) fn claude_thinking_policy(upstream_model: &str) -> ClaudeThinkingPoli
     } else {
         ClaudeThinkingPolicy::ManualOnly
     }
+}
+
+pub(super) fn is_adaptive_only_claude(model: &str) -> bool {
+    is_opus_4_7_or_later(model)
+        || contains_exact_claude_model_marker(model, "claude-fable-5")
+        || contains_exact_claude_model_marker(model, "claude-sonnet-5")
+}
+
+pub(super) fn contains_exact_claude_model_marker(model: &str, marker: &str) -> bool {
+    model.split(marker).skip(1).any(|rest| {
+        rest.chars().next().is_none_or(|ch| {
+            ch.is_ascii_whitespace() || matches!(ch, '/' | ':' | '@' | ',' | ')' | ']')
+        })
+    })
 }
 
 pub(super) fn is_opus_4_7_or_later(model: &str) -> bool {
@@ -362,7 +376,7 @@ pub(super) fn validate_anthropic_sampling_fields(
             continue;
         }
         return Err(ProviderError::InvalidRequest(format!(
-            "`{field}` is not supported with non-default values for `{upstream_model}`; omit the field for Claude Opus 4.7+"
+            "`{field}` is not supported with non-default values for `{upstream_model}`; omit the field for adaptive-only Claude models"
         )));
     }
 
@@ -630,7 +644,20 @@ pub(super) fn validate_converse_anthropic_sampling_fields(
         && !value.is_null()
     {
         return Err(ProviderError::InvalidRequest(format!(
-            "`top_k` is not supported for `{upstream_model}`; omit the field for Claude Opus 4.7+"
+            "`top_k` is not supported for `{upstream_model}`; omit the field for adaptive-only Claude models"
+        )));
+    }
+
+    for field in ["temperature", "top_p", "top_k"] {
+        let Some(value) = body.get(field) else {
+            continue;
+        };
+        if value.is_null() || is_default_anthropic_sampling_value(field, value) {
+            body.remove(field);
+            continue;
+        }
+        return Err(ProviderError::InvalidRequest(format!(
+            "`{field}` is not supported with non-default values for `{upstream_model}`; omit the field for adaptive-only Claude models"
         )));
     }
 
@@ -650,7 +677,7 @@ pub(super) fn validate_converse_anthropic_sampling_fields(
             continue;
         }
         return Err(ProviderError::InvalidRequest(format!(
-            "`{field}` is not supported with non-default values for `{upstream_model}`; omit the field for Claude Opus 4.7+"
+            "`{field}` is not supported with non-default values for `{upstream_model}`; omit the field for adaptive-only Claude models"
         )));
     }
     if inference_config.is_empty() {
@@ -676,7 +703,7 @@ pub(super) fn validate_converse_additional_top_k(
                 continue;
             }
             return Err(ProviderError::InvalidRequest(format!(
-                "`{field}` is not supported for `{upstream_model}`; omit the field for Claude Opus 4.7+"
+                "`{field}` is not supported for `{upstream_model}`; omit the field for adaptive-only Claude models"
             )));
         }
         additional.is_empty()

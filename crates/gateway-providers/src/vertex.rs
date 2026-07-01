@@ -456,7 +456,7 @@ fn claude_thinking_policy(upstream_model: &str) -> ClaudeThinkingPolicy {
     let model = upstream_model.to_ascii_lowercase();
     if model.contains("claude-mythos-preview") {
         ClaudeThinkingPolicy::MythosPreview
-    } else if is_opus_4_7_or_later(&model) {
+    } else if is_adaptive_only_claude(&model) {
         ClaudeThinkingPolicy::AdaptiveOnly
     } else if model.contains("claude-opus-4-6") || model.contains("claude-sonnet-4-6") {
         ClaudeThinkingPolicy::AdaptivePreferred
@@ -465,6 +465,20 @@ fn claude_thinking_policy(upstream_model: &str) -> ClaudeThinkingPolicy {
     } else {
         ClaudeThinkingPolicy::ManualOnly
     }
+}
+
+fn is_adaptive_only_claude(model: &str) -> bool {
+    is_opus_4_7_or_later(model)
+        || contains_exact_claude_model_marker(model, "claude-fable-5")
+        || contains_exact_claude_model_marker(model, "claude-sonnet-5")
+}
+
+fn contains_exact_claude_model_marker(model: &str, marker: &str) -> bool {
+    model.split(marker).skip(1).any(|rest| {
+        rest.chars().next().is_none_or(|ch| {
+            ch.is_ascii_whitespace() || matches!(ch, '/' | ':' | '@' | ',' | ')' | ']')
+        })
+    })
 }
 
 fn is_opus_4_7_or_later(model: &str) -> bool {
@@ -807,7 +821,7 @@ fn validate_vertex_anthropic_sampling_fields(
             continue;
         }
         return Err(ProviderError::InvalidRequest(format!(
-            "`{field}` is not supported with non-default values for `{upstream_model}`; omit the field for Claude Opus 4.7+"
+            "`{field}` is not supported with non-default values for `{upstream_model}`; omit the field for adaptive-only Claude models"
         )));
     }
 
@@ -2671,30 +2685,37 @@ mod tests {
     }
 
     #[test]
-    fn maps_vertex_opus_4_7_reasoning_effort_to_adaptive_thinking() {
-        let mut request = chat_request(vec![CoreChatMessage {
-            role: "user".to_string(),
-            content: Value::String("think carefully".to_string()),
-            name: None,
-            extra: BTreeMap::new(),
-        }]);
-        request.extra.insert("model".to_string(), json!("fast"));
-        request
-            .extra
-            .insert("reasoning_effort".to_string(), json!("xhigh"));
-        request.extra.insert("temperature".to_string(), json!(1.0));
-        request.extra.insert("top_p".to_string(), json!(1.0));
+    fn maps_vertex_adaptive_only_claude_reasoning_effort_to_adaptive_thinking() {
+        for upstream_model in [
+            "anthropic/claude-fable-5",
+            "anthropic/claude-opus-4-7",
+            "anthropic/claude-opus-4-8",
+            "anthropic/claude-sonnet-5",
+        ] {
+            let mut request = chat_request(vec![CoreChatMessage {
+                role: "user".to_string(),
+                content: Value::String("think carefully".to_string()),
+                name: None,
+                extra: BTreeMap::new(),
+            }]);
+            request.extra.insert("model".to_string(), json!("fast"));
+            request
+                .extra
+                .insert("reasoning_effort".to_string(), json!("xhigh"));
+            request.extra.insert("temperature".to_string(), json!(1.0));
+            request.extra.insert("top_p".to_string(), json!(1.0));
 
-        let mapped = map_anthropic_request(&request, &context("anthropic/claude-opus-4-7"), false)
-            .expect("mapped");
+            let mapped =
+                map_anthropic_request(&request, &context(upstream_model), false).expect("mapped");
 
-        assert_eq!(mapped["anthropic_version"], "vertex-2023-10-16");
-        assert_eq!(mapped["thinking"], json!({ "type": "adaptive" }));
-        assert_eq!(mapped["output_config"], json!({ "effort": "xhigh" }));
-        assert!(mapped.get("reasoning_effort").is_none());
-        assert!(mapped.get("model").is_none());
-        assert!(mapped.get("temperature").is_none());
-        assert!(mapped.get("top_p").is_none());
+            assert_eq!(mapped["anthropic_version"], "vertex-2023-10-16");
+            assert_eq!(mapped["thinking"], json!({ "type": "adaptive" }));
+            assert_eq!(mapped["output_config"], json!({ "effort": "xhigh" }));
+            assert!(mapped.get("reasoning_effort").is_none());
+            assert!(mapped.get("model").is_none());
+            assert!(mapped.get("temperature").is_none());
+            assert!(mapped.get("top_p").is_none());
+        }
     }
 
     #[test]
@@ -2904,27 +2925,53 @@ mod tests {
     }
 
     #[test]
-    fn rejects_vertex_opus_4_7_manual_thinking_budget() {
+    fn rejects_vertex_adaptive_only_manual_thinking_budget() {
+        for upstream_model in [
+            "anthropic/claude-fable-5",
+            "anthropic/claude-opus-4-7",
+            "anthropic/claude-opus-4-8",
+            "anthropic/claude-sonnet-5",
+        ] {
+            let mut request = chat_request(vec![CoreChatMessage {
+                role: "user".to_string(),
+                content: Value::String("think carefully".to_string()),
+                name: None,
+                extra: BTreeMap::new(),
+            }]);
+            request.extra.insert(
+                "thinking".to_string(),
+                json!({ "type": "enabled", "budget_tokens": 4096 }),
+            );
+
+            let error = map_anthropic_request(&request, &context(upstream_model), false)
+                .expect_err("manual thinking should be rejected");
+
+            match error {
+                ProviderError::InvalidRequest(message) => {
+                    assert!(message.contains("thinking.type: enabled"));
+                }
+                other => panic!("unexpected error: {other}"),
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_vertex_near_match_adaptive_only_claude_ids() {
         let mut request = chat_request(vec![CoreChatMessage {
             role: "user".to_string(),
             content: Value::String("think carefully".to_string()),
             name: None,
             extra: BTreeMap::new(),
         }]);
-        request.extra.insert(
-            "thinking".to_string(),
-            json!({ "type": "enabled", "budget_tokens": 4096 }),
-        );
+        request
+            .extra
+            .insert("reasoning_effort".to_string(), json!("high"));
 
-        let error = map_anthropic_request(&request, &context("anthropic/claude-opus-4-7"), false)
-            .expect_err("manual thinking should be rejected");
+        let error = map_anthropic_request(&request, &context("anthropic/claude-sonnet-50"), false)
+            .expect_err("near-match model should not be adaptive-only")
+            .to_string();
 
-        match error {
-            ProviderError::InvalidRequest(message) => {
-                assert!(message.contains("thinking.type: enabled"));
-            }
-            other => panic!("unexpected error: {other}"),
-        }
+        assert!(error.contains("manual thinking budget"));
     }
 
     #[test]
@@ -2946,7 +2993,7 @@ mod tests {
         match error {
             ProviderError::InvalidRequest(message) => {
                 assert!(message.contains("temperature"));
-                assert!(message.contains("Claude Opus 4.7+"));
+                assert!(message.contains("adaptive-only Claude models"));
             }
             other => panic!("unexpected error: {other}"),
         }

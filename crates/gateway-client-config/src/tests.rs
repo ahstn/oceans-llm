@@ -98,10 +98,34 @@ fn cache_read_is_omitted_when_missing() {
 }
 
 #[test]
+fn infers_safe_effort_for_newer_claude_models() {
+    for model in [
+        "anthropic/claude-fable-5",
+        "anthropic/claude-opus-4-8",
+        "anthropic/claude-sonnet-4-6",
+        "anthropic/claude-sonnet-5",
+    ] {
+        assert_eq!(
+            infer_anthropic_thinking_policy([model]),
+            Some(AnthropicThinkingPolicy::SafeEffort)
+        );
+    }
+    assert_eq!(
+        infer_anthropic_thinking_policy(["anthropic/claude-sonnet-50"]),
+        Some(AnthropicThinkingPolicy::ManualBudget)
+    );
+    assert_eq!(
+        infer_anthropic_thinking_policy(["anthropic/claude-fable-50"]),
+        Some(AnthropicThinkingPolicy::ManualBudget)
+    );
+}
+
+#[test]
 fn safe_thinking_variants_are_emitted_for_newer_claude_models() {
-    let policy =
-        infer_anthropic_thinking_policy(["anthropic/claude-sonnet-4-6", "Claude Sonnet 4.6"]);
-    let input = input(policy);
+    let input = input(infer_anthropic_thinking_policy([
+        "anthropic/claude-sonnet-4-6",
+        "Claude Sonnet 4.6",
+    ]));
     let opencode: Value =
         serde_json::from_str(&OpenCodeConfigTemplate.render(&input).blocks[0].content)
             .expect("json");
@@ -445,12 +469,36 @@ fn claude_code_shape_includes_gateway_env_and_model_override() {
         lower_usage_settings["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"],
         "200000"
     );
+    assert_eq!(
+        lower_usage_settings["env"]["CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT"],
+        "1"
+    );
     assert_eq!(lower_usage_settings["env"]["ENABLE_TOOL_SEARCH"], "auto");
     assert!(
         rendered
             .notes
             .iter()
             .any(|note| note.contains("/v1/messages"))
+    );
+}
+
+#[test]
+fn claude_code_sets_default_fable_model_env_var() {
+    let mut input = input(Some(AnthropicThinkingPolicy::SafeEffort));
+    input.model_id = "claude-fable".to_string();
+    input.display_name = "Claude Fable".to_string();
+    input.upstream_model = Some("anthropic/claude-fable-5".to_string());
+
+    let rendered = ClaudeCodeConfigTemplate.render(&input);
+    let gateway_settings: Value = serde_json::from_str(&rendered.blocks[0].content).expect("json");
+
+    assert_eq!(
+        gateway_settings["env"]["ANTHROPIC_DEFAULT_FABLE_MODEL"],
+        "claude-fable"
+    );
+    assert_eq!(
+        gateway_settings["modelOverrides"]["claude-fable-5"],
+        "claude-fable"
     );
 }
 
