@@ -1,0 +1,218 @@
+name: review-agent-self-hosted-smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number to smoke-test against.
+        required: true
+        type: number
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.pr_number }}
+  cancel-in-progress: false
+
+env:
+  MISE_EXPERIMENTAL: true
+
+jobs:
+  review-agent-smoke:
+    name: Self-hosted review-agent smoke
+    runs-on: [self-hosted]
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: refs/pull/${{ inputs.pr_number }}/head
+          fetch-depth: 0
+
+      - name: Setup mise + tools
+        uses: jdx/mise-action@e79ddf65a11cec7b0e882bedced08d6e976efb2d
+
+      - name: Verify self-hosted runner
+        run: |
+          set -euo pipefail
+          echo "runner=${RUNNER_NAME}"
+          echo "os=${RUNNER_OS}"
+          echo "arch=${RUNNER_ARCH}"
+          uname -a
+          mise exec -- node --version
+
+      - name: Build pull request event payload
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          set -euo pipefail
+          payload_dir="${RUNNER_TEMP}/oceans-review-agent-smoke"
+          mkdir -p "${payload_dir}"
+          pr_json="${payload_dir}/pull-request.json"
+          event_json="${payload_dir}/event.json"
+
+          curl --fail --silent --show-error --location \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
+            --output "${pr_json}"
+
+          PR_JSON="${pr_json}" EVENT_JSON="${event_json}" mise exec -- node <<'NODE'
+          const fs = require("node:fs");
+          const pr = JSON.parse(fs.readFileSync(process.env.PR_JSON, "utf8"));
+          if (!pr?.base?.repo || !pr?.head?.repo) {
+            throw new Error("GitHub pull request response did not include repository metadata.");
+          }
+          if (pr.head.repo.full_name !== pr.base.repo.full_name) {
+            throw new Error("Review-agent smoke only supports same-repository pull requests.");
+          }
+          fs.writeFileSync(
+            process.env.EVENT_JSON,
+            JSON.stringify({ repository: pr.base.repo, pull_request: pr }, null, 2)
+          );
+          NODE
+
+          echo "REVIEW_AGENT_EVENT_PATH=${event_json}" >> "${GITHUB_ENV}"
+
+      - name: Start mock Oceans API
+        run: |
+          set -euo pipefail
+          mock_server="${RUNNER_TEMP}/mock-oceans.mjs"
+          mock_url_file="${RUNNER_TEMP}/mock-oceans-url"
+          mock_log="${RUNNER_TEMP}/mock-oceans.log"
+
+          cat > "${mock_server}" <<'NODE'
+          import http from "node:http";
+          import { writeFileSync } from "node:fs";
+
+          function readBody(request) {
+            return new Promise((resolve, reject) => {
+              let body = "";
+              request.setEncoding("utf8");
+              request.on("data", (chunk) => {
+                body += chunk;
+              });
+              request.on("end", () => resolve(body ? JSON.parse(body) : {}));
+              request.on("error", reject);
+            });
+          }
+
+          function send(response, status, data) {
+            response.writeHead(status, { "content-type": "application/json" });
+            response.end(JSON.stringify({ data }));
+          }
+
+          const server = http.createServer(async (request, response) => {
+            try {
+              const url = new URL(request.url ?? "/", "http://127.0.0.1");
+              const body = await readBody(request);
+              console.log(`${request.method} ${url.pathname}`);
+
+              if (request.method === "POST" && url.pathname === "/api/v1/review-agent/action/config/resolve") {
+                send(response, 200, {
+                  repository: body.repository,
+                  pull_request_id: "smoke-pr",
+                  effective_config: {
+                    model_id: "smoke-model",
+                    model_execution_mode: "oceans",
+                    inline_review_enabled: true,
+                    pr_summary_enabled: true,
+                    diagrams_enabled: false,
+                    linked_issue_detection_enabled: false,
+                    linked_issue_assessment_enabled: false,
+                    max_inline_comments: 20,
+                    request_changes_on_high_severity: false
+                  },
+                  overrides_applied: {},
+                  overrides_rejected: {},
+                  reporting: {}
+                });
+                return;
+              }
+
+              if (request.method === "POST" && url.pathname === "/api/v1/review-agent/action/runs") {
+                send(response, 200, { run: { id: "smoke-run", status: "in_progress" } });
+                return;
+              }
+
+              if (
+                request.method === "POST" &&
+                ["/api/v1/review-agent/action/runs/smoke-run/complete", "/api/v1/review-agent/action/runs/smoke-run/fail"].includes(
+                  url.pathname
+                )
+              ) {
+                send(response, 200, { run: { id: "smoke-run", status: "succeeded" } });
+                return;
+              }
+
+              send(response, 404, { message: `Unexpected mock Oceans route: ${request.method} ${url.pathname}` });
+            } catch (error) {
+              response.writeHead(500, { "content-type": "application/json" });
+              response.end(JSON.stringify({ data: { message: error instanceof Error ? error.message : String(error) } }));
+            }
+          });
+
+          server.listen(0, "127.0.0.1", () => {
+            const address = server.address();
+            if (!address || typeof address === "string") {
+              throw new Error("Mock Oceans server did not bind to a TCP port.");
+            }
+            writeFileSync(process.env.MOCK_OCEANS_URL_FILE, `http://127.0.0.1:${address.port}`);
+          });
+
+          for (const signal of ["SIGINT", "SIGTERM"]) {
+            process.on(signal, () => server.close(() => process.exit(0)));
+          }
+          NODE
+
+          MOCK_OCEANS_URL_FILE="${mock_url_file}" mise exec -- node "${mock_server}" > "${mock_log}" 2>&1 &
+          echo "$!" > "${RUNNER_TEMP}/mock-oceans.pid"
+
+          for _ in $(seq 1 50); do
+            if [[ -s "${mock_url_file}" ]]; then
+              break
+            fi
+            sleep 0.1
+          done
+
+          if [[ ! -s "${mock_url_file}" ]]; then
+            cat "${mock_log}" || true
+            echo "Mock Oceans API did not start." >&2
+            exit 1
+          fi
+
+          echo "MOCK_OCEANS_URL=$(cat "${mock_url_file}")" >> "${GITHUB_ENV}"
+
+      - name: Run packaged review-agent action
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test -f actions/review-agent/action.yml
+          test -f actions/review-agent/dist/index.js
+
+          env \
+            "GITHUB_EVENT_NAME=pull_request" \
+            "GITHUB_EVENT_PATH=${REVIEW_AGENT_EVENT_PATH}" \
+            "INPUT_OCEANS-URL=${MOCK_OCEANS_URL}" \
+            "INPUT_OCEANS-API-KEY=smoke-oceans-api-key" \
+            "INPUT_DRY-RUN=true" \
+            "INPUT_TIMEOUT-MINUTES=2" \
+            "INPUT_GITHUB-TOKEN=${GH_TOKEN}" \
+            mise exec -- node actions/review-agent/dist/index.js
+
+      - name: Stop mock Oceans API
+        if: always()
+        run: |
+          set -euo pipefail
+          if [[ -f "${RUNNER_TEMP}/mock-oceans.pid" ]]; then
+            kill "$(cat "${RUNNER_TEMP}/mock-oceans.pid")" >/dev/null 2>&1 || true
+          fi
+          if [[ -f "${RUNNER_TEMP}/mock-oceans.log" ]]; then
+            cat "${RUNNER_TEMP}/mock-oceans.log"
+          fi
