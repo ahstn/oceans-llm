@@ -2484,3 +2484,314 @@ pub struct SeedUser {
     #[serde(default)]
     pub budget: Option<SeedBudget>,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewAgentProvider {
+    Github,
+}
+
+impl ReviewAgentProvider {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Github => "github",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "github" => Some(Self::Github),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewAgentRepositoryStatus {
+    Active,
+    Disabled,
+    Archived,
+}
+
+impl ReviewAgentRepositoryStatus {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Disabled => "disabled",
+            Self::Archived => "archived",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "active" => Some(Self::Active),
+            "disabled" => Some(Self::Disabled),
+            "archived" => Some(Self::Archived),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewAgentPullRequestState {
+    Open,
+    Closed,
+    Merged,
+    Unknown,
+}
+
+impl ReviewAgentPullRequestState {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Closed => "closed",
+            Self::Merged => "merged",
+            Self::Unknown => "unknown",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "open" => Some(Self::Open),
+            "closed" => Some(Self::Closed),
+            "merged" => Some(Self::Merged),
+            "unknown" => Some(Self::Unknown),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewAgentRunStatus {
+    Queued,
+    InProgress,
+    Succeeded,
+    Failed,
+    Cancelled,
+    Skipped,
+}
+
+impl ReviewAgentRunStatus {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::InProgress => "in_progress",
+            Self::Succeeded => "succeeded",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+            Self::Skipped => "skipped",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "queued" => Some(Self::Queued),
+            "in_progress" => Some(Self::InProgress),
+            "succeeded" => Some(Self::Succeeded),
+            "failed" => Some(Self::Failed),
+            "cancelled" => Some(Self::Cancelled),
+            "skipped" => Some(Self::Skipped),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReviewAgentSettings {
+    pub inline_review_enabled: bool,
+    pub pr_summary_enabled: bool,
+    pub diagrams_enabled: bool,
+    pub linked_issue_detection_enabled: bool,
+    pub linked_issue_assessment_enabled: bool,
+    pub default_model_key: Option<String>,
+    pub max_inline_comments: Option<i64>,
+    pub request_changes_on_high_severity: bool,
+}
+
+impl Default for ReviewAgentSettings {
+    fn default() -> Self {
+        Self {
+            inline_review_enabled: true,
+            pr_summary_enabled: true,
+            diagrams_enabled: false,
+            linked_issue_detection_enabled: true,
+            linked_issue_assessment_enabled: false,
+            default_model_key: None,
+            max_inline_comments: None,
+            request_changes_on_high_severity: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReviewAgentRepositoryRecord {
+    pub repository_id: Uuid,
+    pub provider: ReviewAgentProvider,
+    pub external_repository_id: Option<String>,
+    pub owner: String,
+    pub name: String,
+    pub full_name: String,
+    pub service_account_id: Uuid,
+    pub status: ReviewAgentRepositoryStatus,
+    pub settings: ReviewAgentSettings,
+    pub settings_json: Value,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct NewReviewAgentRepositoryRecord {
+    pub provider: ReviewAgentProvider,
+    pub external_repository_id: Option<String>,
+    pub owner: String,
+    pub name: String,
+    pub full_name: String,
+    pub service_account_id: Uuid,
+    pub settings: ReviewAgentSettings,
+    pub settings_json: Value,
+    pub created_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UpdateReviewAgentRepositoryRecord {
+    pub repository_id: Uuid,
+    pub external_repository_id: Option<String>,
+    pub owner: String,
+    pub name: String,
+    pub full_name: String,
+    pub service_account_id: Uuid,
+    pub status: ReviewAgentRepositoryStatus,
+    pub settings: ReviewAgentSettings,
+    pub settings_json: Value,
+    pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReviewAgentPullRequestRecord {
+    pub pull_request_id: Uuid,
+    pub repository_id: Uuid,
+    pub provider_pr_id: Option<String>,
+    pub pr_number: i64,
+    pub title: Option<String>,
+    pub author_login: Option<String>,
+    pub state: ReviewAgentPullRequestState,
+    pub head_sha: Option<String>,
+    pub base_sha: Option<String>,
+    pub head_repository_full_name: Option<String>,
+    pub base_repository_full_name: Option<String>,
+    pub is_draft: bool,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UpsertReviewAgentPullRequestRecord {
+    pub repository_id: Uuid,
+    pub provider_pr_id: Option<String>,
+    pub pr_number: i64,
+    pub title: Option<String>,
+    pub author_login: Option<String>,
+    pub state: ReviewAgentPullRequestState,
+    pub head_sha: Option<String>,
+    pub base_sha: Option<String>,
+    pub head_repository_full_name: Option<String>,
+    pub base_repository_full_name: Option<String>,
+    pub is_draft: bool,
+    pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReviewAgentRunRecord {
+    pub run_id: Uuid,
+    pub repository_id: Uuid,
+    pub pull_request_id: Option<Uuid>,
+    pub head_sha: Option<String>,
+    pub github_run_id: Option<String>,
+    pub github_run_attempt: Option<i64>,
+    pub status: ReviewAgentRunStatus,
+    pub started_at: Option<OffsetDateTime>,
+    pub heartbeat_at: Option<OffsetDateTime>,
+    pub finished_at: Option<OffsetDateTime>,
+    pub duration_ms: Option<i64>,
+    pub files_changed: Option<i64>,
+    pub additions: Option<i64>,
+    pub deletions: Option<i64>,
+    pub changed_loc: Option<i64>,
+    pub inline_comments_created: Option<i64>,
+    pub inline_comments_updated: Option<i64>,
+    pub inline_comments_skipped: Option<i64>,
+    pub inline_comments_failed: Option<i64>,
+    pub stale_comments_deleted: Option<i64>,
+    pub managed_comment_id: Option<String>,
+    pub managed_comment_action: Option<String>,
+    pub managed_comment_status: Option<String>,
+    pub review_event_status: Option<String>,
+    pub summary_status: Option<String>,
+    pub diagram_status: Option<String>,
+    pub linked_issue_count: Option<i64>,
+    pub linked_issue_status: Option<String>,
+    pub model_execution_mode: Option<String>,
+    pub provider_key: Option<String>,
+    pub model_key: Option<String>,
+    pub effective_config_json: Value,
+    pub degraded_features_json: Option<Value>,
+    pub error_summary: Option<String>,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct NewReviewAgentRunRecord {
+    pub repository_id: Uuid,
+    pub pull_request_id: Option<Uuid>,
+    pub head_sha: Option<String>,
+    pub github_run_id: Option<String>,
+    pub github_run_attempt: Option<i64>,
+    pub status: ReviewAgentRunStatus,
+    pub started_at: Option<OffsetDateTime>,
+    pub model_execution_mode: Option<String>,
+    pub provider_key: Option<String>,
+    pub model_key: Option<String>,
+    pub effective_config_json: Value,
+    pub created_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UpdateReviewAgentRunRecord {
+    pub run_id: Uuid,
+    pub status: ReviewAgentRunStatus,
+    pub heartbeat_at: Option<OffsetDateTime>,
+    pub finished_at: Option<OffsetDateTime>,
+    pub duration_ms: Option<i64>,
+    pub files_changed: Option<i64>,
+    pub additions: Option<i64>,
+    pub deletions: Option<i64>,
+    pub changed_loc: Option<i64>,
+    pub inline_comments_created: Option<i64>,
+    pub inline_comments_updated: Option<i64>,
+    pub inline_comments_skipped: Option<i64>,
+    pub inline_comments_failed: Option<i64>,
+    pub stale_comments_deleted: Option<i64>,
+    pub managed_comment_id: Option<String>,
+    pub managed_comment_action: Option<String>,
+    pub managed_comment_status: Option<String>,
+    pub review_event_status: Option<String>,
+    pub summary_status: Option<String>,
+    pub diagram_status: Option<String>,
+    pub linked_issue_count: Option<i64>,
+    pub linked_issue_status: Option<String>,
+    pub degraded_features_json: Option<Value>,
+    pub error_summary: Option<String>,
+    pub updated_at: OffsetDateTime,
+}

@@ -2299,6 +2299,371 @@
         ]
       }
     },
+    "/api/v1/admin/review-agent/repositories": {
+      "get": {
+        "tags": [
+          "crate::http::review_agent"
+        ],
+        "operationId": "list_review_agent_repositories",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_ReviewAgentRepositoriesPayload"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "crate::http::review_agent"
+        ],
+        "operationId": "create_review_agent_repository",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateReviewAgentRepositoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_ReviewAgentRepositoryPayload"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/review-agent/repositories/{repository_id}": {
+      "get": {
+        "tags": [
+          "crate::http::review_agent"
+        ],
+        "operationId": "get_review_agent_repository",
+        "parameters": [
+          {
+            "name": "repository_id",
+            "in": "path",
+            "description": "Review Agent repository ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_ReviewAgentRepositoryPayload"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "crate::http::review_agent"
+        ],
+        "operationId": "update_review_agent_repository",
+        "parameters": [
+          {
+            "name": "repository_id",
+            "in": "path",
+            "description": "Review Agent repository ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateReviewAgentRepositoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_ReviewAgentRepositoryPayload"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/review-agent/repositories/{repository_id}/disable": {
+      "post": {
+        "tags": [
+          "crate::http::review_agent"
+        ],
+        "operationId": "disable_review_agent_repository",
+        "parameters": [
+          {
+            "name": "repository_id",
+            "in": "path",
+            "description": "Review Agent repository ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_ReviewAgentRepositoryPayload"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/review-agent/repositories/{repository_id}/reactivate": {
+      "post": {
+        "tags": [
+          "crate::http::review_agent"
+        ],
+        "operationId": "reactivate_review_agent_repository",
+        "parameters": [
+          {
+            "name": "repository_id",
+            "in": "path",
+            "description": "Review Agent repository ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_ReviewAgentRepositoryPayload"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/review-agent/repositories/{repository_id}/runs": {
+      "get": {
+        "tags": [
+          "crate::http::review_agent"
+        ],
+        "operationId": "list_review_agent_runs",
+        "parameters": [
+          {
+            "name": "repository_id",
+            "in": "path",
+            "description": "Review Agent repository ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pr_number",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_ReviewAgentRunsPayload"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/review-agent/repositories/{repository_id}/workflow": {
+      "post": {
+        "tags": [
+          "crate::http::review_agent"
+        ],
+        "operationId": "render_review_agent_workflow",
+        "parameters": [
+          {
+            "name": "repository_id",
+            "in": "path",
+            "description": "Review Agent repository ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowRenderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_ReviewAgentWorkflowPayload"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/spend/budget-alerts": {
       "get": {
         "tags": [
@@ -3098,10 +3463,640 @@
           }
         ]
       }
+    },
+    "/api/v1/review-agent/action/config/resolve": {
+      "post": {
+        "tags": [
+          "crate::http::review_agent"
+        ],
+        "operationId": "resolve_review_agent_action_config",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionConfigResolveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_ActionConfigResolveResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "gateway_api_key": []
+          }
+        ]
+      }
+    },
+    "/api/v1/review-agent/action/runs": {
+      "post": {
+        "tags": [
+          "crate::http::review_agent"
+        ],
+        "operationId": "start_review_agent_action_run",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionRunStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_ActionRunResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "gateway_api_key": []
+          }
+        ]
+      }
+    },
+    "/api/v1/review-agent/action/runs/{run_id}/complete": {
+      "post": {
+        "tags": [
+          "crate::http::review_agent"
+        ],
+        "operationId": "complete_review_agent_action_run",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Review Agent run ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionRunMetricsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_ActionRunResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "gateway_api_key": []
+          }
+        ]
+      }
+    },
+    "/api/v1/review-agent/action/runs/{run_id}/fail": {
+      "post": {
+        "tags": [
+          "crate::http::review_agent"
+        ],
+        "operationId": "fail_review_agent_action_run",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Review Agent run ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionRunFailRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_ActionRunResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "gateway_api_key": []
+          }
+        ]
+      }
+    },
+    "/api/v1/review-agent/action/runs/{run_id}/heartbeat": {
+      "post": {
+        "tags": [
+          "crate::http::review_agent"
+        ],
+        "operationId": "heartbeat_review_agent_action_run",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Review Agent run ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionRunHeartbeatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_ActionRunResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "gateway_api_key": []
+          }
+        ]
+      }
     }
   },
   "components": {
     "schemas": {
+      "ActionConfigOverridesRequest": {
+        "type": "object",
+        "properties": {
+          "diagrams_enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "inline_review_enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "linked_issue_assessment_enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "linked_issue_detection_enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "max_inline_comments": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "model_execution_mode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pr_summary_enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "provider_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_changes_on_high_severity": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "ActionConfigResolveRequest": {
+        "type": "object",
+        "required": [
+          "event_name",
+          "repository",
+          "pull_request"
+        ],
+        "properties": {
+          "event_name": {
+            "type": "string"
+          },
+          "overrides": {
+            "$ref": "#/components/schemas/ActionConfigOverridesRequest"
+          },
+          "pull_request": {
+            "$ref": "#/components/schemas/ActionPullRequestRequest"
+          },
+          "repository": {
+            "$ref": "#/components/schemas/ActionRepositoryIdentityRequest"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ActionConfigResolveResponse": {
+        "type": "object",
+        "required": [
+          "repository",
+          "pull_request_id",
+          "effective_config",
+          "overrides_applied",
+          "overrides_rejected",
+          "reporting"
+        ],
+        "properties": {
+          "effective_config": {},
+          "overrides_applied": {},
+          "overrides_rejected": {},
+          "pull_request_id": {
+            "type": "string"
+          },
+          "reporting": {},
+          "repository": {
+            "$ref": "#/components/schemas/ReviewAgentRepositoryView"
+          }
+        }
+      },
+      "ActionPullRequestRequest": {
+        "type": "object",
+        "required": [
+          "pr_number",
+          "head_repository_full_name",
+          "base_repository_full_name",
+          "is_draft"
+        ],
+        "properties": {
+          "author_login": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "base_repository_full_name": {
+            "type": "string"
+          },
+          "base_sha": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "head_repository_full_name": {
+            "type": "string"
+          },
+          "head_sha": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "is_draft": {
+            "type": "boolean"
+          },
+          "pr_number": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "provider_pr_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "ActionRepositoryIdentityRequest": {
+        "type": "object",
+        "required": [
+          "provider",
+          "owner",
+          "name",
+          "full_name"
+        ],
+        "properties": {
+          "external_repository_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "full_name": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ActionRunFailRequest": {
+        "type": "object",
+        "required": [
+          "error_summary",
+          "metrics"
+        ],
+        "properties": {
+          "error_summary": {
+            "type": "string"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/ActionRunMetricsRequest"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ActionRunHeartbeatRequest": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "ActionRunMetricsRequest": {
+        "type": "object",
+        "properties": {
+          "additions": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "changed_loc": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "degraded_features_json": {},
+          "deletions": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "diagram_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "duration_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "files_changed": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "inline_comments_created": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "inline_comments_failed": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "inline_comments_skipped": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "inline_comments_updated": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "linked_issue_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "linked_issue_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "managed_comment_action": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "managed_comment_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "managed_comment_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "review_event_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stale_comments_deleted": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "ActionRunResponse": {
+        "type": "object",
+        "required": [
+          "run"
+        ],
+        "properties": {
+          "run": {
+            "$ref": "#/components/schemas/ReviewAgentRunView"
+          }
+        }
+      },
+      "ActionRunStartRequest": {
+        "type": "object",
+        "required": [
+          "event_name",
+          "repository",
+          "pull_request",
+          "effective_config_json"
+        ],
+        "properties": {
+          "effective_config_json": {},
+          "event_name": {
+            "type": "string"
+          },
+          "github_run_attempt": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "github_run_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model_execution_mode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pull_request": {
+            "$ref": "#/components/schemas/ActionPullRequestRequest"
+          },
+          "repository": {
+            "$ref": "#/components/schemas/ActionRepositoryIdentityRequest"
+          }
+        },
+        "additionalProperties": false
+      },
       "AddTeamMembersRequest": {
         "type": "object",
         "required": [
@@ -4608,6 +5603,50 @@
           }
         }
       },
+      "CreateReviewAgentRepositoryRequest": {
+        "type": "object",
+        "required": [
+          "provider",
+          "owner",
+          "name",
+          "full_name",
+          "service_account_id"
+        ],
+        "properties": {
+          "external_repository_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "full_name": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "service_account_id": {
+            "type": "string"
+          },
+          "settings": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ReviewAgentSettingsView"
+              }
+            ]
+          },
+          "settings_json": {}
+        }
+      },
       "CreateServiceAccountRequest": {
         "type": "object",
         "required": [
@@ -4809,6 +5848,64 @@
           },
           "scope_key": {
             "type": "string"
+          }
+        }
+      },
+      "Envelope_ActionConfigResolveResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "repository",
+              "pull_request_id",
+              "effective_config",
+              "overrides_applied",
+              "overrides_rejected",
+              "reporting"
+            ],
+            "properties": {
+              "effective_config": {},
+              "overrides_applied": {},
+              "overrides_rejected": {},
+              "pull_request_id": {
+                "type": "string"
+              },
+              "reporting": {},
+              "repository": {
+                "$ref": "#/components/schemas/ReviewAgentRepositoryView"
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_ActionRunResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "run"
+            ],
+            "properties": {
+              "run": {
+                "$ref": "#/components/schemas/ReviewAgentRunView"
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
           }
         }
       },
@@ -6231,6 +7328,120 @@
                 "type": "integer",
                 "format": "int64",
                 "minimum": 0
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_ReviewAgentRepositoriesPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ReviewAgentRepositoryView"
+                }
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_ReviewAgentRepositoryPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "repository"
+            ],
+            "properties": {
+              "repository": {
+                "$ref": "#/components/schemas/ReviewAgentRepositoryView"
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_ReviewAgentRunsPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ReviewAgentRunView"
+                }
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_ReviewAgentWorkflowPayload": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "file_name",
+              "yaml",
+              "action_ref",
+              "oceans_url",
+              "api_key_secret_name"
+            ],
+            "properties": {
+              "action_ref": {
+                "type": "string"
+              },
+              "api_key_secret_name": {
+                "type": "string"
+              },
+              "file_name": {
+                "type": "string"
+              },
+              "oceans_url": {
+                "type": "string"
+              },
+              "yaml": {
+                "type": "string"
               }
             }
           },
@@ -8308,6 +9519,387 @@
           }
         }
       },
+      "ReviewAgentRepositoriesPayload": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewAgentRepositoryView"
+            }
+          }
+        }
+      },
+      "ReviewAgentRepositoryPayload": {
+        "type": "object",
+        "required": [
+          "repository"
+        ],
+        "properties": {
+          "repository": {
+            "$ref": "#/components/schemas/ReviewAgentRepositoryView"
+          }
+        }
+      },
+      "ReviewAgentRepositoryView": {
+        "type": "object",
+        "required": [
+          "id",
+          "provider",
+          "owner",
+          "name",
+          "full_name",
+          "service_account_id",
+          "status",
+          "settings",
+          "settings_json",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "external_repository_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "full_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "service_account_id": {
+            "type": "string"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/ReviewAgentSettingsView"
+          },
+          "settings_json": {},
+          "status": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "ReviewAgentRunView": {
+        "type": "object",
+        "required": [
+          "id",
+          "repository_id",
+          "status",
+          "effective_config_json",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "additions": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "changed_loc": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "degraded_features_json": {},
+          "deletions": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "diagram_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "duration_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "effective_config_json": {},
+          "error_summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "files_changed": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "github_run_attempt": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "github_run_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "head_sha": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "heartbeat_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "inline_comments_created": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "inline_comments_failed": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "inline_comments_skipped": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "inline_comments_updated": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "linked_issue_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "linked_issue_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "managed_comment_action": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "managed_comment_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "managed_comment_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model_execution_mode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pull_request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repository_id": {
+            "type": "string"
+          },
+          "review_event_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stale_comments_deleted": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "summary_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "ReviewAgentRunsPayload": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewAgentRunView"
+            }
+          }
+        }
+      },
+      "ReviewAgentSettingsView": {
+        "type": "object",
+        "required": [
+          "inline_review_enabled",
+          "pr_summary_enabled",
+          "diagrams_enabled",
+          "linked_issue_detection_enabled",
+          "linked_issue_assessment_enabled",
+          "request_changes_on_high_severity"
+        ],
+        "properties": {
+          "default_model_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "diagrams_enabled": {
+            "type": "boolean"
+          },
+          "inline_review_enabled": {
+            "type": "boolean"
+          },
+          "linked_issue_assessment_enabled": {
+            "type": "boolean"
+          },
+          "linked_issue_detection_enabled": {
+            "type": "boolean"
+          },
+          "max_inline_comments": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "pr_summary_enabled": {
+            "type": "boolean"
+          },
+          "request_changes_on_high_severity": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ReviewAgentWorkflowPayload": {
+        "type": "object",
+        "required": [
+          "file_name",
+          "yaml",
+          "action_ref",
+          "oceans_url",
+          "api_key_secret_name"
+        ],
+        "properties": {
+          "action_ref": {
+            "type": "string"
+          },
+          "api_key_secret_name": {
+            "type": "string"
+          },
+          "file_name": {
+            "type": "string"
+          },
+          "oceans_url": {
+            "type": "string"
+          },
+          "yaml": {
+            "type": "string"
+          }
+        }
+      },
       "RevokeApiKeyResponse": {
         "type": "object",
         "required": [
@@ -8774,6 +10366,44 @@
           }
         }
       },
+      "UpdateReviewAgentRepositoryRequest": {
+        "type": "object",
+        "required": [
+          "owner",
+          "name",
+          "full_name",
+          "service_account_id",
+          "status",
+          "settings"
+        ],
+        "properties": {
+          "external_repository_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "full_name": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "service_account_id": {
+            "type": "string"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/ReviewAgentSettingsView"
+          },
+          "settings_json": {},
+          "status": {
+            "type": "string"
+          }
+        }
+      },
       "UpdateServiceAccountRequest": {
         "type": "object",
         "required": [
@@ -9020,9 +10650,37 @@
             "type": "string"
           }
         }
+      },
+      "WorkflowRenderRequest": {
+        "type": "object",
+        "properties": {
+          "action_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "api_key_secret_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "oceans_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
       }
     },
     "securitySchemes": {
+      "gateway_api_key": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "Gateway API key"
+      },
       "session_cookie": {
         "type": "apiKey",
         "in": "cookie",

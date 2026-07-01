@@ -13,6 +13,7 @@ pub mod mcp_registry;
 pub mod models;
 pub mod observability;
 pub mod request_tags;
+pub mod review_agent;
 pub mod spend;
 pub mod state;
 
@@ -29,7 +30,7 @@ use tower_http::{
 
 use self::{
     api_keys::*, handlers::*, identity::*, mcp_gateway::*, mcp_registry::*, models::*,
-    observability::*, spend::*, state::AppState,
+    observability::*, review_agent::*, spend::*, state::AppState,
 };
 
 pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
@@ -106,6 +107,50 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
             post(regenerate_password_invite),
         )
         .route("/api/v1/admin/spend/report", get(get_spend_report))
+        .route(
+            "/api/v1/admin/review-agent/repositories",
+            get(list_review_agent_repositories).post(create_review_agent_repository),
+        )
+        .route(
+            "/api/v1/admin/review-agent/repositories/{repository_id}",
+            get(get_review_agent_repository).patch(update_review_agent_repository),
+        )
+        .route(
+            "/api/v1/admin/review-agent/repositories/{repository_id}/disable",
+            post(disable_review_agent_repository),
+        )
+        .route(
+            "/api/v1/admin/review-agent/repositories/{repository_id}/reactivate",
+            post(reactivate_review_agent_repository),
+        )
+        .route(
+            "/api/v1/admin/review-agent/repositories/{repository_id}/runs",
+            get(list_review_agent_runs),
+        )
+        .route(
+            "/api/v1/admin/review-agent/repositories/{repository_id}/workflow",
+            post(render_review_agent_workflow),
+        )
+        .route(
+            "/api/v1/review-agent/action/config/resolve",
+            post(resolve_review_agent_action_config),
+        )
+        .route(
+            "/api/v1/review-agent/action/runs",
+            post(start_review_agent_action_run),
+        )
+        .route(
+            "/api/v1/review-agent/action/runs/{run_id}/heartbeat",
+            post(heartbeat_review_agent_action_run),
+        )
+        .route(
+            "/api/v1/review-agent/action/runs/{run_id}/complete",
+            post(complete_review_agent_action_run),
+        )
+        .route(
+            "/api/v1/review-agent/action/runs/{run_id}/fail",
+            post(fail_review_agent_action_run),
+        )
         .route("/api/v1/admin/spend/focus.csv", get(get_admin_focus_export))
         .route("/api/v1/me/spend/focus.csv", get(get_my_focus_export))
         .route(

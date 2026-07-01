@@ -60,6 +60,27 @@ export type GenerateModelClientConfigsInput =
   components['schemas']['GenerateModelClientConfigsRequest']
 export type GenerateModelClientConfigsResponse =
   components['schemas']['GenerateModelClientConfigsResponse']
+
+export type ReviewAgentRepositoryView = components['schemas']['ReviewAgentRepositoryView']
+export type ReviewAgentSettingsView = components['schemas']['ReviewAgentSettingsView']
+export type ReviewAgentRunView = components['schemas']['ReviewAgentRunView']
+export type ReviewAgentRepositoriesPayload =
+  components['schemas']['ReviewAgentRepositoriesPayload']
+export type ReviewAgentRepositoryPayload = components['schemas']['ReviewAgentRepositoryPayload']
+export type ReviewAgentRunsPayload = components['schemas']['ReviewAgentRunsPayload']
+export type ReviewAgentWorkflowPayload = components['schemas']['ReviewAgentWorkflowPayload']
+export type CreateReviewAgentRepositoryInput =
+  components['schemas']['CreateReviewAgentRepositoryRequest']
+export type UpdateReviewAgentRepositoryInput =
+  components['schemas']['UpdateReviewAgentRepositoryRequest']
+export type ReviewAgentWorkflowInput = components['schemas']['WorkflowRenderRequest']
+export type ReviewAgentListQuery = NonNullable<
+  operations['list_review_agent_repositories']['parameters']['query']
+>
+export type ReviewAgentRunsQuery = NonNullable<
+  operations['list_review_agent_runs']['parameters']['query']
+>
+
 export type RequestTagView = components['schemas']['RequestTagView']
 export type RequestLogTagsView = components['schemas']['RequestTagsView']
 export type RequestLogView = components['schemas']['RequestLogSummaryView']
