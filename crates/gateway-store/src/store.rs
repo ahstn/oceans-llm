@@ -452,12 +452,16 @@ impl AdminApiKeyRepository for AnyStore {
         dispatch_store!(self, create_api_key(api_key))
     }
 
-    async fn replace_api_key_model_grants(
+    async fn replace_api_key_model_access(
         &self,
         api_key_id: Uuid,
+        model_grant_mode: gateway_core::ApiKeyModelGrantMode,
         model_ids: &[Uuid],
     ) -> Result<(), StoreError> {
-        dispatch_store!(self, replace_api_key_model_grants(api_key_id, model_ids))
+        dispatch_store!(
+            self,
+            replace_api_key_model_access(api_key_id, model_grant_mode, model_ids)
+        )
     }
 
     async fn revoke_api_key(

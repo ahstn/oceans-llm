@@ -5,7 +5,7 @@ impl AdminApiKeyRepository for PostgresStore {
     async fn list_api_keys(&self) -> Result<Vec<ApiKeyRecord>, StoreError> {
         let rows = sqlx::query(
             r#"
-            SELECT id, public_id, secret_hash, name, status,
+            SELECT id, public_id, secret_hash, name, status, model_grant_mode,
                    owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
                    created_at, last_used_at, revoked_at
             FROM api_keys
@@ -25,7 +25,7 @@ impl AdminApiKeyRepository for PostgresStore {
     ) -> Result<Option<ApiKeyRecord>, StoreError> {
         let row = sqlx::query(
             r#"
-            SELECT id, public_id, secret_hash, name, status,
+            SELECT id, public_id, secret_hash, name, status, model_grant_mode,
                    owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
                    created_at, last_used_at, revoked_at
             FROM api_keys
@@ -46,16 +46,17 @@ impl AdminApiKeyRepository for PostgresStore {
         sqlx::query(
             r#"
             INSERT INTO api_keys (
-                id, public_id, secret_hash, name, status,
+                id, public_id, secret_hash, name, status, model_grant_mode,
                 owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
                 created_at, last_used_at, revoked_at
-            ) VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8, $9, NULL, NULL)
+            ) VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8, $9, $10, NULL, NULL)
             "#,
         )
         .bind(api_key_id.to_string())
         .bind(api_key.public_id.as_str())
         .bind(api_key.secret_hash.as_str())
         .bind(api_key.name.as_str())
+        .bind(api_key.model_grant_mode.as_str())
         .bind(api_key.owner_kind.as_str())
         .bind(api_key.owner_user_id.map(|value| value.to_string()))
         .bind(api_key.owner_team_id.map(|value| value.to_string()))
@@ -76,11 +77,19 @@ impl AdminApiKeyRepository for PostgresStore {
             })
     }
 
-    async fn replace_api_key_model_grants(
+    async fn replace_api_key_model_access(
         &self,
         api_key_id: Uuid,
+        model_grant_mode: ApiKeyModelGrantMode,
         model_ids: &[Uuid],
     ) -> Result<(), StoreError> {
+        sqlx::query("UPDATE api_keys SET model_grant_mode = $1 WHERE id = $2")
+            .bind(model_grant_mode.as_str())
+            .bind(api_key_id.to_string())
+            .execute(&self.pool)
+            .await
+            .map_err(to_query_error)?;
+
         sqlx::query("DELETE FROM api_key_model_grants WHERE api_key_id = $1")
             .bind(api_key_id.to_string())
             .execute(&self.pool)
@@ -131,7 +140,7 @@ impl ApiKeyRepository for PostgresStore {
     ) -> Result<Option<ApiKeyRecord>, StoreError> {
         let row = sqlx::query(
             r#"
-            SELECT id, public_id, secret_hash, name, status,
+            SELECT id, public_id, secret_hash, name, status, model_grant_mode,
                    owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
                    created_at, last_used_at, revoked_at
             FROM api_keys

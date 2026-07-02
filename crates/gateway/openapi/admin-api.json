@@ -4199,6 +4199,7 @@
           "owner_kind",
           "owner_id",
           "owner_name",
+          "model_grant_mode",
           "model_keys",
           "created_at"
         ],
@@ -4214,6 +4215,9 @@
               "string",
               "null"
             ]
+          },
+          "model_grant_mode": {
+            "type": "string"
           },
           "model_keys": {
             "type": "array",
@@ -5474,9 +5478,13 @@
         "required": [
           "name",
           "owner_kind",
+          "model_grant_mode",
           "model_keys"
         ],
         "properties": {
+          "model_grant_mode": {
+            "type": "string"
+          },
           "model_keys": {
             "type": "array",
             "items": {
@@ -10291,9 +10299,13 @@
       "UpdateApiKeyRequest": {
         "type": "object",
         "required": [
+          "model_grant_mode",
           "model_keys"
         ],
         "properties": {
+          "model_grant_mode": {
+            "type": "string"
+          },
           "model_keys": {
             "type": "array",
             "items": {

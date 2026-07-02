@@ -1207,6 +1207,7 @@ export interface components {
             created_at: string;
             id: string;
             last_used_at?: string | null;
+            model_grant_mode: string;
             model_keys: string[];
             name: string;
             owner_email?: string | null;
@@ -1496,6 +1497,7 @@ export interface components {
             status: string;
         };
         CreateApiKeyRequest: {
+            model_grant_mode: string;
             model_keys: string[];
             name: string;
             owner_kind: string;
@@ -2675,6 +2677,7 @@ export interface components {
             destination_team_id: string;
         };
         UpdateApiKeyRequest: {
+            model_grant_mode: string;
             model_keys: string[];
         };
         UpdateApiKeyResponse: {

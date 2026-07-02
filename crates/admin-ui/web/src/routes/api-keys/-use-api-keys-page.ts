@@ -20,10 +20,12 @@ const initialForm: CreateApiKeyInput = {
   owner_user_id: null,
   owner_team_id: null,
   owner_service_account_id: null,
+  model_grant_mode: 'all',
   model_keys: [],
 }
 
 const initialManageForm: UpdateApiKeyInput = {
+  model_grant_mode: 'explicit',
   model_keys: [],
 }
 
@@ -56,15 +58,16 @@ export function useApiKeysPageState({
   const isCreateDisabled =
     isMutating ||
     form.name.trim().length === 0 ||
-    form.model_keys.length === 0 ||
+    (form.model_grant_mode === 'explicit' && form.model_keys.length === 0) ||
     (form.owner_kind === 'user' ? !form.owner_user_id : !form.owner_service_account_id)
 
   const isManageDisabled =
     isMutating ||
     !manageTarget ||
     manageTarget.status !== 'active' ||
-    manageForm.model_keys.length === 0 ||
-    sameModelSelection(manageTarget.model_keys, manageForm.model_keys)
+    (manageForm.model_grant_mode === 'explicit' && manageForm.model_keys.length === 0) ||
+    (manageTarget.model_grant_mode === manageForm.model_grant_mode &&
+      sameModelSelection(manageTarget.model_keys, manageForm.model_keys))
 
   async function refreshApiKeys() {
     await router.invalidate()
@@ -83,6 +86,7 @@ export function useApiKeysPageState({
   function openManageDialog(apiKeyId: string) {
     const target = items.find((item) => item.id === apiKeyId)
     setManageForm({
+      model_grant_mode: target?.model_grant_mode ?? 'explicit',
       model_keys: target?.model_keys ?? [],
     })
     setManageDialog({ mode: 'open', apiKeyId })
@@ -98,6 +102,7 @@ export function useApiKeysPageState({
       ...current,
       owner_kind: ownerKind,
       owner_user_id: ownerKind === 'user' ? current.owner_user_id : null,
+      model_grant_mode: ownerKind === 'user' ? current.model_grant_mode : 'explicit',
       owner_team_id:
         ownerKind === 'service_account'
           ? (service_accounts.find((account) => account.id === current.owner_service_account_id)
@@ -105,6 +110,26 @@ export function useApiKeysPageState({
           : null,
       owner_service_account_id:
         ownerKind === 'service_account' ? current.owner_service_account_id : null,
+    }))
+  }
+
+  function updateModelGrantMode(modelGrantMode: CreateApiKeyInput['model_grant_mode']) {
+    setForm((current) => ({
+      ...current,
+      model_grant_mode: current.owner_kind === 'service_account' ? 'explicit' : modelGrantMode,
+      model_keys: modelGrantMode === 'all' ? [] : current.model_keys,
+    }))
+  }
+
+  function updateManageModelGrantMode(modelGrantMode: UpdateApiKeyInput['model_grant_mode']) {
+    if (manageTarget?.owner_kind === 'service_account') {
+      return
+    }
+
+    setManageForm((current) => ({
+      ...current,
+      model_grant_mode: modelGrantMode,
+      model_keys: modelGrantMode === 'all' ? [] : current.model_keys,
     }))
   }
 
@@ -153,6 +178,7 @@ export function useApiKeysPageState({
         data: {
           ...form,
           name: form.name.trim(),
+          model_keys: form.model_grant_mode === 'all' ? [] : form.model_keys,
         },
       })
       setCreatedResult(response.data)
@@ -178,7 +204,8 @@ export function useApiKeysPageState({
         data: {
           apiKeyId: manageDialog.apiKeyId,
           input: {
-            model_keys: manageForm.model_keys,
+            model_grant_mode: manageForm.model_grant_mode,
+            model_keys: manageForm.model_grant_mode === 'all' ? [] : manageForm.model_keys,
           },
         },
       })
@@ -244,6 +271,8 @@ export function useApiKeysPageState({
       setCreatedResult,
       toggleManageModelKey,
       toggleModelKey,
+      updateManageModelGrantMode,
+      updateModelGrantMode,
       updateName,
       updateOwnerKind,
       updateOwnerSelection,

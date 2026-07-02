@@ -132,13 +132,14 @@ Use [oidc-and-sso-status.md](oidc-and-sso-status.md) for the practical SSO contr
 
 Effective model access is layered:
 
-1. API key grants for the authenticated user or service account credential
+1. API key grant mode for the authenticated user or service account credential
 2. team allowlist when the team is `restricted`
-3. user allowlist when the user is `restricted`
+3. service-account allowlist when the service account is `restricted`
+4. user allowlist when the user is `restricted`
 
-This keeps API-key grants as the baseline contract while allowing narrower restrictions above them.
+API keys can use `model_grant_mode='explicit'` with rows in `api_key_model_grants`, or `model_grant_mode='all'` to track every current and future gateway model. Owner restrictions always intersect that baseline; `all` never bypasses team, service-account, or user allowlists.
 
-For service accounts, the team allowlist applies through the owning team. User allowlists do not apply because service accounts are not users.
+For service accounts, the team allowlist applies through the owning team and the service account allowlist applies directly when restricted. User allowlists do not apply because service accounts are not users. Admin-managed service-account API keys require explicit model grants so automation credentials stay deliberately scoped.
 
 ## MCP Gateway API-Key Contract
 

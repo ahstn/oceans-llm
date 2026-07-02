@@ -57,17 +57,18 @@ Tracked follow-up:
 
 Admins can:
 
-- list API keys with owner summary and grant list
+- list API keys with owner summary, grant mode, and grant list
 - create a new key for an explicit user or service-account owner
-- grant access to an explicit set of gateway models at creation time
+- grant access to all gateway models for user-owned keys
+- grant access to an explicit set of gateway models for user-owned or service-account-owned keys
 - copy the raw key once from the create response
-- replace model grants for an active key
+- replace model grant mode and explicit grants for an active key
 - revoke a key so runtime auth rejects it immediately
 
 For service workloads, create a service account for the workload and then create credentials on that service account:
 
 - give it a workload-specific name
-- grant only the gateway models the workload needs
+- grant only the explicit gateway models the workload needs
 - configure an active service-account budget before using active credentials
 - rotate by creating a replacement key, updating the caller secret, then revoking the old key
 

@@ -159,6 +159,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V34__review_agent.sql"),
         postgres_sql: include_str!("../migrations/postgres/V34__review_agent.sql"),
     },
+    MigrationManifest {
+        version: 35,
+        name: "api_key_model_grant_mode",
+        checksum: "V35__api_key_model_grant_mode.sql",
+        libsql_sql: include_str!("../migrations/V35__api_key_model_grant_mode.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V35__api_key_model_grant_mode.sql"),
+    },
 ];
 
 #[cfg(test)]
