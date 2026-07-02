@@ -11,5 +11,10 @@ For docs changes:
 - Capture behavior that spans files, workflows, or runtime phases; do not restate code that is obvious from one source file.
 - Link to ADRs, GitHub issues, PRs, and source files when they explain why the behavior exists.
 - Keep `docs/adr/` as historical decision records. Prefer appending a short supersession note over rewriting old decision context.
-- Put rough notes, interviews, and research under `docs/internal/`; they are not public contract pages.
-- State validation commands before handoff, usually `mise run docs-check` or `mise run docs-verify`.
+- Preserve the split between the primary user-facing docs surface and the `Contributing & Internal` surface.
+- Keep the primary surface focused on admins, users, callers, and clients operating Oceans LLM.
+- Put maintainer-only workflows, release process, contract generation, schema/data-model notes, migrations, E2E harnesses, implementation plans, interviews, rough notes, and research in the internal/contributor surface.
+- Keep `docs/internal/` for rough notes and research that should not publish as contract pages. Use a published internal/contributor docs path only when maintainers need the page in the VitePress site.
+- Do not link user-facing navigation to maintainer-only pages unless the user workflow genuinely depends on that context. Internal/contributor pages may link back to user-facing canonical pages.
+- When adding or moving pages, update VitePress nav/sidebar ownership and `See also` links together so labels match destination titles.
+- State validation commands before handoff: from the repo root use `mise run docs:check` for docs checks and `mise run docs:verify` for checks plus build; from `docs/`, use `mise run check` or `mise run verify`.
