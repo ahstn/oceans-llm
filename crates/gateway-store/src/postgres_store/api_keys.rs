@@ -76,6 +76,86 @@ impl AdminApiKeyRepository for PostgresStore {
             })
     }
 
+    async fn get_api_key_secret_material(
+        &self,
+        api_key_id: Uuid,
+    ) -> Result<Option<ApiKeySecretMaterialRecord>, StoreError> {
+        let row = sqlx::query(
+            r#"
+            SELECT api_key_id, storage_kind, secret_ciphertext, secret_nonce, secret_key_id,
+                   created_at, updated_at, last_retrieved_at
+            FROM api_key_secret_materials
+            WHERE api_key_id = $1
+            LIMIT 1
+            "#,
+        )
+        .bind(api_key_id.to_string())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+
+        row.as_ref().map(decode_api_key_secret_material).transpose()
+    }
+
+    async fn upsert_api_key_secret_material(
+        &self,
+        material: &ApiKeySecretMaterialRecord,
+    ) -> Result<(), StoreError> {
+        sqlx::query(
+            r#"
+            INSERT INTO api_key_secret_materials (
+                api_key_id, storage_kind, secret_ciphertext, secret_nonce, secret_key_id,
+                created_at, updated_at, last_retrieved_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT(api_key_id) DO UPDATE SET
+                storage_kind = EXCLUDED.storage_kind,
+                secret_ciphertext = EXCLUDED.secret_ciphertext,
+                secret_nonce = EXCLUDED.secret_nonce,
+                secret_key_id = EXCLUDED.secret_key_id,
+                updated_at = EXCLUDED.updated_at
+            "#,
+        )
+        .bind(material.api_key_id.to_string())
+        .bind(material.storage_kind.as_str())
+        .bind(material.secret_ciphertext.as_str())
+        .bind(material.secret_nonce.as_str())
+        .bind(material.secret_key_id.as_str())
+        .bind(material.created_at.unix_timestamp())
+        .bind(material.updated_at.unix_timestamp())
+        .bind(
+            material
+                .last_retrieved_at
+                .map(|value| value.unix_timestamp()),
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+
+        Ok(())
+    }
+
+    async fn touch_api_key_secret_material_retrieved(
+        &self,
+        api_key_id: Uuid,
+        retrieved_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        let result = sqlx::query(
+            r#"
+            UPDATE api_key_secret_materials
+            SET last_retrieved_at = $1,
+                updated_at = $1
+            WHERE api_key_id = $2
+            "#,
+        )
+        .bind(retrieved_at.unix_timestamp())
+        .bind(api_key_id.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
     async fn replace_api_key_model_grants(
         &self,
         api_key_id: Uuid,

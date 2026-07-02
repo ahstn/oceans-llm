@@ -96,6 +96,95 @@ impl AdminApiKeyRepository for LibsqlStore {
             })
     }
 
+    async fn get_api_key_secret_material(
+        &self,
+        api_key_id: Uuid,
+    ) -> Result<Option<ApiKeySecretMaterialRecord>, StoreError> {
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT api_key_id, storage_kind, secret_ciphertext, secret_nonce, secret_key_id,
+                       created_at, updated_at, last_retrieved_at
+                FROM api_key_secret_materials
+                WHERE api_key_id = ?1
+                LIMIT 1
+                "#,
+                [api_key_id.to_string()],
+            )
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?;
+
+        let Some(row) = rows
+            .next()
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?
+        else {
+            return Ok(None);
+        };
+
+        decode_api_key_secret_material(&row).map(Some)
+    }
+
+    async fn upsert_api_key_secret_material(
+        &self,
+        material: &ApiKeySecretMaterialRecord,
+    ) -> Result<(), StoreError> {
+        self.connection
+            .execute(
+                r#"
+                INSERT INTO api_key_secret_materials (
+                    api_key_id, storage_kind, secret_ciphertext, secret_nonce, secret_key_id,
+                    created_at, updated_at, last_retrieved_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                ON CONFLICT(api_key_id) DO UPDATE SET
+                    storage_kind = excluded.storage_kind,
+                    secret_ciphertext = excluded.secret_ciphertext,
+                    secret_nonce = excluded.secret_nonce,
+                    secret_key_id = excluded.secret_key_id,
+                    updated_at = excluded.updated_at
+                "#,
+                libsql::params![
+                    material.api_key_id.to_string(),
+                    material.storage_kind.as_str(),
+                    material.secret_ciphertext.as_str(),
+                    material.secret_nonce.as_str(),
+                    material.secret_key_id.as_str(),
+                    material.created_at.unix_timestamp(),
+                    material.updated_at.unix_timestamp(),
+                    material
+                        .last_retrieved_at
+                        .map(|value| value.unix_timestamp()),
+                ],
+            )
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn touch_api_key_secret_material_retrieved(
+        &self,
+        api_key_id: Uuid,
+        retrieved_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        let rows_affected = self
+            .connection
+            .execute(
+                r#"
+                UPDATE api_key_secret_materials
+                SET last_retrieved_at = ?1,
+                    updated_at = ?1
+                WHERE api_key_id = ?2
+                "#,
+                libsql::params![retrieved_at.unix_timestamp(), api_key_id.to_string()],
+            )
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?;
+
+        Ok(rows_affected > 0)
+    }
+
     async fn replace_api_key_model_grants(
         &self,
         api_key_id: Uuid,

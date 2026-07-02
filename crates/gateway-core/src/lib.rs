@@ -2,6 +2,7 @@ pub mod auth;
 pub mod budgets;
 pub mod domain;
 pub mod error;
+pub mod gateway_keys;
 pub mod protocol;
 pub mod streaming;
 pub mod traits;
@@ -13,15 +14,16 @@ pub use budgets::{
     BudgetModelSelector, BudgetRecord, BudgetScope, BudgetScopeKind, BudgetSettings,
 };
 pub use domain::{
-    ApiKeyOwnerKind, ApiKeyRecord, ApiKeyStatus, AuthMode, AwsBedrockApiStyle,
-    AwsBedrockRouteCompatibility, BudgetAlertChannel, BudgetAlertDeliveryRecord,
-    BudgetAlertDeliveryStatus, BudgetAlertDispatchTask, BudgetAlertHistoryPage,
-    BudgetAlertHistoryQuery, BudgetAlertHistoryRecord, BudgetAlertRecord, BudgetCadence,
-    BudgetWindow, ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus,
-    ExternalMcpServerRecord, ExternalMcpServerStatus, ExternalMcpToolRecord, ExternalMcpTransport,
-    FocusExportAggregateRecord, FocusExportDiagnosticsRecord, GatewayModel, GlobalRole,
-    HarnessUsageBucketRecord, HarnessUsageLeaderRecord, IdentityUserRecord,
-    MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, McpAccessResolution, McpAggregateSessionRecord,
+    ApiKeyOwnerKind, ApiKeyRecord, ApiKeySecretMaterialRecord, ApiKeySecretStorageKind,
+    ApiKeyStatus, AuthMode, AwsBedrockApiStyle, AwsBedrockRouteCompatibility, BudgetAlertChannel,
+    BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus, BudgetAlertDispatchTask,
+    BudgetAlertHistoryPage, BudgetAlertHistoryQuery, BudgetAlertHistoryRecord, BudgetAlertRecord,
+    BudgetCadence, BudgetWindow, ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord,
+    ExternalMcpDiscoveryStatus, ExternalMcpServerRecord, ExternalMcpServerStatus,
+    ExternalMcpToolRecord, ExternalMcpTransport, FocusExportAggregateRecord,
+    FocusExportDiagnosticsRecord, GatewayModel, GlobalRole, HarnessUsageBucketRecord,
+    HarnessUsageLeaderRecord, IdentityUserRecord, MAX_MCP_TOOL_INVOCATION_PAGE_SIZE,
+    ManagedApiKeySource, McpAccessResolution, McpAggregateSessionRecord,
     McpCatalogAccessResolution, McpCatalogToolRecord, McpGrantSubject, McpTokenEstimateConfidence,
     McpTokenEstimateSource, McpToolGrantRecord, McpToolGrantSubjectKind, McpToolGrantTargetKind,
     McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationPayloadRecord,
@@ -46,8 +48,9 @@ pub use domain::{
     ReviewAgentProvider, ReviewAgentPullRequestRecord, ReviewAgentPullRequestState,
     ReviewAgentRepositoryRecord, ReviewAgentRepositoryStatus, ReviewAgentRunRecord,
     ReviewAgentRunStatus, ReviewAgentSettings, RouteCompatibility, SYSTEM_BOOTSTRAP_ADMIN_EMAIL,
-    SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SeedApiKey, SeedBudget, SeedModel, SeedModelRoute,
-    SeedOauthProvider, SeedOidcProvider, SeedProvider, SeedTeam, SeedUser, SeedUserMembership,
+    SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SeedApiKey, SeedApiKeySecretMaterial, SeedBudget,
+    SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute, SeedOauthProvider,
+    SeedOidcProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership,
     ServiceAccountRecord, ServiceAccountStatus, SpendDailyAggregateRecord,
     SpendModelAggregateRecord, SpendOwnerAggregateRecord, TeamMembershipRecord, TeamRecord,
     UpdateExternalMcpServerRecord, UpdateMcpToolsetRecord, UpdateReviewAgentRepositoryRecord,
@@ -58,6 +61,12 @@ pub use domain::{
     UserRecord, UserSessionRecord, UserStatus, budget_window_utc,
 };
 pub use error::{AuthError, GatewayError, ProviderError, RouteError, StoreError};
+pub use gateway_keys::{
+    EncryptedSecret, GATEWAY_API_KEY_SECRET_KEY_ENV, GATEWAY_API_KEY_SECRET_KEY_ID,
+    decrypt_gateway_api_key_secret, decrypt_secret_with_key, encrypt_gateway_api_key_secret,
+    encrypt_secret_with_key, generate_gateway_api_key_value, hash_gateway_key_secret,
+    validate_secret_key_env,
+};
 pub use protocol::anthropic::{AnthropicMessage, AnthropicMessagesRequest};
 pub use protocol::core::{
     ChatMessage as CoreChatMessage, ChatRequest as CoreChatRequest,

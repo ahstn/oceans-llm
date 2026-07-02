@@ -1650,7 +1650,10 @@ dependencies = [
 name = "gateway-core"
 version = "0.12.0"
 dependencies = [
+ "aes-gcm",
+ "argon2",
  "async-trait",
+ "base64 0.22.1",
  "bytes",
  "futures-core",
  "serde",

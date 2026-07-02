@@ -62,24 +62,24 @@ To set a user budget, choose the user, cadence, amount, and whether the budget i
 
 ## Config-Seeded Service Accounts
 
-Declarative gateway API keys must define the service account they create or reconcile:
+Declarative service accounts define their owning team, budget, and managed gateway API keys:
 
 ```yaml
-auth:
-  seed_api_keys:
-    - name: ci-indexer
-      value: env.CI_INDEXER_GATEWAY_API_KEY
-      service_account:
-        key: ci-indexer
-        name: CI Indexer
-        team: platform
-        budget:
-          cadence: daily
-          amount_usd: "25.0000"
-          hard_limit: true
-          timezone: UTC
-      allowed_models:
-        - fast
+service_accounts:
+  - id: ci-indexer
+    name: CI Indexer
+    team: platform
+    budget:
+      cadence: daily
+      amount_usd: "25.0000"
+      hard_limit: true
+      timezone: UTC
+    keys:
+      - id: primary
+        name: CI Indexer Primary
+        value: env.CI_INDEXER_GATEWAY_API_KEY
+        allowed_models:
+          - fast
 ```
 
 The owning team must be declared in `teams`. The budget block is required.

@@ -2413,11 +2413,89 @@ pub struct SeedApiKey {
     pub public_id: String,
     pub secret_hash: String,
     pub service_account_key: String,
-    pub service_account_name: String,
-    pub service_account_team_key: String,
-    pub service_account_budget: SeedBudget,
     #[serde(default)]
     pub allowed_models: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeedServiceAccount {
+    pub service_account_key: String,
+    pub service_account_name: String,
+    pub team_key: String,
+    pub budget: SeedBudget,
+    #[serde(default)]
+    pub managed_api_keys: Vec<SeedManagedServiceAccountApiKey>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeedManagedServiceAccountApiKey {
+    pub config_key: String,
+    pub name: String,
+    pub auto_create: bool,
+    pub source: ManagedApiKeySource,
+    pub public_id: Option<String>,
+    pub secret_hash: Option<String>,
+    pub secret_material: Option<SeedApiKeySecretMaterial>,
+    #[serde(default)]
+    pub allowed_models: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ManagedApiKeySource {
+    Generated,
+    ConfiguredValue,
+}
+
+impl ManagedApiKeySource {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Generated => "generated",
+            Self::ConfiguredValue => "configured_value",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeedApiKeySecretMaterial {
+    pub storage_kind: ApiKeySecretStorageKind,
+    pub secret_ciphertext: String,
+    pub secret_nonce: String,
+    pub secret_key_id: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ApiKeySecretStorageKind {
+    EncryptedBlob,
+}
+
+impl ApiKeySecretStorageKind {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::EncryptedBlob => "encrypted_blob",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "encrypted_blob" => Some(Self::EncryptedBlob),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiKeySecretMaterialRecord {
+    pub api_key_id: Uuid,
+    pub storage_kind: ApiKeySecretStorageKind,
+    pub secret_ciphertext: String,
+    pub secret_nonce: String,
+    pub secret_key_id: String,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+    pub last_retrieved_at: Option<OffsetDateTime>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

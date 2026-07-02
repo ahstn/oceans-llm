@@ -1140,6 +1140,7 @@ pub struct RequestLogPayloadView {
         crate::http::api_keys::create_api_key,
         crate::http::api_keys::update_api_key,
         crate::http::api_keys::revoke_api_key,
+        crate::http::api_keys::reveal_api_key_secret,
         crate::http::identity::list_identity_users,
         crate::http::identity::list_identity_teams,
         crate::http::models::list_models,

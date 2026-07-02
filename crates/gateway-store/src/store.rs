@@ -9,9 +9,9 @@ use gateway_core::{
     MembershipRole, ModelRepository, OauthLoginStateRecord, OauthProviderRecord,
     OidcLoginStateRecord, OidcProviderRecord, PasswordInvitationRecord, PricingCatalogRepository,
     ProviderRepository, RequestLogRepository, RequestTag, ReviewAgentRepository, SeedApiKey,
-    SeedModel, SeedOauthProvider, SeedOidcProvider, SeedProvider, SeedTeam, SeedUser, StoreError,
-    StoreHealth, TeamMembershipRecord, TeamRecord, UserOauthAuthRecord, UserOidcAuthRecord,
-    UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
+    SeedModel, SeedOauthProvider, SeedOidcProvider, SeedProvider, SeedServiceAccount, SeedTeam,
+    SeedUser, StoreError, StoreHealth, TeamMembershipRecord, TeamRecord, UserOauthAuthRecord,
+    UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -360,6 +360,7 @@ pub trait GatewayStore:
         providers: &[SeedProvider],
         models: &[SeedModel],
         api_keys: &[SeedApiKey],
+        service_accounts: &[SeedServiceAccount],
         oidc_providers: &[SeedOidcProvider],
         oauth_providers: &[SeedOauthProvider],
         teams: &[SeedTeam],
@@ -450,6 +451,31 @@ impl AdminApiKeyRepository for AnyStore {
         api_key: &gateway_core::NewApiKeyRecord,
     ) -> Result<gateway_core::ApiKeyRecord, StoreError> {
         dispatch_store!(self, create_api_key(api_key))
+    }
+
+    async fn get_api_key_secret_material(
+        &self,
+        api_key_id: Uuid,
+    ) -> Result<Option<gateway_core::ApiKeySecretMaterialRecord>, StoreError> {
+        dispatch_store!(self, get_api_key_secret_material(api_key_id))
+    }
+
+    async fn upsert_api_key_secret_material(
+        &self,
+        material: &gateway_core::ApiKeySecretMaterialRecord,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(self, upsert_api_key_secret_material(material))
+    }
+
+    async fn touch_api_key_secret_material_retrieved(
+        &self,
+        api_key_id: Uuid,
+        retrieved_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        dispatch_store!(
+            self,
+            touch_api_key_secret_material_retrieved(api_key_id, retrieved_at)
+        )
     }
 
     async fn replace_api_key_model_grants(
@@ -1586,6 +1612,7 @@ impl GatewayStore for AnyStore {
         providers: &[SeedProvider],
         models: &[SeedModel],
         api_keys: &[SeedApiKey],
+        service_accounts: &[SeedServiceAccount],
         oidc_providers: &[SeedOidcProvider],
         oauth_providers: &[SeedOauthProvider],
         teams: &[SeedTeam],
@@ -1597,6 +1624,7 @@ impl GatewayStore for AnyStore {
                 providers,
                 models,
                 api_keys,
+                service_accounts,
                 oidc_providers,
                 oauth_providers,
                 teams,

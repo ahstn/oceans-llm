@@ -114,7 +114,7 @@ where
 {
     let providers_seed = config.seed_providers()?;
     let models_seed = config.seed_models()?;
-    let api_keys_seed = config.seed_api_keys()?;
+    let service_accounts_seed = config.seed_service_accounts()?;
     let oidc_providers_seed = config.seed_oidc_providers()?;
     let oauth_providers_seed = config.seed_oauth_providers()?;
     let teams_seed = config.seed_teams()?;
@@ -124,7 +124,8 @@ where
         .seed_from_inputs(
             &providers_seed,
             &models_seed,
-            &api_keys_seed,
+            &[],
+            &service_accounts_seed,
             &oidc_providers_seed,
             &oauth_providers_seed,
             &teams_seed,
