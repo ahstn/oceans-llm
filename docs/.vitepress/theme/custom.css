@@ -22,6 +22,8 @@
         transparent
     );
     --docs-scrollbar-track: transparent;
+    --docs-wide-sidebar-layout-inset: 32px;
+    --vp-sidebar-width: 300px;
     --vp-home-hero-name-color: oklch(56% 0.13 218);
     --vp-home-hero-image-background-image: radial-gradient(
         circle at 50% 50%,
@@ -213,6 +215,17 @@ html,
     font-size: 18px;
 }
 
+.vp-doc a {
+    border-bottom: 1px solid var(--vp-c-brand-1);
+    color: inherit;
+    text-decoration: none;
+}
+
+.vp-doc a:hover {
+    border-bottom-width: 2px;
+    color: inherit;
+}
+
 .VPSidebar {
     border-right: 1px solid var(--vp-c-divider);
     background-color: var(--vp-c-bg-alt);
@@ -233,13 +246,11 @@ html,
     font-size: 12px;
     font-weight: 760;
     letter-spacing: 0.04em;
-    margin-left: 28px;
     text-transform: uppercase;
 }
 
 .VPSidebarItem.level-1 > .item {
-    padding-top: 6px;
-    padding-bottom: 6px;
+    padding: 3px 0;
 }
 
 .VPSidebarItem.level-1 > .item > .link > .text {
@@ -275,6 +286,35 @@ html,
 
 .VPSidebarItem.is-active :is(.link, .VPLink.link)::before {
     opacity: 1;
+}
+
+@media (min-width: 1440px) {
+    :root {
+        --docs-wide-sidebar-gutter: calc(
+            (
+                    100% -
+                        (
+                            var(--vp-layout-max-width) -
+                                var(--docs-wide-sidebar-layout-inset)
+                        )
+                ) /
+                2
+        );
+        --docs-wide-sidebar-edge: calc(
+            var(--docs-wide-sidebar-gutter) + var(--vp-sidebar-width) - 32px
+        );
+    }
+
+    .Layout .VPSidebar,
+    .VPNavBar.has-sidebar.has-sidebar > .wrapper > .container > .title {
+        padding-left: max(32px, var(--docs-wide-sidebar-gutter));
+        width: var(--docs-wide-sidebar-edge);
+    }
+
+    .Layout .VPContent.has-sidebar,
+    .VPNavBar.has-sidebar.has-sidebar > .wrapper > .container > .content {
+        padding-left: var(--docs-wide-sidebar-edge);
+    }
 }
 
 @keyframes oceans-hero-gradient {
