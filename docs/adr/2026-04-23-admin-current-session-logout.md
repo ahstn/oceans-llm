@@ -24,7 +24,7 @@
 - Docs:
   - [../access/admin-control-plane.md](../access/admin-control-plane.md)
   - [../access/identity-and-access.md](../access/identity-and-access.md)
-  - [../reference/e2e-contract-tests.md](../reference/e2e-contract-tests.md)
+  - [../reference/e2e-contract-tests.md](../contributing/reference/e2e-contract-tests.md)
 
 ## Context
 

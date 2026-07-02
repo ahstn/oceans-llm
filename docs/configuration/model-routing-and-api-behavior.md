@@ -1,6 +1,6 @@
 # Model Routing and API Behavior
 
-`See also`: [Configuration Reference](configuration-reference.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Data Relationships](../reference/data-relationships.md), [Identity and Access](../access/identity-and-access.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Pricing Catalog and Accounting](pricing-catalog-and-accounting.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [ADR: Model Aliases and Provider-Only Route Config](../adr/2026-03-10-model-aliases-and-provider-route-config.md), [ADR: Capability-Aware Route Gating with Strict Fail-Fast Validation](../adr/2026-03-13-capability-aware-route-gating.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md)
+`See also`: [Configuration Reference](configuration-reference.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Data Relationships](../contributing/reference/data-relationships.md), [Identity and Access](../access/identity-and-access.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Pricing Catalog and Accounting](pricing-catalog-and-accounting.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [ADR: Model Aliases and Provider-Only Route Config](../adr/2026-03-10-model-aliases-and-provider-route-config.md), [ADR: Capability-Aware Route Gating with Strict Fail-Fast Validation](../adr/2026-03-13-capability-aware-route-gating.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md)
 
 This page explains how the public `/v1/*` surface resolves a request into one concrete route.
 
@@ -242,4 +242,4 @@ The open retry/fallback policy work must amend this section when it lands; see [
 - exact pricing coverage:
   - [pricing-catalog-and-accounting.md](pricing-catalog-and-accounting.md)
 - spend enforcement and budget windows:
-  - [budgets-and-spending.md](../operations/budgets-and-spending.md)
+  - [budgets-and-spending.md](../contributing/operations/budgets-and-spending.md)

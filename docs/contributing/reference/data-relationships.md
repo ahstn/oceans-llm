@@ -1,22 +1,22 @@
 # Data Relationships
 
-`See also`: [Identity and Access](../access/identity-and-access.md), [Service Accounts](../access/service-accounts.md), [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](provider-api-compatibility.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../operations/observability/mcp-invocations.md), [MCP Registry and Discovery](../operations/observability/mcp-registry-and-discovery.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../adr/2026-05-10-team-service-accounts.md), [ADR: Identity Foundation for Users, Teams, and API Key Ownership](../adr/2026-03-05-identity-foundation.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md), [ADR: MCP Tool Cardinality Observability](../adr/2026-04-28-mcp-tool-cardinality-observability.md), [ADR: External MCP Registry and Discovery Boundary](../adr/2026-05-26-external-mcp-registry-and-discovery.md)
+`See also`: [Identity and Access](../../access/identity-and-access.md), [Service Accounts](../../access/service-accounts.md), [Model Routing and API Behavior](../../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](../../reference/provider-api-compatibility.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../../operations/observability-and-request-logs.md), [Request Logs](../../operations/observability/request-logs.md), [MCP Invocations](../../mcp/mcp-invocations.md), [MCP Registry and Discovery](../mcp/mcp-registry-and-discovery.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../../adr/2026-05-10-team-service-accounts.md), [ADR: Identity Foundation for Users, Teams, and API Key Ownership](../../adr/2026-03-05-identity-foundation.md), [ADR: Route-Level Provider API Compatibility Profiles](../../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md), [ADR: MCP Tool Cardinality Observability](../../adr/2026-04-28-mcp-tool-cardinality-observability.md), [ADR: External MCP Registry and Discovery Boundary](../../adr/2026-05-26-external-mcp-registry-and-discovery.md)
 
 This document is schema-oriented. It describes the persistent relationships that are hard to infer from a single file, but it does not try to restate every runtime rule owned by neighboring docs.
 
 ## Source of Truth
 
 - Migrations:
-  - [../crates/gateway-store/migrations/](../../crates/gateway-store/migrations)
-  - [../crates/gateway-store/migrations/postgres/](../../crates/gateway-store/migrations/postgres)
+  - [../crates/gateway-store/migrations/](../../../crates/gateway-store/migrations)
+  - [../crates/gateway-store/migrations/postgres/](../../../crates/gateway-store/migrations/postgres)
 - Core types:
-  - [../crates/gateway-core/src/domain.rs](../../crates/gateway-core/src/domain.rs)
-  - [../crates/gateway-core/src/traits.rs](../../crates/gateway-core/src/traits.rs)
+  - [../crates/gateway-core/src/domain.rs](../../../crates/gateway-core/src/domain.rs)
+  - [../crates/gateway-core/src/traits.rs](../../../crates/gateway-core/src/traits.rs)
 - Runtime behavior:
-  - [../crates/gateway-service/src/model_access.rs](../../crates/gateway-service/src/model_access.rs)
-  - [../crates/gateway-service/src/model_resolution.rs](../../crates/gateway-service/src/model_resolution.rs)
-  - [../crates/gateway-service/src/request_logging.rs](../../crates/gateway-service/src/request_logging.rs)
-  - [../crates/gateway-service/src/budget_guard.rs](../../crates/gateway-service/src/budget_guard.rs)
+  - [../crates/gateway-service/src/model_access.rs](../../../crates/gateway-service/src/model_access.rs)
+  - [../crates/gateway-service/src/model_resolution.rs](../../../crates/gateway-service/src/model_resolution.rs)
+  - [../crates/gateway-service/src/request_logging.rs](../../../crates/gateway-service/src/request_logging.rs)
+  - [../crates/gateway-service/src/budget_guard.rs](../../../crates/gateway-service/src/budget_guard.rs)
 
 ## Core Entity Graph
 
@@ -208,7 +208,7 @@ Service-account credentials use API-key grants plus the owning team's allowlist 
 - `request_logs.model_key` stores the requested gateway model
 - `request_logs.resolved_model_key` stores the canonical execution model after alias resolution
 
-This distinction matters for admin-facing observability and historical debugging. See [model-routing-and-api-behavior.md](../configuration/model-routing-and-api-behavior.md).
+This distinction matters for admin-facing observability and historical debugging. See [model-routing-and-api-behavior.md](../../configuration/model-routing-and-api-behavior.md).
 
 ## Route Viability Note
 
@@ -221,7 +221,7 @@ Operational viability also depends on:
 - positive route weights
 - capability filtering
 
-Those rules are owned by [configuration-reference.md](../configuration/configuration-reference.md) and [model-routing-and-api-behavior.md](../configuration/model-routing-and-api-behavior.md).
+Those rules are owned by [configuration-reference.md](../../configuration/configuration-reference.md) and [model-routing-and-api-behavior.md](../../configuration/model-routing-and-api-behavior.md).
 
 ## Ownership Notes
 
@@ -230,7 +230,7 @@ Those rules are owned by [configuration-reference.md](../configuration/configura
 - Direct team-owned runtime API keys are removed from the schema contract
 - There is no reserved `system-legacy` ownership path
 
-That ownership model is explained operationally in [identity-and-access.md](../access/identity-and-access.md), [service-accounts.md](../access/service-accounts.md), and [budgets-and-spending.md](../operations/budgets-and-spending.md).
+That ownership model is explained operationally in [identity-and-access.md](../../access/identity-and-access.md), [service-accounts.md](../../access/service-accounts.md), and [budgets-and-spending.md](../operations/budgets-and-spending.md).
 
 ## PostgreSQL and libsql Parity
 
@@ -243,4 +243,4 @@ Both runtime backends are expected to stay logically aligned for:
 - spend ledger behavior
 - request-log summary, payload, tag, and attempt persistence
 
-See [../crates/gateway-store/README.md](../../crates/gateway-store/README.md) for the storage-layer overview.
+See [../crates/gateway-store/README.md](../../../crates/gateway-store/README.md) for the storage-layer overview.

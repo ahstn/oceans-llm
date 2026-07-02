@@ -2,7 +2,7 @@
 
 `Owns`: contributor setup, day-to-day repo workflow, CI/workflow map, and the workspace primer for maintainers.
 `Depends on`: [README.md](README.md), [docs/index.md](docs/index.md), [mise.toml](mise.toml)
-`See also`: [.github/pull_request_template.md](.github/pull_request_template.md), [.github/ISSUE_TEMPLATE/feature_request.md](.github/ISSUE_TEMPLATE/feature_request.md), [.github/ISSUE_TEMPLATE/bug_report.md](.github/ISSUE_TEMPLATE/bug_report.md), [docs/adr/2026-03-06-release-versioning-and-ghcr-publishing.md](docs/adr/2026-03-06-release-versioning-and-ghcr-publishing.md), [docs/reference/e2e-contract-tests.md](docs/reference/e2e-contract-tests.md)
+`See also`: [.github/pull_request_template.md](.github/pull_request_template.md), [.github/ISSUE_TEMPLATE/feature_request.md](.github/ISSUE_TEMPLATE/feature_request.md), [.github/ISSUE_TEMPLATE/bug_report.md](.github/ISSUE_TEMPLATE/bug_report.md), [docs/adr/2026-03-06-release-versioning-and-ghcr-publishing.md](docs/adr/2026-03-06-release-versioning-and-ghcr-publishing.md), [docs/contributing/reference/e2e-contract-tests.md](docs/contributing/reference/e2e-contract-tests.md)
 
 This guide is the entry point for contributing to the repository. It intentionally links to source files for task definitions, workflow details, and architecture decisions instead of restating them here.
 
@@ -94,9 +94,9 @@ Canonical architecture docs:
 
 - [docs/access/identity-and-access.md](docs/access/identity-and-access.md)
 - [docs/configuration/model-routing-and-api-behavior.md](docs/configuration/model-routing-and-api-behavior.md)
-- [docs/operations/budgets-and-spending.md](docs/operations/budgets-and-spending.md)
+- [docs/contributing/operations/budgets-and-spending.md](docs/contributing/operations/budgets-and-spending.md)
 - [docs/operations/observability-and-request-logs.md](docs/operations/observability-and-request-logs.md)
-- [docs/reference/data-relationships.md](docs/reference/data-relationships.md)
+- [docs/contributing/reference/data-relationships.md](docs/contributing/reference/data-relationships.md)
 
 ## Pull Requests And Issues
 
@@ -183,7 +183,7 @@ When behavior changes, update the owning page instead of adding a second explana
 - OIDC and SSO boundary:
   - [docs/access/oidc-and-sso-status.md](docs/access/oidc-and-sso-status.md)
 - admin contract generation and drift rules:
-  - [docs/reference/admin-api-contract-workflow.md](docs/reference/admin-api-contract-workflow.md)
+  - [docs/contributing/reference/admin-api-contract-workflow.md](docs/contributing/reference/admin-api-contract-workflow.md)
 - request routing, pricing, spend, and logging as one path:
   - [docs/reference/request-lifecycle-and-failure-modes.md](docs/reference/request-lifecycle-and-failure-modes.md)
 

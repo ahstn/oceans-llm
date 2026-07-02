@@ -1,6 +1,6 @@
 # Admin Control Plane
 
-`See also`: [Identity and Access](identity-and-access.md), [Service Accounts](service-accounts.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../operations/observability/mcp-invocations.md), [MCP Registry and Discovery](../operations/observability/mcp-registry-and-discovery.md), [Agent Harness Usage](../operations/agent-harness-usage.md), [Admin API Contract Workflow](../reference/admin-api-contract-workflow.md), [End-to-End Contract Tests](../reference/e2e-contract-tests.md), [OIDC and SSO](oidc-and-sso-status.md)
+`See also`: [Identity and Access](identity-and-access.md), [Service Accounts](service-accounts.md), [Budgets and Spending](../contributing/operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../mcp/mcp-invocations.md), [MCP Registry and Discovery](../contributing/mcp/mcp-registry-and-discovery.md), [Agent Harness Usage](../operations/agent-harness-usage.md), [Admin API Contract Workflow](../contributing/reference/admin-api-contract-workflow.md), [End-to-End Contract Tests](../contributing/reference/e2e-contract-tests.md), [OIDC and SSO](oidc-and-sso-status.md)
 
 This page describes what admins can actually do in the admin UI today.
 
@@ -13,7 +13,7 @@ Normal runtime model:
 - the gateway handles auth, admin APIs, and reverse proxying
 - the SSR app calls back into the gateway through the same-origin client boundary
 
-For the generated contract and artifact workflow, use [admin-api-contract-workflow.md](../reference/admin-api-contract-workflow.md).
+For the generated contract and artifact workflow, use [admin-api-contract-workflow.md](../contributing/reference/admin-api-contract-workflow.md).
 
 ## Live Gateway-Backed Surfaces
 
@@ -186,4 +186,4 @@ The E2E harness treats only live gateway-backed surfaces as contract flows.
 - live surfaces should gain targeted cross-layer coverage as they harden
 - maturing live pages can appear in smoke coverage before every workflow becomes business-flow coverage
 
-Use [e2e-contract-tests.md](../reference/e2e-contract-tests.md) for the test boundary.
+Use [e2e-contract-tests.md](../contributing/reference/e2e-contract-tests.md) for the test boundary.

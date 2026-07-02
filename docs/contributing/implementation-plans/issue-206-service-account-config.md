@@ -1,6 +1,6 @@
 # Issue 206: Top-Level Service Account Config
 
-`See also`: [Configuration Reference](../configuration/configuration-reference.md), [Service Accounts](../access/service-accounts.md), [Service Account Config and Managed API Key Secrets](../adr/2026-07-02-service-account-config-and-managed-api-key-secrets.md)
+`See also`: [Configuration Reference](../../configuration/configuration-reference.md), [Service Accounts](../../access/service-accounts.md), [Service Account Config and Managed API Key Secrets](../../adr/2026-07-02-service-account-config-and-managed-api-key-secrets.md)
 
 GitHub issue: https://github.com/ahstn/oceans-llm/issues/206
 

@@ -893,6 +893,6 @@ Later failures are usually runtime problems such as:
 - cross-cutting request cause and effect:
   - [request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md)
 - spend windows and budget policy:
-  - [budgets-and-spending.md](../operations/budgets-and-spending.md)
+  - [budgets-and-spending.md](../contributing/operations/budgets-and-spending.md)
 - OIDC and SSO behavior:
   - [oidc-and-sso-status.md](../access/oidc-and-sso-status.md)

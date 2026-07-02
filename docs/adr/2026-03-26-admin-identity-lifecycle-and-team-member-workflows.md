@@ -211,7 +211,7 @@ Canonical docs were updated alongside the code:
 
 - [../identity-and-access.md](../access/identity-and-access.md)
 - [../admin-control-plane.md](../access/admin-control-plane.md)
-- [../e2e-contract-tests.md](../reference/e2e-contract-tests.md)
+- [../e2e-contract-tests.md](../contributing/reference/e2e-contract-tests.md)
 
 ## Consequences
 

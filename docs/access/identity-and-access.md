@@ -1,6 +1,6 @@
 # Identity and Access
 
-`See also`: [MCP Servers](../configuration/mcp-servers.md), [MCP Client Setup](../setup/mcp-client-setup.md), [Data Relationships](../reference/data-relationships.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Service Accounts](service-accounts.md), [OIDC and SSO](oidc-and-sso-status.md), [Admin Control Plane](admin-control-plane.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Tagging](../operations/tagging.md), [MCP Invocations](../operations/observability/mcp-invocations.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../adr/2026-05-10-team-service-accounts.md), [ADR: Admin Identity Lifecycle and Team Member Workflow Hardening](../adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md)
+`See also`: [MCP Servers](../configuration/mcp-servers.md), [MCP Client Setup](../mcp/mcp-client-setup.md), [Data Relationships](../contributing/reference/data-relationships.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Service Accounts](service-accounts.md), [OIDC and SSO](oidc-and-sso-status.md), [Admin Control Plane](admin-control-plane.md), [Budgets and Spending](../contributing/operations/budgets-and-spending.md), [Tagging](../operations/tagging.md), [MCP Invocations](../mcp/mcp-invocations.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../adr/2026-05-10-team-service-accounts.md), [ADR: Admin Identity Lifecycle and Team Member Workflow Hardening](../adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md)
 
 This page describes the live identity model across the gateway and admin control plane.
 
@@ -217,7 +217,7 @@ Team-scoped management rules live in [service-accounts.md](service-accounts.md).
 - startup and first access:
   - [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md)
 - spend ownership effects:
-  - [budgets-and-spending.md](../operations/budgets-and-spending.md)
+  - [budgets-and-spending.md](../contributing/operations/budgets-and-spending.md)
 - request resolution effects:
   - [model-routing-and-api-behavior.md](../configuration/model-routing-and-api-behavior.md)
 - non-human gateway access:

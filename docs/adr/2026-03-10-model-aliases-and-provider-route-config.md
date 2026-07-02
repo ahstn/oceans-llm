@@ -7,7 +7,7 @@
 
 - Canonical docs:
   - [../model-routing-and-api-behavior.md](../configuration/model-routing-and-api-behavior.md)
-  - [../data-relationships.md](../reference/data-relationships.md)
+  - [../data-relationships.md](../contributing/reference/data-relationships.md)
 
 ## Current state
 

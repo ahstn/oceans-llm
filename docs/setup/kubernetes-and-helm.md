@@ -1,6 +1,6 @@
 # Kubernetes and Helm
 
-`See also`: [Deploy and Operations](deploy-and-operations.md), [Runtime Bootstrap and Access](runtime-bootstrap-and-access.md), [Admin Runbooks](../operations/operator-runbooks.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Configuration Reference](../configuration/configuration-reference.md), [Release Process](../reference/release-process.md), [Deploy](../../deploy/README.md)
+`See also`: [Deploy and Operations](deploy-and-operations.md), [Runtime Bootstrap and Access](runtime-bootstrap-and-access.md), [Admin Runbooks](../operations/operator-runbooks.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Configuration Reference](../configuration/configuration-reference.md), [Release Process](../contributing/reference/release-process.md), [Deploy](../../deploy/README.md)
 
 This page owns the Kubernetes and Helm deployment contract for Oceans LLM.
 
@@ -162,4 +162,4 @@ mise run helm-template
 - General runtime shape: [Deploy and Operations](deploy-and-operations.md)
 - First access behavior: [Runtime Bootstrap and Access](runtime-bootstrap-and-access.md)
 - Action-oriented deployment and recovery steps: [Admin Runbooks](../operations/operator-runbooks.md)
-- Release procedure: [Release Process](../reference/release-process.md)
+- Release procedure: [Release Process](../contributing/reference/release-process.md)

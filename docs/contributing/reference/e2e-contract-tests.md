@@ -1,6 +1,6 @@
 # End-to-End Contract Tests
 
-`See also`: [Admin Control Plane](../access/admin-control-plane.md), [Admin API Contract Workflow](admin-api-contract-workflow.md)
+`See also`: [Admin Control Plane](../../access/admin-control-plane.md), [Admin API Contract Workflow](admin-api-contract-workflow.md)
 
 The E2E harness boots three real processes:
 
@@ -100,13 +100,13 @@ Generated admin contract maintenance belongs in the same durability bucket.
 Source files:
 
 - Playwright config:
-  - [../crates/admin-ui/web/playwright.config.ts](../../crates/admin-ui/web/playwright.config.ts)
+  - [../crates/admin-ui/web/playwright.config.ts](../../../crates/admin-ui/web/playwright.config.ts)
 - E2E specs:
-  - [../crates/admin-ui/web/e2e/](../../crates/admin-ui/web/e2e)
+  - [../crates/admin-ui/web/e2e/](../../../crates/admin-ui/web/e2e)
 - stack launcher:
-  - [../scripts/start-e2e-stack.sh](../../scripts/start-e2e-stack.sh)
+  - [../scripts/start-e2e-stack.sh](../../../scripts/start-e2e-stack.sh)
 - deterministic upstream:
-  - [../scripts/mock-openai-upstream.mjs](../../scripts/mock-openai-upstream.mjs)
+  - [../scripts/mock-openai-upstream.mjs](../../../scripts/mock-openai-upstream.mjs)
 
 Useful environment knobs:
 

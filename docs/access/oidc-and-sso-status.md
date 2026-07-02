@@ -1,6 +1,6 @@
 # OIDC and SSO
 
-`See also`: [Identity and Access](identity-and-access.md), [GitHub OAuth SSO Setup for Admins](github-oauth-admin-setup.md), [Testing Authentication Locally](../development/authentication-testing.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Configuration Reference](../configuration/configuration-reference.md), [Deploy and Operations](../setup/deploy-and-operations.md), [Admin Control Plane](admin-control-plane.md), [ADR: Identity Foundation for Users, Teams, and API Key Ownership](../adr/2026-03-05-identity-foundation.md), [ADR: Authentik Local SSO Test IdP](../adr/2026-05-15-authentik-local-sso-test-idp.md), [ADR: Local SSO Compose Fixture and Browser Origin](../adr/2026-05-15-local-sso-compose-fixture-and-browser-origin.md)
+`See also`: [Identity and Access](identity-and-access.md), [GitHub OAuth SSO Setup for Admins](github-oauth-admin-setup.md), [Testing Authentication Locally](../contributing/development/authentication-testing.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Configuration Reference](../configuration/configuration-reference.md), [Deploy and Operations](../setup/deploy-and-operations.md), [Admin Control Plane](admin-control-plane.md), [ADR: Identity Foundation for Users, Teams, and API Key Ownership](../adr/2026-03-05-identity-foundation.md), [ADR: Authentik Local SSO Test IdP](../adr/2026-05-15-authentik-local-sso-test-idp.md), [ADR: Local SSO Compose Fixture and Browser Origin](../adr/2026-05-15-local-sso-compose-fixture-and-browser-origin.md)
 
 Oceans LLM supports OIDC and OAuth SSO for the admin control plane. The browser ends each flow with the same `ogw_session` HttpOnly cookie used by password login.
 
@@ -49,7 +49,7 @@ The repo ships an opt-in Authentik fixture for local/manual SSO testing:
 - [../../deploy/config/gateway.local.yaml](../../deploy/config/gateway.local.yaml) enables the local Authentik provider and JIT policy for that compose path.
 - [../../deploy/compose.yaml](../../deploy/compose.yaml) includes the same `sso` profile for image-based deploy runs.
 - [../../deploy/authentik/oceans-llm-blueprint.yaml](../../deploy/authentik/oceans-llm-blueprint.yaml) creates the `Oceans LLM` OIDC application and the `sso-user@example.com` test user.
-- [../development/authentication-testing.md](../development/authentication-testing.md) owns the local testing procedure, URLs, and fixture passwords.
+- [../development/authentication-testing.md](../contributing/development/authentication-testing.md) owns the local testing procedure, URLs, and fixture passwords.
 
 Run it with:
 
@@ -130,6 +130,6 @@ The matching local Authentik application must use:
 
 - user lifecycle and team rules: [identity-and-access.md](identity-and-access.md)
 - config field syntax for providers: [configuration-reference.md](../configuration/configuration-reference.md)
-- local auth test procedure: [authentication-testing.md](../development/authentication-testing.md)
+- local auth test procedure: [authentication-testing.md](../contributing/development/authentication-testing.md)
 - admin UI capability map: [admin-control-plane.md](admin-control-plane.md)
 - deploy topology and first-access behavior: [deploy-and-operations.md](../setup/deploy-and-operations.md), [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md)

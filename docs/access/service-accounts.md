@@ -1,6 +1,6 @@
 # Service Accounts
 
-`See also`: [Identity and Access](identity-and-access.md), [Admin Control Plane](admin-control-plane.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Data Relationships](../reference/data-relationships.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../adr/2026-05-10-team-service-accounts.md)
+`See also`: [Identity and Access](identity-and-access.md), [Admin Control Plane](admin-control-plane.md), [Budgets and Spending](../contributing/operations/budgets-and-spending.md), [Data Relationships](../contributing/reference/data-relationships.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../adr/2026-05-10-team-service-accounts.md)
 
 This page describes the intended service-account model for non-human gateway callers.
 

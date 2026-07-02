@@ -13,9 +13,9 @@
 
 ## Current state
 
-- [../admin-api-contract-workflow.md](../reference/admin-api-contract-workflow.md)
+- [../admin-api-contract-workflow.md](../contributing/reference/admin-api-contract-workflow.md)
 - [../admin-control-plane.md](../access/admin-control-plane.md)
-- [../e2e-contract-tests.md](../reference/e2e-contract-tests.md)
+- [../e2e-contract-tests.md](../contributing/reference/e2e-contract-tests.md)
 
 ## Context
 
@@ -150,7 +150,7 @@ Canonical docs now describe the generated live contract pipeline and the boundar
 - [../../README.md](../../README.md)
 - [../access/admin-control-plane.md](../access/admin-control-plane.md)
 - [../operations/observability-and-request-logs.md](../operations/observability-and-request-logs.md)
-- [../reference/e2e-contract-tests.md](../reference/e2e-contract-tests.md)
+- [../reference/e2e-contract-tests.md](../contributing/reference/e2e-contract-tests.md)
 
 ## Tradeoffs
 

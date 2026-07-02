@@ -1,19 +1,19 @@
 # Release Process
 
-`See also`: [Contributing](../../CONTRIBUTING.md), [Deploy and Operations](../setup/deploy-and-operations.md), [Admin Runbooks](../operations/operator-runbooks.md), [ADR: Cocogitto Releases, git-cliff Changelogs, and GHCR Image Publishing](../adr/2026-03-06-release-versioning-and-ghcr-publishing.md)
+`See also`: [Contributing](../../../CONTRIBUTING.md), [Deploy and Operations](../../setup/deploy-and-operations.md), [Admin Runbooks](../../operations/operator-runbooks.md), [ADR: Cocogitto Releases, git-cliff Changelogs, and GHCR Image Publishing](../../adr/2026-03-06-release-versioning-and-ghcr-publishing.md)
 
 This page is the maintainer-facing release runbook.
 
 ## Source of Truth
 
 - local release task:
-  - [../mise.toml](../../mise.toml)
+  - [../mise.toml](../../../mise.toml)
 - release workflow:
-  - [../.github/workflows/release.yml](../../.github/workflows/release.yml)
+  - [../.github/workflows/release.yml](../../../.github/workflows/release.yml)
 - Helm chart:
-  - [../../deploy/helm/oceans-llm](../../deploy/helm/oceans-llm/README.md)
+  - [../../deploy/helm/oceans-llm](../../../deploy/helm/oceans-llm/README.md)
 - changelog config:
-  - [../cliff.toml](../../cliff.toml)
+  - [../cliff.toml](../../../cliff.toml)
 
 ## Release Preflight
 
@@ -50,7 +50,7 @@ That means release metadata and version updates are authored locally before any 
 
 ## What GitHub Actions Does
 
-The pushed `v*` tag triggers [../.github/workflows/release.yml](../../.github/workflows/release.yml).
+The pushed `v*` tag triggers [../.github/workflows/release.yml](../../../.github/workflows/release.yml).
 
 Current workflow responsibilities:
 
@@ -74,7 +74,7 @@ For a tag `vX.Y.Z`, the chart is packaged with:
 - chart version: `X.Y.Z`
 - chart appVersion: `vX.Y.Z`
 
-The publish step runs `mise run helm-check`, packages [../../deploy/helm/oceans-llm](../../deploy/helm/oceans-llm/README.md), logs in to GHCR with the workflow token, and pushes the package with `helm push ... oci://ghcr.io/ahstn/charts`.
+The publish step runs `mise run helm-check`, packages [../../deploy/helm/oceans-llm](../../../deploy/helm/oceans-llm/README.md), logs in to GHCR with the workflow token, and pushes the package with `helm push ... oci://ghcr.io/ahstn/charts`.
 
 The push target intentionally omits the chart basename and tag. Helm infers `oceans-llm:X.Y.Z` from the packaged chart name and version.
 

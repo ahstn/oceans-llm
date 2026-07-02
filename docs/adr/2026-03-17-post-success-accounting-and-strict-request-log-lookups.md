@@ -7,7 +7,7 @@
 
 - [../request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md)
 - [../observability-and-request-logs.md](../operations/observability-and-request-logs.md)
-- [../budgets-and-spending.md](../operations/budgets-and-spending.md)
+- [../budgets-and-spending.md](../contributing/operations/budgets-and-spending.md)
 
 ## Context
 

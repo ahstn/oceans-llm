@@ -1,6 +1,6 @@
 # Pricing Catalog and Accounting
 
-`See also`: [Configuration Reference](configuration-reference.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Data Relationships](../reference/data-relationships.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Budgets and Spending](../operations/budgets-and-spending.md), [ADR: Hybrid Pricing Catalog from models.dev](../adr/2026-03-06-hybrid-pricing-catalog.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md)
+`See also`: [Configuration Reference](configuration-reference.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Data Relationships](../contributing/reference/data-relationships.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Budgets and Spending](../contributing/operations/budgets-and-spending.md), [ADR: Hybrid Pricing Catalog from models.dev](../adr/2026-03-06-hybrid-pricing-catalog.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md)
 
 This page explains how the gateway turns provider usage into durable pricing records and why some successful requests are intentionally not charged.
 
@@ -138,4 +138,4 @@ Budget enforcement only uses priced totals.
 - `priced` and `legacy_estimated` rows count
 - `unpriced` and `usage_missing` rows do not count
 
-Use [budgets-and-spending.md](../operations/budgets-and-spending.md) for budget windows and spend APIs.
+Use [budgets-and-spending.md](../contributing/operations/budgets-and-spending.md) for budget windows and spend APIs.

@@ -1,6 +1,6 @@
 # MCP Tool Access
 
-`See also`: [MCP Servers](../configuration/mcp-servers.md), [MCP Client Setup](../setup/mcp-client-setup.md), [Identity and Access](identity-and-access.md), [Budgets](budgets.md), [MCP Invocations](../operations/observability/mcp-invocations.md)
+`See also`: [MCP Servers](../configuration/mcp-servers.md), [MCP Client Setup](mcp-client-setup.md), [Identity and Access](../access/identity-and-access.md), [Budgets](../access/budgets.md), [MCP Invocations](mcp-invocations.md)
 
 MCP tool access controls which discovered tools an Oceans API key can find through `/mcp` and see or call through `/mcp/{server_key}`.
 
@@ -108,6 +108,6 @@ effective access at request time:
 
 MCP grants decide tool visibility and call permission. They do not create spend budgets.
 
-Service-account MCP credentials and service-account budgets are separate controls. A service account can have an upstream credential binding and still be blocked by budget policy elsewhere, or have budget capacity but no MCP credential for a particular upstream server. User-facing budget setup remains in [Budgets](budgets.md).
+Service-account MCP credentials and service-account budgets are separate controls. A service account can have an upstream credential binding and still be blocked by budget policy elsewhere, or have budget capacity but no MCP credential for a particular upstream server. User-facing budget setup remains in [Budgets](../access/budgets.md).
 
 MCP token-overhead estimates are context-window telemetry. They estimate how many prompt-context tokens granted tool definitions and tool results may consume, but they are not billing truth and do not count toward spend-budget accounting.

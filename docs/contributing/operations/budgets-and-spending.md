@@ -1,17 +1,17 @@
 # Budgets and Spending
 
-`See also`: [Budgets](../access/budgets.md), [Data Relationships](../reference/data-relationships.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Identity and Access](../access/identity-and-access.md), [Service Accounts](../access/service-accounts.md), [Admin Control Plane](../access/admin-control-plane.md)
+`See also`: [Budgets](../../access/budgets.md), [Data Relationships](../reference/data-relationships.md), [Pricing Catalog and Accounting](../../configuration/pricing-catalog-and-accounting.md), [Request Lifecycle and Failure Modes](../../reference/request-lifecycle-and-failure-modes.md), [Identity and Access](../../access/identity-and-access.md), [Service Accounts](../../access/service-accounts.md), [Admin Control Plane](../../access/admin-control-plane.md)
 
-This page is the developer/operator contract for spend accounting and budget enforcement. Product-facing setup guidance lives in [Budgets](../access/budgets.md).
+This page is the developer/operator contract for spend accounting and budget enforcement. Product-facing setup guidance lives in [Budgets](../../access/budgets.md).
 
 ## Source of Truth
 
-- ledger writes: [../../crates/gateway-service/src/service.rs](../../crates/gateway-service/src/service.rs)
-- budget domain: [../../crates/gateway-core/src/budgets.rs](../../crates/gateway-core/src/budgets.rs)
-- budget scope evaluation: [../../crates/gateway-service/src/budget_scopes.rs](../../crates/gateway-service/src/budget_scopes.rs)
-- request-path enforcement: [../../crates/gateway-service/src/budget_guard.rs](../../crates/gateway-service/src/budget_guard.rs)
-- budget persistence: [../../crates/gateway-store/src/libsql_store/budgets.rs](../../crates/gateway-store/src/libsql_store/budgets.rs) and [../../crates/gateway-store/src/postgres_store/budgets.rs](../../crates/gateway-store/src/postgres_store/budgets.rs)
-- admin spend APIs: [../../crates/gateway/src/http/spend.rs](../../crates/gateway/src/http/spend.rs)
+- ledger writes: [../../crates/gateway-service/src/service.rs](../../../crates/gateway-service/src/service.rs)
+- budget domain: [../../crates/gateway-core/src/budgets.rs](../../../crates/gateway-core/src/budgets.rs)
+- budget scope evaluation: [../../crates/gateway-service/src/budget_scopes.rs](../../../crates/gateway-service/src/budget_scopes.rs)
+- request-path enforcement: [../../crates/gateway-service/src/budget_guard.rs](../../../crates/gateway-service/src/budget_guard.rs)
+- budget persistence: [../../crates/gateway-store/src/libsql_store/budgets.rs](../../../crates/gateway-store/src/libsql_store/budgets.rs) and [../../crates/gateway-store/src/postgres_store/budgets.rs](../../../crates/gateway-store/src/postgres_store/budgets.rs)
+- admin spend APIs: [../../crates/gateway/src/http/spend.rs](../../../crates/gateway/src/http/spend.rs)
 
 ## Ledger Contract
 
