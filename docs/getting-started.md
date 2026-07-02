@@ -2,11 +2,7 @@
 
 `See also`: [Runtime Bootstrap and Access](setup/runtime-bootstrap-and-access.md), [MCP Client Setup](mcp/mcp-client-setup.md), [MCP Servers](configuration/mcp-servers.md), [Service Accounts](access/service-accounts.md), [Deploy and Operations](setup/deploy-and-operations.md), [Configuration Reference](configuration/configuration-reference.md)
 
-This page is the admin, user, caller, and client map for the gateway.
-
-- Use it when the behavior spans more than one file.
-- Use the owning page instead of chasing the same rule through several docs.
-- Use the `Contributing & Internal` top navigation for maintainer workflows, release mechanics, contract generation, migration authoring, and implementation notes.
+This page is the admin, user, caller, and client map for the gateway. Use `Contributing & Internal` for maintainer workflows, release mechanics, contract generation, migration authoring, and implementation notes.
 
 ## Running The Gateway
 
@@ -33,46 +29,6 @@ This page is the admin, user, caller, and client map for the gateway.
 - Cross-cutting request path across routing, logging, pricing, and spend: [Request Lifecycle and Failure Modes](reference/request-lifecycle-and-failure-modes.md)
 - Provider API family support, OpenAI-compatible route quirks, and compatibility follow-up work: [Provider API Compatibility](reference/provider-api-compatibility.md)
 - Admin UI capability map and live surface maturity: [Admin Control Plane](access/admin-control-plane.md)
-
-## Sections
-
-### Setup
-
-- [Runtime Bootstrap and Access](setup/runtime-bootstrap-and-access.md)
-- [Deploy and Operations](setup/deploy-and-operations.md)
-- [MCP Client Setup](mcp/mcp-client-setup.md)
-
-### Configuration
-
-- [Configuration Reference](configuration/configuration-reference.md)
-- [Model Routing and API Behavior](configuration/model-routing-and-api-behavior.md)
-- [Pricing Catalog and Accounting](configuration/pricing-catalog-and-accounting.md)
-- [MCP Servers](configuration/mcp-servers.md)
-- [MCP Tool Access](mcp/mcp-tool-access.md)
-
-### Providers
-
-- [Google Cloud Run OpenAI-Compatible Models](providers/gcp-cloud-run-openai-compat.md)
-- [Google Vertex AI](providers/gcp-vertex.md)
-- [AWS Bedrock](providers/aws-bedrock.md)
-
-### Operations
-
-- [Observability and Request Logs](operations/observability-and-request-logs.md)
-- [Admin Runbooks](operations/operator-runbooks.md)
-
-### Access
-
-- [Identity and Access](access/identity-and-access.md)
-- [Service Accounts](access/service-accounts.md)
-- [Budgets](access/budgets.md)
-- [OIDC and SSO](access/oidc-and-sso-status.md)
-- [Admin Control Plane](access/admin-control-plane.md)
-
-### Reference
-
-- [Request Lifecycle and Failure Modes](reference/request-lifecycle-and-failure-modes.md)
-- [Provider API Compatibility](reference/provider-api-compatibility.md)
 
 ## Common Questions
 
