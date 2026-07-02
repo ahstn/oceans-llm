@@ -431,6 +431,15 @@ describe('ModelsPage', () => {
     )
 
     fireEvent.click(screen.getByRole('radio', { name: 'Codex' }))
+    expect(screen.getByText('~/.codex/config.toml')).toBeInTheDocument()
+    expect(
+      screen.getByText(/Set OCEANS_LLM_API_KEY to a gateway API key before using this Codex/),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', {
+        name: 'https://developers.openai.com/codex/config-reference',
+      }),
+    ).toHaveAttribute('href', 'https://developers.openai.com/codex/config-reference')
     expect(screen.getByText('config.toml')).toBeInTheDocument()
     expect(screen.getByText(/model = "claude-sonnet"/)).toBeInTheDocument()
     expect(screen.getByText(/\[model_providers.oceans-llm\]/)).toBeInTheDocument()

@@ -629,7 +629,7 @@ function ClientConfigDialog({
                           <a
                             href={item.href}
                             target="_blank"
-                            rel="noreferrer"
+                            rel="noopener noreferrer"
                             className="break-words font-mono text-xs underline underline-offset-4"
                           >
                             {item.value}
