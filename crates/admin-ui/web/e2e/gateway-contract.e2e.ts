@@ -1,9 +1,88 @@
-import { expect, test } from 'playwright/test'
+import { type APIRequestContext, expect, test } from 'playwright/test'
 
 import { ensureAdminSession } from './admin-session'
 import { requireEnv, stubAdminUrl } from './env'
 
 const gatewayApiKey = process.env.E2E_GATEWAY_API_KEY ?? 'gwk_e2e.secret-value'
+
+type ApiKeysCatalog = {
+  users: Array<{ id: string }>
+  models: Array<{ key: string }>
+}
+
+function invitationToken(inviteUrl: string, root: string): string {
+  const token = new URL(inviteUrl, root).pathname.split('/').filter(Boolean).pop()
+  if (!token) {
+    throw new Error(`expected password invite URL to include a token: ${inviteUrl}`)
+  }
+  return token
+}
+
+async function createActiveApiKeyOwner(
+  request: APIRequestContext,
+  root: string,
+  adminCookie: string,
+): Promise<{ owner: { id: string }; catalog: ApiKeysCatalog }> {
+  const unique = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  const createUserResponse = await request.post(`${root}/api/v1/admin/identity/users`, {
+    headers: {
+      cookie: adminCookie,
+      'content-type': 'application/json',
+    },
+    data: {
+      name: 'E2E All Models Owner',
+      email: `all-model-owner-${unique}@example.com`,
+      auth_mode: 'password',
+      global_role: 'user',
+    },
+  })
+  expect(createUserResponse.status()).toBe(200)
+  const createUserBody = (await createUserResponse.json()) as {
+    data:
+      | {
+          kind: 'password_invite'
+          user: { id: string }
+          invite_url: string
+        }
+      | {
+          kind: string
+        }
+  }
+  expect(createUserBody.data.kind).toBe('password_invite')
+  if (createUserBody.data.kind !== 'password_invite') {
+    throw new Error(`expected password invite onboarding, received ${createUserBody.data.kind}`)
+  }
+
+  const completeInviteResponse = await request.post(
+    `${root}/api/v1/auth/invitations/${invitationToken(createUserBody.data.invite_url, root)}/password`,
+    {
+      headers: {
+        'content-type': 'application/json',
+      },
+      data: {
+        password: 'all-model-owner-pass',
+      },
+    },
+  )
+  expect(completeInviteResponse.status()).toBe(200)
+
+  const apiKeysResponse = await request.get(`${root}/api/v1/admin/api-keys`, {
+    headers: {
+      cookie: adminCookie,
+    },
+  })
+  expect(apiKeysResponse.status()).toBe(200)
+  const apiKeysBody = (await apiKeysResponse.json()) as {
+    data: ApiKeysCatalog
+  }
+  const owner = apiKeysBody.data.users.find((user) => user.id === createUserBody.data.user.id)
+  expect(owner).toBeTruthy()
+  if (!owner) {
+    throw new Error('expected the activated user to be available as an API key owner')
+  }
+
+  return { owner, catalog: apiKeysBody.data }
+}
 
 test('gateway exposes the seeded model and forwards chat completions to the stub upstream', async ({
   request,
@@ -427,25 +506,8 @@ test('user-owned all-model api keys track the live model catalog', async ({
   const root = baseURL ?? requireEnv('E2E_BASE_URL')
   const adminCookie = await ensureAdminSession(page, request, root)
 
-  const apiKeysResponse = await request.get(`${root}/api/v1/admin/api-keys`, {
-    headers: {
-      cookie: adminCookie,
-    },
-  })
-  expect(apiKeysResponse.status()).toBe(200)
-  const apiKeysBody = (await apiKeysResponse.json()) as {
-    data: {
-      users: Array<{ id: string }>
-      models: Array<{ key: string }>
-    }
-  }
-  const [owner] = apiKeysBody.data.users
-  expect(owner).toBeTruthy()
-  if (!owner) {
-    throw new Error('expected an active user owner for all-model API key coverage')
-  }
-
-  const expectedModelKeys = apiKeysBody.data.models.map((model) => model.key).sort()
+  const { owner, catalog } = await createActiveApiKeyOwner(request, root, adminCookie)
+  const expectedModelKeys = catalog.models.map((model) => model.key).sort()
   expect(expectedModelKeys.length).toBeGreaterThan(0)
 
   const createResponse = await request.post(`${root}/api/v1/admin/api-keys`, {
