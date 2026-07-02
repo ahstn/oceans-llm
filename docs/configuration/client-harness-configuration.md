@@ -2,7 +2,7 @@
 
 `See also`: [Model Routing and API Behavior](model-routing-and-api-behavior.md), [Budgets](../access/budgets.md), [Budgets and Spending](../operations/budgets-and-spending.md)
 
-![Model Config Page](../public/images/screenshot-model-client-config.png)
+![Model Config Page](../public/images/screenshot-model-client-config-opencode.jpeg)
 
 Oceans generates client configuration snippets from the live model catalog so users can point local agent harnesses at the gateway without hand-writing model metadata.
 
