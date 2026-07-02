@@ -20,19 +20,21 @@ pub mod redaction;
 pub mod request_logging;
 pub mod review_agent;
 pub mod route_planner;
+pub mod secret_storage;
 pub mod service;
 
 pub use admin_api_keys::{
     AdminApiKeyModelOption, AdminApiKeyService, AdminApiKeyServiceAccountOwner, AdminApiKeySummary,
     AdminApiKeyUserOwner, AdminApiKeysPayload, CreateAdminApiKeyInput, CreateAdminApiKeyResult,
-    UpdateAdminApiKeyInput,
+    RevealAdminApiKeySecretResult, UpdateAdminApiKeyInput,
 };
 pub use admin_models::{AdminModelStatus, AdminModelSummary, AdminModelsService};
-pub use authenticator::{Authenticator, hash_gateway_key_secret, verify_gateway_key_secret};
+pub use authenticator::{Authenticator, verify_gateway_key_secret};
 pub use budget_alerts::{
     BUDGET_ALERT_THRESHOLD_BPS, BudgetAlertEmail, BudgetAlertSendResult, BudgetAlertSender,
     BudgetAlertService, SinkBudgetAlertSender,
 };
+pub use gateway_core::hash_gateway_key_secret;
 pub use icon_identity::{
     ModelIconKey, ProviderDisplayIdentity, ProviderIconKey, REQUEST_LOG_MODEL_ICON_KEY,
     REQUEST_LOG_PROVIDER_ICON_KEY, RequestLogIconMetadata, model_icon_key_from_metadata,
@@ -86,4 +88,8 @@ pub use review_agent::{
     ReviewAgentService, UpdateReviewAgentRepositoryInput, WorkflowRenderInput,
 };
 pub use route_planner::WeightedRoutePlanner;
+pub use secret_storage::{
+    GATEWAY_API_KEY_SECRET_KEY_ENV, GATEWAY_API_KEY_SECRET_KEY_ID, decrypt_gateway_api_key_secret,
+    encrypt_gateway_api_key_secret,
+};
 pub use service::{GatewayService, RecordedChatUsage};

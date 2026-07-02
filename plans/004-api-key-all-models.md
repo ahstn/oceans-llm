@@ -19,8 +19,8 @@ Implement GitHub issue #204: allow user-owned API keys to grant all current and 
   - `crates/gateway-core/src/domain.rs`
   - `crates/gateway-core/src/auth.rs`
 - Store and migrations:
-  - `crates/gateway-store/migrations/V35__api_key_model_grant_mode.sql`
-  - `crates/gateway-store/migrations/postgres/V35__api_key_model_grant_mode.sql`
+  - `crates/gateway-store/migrations/V36__api_key_model_grant_mode.sql`
+  - `crates/gateway-store/migrations/postgres/V36__api_key_model_grant_mode.sql`
   - `crates/gateway-store/src/migration_registry.rs`
   - libsql/postgres API-key stores and decoders
 - Runtime access:

@@ -38,8 +38,8 @@ The same behavior is also exposed through explicit commands:
 | --- | --- | --- | --- | --- | --- |
 | Local development | `gateway.yaml` | none for checked-in defaults | libsql or SQLite | `admin@local` / `admin` from checked-in config | none by default; local demo reset seeds sample keys |
 | Production-shaped local | `gateway.prod.yaml` | `POSTGRES_URL` if not supplied by the mise task | PostgreSQL | `admin@local` / `admin`, with forced password rotation | service account created after admin access |
-| GHCR compose deploy | `deploy/config/gateway.yaml` | `GATEWAY_BOOTSTRAP_ADMIN_PASSWORD`, provider secrets, Postgres env | PostgreSQL | `admin@local` with env-backed bootstrap password | service account created after admin access |
-| Kubernetes Helm deploy | rendered `gateway.config` values | `POSTGRES_URL` or CloudNativePG connection secret, `GATEWAY_IDENTITY_TOKEN_SECRET`, provider secrets | PostgreSQL | opt-in bootstrap-admin Job | service account created after admin access |
+| GHCR compose deploy | `deploy/config/gateway.yaml` | `GATEWAY_BOOTSTRAP_ADMIN_PASSWORD`, `GATEWAY_API_KEY`, `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY`, provider secrets, Postgres env | PostgreSQL | `admin@local` with env-backed bootstrap password | config-seeded service account and managed key |
+| Kubernetes Helm deploy | rendered `gateway.config` values | `POSTGRES_URL` or CloudNativePG connection secret, `GATEWAY_IDENTITY_TOKEN_SECRET`, provider secrets, plus `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY` when managed service-account keys are configured | PostgreSQL | opt-in bootstrap-admin Job | service account created after admin access or config-seeded when declared |
 
 Bootstrap admin access and service-account data-plane access are separate paths. One can exist without the other.
 
@@ -93,7 +93,8 @@ What exists after boot:
 - a bootstrap admin at `admin@local`
 - config-seeded teams, invited users, and any listed active budgets
 - admin access once `GATEWAY_BOOTSTRAP_ADMIN_PASSWORD` is set in the deploy environment
-- data-plane access after an allowed admin creates a service account and credential
+- a config-seeded `default` service account and `GATEWAY_API_KEY` managed key
+- retrievable service-account key material encrypted with `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY`
 
 ### Kubernetes Helm deploy
 
@@ -109,7 +110,7 @@ What exists after boot depends on the enabled Jobs:
 - migrations run before normal external-Postgres installs and after CloudNativePG resource creation for CloudNativePG installs
 - gateway pods do not run migrations, bootstrap admin creation, or config seeding on startup
 - admin access only exists if bootstrap-admin is enabled or an admin already exists in the database
-- data-plane access exists after an allowed admin creates a service account and credential
+- data-plane access exists after an allowed admin creates a service account and credential, or after `seedConfigJob.enabled=true` seeds declared service accounts
 
 ## Bootstrap Admin
 
@@ -132,9 +133,10 @@ Service accounts are for non-human data-plane access.
 
 - They belong to a team.
 - They are managed by platform admins or by owners and admins of the owning team.
-- They authenticate through issued credentials.
+- They authenticate through issued or config-managed credentials.
 - They do not replace admin login.
 - Direct team-owned runtime API keys and `system-legacy` seeded keys are not supported.
+- Config-managed service-account credentials require `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY` so the raw key can be stored encrypted and revealed later.
 
 Seeded users and teams are also config-backed, but password and OIDC onboarding links are still generated through the admin UI after boot.
 
@@ -171,7 +173,7 @@ The right first-access path depends on the runtime shape.
 - confirm the stack is healthy
 - sign in with `admin@local` and the configured bootstrap password
 - inspect seeded teams, invited users, and budgets in `/admin`
-- create a team service account and credential for automation that needs `/v1/*`
+- confirm the seeded `default` service account exists before using `GATEWAY_API_KEY` for `/v1/*`
 
 ### Kubernetes Helm deploy
 

@@ -161,10 +161,17 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
     },
     MigrationManifest {
         version: 35,
+        name: "managed_api_key_secrets",
+        checksum: "V35__managed_api_key_secrets.sql",
+        libsql_sql: include_str!("../migrations/V35__managed_api_key_secrets.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V35__managed_api_key_secrets.sql"),
+    },
+    MigrationManifest {
+        version: 36,
         name: "api_key_model_grant_mode",
-        checksum: "V35__api_key_model_grant_mode.sql",
-        libsql_sql: include_str!("../migrations/V35__api_key_model_grant_mode.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V35__api_key_model_grant_mode.sql"),
+        checksum: "V36__api_key_model_grant_mode.sql",
+        libsql_sql: include_str!("../migrations/V36__api_key_model_grant_mode.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V36__api_key_model_grant_mode.sql"),
     },
 ];
 

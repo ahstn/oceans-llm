@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use argon2::{
     Argon2,
-    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
+    password_hash::{PasswordHash, PasswordVerifier},
 };
 use gateway_core::{
     ApiKeyOwnerKind, ApiKeyRepository, ApiKeyStatus, AuthError, AuthenticatedApiKey,
@@ -113,16 +113,6 @@ where
             owner_service_account_id: record.owner_service_account_id,
         })
     }
-}
-
-pub fn hash_gateway_key_secret(secret: &str) -> anyhow::Result<String> {
-    let salt = SaltString::generate(&mut OsRng);
-    let hash = Argon2::default()
-        .hash_password(secret.as_bytes(), &salt)
-        .map_err(|error| anyhow::anyhow!("failed to hash gateway key secret: {error}"))?
-        .to_string();
-
-    Ok(hash)
 }
 
 pub fn verify_gateway_key_secret(secret: &str, expected_hash: &str) -> anyhow::Result<bool> {

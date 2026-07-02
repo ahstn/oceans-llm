@@ -15,7 +15,6 @@ gateway:
         email: admin@local
         password: env.GATEWAY_BOOTSTRAP_ADMIN_PASSWORD
         require_password_change: true
-      seed_api_keys: []
 
 database:
   mode: external

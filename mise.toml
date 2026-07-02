@@ -297,6 +297,7 @@ run = "bun run --cwd crates/admin-ui/web test:e2e"
 
 [tasks.release]
 description = "Analyze commits and dispatch the release workflow when a release is pending"
+depends = ["sync-pricing-catalog"]
 env = { GITHUB_TOKEN = { required = true } }
 # Cocogitto is used purely for version bumping and publishing tags.
 # git-cliff, might be able to replace it entirely, but failed when an initial tag didn't exist.

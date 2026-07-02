@@ -52,6 +52,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/api-keys/{api_key_id}/secret/reveal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reveal_api_key_secret"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/identity/service-accounts": {
         parameters: {
             query?: never;
@@ -1939,6 +1955,12 @@ export interface components {
             };
             meta: components["schemas"]["ResponseMeta"];
         };
+        Envelope_RevealApiKeySecretResponse: {
+            data: {
+                raw_key: string;
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
         Envelope_ReviewAgentRepositoriesPayload: {
             data: {
                 items: components["schemas"]["ReviewAgentRepositoryView"][];
@@ -2482,6 +2504,9 @@ export interface components {
         ResponseMeta: {
             generated_at: string;
         };
+        RevealApiKeySecretResponse: {
+            raw_key: string;
+        };
         ReviewAgentRepositoriesPayload: {
             items: components["schemas"]["ReviewAgentRepositoryView"][];
         };
@@ -2872,6 +2897,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_RevokeApiKeyResponse"];
+                };
+            };
+        };
+    };
+    reveal_api_key_secret: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description API key identifier */
+                api_key_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_RevealApiKeySecretResponse"];
                 };
             };
         };

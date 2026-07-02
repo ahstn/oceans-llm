@@ -1,9 +1,11 @@
 use std::collections::BTreeMap;
 
 use gateway_core::{
-    AuthMode, BudgetScope, BudgetSettings, GlobalRole, IdentityUserRecord, MembershipRole,
-    OauthProviderRecord, OidcProviderRecord, SeedApiKey, SeedTeam, SeedUser, StoreError,
-    TeamRecord, UserStatus,
+    ApiKeySecretStorageKind, AuthMode, BudgetScope, BudgetSettings, GlobalRole, IdentityUserRecord,
+    MembershipRole, OauthProviderRecord, OidcProviderRecord, SeedApiKeySecretMaterial,
+    SeedManagedServiceAccountApiKey, SeedServiceAccount, SeedTeam, SeedUser, StoreError,
+    TeamRecord, UserStatus, encrypt_gateway_api_key_secret, generate_gateway_api_key_value,
+    hash_gateway_key_secret, parse_gateway_api_key,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -35,11 +37,68 @@ pub(crate) fn api_key_uuid(public_id: &str) -> Uuid {
     )
 }
 
+pub(crate) fn managed_api_key_uuid(service_account_key: &str, config_key: &str) -> Uuid {
+    Uuid::new_v5(
+        &Uuid::NAMESPACE_OID,
+        format!("managed_api_key:{service_account_key}:{config_key}").as_bytes(),
+    )
+}
+
 pub(crate) fn service_account_uuid(service_account_key: &str) -> Uuid {
     Uuid::new_v5(
         &Uuid::NAMESPACE_OID,
         format!("service_account:{service_account_key}").as_bytes(),
     )
+}
+
+pub(crate) fn generate_seed_api_key_material()
+-> Result<(String, String, SeedApiKeySecretMaterial), StoreError> {
+    let raw_key = generate_gateway_api_key_value();
+    seed_api_key_material_from_raw(&raw_key)
+}
+
+pub(crate) fn seed_api_key_material_from_raw(
+    raw_key: &str,
+) -> Result<(String, String, SeedApiKeySecretMaterial), StoreError> {
+    let parsed = parse_gateway_api_key(raw_key).map_err(|error| {
+        StoreError::Conflict(format!("generated gateway key is invalid: {error}"))
+    })?;
+    let secret_hash = hash_gateway_key_secret(&parsed.secret)
+        .map_err(|error| StoreError::Unexpected(error.to_string()))?;
+    let encrypted = encrypt_gateway_api_key_secret(raw_key)
+        .map_err(|error| StoreError::Unexpected(error.to_string()))?;
+
+    Ok((
+        parsed.public_id,
+        secret_hash,
+        SeedApiKeySecretMaterial {
+            storage_kind: ApiKeySecretStorageKind::EncryptedBlob,
+            secret_ciphertext: encrypted.ciphertext,
+            secret_nonce: encrypted.nonce,
+            secret_key_id: encrypted.key_id.to_string(),
+        },
+    ))
+}
+
+pub(crate) fn provided_seed_api_key_material(
+    managed_key: &SeedManagedServiceAccountApiKey,
+) -> Result<Option<(String, String, SeedApiKeySecretMaterial)>, StoreError> {
+    match (
+        managed_key.public_id.as_ref(),
+        managed_key.secret_hash.as_ref(),
+        managed_key.secret_material.as_ref(),
+    ) {
+        (Some(public_id), Some(secret_hash), Some(secret_material)) => Ok(Some((
+            public_id.clone(),
+            secret_hash.clone(),
+            secret_material.clone(),
+        ))),
+        (None, None, None) => Ok(None),
+        _ => Err(StoreError::Conflict(format!(
+            "managed api key `{}` has incomplete secret material",
+            managed_key.config_key
+        ))),
+    }
 }
 
 pub(crate) fn oidc_provider_uuid(provider_key: &str) -> String {
@@ -88,18 +147,18 @@ where
     Ok(records)
 }
 
-pub(crate) fn validate_seed_api_key_team_references(
+pub(crate) fn validate_seed_service_account_team_references(
     teams: &[SeedTeam],
-    api_keys: &[SeedApiKey],
+    service_accounts: &[SeedServiceAccount],
 ) -> Result<(), StoreError> {
-    for api_key in api_keys {
+    for service_account in service_accounts {
         if !teams
             .iter()
-            .any(|team| team.team_key == api_key.service_account_team_key)
+            .any(|team| team.team_key == service_account.team_key)
         {
             return Err(StoreError::Conflict(format!(
-                "seed api key '{}' references unknown service account team '{}'",
-                api_key.public_id, api_key.service_account_team_key
+                "seed service account '{}' references unknown team '{}'",
+                service_account.service_account_key, service_account.team_key
             )));
         }
     }

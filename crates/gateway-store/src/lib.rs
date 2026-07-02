@@ -33,11 +33,12 @@ mod tests {
     use std::env;
 
     use gateway_core::{
-        ApiKeyOwnerKind, ApiKeyRepository, AuthMode, BudgetAlertChannel, BudgetAlertDeliveryRecord,
-        BudgetAlertDeliveryStatus, BudgetAlertHistoryQuery, BudgetAlertRecord,
-        BudgetAlertRepository, BudgetCadence, BudgetRepository, BudgetScope, BudgetSettings,
-        ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus,
-        ExternalMcpServerStatus, ExternalMcpTransport, GlobalRole, IdentityRepository,
+        ApiKeyOwnerKind, ApiKeyRepository, ApiKeySecretStorageKind, ApiKeyStatus, AuthMode,
+        BudgetAlertChannel, BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus,
+        BudgetAlertHistoryQuery, BudgetAlertRecord, BudgetAlertRepository, BudgetCadence,
+        BudgetRepository, BudgetScope, BudgetSettings, ExternalMcpAuthMode,
+        ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus, ExternalMcpServerStatus,
+        ExternalMcpTransport, GlobalRole, IdentityRepository, ManagedApiKeySource,
         McpRegistryRepository, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
         McpToolInvocationRecord, McpToolInvocationRepository, McpToolInvocationStatus,
         McpToolPolicyResult, McpUpstreamCredentialMaterialKind,
@@ -51,10 +52,11 @@ mod tests {
         RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository,
         RequestTag, RequestTags, RequestToolCardinality, ReviewAgentProvider,
         ReviewAgentPullRequestState, ReviewAgentRepository, ReviewAgentRepositoryStatus,
-        ReviewAgentRunStatus, ReviewAgentSettings, RouteCompatibility, SeedApiKey, SeedBudget,
-        SeedModel, SeedModelRoute, SeedOauthProvider, SeedProvider, SeedTeam, SeedUser,
-        SeedUserMembership, StoreError, StoreHealth, UpdateExternalMcpServerRecord,
-        UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord,
+        ReviewAgentRunStatus, ReviewAgentSettings, RouteCompatibility, SeedApiKey,
+        SeedApiKeySecretMaterial, SeedBudget, SeedManagedServiceAccountApiKey, SeedModel,
+        SeedModelRoute, SeedOauthProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser,
+        SeedUserMembership, ServiceAccountStatus, StoreError, StoreHealth,
+        UpdateExternalMcpServerRecord, UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord,
         UpsertMcpUpstreamCredentialBindingRecord, UpsertReviewAgentPullRequestRecord,
         UsageLedgerRecord, UsagePricingStatus, UserStatus,
     };
@@ -94,6 +96,106 @@ mod tests {
         }]
     }
 
+    fn seed_api_key_service_accounts() -> Vec<SeedServiceAccount> {
+        vec![SeedServiceAccount {
+            service_account_key: "seed-workloads".to_string(),
+            service_account_name: "Seed Workloads".to_string(),
+            team_key: "seed-workloads".to_string(),
+            budget: SeedBudget {
+                cadence: BudgetCadence::Daily,
+                amount_usd: Money4::from_scaled(100_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            },
+            managed_api_keys: Vec::new(),
+        }]
+    }
+
+    fn managed_key_service_accounts(public_id: &str, secret_hash: &str) -> Vec<SeedServiceAccount> {
+        vec![SeedServiceAccount {
+            service_account_key: "ci-indexer".to_string(),
+            service_account_name: "CI Indexer".to_string(),
+            team_key: "seed-workloads".to_string(),
+            budget: SeedBudget {
+                cadence: BudgetCadence::Daily,
+                amount_usd: Money4::from_scaled(250_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            },
+            managed_api_keys: vec![SeedManagedServiceAccountApiKey {
+                config_key: "default".to_string(),
+                name: "CI Indexer".to_string(),
+                auto_create: true,
+                source: ManagedApiKeySource::Generated,
+                public_id: Some(public_id.to_string()),
+                secret_hash: Some(secret_hash.to_string()),
+                secret_material: Some(SeedApiKeySecretMaterial {
+                    storage_kind: ApiKeySecretStorageKind::EncryptedBlob,
+                    secret_ciphertext: format!("ciphertext-{public_id}"),
+                    secret_nonce: format!("nonce-{public_id}"),
+                    secret_key_id: "test-key".to_string(),
+                }),
+                allowed_models: vec!["fast".to_string()],
+            }],
+        }]
+    }
+
+    fn generated_key_without_material_service_accounts() -> Vec<SeedServiceAccount> {
+        vec![SeedServiceAccount {
+            service_account_key: "generated-worker".to_string(),
+            service_account_name: "Generated Worker".to_string(),
+            team_key: "seed-workloads".to_string(),
+            budget: SeedBudget {
+                cadence: BudgetCadence::Daily,
+                amount_usd: Money4::from_scaled(250_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            },
+            managed_api_keys: vec![SeedManagedServiceAccountApiKey {
+                config_key: "default".to_string(),
+                name: "Generated Worker".to_string(),
+                auto_create: true,
+                source: ManagedApiKeySource::Generated,
+                public_id: None,
+                secret_hash: None,
+                secret_material: None,
+                allowed_models: vec!["fast".to_string()],
+            }],
+        }]
+    }
+
+    fn configured_key_service_accounts(
+        public_id: &str,
+        secret_hash: &str,
+    ) -> Vec<SeedServiceAccount> {
+        vec![SeedServiceAccount {
+            service_account_key: "ci-rotator".to_string(),
+            service_account_name: "CI Rotator".to_string(),
+            team_key: "seed-workloads".to_string(),
+            budget: SeedBudget {
+                cadence: BudgetCadence::Daily,
+                amount_usd: Money4::from_scaled(250_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            },
+            managed_api_keys: vec![SeedManagedServiceAccountApiKey {
+                config_key: "default".to_string(),
+                name: "CI Rotator".to_string(),
+                auto_create: true,
+                source: ManagedApiKeySource::ConfiguredValue,
+                public_id: Some(public_id.to_string()),
+                secret_hash: Some(secret_hash.to_string()),
+                secret_material: Some(SeedApiKeySecretMaterial {
+                    storage_kind: ApiKeySecretStorageKind::EncryptedBlob,
+                    secret_ciphertext: format!("ciphertext-{public_id}"),
+                    secret_nonce: format!("nonce-{public_id}"),
+                    secret_key_id: "test-key".to_string(),
+                }),
+                allowed_models: vec!["fast".to_string()],
+            }],
+        }]
+    }
+
     fn seed_github_oauth_provider_with_domains(domains: Vec<&str>) -> SeedOauthProvider {
         SeedOauthProvider {
             provider_key: "github".to_string(),
@@ -107,6 +209,260 @@ mod tests {
             enabled: true,
             jit: OauthJitPolicy::default(),
         }
+    }
+
+    async fn exercise_managed_service_account_seed<S>(store: &S)
+    where
+        S: GatewayStore + Sync,
+    {
+        unsafe {
+            env::set_var(
+                "OCEANS_API_KEY_SECRET_ENCRYPTION_KEY",
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+            );
+        }
+
+        let providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: json!({}),
+            secrets: None,
+        }];
+        let models = vec![SeedModel {
+            model_key: "fast".to_string(),
+            alias_target_model_key: None,
+            description: None,
+            tags: Vec::new(),
+            rank: 10,
+            routes: Vec::new(),
+        }];
+
+        store
+            .seed_from_inputs(
+                &providers,
+                &models,
+                &[],
+                &managed_key_service_accounts("managed123", "hash-v1"),
+                &[],
+                &[],
+                &seed_api_key_teams(),
+                &[],
+            )
+            .await
+            .expect("seed managed key");
+
+        store
+            .seed_from_inputs(
+                &providers,
+                &models,
+                &[],
+                &generated_key_without_material_service_accounts(),
+                &[],
+                &[],
+                &seed_api_key_teams(),
+                &[],
+            )
+            .await
+            .expect("seed generated managed key without provided material");
+        let generated_service_account = store
+            .list_service_accounts()
+            .await
+            .expect("list service accounts")
+            .into_iter()
+            .find(|account| account.service_account_key == "generated-worker")
+            .expect("generated service account exists");
+        let generated_keys = store
+            .list_api_keys()
+            .await
+            .expect("list api keys")
+            .into_iter()
+            .filter(|key| {
+                key.owner_service_account_id == Some(generated_service_account.service_account_id)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(generated_keys.len(), 1);
+        assert_eq!(generated_keys[0].status, ApiKeyStatus::Active);
+        assert!(
+            store
+                .get_api_key_secret_material(generated_keys[0].id)
+                .await
+                .expect("load generated secret material")
+                .is_some()
+        );
+
+        unsafe {
+            env::remove_var("OCEANS_API_KEY_SECRET_ENCRYPTION_KEY");
+        }
+        store
+            .seed_from_inputs(
+                &providers,
+                &models,
+                &[],
+                &generated_key_without_material_service_accounts(),
+                &[],
+                &[],
+                &seed_api_key_teams(),
+                &[],
+            )
+            .await
+            .expect("reseed generated managed key without encryption key");
+
+        let api_key = store
+            .get_api_key_by_public_id("managed123")
+            .await
+            .expect("load managed key")
+            .expect("managed api key exists");
+        assert_eq!(api_key.name, "CI Indexer");
+        assert_eq!(api_key.secret_hash, "hash-v1");
+        assert_eq!(api_key.owner_kind, ApiKeyOwnerKind::ServiceAccount);
+        assert!(api_key.owner_service_account_id.is_some());
+
+        let material = store
+            .get_api_key_secret_material(api_key.id)
+            .await
+            .expect("load secret material")
+            .expect("secret material exists");
+        assert_eq!(
+            material.storage_kind,
+            ApiKeySecretStorageKind::EncryptedBlob
+        );
+        assert_eq!(material.secret_ciphertext, "ciphertext-managed123");
+        assert_eq!(material.secret_nonce, "nonce-managed123");
+        assert_eq!(material.secret_key_id, "test-key");
+        assert_eq!(material.last_retrieved_at, None);
+
+        let retrieved_at = material.created_at + Duration::seconds(10);
+        store
+            .touch_api_key_secret_material_retrieved(api_key.id, retrieved_at)
+            .await
+            .expect("touch retrieved timestamp");
+        let touched = store
+            .get_api_key_secret_material(api_key.id)
+            .await
+            .expect("reload secret material")
+            .expect("secret material still exists");
+        assert_eq!(touched.last_retrieved_at, Some(retrieved_at));
+
+        let disabled_at = retrieved_at + Duration::seconds(1);
+        let service_account_id = api_key
+            .owner_service_account_id
+            .expect("managed key has service account owner");
+        store
+            .disable_service_account(service_account_id, disabled_at)
+            .await
+            .expect("disable service account");
+        store
+            .revoke_api_key(api_key.id, disabled_at)
+            .await
+            .expect("revoke managed key");
+
+        store
+            .seed_from_inputs(
+                &providers,
+                &models,
+                &[],
+                &managed_key_service_accounts("managed456", "hash-v2"),
+                &[],
+                &[],
+                &seed_api_key_teams(),
+                &[],
+            )
+            .await
+            .expect("seed managed key idempotent");
+
+        let stable_key = store
+            .get_api_key_by_public_id("managed123")
+            .await
+            .expect("load stable managed key")
+            .expect("managed api key remains under original public id");
+        assert_eq!(stable_key.id, api_key.id);
+        assert_eq!(stable_key.secret_hash, "hash-v1");
+        assert_eq!(stable_key.status, ApiKeyStatus::Revoked);
+        assert_eq!(stable_key.revoked_at, Some(disabled_at));
+        assert!(
+            store
+                .get_api_key_by_public_id("managed456")
+                .await
+                .expect("query replacement public id")
+                .is_none()
+        );
+        let stable_material = store
+            .get_api_key_secret_material(api_key.id)
+            .await
+            .expect("reload stable material")
+            .expect("secret material remains");
+        assert_eq!(stable_material.secret_ciphertext, "ciphertext-managed123");
+        assert_eq!(stable_material.last_retrieved_at, Some(retrieved_at));
+        let disabled_service_account =
+            IdentityRepository::get_service_account_by_id(store, service_account_id)
+                .await
+                .expect("load disabled service account")
+                .expect("disabled service account exists");
+        assert_eq!(
+            disabled_service_account.status,
+            ServiceAccountStatus::Disabled
+        );
+        assert_eq!(disabled_service_account.disabled_at, Some(disabled_at));
+
+        store
+            .seed_from_inputs(
+                &providers,
+                &models,
+                &[],
+                &configured_key_service_accounts("configured123", "hash-configured-v1"),
+                &[],
+                &[],
+                &seed_api_key_teams(),
+                &[],
+            )
+            .await
+            .expect("seed configured managed key");
+        let original_configured_key = store
+            .get_api_key_by_public_id("configured123")
+            .await
+            .expect("load configured key")
+            .expect("configured api key exists");
+
+        store
+            .seed_from_inputs(
+                &providers,
+                &models,
+                &[],
+                &configured_key_service_accounts("configured456", "hash-configured-v2"),
+                &[],
+                &[],
+                &seed_api_key_teams(),
+                &[],
+            )
+            .await
+            .expect("rotate configured managed key");
+
+        let revoked_configured_key = store
+            .get_api_key_by_public_id("configured123")
+            .await
+            .expect("load original configured key")
+            .expect("original configured key remains");
+        assert_eq!(revoked_configured_key.id, original_configured_key.id);
+        assert_eq!(revoked_configured_key.status, ApiKeyStatus::Revoked);
+        assert!(revoked_configured_key.revoked_at.is_some());
+
+        let rotated_configured_key = store
+            .get_api_key_by_public_id("configured456")
+            .await
+            .expect("load rotated configured key")
+            .expect("rotated configured key exists");
+        assert_ne!(rotated_configured_key.id, original_configured_key.id);
+        assert_eq!(rotated_configured_key.status, ApiKeyStatus::Active);
+        assert_eq!(rotated_configured_key.secret_hash, "hash-configured-v2");
+        let rotated_material = store
+            .get_api_key_secret_material(rotated_configured_key.id)
+            .await
+            .expect("load rotated material")
+            .expect("rotated secret material exists");
+        assert_eq!(
+            rotated_material.secret_ciphertext,
+            "ciphertext-configured456"
+        );
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -590,14 +946,6 @@ mod tests {
             public_id: "dev123".to_string(),
             secret_hash: "hash".to_string(),
             service_account_key: "seed-workloads".to_string(),
-            service_account_name: "Seed Workloads".to_string(),
-            service_account_team_key: "seed-workloads".to_string(),
-            service_account_budget: SeedBudget {
-                cadence: BudgetCadence::Daily,
-                amount_usd: Money4::from_scaled(100_000),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-            },
             allowed_models: vec!["fast".to_string()],
         }];
 
@@ -606,6 +954,7 @@ mod tests {
                 &providers,
                 &models,
                 &api_keys,
+                &seed_api_key_service_accounts(),
                 &[],
                 &[],
                 &seed_api_key_teams(),
@@ -1176,14 +1525,6 @@ mod tests {
             public_id: "dev123".to_string(),
             secret_hash: "hash".to_string(),
             service_account_key: "seed-workloads".to_string(),
-            service_account_name: "Seed Workloads".to_string(),
-            service_account_team_key: "seed-workloads".to_string(),
-            service_account_budget: SeedBudget {
-                cadence: BudgetCadence::Daily,
-                amount_usd: Money4::from_scaled(100_000),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-            },
             allowed_models: vec!["fast".to_string(), "reasoning".to_string()],
         }];
         store
@@ -1191,6 +1532,7 @@ mod tests {
                 &providers,
                 &models,
                 &api_keys,
+                &seed_api_key_service_accounts(),
                 &[],
                 &[],
                 &seed_api_key_teams(),
@@ -2371,14 +2713,6 @@ mod tests {
             public_id: "dev123".to_string(),
             secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
             service_account_key: "seed-workloads".to_string(),
-            service_account_name: "Seed Workloads".to_string(),
-            service_account_team_key: "seed-workloads".to_string(),
-            service_account_budget: SeedBudget {
-                cadence: BudgetCadence::Daily,
-                amount_usd: Money4::from_scaled(100_000),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-            },
             allowed_models: vec!["fast".to_string()],
         }];
 
@@ -2387,6 +2721,7 @@ mod tests {
                 &providers,
                 &models,
                 &api_keys,
+                &seed_api_key_service_accounts(),
                 &[],
                 &[],
                 &seed_api_key_teams(),
@@ -2400,6 +2735,7 @@ mod tests {
                 &providers,
                 &models,
                 &api_keys,
+                &seed_api_key_service_accounts(),
                 &[],
                 &[],
                 &seed_api_key_teams(),
@@ -2599,6 +2935,48 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn libsql_seed_reconciles_managed_service_account_api_keys() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        exercise_managed_service_account_seed(&store).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_seed_reconciles_managed_service_account_api_keys() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres managed api key seed test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options)
+            .await
+            .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        exercise_managed_service_account_seed(&store).await;
+
+        drop(store);
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn libsql_mcp_tool_invocations_round_trip_and_filter() {
         let tmp = tempdir().expect("tempdir");
         let db_path = tmp.path().join("gateway.db");
@@ -2667,16 +3045,8 @@ mod tests {
                     public_id: "dev123".to_string(),
                     secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
             service_account_key: "seed-workloads".to_string(),
-            service_account_name: "Seed Workloads".to_string(),
-            service_account_team_key: "seed-workloads".to_string(),
-            service_account_budget: SeedBudget {
-                cadence: BudgetCadence::Daily,
-                amount_usd: Money4::from_scaled(100_000),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-            },
                     allowed_models: vec!["fast".to_string()],
-                }], &[], &[], &seed_api_key_teams(), &[])
+                }], &seed_api_key_service_accounts(), &[], &[], &seed_api_key_teams(), &[])
             .await
             .expect("seed");
         let api_key = store
@@ -2866,16 +3236,8 @@ mod tests {
                     public_id: "dev123".to_string(),
                     secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
             service_account_key: "seed-workloads".to_string(),
-            service_account_name: "Seed Workloads".to_string(),
-            service_account_team_key: "seed-workloads".to_string(),
-            service_account_budget: SeedBudget {
-                cadence: BudgetCadence::Daily,
-                amount_usd: Money4::from_scaled(100_000),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-            },
                     allowed_models: vec!["fast".to_string()],
-                }], &[], &[], &seed_api_key_teams(), &[])
+                }], &seed_api_key_service_accounts(), &[], &[], &seed_api_key_teams(), &[])
             .await
             .expect("seed");
         let api_key = store
@@ -3049,16 +3411,8 @@ mod tests {
                     public_id: "dev123".to_string(),
                     secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
             service_account_key: "seed-workloads".to_string(),
-            service_account_name: "Seed Workloads".to_string(),
-            service_account_team_key: "seed-workloads".to_string(),
-            service_account_budget: SeedBudget {
-                cadence: BudgetCadence::Daily,
-                amount_usd: Money4::from_scaled(100_000),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-            },
                     allowed_models: vec!["fast".to_string()],
-                }], &[], &[], &seed_api_key_teams(), &[])
+                }], &seed_api_key_service_accounts(), &[], &[], &seed_api_key_teams(), &[])
             .await
             .expect("seed");
         let api_key = store
@@ -3320,16 +3674,8 @@ mod tests {
                     public_id: "dev123".to_string(),
                     secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
             service_account_key: "seed-workloads".to_string(),
-            service_account_name: "Seed Workloads".to_string(),
-            service_account_team_key: "seed-workloads".to_string(),
-            service_account_budget: SeedBudget {
-                cadence: BudgetCadence::Daily,
-                amount_usd: Money4::from_scaled(100_000),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-            },
                     allowed_models: vec!["fast".to_string()],
-                }], &[], &[], &seed_api_key_teams(), &[])
+                }], &seed_api_key_service_accounts(), &[], &[], &seed_api_key_teams(), &[])
             .await
             .expect("seed");
         let api_key = store
@@ -3595,14 +3941,6 @@ mod tests {
             public_id: "dev123".to_string(),
             secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
             service_account_key: "seed-workloads".to_string(),
-            service_account_name: "Seed Workloads".to_string(),
-            service_account_team_key: "seed-workloads".to_string(),
-            service_account_budget: SeedBudget {
-                cadence: BudgetCadence::Daily,
-                amount_usd: Money4::from_scaled(100_000),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-            },
             allowed_models: vec!["fast".to_string()],
         }];
 
@@ -3611,6 +3949,7 @@ mod tests {
                 &providers,
                 &models,
                 &api_keys,
+                &seed_api_key_service_accounts(),
                 &[],
                 &[],
                 &seed_api_key_teams(),
@@ -4697,6 +5036,7 @@ mod tests {
                 &[],
                 &[],
                 &[],
+                &[],
                 &[seed_github_oauth_provider_with_domains(vec!["test.com"])],
                 &[],
                 &[],
@@ -4718,7 +5058,7 @@ mod tests {
             seed_github_oauth_provider_with_domains(vec!["example.com", "team.example.com"]);
         updated_provider.sso_email_verification_enabled = false;
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[updated_provider], &[], &[])
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[updated_provider], &[], &[])
             .await
             .expect("update provider");
         let provider = store
@@ -4761,6 +5101,7 @@ mod tests {
                 &[],
                 &[],
                 &[],
+                &[],
                 &[seed_github_oauth_provider_with_domains(vec!["test.com"])],
                 &[],
                 &[],
@@ -4782,7 +5123,7 @@ mod tests {
             seed_github_oauth_provider_with_domains(vec!["example.com", "team.example.com"]);
         updated_provider.sso_email_verification_enabled = false;
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[updated_provider], &[], &[])
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[updated_provider], &[], &[])
             .await
             .expect("update provider");
         let provider = store
@@ -4843,7 +5184,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &initial_teams, &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &initial_teams, &initial_users)
             .await
             .expect("initial seed");
 
@@ -4910,11 +5251,11 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &updated_teams, &updated_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &updated_teams, &updated_users)
             .await
             .expect("updated seed");
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &updated_teams, &updated_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &updated_teams, &updated_users)
             .await
             .expect("updated seed idempotent");
 
@@ -5005,7 +5346,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &initial_teams, &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &initial_teams, &initial_users)
             .await
             .expect("initial seed");
 
@@ -5045,7 +5386,7 @@ mod tests {
         }];
 
         let error = store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &invalid_teams, &invalid_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &invalid_teams, &invalid_users)
             .await
             .expect_err("seed should fail");
         assert!(
@@ -5097,7 +5438,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &[], &initial_users)
             .await
             .expect("initial seed");
 
@@ -5135,7 +5476,7 @@ mod tests {
         }];
 
         let error = store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &invalid_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &[], &invalid_users)
             .await
             .expect_err("seed should fail");
         assert!(
@@ -5202,7 +5543,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &[], &initial_users)
             .await
             .expect("initial seed");
 
@@ -5230,7 +5571,7 @@ mod tests {
         }];
 
         let error = store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &invalid_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &[], &invalid_users)
             .await
             .expect_err("seed should fail");
         assert!(
@@ -5301,7 +5642,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &initial_teams, &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &initial_teams, &initial_users)
             .await
             .expect("initial seed");
 
@@ -5368,11 +5709,11 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &updated_teams, &updated_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &updated_teams, &updated_users)
             .await
             .expect("updated seed");
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &updated_teams, &updated_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &updated_teams, &updated_users)
             .await
             .expect("updated seed idempotent");
 
@@ -5477,7 +5818,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &initial_teams, &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &initial_teams, &initial_users)
             .await
             .expect("initial seed");
 
@@ -5517,7 +5858,7 @@ mod tests {
         }];
 
         let error = store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &invalid_teams, &invalid_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &invalid_teams, &invalid_users)
             .await
             .expect_err("seed should fail");
         assert!(
@@ -5584,7 +5925,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &[], &initial_users)
             .await
             .expect("initial seed");
 
@@ -5622,7 +5963,7 @@ mod tests {
         }];
 
         let error = store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &invalid_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &[], &invalid_users)
             .await
             .expect_err("seed should fail");
         assert!(
@@ -5703,7 +6044,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &[], &initial_users)
             .await
             .expect("initial seed");
 
@@ -5731,7 +6072,7 @@ mod tests {
         }];
 
         let error = store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &invalid_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &[], &invalid_users)
             .await
             .expect_err("seed should fail");
         assert!(
@@ -5795,14 +6136,6 @@ mod tests {
             public_id: "dev123".to_string(),
             secret_hash: "hash".to_string(),
             service_account_key: "seed-workloads".to_string(),
-            service_account_name: "Seed Workloads".to_string(),
-            service_account_team_key: "seed-workloads".to_string(),
-            service_account_budget: SeedBudget {
-                cadence: BudgetCadence::Daily,
-                amount_usd: Money4::from_scaled(100_000),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-            },
             allowed_models: vec!["fast".to_string()],
         }];
         store
@@ -5810,6 +6143,7 @@ mod tests {
                 &providers,
                 &models,
                 &api_keys,
+                &seed_api_key_service_accounts(),
                 &[],
                 &[],
                 &seed_api_key_teams(),
@@ -6113,14 +6447,6 @@ mod tests {
             public_id: "dev123".to_string(),
             secret_hash: "hash".to_string(),
             service_account_key: "seed-workloads".to_string(),
-            service_account_name: "Seed Workloads".to_string(),
-            service_account_team_key: "seed-workloads".to_string(),
-            service_account_budget: SeedBudget {
-                cadence: BudgetCadence::Daily,
-                amount_usd: Money4::from_scaled(100_000),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-            },
             allowed_models: vec!["fast".to_string()],
         }];
 
@@ -6129,6 +6455,7 @@ mod tests {
                 &providers,
                 &models,
                 &api_keys,
+                &seed_api_key_service_accounts(),
                 &[],
                 &[],
                 &seed_api_key_teams(),
@@ -6672,14 +6999,6 @@ mod tests {
             public_id: "dev123".to_string(),
             secret_hash: "hash".to_string(),
             service_account_key: "seed-workloads".to_string(),
-            service_account_name: "Seed Workloads".to_string(),
-            service_account_team_key: "seed-workloads".to_string(),
-            service_account_budget: SeedBudget {
-                cadence: BudgetCadence::Daily,
-                amount_usd: Money4::from_scaled(100_000),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-            },
             allowed_models: vec!["fast".to_string()],
         }];
         store
@@ -6687,6 +7006,7 @@ mod tests {
                 &providers,
                 &models,
                 &api_keys,
+                &seed_api_key_service_accounts(),
                 &[],
                 &[],
                 &seed_api_key_teams(),
@@ -7014,14 +7334,6 @@ mod tests {
             public_id: "dev123".to_string(),
             secret_hash: "hash".to_string(),
             service_account_key: "seed-workloads".to_string(),
-            service_account_name: "Seed Workloads".to_string(),
-            service_account_team_key: "seed-workloads".to_string(),
-            service_account_budget: SeedBudget {
-                cadence: BudgetCadence::Daily,
-                amount_usd: Money4::from_scaled(100_000),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-            },
             allowed_models: vec!["fast".to_string()],
         }];
 
@@ -7030,6 +7342,7 @@ mod tests {
                 &providers,
                 &models,
                 &api_keys,
+                &seed_api_key_service_accounts(),
                 &[],
                 &[],
                 &seed_api_key_teams(),

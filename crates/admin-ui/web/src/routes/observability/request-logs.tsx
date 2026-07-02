@@ -62,6 +62,10 @@ const initialFilters: RequestLogFiltersInput = {
   tag_value: '',
 }
 
+const requestLogRowEstimatePx = 56
+const requestLogDesktopPreviewRows = 12
+const requestLogDesktopTableHeightPx = requestLogRowEstimatePx * requestLogDesktopPreviewRows
+
 export function RequestLogsPage() {
   const { data: logPage } = Route.useLoaderData()
   const search = Route.useSearch()
@@ -120,7 +124,7 @@ export function RequestLogsPage() {
   const rowVirtualizer = useVirtualizer({
     count: logPage.items.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 56,
+    estimateSize: () => requestLogRowEstimatePx,
     overscan: 12,
   })
 
@@ -343,7 +347,12 @@ export function RequestLogsPage() {
                 <span className="px-3 py-2 font-semibold">Tools</span>
                 <span className="px-3 py-2 font-semibold">Inspect</span>
               </div>
-              <div ref={parentRef} className="h-[430px] overflow-y-auto">
+              <div
+                ref={parentRef}
+                className="overflow-y-auto"
+                data-testid="request-log-desktop-table-viewport"
+                style={{ height: `${requestLogDesktopTableHeightPx}px` }}
+              >
                 <div
                   className="relative"
                   style={{
