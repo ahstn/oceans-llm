@@ -40,10 +40,11 @@ The tag workflow is distribution, not the quality gate.
 
 Current task steps:
 
-1. `cog bump --auto --skip-untracked`
-2. `git-cliff -o CHANGELOG.md`
-3. `gh release create v$(cog get-version) ...`
-4. `cargo release version $(cog get-version) --execute`
+1. `mise run sync-pricing-catalog`
+2. `cog bump --auto --skip-untracked`
+3. `git-cliff -o CHANGELOG.md`
+4. `gh release create v$(cog get-version) ...`
+5. `cargo release version $(cog get-version) --execute`
 
 That means release metadata and version updates are authored locally before any push happens. The GitHub release is not created as a draft by this task.
 
