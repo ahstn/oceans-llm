@@ -4314,9 +4314,9 @@ mod tests {
         conn.execute(
             r#"
             INSERT INTO api_keys (
-              id, public_id, secret_hash, name, status, model_grant_mode,
+              id, public_id, secret_hash, name, status,
               owner_kind, owner_user_id, owner_team_id, created_at
-            ) VALUES (?1, 'pub_user', 'hash', 'User key', 'active', 'explicit', 'user', ?2, NULL, ?3)
+            ) VALUES (?1, 'pub_user', 'hash', 'User key', 'active', 'user', ?2, NULL, ?3)
             "#,
             libsql::params![api_key_id.to_string(), user_id.to_string(), now],
         )
