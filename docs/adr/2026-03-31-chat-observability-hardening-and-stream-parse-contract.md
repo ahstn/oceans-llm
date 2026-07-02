@@ -14,7 +14,7 @@
 
 - [../operations/observability-and-request-logs.md](../operations/observability-and-request-logs.md)
 - [../reference/request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md)
-- [../operations/budgets-and-spending.md](../operations/budgets-and-spending.md)
+- [../operations/budgets-and-spending.md](../contributing/operations/budgets-and-spending.md)
 
 ## Context
 
@@ -148,7 +148,7 @@ Canonical docs:
 
 - [../operations/observability-and-request-logs.md](../operations/observability-and-request-logs.md)
 - [../reference/request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md)
-- [../operations/budgets-and-spending.md](../operations/budgets-and-spending.md)
+- [../operations/budgets-and-spending.md](../contributing/operations/budgets-and-spending.md)
 
 We want future readers to learn the real contract from the docs, not from spelunking tests or reconstructing intent from issue threads.
 

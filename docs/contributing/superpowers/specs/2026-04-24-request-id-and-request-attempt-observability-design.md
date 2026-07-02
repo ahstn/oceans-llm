@@ -1,6 +1,6 @@
 # Request ID and Request Attempt Observability Design
 
-`See also`: [Request ID and Request Attempt Observability Interview](../../interviews/2026-04-24-request-id-and-request-attempt-observability.md), [ADR: Request Attempt Observability Records](../../adr/2026-04-24-request-attempt-observability-records.md), [Observability and Request Logs](../../operations/observability-and-request-logs.md), [Request Lifecycle and Failure Modes](../../reference/request-lifecycle-and-failure-modes.md)
+`See also`: [Request ID and Request Attempt Observability Interview](../../interviews/2026-04-24-request-id-and-request-attempt-observability.md), [ADR: Request Attempt Observability Records](../../../adr/2026-04-24-request-attempt-observability-records.md), [Observability and Request Logs](../../../operations/observability-and-request-logs.md), [Request Lifecycle and Failure Modes](../../../reference/request-lifecycle-and-failure-modes.md)
 
 Date: 2026-04-24
 

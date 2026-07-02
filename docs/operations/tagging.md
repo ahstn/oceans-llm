@@ -1,6 +1,6 @@
 # Tagging
 
-`See also`: [Observability and Request Logs](observability-and-request-logs.md), [Request Logs](observability/request-logs.md), [Identity and Access](../access/identity-and-access.md), [Budgets and Spending](budgets-and-spending.md), [Data Relationships](../reference/data-relationships.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md)
+`See also`: [Observability and Request Logs](observability-and-request-logs.md), [Request Logs](observability/request-logs.md), [Identity and Access](../access/identity-and-access.md), [Budgets and Spending](../contributing/operations/budgets-and-spending.md), [Data Relationships](../contributing/reference/data-relationships.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md)
 
 Tags are bounded key/value metadata that admins and callers can use to connect Oceans activity to their own systems. They are intended for attribution, filtering, export, and reconciliation, not for authorization or secret storage.
 
@@ -94,13 +94,13 @@ Request tags and identity tags have different retention behavior.
 - Identity tags are durable user/team metadata. Request-log retention does not remove users, teams, or their tags.
 - Spend ledger rows remain separate from request-log retention. Future export jobs should join or enrich ledger data intentionally instead of assuming request-log detail is always retained.
 
-For table-level relationships, see [Data Relationships](../reference/data-relationships.md).
+For table-level relationships, see [Data Relationships](../contributing/reference/data-relationships.md).
 
 ## What This Page Does Not Own
 
 - Request-log payload capture, redaction, stream parsing, and purge mechanics: [Observability and Request Logs](observability-and-request-logs.md)
 - Per-request list/detail behavior: [Request Logs](observability/request-logs.md)
 - User, team, service-account, and API-key lifecycle rules: [Identity and Access](../access/identity-and-access.md)
-- Spend ledger semantics and budget enforcement: [Budgets and Spending](budgets-and-spending.md)
+- Spend ledger semantics and budget enforcement: [Budgets and Spending](../contributing/operations/budgets-and-spending.md)
 
 Validate documentation-only edits with `mise run docs:check`.

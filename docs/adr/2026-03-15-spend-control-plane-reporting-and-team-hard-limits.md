@@ -7,12 +7,12 @@
 ## Implemented By
 
 - Canonical docs:
-  - [../budgets-and-spending.md](../operations/budgets-and-spending.md)
+  - [../budgets-and-spending.md](../contributing/operations/budgets-and-spending.md)
   - [../admin-control-plane.md](../access/admin-control-plane.md)
 
 ## Current state
 
-- [../budgets-and-spending.md](../operations/budgets-and-spending.md)
+- [../budgets-and-spending.md](../contributing/operations/budgets-and-spending.md)
 - [../admin-control-plane.md](../access/admin-control-plane.md)
 
 ## Context

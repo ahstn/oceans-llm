@@ -1,6 +1,6 @@
 # Request Lifecycle and Failure Modes
 
-`See also`: [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](provider-api-compatibility.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../mcp/mcp-invocations.md), [Configuration Reference](../configuration/configuration-reference.md), [Identity and Access](../access/identity-and-access.md), [Data Relationships](data-relationships.md), [ADR: V1 Runtime Simplification for Routing and Streaming](../adr/2026-03-15-v1-runtime-simplification.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md)
+`See also`: [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](provider-api-compatibility.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md), [Budgets and Spending](../contributing/operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../mcp/mcp-invocations.md), [Configuration Reference](../configuration/configuration-reference.md), [Identity and Access](../access/identity-and-access.md), [Data Relationships](../contributing/reference/data-relationships.md), [ADR: V1 Runtime Simplification for Routing and Streaming](../adr/2026-03-15-v1-runtime-simplification.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md)
 
 This page is the cross-cutting view. Neighboring docs own their own policy slices. This page explains how those slices connect during one request.
 
@@ -175,5 +175,5 @@ For the current observability cleanup notes, see [observability-and-request-logs
 - identity and ownership policy: [identity-and-access.md](../access/identity-and-access.md)
 - route-planning contract and endpoint behavior: [model-routing-and-api-behavior.md](../configuration/model-routing-and-api-behavior.md)
 - exact pricing coverage rules: [pricing-catalog-and-accounting.md](../configuration/pricing-catalog-and-accounting.md)
-- budget windows and spend APIs: [budgets-and-spending.md](../operations/budgets-and-spending.md)
+- budget windows and spend APIs: [budgets-and-spending.md](../contributing/operations/budgets-and-spending.md)
 - request-log storage and payload policy: [observability-and-request-logs.md](../operations/observability-and-request-logs.md)

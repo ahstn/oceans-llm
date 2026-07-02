@@ -12,7 +12,7 @@
 
 ## Current state
 
-- [../operations/budgets-and-spending.md](../operations/budgets-and-spending.md)
+- [../operations/budgets-and-spending.md](../contributing/operations/budgets-and-spending.md)
 - [../operations/observability-and-request-logs.md](../operations/observability-and-request-logs.md)
 - [../access/admin-control-plane.md](../access/admin-control-plane.md)
 

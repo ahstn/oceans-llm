@@ -1,6 +1,6 @@
 # Client Harness Configuration
 
-`See also`: [Model Routing and API Behavior](model-routing-and-api-behavior.md), [Budgets](../access/budgets.md), [Budgets and Spending](../operations/budgets-and-spending.md)
+`See also`: [Model Routing and API Behavior](model-routing-and-api-behavior.md), [Budgets](../access/budgets.md), [Budgets and Spending](../contributing/operations/budgets-and-spending.md)
 
 ![Model Config Page](../public/images/screenshot-model-client-config-opencode.jpeg)
 

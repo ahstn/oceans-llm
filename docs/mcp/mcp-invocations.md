@@ -1,6 +1,6 @@
 # MCP Invocations
 
-`See also`: [Observability and Request Logs](../operations/observability-and-request-logs.md), [MCP Registry and Discovery](mcp-registry-and-discovery.md), [Request Logs](../operations/observability/request-logs.md), [Identity and Access](../access/identity-and-access.md), [Admin Control Plane](../access/admin-control-plane.md), [Data Relationships](../reference/data-relationships.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md)
+`See also`: [Observability and Request Logs](../operations/observability-and-request-logs.md), [MCP Registry and Discovery](../contributing/mcp/mcp-registry-and-discovery.md), [Request Logs](../operations/observability/request-logs.md), [Identity and Access](../access/identity-and-access.md), [Admin Control Plane](../access/admin-control-plane.md), [Data Relationships](../contributing/reference/data-relationships.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md)
 
 MCP invocation logs are the durable audit view for individual MCP tool calls. They are narrower than request logs: one request can produce zero, one, or many tool invocation rows.
 

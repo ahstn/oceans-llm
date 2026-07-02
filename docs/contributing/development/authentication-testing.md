@@ -1,6 +1,6 @@
 # Testing Authentication Locally
 
-`See also`: [OIDC and SSO](../access/oidc-and-sso-status.md), [Identity and Access](../access/identity-and-access.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [ADR: Local SSO Compose Fixture and Browser Origin](../adr/2026-05-15-local-sso-compose-fixture-and-browser-origin.md)
+`See also`: [OIDC and SSO](../../access/oidc-and-sso-status.md), [Identity and Access](../../access/identity-and-access.md), [Runtime Bootstrap and Access](../../setup/runtime-bootstrap-and-access.md), [ADR: Local SSO Compose Fixture and Browser Origin](../../adr/2026-05-15-local-sso-compose-fixture-and-browser-origin.md)
 
 This page is for maintainers testing admin authentication from the source-built Docker Compose stack.
 
@@ -16,10 +16,10 @@ The stack builds local gateway and admin UI images from the working tree.
 
 Important files:
 
-- [../../compose.local.yaml](../../compose.local.yaml): local Docker topology
-- [../../deploy/config/gateway.local.yaml](../../deploy/config/gateway.local.yaml): gateway config mounted by local compose
-- [../../deploy/authentik/oceans-llm-blueprint.yaml](../../deploy/authentik/oceans-llm-blueprint.yaml): Authentik fixture application, provider, and test user
-- [../../deploy/config/gateway.yaml](../../deploy/config/gateway.yaml): deploy-oriented config, not used by `compose.local.yaml`
+- [../../compose.local.yaml](../../../compose.local.yaml): local Docker topology
+- [../../deploy/config/gateway.local.yaml](../../../deploy/config/gateway.local.yaml): gateway config mounted by local compose
+- [../../deploy/authentik/oceans-llm-blueprint.yaml](../../../deploy/authentik/oceans-llm-blueprint.yaml): Authentik fixture application, provider, and test user
+- [../../deploy/config/gateway.yaml](../../../deploy/config/gateway.yaml): deploy-oriented config, not used by `compose.local.yaml`
 
 ## URLs
 
@@ -83,7 +83,7 @@ The bootstrap admin is created only when no platform admin already exists. Chang
 
 The local fixture uses Authentik `2025.4.4` by default through `AUTHENTIK_TAG`.
 
-The OIDC provider shape in [../../deploy/config/gateway.local.yaml](../../deploy/config/gateway.local.yaml) is:
+The OIDC provider shape in [../../deploy/config/gateway.local.yaml](../../../deploy/config/gateway.local.yaml) is:
 
 ```yaml
 auth:
@@ -122,7 +122,7 @@ The matching Authentik blueprint sets:
 
 No SSO button appears:
 
-- confirm the stack uses [../../deploy/config/gateway.local.yaml](../../deploy/config/gateway.local.yaml)
+- confirm the stack uses [../../deploy/config/gateway.local.yaml](../../../deploy/config/gateway.local.yaml)
 - check `http://localhost:8080/api/v1/auth/oidc/providers`
 - restart `gateway` after changing provider config
 

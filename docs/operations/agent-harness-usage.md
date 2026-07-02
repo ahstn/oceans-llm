@@ -1,6 +1,6 @@
 # Agent Harness Usage
 
-`See also`: [Observability and Request Logs](observability-and-request-logs.md), [Data Relationships](../reference/data-relationships.md), [Admin Control Plane](../access/admin-control-plane.md)
+`See also`: [Observability and Request Logs](observability-and-request-logs.md), [Data Relationships](../contributing/reference/data-relationships.md), [Admin Control Plane](../access/admin-control-plane.md)
 
 Implementation references: [`request_logging.rs`](../../crates/gateway-service/src/request_logging.rs), [`observability.rs`](../../crates/gateway/src/http/observability.rs), [`agent-harnesses.tsx`](../../crates/admin-ui/web/src/routes/observability/agent-harnesses.tsx)
 

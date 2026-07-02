@@ -6,8 +6,8 @@
 ## Current state
 
 - [../pricing-catalog-and-accounting.md](../configuration/pricing-catalog-and-accounting.md)
-- [../budgets-and-spending.md](../operations/budgets-and-spending.md)
-- [../data-relationships.md](../reference/data-relationships.md)
+- [../budgets-and-spending.md](../contributing/operations/budgets-and-spending.md)
+- [../data-relationships.md](../contributing/reference/data-relationships.md)
 
 ## Context
 

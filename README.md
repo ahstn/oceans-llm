@@ -126,10 +126,10 @@ Use the docs site instead of treating this file as the full admin and maintainer
   - [Request Lifecycle and Failure Modes](docs/reference/request-lifecycle-and-failure-modes.md)
 - pricing and spend:
   - [Pricing Catalog and Accounting](docs/configuration/pricing-catalog-and-accounting.md)
-  - [Budgets and Spending](docs/operations/budgets-and-spending.md)
+  - [Budgets and Spending](docs/contributing/operations/budgets-and-spending.md)
 - observability:
   - [Observability and Request Logs](docs/operations/observability-and-request-logs.md)
-  - [MCP Registry and Discovery](docs/mcp/mcp-registry-and-discovery.md)
+  - [MCP Registry and Discovery](docs/contributing/mcp/mcp-registry-and-discovery.md)
 - admin UI:
   - [Admin Control Plane](docs/access/admin-control-plane.md)
 - maintainer-facing docs source notes:
@@ -171,4 +171,4 @@ Verify drift with:
 mise run admin-contract-check
 ```
 
-For the full maintainer workflow, use [Admin API Contract Workflow](docs/reference/admin-api-contract-workflow.md).
+For the full maintainer workflow, use [Admin API Contract Workflow](docs/contributing/reference/admin-api-contract-workflow.md).
