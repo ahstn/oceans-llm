@@ -103,6 +103,9 @@ describe('RequestLogsPage', () => {
 
     expect(screen.getByTestId('request-log-mobile-list')).toBeInTheDocument()
     expect(screen.getByTestId('request-log-desktop-table')).toBeInTheDocument()
+    expect(screen.getByTestId('request-log-desktop-table-viewport')).toHaveStyle({
+      height: '672px',
+    })
     expect(
       screen.getByText(
         'Inspect single-route request execution, latency, and sanitized payloads without dropping into raw traces.',
