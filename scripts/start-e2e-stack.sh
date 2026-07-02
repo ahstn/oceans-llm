@@ -26,6 +26,7 @@ E2E_UI_PORT="${E2E_UI_PORT:-33001}"
 E2E_UPSTREAM_PORT="${E2E_UPSTREAM_PORT:-38081}"
 E2E_BASE_URL="${E2E_BASE_URL:-http://127.0.0.1:${E2E_GATEWAY_PORT}}"
 E2E_GATEWAY_API_KEY="${E2E_GATEWAY_API_KEY:-gwk_e2e.secret-value}"
+E2E_API_KEY_SECRET_ENCRYPTION_KEY="${E2E_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}"
 E2E_ADMIN_EMAIL="${E2E_ADMIN_EMAIL:-admin@local}"
 E2E_ADMIN_PASSWORD="${E2E_ADMIN_PASSWORD:-admin}"
 E2E_ADMIN_NEW_PASSWORD="${E2E_ADMIN_NEW_PASSWORD:-s3cur3-passw0rd}"
@@ -45,6 +46,7 @@ export E2E_UI_PORT
 export E2E_UPSTREAM_PORT
 export E2E_BASE_URL
 export E2E_GATEWAY_API_KEY
+export E2E_API_KEY_SECRET_ENCRYPTION_KEY
 export E2E_ADMIN_EMAIL
 export E2E_ADMIN_PASSWORD
 export E2E_ADMIN_NEW_PASSWORD
@@ -71,19 +73,6 @@ database:
   path: "${DB_PATH}"
 
 auth:
-  seed_api_keys:
-    - name: "E2E Contract Key"
-      value: env.E2E_GATEWAY_API_KEY
-      service_account:
-        key: seed-api-keys
-        name: E2E Seed API Keys
-        team: e2e
-        budget:
-          cadence: daily
-          amount_usd: "25.0000"
-          hard_limit: true
-          timezone: UTC
-      allowed_models: ["fast"]
   bootstrap_admin:
     enabled: true
     email: "${E2E_ADMIN_EMAIL}"
@@ -91,8 +80,23 @@ auth:
     require_password_change: true
 
 teams:
-  - key: e2e
+  - id: e2e
     name: E2E
+
+service_accounts:
+  - id: seed-api-keys
+    name: E2E Seed API Keys
+    team: e2e
+    budget:
+      cadence: daily
+      amount_usd: "25.0000"
+      hard_limit: true
+      timezone: UTC
+    keys:
+      - id: contract
+        name: E2E Contract Key
+        value: env.E2E_GATEWAY_API_KEY
+        allowed_models: ["fast"]
 
 providers:
   - id: openai-e2e
@@ -146,6 +150,7 @@ UI_PID=$!
   ADMIN_UI_UPSTREAM="http://127.0.0.1:${E2E_UI_PORT}" \
   GATEWAY_CONFIG="$CONFIG_PATH" \
   GATEWAY_IDENTITY_TOKEN_SECRET="local-dev-identity-secret" \
+  OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="$E2E_API_KEY_SECRET_ENCRYPTION_KEY" \
     "$E2E_GATEWAY_BIN"
 ) >"$GATEWAY_LOG" 2>&1 &
 GATEWAY_PID=$!
