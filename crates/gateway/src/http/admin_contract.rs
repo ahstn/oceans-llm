@@ -288,8 +288,16 @@ pub struct AdminModelClientConfigView {
     pub key: String,
     pub label: String,
     pub model_ids: Vec<String>,
+    pub setup: Vec<AdminModelClientConfigSetupItemView>,
     pub blocks: Vec<AdminModelClientConfigBlockView>,
     pub notes: Vec<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AdminModelClientConfigSetupItemView {
+    pub label: String,
+    pub value: String,
+    pub href: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

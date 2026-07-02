@@ -9,12 +9,14 @@ use crate::{
     templates::notes::thinking_notes,
     types::{
         AnthropicThinkingPolicy, ClientConfig, ClientConfigCodeBlock, ClientConfigInput,
-        ClientConfigInputSet, ClientConfigTemplate,
+        ClientConfigInputSet, ClientConfigSetupItem, ClientConfigTemplate,
     },
 };
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct OpenCodeConfigTemplate;
+
+const OPENCODE_CONFIG_DOCS_URL: &str = "https://opencode.ai/docs/config/";
 
 impl ClientConfigTemplate for OpenCodeConfigTemplate {
     fn render(&self, input: &ClientConfigInput) -> ClientConfig {
@@ -62,6 +64,7 @@ impl OpenCodeConfigTemplate {
                 .iter()
                 .map(|input| input.model_id.clone())
                 .collect(),
+            setup: opencode_setup(first),
             blocks: vec![ClientConfigCodeBlock {
                 label: "opencode.json".to_string(),
                 filename: "opencode.json".to_string(),
@@ -70,6 +73,29 @@ impl OpenCodeConfigTemplate {
             notes: input_set.models.iter().flat_map(thinking_notes).collect(),
         }
     }
+}
+
+fn opencode_setup(input: &ClientConfigInput) -> Vec<ClientConfigSetupItem> {
+    vec![
+        ClientConfigSetupItem {
+            label: "Configuration".to_string(),
+            value: "~/.config/opencode/opencode.json".to_string(),
+            href: None,
+        },
+        ClientConfigSetupItem {
+            label: "API key".to_string(),
+            value: format!(
+                "Set {} to a gateway API key before using this OpenCode configuration.",
+                input.api_key_env_var
+            ),
+            href: None,
+        },
+        ClientConfigSetupItem {
+            label: "Docs".to_string(),
+            value: OPENCODE_CONFIG_DOCS_URL.to_string(),
+            href: Some(OPENCODE_CONFIG_DOCS_URL.to_string()),
+        },
+    ]
 }
 
 fn grouped_models(

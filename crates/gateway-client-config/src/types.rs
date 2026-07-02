@@ -111,8 +111,16 @@ pub struct ClientConfig {
     pub key: String,
     pub label: String,
     pub model_ids: Vec<String>,
+    pub setup: Vec<ClientConfigSetupItem>,
     pub blocks: Vec<ClientConfigCodeBlock>,
     pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClientConfigSetupItem {
+    pub label: String,
+    pub value: String,
+    pub href: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

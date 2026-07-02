@@ -4491,12 +4491,34 @@
           }
         }
       },
+      "AdminModelClientConfigSetupItemView": {
+        "type": "object",
+        "required": [
+          "label",
+          "value"
+        ],
+        "properties": {
+          "href": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "label": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
       "AdminModelClientConfigView": {
         "type": "object",
         "required": [
           "key",
           "label",
           "model_ids",
+          "setup",
           "blocks",
           "notes"
         ],
@@ -4523,6 +4545,12 @@
             "type": "array",
             "items": {
               "type": "string"
+            }
+          },
+          "setup": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminModelClientConfigSetupItemView"
             }
           }
         }

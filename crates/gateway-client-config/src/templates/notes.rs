@@ -6,7 +6,6 @@ use crate::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum ClientConfigNoteKind {
     ThinkingPolicy,
-    ClaudeCodeAuth,
     ClaudeCodeBaseUrl,
 }
 
@@ -52,13 +51,6 @@ pub(crate) fn thinking_note_items(input: &ClientConfigInput) -> Vec<ClientConfig
 
 pub(crate) fn claude_code_note_items(input: &ClientConfigInput) -> Vec<ClientConfigNote> {
     let mut notes = thinking_note_items(input);
-    notes.push(ClientConfigNote::new(
-        ClientConfigNoteKind::ClaudeCodeAuth,
-        format!(
-            "Replace {} with a gateway API key before using Claude Code settings.",
-            super::claude_code::CLAUDE_CODE_AUTH_TOKEN_PLACEHOLDER
-        ),
-    ));
     if uses_anthropic_messages_api(input) {
         notes.push(ClientConfigNote::new(
             ClientConfigNoteKind::ClaudeCodeBaseUrl,
@@ -79,15 +71,9 @@ pub(crate) fn claude_code_note_items(input: &ClientConfigInput) -> Vec<ClientCon
     notes
 }
 
-pub(crate) fn codex_notes(input: &ClientConfigInput) -> Vec<String> {
-    let mut notes = Vec::new();
-    notes.push(
+pub(crate) fn codex_notes(_input: &ClientConfigInput) -> Vec<String> {
+    vec![
         "Add this provider configuration to user-level ~/.codex/config.toml; Codex ignores provider and auth keys in project-local .codex/config.toml files."
             .to_string(),
-    );
-    notes.push(format!(
-        "Set {} to a gateway API key before using this Codex config.",
-        input.api_key_env_var
-    ));
-    notes
+    ]
 }

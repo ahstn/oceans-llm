@@ -8,9 +8,9 @@ use gateway_service::{AdminModelSummary, AdminModelsService};
 use crate::http::{
     admin_auth::require_platform_admin,
     admin_contract::{
-        AdminModelClientConfigBlockView, AdminModelClientConfigView, AdminModelListQuery,
-        AdminModelPageView, AdminModelView, Envelope, GenerateModelClientConfigsRequest,
-        GenerateModelClientConfigsResponse, envelope,
+        AdminModelClientConfigBlockView, AdminModelClientConfigSetupItemView,
+        AdminModelClientConfigView, AdminModelListQuery, AdminModelPageView, AdminModelView,
+        Envelope, GenerateModelClientConfigsRequest, GenerateModelClientConfigsResponse, envelope,
     },
     error::AppError,
     state::AppState,
@@ -82,6 +82,15 @@ pub async fn generate_model_client_configs(
             key: config.key,
             label: config.label,
             model_ids: config.model_ids,
+            setup: config
+                .setup
+                .into_iter()
+                .map(|item| AdminModelClientConfigSetupItemView {
+                    label: item.label,
+                    value: item.value,
+                    href: item.href,
+                })
+                .collect(),
             blocks: config
                 .blocks
                 .into_iter()
@@ -143,6 +152,15 @@ fn map_model_summary(model: AdminModelSummary) -> AdminModelView {
                 key: config.key,
                 label: config.label,
                 model_ids: config.model_ids,
+                setup: config
+                    .setup
+                    .into_iter()
+                    .map(|item| AdminModelClientConfigSetupItemView {
+                        label: item.label,
+                        value: item.value,
+                        href: item.href,
+                    })
+                    .collect(),
                 blocks: config
                     .blocks
                     .into_iter()

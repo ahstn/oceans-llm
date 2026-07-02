@@ -5,10 +5,14 @@ use serde::Serialize;
 use crate::{
     format::to_pretty_toml,
     templates::notes::codex_notes,
-    types::{ClientConfig, ClientConfigCodeBlock, ClientConfigInput, ClientConfigTemplate},
+    types::{
+        ClientConfig, ClientConfigCodeBlock, ClientConfigInput, ClientConfigSetupItem,
+        ClientConfigTemplate,
+    },
 };
 
 const CODEX_WIRE_API_RESPONSES: &str = "responses";
+const CODEX_CONFIG_DOCS_URL: &str = "https://developers.openai.com/codex/config-reference";
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CodexConfigTemplate;
@@ -36,6 +40,7 @@ impl ClientConfigTemplate for CodexConfigTemplate {
             key: "codex".to_string(),
             label: "Codex".to_string(),
             model_ids: vec![input.model_id.clone()],
+            setup: codex_setup(input),
             blocks: vec![ClientConfigCodeBlock {
                 label: "config.toml".to_string(),
                 filename: "config.toml".to_string(),
@@ -44,6 +49,29 @@ impl ClientConfigTemplate for CodexConfigTemplate {
             notes: codex_notes(input),
         }
     }
+}
+
+fn codex_setup(input: &ClientConfigInput) -> Vec<ClientConfigSetupItem> {
+    vec![
+        ClientConfigSetupItem {
+            label: "Configuration".to_string(),
+            value: "~/.codex/config.toml".to_string(),
+            href: None,
+        },
+        ClientConfigSetupItem {
+            label: "API key".to_string(),
+            value: format!(
+                "Set {} to a gateway API key before using this Codex configuration.",
+                input.api_key_env_var
+            ),
+            href: None,
+        },
+        ClientConfigSetupItem {
+            label: "Docs".to_string(),
+            value: CODEX_CONFIG_DOCS_URL.to_string(),
+            href: Some(CODEX_CONFIG_DOCS_URL.to_string()),
+        },
+    ]
 }
 
 #[derive(Debug, Serialize)]

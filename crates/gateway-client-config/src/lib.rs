@@ -12,8 +12,8 @@ pub use templates::{
 pub use thinking::infer_anthropic_thinking_policy;
 pub use types::{
     AnthropicThinkingPolicy, ClientConfig, ClientConfigCodeBlock, ClientConfigInput,
-    ClientConfigInputSet, ClientConfigTemplate, ClientModelCapabilities, DEFAULT_API_KEY_ENV_VAR,
-    DEFAULT_GATEWAY_BASE_URL, DEFAULT_PROVIDER_ID,
+    ClientConfigInputSet, ClientConfigSetupItem, ClientConfigTemplate, ClientModelCapabilities,
+    DEFAULT_API_KEY_ENV_VAR, DEFAULT_GATEWAY_BASE_URL, DEFAULT_PROVIDER_ID,
 };
 
 #[cfg(test)]

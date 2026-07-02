@@ -20,6 +20,14 @@ By default, snippets use the local development gateway base URL `http://127.0.0.
 
 OpenCode and Pi can include multiple selected models in one generated file. When the selection mixes Anthropic Messages models and OpenAI-compatible models, Oceans emits separate provider entries so each provider keeps the correct client adapter. Claude Code only includes selected models that use Anthropic Messages; non-Anthropic selections are ignored for the Claude Code tab instead of generating invalid overrides.
 
+## OpenCode
+
+The OpenCode tab emits `opencode.json` content for the user-level OpenCode configuration at `~/.config/opencode/opencode.json`. The dialog shows the configuration path, gateway API key environment variable, and [OpenCode configuration docs] before the copied JSON block.
+
+## Pi
+
+The Pi tab emits `models.json` content for Pi custom provider/model configuration. Pi settings are separate configuration: use `~/.pi/agent/settings.json` for global settings and `.pi/settings.json` for project overrides. The dialog shows those paths together with the generated provider configuration path and links to the [Pi settings docs].
+
 ## Claude Code
 
 The Claude Code tab emits `.claude/settings.json` content with the SchemaStore Claude Code schema URL. The gateway settings block includes:
@@ -46,6 +54,8 @@ Budget scopes are independent of the client harness:
 
 Use `/admin/spend-controls` to configure those budgets. For the full taxonomy and setup workflow, see [Budgets](../access/budgets.md).
 
-[opencode]: https://opencode.ai/
-[pi]: https://pi.dev/
+[opencode]: https://opencode.ai/docs/config/
+[pi]: https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/settings.md
+[opencode configuration docs]: https://opencode.ai/docs/config/
+[pi settings docs]: https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/settings.md
 [claude code]: https://code.claude.com/docs/en/settings
