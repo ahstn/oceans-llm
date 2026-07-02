@@ -44,7 +44,7 @@ Implement GitHub issue #204: allow user-owned API keys to grant all current and 
 Run the focused tests first, then full lint:
 
 ```bash
-eval "$(/Users/ahstn/.local/bin/mise activate zsh)"
+eval "$(mise activate zsh)"
 mise run admin-contract-generate
 mise run admin-contract-check
 cargo test -p gateway-store api_key

@@ -51,7 +51,6 @@ This document is schema-oriented. It describes the persistent relationships that
 - `providers`: upstream provider config and secret references
 - `gateway_models`: gateway model registry; rows can be provider-backed or alias-backed
 - `model_routes`: execution targets for provider-backed models only
-- `api_keys.model_grant_mode`: `all` tracks the current model catalog; `explicit` uses grant rows
 - `api_key_model_grants`: explicit model grants attached to an API key
 - `audit_logs`: control-plane audit baseline
 
@@ -103,13 +102,15 @@ Compatibility metadata is not a provider config fallback and is not an `extra_bo
   - Relationship: `user_id` + `model_id`
 - `team_model_allowlist`
   - Relationship: `team_id` + `model_id`
+- `service_account_model_allowlist`
+  - Relationship: `service_account_id` + `model_id`
 
 ### Ownership, Accounting, and Logging Tables
 
 - `api_keys`
-  - Key columns: `id`, `public_id`, `secret_hash`, `owner_kind`, `owner_user_id`, `owner_service_account_id`
+  - Key columns: `id`, `public_id`, `secret_hash`, `model_grant_mode`, `owner_kind`, `owner_user_id`, `owner_service_account_id`
   - Constraint: exactly one owner column must be set consistently with `owner_kind`
-  - Notes: direct team-owned runtime keys and `system-legacy` ownership are not supported
+  - Notes: `model_grant_mode='all'` tracks the current model catalog; `explicit` uses `api_key_model_grants`. Direct team-owned runtime keys and `system-legacy` ownership are not supported
 - `budgets`
   - Key columns: `budget_id`, `scope_kind`, `scope_key`, `user_id`, `service_account_id`, `model_id`, `upstream_model`, `cadence`, `amount_10000`, `hard_limit`, `timezone`, `is_active`
   - Constraint: one active budget per canonical `scope_key`

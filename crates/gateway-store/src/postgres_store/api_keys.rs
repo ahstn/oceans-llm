@@ -42,6 +42,8 @@ impl AdminApiKeyRepository for PostgresStore {
     }
 
     async fn create_api_key(&self, api_key: &NewApiKeyRecord) -> Result<ApiKeyRecord, StoreError> {
+        validate_api_key_grant_mode(api_key.owner_kind, api_key.model_grant_mode)?;
+
         let api_key_id = api_key_uuid(&api_key.public_id);
         sqlx::query(
             r#"
@@ -83,16 +85,32 @@ impl AdminApiKeyRepository for PostgresStore {
         model_grant_mode: ApiKeyModelGrantMode,
         model_ids: &[Uuid],
     ) -> Result<(), StoreError> {
+        let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+
+        if model_grant_mode == ApiKeyModelGrantMode::All {
+            let row = sqlx::query("SELECT owner_kind FROM api_keys WHERE id = $1 LIMIT 1")
+                .bind(api_key_id.to_string())
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(to_query_error)?
+                .ok_or_else(|| StoreError::NotFound(format!("api key `{api_key_id}`")))?;
+            let owner_kind: String = row.try_get(0).map_err(to_query_error)?;
+            let owner_kind = ApiKeyOwnerKind::from_db(&owner_kind).ok_or_else(|| {
+                StoreError::Serialization(format!("unknown owner kind `{owner_kind}`"))
+            })?;
+            validate_api_key_grant_mode(owner_kind, model_grant_mode)?;
+        }
+
         sqlx::query("UPDATE api_keys SET model_grant_mode = $1 WHERE id = $2")
             .bind(model_grant_mode.as_str())
             .bind(api_key_id.to_string())
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .map_err(to_query_error)?;
 
         sqlx::query("DELETE FROM api_key_model_grants WHERE api_key_id = $1")
             .bind(api_key_id.to_string())
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .map_err(to_query_error)?;
 
@@ -100,10 +118,12 @@ impl AdminApiKeyRepository for PostgresStore {
             sqlx::query("INSERT INTO api_key_model_grants (api_key_id, model_id) VALUES ($1, $2)")
                 .bind(api_key_id.to_string())
                 .bind(model_id.to_string())
-                .execute(&self.pool)
+                .execute(&mut *tx)
                 .await
                 .map_err(to_query_error)?;
         }
+
+        tx.commit().await.map_err(to_query_error)?;
 
         Ok(())
     }
@@ -173,4 +193,19 @@ impl ApiKeyRepository for PostgresStore {
     ) -> Result<Option<ServiceAccountRecord>, StoreError> {
         Self::get_service_account_by_id(self, service_account_id).await
     }
+}
+
+fn validate_api_key_grant_mode(
+    owner_kind: ApiKeyOwnerKind,
+    model_grant_mode: ApiKeyModelGrantMode,
+) -> Result<(), StoreError> {
+    if owner_kind == ApiKeyOwnerKind::ServiceAccount
+        && model_grant_mode == ApiKeyModelGrantMode::All
+    {
+        return Err(StoreError::Conflict(
+            "service-account api keys require explicit model grants".to_string(),
+        ));
+    }
+
+    Ok(())
 }

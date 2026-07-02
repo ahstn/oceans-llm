@@ -1,8 +1,8 @@
 use std::{collections::HashSet, sync::Arc};
 
 use gateway_core::{
-    ApiKeyModelGrantMode, AuthError, AuthenticatedApiKey, GatewayError, GatewayModel,
-    IdentityRepository, ModelAccessMode, ModelRepository, RouteError, UserStatus,
+    ApiKeyModelGrantMode, ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, GatewayError,
+    GatewayModel, IdentityRepository, ModelAccessMode, ModelRepository, RouteError, UserStatus,
 };
 use itertools::Itertools;
 
@@ -42,14 +42,8 @@ where
             .await?
             .ok_or_else(|| RouteError::ModelNotFound(requested_model.to_string()))?;
 
-        let effective_models = self.effective_models_for_api_key(api_key).await?;
-        let has_grant = effective_models
-            .iter()
-            .any(|granted| granted.model_key == requested_model);
-
-        if !has_grant {
-            return Err(AuthError::ModelNotGranted(requested_model.to_string()).into());
-        }
+        self.ensure_api_key_can_access_model(api_key, requested_model)
+            .await?;
 
         Ok(model)
     }
@@ -94,11 +88,63 @@ where
         &self,
         api_key: &AuthenticatedApiKey,
     ) -> Result<Vec<GatewayModel>, GatewayError> {
+        validate_api_key_grant_mode(api_key)?;
+
         let granted_models = match api_key.model_grant_mode {
             ApiKeyModelGrantMode::All => self.repo.list_models().await?,
             ApiKeyModelGrantMode::Explicit => self.repo.list_models_for_api_key(api_key.id).await?,
         };
-        let mut allowed_model_keys: Option<HashSet<String>> = None;
+        let allowed_model_keys = self.allowed_model_keys_for_api_key(api_key).await?;
+
+        let effective_models = granted_models
+            .into_iter()
+            .filter(|model| match &allowed_model_keys {
+                Some(allowed) => allowed.contains(&model.model_key),
+                None => true,
+            })
+            .sorted_by(|left, right| {
+                left.rank
+                    .cmp(&right.rank)
+                    .then(left.model_key.cmp(&right.model_key))
+            })
+            .collect::<Vec<_>>();
+
+        Ok(effective_models)
+    }
+
+    async fn ensure_api_key_can_access_model(
+        &self,
+        api_key: &AuthenticatedApiKey,
+        model_key: &str,
+    ) -> Result<(), GatewayError> {
+        validate_api_key_grant_mode(api_key)?;
+
+        if api_key.model_grant_mode == ApiKeyModelGrantMode::Explicit {
+            let has_explicit_grant = self
+                .repo
+                .list_models_for_api_key(api_key.id)
+                .await?
+                .into_iter()
+                .any(|model| model.model_key == model_key);
+            if !has_explicit_grant {
+                return Err(AuthError::ModelNotGranted(model_key.to_string()).into());
+            }
+        }
+
+        if let Some(allowed_model_keys) = self.allowed_model_keys_for_api_key(api_key).await?
+            && !allowed_model_keys.contains(model_key)
+        {
+            return Err(AuthError::ModelNotGranted(model_key.to_string()).into());
+        }
+
+        Ok(())
+    }
+
+    async fn allowed_model_keys_for_api_key(
+        &self,
+        api_key: &AuthenticatedApiKey,
+    ) -> Result<Option<HashSet<String>>, GatewayError> {
+        let mut allowed_model_keys = None;
         let mut effective_team_id = api_key.owner_team_id;
 
         if effective_team_id.is_none()
@@ -166,21 +212,18 @@ where
             }
         }
 
-        let effective_models = granted_models
-            .into_iter()
-            .filter(|model| match &allowed_model_keys {
-                Some(allowed) => allowed.contains(&model.model_key),
-                None => true,
-            })
-            .sorted_by(|left, right| {
-                left.rank
-                    .cmp(&right.rank)
-                    .then(left.model_key.cmp(&right.model_key))
-            })
-            .collect::<Vec<_>>();
-
-        Ok(effective_models)
+        Ok(allowed_model_keys)
     }
+}
+
+fn validate_api_key_grant_mode(api_key: &AuthenticatedApiKey) -> Result<(), GatewayError> {
+    if api_key.owner_kind == ApiKeyOwnerKind::ServiceAccount
+        && api_key.model_grant_mode == ApiKeyModelGrantMode::All
+    {
+        return Err(AuthError::ApiKeyOwnerInvalid.into());
+    }
+
+    Ok(())
 }
 
 fn intersect_allowed(
@@ -216,6 +259,7 @@ mod tests {
     #[derive(Default)]
     struct AccessRepo {
         models: Mutex<Vec<GatewayModel>>,
+        list_models_calls: Mutex<usize>,
         grants_by_api_key: Mutex<HashMap<Uuid, Vec<String>>>,
         teams: Mutex<HashMap<Uuid, TeamRecord>>,
         users: Mutex<HashMap<Uuid, UserRecord>>,
@@ -229,6 +273,10 @@ mod tests {
     #[async_trait]
     impl ModelRepository for AccessRepo {
         async fn list_models(&self) -> Result<Vec<GatewayModel>, StoreError> {
+            *self
+                .list_models_calls
+                .lock()
+                .expect("list models calls lock") += 1;
             Ok(self.models.lock().expect("models lock").clone())
         }
 
@@ -454,7 +502,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn all_mode_intersects_service_account_restrictions() {
+    async fn service_account_all_mode_is_rejected_at_runtime() {
         let repo = Arc::new(AccessRepo::default());
         let team_id = Uuid::new_v4();
         let service_account_id = Uuid::new_v4();
@@ -490,9 +538,36 @@ mod tests {
             owner_service_account_id: Some(service_account_id),
         };
 
+        let error = access
+            .list_models_for_api_key(&auth)
+            .await
+            .expect_err("service-account all-mode keys should be invalid");
+        assert_eq!(error.error_code(), "api_key_owner_invalid");
+    }
+
+    #[tokio::test]
+    async fn all_mode_single_model_resolution_does_not_load_catalog() {
+        let repo = Arc::new(AccessRepo::default());
+        repo.models
+            .lock()
+            .expect("models lock")
+            .extend([model("fast", 10), model("reasoning", 20)]);
+
+        let access = ModelAccess::new(repo.clone());
+        let auth = user_auth(ApiKeyModelGrantMode::All, Uuid::new_v4(), None);
+
+        let model = access
+            .resolve_requested_model(&auth, "fast")
+            .await
+            .expect("resolve model");
+
+        assert_eq!(model.model_key, "fast");
         assert_eq!(
-            model_keys(access.list_models_for_api_key(&auth).await.expect("models")),
-            ["fast"]
+            *repo
+                .list_models_calls
+                .lock()
+                .expect("list models calls lock"),
+            0
         );
     }
 

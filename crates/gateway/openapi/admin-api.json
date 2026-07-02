@@ -4217,7 +4217,7 @@
             ]
           },
           "model_grant_mode": {
-            "type": "string"
+            "$ref": "#/components/schemas/ApiKeyModelGrantModeView"
           },
           "model_keys": {
             "type": "array",
@@ -5059,6 +5059,13 @@
           }
         }
       },
+      "ApiKeyModelGrantModeView": {
+        "type": "string",
+        "enum": [
+          "all",
+          "explicit"
+        ]
+      },
       "AuthSessionUserView": {
         "type": "object",
         "required": [
@@ -5483,7 +5490,7 @@
         ],
         "properties": {
           "model_grant_mode": {
-            "type": "string"
+            "$ref": "#/components/schemas/ApiKeyModelGrantModeView"
           },
           "model_keys": {
             "type": "array",
@@ -10304,7 +10311,7 @@
         ],
         "properties": {
           "model_grant_mode": {
-            "type": "string"
+            "$ref": "#/components/schemas/ApiKeyModelGrantModeView"
           },
           "model_keys": {
             "type": "array",
