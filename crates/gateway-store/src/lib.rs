@@ -4520,8 +4520,9 @@ mod tests {
             .execute(
                 r#"
                 INSERT INTO api_keys (
-                  id, public_id, secret_hash, name, status, owner_kind, owner_user_id, owner_team_id, created_at
-                ) VALUES (?1, 'invalid_owner', 'hash', 'invalid', 'active', 'user', NULL, NULL, ?2)
+                  id, public_id, secret_hash, name, status, model_grant_mode,
+                  owner_kind, owner_user_id, owner_team_id, created_at
+                ) VALUES (?1, 'invalid_owner', 'hash', 'invalid', 'active', 'explicit', 'user', NULL, NULL, ?2)
                 "#,
                 libsql::params![Uuid::new_v4().to_string(), now],
             )
@@ -4564,9 +4565,9 @@ mod tests {
             .execute(
                 r#"
                 INSERT INTO api_keys (
-                  id, public_id, secret_hash, name, status, owner_kind,
+                  id, public_id, secret_hash, name, status, model_grant_mode, owner_kind,
                   owner_user_id, owner_team_id, owner_service_account_id, created_at
-                ) VALUES (?1, 'invalid_service_team', 'hash', 'invalid', 'active',
+                ) VALUES (?1, 'invalid_service_team', 'hash', 'invalid', 'active', 'explicit',
                   'service_account', NULL, ?2, ?3, ?4)
                 "#,
                 libsql::params![
@@ -4652,7 +4653,8 @@ mod tests {
         conn.execute(
             r#"
             INSERT INTO api_keys (
-              id, public_id, secret_hash, name, status, owner_kind, owner_user_id, owner_team_id, created_at
+              id, public_id, secret_hash, name, status,
+              owner_kind, owner_user_id, owner_team_id, created_at
             ) VALUES (?1, 'pub_user', 'hash', 'User key', 'active', 'user', ?2, NULL, ?3)
             "#,
             libsql::params![api_key_id.to_string(), user_id.to_string(), now],

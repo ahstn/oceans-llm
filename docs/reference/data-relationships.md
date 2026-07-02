@@ -24,10 +24,11 @@ This document is schema-oriented. It describes the persistent relationships that
 2. `users` 0..1 `team_memberships`
 3. `teams` 0..N `service_accounts`
 4. `api_keys` belongs to exactly one principal owner: user or service account
-5. `api_keys` N..N `gateway_models` through `api_key_model_grants`
+5. `api_keys` may grant `all` gateway models or an explicit N..N set through `api_key_model_grants`
 6. Optional restriction overlays:
    - `user_model_allowlist`
    - `team_model_allowlist`
+   - `service_account_model_allowlist`
 7. `budgets` stores user, service-account, and user-model budgets with one active row per canonical scope key
 8. `usage_cost_events` records request ownership, model attribution, pricing status, and computed cost
 9. `request_logs` records the final user-visible request outcome
@@ -50,7 +51,7 @@ This document is schema-oriented. It describes the persistent relationships that
 - `providers`: upstream provider config and secret references
 - `gateway_models`: gateway model registry; rows can be provider-backed or alias-backed
 - `model_routes`: execution targets for provider-backed models only
-- `api_key_model_grants`: model grants attached to an API key
+- `api_key_model_grants`: explicit model grants attached to an API key
 - `audit_logs`: control-plane audit baseline
 
 `model_routes` stores two distinct route execution metadata documents:
@@ -101,13 +102,15 @@ Compatibility metadata is not a provider config fallback and is not an `extra_bo
   - Relationship: `user_id` + `model_id`
 - `team_model_allowlist`
   - Relationship: `team_id` + `model_id`
+- `service_account_model_allowlist`
+  - Relationship: `service_account_id` + `model_id`
 
 ### Ownership, Accounting, and Logging Tables
 
 - `api_keys`
-  - Key columns: `id`, `public_id`, `secret_hash`, `owner_kind`, `owner_user_id`, `owner_service_account_id`
+  - Key columns: `id`, `public_id`, `secret_hash`, `model_grant_mode`, `owner_kind`, `owner_user_id`, `owner_service_account_id`
   - Constraint: exactly one owner column must be set consistently with `owner_kind`
-  - Notes: direct team-owned runtime keys and `system-legacy` ownership are not supported
+  - Notes: `model_grant_mode='all'` tracks the current model catalog; `explicit` uses `api_key_model_grants`. Direct team-owned runtime keys and `system-legacy` ownership are not supported
 - `budgets`
   - Key columns: `budget_id`, `scope_kind`, `scope_key`, `user_id`, `service_account_id`, `model_id`, `upstream_model`, `cadence`, `amount_10000`, `hard_limit`, `timezone`, `is_active`
   - Constraint: one active budget per canonical `scope_key`
@@ -169,13 +172,16 @@ Request-log purge treats `request_logs` as the parent retention boundary. Purgin
 
 Effective model access is the intersection of:
 
-1. API key grants from `api_key_model_grants`
+1. API key grants from `api_keys.model_grant_mode`:
+   - `all` starts from every current gateway model
+   - `explicit` starts from `api_key_model_grants`
 2. Team allowlist, only when `teams.model_access_mode='restricted'`
-3. User allowlist, only when `users.model_access_mode='restricted'`
+3. Service-account allowlist, only when `service_accounts.model_access_mode='restricted'`
+4. User allowlist, only when `users.model_access_mode='restricted'`
 
-If neither the team nor the user is restricted, grants remain unchanged.
+If no owner overlay is restricted, the API-key grant baseline remains unchanged.
 
-Service-account credentials use API-key grants plus the owning team's allowlist. User allowlists do not apply to service accounts.
+Service-account credentials use API-key grants plus the owning team's allowlist and their own service-account allowlist. User allowlists do not apply to service accounts. Admin-managed service-account API keys require `model_grant_mode='explicit'`.
 
 ## Budget and Pricing Notes
 

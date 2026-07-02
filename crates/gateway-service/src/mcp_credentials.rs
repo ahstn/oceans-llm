@@ -528,9 +528,9 @@ mod tests {
     use base64::Engine as _;
     use base64::engine::general_purpose::STANDARD as BASE64;
     use gateway_core::{
-        ExternalMcpAuthMode, ExternalMcpDiscoveryStatus, ExternalMcpServerStatus,
-        ExternalMcpTransport, MembershipRole, StoreError, TeamMembershipRecord, TeamRecord,
-        UserRecord,
+        ApiKeyModelGrantMode, ExternalMcpAuthMode, ExternalMcpDiscoveryStatus,
+        ExternalMcpServerStatus, ExternalMcpTransport, MembershipRole, StoreError,
+        TeamMembershipRecord, TeamRecord, UserRecord,
     };
     use std::{collections::HashMap, sync::Mutex};
     use time::Duration;
@@ -606,6 +606,7 @@ mod tests {
             id: Uuid::new_v4(),
             public_id: "gwk_test".to_string(),
             name: "test".to_string(),
+            model_grant_mode: ApiKeyModelGrantMode::Explicit,
             owner_kind: ApiKeyOwnerKind::ServiceAccount,
             owner_user_id: None,
             owner_team_id: Some(team_id),
@@ -659,6 +660,7 @@ mod tests {
             id: Uuid::new_v4(),
             public_id: "gwk_test".to_string(),
             name: "test".to_string(),
+            model_grant_mode: ApiKeyModelGrantMode::Explicit,
             owner_kind: ApiKeyOwnerKind::User,
             owner_user_id: Some(user_id),
             owner_team_id: None,
@@ -703,6 +705,7 @@ mod tests {
             id: Uuid::new_v4(),
             public_id: "gwk_test".to_string(),
             name: "test".to_string(),
+            model_grant_mode: ApiKeyModelGrantMode::Explicit,
             owner_kind: ApiKeyOwnerKind::User,
             owner_user_id: Some(user_id),
             owner_team_id: None,
@@ -736,6 +739,7 @@ mod tests {
             id: Uuid::new_v4(),
             public_id: "gwk_test".to_string(),
             name: "test".to_string(),
+            model_grant_mode: ApiKeyModelGrantMode::Explicit,
             owner_kind: ApiKeyOwnerKind::User,
             owner_user_id: Some(user_id),
             owner_team_id: None,
@@ -775,6 +779,7 @@ mod tests {
             id: Uuid::new_v4(),
             public_id: "gwk_test".to_string(),
             name: "test".to_string(),
+            model_grant_mode: ApiKeyModelGrantMode::Explicit,
             owner_kind: ApiKeyOwnerKind::User,
             owner_user_id: Some(user_id),
             owner_team_id: None,

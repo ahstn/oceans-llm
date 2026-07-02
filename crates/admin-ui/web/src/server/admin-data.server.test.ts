@@ -85,6 +85,7 @@ describe('server-side admin data wrappers', () => {
                 owner_service_account_key: 'deploy-bot',
                 owner_service_account_team_id: 'team_1',
                 owner_service_account_team_key: 'core-platform',
+                model_grant_mode: 'explicit',
                 model_keys: ['fast', 'reasoning'],
                 created_at: '2026-03-14T12:00:00Z',
                 last_used_at: '2026-03-18T09:15:00Z',
@@ -133,6 +134,7 @@ describe('server-side admin data wrappers', () => {
               owner_service_account_key: 'deploy-bot',
               owner_service_account_team_id: 'team_1',
               owner_service_account_team_key: 'core-platform',
+              model_grant_mode: 'explicit',
               model_keys: ['fast'],
               created_at: '2026-03-20T09:00:00Z',
               last_used_at: null,
@@ -191,6 +193,7 @@ describe('server-side admin data wrappers', () => {
               owner_service_account_key: 'deploy-bot',
               owner_service_account_team_id: 'team_1',
               owner_service_account_team_key: 'core-platform',
+              model_grant_mode: 'explicit',
               model_keys: ['fast', 'reasoning'],
               created_at: '2026-03-14T12:00:00Z',
               last_used_at: '2026-03-18T09:15:00Z',
@@ -631,6 +634,7 @@ describe('server-side admin data wrappers', () => {
                 owner_service_account_key: 'deploy-bot',
                 owner_service_account_team_id: 'team_1',
                 owner_service_account_team_key: 'core-platform',
+                model_grant_mode: 'explicit',
                 model_keys: ['reasoning'],
                 created_at: '2026-03-14T12:00:00Z',
                 last_used_at: '2026-03-18T09:15:00Z',
@@ -745,6 +749,7 @@ describe('server-side admin data wrappers', () => {
         owner_user_id: null,
         owner_team_id: 'team_1',
         owner_service_account_id: 'service_account_1',
+        model_grant_mode: 'explicit',
         model_keys: ['fast'],
       }),
     ).resolves.toMatchObject({
@@ -757,10 +762,16 @@ describe('server-side admin data wrappers', () => {
       },
     })
 
-    await expect(updateApiKey('api_key_1', { model_keys: ['reasoning'] })).resolves.toMatchObject({
+    await expect(
+      updateApiKey('api_key_1', {
+        model_grant_mode: 'explicit',
+        model_keys: ['reasoning'],
+      }),
+    ).resolves.toMatchObject({
       data: {
         api_key: {
           id: 'api_key_1',
+          model_grant_mode: 'explicit',
           model_keys: ['reasoning'],
         },
       },
@@ -777,7 +788,7 @@ describe('server-side admin data wrappers', () => {
 
     expect(PATCH).toHaveBeenCalledWith('/api/v1/admin/api-keys/{api_key_id}', {
       params: { path: { api_key_id: 'api_key_1' } },
-      body: { model_keys: ['reasoning'] },
+      body: { model_grant_mode: 'explicit', model_keys: ['reasoning'] },
     })
   })
 

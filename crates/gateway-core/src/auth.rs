@@ -1,6 +1,6 @@
 use uuid::Uuid;
 
-use crate::domain::ApiKeyOwnerKind;
+use crate::domain::{ApiKeyModelGrantMode, ApiKeyOwnerKind};
 use crate::error::AuthError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -14,6 +14,7 @@ pub struct AuthenticatedApiKey {
     pub id: Uuid,
     pub public_id: String,
     pub name: String,
+    pub model_grant_mode: ApiKeyModelGrantMode,
     pub owner_kind: ApiKeyOwnerKind,
     pub owner_user_id: Option<Uuid>,
     pub owner_team_id: Option<Uuid>,

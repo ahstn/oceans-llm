@@ -7,7 +7,7 @@ impl AdminApiKeyRepository for LibsqlStore {
             .connection
             .query(
                 r#"
-                SELECT id, public_id, secret_hash, name, status,
+                SELECT id, public_id, secret_hash, name, status, model_grant_mode,
                        owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
                        created_at, last_used_at, revoked_at
                 FROM api_keys
@@ -38,7 +38,7 @@ impl AdminApiKeyRepository for LibsqlStore {
             .connection
             .query(
                 r#"
-                SELECT id, public_id, secret_hash, name, status,
+                SELECT id, public_id, secret_hash, name, status, model_grant_mode,
                        owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
                        created_at, last_used_at, revoked_at
                 FROM api_keys
@@ -62,21 +62,24 @@ impl AdminApiKeyRepository for LibsqlStore {
     }
 
     async fn create_api_key(&self, api_key: &NewApiKeyRecord) -> Result<ApiKeyRecord, StoreError> {
+        validate_api_key_grant_mode(api_key.owner_kind, api_key.model_grant_mode)?;
+
         let api_key_id = api_key_uuid(&api_key.public_id);
         self.connection
             .execute(
                 r#"
                 INSERT INTO api_keys (
-                    id, public_id, secret_hash, name, status,
+                    id, public_id, secret_hash, name, status, model_grant_mode,
                     owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
                     created_at, last_used_at, revoked_at
-                ) VALUES (?1, ?2, ?3, ?4, 'active', ?5, ?6, ?7, ?8, ?9, NULL, NULL)
+                ) VALUES (?1, ?2, ?3, ?4, 'active', ?5, ?6, ?7, ?8, ?9, ?10, NULL, NULL)
                 "#,
                 libsql::params![
                     api_key_id.to_string(),
                     api_key.public_id.as_str(),
                     api_key.secret_hash.as_str(),
                     api_key.name.as_str(),
+                    api_key.model_grant_mode.as_str(),
                     api_key.owner_kind.as_str(),
                     api_key.owner_user_id.map(|value| value.to_string()),
                     api_key.owner_team_id.map(|value| value.to_string()),
@@ -185,28 +188,68 @@ impl AdminApiKeyRepository for LibsqlStore {
         Ok(rows_affected > 0)
     }
 
-    async fn replace_api_key_model_grants(
+    async fn replace_api_key_model_access(
         &self,
         api_key_id: Uuid,
+        model_grant_mode: ApiKeyModelGrantMode,
         model_ids: &[Uuid],
     ) -> Result<(), StoreError> {
-        self.connection
-            .execute(
-                "DELETE FROM api_key_model_grants WHERE api_key_id = ?1",
-                [api_key_id.to_string()],
-            )
+        let tx = self
+            .connection
+            .transaction()
             .await
             .map_err(|error| StoreError::Query(error.to_string()))?;
 
-        for model_id in model_ids {
-            self.connection
-                .execute(
-                    "INSERT INTO api_key_model_grants (api_key_id, model_id) VALUES (?1, ?2)",
-                    libsql::params![api_key_id.to_string(), model_id.to_string()],
+        if model_grant_mode == ApiKeyModelGrantMode::All {
+            let mut rows = tx
+                .query(
+                    "SELECT owner_kind FROM api_keys WHERE id = ?1 LIMIT 1",
+                    [api_key_id.to_string()],
                 )
                 .await
                 .map_err(|error| StoreError::Query(error.to_string()))?;
+            let Some(row) = rows
+                .next()
+                .await
+                .map_err(|error| StoreError::Query(error.to_string()))?
+            else {
+                return Err(StoreError::NotFound(format!("api key `{api_key_id}`")));
+            };
+            let owner_kind: String = row
+                .get(0)
+                .map_err(|error| StoreError::Query(error.to_string()))?;
+            let owner_kind = ApiKeyOwnerKind::from_db(&owner_kind).ok_or_else(|| {
+                StoreError::Serialization(format!("unknown owner kind `{owner_kind}`"))
+            })?;
+            validate_api_key_grant_mode(owner_kind, model_grant_mode)?;
         }
+
+        tx.execute(
+            "UPDATE api_keys SET model_grant_mode = ?1 WHERE id = ?2",
+            libsql::params![model_grant_mode.as_str(), api_key_id.to_string()],
+        )
+        .await
+        .map_err(|error| StoreError::Query(error.to_string()))?;
+
+        tx.execute(
+            "DELETE FROM api_key_model_grants WHERE api_key_id = ?1",
+            [api_key_id.to_string()],
+        )
+        .await
+        .map_err(|error| StoreError::Query(error.to_string()))?;
+
+        for model_id in model_ids {
+            tx.execute(
+                "INSERT INTO api_key_model_grants (api_key_id, model_id) VALUES (?1, ?2)",
+                libsql::params![api_key_id.to_string(), model_id.to_string()],
+            )
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?;
+        }
+
+        tx.commit()
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?;
 
         Ok(())
     }
@@ -245,7 +288,7 @@ impl ApiKeyRepository for LibsqlStore {
             .connection
             .query(
                 r#"
-                SELECT id, public_id, secret_hash, name, status,
+                SELECT id, public_id, secret_hash, name, status, model_grant_mode,
                        owner_kind, owner_user_id, owner_team_id, owner_service_account_id,
                        created_at, last_used_at, revoked_at
                 FROM api_keys
@@ -286,4 +329,19 @@ impl ApiKeyRepository for LibsqlStore {
     ) -> Result<Option<ServiceAccountRecord>, StoreError> {
         Self::get_service_account_by_id(self, service_account_id).await
     }
+}
+
+fn validate_api_key_grant_mode(
+    owner_kind: ApiKeyOwnerKind,
+    model_grant_mode: ApiKeyModelGrantMode,
+) -> Result<(), StoreError> {
+    if owner_kind == ApiKeyOwnerKind::ServiceAccount
+        && model_grant_mode == ApiKeyModelGrantMode::All
+    {
+        return Err(StoreError::Conflict(
+            "service-account api keys require explicit model grants".to_string(),
+        ));
+    }
+
+    Ok(())
 }

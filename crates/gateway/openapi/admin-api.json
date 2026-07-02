@@ -4235,6 +4235,7 @@
           "owner_kind",
           "owner_id",
           "owner_name",
+          "model_grant_mode",
           "model_keys",
           "created_at"
         ],
@@ -4250,6 +4251,9 @@
               "string",
               "null"
             ]
+          },
+          "model_grant_mode": {
+            "$ref": "#/components/schemas/ApiKeyModelGrantModeView"
           },
           "model_keys": {
             "type": "array",
@@ -5091,6 +5095,13 @@
           }
         }
       },
+      "ApiKeyModelGrantModeView": {
+        "type": "string",
+        "enum": [
+          "all",
+          "explicit"
+        ]
+      },
       "AuthSessionUserView": {
         "type": "object",
         "required": [
@@ -5510,9 +5521,13 @@
         "required": [
           "name",
           "owner_kind",
+          "model_grant_mode",
           "model_keys"
         ],
         "properties": {
+          "model_grant_mode": {
+            "$ref": "#/components/schemas/ApiKeyModelGrantModeView"
+          },
           "model_keys": {
             "type": "array",
             "items": {
@@ -10361,9 +10376,13 @@
       "UpdateApiKeyRequest": {
         "type": "object",
         "required": [
+          "model_grant_mode",
           "model_keys"
         ],
         "properties": {
+          "model_grant_mode": {
+            "$ref": "#/components/schemas/ApiKeyModelGrantModeView"
+          },
           "model_keys": {
             "type": "array",
             "items": {

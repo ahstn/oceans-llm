@@ -106,6 +106,7 @@ where
             id: record.id,
             public_id: record.public_id,
             name: record.name,
+            model_grant_mode: record.model_grant_mode,
             owner_kind: record.owner_kind,
             owner_user_id: record.owner_user_id,
             owner_team_id: record.owner_team_id,

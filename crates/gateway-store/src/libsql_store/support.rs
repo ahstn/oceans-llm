@@ -26,13 +26,14 @@ pub(super) async fn list_allowed_model_keys(
 
 pub(super) fn decode_api_key(row: &libsql::Row) -> Result<ApiKeyRecord, StoreError> {
     let id: String = row.get(0).map_err(to_query_error)?;
-    let owner_kind: String = row.get(5).map_err(to_query_error)?;
-    let owner_user_id: Option<String> = row.get(6).map_err(to_query_error)?;
-    let owner_team_id: Option<String> = row.get(7).map_err(to_query_error)?;
-    let owner_service_account_id: Option<String> = row.get(8).map_err(to_query_error)?;
-    let created_at: i64 = row.get(9).map_err(to_query_error)?;
-    let last_used_at: Option<i64> = row.get(10).map_err(to_query_error)?;
-    let revoked_at: Option<i64> = row.get(11).map_err(to_query_error)?;
+    let model_grant_mode: String = row.get(5).map_err(to_query_error)?;
+    let owner_kind: String = row.get(6).map_err(to_query_error)?;
+    let owner_user_id: Option<String> = row.get(7).map_err(to_query_error)?;
+    let owner_team_id: Option<String> = row.get(8).map_err(to_query_error)?;
+    let owner_service_account_id: Option<String> = row.get(9).map_err(to_query_error)?;
+    let created_at: i64 = row.get(10).map_err(to_query_error)?;
+    let last_used_at: Option<i64> = row.get(11).map_err(to_query_error)?;
+    let revoked_at: Option<i64> = row.get(12).map_err(to_query_error)?;
 
     Ok(ApiKeyRecord {
         id: parse_uuid(&id)?,
@@ -45,6 +46,11 @@ pub(super) fn decode_api_key(row: &libsql::Row) -> Result<ApiKeyRecord, StoreErr
                 StoreError::Serialization(format!("unknown api key status `{status}`"))
             })?
         },
+        model_grant_mode: ApiKeyModelGrantMode::from_db(&model_grant_mode).ok_or_else(|| {
+            StoreError::Serialization(format!(
+                "unknown api key model grant mode `{model_grant_mode}`"
+            ))
+        })?,
         owner_kind: ApiKeyOwnerKind::from_db(&owner_kind).ok_or_else(|| {
             StoreError::Serialization(format!("unknown owner kind `{owner_kind}`"))
         })?,
