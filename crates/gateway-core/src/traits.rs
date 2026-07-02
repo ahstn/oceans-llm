@@ -67,6 +67,38 @@ pub trait AdminApiKeyRepository: Send + Sync {
 
     async fn create_api_key(&self, api_key: &NewApiKeyRecord) -> Result<ApiKeyRecord, StoreError>;
 
+    async fn get_api_key_secret_material(
+        &self,
+        api_key_id: Uuid,
+    ) -> Result<Option<crate::ApiKeySecretMaterialRecord>, StoreError> {
+        let _ = api_key_id;
+        Err(StoreError::Unexpected(
+            "api key secret material is not implemented for this repository".to_string(),
+        ))
+    }
+
+    async fn upsert_api_key_secret_material(
+        &self,
+        material: &crate::ApiKeySecretMaterialRecord,
+    ) -> Result<(), StoreError> {
+        let _ = material;
+        Err(StoreError::Unexpected(
+            "api key secret material is not implemented for this repository".to_string(),
+        ))
+    }
+
+    async fn touch_api_key_secret_material_retrieved(
+        &self,
+        api_key_id: Uuid,
+        retrieved_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        let _ = api_key_id;
+        let _ = retrieved_at;
+        Err(StoreError::Unexpected(
+            "api key secret material retrieval is not implemented for this repository".to_string(),
+        ))
+    }
+
     async fn replace_api_key_model_grants(
         &self,
         api_key_id: Uuid,

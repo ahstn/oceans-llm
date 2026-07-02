@@ -6,7 +6,6 @@ database:
   path: "./gateway.db"
 
 auth:
-  seed_api_keys: []
   bootstrap_admin:
     enabled: true
     email: admin@local
@@ -22,16 +21,16 @@ request_logging:
     redaction_paths: []
 
 teams:
-  - key: platform
+  - id: platform
     name: Platform
 
-  - key: research
+  - id: research
     name: Research
 
-  - key: applied-ai
+  - id: applied-ai
     name: Applied AI
 
-  - key: operations
+  - id: operations
     name: Operations
 
 users:

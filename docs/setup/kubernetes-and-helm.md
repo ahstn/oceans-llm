@@ -70,6 +70,7 @@ For production-like installs, provide:
 - `GATEWAY_IDENTITY_TOKEN_SECRET`
 - provider credentials referenced by `gateway.config.providers`
 - any bootstrap-admin password used by an opt-in bootstrap Job
+- `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY` when `gateway.config.service_accounts[*].keys` declares managed service-account keys
 
 The chart does not install External Secrets Operator and does not create a store.
 

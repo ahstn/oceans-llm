@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use gateway_core::{
     AuthMode, BudgetScope, BudgetSettings, GlobalRole, IdentityUserRecord, MembershipRole,
-    OauthProviderRecord, OidcProviderRecord, SeedApiKey, SeedTeam, SeedUser, StoreError,
+    OauthProviderRecord, OidcProviderRecord, SeedServiceAccount, SeedTeam, SeedUser, StoreError,
     TeamRecord, UserStatus,
 };
 use time::OffsetDateTime;
@@ -32,6 +32,13 @@ pub(crate) fn api_key_uuid(public_id: &str) -> Uuid {
     Uuid::new_v5(
         &Uuid::NAMESPACE_OID,
         format!("api_key:{public_id}").as_bytes(),
+    )
+}
+
+pub(crate) fn managed_api_key_uuid(service_account_key: &str, config_key: &str) -> Uuid {
+    Uuid::new_v5(
+        &Uuid::NAMESPACE_OID,
+        format!("managed_api_key:{service_account_key}:{config_key}").as_bytes(),
     )
 }
 
@@ -88,18 +95,18 @@ where
     Ok(records)
 }
 
-pub(crate) fn validate_seed_api_key_team_references(
+pub(crate) fn validate_seed_service_account_team_references(
     teams: &[SeedTeam],
-    api_keys: &[SeedApiKey],
+    service_accounts: &[SeedServiceAccount],
 ) -> Result<(), StoreError> {
-    for api_key in api_keys {
+    for service_account in service_accounts {
         if !teams
             .iter()
-            .any(|team| team.team_key == api_key.service_account_team_key)
+            .any(|team| team.team_key == service_account.team_key)
         {
             return Err(StoreError::Conflict(format!(
-                "seed api key '{}' references unknown service account team '{}'",
-                api_key.public_id, api_key.service_account_team_key
+                "seed service account '{}' references unknown team '{}'",
+                service_account.service_account_key, service_account.team_key
             )));
         }
     }
