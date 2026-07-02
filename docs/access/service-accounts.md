@@ -47,8 +47,9 @@ Team owners and team admins can:
 - create service accounts for their own team
 - deactivate service accounts for their own team
 - manage credentials and grants for their own team's service accounts
+- reveal stored key material for their own team's service-account credentials
 
-Ordinary team members cannot manage service accounts. Users outside the owning team cannot manage that team's service accounts unless they are platform admins.
+Ordinary team members cannot manage service accounts or reveal stored key material. Users outside the owning team cannot manage that team's service accounts unless they are platform admins.
 
 ## Lifecycle
 

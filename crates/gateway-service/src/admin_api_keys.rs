@@ -232,8 +232,9 @@ where
                 created_at: now,
             })
             .await?;
-        if let Some(encrypted) = secret_material {
-            self.repo
+        if let Some(encrypted) = secret_material
+            && let Err(error) = self
+                .repo
                 .upsert_api_key_secret_material(&ApiKeySecretMaterialRecord {
                     api_key_id: api_key.id,
                     storage_kind: ApiKeySecretStorageKind::EncryptedBlob,
@@ -244,7 +245,10 @@ where
                     updated_at: now,
                     last_retrieved_at: None,
                 })
-                .await?;
+                .await
+        {
+            let _ = self.repo.revoke_api_key(api_key.id, now).await;
+            return Err(error.into());
         }
         let model_ids = granted_models
             .iter()

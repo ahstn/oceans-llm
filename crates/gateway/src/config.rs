@@ -11,7 +11,7 @@ use gateway_core::{
     RequestLogRetentionWindow, RouteCompatibility, SeedApiKeySecretMaterial, SeedBudget,
     SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute, SeedOauthProvider,
     SeedOidcProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership,
-    parse_gateway_api_key,
+    hash_gateway_key_secret, parse_gateway_api_key,
 };
 use gateway_providers::{
     BedrockAuthConfig, BedrockEndpointKind, BedrockProviderConfig, CloudRunOpenAiCompatAuth,
@@ -19,13 +19,11 @@ use gateway_providers::{
 };
 use gateway_service::{
     PayloadPath, ProviderIconKey, RequestLogPayloadCaptureMode, RequestLogPayloadPolicy,
-    encrypt_gateway_api_key_secret, hash_gateway_key_secret, is_supported_pricing_provider_id,
-    parse_payload_path,
+    encrypt_gateway_api_key_secret, is_supported_pricing_provider_id, parse_payload_path,
 };
 use gateway_store::StoreConnectionOptions;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
-use uuid::Uuid;
 
 mod providers;
 
@@ -785,50 +783,55 @@ impl GatewayConfig {
                 for key in &service_account.keys {
                     let config_key = normalize_config_managed_api_key(&key.id)?;
                     let key_name = key.name.as_deref().unwrap_or(&key.id).trim().to_string();
-                    let (source, raw_value) = match key.value.as_deref() {
-                        Some(value_ref) => (
-                            ManagedApiKeySource::ConfiguredValue,
-                            resolve_secret_reference(value_ref).with_context(|| {
-                                format!(
-                                    "service account `{service_account_key}` key `{config_key}` value"
+                    let (source, public_id, secret_hash, secret_material) =
+                        match key.value.as_deref() {
+                            Some(value_ref) => {
+                                let raw_value =
+                                    resolve_secret_reference(value_ref).with_context(|| {
+                                        format!(
+                                            "service account `{service_account_key}` key `{config_key}` value"
+                                        )
+                                    })?;
+                                let parsed = parse_gateway_api_key(&raw_value).with_context(|| {
+                                    format!(
+                                        "invalid gateway key configured for service account `{service_account_key}` key `{config_key}`"
+                                    )
+                                })?;
+                                let secret_hash =
+                                    hash_gateway_key_secret(&parsed.secret).with_context(|| {
+                                        format!(
+                                            "failed hashing gateway key for service account `{service_account_key}` key `{config_key}`"
+                                        )
+                                    })?;
+                                let encrypted =
+                                    encrypt_gateway_api_key_secret(&raw_value).map_err(|error| {
+                                        anyhow::anyhow!(
+                                            "failed encrypting gateway key for service account `{service_account_key}` key `{config_key}`: {error}"
+                                        )
+                                    })?;
+                                (
+                                    ManagedApiKeySource::ConfiguredValue,
+                                    Some(parsed.public_id),
+                                    Some(secret_hash),
+                                    Some(SeedApiKeySecretMaterial {
+                                        storage_kind: ApiKeySecretStorageKind::EncryptedBlob,
+                                        secret_ciphertext: encrypted.ciphertext,
+                                        secret_nonce: encrypted.nonce,
+                                        secret_key_id: encrypted.key_id.to_string(),
+                                    }),
                                 )
-                            })?,
-                        ),
-                        None => (
-                            ManagedApiKeySource::Generated,
-                            generate_gateway_api_key_value(),
-                        ),
-                    };
-
-                    let parsed = parse_gateway_api_key(&raw_value).with_context(|| {
-                        format!(
-                            "invalid gateway key configured for service account `{service_account_key}` key `{config_key}`"
-                        )
-                    })?;
-                    let secret_hash = hash_gateway_key_secret(&parsed.secret).with_context(|| {
-                        format!(
-                            "failed hashing gateway key for service account `{service_account_key}` key `{config_key}`"
-                        )
-                    })?;
-                    let encrypted = encrypt_gateway_api_key_secret(&raw_value).map_err(|error| {
-                        anyhow::anyhow!(
-                            "failed encrypting gateway key for service account `{service_account_key}` key `{config_key}`: {error}"
-                        )
-                    })?;
+                            }
+                            None => (ManagedApiKeySource::Generated, None, None, None),
+                        };
 
                     managed_api_keys.push(SeedManagedServiceAccountApiKey {
                         config_key,
                         name: key_name,
                         auto_create: key.auto_create,
                         source,
-                        public_id: Some(parsed.public_id),
-                        secret_hash: Some(secret_hash),
-                        secret_material: Some(SeedApiKeySecretMaterial {
-                            storage_kind: ApiKeySecretStorageKind::EncryptedBlob,
-                            secret_ciphertext: encrypted.ciphertext,
-                            secret_nonce: encrypted.nonce,
-                            secret_key_id: encrypted.key_id.to_string(),
-                        }),
+                        public_id,
+                        secret_hash,
+                        secret_material,
                         allowed_models: key.allowed_models.clone(),
                     });
                 }
@@ -1835,12 +1838,14 @@ impl BootstrapAdminConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TeamConfig {
     pub id: String,
     pub name: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ServiceAccountConfig {
     pub id: String,
     #[serde(default)]
@@ -1852,6 +1857,7 @@ pub struct ServiceAccountConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ServiceAccountKeyConfig {
     pub id: String,
     #[serde(default)]
@@ -2509,12 +2515,6 @@ fn normalize_config_managed_api_key(config_key: &str) -> anyhow::Result<String> 
     Ok(normalized)
 }
 
-fn generate_gateway_api_key_value() -> String {
-    let public_id = Uuid::new_v4().simple().to_string();
-    let secret = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
-    format!("gwk_{public_id}.{secret}")
-}
-
 fn normalize_config_oidc_provider_key(provider_key: &str) -> anyhow::Result<String> {
     let normalized = provider_key.trim().to_string();
     if normalized.is_empty() {
@@ -2773,9 +2773,9 @@ mod tests {
     use std::{env, path::Path};
 
     use gateway_core::{
-        AuthMode, AwsBedrockApiStyle, BudgetCadence, GlobalRole, MembershipRole, Money4,
-        OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
-        OpenRouterPercentilePreference, RequestLogRetentionWindow,
+        AuthMode, AwsBedrockApiStyle, BudgetCadence, GlobalRole, ManagedApiKeySource,
+        MembershipRole, Money4, OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField,
+        OpenAiCompatReasoningEffort, OpenRouterPercentilePreference, RequestLogRetentionWindow,
     };
     use gateway_providers::{BearerAuthHeader, BedrockAuthConfig};
     use gateway_service::RequestLogPayloadCaptureMode;
@@ -4864,6 +4864,45 @@ service_accounts:
             service_accounts[0].managed_api_keys[1].config_key,
             "fallback"
         );
+    }
+
+    #[test]
+    fn parses_generated_service_account_key_without_encryption_key() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        unsafe {
+            env::remove_var("OCEANS_API_KEY_SECRET_ENCRYPTION_KEY");
+        }
+
+        write_config(
+            &config_path,
+            r#"
+teams:
+  - id: platform
+    name: Platform
+service_accounts:
+  - id: ci-indexer
+    name: CI Indexer
+    team: platform
+    budget:
+      cadence: daily
+      amount_usd: "25.0000"
+      hard_limit: true
+      timezone: UTC
+    keys:
+      - id: primary
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let service_accounts = config
+            .seed_service_accounts()
+            .expect("seed service accounts");
+        let managed_key = &service_accounts[0].managed_api_keys[0];
+        assert_eq!(managed_key.source, ManagedApiKeySource::Generated);
+        assert_eq!(managed_key.public_id, None);
+        assert_eq!(managed_key.secret_hash, None);
+        assert!(managed_key.secret_material.is_none());
     }
 
     #[test]

@@ -292,7 +292,7 @@ Important managed-key fields:
 - `value`: optional `env.*` or `literal.*` gateway API key value, used to import or rotate a known value
 - `allowed_models`: reconciled model grants for the key
 
-Managed key material is encrypted before storage so it can be revealed later to authenticated platform admins or active members of the owning team. Set `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY` to a base64-encoded 32-byte key before using config-created managed keys or creating service-account-owned keys in the admin UI.
+Managed key material is encrypted before storage so it can be revealed later to authenticated platform admins or active team owners/admins of the owning team. Set `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY` to a base64-encoded 32-byte key before using config-created managed keys or creating service-account-owned keys in the admin UI.
 
 Operational guidance:
 
@@ -389,7 +389,7 @@ Important `users` fields:
 
 Validation rules that matter:
 
-- team keys must be unique
+- team IDs must be unique
 - `system-legacy` has no reserved meaning and is not a compatibility owner
 - user emails are normalized and must be unique
 - `admin@local` is reserved for the bootstrap admin

@@ -1,9 +1,11 @@
 use std::collections::BTreeMap;
 
 use gateway_core::{
-    AuthMode, BudgetScope, BudgetSettings, GlobalRole, IdentityUserRecord, MembershipRole,
-    OauthProviderRecord, OidcProviderRecord, SeedServiceAccount, SeedTeam, SeedUser, StoreError,
-    TeamRecord, UserStatus,
+    ApiKeySecretStorageKind, AuthMode, BudgetScope, BudgetSettings, GlobalRole, IdentityUserRecord,
+    MembershipRole, OauthProviderRecord, OidcProviderRecord, SeedApiKeySecretMaterial,
+    SeedManagedServiceAccountApiKey, SeedServiceAccount, SeedTeam, SeedUser, StoreError,
+    TeamRecord, UserStatus, encrypt_gateway_api_key_secret, generate_gateway_api_key_value,
+    hash_gateway_key_secret, parse_gateway_api_key,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -47,6 +49,56 @@ pub(crate) fn service_account_uuid(service_account_key: &str) -> Uuid {
         &Uuid::NAMESPACE_OID,
         format!("service_account:{service_account_key}").as_bytes(),
     )
+}
+
+pub(crate) fn generate_seed_api_key_material()
+-> Result<(String, String, SeedApiKeySecretMaterial), StoreError> {
+    let raw_key = generate_gateway_api_key_value();
+    seed_api_key_material_from_raw(&raw_key)
+}
+
+pub(crate) fn seed_api_key_material_from_raw(
+    raw_key: &str,
+) -> Result<(String, String, SeedApiKeySecretMaterial), StoreError> {
+    let parsed = parse_gateway_api_key(raw_key).map_err(|error| {
+        StoreError::Conflict(format!("generated gateway key is invalid: {error}"))
+    })?;
+    let secret_hash = hash_gateway_key_secret(&parsed.secret)
+        .map_err(|error| StoreError::Unexpected(error.to_string()))?;
+    let encrypted = encrypt_gateway_api_key_secret(raw_key)
+        .map_err(|error| StoreError::Unexpected(error.to_string()))?;
+
+    Ok((
+        parsed.public_id,
+        secret_hash,
+        SeedApiKeySecretMaterial {
+            storage_kind: ApiKeySecretStorageKind::EncryptedBlob,
+            secret_ciphertext: encrypted.ciphertext,
+            secret_nonce: encrypted.nonce,
+            secret_key_id: encrypted.key_id.to_string(),
+        },
+    ))
+}
+
+pub(crate) fn provided_seed_api_key_material(
+    managed_key: &SeedManagedServiceAccountApiKey,
+) -> Result<Option<(String, String, SeedApiKeySecretMaterial)>, StoreError> {
+    match (
+        managed_key.public_id.as_ref(),
+        managed_key.secret_hash.as_ref(),
+        managed_key.secret_material.as_ref(),
+    ) {
+        (Some(public_id), Some(secret_hash), Some(secret_material)) => Ok(Some((
+            public_id.clone(),
+            secret_hash.clone(),
+            secret_material.clone(),
+        ))),
+        (None, None, None) => Ok(None),
+        _ => Err(StoreError::Conflict(format!(
+            "managed api key `{}` has incomplete secret material",
+            managed_key.config_key
+        ))),
+    }
 }
 
 pub(crate) fn oidc_provider_uuid(provider_key: &str) -> String {

@@ -1,5 +1,7 @@
 # Service Account Config and Managed API Key Secrets
 
+`See also`: [Configuration Reference](../configuration/configuration-reference.md), [Service Accounts](../access/service-accounts.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Issue 206 Implementation Plan](../implementation-plans/issue-206-service-account-config.md)
+
 ## Status
 
 Accepted.
@@ -76,8 +78,8 @@ by response redaction keys.
 - Deployments that configure managed service-account keys must provide
   `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY` to seed or create retrievable service-account
   keys.
-- Generated managed keys can be revealed later to platform admins or active members of
-  the owning team, but they are not implicitly rotated on restart.
+- Generated managed keys can be revealed later to platform admins or team owners/admins
+  of the owning team, but they are not implicitly rotated on restart.
 - Rotating the encryption key requires a deliberate re-encryption procedure; changing
   only the environment variable makes existing stored materials undecryptable.
 

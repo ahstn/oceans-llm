@@ -33,31 +33,32 @@ mod tests {
     use std::env;
 
     use gateway_core::{
-        ApiKeyOwnerKind, ApiKeyRepository, ApiKeySecretStorageKind, AuthMode, BudgetAlertChannel,
-        BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus, BudgetAlertHistoryQuery,
-        BudgetAlertRecord, BudgetAlertRepository, BudgetCadence, BudgetRepository, BudgetScope,
-        BudgetSettings, ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord,
-        ExternalMcpDiscoveryStatus, ExternalMcpServerStatus, ExternalMcpTransport, GlobalRole,
-        IdentityRepository, ManagedApiKeySource, McpRegistryRepository,
-        McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
-        McpToolInvocationRepository, McpToolInvocationStatus, McpToolPolicyResult,
-        McpUpstreamCredentialMaterialKind, McpUpstreamCredentialOwnerScopeKind,
-        McpUpstreamCredentialRepository, McpUpstreamSecretStorageKind, MembershipRole,
-        ModelPricingRecord, ModelRepository, Money4, NewExternalMcpServerRecord,
-        NewReviewAgentRepositoryRecord, NewReviewAgentRunRecord, OauthJitPolicy,
-        OidcLoginStateRecord, OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField,
-        OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility, PricingCatalogCacheRecord,
-        PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
-        ProviderCapabilities, RequestAttemptRecord, RequestAttemptStatus, RequestLogPayloadRecord,
-        RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestTag, RequestTags,
-        RequestToolCardinality, ReviewAgentProvider, ReviewAgentPullRequestState,
-        ReviewAgentRepository, ReviewAgentRepositoryStatus, ReviewAgentRunStatus,
-        ReviewAgentSettings, RouteCompatibility, SeedApiKey, SeedApiKeySecretMaterial, SeedBudget,
-        SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute, SeedOauthProvider,
-        SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership, StoreError,
-        StoreHealth, UpdateExternalMcpServerRecord, UpdateReviewAgentRunRecord,
-        UpsertExternalMcpToolRecord, UpsertMcpUpstreamCredentialBindingRecord,
-        UpsertReviewAgentPullRequestRecord, UsageLedgerRecord, UsagePricingStatus, UserStatus,
+        ApiKeyOwnerKind, ApiKeyRepository, ApiKeySecretStorageKind, ApiKeyStatus, AuthMode,
+        BudgetAlertChannel, BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus,
+        BudgetAlertHistoryQuery, BudgetAlertRecord, BudgetAlertRepository, BudgetCadence,
+        BudgetRepository, BudgetScope, BudgetSettings, ExternalMcpAuthMode,
+        ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus, ExternalMcpServerStatus,
+        ExternalMcpTransport, GlobalRole, IdentityRepository, ManagedApiKeySource,
+        McpRegistryRepository, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
+        McpToolInvocationRecord, McpToolInvocationRepository, McpToolInvocationStatus,
+        McpToolPolicyResult, McpUpstreamCredentialMaterialKind,
+        McpUpstreamCredentialOwnerScopeKind, McpUpstreamCredentialRepository,
+        McpUpstreamSecretStorageKind, MembershipRole, ModelPricingRecord, ModelRepository, Money4,
+        NewExternalMcpServerRecord, NewReviewAgentRepositoryRecord, NewReviewAgentRunRecord,
+        OauthJitPolicy, OidcLoginStateRecord, OpenAiCompatDeveloperRole,
+        OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
+        PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
+        PricingProvenance, ProviderCapabilities, RequestAttemptRecord, RequestAttemptStatus,
+        RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository,
+        RequestTag, RequestTags, RequestToolCardinality, ReviewAgentProvider,
+        ReviewAgentPullRequestState, ReviewAgentRepository, ReviewAgentRepositoryStatus,
+        ReviewAgentRunStatus, ReviewAgentSettings, RouteCompatibility, SeedApiKey,
+        SeedApiKeySecretMaterial, SeedBudget, SeedManagedServiceAccountApiKey, SeedModel,
+        SeedModelRoute, SeedOauthProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser,
+        SeedUserMembership, ServiceAccountStatus, StoreError, StoreHealth,
+        UpdateExternalMcpServerRecord, UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord,
+        UpsertMcpUpstreamCredentialBindingRecord, UpsertReviewAgentPullRequestRecord,
+        UsageLedgerRecord, UsagePricingStatus, UserStatus,
     };
     use serde_json::{Map, json};
     use serial_test::serial;
@@ -139,6 +140,62 @@ mod tests {
         }]
     }
 
+    fn generated_key_without_material_service_accounts() -> Vec<SeedServiceAccount> {
+        vec![SeedServiceAccount {
+            service_account_key: "generated-worker".to_string(),
+            service_account_name: "Generated Worker".to_string(),
+            team_key: "seed-workloads".to_string(),
+            budget: SeedBudget {
+                cadence: BudgetCadence::Daily,
+                amount_usd: Money4::from_scaled(250_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            },
+            managed_api_keys: vec![SeedManagedServiceAccountApiKey {
+                config_key: "default".to_string(),
+                name: "Generated Worker".to_string(),
+                auto_create: true,
+                source: ManagedApiKeySource::Generated,
+                public_id: None,
+                secret_hash: None,
+                secret_material: None,
+                allowed_models: vec!["fast".to_string()],
+            }],
+        }]
+    }
+
+    fn configured_key_service_accounts(
+        public_id: &str,
+        secret_hash: &str,
+    ) -> Vec<SeedServiceAccount> {
+        vec![SeedServiceAccount {
+            service_account_key: "ci-rotator".to_string(),
+            service_account_name: "CI Rotator".to_string(),
+            team_key: "seed-workloads".to_string(),
+            budget: SeedBudget {
+                cadence: BudgetCadence::Daily,
+                amount_usd: Money4::from_scaled(250_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            },
+            managed_api_keys: vec![SeedManagedServiceAccountApiKey {
+                config_key: "default".to_string(),
+                name: "CI Rotator".to_string(),
+                auto_create: true,
+                source: ManagedApiKeySource::ConfiguredValue,
+                public_id: Some(public_id.to_string()),
+                secret_hash: Some(secret_hash.to_string()),
+                secret_material: Some(SeedApiKeySecretMaterial {
+                    storage_kind: ApiKeySecretStorageKind::EncryptedBlob,
+                    secret_ciphertext: format!("ciphertext-{public_id}"),
+                    secret_nonce: format!("nonce-{public_id}"),
+                    secret_key_id: "test-key".to_string(),
+                }),
+                allowed_models: vec!["fast".to_string()],
+            }],
+        }]
+    }
+
     fn seed_github_oauth_provider_with_domains(domains: Vec<&str>) -> SeedOauthProvider {
         SeedOauthProvider {
             provider_key: "github".to_string(),
@@ -158,6 +215,13 @@ mod tests {
     where
         S: GatewayStore + Sync,
     {
+        unsafe {
+            env::set_var(
+                "OCEANS_API_KEY_SECRET_ENCRYPTION_KEY",
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+            );
+        }
+
         let providers = vec![SeedProvider {
             provider_key: "openai-prod".to_string(),
             provider_type: "openai_compat".to_string(),
@@ -186,6 +250,62 @@ mod tests {
             )
             .await
             .expect("seed managed key");
+
+        store
+            .seed_from_inputs(
+                &providers,
+                &models,
+                &[],
+                &generated_key_without_material_service_accounts(),
+                &[],
+                &[],
+                &seed_api_key_teams(),
+                &[],
+            )
+            .await
+            .expect("seed generated managed key without provided material");
+        let generated_service_account = store
+            .list_service_accounts()
+            .await
+            .expect("list service accounts")
+            .into_iter()
+            .find(|account| account.service_account_key == "generated-worker")
+            .expect("generated service account exists");
+        let generated_keys = store
+            .list_api_keys()
+            .await
+            .expect("list api keys")
+            .into_iter()
+            .filter(|key| {
+                key.owner_service_account_id == Some(generated_service_account.service_account_id)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(generated_keys.len(), 1);
+        assert_eq!(generated_keys[0].status, ApiKeyStatus::Active);
+        assert!(
+            store
+                .get_api_key_secret_material(generated_keys[0].id)
+                .await
+                .expect("load generated secret material")
+                .is_some()
+        );
+
+        unsafe {
+            env::remove_var("OCEANS_API_KEY_SECRET_ENCRYPTION_KEY");
+        }
+        store
+            .seed_from_inputs(
+                &providers,
+                &models,
+                &[],
+                &generated_key_without_material_service_accounts(),
+                &[],
+                &[],
+                &seed_api_key_teams(),
+                &[],
+            )
+            .await
+            .expect("reseed generated managed key without encryption key");
 
         let api_key = store
             .get_api_key_by_public_id("managed123")
@@ -223,6 +343,19 @@ mod tests {
             .expect("secret material still exists");
         assert_eq!(touched.last_retrieved_at, Some(retrieved_at));
 
+        let disabled_at = retrieved_at + Duration::seconds(1);
+        let service_account_id = api_key
+            .owner_service_account_id
+            .expect("managed key has service account owner");
+        store
+            .disable_service_account(service_account_id, disabled_at)
+            .await
+            .expect("disable service account");
+        store
+            .revoke_api_key(api_key.id, disabled_at)
+            .await
+            .expect("revoke managed key");
+
         store
             .seed_from_inputs(
                 &providers,
@@ -244,6 +377,8 @@ mod tests {
             .expect("managed api key remains under original public id");
         assert_eq!(stable_key.id, api_key.id);
         assert_eq!(stable_key.secret_hash, "hash-v1");
+        assert_eq!(stable_key.status, ApiKeyStatus::Revoked);
+        assert_eq!(stable_key.revoked_at, Some(disabled_at));
         assert!(
             store
                 .get_api_key_by_public_id("managed456")
@@ -258,6 +393,76 @@ mod tests {
             .expect("secret material remains");
         assert_eq!(stable_material.secret_ciphertext, "ciphertext-managed123");
         assert_eq!(stable_material.last_retrieved_at, Some(retrieved_at));
+        let disabled_service_account =
+            IdentityRepository::get_service_account_by_id(store, service_account_id)
+                .await
+                .expect("load disabled service account")
+                .expect("disabled service account exists");
+        assert_eq!(
+            disabled_service_account.status,
+            ServiceAccountStatus::Disabled
+        );
+        assert_eq!(disabled_service_account.disabled_at, Some(disabled_at));
+
+        store
+            .seed_from_inputs(
+                &providers,
+                &models,
+                &[],
+                &configured_key_service_accounts("configured123", "hash-configured-v1"),
+                &[],
+                &[],
+                &seed_api_key_teams(),
+                &[],
+            )
+            .await
+            .expect("seed configured managed key");
+        let original_configured_key = store
+            .get_api_key_by_public_id("configured123")
+            .await
+            .expect("load configured key")
+            .expect("configured api key exists");
+
+        store
+            .seed_from_inputs(
+                &providers,
+                &models,
+                &[],
+                &configured_key_service_accounts("configured456", "hash-configured-v2"),
+                &[],
+                &[],
+                &seed_api_key_teams(),
+                &[],
+            )
+            .await
+            .expect("rotate configured managed key");
+
+        let revoked_configured_key = store
+            .get_api_key_by_public_id("configured123")
+            .await
+            .expect("load original configured key")
+            .expect("original configured key remains");
+        assert_eq!(revoked_configured_key.id, original_configured_key.id);
+        assert_eq!(revoked_configured_key.status, ApiKeyStatus::Revoked);
+        assert!(revoked_configured_key.revoked_at.is_some());
+
+        let rotated_configured_key = store
+            .get_api_key_by_public_id("configured456")
+            .await
+            .expect("load rotated configured key")
+            .expect("rotated configured key exists");
+        assert_ne!(rotated_configured_key.id, original_configured_key.id);
+        assert_eq!(rotated_configured_key.status, ApiKeyStatus::Active);
+        assert_eq!(rotated_configured_key.secret_hash, "hash-configured-v2");
+        let rotated_material = store
+            .get_api_key_secret_material(rotated_configured_key.id)
+            .await
+            .expect("load rotated material")
+            .expect("rotated secret material exists");
+        assert_eq!(
+            rotated_material.secret_ciphertext,
+            "ciphertext-configured456"
+        );
     }
 
     #[allow(clippy::too_many_arguments)]

@@ -2,6 +2,7 @@ pub mod auth;
 pub mod budgets;
 pub mod domain;
 pub mod error;
+pub mod gateway_keys;
 pub mod protocol;
 pub mod streaming;
 pub mod traits;
@@ -60,6 +61,12 @@ pub use domain::{
     UserRecord, UserSessionRecord, UserStatus, budget_window_utc,
 };
 pub use error::{AuthError, GatewayError, ProviderError, RouteError, StoreError};
+pub use gateway_keys::{
+    EncryptedSecret, GATEWAY_API_KEY_SECRET_KEY_ENV, GATEWAY_API_KEY_SECRET_KEY_ID,
+    decrypt_gateway_api_key_secret, decrypt_secret_with_key, encrypt_gateway_api_key_secret,
+    encrypt_secret_with_key, generate_gateway_api_key_value, hash_gateway_key_secret,
+    validate_secret_key_env,
+};
 pub use protocol::anthropic::{AnthropicMessage, AnthropicMessagesRequest};
 pub use protocol::core::{
     ChatMessage as CoreChatMessage, ChatRequest as CoreChatRequest,

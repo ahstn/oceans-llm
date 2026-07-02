@@ -1,6 +1,7 @@
 use super::*;
 use crate::seed::{
-    managed_api_key_uuid, prevalidate_seed_users, reconcile_seed_teams, reconcile_seed_users,
+    generate_seed_api_key_material, managed_api_key_uuid, prevalidate_seed_users,
+    provided_seed_api_key_material, reconcile_seed_teams, reconcile_seed_users,
     service_account_uuid, validate_seed_service_account_team_references,
 };
 use crate::shared::{parse_uuid, serialize_json, serialize_optional_json};
@@ -373,11 +374,7 @@ impl PostgresStore {
                 ON CONFLICT(service_account_id) DO UPDATE SET
                     service_account_key = excluded.service_account_key,
                     service_account_name = excluded.service_account_name,
-                    status = excluded.status,
-                    model_access_mode = excluded.model_access_mode,
-                    metadata_json = excluded.metadata_json,
-                    updated_at = excluded.updated_at,
-                    disabled_at = NULL
+                    updated_at = excluded.updated_at
                 "#,
             )
             .bind(service_account_id.to_string())
@@ -429,6 +426,7 @@ impl PostgresStore {
                     == gateway_core::ManagedApiKeySource::ConfiguredValue
                     || !is_existing_managed_key;
 
+                let mut secret_material_to_apply = None;
                 let api_key_id = if let Some(api_key_id) = existing_managed_api_key_id {
                     let existing_api_key =
                         AdminApiKeyRepository::get_api_key_by_id(self, api_key_id)
@@ -439,59 +437,119 @@ impl PostgresStore {
                                     managed_key.config_key
                                 ))
                             })?;
-                    if should_apply_secret
-                        && let Some(public_id) = &managed_key.public_id
-                        && existing_api_key.public_id != *public_id
-                    {
-                        return Err(StoreError::Conflict(format!(
-                            "managed api key `{}` cannot change public id",
-                            managed_key.config_key
-                        )));
+                    let provided_material = provided_seed_api_key_material(managed_key)?;
+                    let is_rotation = should_apply_secret
+                        && managed_key.source == gateway_core::ManagedApiKeySource::ConfiguredValue
+                        && provided_material.as_ref().is_some_and(|(public_id, _, _)| {
+                            existing_api_key.public_id != *public_id
+                        });
+
+                    if is_rotation {
+                        let (public_id, secret_hash, secret_material) = provided_material
+                            .ok_or_else(|| {
+                                StoreError::Conflict(format!(
+                                    "managed api key `{}` cannot rotate without secret material",
+                                    managed_key.config_key
+                                ))
+                            })?;
+                        let rotated_api_key_id = api_key_uuid(&public_id);
+                        if AdminApiKeyRepository::get_api_key_by_id(self, rotated_api_key_id)
+                            .await?
+                            .is_some()
+                        {
+                            return Err(StoreError::Conflict(format!(
+                                "managed api key `{}` public id already exists",
+                                managed_key.config_key
+                            )));
+                        }
+
+                        sqlx::query(
+                            r#"
+                            INSERT INTO api_keys (
+                                id, public_id, secret_hash, name, status,
+                                owner_kind, owner_user_id, owner_team_id, owner_service_account_id, created_at
+                            ) VALUES ($1, $2, $3, $4, 'active', 'service_account', NULL, $5, $6, $7)
+                            "#,
+                        )
+                        .bind(rotated_api_key_id.to_string())
+                        .bind(public_id.as_str())
+                        .bind(secret_hash.as_str())
+                        .bind(managed_key.name.as_str())
+                        .bind(team.team_id.to_string())
+                        .bind(service_account_id.to_string())
+                        .bind(now_unix)
+                        .execute(&self.pool)
+                        .await
+                        .map_err(to_query_error)?;
+
+                        sqlx::query(
+                            r#"
+                            UPDATE api_keys
+                            SET status = 'revoked', revoked_at = $1
+                            WHERE id = $2
+                            "#,
+                        )
+                        .bind(now_unix)
+                        .bind(api_key_id.to_string())
+                        .execute(&self.pool)
+                        .await
+                        .map_err(to_query_error)?;
+
+                        secret_material_to_apply = Some(secret_material);
+                        rotated_api_key_id
+                    } else {
+                        let secret_hash = if should_apply_secret {
+                            if let Some((_, secret_hash, secret_material)) = provided_material {
+                                secret_material_to_apply = Some(secret_material);
+                                secret_hash
+                            } else {
+                                existing_api_key.secret_hash.clone()
+                            }
+                        } else {
+                            existing_api_key.secret_hash.clone()
+                        };
+
+                        sqlx::query(
+                            r#"
+                            UPDATE api_keys
+                            SET secret_hash = $1,
+                                name = $2,
+                                owner_kind = 'service_account',
+                                owner_user_id = NULL,
+                                owner_team_id = $3,
+                                owner_service_account_id = $4
+                            WHERE id = $5
+                            "#,
+                        )
+                        .bind(secret_hash.as_str())
+                        .bind(managed_key.name.as_str())
+                        .bind(team.team_id.to_string())
+                        .bind(service_account_id.to_string())
+                        .bind(api_key_id.to_string())
+                        .execute(&self.pool)
+                        .await
+                        .map_err(to_query_error)?;
+
+                        api_key_id
                     }
-                    let secret_hash = managed_key
-                        .secret_hash
-                        .as_deref()
-                        .filter(|_| should_apply_secret)
-                        .unwrap_or(existing_api_key.secret_hash.as_str());
-
-                    sqlx::query(
-                        r#"
-                        UPDATE api_keys
-                        SET secret_hash = $1,
-                            name = $2,
-                            status = 'active',
-                            owner_kind = 'service_account',
-                            owner_user_id = NULL,
-                            owner_team_id = $3,
-                            owner_service_account_id = $4,
-                            revoked_at = NULL
-                        WHERE id = $5
-                        "#,
-                    )
-                    .bind(secret_hash)
-                    .bind(managed_key.name.as_str())
-                    .bind(team.team_id.to_string())
-                    .bind(service_account_id.to_string())
-                    .bind(api_key_id.to_string())
-                    .execute(&self.pool)
-                    .await
-                    .map_err(to_query_error)?;
-
-                    api_key_id
                 } else {
-                    let public_id = managed_key.public_id.as_ref().ok_or_else(|| {
-                        StoreError::Conflict(format!(
-                            "managed api key `{}` cannot be created without a public id",
-                            managed_key.config_key
-                        ))
-                    })?;
-                    let secret_hash = managed_key.secret_hash.as_ref().ok_or_else(|| {
-                        StoreError::Conflict(format!(
-                            "managed api key `{}` cannot be created without a secret hash",
-                            managed_key.config_key
-                        ))
-                    })?;
-                    let api_key_id = api_key_uuid(public_id);
+                    let (public_id, secret_hash, secret_material) =
+                        match provided_seed_api_key_material(managed_key)? {
+                            Some(material) => material,
+                            None if managed_key.source
+                                == gateway_core::ManagedApiKeySource::Generated
+                                && managed_key.auto_create =>
+                            {
+                                generate_seed_api_key_material()?
+                            }
+                            None => {
+                                return Err(StoreError::Conflict(format!(
+                                    "managed api key `{}` cannot be created without secret material",
+                                    managed_key.config_key
+                                )));
+                            }
+                        };
+                    let api_key_id = api_key_uuid(&public_id);
 
                     if AdminApiKeyRepository::get_api_key_by_id(self, api_key_id)
                         .await?
@@ -522,6 +580,7 @@ impl PostgresStore {
                     .await
                     .map_err(to_query_error)?;
 
+                    secret_material_to_apply = Some(secret_material);
                     api_key_id
                 };
 
@@ -559,7 +618,7 @@ impl PostgresStore {
                 .await
                 .map_err(to_query_error)?;
 
-                if should_apply_secret && let Some(secret_material) = &managed_key.secret_material {
+                if let Some(secret_material) = secret_material_to_apply {
                     AdminApiKeyRepository::upsert_api_key_secret_material(
                         self,
                         &gateway_core::ApiKeySecretMaterialRecord {

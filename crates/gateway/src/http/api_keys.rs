@@ -288,6 +288,12 @@ async fn authorize_reveal_api_key_secret(
         .get_team_membership_for_user(actor.user_id)
         .await?
         .ok_or_else(insufficient_privileges)?;
+    if !matches!(
+        membership.role,
+        MembershipRole::Owner | MembershipRole::Admin
+    ) {
+        return Err(insufficient_privileges());
+    }
     let api_key = state
         .store
         .get_api_key_by_id(api_key_id)

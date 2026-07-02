@@ -1,5 +1,7 @@
 # Issue 206: Top-Level Service Account Config
 
+`See also`: [Configuration Reference](../configuration/configuration-reference.md), [Service Accounts](../access/service-accounts.md), [Service Account Config and Managed API Key Secrets](../adr/2026-07-02-service-account-config-and-managed-api-key-secrets.md)
+
 GitHub issue: https://github.com/ahstn/oceans-llm/issues/206
 
 ## Target Shape
@@ -45,7 +47,7 @@ are stable config identities. Display names remain renameable.
 10. Store generated raw key material separately from `api_keys.secret_hash`. `secret_hash` remains an Argon2 verifier only.
 11. Extract the existing AES-256-GCM encrypted secret pattern from MCP credentials into a shared gateway-secret helper.
 12. Add an explicit reveal endpoint for stored managed key material. List responses must remain redacted.
-13. Authorize reveal for active platform admins or active members of the owning team, per issue #206.
+13. Authorize reveal for active platform admins or active team owners/admins of the owning team.
 14. Extend redaction for `raw_key`, `generated_key`, and `key_material`.
 15. Update docs, examples, OpenAPI, generated admin UI types, and tests.
 

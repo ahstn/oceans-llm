@@ -29,11 +29,12 @@ pub use admin_api_keys::{
     RevealAdminApiKeySecretResult, UpdateAdminApiKeyInput,
 };
 pub use admin_models::{AdminModelStatus, AdminModelSummary, AdminModelsService};
-pub use authenticator::{Authenticator, hash_gateway_key_secret, verify_gateway_key_secret};
+pub use authenticator::{Authenticator, verify_gateway_key_secret};
 pub use budget_alerts::{
     BUDGET_ALERT_THRESHOLD_BPS, BudgetAlertEmail, BudgetAlertSendResult, BudgetAlertSender,
     BudgetAlertService, SinkBudgetAlertSender,
 };
+pub use gateway_core::hash_gateway_key_secret;
 pub use icon_identity::{
     ModelIconKey, ProviderDisplayIdentity, ProviderIconKey, REQUEST_LOG_MODEL_ICON_KEY,
     REQUEST_LOG_PROVIDER_ICON_KEY, RequestLogIconMetadata, model_icon_key_from_metadata,
