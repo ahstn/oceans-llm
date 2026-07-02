@@ -103,6 +103,7 @@ describe('RequestLogsPage', () => {
 
     expect(screen.getByTestId('request-log-mobile-list')).toBeInTheDocument()
     expect(screen.getByTestId('request-log-desktop-table')).toBeInTheDocument()
+    // 12 rows × 56 px (requestLogDesktopPreviewRows × requestLogRowEstimatePx)
     expect(screen.getByTestId('request-log-desktop-table-viewport')).toHaveStyle({
       height: '672px',
     })
