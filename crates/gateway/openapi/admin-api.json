@@ -149,6 +149,42 @@
         ]
       }
     },
+    "/api/v1/admin/api-keys/{api_key_id}/secret/reveal": {
+      "post": {
+        "tags": [
+          "crate::http::api_keys"
+        ],
+        "operationId": "reveal_api_key_secret",
+        "parameters": [
+          {
+            "name": "api_key_id",
+            "in": "path",
+            "description": "API key identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_RevealApiKeySecretResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/identity/service-accounts": {
       "get": {
         "tags": [
@@ -7336,6 +7372,29 @@
           }
         }
       },
+      "Envelope_RevealApiKeySecretResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "raw_key"
+            ],
+            "properties": {
+              "raw_key": {
+                "type": "string"
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
       "Envelope_ReviewAgentRepositoriesPayload": {
         "type": "object",
         "required": [
@@ -9515,6 +9574,17 @@
         ],
         "properties": {
           "generated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "RevealApiKeySecretResponse": {
+        "type": "object",
+        "required": [
+          "raw_key"
+        ],
+        "properties": {
+          "raw_key": {
             "type": "string"
           }
         }

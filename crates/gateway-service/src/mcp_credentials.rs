@@ -1,10 +1,5 @@
 use std::collections::BTreeMap;
 
-use aes_gcm::{
-    Aes256Gcm, KeyInit,
-    aead::{Aead, OsRng, rand_core::RngCore},
-};
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use gateway_core::{
     ApiKeyOwnerKind, AuthenticatedApiKey, ExternalMcpServerRecord, GatewayError,
     IdentityRepository, McpUpstreamCredentialBindingRecord, McpUpstreamCredentialMaterialKind,
@@ -15,6 +10,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Map;
 use time::OffsetDateTime;
 use uuid::Uuid;
+
+use crate::secret_storage::{
+    EncryptedSecret, decrypt_secret_with_key, encrypt_secret_with_key, validate_secret_key_env,
+};
 
 const CREDENTIAL_KEY_ENV: &str = "OCEANS_MCP_CREDENTIAL_ENCRYPTION_KEY";
 const CREDENTIAL_KEY_ID: &str = "env/OCEANS_MCP_CREDENTIAL_ENCRYPTION_KEY";
@@ -80,7 +79,7 @@ where
 
     pub fn validate_runtime_configuration() -> Result<(), GatewayError> {
         if std::env::var(CREDENTIAL_KEY_ENV).is_ok() {
-            credential_cipher_key()?;
+            validate_secret_key_env(CREDENTIAL_KEY_ENV)?;
         }
         Ok(())
     }
@@ -158,7 +157,7 @@ where
                         McpUpstreamSecretStorageKind::EncryptedBlob,
                         Some(encrypted.ciphertext),
                         Some(encrypted.nonce),
-                        Some(CREDENTIAL_KEY_ID.to_string()),
+                        Some(encrypted.key_id.to_string()),
                         None,
                     )
                 }
@@ -435,76 +434,26 @@ fn validate_header_name(header_name: &str) -> Result<(), GatewayError> {
     Ok(())
 }
 
-struct EncryptedSecret {
-    ciphertext: String,
-    nonce: String,
-}
-
 fn encrypt_secret(secret: &str) -> Result<EncryptedSecret, GatewayError> {
-    let key = credential_cipher_key()?;
-    let cipher = Aes256Gcm::new_from_slice(&key).map_err(|error| {
-        GatewayError::Internal(format!("invalid credential cipher key: {error}"))
-    })?;
-    let mut nonce_bytes = [0_u8; 12];
-    OsRng.fill_bytes(&mut nonce_bytes);
-    let ciphertext = cipher
-        .encrypt((&nonce_bytes).into(), secret.as_bytes())
-        .map_err(|error| {
-            GatewayError::Internal(format!("failed encrypting MCP credential: {error}"))
-        })?;
-    Ok(EncryptedSecret {
-        ciphertext: BASE64.encode(ciphertext),
-        nonce: BASE64.encode(nonce_bytes),
-    })
+    encrypt_secret_with_key(
+        secret,
+        CREDENTIAL_KEY_ENV,
+        CREDENTIAL_KEY_ID,
+        "MCP credential",
+    )
 }
 
 fn decrypt_binding_secret(
     binding: &McpUpstreamCredentialBindingRecord,
 ) -> Result<String, GatewayError> {
-    if binding.secret_key_id.as_deref() != Some(CREDENTIAL_KEY_ID) {
-        return Err(GatewayError::InvalidRequest(
-            "MCP credential was encrypted with an unknown key id".to_string(),
-        ));
-    }
-    let key = credential_cipher_key()?;
-    let nonce = BASE64
-        .decode(binding.secret_nonce.as_deref().unwrap_or_default())
-        .map_err(|error| {
-            GatewayError::InvalidRequest(format!("credential nonce is invalid: {error}"))
-        })?;
-    let ciphertext = BASE64
-        .decode(binding.secret_ciphertext.as_deref().unwrap_or_default())
-        .map_err(|error| {
-            GatewayError::InvalidRequest(format!("credential ciphertext is invalid: {error}"))
-        })?;
-    let cipher = Aes256Gcm::new_from_slice(&key).map_err(|error| {
-        GatewayError::Internal(format!("invalid credential cipher key: {error}"))
-    })?;
-    let plaintext = cipher
-        .decrypt(nonce.as_slice().into(), ciphertext.as_ref())
-        .map_err(|_| {
-            GatewayError::InvalidRequest("MCP credential could not be decrypted".to_string())
-        })?;
-    String::from_utf8(plaintext).map_err(|error| {
-        GatewayError::InvalidRequest(format!("credential secret is not UTF-8: {error}"))
-    })
-}
-
-fn credential_cipher_key() -> Result<Vec<u8>, GatewayError> {
-    let raw = std::env::var(CREDENTIAL_KEY_ENV).map_err(|_| {
-        GatewayError::InvalidRequest(format!(
-            "{CREDENTIAL_KEY_ENV} must be configured before encrypted MCP credentials can be used"
-        ))
-    })?;
-    let key = BASE64.decode(raw.trim()).map_err(|error| {
-        GatewayError::InvalidRequest(format!("{CREDENTIAL_KEY_ENV} must be base64: {error}"))
-    })?;
-    if key.len() != 32 {
-        return Err(GatewayError::InvalidRequest(format!(
-            "{CREDENTIAL_KEY_ENV} must decode to exactly 32 bytes"
-        )));
-    }
-    Ok(key)
+    decrypt_secret_with_key(
+        binding.secret_ciphertext.as_deref().unwrap_or_default(),
+        binding.secret_nonce.as_deref().unwrap_or_default(),
+        binding.secret_key_id.as_deref().unwrap_or_default(),
+        CREDENTIAL_KEY_ENV,
+        CREDENTIAL_KEY_ID,
+        "MCP credential",
+    )
 }
 
 fn validate_credential_secret_ref(secret_ref: &str) -> Result<(), GatewayError> {
@@ -576,6 +525,7 @@ fn redact_binding(binding: McpUpstreamCredentialBindingRecord) -> RedactedMcpCre
 mod tests {
     use super::*;
     use async_trait::async_trait;
+    use base64::Engine as _;
     use base64::engine::general_purpose::STANDARD as BASE64;
     use gateway_core::{
         ExternalMcpAuthMode, ExternalMcpDiscoveryStatus, ExternalMcpServerStatus,
@@ -608,7 +558,7 @@ mod tests {
         unsafe {
             std::env::set_var(CREDENTIAL_KEY_ENV, BASE64.encode([0_u8; 31]));
         }
-        assert!(credential_cipher_key().is_err());
+        assert!(validate_secret_key_env(CREDENTIAL_KEY_ENV).is_err());
         match previous {
             Some(value) => unsafe {
                 std::env::set_var(CREDENTIAL_KEY_ENV, value);

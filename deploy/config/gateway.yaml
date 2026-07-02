@@ -12,9 +12,6 @@ auth:
     email: admin@local
     password: env.GATEWAY_BOOTSTRAP_ADMIN_PASSWORD
     require_password_change: true
-  seed_api_keys:
-    - name: default
-      value: env.GATEWAY_API_KEY
   oidc:
     public_base_url: env.GATEWAY_PUBLIC_BASE_URL
     providers:
@@ -68,8 +65,22 @@ request_logging:
     redaction_paths: []
 
 teams:
-  - key: platform
+  - id: platform
     name: Platform
+
+service_accounts:
+  - id: default
+    name: Default
+    team: platform
+    budget:
+      cadence: monthly
+      amount_usd: "100.0000"
+      hard_limit: true
+      timezone: UTC
+    keys:
+      - id: default
+        name: Default
+        value: env.GATEWAY_API_KEY
 
 users:
   - name: Platform Admin

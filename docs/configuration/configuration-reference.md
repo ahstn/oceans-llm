@@ -99,7 +99,7 @@ providers:
       credentials_path: env.GCP_SERVICE_ACCOUNT_JSON
 
 teams:
-  - key: platform
+  - id: platform
     name: Platform
 
 users:
@@ -252,28 +252,47 @@ Important distinctions:
 - `bootstrap_admin.require_password_change` changes first-login behavior
 - `bootstrap_admin.password` must be `literal.*` or `env.*`
 
-Seeded API keys are gateway caller credentials. They are useful for bootstrap automation and service-account workloads, but they are not upstream cloud provider service-account credentials. Each seeded key creates or reconciles an explicit gateway service account with an owning team and active budget.
+Service accounts are gateway workload identities owned by teams. They are not upstream cloud provider service-account credentials. Each declared service account must reference an existing team and define an active budget. Managed keys under the service account are gateway caller credentials.
 
-Example seeded gateway key:
+Example service account with one managed gateway key:
 
 ```yaml
-auth:
-  seed_api_keys:
-    - name: ci-indexer
-      value: env.CI_INDEXER_GATEWAY_API_KEY
-      service_account:
-        key: ci-indexer
-        name: CI Indexer
-        team: platform
-        budget:
-          cadence: daily
-          amount_usd: "25.0000"
-          hard_limit: true
-          timezone: UTC
-      allowed_models:
-        - gpt-4o-mini
-        - gemini-fast
+service_accounts:
+  - id: ci-indexer
+    name: CI Indexer
+    team: platform
+    budget:
+      cadence: daily
+      amount_usd: "25.0000"
+      hard_limit: true
+      timezone: UTC
+    keys:
+      - id: primary
+        name: CI Indexer Primary
+        auto_create: true
+        value: env.CI_INDEXER_GATEWAY_API_KEY
+        allowed_models:
+          - gpt-4o-mini
+          - gemini-fast
 ```
+
+Important service-account fields:
+
+- `id`: stable config key for the gateway service account; names can change
+- `name`: display name; defaults to `id`
+- `team`: owning `teams[*].id`; team moves are rejected by seed reconciliation
+- `budget`: required active service-account budget
+- `keys`: managed gateway API keys for this service account
+
+Important managed-key fields:
+
+- `id`: stable config key for the managed key under the service account
+- `name`: display name; defaults to `id`
+- `auto_create`: defaults to `true`; generated material is used only when no managed key exists yet
+- `value`: optional `env.*` or `literal.*` gateway API key value, used to import or rotate a known value
+- `allowed_models`: reconciled model grants for the key
+
+Managed key material is encrypted before storage so it can be revealed later to authenticated platform admins or active members of the owning team. Set `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY` to a base64-encoded 32-byte key before using config-created managed keys or creating service-account-owned keys in the admin UI.
 
 Operational guidance:
 
@@ -281,7 +300,7 @@ Operational guidance:
 - grant only the gateway models the workload needs
 - declare the owning team in `teams`
 - set a service-account budget before activating service-account traffic
-- rotate by creating or seeding a replacement key, moving the caller, then revoking or removing the old key
+- rotate configured values by changing `keys[*].value`; generated keys are create-only and are not rotated on restart
 
 OIDC providers use authorization-code login with provider discovery and ID-token verification:
 
@@ -384,16 +403,16 @@ Validation rules that matter:
 
 Seed semantics that matter:
 
-- listed teams are upserted by `teams[*].key`
+- listed teams are upserted by `teams[*].id`
+- listed service accounts are upserted by `service_accounts[*].id`
+- listed managed service-account keys are upserted by `service_accounts[*].keys[*].id`
 - listed users are upserted by normalized email
 - new config-seeded users are created as `invited`
 - listed membership and active-budget state is reconciled for listed users
 - omitting a `budget` block for a listed user deactivates that user's active budget
-- unlisted teams and users are left untouched
+- unlisted teams, service accounts, keys, and users are left untouched
 
 OIDC and OAuth provider existence is validated at seed time against enabled runtime providers, not YAML parse time.
-
-Service accounts are managed by admins. They are not a replacement spelling for `auth.seed_api_keys`.
 
 ## `budget_alerts`
 

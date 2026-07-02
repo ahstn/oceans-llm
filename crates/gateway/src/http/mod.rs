@@ -49,6 +49,10 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
             "/api/v1/admin/api-keys/{api_key_id}/revoke",
             post(revoke_api_key),
         )
+        .route(
+            "/api/v1/admin/api-keys/{api_key_id}/secret/reveal",
+            post(reveal_api_key_secret),
+        )
         .route("/api/v1/admin/models", get(list_models))
         .route(
             "/api/v1/admin/models/client-configs",

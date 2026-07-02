@@ -2,14 +2,16 @@ use std::{collections::BTreeMap, env, fs, path::Path};
 
 use anyhow::{Context, bail};
 use gateway_core::{
-    AuthMode, AwsBedrockApiStyle, AwsBedrockRouteCompatibility, BudgetCadence, GlobalRole,
-    MembershipRole, Money4, OauthJitMembership, OauthJitPolicy, OidcJitMembership, OidcJitPolicy,
-    OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
-    OpenAiCompatRouteCompatibility, OpenRouterMaxPrice, OpenRouterPercentileCutoffs,
-    OpenRouterPercentilePreference, OpenRouterProviderRouting, OpenRouterRouteCompatibility,
-    ProviderCapabilities, RequestLogRetentionWindow, RouteCompatibility, SeedApiKey, SeedBudget,
-    SeedModel, SeedModelRoute, SeedOauthProvider, SeedOidcProvider, SeedProvider, SeedTeam,
-    SeedUser, SeedUserMembership, parse_gateway_api_key,
+    ApiKeySecretStorageKind, AuthMode, AwsBedrockApiStyle, AwsBedrockRouteCompatibility,
+    BudgetCadence, GlobalRole, ManagedApiKeySource, MembershipRole, Money4, OauthJitMembership,
+    OauthJitPolicy, OidcJitMembership, OidcJitPolicy, OpenAiCompatDeveloperRole,
+    OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
+    OpenRouterMaxPrice, OpenRouterPercentileCutoffs, OpenRouterPercentilePreference,
+    OpenRouterProviderRouting, OpenRouterRouteCompatibility, ProviderCapabilities,
+    RequestLogRetentionWindow, RouteCompatibility, SeedApiKeySecretMaterial, SeedBudget,
+    SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute, SeedOauthProvider,
+    SeedOidcProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership,
+    parse_gateway_api_key,
 };
 use gateway_providers::{
     BedrockAuthConfig, BedrockEndpointKind, BedrockProviderConfig, CloudRunOpenAiCompatAuth,
@@ -17,11 +19,13 @@ use gateway_providers::{
 };
 use gateway_service::{
     PayloadPath, ProviderIconKey, RequestLogPayloadCaptureMode, RequestLogPayloadPolicy,
-    hash_gateway_key_secret, is_supported_pricing_provider_id, parse_payload_path,
+    encrypt_gateway_api_key_secret, hash_gateway_key_secret, is_supported_pricing_provider_id,
+    parse_payload_path,
 };
 use gateway_store::StoreConnectionOptions;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
+use uuid::Uuid;
 
 mod providers;
 
@@ -50,6 +54,8 @@ pub struct GatewayConfig {
     pub models: Vec<ModelConfig>,
     #[serde(default)]
     pub teams: Vec<TeamConfig>,
+    #[serde(default)]
+    pub service_accounts: Vec<ServiceAccountConfig>,
     #[serde(default)]
     pub users: Vec<UserConfig>,
 }
@@ -377,56 +383,65 @@ impl GatewayConfig {
 
         let mut team_keys = std::collections::BTreeSet::new();
         for team in &self.teams {
-            let team_key = normalize_config_team_key(&team.key)?;
+            let team_key = normalize_config_team_key(&team.id)?;
             if team.name.trim().is_empty() {
                 bail!("team `{team_key}` name cannot be empty");
             }
             if !team_keys.insert(team_key.clone()) {
-                bail!("duplicate team key `{team_key}`");
+                bail!("duplicate team id `{team_key}`");
             }
         }
 
-        let mut seed_service_accounts = std::collections::BTreeMap::new();
-        for seed_key in &self.auth.seed_api_keys {
-            if seed_key.name.trim().is_empty() {
-                bail!("auth.seed_api_keys entry name cannot be empty");
+        let mut service_account_keys = std::collections::BTreeSet::new();
+        for service_account in &self.service_accounts {
+            let service_account_key = normalize_config_service_account_key(&service_account.id)?;
+            if !service_account_keys.insert(service_account_key.clone()) {
+                bail!("duplicate service account id `{service_account_key}`");
             }
-            let service_account = &seed_key.service_account;
-            let service_account_key = normalize_config_service_account_key(&service_account.key)
-                .with_context(|| {
-                    format!("auth.seed_api_keys `{}` service_account.key", seed_key.name)
-                })?;
-            if service_account.name.trim().is_empty() {
-                bail!("seeded service account `{service_account_key}` name cannot be empty");
+            if let Some(name) = &service_account.name
+                && name.trim().is_empty()
+            {
+                bail!("service account `{service_account_key}` name cannot be empty");
             }
             let team_key = normalize_config_team_key(&service_account.team)
-                .with_context(|| format!("seeded service account `{service_account_key}` team"))?;
+                .with_context(|| format!("service account `{service_account_key}` team"))?;
             if !team_keys.contains(&team_key) {
                 bail!(
-                    "seeded service account `{service_account_key}` references unknown team `{team_key}`"
+                    "service account `{service_account_key}` references unknown team `{team_key}`"
                 );
             }
-            service_account.budget.validate(&format!(
-                "seeded service account `{service_account_key}` budget"
-            ))?;
-            let budget = service_account.budget.seed_budget().with_context(|| {
-                format!("seeded service account `{service_account_key}` budget")
-            })?;
-            let signature = SeedServiceAccountSignature {
-                name: service_account.name.trim().to_string(),
-                team_key: team_key.clone(),
-                budget_cadence: budget.cadence,
-                budget_amount_usd: budget.amount_usd,
-                budget_hard_limit: budget.hard_limit,
-                budget_timezone: budget.timezone.trim().to_string(),
-            };
-            if let Some(existing) =
-                seed_service_accounts.insert(service_account_key.clone(), signature.clone())
-                && existing != signature
-            {
-                bail!(
-                    "seeded service account `{service_account_key}` is declared with conflicting name, team, or budget settings"
-                );
+            service_account
+                .budget
+                .validate(&format!("service account `{service_account_key}` budget"))?;
+
+            let mut managed_key_ids = std::collections::BTreeSet::new();
+            for key in &service_account.keys {
+                let config_key = normalize_config_managed_api_key(&key.id)
+                    .with_context(|| format!("service account `{service_account_key}` key id"))?;
+                if !managed_key_ids.insert(config_key.clone()) {
+                    bail!(
+                        "service account `{service_account_key}` has duplicate key id `{config_key}`"
+                    );
+                }
+                if let Some(name) = &key.name
+                    && name.trim().is_empty()
+                {
+                    bail!(
+                        "service account `{service_account_key}` key `{config_key}` name cannot be empty"
+                    );
+                }
+                if !key.auto_create && key.value.is_none() {
+                    bail!(
+                        "service account `{service_account_key}` key `{config_key}` must set value when auto_create is false"
+                    );
+                }
+                for model_key in &key.allowed_models {
+                    if !model_by_id.contains_key(model_key.as_str()) {
+                        bail!(
+                            "service account `{service_account_key}` key `{config_key}` references unknown model `{model_key}`"
+                        );
+                    }
+                }
             }
         }
 
@@ -754,39 +769,79 @@ impl GatewayConfig {
         Ok(models)
     }
 
-    pub fn seed_api_keys(&self) -> anyhow::Result<Vec<SeedApiKey>> {
-        let mut api_keys = Vec::new();
+    pub fn seed_service_accounts(&self) -> anyhow::Result<Vec<SeedServiceAccount>> {
+        self.service_accounts
+            .iter()
+            .map(|service_account| {
+                let service_account_key = normalize_config_service_account_key(&service_account.id)?;
+                let service_account_name = service_account
+                    .name
+                    .as_deref()
+                    .unwrap_or(&service_account.id)
+                    .trim()
+                    .to_string();
 
-        for seed_key in &self.auth.seed_api_keys {
-            let raw_value = resolve_env_reference(&seed_key.value)?;
-            let parsed = parse_gateway_api_key(&raw_value).with_context(|| {
-                format!("invalid gateway key configured for `{}`", seed_key.name)
-            })?;
+                let mut managed_api_keys = Vec::with_capacity(service_account.keys.len());
+                for key in &service_account.keys {
+                    let config_key = normalize_config_managed_api_key(&key.id)?;
+                    let key_name = key.name.as_deref().unwrap_or(&key.id).trim().to_string();
+                    let (source, raw_value) = match key.value.as_deref() {
+                        Some(value_ref) => (
+                            ManagedApiKeySource::ConfiguredValue,
+                            resolve_secret_reference(value_ref).with_context(|| {
+                                format!(
+                                    "service account `{service_account_key}` key `{config_key}` value"
+                                )
+                            })?,
+                        ),
+                        None => (
+                            ManagedApiKeySource::Generated,
+                            generate_gateway_api_key_value(),
+                        ),
+                    };
 
-            let secret_hash = hash_gateway_key_secret(&parsed.secret).with_context(|| {
-                format!(
-                    "failed hashing configured gateway key for `{}`",
-                    seed_key.name
-                )
-            })?;
+                    let parsed = parse_gateway_api_key(&raw_value).with_context(|| {
+                        format!(
+                            "invalid gateway key configured for service account `{service_account_key}` key `{config_key}`"
+                        )
+                    })?;
+                    let secret_hash = hash_gateway_key_secret(&parsed.secret).with_context(|| {
+                        format!(
+                            "failed hashing gateway key for service account `{service_account_key}` key `{config_key}`"
+                        )
+                    })?;
+                    let encrypted = encrypt_gateway_api_key_secret(&raw_value).map_err(|error| {
+                        anyhow::anyhow!(
+                            "failed encrypting gateway key for service account `{service_account_key}` key `{config_key}`: {error}"
+                        )
+                    })?;
 
-            api_keys.push(SeedApiKey {
-                name: seed_key.name.clone(),
-                public_id: parsed.public_id,
-                secret_hash,
-                service_account_key: normalize_config_service_account_key(
-                    &seed_key.service_account.key,
-                )?,
-                service_account_name: seed_key.service_account.name.trim().to_string(),
-                service_account_team_key: normalize_config_team_key(
-                    &seed_key.service_account.team,
-                )?,
-                service_account_budget: seed_key.service_account.budget.seed_budget()?,
-                allowed_models: seed_key.allowed_models.clone(),
-            });
-        }
+                    managed_api_keys.push(SeedManagedServiceAccountApiKey {
+                        config_key,
+                        name: key_name,
+                        auto_create: key.auto_create,
+                        source,
+                        public_id: Some(parsed.public_id),
+                        secret_hash: Some(secret_hash),
+                        secret_material: Some(SeedApiKeySecretMaterial {
+                            storage_kind: ApiKeySecretStorageKind::EncryptedBlob,
+                            secret_ciphertext: encrypted.ciphertext,
+                            secret_nonce: encrypted.nonce,
+                            secret_key_id: encrypted.key_id.to_string(),
+                        }),
+                        allowed_models: key.allowed_models.clone(),
+                    });
+                }
 
-        Ok(api_keys)
+                Ok(SeedServiceAccount {
+                    service_account_key,
+                    service_account_name,
+                    team_key: normalize_config_team_key(&service_account.team)?,
+                    budget: service_account.budget.seed_budget()?,
+                    managed_api_keys,
+                })
+            })
+            .collect()
     }
 
     pub fn seed_oidc_providers(&self) -> anyhow::Result<Vec<SeedOidcProvider>> {
@@ -812,7 +867,7 @@ impl GatewayConfig {
             .iter()
             .map(|team| {
                 Ok(SeedTeam {
-                    team_key: normalize_config_team_key(&team.key)?,
+                    team_key: normalize_config_team_key(&team.id)?,
                     team_name: team.name.trim().to_string(),
                 })
             })
@@ -1034,16 +1089,6 @@ impl GatewayConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct SeedServiceAccountSignature {
-    name: String,
-    team_key: String,
-    budget_cadence: BudgetCadence,
-    budget_amount_usd: Money4,
-    budget_hard_limit: bool,
-    budget_timezone: String,
-}
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct ServerConfig {
     #[serde(default = "default_bind")]
@@ -1124,9 +1169,8 @@ impl DatabaseConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct AuthConfig {
-    #[serde(default)]
-    pub seed_api_keys: Vec<SeedApiKeyConfig>,
     #[serde(default)]
     pub bootstrap_admin: BootstrapAdminConfig,
     #[serde(default)]
@@ -1164,7 +1208,7 @@ impl AuthOidcConfig {
         let mut provider_keys = std::collections::BTreeSet::new();
         let team_keys = teams
             .iter()
-            .map(|team| normalize_config_team_key(&team.key))
+            .map(|team| normalize_config_team_key(&team.id))
             .collect::<anyhow::Result<std::collections::BTreeSet<_>>>()?;
 
         for provider in &self.providers {
@@ -1262,7 +1306,7 @@ impl AuthOauthConfig {
         let mut provider_keys = std::collections::BTreeSet::new();
         let team_keys = teams
             .iter()
-            .map(|team| normalize_config_team_key(&team.key))
+            .map(|team| normalize_config_team_key(&team.id))
             .collect::<anyhow::Result<std::collections::BTreeSet<_>>>()?;
 
         for provider in &self.providers {
@@ -1791,26 +1835,33 @@ impl BootstrapAdminConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct SeedApiKeyConfig {
+pub struct TeamConfig {
+    pub id: String,
     pub name: String,
-    pub value: String,
-    pub service_account: SeedApiKeyServiceAccountConfig,
-    #[serde(default)]
-    pub allowed_models: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct SeedApiKeyServiceAccountConfig {
-    pub key: String,
-    pub name: String,
+pub struct ServiceAccountConfig {
+    pub id: String,
+    #[serde(default)]
+    pub name: Option<String>,
     pub team: String,
     pub budget: BudgetConfig,
+    #[serde(default)]
+    pub keys: Vec<ServiceAccountKeyConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct TeamConfig {
-    pub key: String,
-    pub name: String,
+pub struct ServiceAccountKeyConfig {
+    pub id: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default = "default_enabled")]
+    pub auto_create: bool,
+    #[serde(default)]
+    pub value: Option<String>,
+    #[serde(default)]
+    pub allowed_models: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -2448,6 +2499,20 @@ fn normalize_config_service_account_key(service_account_key: &str) -> anyhow::Re
         bail!("service account key cannot be empty");
     }
     Ok(normalized)
+}
+
+fn normalize_config_managed_api_key(config_key: &str) -> anyhow::Result<String> {
+    let normalized = config_key.trim().to_string();
+    if normalized.is_empty() {
+        bail!("managed api key id cannot be empty");
+    }
+    Ok(normalized)
+}
+
+fn generate_gateway_api_key_value() -> String {
+    let public_id = Uuid::new_v4().simple().to_string();
+    let secret = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
+    format!("gwk_{public_id}.{secret}")
 }
 
 fn normalize_config_oidc_provider_key(provider_key: &str) -> anyhow::Result<String> {
@@ -4353,7 +4418,7 @@ auth:
         client_id: oceans
         client_secret: literal.secret
 teams:
-  - key: " platform "
+  - id: " platform "
     name: Platform
 users:
   - name: Member
@@ -4695,138 +4760,141 @@ auth:
     }
 
     #[test]
-    fn parses_seed_api_keys_with_explicit_service_account_budget() {
+    fn parses_service_accounts_with_managed_key_and_budget() {
         let tmp = tempdir().expect("tempdir");
         let config_path = tmp.path().join("gateway.yaml");
         unsafe {
             env::set_var("OCEANS_TEST_SEED_API_KEY", "gwk_abcd1234.secret-value");
+            env::set_var(
+                "OCEANS_API_KEY_SECRET_ENCRYPTION_KEY",
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+            );
         }
 
         write_config(
             &config_path,
             r#"
-auth:
-  seed_api_keys:
-    - name: CI Indexer
-      value: env.OCEANS_TEST_SEED_API_KEY
-      service_account:
-        key: " ci-indexer "
-        name: CI Indexer
-        team: " platform "
-        budget:
-          cadence: daily
-          amount_usd: "25.0000"
-          hard_limit: true
-          timezone: UTC
-      allowed_models: [fast]
 teams:
-  - key: " platform "
+  - id: " platform "
     name: Platform
+service_accounts:
+  - id: " ci-indexer "
+    name: CI Indexer
+    team: " platform "
+    budget:
+      cadence: daily
+      amount_usd: "25.0000"
+      hard_limit: true
+      timezone: UTC
+    keys:
+      - id: primary
+        name: CI Indexer Primary
+        value: env.OCEANS_TEST_SEED_API_KEY
 "#,
         );
 
         let config = GatewayConfig::from_path(&config_path).expect("config should parse");
-        let api_keys = config.seed_api_keys().expect("seed api keys");
-        assert_eq!(api_keys.len(), 1);
-        assert_eq!(api_keys[0].service_account_key, "ci-indexer");
-        assert_eq!(api_keys[0].service_account_name, "CI Indexer");
-        assert_eq!(api_keys[0].service_account_team_key, "platform");
+        let service_accounts = config
+            .seed_service_accounts()
+            .expect("seed service accounts");
+        assert_eq!(service_accounts.len(), 1);
+        assert_eq!(service_accounts[0].service_account_key, "ci-indexer");
+        assert_eq!(service_accounts[0].service_account_name, "CI Indexer");
+        assert_eq!(service_accounts[0].team_key, "platform");
         assert_eq!(
-            api_keys[0].service_account_budget.amount_usd,
+            service_accounts[0].budget.amount_usd,
             Money4::from_scaled(250_000)
         );
-        assert_eq!(api_keys[0].allowed_models, ["fast"]);
+        assert_eq!(service_accounts[0].managed_api_keys.len(), 1);
+        let managed_key = &service_accounts[0].managed_api_keys[0];
+        assert_eq!(managed_key.config_key, "primary");
+        assert_eq!(managed_key.name, "CI Indexer Primary");
+        assert_eq!(managed_key.public_id.as_deref(), Some("abcd1234"));
+        assert!(managed_key.secret_hash.is_some());
+        assert!(managed_key.secret_material.is_some());
     }
 
     #[test]
-    fn accepts_multiple_seed_api_keys_for_same_service_account() {
+    fn accepts_multiple_managed_keys_for_same_service_account() {
         let tmp = tempdir().expect("tempdir");
         let config_path = tmp.path().join("gateway.yaml");
         unsafe {
             env::set_var("OCEANS_TEST_SEED_API_KEY_ONE", "gwk_abcd1234.secret-one");
             env::set_var("OCEANS_TEST_SEED_API_KEY_TWO", "gwk_wxyz9876.secret-two");
+            env::set_var(
+                "OCEANS_API_KEY_SECRET_ENCRYPTION_KEY",
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+            );
         }
 
         write_config(
             &config_path,
             r#"
-auth:
-  seed_api_keys:
-    - name: CI Indexer One
-      value: env.OCEANS_TEST_SEED_API_KEY_ONE
-      service_account: &ci_service_account
-        key: ci-indexer
-        name: CI Indexer
-        team: platform
-        budget:
-          cadence: daily
-          amount_usd: "25.0000"
-          hard_limit: true
-          timezone: UTC
-      allowed_models: [fast]
-    - name: CI Indexer Two
-      value: env.OCEANS_TEST_SEED_API_KEY_TWO
-      service_account: *ci_service_account
-      allowed_models: [reasoning]
 teams:
-  - key: platform
+  - id: platform
     name: Platform
+service_accounts:
+  - id: ci-indexer
+    name: CI Indexer
+    team: platform
+    budget:
+      cadence: daily
+      amount_usd: "25.0000"
+      hard_limit: true
+      timezone: UTC
+    keys:
+      - id: primary
+        value: env.OCEANS_TEST_SEED_API_KEY_ONE
+      - id: fallback
+        value: env.OCEANS_TEST_SEED_API_KEY_TWO
 "#,
         );
 
         let config = GatewayConfig::from_path(&config_path).expect("config should parse");
-        let api_keys = config.seed_api_keys().expect("seed api keys");
-        assert_eq!(api_keys.len(), 2);
-        assert_eq!(api_keys[0].service_account_key, "ci-indexer");
-        assert_eq!(api_keys[1].service_account_key, "ci-indexer");
+        let service_accounts = config
+            .seed_service_accounts()
+            .expect("seed service accounts");
+        assert_eq!(service_accounts.len(), 1);
+        assert_eq!(service_accounts[0].managed_api_keys.len(), 2);
+        assert_eq!(
+            service_accounts[0].managed_api_keys[0].config_key,
+            "primary"
+        );
+        assert_eq!(
+            service_accounts[0].managed_api_keys[1].config_key,
+            "fallback"
+        );
     }
 
     #[test]
-    fn rejects_conflicting_seed_service_account_declarations() {
+    fn rejects_duplicate_service_account_ids_after_normalization() {
         let tmp = tempdir().expect("tempdir");
         let config_path = tmp.path().join("gateway.yaml");
-        unsafe {
-            env::set_var("OCEANS_TEST_SEED_API_KEY_ONE", "gwk_abcd1234.secret-one");
-            env::set_var("OCEANS_TEST_SEED_API_KEY_TWO", "gwk_wxyz9876.secret-two");
-        }
 
         write_config(
             &config_path,
             r#"
-auth:
-  seed_api_keys:
-    - name: CI Indexer One
-      value: env.OCEANS_TEST_SEED_API_KEY_ONE
-      service_account:
-        key: ci-indexer
-        name: CI Indexer
-        team: platform
-        budget:
-          cadence: daily
-          amount_usd: "25.0000"
-          hard_limit: true
-          timezone: UTC
-    - name: CI Indexer Two
-      value: env.OCEANS_TEST_SEED_API_KEY_TWO
-      service_account:
-        key: ci-indexer
-        name: Different Name
-        team: platform
-        budget:
-          cadence: daily
-          amount_usd: "25.0000"
-          hard_limit: true
-          timezone: UTC
 teams:
-  - key: platform
+  - id: platform
     name: Platform
+service_accounts:
+  - id: ci-indexer
+    team: platform
+    budget:
+      cadence: daily
+      amount_usd: "25.0000"
+  - id: " ci-indexer "
+    team: platform
+    budget:
+      cadence: daily
+      amount_usd: "25.0000"
 "#,
         );
 
         let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
         let error_text = format!("{error:#}");
         assert!(
-            error_text.contains("conflicting name, team, or budget settings"),
+            error_text.contains("duplicate service account id `ci-indexer`"),
             "unexpected error: {error_text}"
         );
     }
@@ -4840,9 +4908,9 @@ teams:
             &config_path,
             r#"
 teams:
-  - key: platform
+  - id: platform
     name: Platform
-  - key: " platform "
+  - id: " platform "
     name: Duplicate
 "#,
         );
@@ -4850,7 +4918,28 @@ teams:
         let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
         let error_text = format!("{error:#}");
         assert!(
-            error_text.contains("duplicate team key `platform`"),
+            error_text.contains("duplicate team id `platform`"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_legacy_auth_seed_api_keys_config() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+auth:
+  seed_api_keys: []
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("seed_api_keys"),
             "unexpected error: {error_text}"
         );
     }
@@ -4864,7 +4953,7 @@ teams:
             &config_path,
             r#"
 teams:
-  - key: platform
+  - id: platform
     name: Platform
 users:
   - name: Member

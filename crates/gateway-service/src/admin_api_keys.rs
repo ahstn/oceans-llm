@@ -4,14 +4,17 @@ use std::{
 };
 
 use gateway_core::{
-    AdminApiKeyRepository, AdminIdentityRepository, ApiKeyOwnerKind, ApiKeyRecord, ApiKeyStatus,
-    BudgetRepository, BudgetScope, GatewayError, GatewayModel, IdentityUserRecord, ModelRepository,
-    NewApiKeyRecord, ServiceAccountRecord, StoreError, TeamRecord, UserStatus,
+    AdminApiKeyRepository, AdminIdentityRepository, ApiKeyOwnerKind, ApiKeyRecord,
+    ApiKeySecretMaterialRecord, ApiKeySecretStorageKind, ApiKeyStatus, BudgetRepository,
+    BudgetScope, GatewayError, GatewayModel, IdentityUserRecord, ModelRepository, NewApiKeyRecord,
+    ServiceAccountRecord, StoreError, TeamRecord, UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::hash_gateway_key_secret;
+use crate::{
+    decrypt_gateway_api_key_secret, encrypt_gateway_api_key_secret, hash_gateway_key_secret,
+};
 
 type ApiKeyOwnerIds = (Option<Uuid>, Option<Uuid>, Option<Uuid>);
 
@@ -92,6 +95,10 @@ pub struct CreateAdminApiKeyResult {
 #[derive(Debug, Clone)]
 pub struct UpdateAdminApiKeyInput {
     pub model_keys: Vec<String>,
+}
+
+pub struct RevealAdminApiKeySecretResult {
+    pub raw_key: String,
 }
 
 impl<R> AdminApiKeyService<R>
@@ -206,6 +213,11 @@ where
         let secret_hash = hash_gateway_key_secret(&secret)
             .map_err(|error| GatewayError::Internal(error.to_string()))?;
         let now = OffsetDateTime::now_utc();
+        let secret_material = if owner_kind == ApiKeyOwnerKind::ServiceAccount {
+            Some(encrypt_gateway_api_key_secret(&raw_key)?)
+        } else {
+            None
+        };
 
         let api_key = self
             .repo
@@ -220,6 +232,20 @@ where
                 created_at: now,
             })
             .await?;
+        if let Some(encrypted) = secret_material {
+            self.repo
+                .upsert_api_key_secret_material(&ApiKeySecretMaterialRecord {
+                    api_key_id: api_key.id,
+                    storage_kind: ApiKeySecretStorageKind::EncryptedBlob,
+                    secret_ciphertext: encrypted.ciphertext,
+                    secret_nonce: encrypted.nonce,
+                    secret_key_id: encrypted.key_id.to_string(),
+                    created_at: now,
+                    updated_at: now,
+                    last_retrieved_at: None,
+                })
+                .await?;
+        }
         let model_ids = granted_models
             .iter()
             .map(|model| model.id)
@@ -261,6 +287,42 @@ where
         let granted_models = self.repo.list_models_for_api_key(api_key.id).await?;
 
         build_api_key_summary(&api_key, &users, &teams, &service_accounts, &granted_models)
+    }
+
+    pub async fn reveal_api_key_secret(
+        &self,
+        api_key_id: Uuid,
+    ) -> Result<RevealAdminApiKeySecretResult, GatewayError> {
+        let api_key = self
+            .repo
+            .get_api_key_by_id(api_key_id)
+            .await?
+            .ok_or_else(|| StoreError::NotFound(format!("api key `{api_key_id}`")))?;
+        if api_key.status != ApiKeyStatus::Active {
+            return Err(GatewayError::InvalidRequest(
+                "revoked api keys cannot be revealed".to_string(),
+            ));
+        }
+
+        let material = self
+            .repo
+            .get_api_key_secret_material(api_key_id)
+            .await?
+            .ok_or_else(|| {
+                GatewayError::InvalidRequest(
+                    "api key secret is not retrievable for this key".to_string(),
+                )
+            })?;
+        let raw_key = decrypt_gateway_api_key_secret(
+            &material.secret_ciphertext,
+            &material.secret_nonce,
+            &material.secret_key_id,
+        )?;
+        self.repo
+            .touch_api_key_secret_material_retrieved(api_key_id, OffsetDateTime::now_utc())
+            .await?;
+
+        Ok(RevealAdminApiKeySecretResult { raw_key })
     }
 
     pub async fn update_api_key(

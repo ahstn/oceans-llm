@@ -52,6 +52,30 @@ pub(super) fn decode_api_key(row: &PgRow) -> Result<ApiKeyRecord, StoreError> {
     })
 }
 
+pub(super) fn decode_api_key_secret_material(
+    row: &PgRow,
+) -> Result<ApiKeySecretMaterialRecord, StoreError> {
+    let storage_kind: String = row.try_get(1).map_err(to_query_error)?;
+    let created_at: i64 = row.try_get(5).map_err(to_query_error)?;
+    let updated_at: i64 = row.try_get(6).map_err(to_query_error)?;
+    let last_retrieved_at: Option<i64> = row.try_get(7).map_err(to_query_error)?;
+
+    Ok(ApiKeySecretMaterialRecord {
+        api_key_id: parse_uuid(&row.try_get::<String, _>(0).map_err(to_query_error)?)?,
+        storage_kind: ApiKeySecretStorageKind::from_db(&storage_kind).ok_or_else(|| {
+            StoreError::Serialization(format!(
+                "unknown api key secret storage kind `{storage_kind}`"
+            ))
+        })?,
+        secret_ciphertext: row.try_get(2).map_err(to_query_error)?,
+        secret_nonce: row.try_get(3).map_err(to_query_error)?,
+        secret_key_id: row.try_get(4).map_err(to_query_error)?,
+        created_at: unix_to_datetime(created_at)?,
+        updated_at: unix_to_datetime(updated_at)?,
+        last_retrieved_at: last_retrieved_at.map(unix_to_datetime).transpose()?,
+    })
+}
+
 pub(super) fn decode_gateway_model(row: &PgRow) -> Result<GatewayModel, StoreError> {
     let tags_json: String = row.try_get(4).map_err(to_query_error)?;
     Ok(GatewayModel {

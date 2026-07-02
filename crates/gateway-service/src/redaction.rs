@@ -17,6 +17,9 @@ const SENSITIVE_JSON_KEYS: &[&str] = &[
     "set_cookie",
     "x_api_key",
     "api_key",
+    "raw_key",
+    "generated_key",
+    "key_material",
     "anthropic_api_key",
     "client_secret",
     "credentials",
@@ -499,6 +502,9 @@ mod tests {
     fn redacts_nested_sensitive_json_keys() {
         let input = json!({
             "token": "raw",
+            "raw_key": "gwk_public.secret",
+            "generated_key": "gwk_generated.secret",
+            "key_material": "secret material",
             "nested": {
                 "password": "secret",
                 "keep": "value"
@@ -507,6 +513,9 @@ mod tests {
 
         let redacted = redact_json_value(&input);
         assert_eq!(redacted["token"], "[REDACTED]");
+        assert_eq!(redacted["raw_key"], "[REDACTED]");
+        assert_eq!(redacted["generated_key"], "[REDACTED]");
+        assert_eq!(redacted["key_material"], "[REDACTED]");
         assert_eq!(redacted["nested"]["password"], "[REDACTED]");
         assert_eq!(redacted["nested"]["keep"], "value");
     }

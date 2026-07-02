@@ -10,7 +10,8 @@ use gateway_core::{
 use gateway_service::{
     AdminApiKeyModelOption, AdminApiKeyService, AdminApiKeyServiceAccountOwner, AdminApiKeySummary,
     AdminApiKeyUserOwner, AdminApiKeysPayload as ServiceAdminApiKeysPayload,
-    CreateAdminApiKeyInput, CreateAdminApiKeyResult, UpdateAdminApiKeyInput,
+    CreateAdminApiKeyInput, CreateAdminApiKeyResult, RevealAdminApiKeySecretResult,
+    UpdateAdminApiKeyInput,
 };
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -105,6 +106,11 @@ pub struct UpdateApiKeyResponse {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct RevokeApiKeyResponse {
     api_key: AdminApiKeyView,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct RevealApiKeySecretResponse {
+    raw_key: String,
 }
 
 #[utoipa::path(
@@ -211,6 +217,27 @@ pub async fn revoke_api_key(
     })))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/admin/api-keys/{api_key_id}/secret/reveal",
+    params(("api_key_id" = String, Path, description = "API key identifier")),
+    responses((status = 200, body = Envelope<RevealApiKeySecretResponse>)),
+    security(("session_cookie" = []))
+)]
+pub async fn reveal_api_key_secret(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(api_key_id): Path<String>,
+) -> Result<Json<Envelope<RevealApiKeySecretResponse>>, AppError> {
+    let api_key_id = parse_uuid(&api_key_id, "api_key_id")?;
+    authorize_reveal_api_key_secret(&state, &headers, api_key_id).await?;
+
+    let service = AdminApiKeyService::new(state.store.clone());
+    let result = service.reveal_api_key_secret(api_key_id).await?;
+
+    Ok(Json(envelope(map_reveal_result(result))))
+}
+
 enum ApiKeyAdminScope {
     Platform,
     Team(Uuid),
@@ -241,6 +268,37 @@ async fn require_api_key_admin_scope(
     }
 
     Ok(ApiKeyAdminScope::Team(membership.team_id))
+}
+
+async fn authorize_reveal_api_key_secret(
+    state: &AppState,
+    headers: &HeaderMap,
+    api_key_id: Uuid,
+) -> Result<(), AppError> {
+    let actor = require_authenticated_session(state, headers).await?;
+    if actor.status != UserStatus::Active {
+        return Err(insufficient_privileges());
+    }
+    if actor.global_role == GlobalRole::PlatformAdmin {
+        return Ok(());
+    }
+
+    let membership = state
+        .store
+        .get_team_membership_for_user(actor.user_id)
+        .await?
+        .ok_or_else(insufficient_privileges)?;
+    let api_key = state
+        .store
+        .get_api_key_by_id(api_key_id)
+        .await?
+        .ok_or_else(insufficient_privileges)?;
+    if api_key.owner_kind != ApiKeyOwnerKind::ServiceAccount
+        || api_key.owner_team_id != Some(membership.team_id)
+    {
+        return Err(insufficient_privileges());
+    }
+    Ok(())
 }
 
 async fn authorize_create_api_key(
@@ -332,6 +390,12 @@ fn map_payload(payload: ServiceAdminApiKeysPayload) -> AdminApiKeysPayload {
 fn map_create_result(result: CreateAdminApiKeyResult) -> CreateApiKeyResponse {
     CreateApiKeyResponse {
         api_key: map_api_key_summary(result.api_key),
+        raw_key: result.raw_key,
+    }
+}
+
+fn map_reveal_result(result: RevealAdminApiKeySecretResult) -> RevealApiKeySecretResponse {
+    RevealApiKeySecretResponse {
         raw_key: result.raw_key,
     }
 }
