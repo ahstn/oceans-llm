@@ -45,6 +45,7 @@ pub struct AdminApiKeyView {
     owner_service_account_key: Option<String>,
     owner_service_account_team_id: Option<String>,
     owner_service_account_team_key: Option<String>,
+    model_grant_mode: String,
     model_keys: Vec<String>,
     created_at: String,
     last_used_at: Option<String>,
@@ -83,6 +84,7 @@ pub struct CreateApiKeyRequest {
     owner_user_id: Option<String>,
     owner_team_id: Option<String>,
     owner_service_account_id: Option<String>,
+    model_grant_mode: String,
     model_keys: Vec<String>,
 }
 
@@ -94,6 +96,7 @@ pub struct CreateApiKeyResponse {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateApiKeyRequest {
+    model_grant_mode: String,
     model_keys: Vec<String>,
 }
 
@@ -147,6 +150,7 @@ pub async fn create_api_key(
             owner_user_id: request.owner_user_id,
             owner_team_id: request.owner_team_id,
             owner_service_account_id: request.owner_service_account_id,
+            model_grant_mode: request.model_grant_mode,
             model_keys: request.model_keys,
         })
         .await?;
@@ -177,6 +181,7 @@ pub async fn update_api_key(
         .update_api_key(
             api_key_id,
             UpdateAdminApiKeyInput {
+                model_grant_mode: request.model_grant_mode,
                 model_keys: request.model_keys,
             },
         )
@@ -352,6 +357,7 @@ fn map_api_key_summary(api_key: AdminApiKeySummary) -> AdminApiKeyView {
             .owner_service_account_team_id
             .map(|value| value.to_string()),
         owner_service_account_team_key: api_key.owner_service_account_team_key,
+        model_grant_mode: api_key.model_grant_mode.as_str().to_string(),
         model_keys: api_key.model_keys,
         created_at: format_timestamp(api_key.created_at),
         last_used_at: api_key.last_used_at.map(format_timestamp),

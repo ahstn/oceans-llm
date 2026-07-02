@@ -55,6 +55,7 @@ const basePayload: ApiKeysPayload = {
       owner_service_account_key: null,
       owner_service_account_team_id: null,
       owner_service_account_team_key: null,
+      model_grant_mode: 'explicit',
       model_keys: ['fast'],
       created_at: '2026-03-14T12:00:00Z',
       last_used_at: '2026-03-18T09:15:00Z',
@@ -161,7 +162,8 @@ describe('ApiKeysPage', () => {
           owner_service_account_key: null,
           owner_service_account_team_id: null,
           owner_service_account_team_key: null,
-          model_keys: ['fast'],
+          model_grant_mode: 'all',
+          model_keys: [],
           created_at: '2026-03-20T09:00:00Z',
           last_used_at: null,
           revoked_at: null,
@@ -179,7 +181,6 @@ describe('ApiKeysPage', () => {
     fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Production Web' } })
     fireEvent.click(screen.getByRole('combobox', { name: 'Owner user' }))
     fireEvent.click(screen.getByRole('option', { name: /Jane Admin/ }))
-    await toggleModelSelection(dialog, 'fast')
 
     const submitButton = within(dialog).getByRole('button', { name: 'Create API key' })
     await waitFor(() => expect(submitButton).toBeEnabled())
@@ -193,7 +194,8 @@ describe('ApiKeysPage', () => {
         owner_user_id: 'user_1',
         owner_team_id: null,
         owner_service_account_id: null,
-        model_keys: ['fast'],
+        model_grant_mode: 'all',
+        model_keys: [],
       },
     })
     await waitFor(() =>
@@ -220,6 +222,7 @@ describe('ApiKeysPage', () => {
           owner_service_account_key: 'deploy-bot',
           owner_service_account_team_id: 'team_1',
           owner_service_account_team_key: 'core-platform',
+          model_grant_mode: 'explicit',
           model_keys: ['fast'],
           created_at: '2026-03-20T09:00:00Z',
           last_used_at: null,
@@ -254,6 +257,7 @@ describe('ApiKeysPage', () => {
         owner_user_id: null,
         owner_team_id: 'team_1',
         owner_service_account_id: 'service_account_1',
+        model_grant_mode: 'explicit',
         model_keys: ['fast'],
       },
     })
@@ -276,7 +280,6 @@ describe('ApiKeysPage', () => {
     fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Production Web' } })
     fireEvent.click(screen.getByRole('combobox', { name: 'Owner user' }))
     fireEvent.click(screen.getByRole('option', { name: /Jane Admin/ }))
-    await toggleModelSelection(dialog, 'fast')
 
     const submitButton = within(dialog).getByRole('button', { name: 'Create API key' })
     await waitFor(() => expect(submitButton).toBeEnabled())
@@ -300,7 +303,8 @@ describe('ApiKeysPage', () => {
           owner_service_account_key: null,
           owner_service_account_team_id: null,
           owner_service_account_team_key: null,
-          model_keys: ['fast'],
+          model_grant_mode: 'all',
+          model_keys: [],
           created_at: '2026-03-20T09:00:00Z',
           last_used_at: null,
           revoked_at: null,
@@ -321,6 +325,7 @@ describe('ApiKeysPage', () => {
       data: {
         api_key: {
           ...basePayload.items[0],
+          model_grant_mode: 'explicit',
           model_keys: ['fast', 'reasoning'],
         },
       },
@@ -351,6 +356,7 @@ describe('ApiKeysPage', () => {
       data: {
         apiKeyId: 'api_key_1',
         input: {
+          model_grant_mode: 'explicit',
           model_keys: ['fast', 'reasoning'],
         },
       },

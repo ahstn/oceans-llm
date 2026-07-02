@@ -170,8 +170,9 @@ mod tests {
 
     use async_trait::async_trait;
     use gateway_core::{
-        ApiKeyOwnerKind, AuthenticatedApiKey, BudgetCadence, BudgetRecord, BudgetRepository,
-        BudgetScope, BudgetSettings, Money4, StoreError, UsageLedgerRecord, UsagePricingStatus,
+        ApiKeyModelGrantMode, ApiKeyOwnerKind, AuthenticatedApiKey, BudgetCadence, BudgetRecord,
+        BudgetRepository, BudgetScope, BudgetSettings, Money4, StoreError, UsageLedgerRecord,
+        UsagePricingStatus,
     };
     use serde_json::json;
     use time::OffsetDateTime;
@@ -261,6 +262,7 @@ mod tests {
             id: Uuid::new_v4(),
             public_id: "dev123".to_string(),
             name: "dev".to_string(),
+            model_grant_mode: ApiKeyModelGrantMode::Explicit,
             owner_kind: ApiKeyOwnerKind::User,
             owner_user_id: Some(user_id),
             owner_team_id: None,

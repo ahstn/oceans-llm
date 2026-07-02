@@ -1253,11 +1253,11 @@ mod tests {
 
     use async_trait::async_trait;
     use gateway_core::{
-        ApiKeyOwnerKind, AuthMode, AuthenticatedApiKey, ChatCompletionsRequest, GlobalRole,
-        IdentityRepository, ModelAccessMode, RequestLogDetail, RequestLogPage,
-        RequestLogPayloadRecord, RequestLogPurgeResult, RequestLogQuery, RequestLogRecord,
-        RequestLogRepository, RequestLogRetentionWindow, RequestTag, RequestTags, StoreError,
-        TeamMembershipRecord, TeamRecord, UserRecord, UserStatus,
+        ApiKeyModelGrantMode, ApiKeyOwnerKind, AuthMode, AuthenticatedApiKey,
+        ChatCompletionsRequest, GlobalRole, IdentityRepository, ModelAccessMode, RequestLogDetail,
+        RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult, RequestLogQuery,
+        RequestLogRecord, RequestLogRepository, RequestLogRetentionWindow, RequestTag, RequestTags,
+        StoreError, TeamMembershipRecord, TeamRecord, UserRecord, UserStatus,
     };
     use serde_json::{Value, json};
     use time::OffsetDateTime;
@@ -1540,6 +1540,7 @@ mod tests {
             id: Uuid::new_v4(),
             public_id: "dev123".to_string(),
             name: "dev".to_string(),
+            model_grant_mode: ApiKeyModelGrantMode::Explicit,
             owner_kind: ApiKeyOwnerKind::User,
             owner_user_id: Some(user_id),
             owner_team_id: None,
@@ -1552,6 +1553,7 @@ mod tests {
             id: Uuid::new_v4(),
             public_id: "dev123".to_string(),
             name: "dev".to_string(),
+            model_grant_mode: ApiKeyModelGrantMode::Explicit,
             owner_kind: ApiKeyOwnerKind::ServiceAccount,
             owner_user_id: None,
             owner_team_id: Some(Uuid::new_v4()),
@@ -1748,6 +1750,7 @@ mod tests {
             id: Uuid::new_v4(),
             public_id: "dev123".to_string(),
             name: "dev".to_string(),
+            model_grant_mode: ApiKeyModelGrantMode::Explicit,
             owner_kind: ApiKeyOwnerKind::ServiceAccount,
             owner_user_id: None,
             owner_team_id: Some(team_id),
@@ -1988,6 +1991,7 @@ mod tests {
             id: Uuid::new_v4(),
             public_id: "dev123".to_string(),
             name: "dev".to_string(),
+            model_grant_mode: ApiKeyModelGrantMode::Explicit,
             owner_kind: ApiKeyOwnerKind::ServiceAccount,
             owner_user_id: None,
             owner_team_id: Some(Uuid::new_v4()),

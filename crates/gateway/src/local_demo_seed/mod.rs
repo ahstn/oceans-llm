@@ -1,7 +1,7 @@
 use anyhow::Context;
 use gateway_core::{
-    AdminApiKeyRepository, ApiKeyOwnerKind, ApiKeyRepository, ApiKeyStatus, BudgetRepository,
-    IdentityRepository, McpTokenEstimateConfidence, McpTokenEstimateSource,
+    AdminApiKeyRepository, ApiKeyModelGrantMode, ApiKeyOwnerKind, ApiKeyRepository, ApiKeyStatus,
+    BudgetRepository, IdentityRepository, McpTokenEstimateConfidence, McpTokenEstimateSource,
     McpTokenOverheadRepository, ModelRepository, Money4, NewApiKeyRecord, RequestAttemptRecord,
     RequestAttemptStatus, RequestLogPayloadRecord, RequestLogRecord, RequestLogRepository,
     RequestMcpTokenOverheadRecord, RequestTag, RequestTags, UsageLedgerRecord, UsagePricingStatus,
@@ -195,7 +195,11 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
                     );
                 }
                 store
-                    .replace_api_key_model_grants(existing.id, &model_grants)
+                    .replace_api_key_model_access(
+                        existing.id,
+                        ApiKeyModelGrantMode::Explicit,
+                        &model_grants,
+                    )
                     .await
                     .with_context(|| {
                         format!("failed refreshing grants for `{}`", fixture.public_id)
@@ -210,6 +214,7 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
                         name: fixture.name.to_string(),
                         public_id: fixture.public_id.to_string(),
                         secret_hash,
+                        model_grant_mode: ApiKeyModelGrantMode::Explicit,
                         owner_kind: owner.0,
                         owner_user_id: owner.1,
                         owner_team_id: owner.2,
@@ -221,7 +226,11 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
                         format!("failed creating demo api key `{}`", fixture.public_id)
                     })?;
                 store
-                    .replace_api_key_model_grants(created.id, &model_grants)
+                    .replace_api_key_model_access(
+                        created.id,
+                        ApiKeyModelGrantMode::Explicit,
+                        &model_grants,
+                    )
                     .await
                     .with_context(|| {
                         format!("failed storing grants for `{}`", fixture.public_id)

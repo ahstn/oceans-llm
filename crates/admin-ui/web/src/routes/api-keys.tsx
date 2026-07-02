@@ -47,6 +47,7 @@ export function ApiKeysPage() {
         serviceAccountOptions={service_accounts}
         userOptions={users}
         submitDisabled={state.isCreateDisabled}
+        onModelGrantModeChange={state.actions.updateModelGrantMode}
         onModelToggle={state.actions.toggleModelKey}
         onNameChange={state.actions.updateName}
         onOpenChange={(open) => (!open ? state.actions.closeCreateDialog() : undefined)}
@@ -62,6 +63,7 @@ export function ApiKeysPage() {
         open={state.manageDialog.mode === 'open'}
         submitDisabled={state.isManageDisabled}
         target={state.manageTarget}
+        onModelGrantModeChange={state.actions.updateManageModelGrantMode}
         onModelToggle={state.actions.toggleManageModelKey}
         onOpenChange={(open) => (!open ? state.actions.closeManageDialog() : undefined)}
         onRevoke={state.actions.handleRevokeApiKey}

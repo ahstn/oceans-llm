@@ -442,6 +442,32 @@ impl ApiKeyStatus {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApiKeyModelGrantMode {
+    All,
+    Explicit,
+}
+
+impl ApiKeyModelGrantMode {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::Explicit => "explicit",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "all" => Some(Self::All),
+            "explicit" => Some(Self::Explicit),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiKeyRecord {
     pub id: Uuid,
@@ -449,6 +475,7 @@ pub struct ApiKeyRecord {
     pub secret_hash: String,
     pub name: String,
     pub status: ApiKeyStatus,
+    pub model_grant_mode: ApiKeyModelGrantMode,
     pub owner_kind: ApiKeyOwnerKind,
     pub owner_user_id: Option<Uuid>,
     pub owner_team_id: Option<Uuid>,
@@ -463,6 +490,7 @@ pub struct NewApiKeyRecord {
     pub name: String,
     pub public_id: String,
     pub secret_hash: String,
+    pub model_grant_mode: ApiKeyModelGrantMode,
     pub owner_kind: ApiKeyOwnerKind,
     pub owner_user_id: Option<Uuid>,
     pub owner_team_id: Option<Uuid>,

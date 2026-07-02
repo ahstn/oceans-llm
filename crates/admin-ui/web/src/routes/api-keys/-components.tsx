@@ -41,6 +41,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type {
   ApiKeyModelOptionView,
   ApiKeyOwnerServiceAccountView,
@@ -111,8 +112,8 @@ export function ApiKeysCard({
         <div className="flex flex-col gap-1">
           <CardTitle>API Keys</CardTitle>
           <CardDescription>
-            Issue gateway credentials with explicit owners and model grants, then revoke them when
-            access should stop.
+            Issue gateway credentials with explicit owners and model grant modes, then revoke them
+            when access should stop.
           </CardDescription>
         </div>
         <Button type="button" onClick={onCreate}>
@@ -178,7 +179,7 @@ export function ApiKeyList({
               </div>
               <div>
                 <dt className="text-[var(--color-text-soft)]">Models</dt>
-                <dd className="text-[var(--color-text)]">{item.model_keys.join(', ')}</dd>
+                <dd className="text-[var(--color-text)]">{formatModelGrantSummary(item)}</dd>
               </div>
               <div>
                 <dt className="text-[var(--color-text-soft)]">Created</dt>
@@ -224,7 +225,7 @@ export function ApiKeyList({
                 </td>
                 <td className="px-3 py-3 text-[var(--color-text)]">{formatOwner(item)}</td>
                 <td className="px-3 py-3 text-[var(--color-text-muted)]">
-                  {item.model_keys.join(', ')}
+                  {formatModelGrantSummary(item)}
                 </td>
                 <td className="px-3 py-3 text-[var(--color-text-muted)]">
                   {formatCreatedAt(item.created_at)}
@@ -262,6 +263,7 @@ export function CreateApiKeyDialog({
   serviceAccountOptions,
   userOptions,
   submitDisabled,
+  onModelGrantModeChange,
   onModelToggle,
   onNameChange,
   onOpenChange,
@@ -277,6 +279,7 @@ export function CreateApiKeyDialog({
   serviceAccountOptions: ApiKeyOwnerServiceAccountView[]
   userOptions: ApiKeyOwnerUserView[]
   submitDisabled: boolean
+  onModelGrantModeChange: (mode: CreateApiKeyInput['model_grant_mode']) => void
   onModelToggle: (modelKey: string, checked: boolean) => void
   onNameChange: (name: string) => void
   onOpenChange: (open: boolean) => void
@@ -290,7 +293,7 @@ export function CreateApiKeyDialog({
         <DialogHeader>
           <DialogTitle>Create API key</DialogTitle>
           <DialogDescription>
-            Keys are created with an explicit owner and model grant set. The raw secret is only
+            Keys are created with an explicit owner and model grant mode. The raw secret is only
             shown once after creation.
           </DialogDescription>
         </DialogHeader>
@@ -368,15 +371,30 @@ export function CreateApiKeyDialog({
               </Field>
             </FieldGroup>
 
-            <ModelMultiSelectField
-              description="Choose the exact gateway models this key can access. No implicit grants are added."
-              label="Granted models"
-              modelOptions={modelOptions}
-              placeholder="Select models"
-              searchPlaceholder="Search models…"
-              selectedKeys={form.model_keys}
-              onToggle={onModelToggle}
+            <ModelGrantModeField
+              disabled={form.owner_kind === 'service_account'}
+              mode={form.model_grant_mode}
+              onChange={onModelGrantModeChange}
             />
+
+            {form.model_grant_mode === 'explicit' ? (
+              <ModelMultiSelectField
+                description="Choose the exact gateway models this key can access."
+                label="Granted models"
+                modelOptions={modelOptions}
+                placeholder="Select models"
+                searchPlaceholder="Search models..."
+                selectedKeys={form.model_keys}
+                onToggle={onModelToggle}
+              />
+            ) : (
+              <Field>
+                <FieldLabel>Granted models</FieldLabel>
+                <FieldDescription>
+                  This key can use every current and future gateway model allowed by its owner.
+                </FieldDescription>
+              </Field>
+            )}
           </div>
 
           <DialogFooter>
@@ -400,6 +418,7 @@ export function ManageApiKeyDialog({
   open,
   submitDisabled,
   target,
+  onModelGrantModeChange,
   onModelToggle,
   onOpenChange,
   onRevoke,
@@ -411,6 +430,7 @@ export function ManageApiKeyDialog({
   open: boolean
   submitDisabled: boolean
   target: ApiKeyView | null
+  onModelGrantModeChange: (mode: UpdateApiKeyInput['model_grant_mode']) => void
   onModelToggle: (modelKey: string, checked: boolean) => void
   onOpenChange: (open: boolean) => void
   onRevoke: () => void | Promise<void>
@@ -473,20 +493,35 @@ export function ManageApiKeyDialog({
                 </Alert>
               ) : null}
 
-              <ModelMultiSelectField
-                description={
-                  target.status === 'active'
-                    ? 'Save model access changes to apply them immediately.'
-                    : 'Current model access is shown for reference only.'
-                }
-                disabled={target.status !== 'active'}
-                label="Granted models"
-                modelOptions={modelOptions}
-                placeholder="Select models"
-                searchPlaceholder="Search models…"
-                selectedKeys={form.model_keys}
-                onToggle={onModelToggle}
+              <ModelGrantModeField
+                disabled={target.status !== 'active' || target.owner_kind === 'service_account'}
+                mode={form.model_grant_mode}
+                onChange={onModelGrantModeChange}
               />
+
+              {form.model_grant_mode === 'explicit' ? (
+                <ModelMultiSelectField
+                  description={
+                    target.status === 'active'
+                      ? 'Save model access changes to apply them immediately.'
+                      : 'Current model access is shown for reference only.'
+                  }
+                  disabled={target.status !== 'active'}
+                  label="Granted models"
+                  modelOptions={modelOptions}
+                  placeholder="Select models"
+                  searchPlaceholder="Search models..."
+                  selectedKeys={form.model_keys}
+                  onToggle={onModelToggle}
+                />
+              ) : (
+                <Field>
+                  <FieldLabel>Granted models</FieldLabel>
+                  <FieldDescription>
+                    This key can use every current and future gateway model allowed by its owner.
+                  </FieldDescription>
+                </Field>
+              )}
 
               <section className="flex flex-col gap-3 rounded-lg border border-[color:var(--color-border)] p-4">
                 <div className="flex flex-col gap-1">
@@ -600,11 +635,6 @@ function ModelMultiSelectField({
                             {model.description}
                           </span>
                         ) : null}
-                        {model.tags.length > 0 ? (
-                          <span className="truncate text-xs text-[var(--color-text-soft)]">
-                            {model.tags.join(' • ')}
-                          </span>
-                        ) : null}
                       </div>
                     </CommandItem>
                   )
@@ -629,6 +659,44 @@ function ModelMultiSelectField({
       ) : (
         <FieldDescription>{description}</FieldDescription>
       )}
+    </Field>
+  )
+}
+
+function ModelGrantModeField({
+  disabled,
+  mode,
+  onChange,
+}: {
+  disabled: boolean
+  mode: CreateApiKeyInput['model_grant_mode']
+  onChange: (mode: CreateApiKeyInput['model_grant_mode']) => void
+}) {
+  return (
+    <Field>
+      <FieldLabel>Model grant mode</FieldLabel>
+      <ToggleGroup
+        type="single"
+        value={mode}
+        onValueChange={(value) => {
+          if (value === 'all' || value === 'explicit') {
+            onChange(value)
+          }
+        }}
+        disabled={disabled}
+        aria-label="Model grant mode"
+      >
+        <ToggleGroupItem value="all" aria-label="All models">
+          All models
+        </ToggleGroupItem>
+        <ToggleGroupItem value="explicit" aria-label="Selected models">
+          Selected models
+        </ToggleGroupItem>
+      </ToggleGroup>
+      <FieldDescription>
+        Service-account-owned keys require selected models. User-owned keys can track the full
+        gateway model catalog.
+      </FieldDescription>
     </Field>
   )
 }
@@ -663,6 +731,14 @@ function formatOwner(item: ApiKeyView) {
   }
 
   return item.owner_name
+}
+
+function formatModelGrantSummary(item: ApiKeyView) {
+  if (item.model_grant_mode === 'all') {
+    return 'All models'
+  }
+
+  return item.model_keys.length > 0 ? item.model_keys.join(', ') : 'No models'
 }
 
 function maskApiKeyPrefix(prefix: string) {

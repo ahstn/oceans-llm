@@ -418,3 +418,79 @@ test('admin ui can create, manage, and revoke an api key that gates live gateway
   }
   expect(revokedBody.error.code).toBe('api_key_revoked')
 })
+
+test('user-owned all-model api keys track the live model catalog', async ({
+  request,
+  page,
+  baseURL,
+}) => {
+  const root = baseURL ?? requireEnv('E2E_BASE_URL')
+  const adminCookie = await ensureAdminSession(page, request, root)
+
+  const apiKeysResponse = await request.get(`${root}/api/v1/admin/api-keys`, {
+    headers: {
+      cookie: adminCookie,
+    },
+  })
+  expect(apiKeysResponse.status()).toBe(200)
+  const apiKeysBody = (await apiKeysResponse.json()) as {
+    data: {
+      users: Array<{ id: string }>
+      models: Array<{ key: string }>
+    }
+  }
+  const [owner] = apiKeysBody.data.users
+  expect(owner).toBeTruthy()
+  if (!owner) {
+    throw new Error('expected an active user owner for all-model API key coverage')
+  }
+
+  const expectedModelKeys = apiKeysBody.data.models.map((model) => model.key).sort()
+  expect(expectedModelKeys.length).toBeGreaterThan(0)
+
+  const createResponse = await request.post(`${root}/api/v1/admin/api-keys`, {
+    headers: {
+      cookie: adminCookie,
+      'content-type': 'application/json',
+    },
+    data: {
+      name: `E2E All Models ${Date.now()}`,
+      owner_kind: 'user',
+      owner_user_id: owner.id,
+      owner_team_id: null,
+      owner_service_account_id: null,
+      model_grant_mode: 'all',
+      model_keys: [],
+    },
+  })
+  expect(createResponse.status()).toBe(200)
+  const createBody = (await createResponse.json()) as {
+    data: {
+      api_key: { id: string; model_grant_mode: string; model_keys: string[] }
+      raw_key: string
+    }
+  }
+  expect(createBody.data.api_key.model_grant_mode).toBe('all')
+  expect(createBody.data.api_key.model_keys).toEqual([])
+
+  const modelsResponse = await request.get(`${root}/v1/models`, {
+    headers: {
+      authorization: `Bearer ${createBody.data.raw_key}`,
+    },
+  })
+  expect(modelsResponse.status()).toBe(200)
+  const modelsBody = (await modelsResponse.json()) as {
+    data: Array<{ id: string }>
+  }
+  expect(modelsBody.data.map((model) => model.id).sort()).toEqual(expectedModelKeys)
+
+  const revokeResponse = await request.post(
+    `${root}/api/v1/admin/api-keys/${createBody.data.api_key.id}/revoke`,
+    {
+      headers: {
+        cookie: adminCookie,
+      },
+    },
+  )
+  expect(revokeResponse.status()).toBe(200)
+})

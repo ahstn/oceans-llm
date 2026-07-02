@@ -397,11 +397,13 @@ impl PostgresStore {
                 r#"
                 INSERT INTO api_keys (
                     id, public_id, secret_hash, name, status,
-                    owner_kind, owner_user_id, owner_team_id, owner_service_account_id, created_at
-                ) VALUES ($1, $2, $3, $4, 'active', 'service_account', NULL, $5, $6, $7)
+                    model_grant_mode, owner_kind, owner_user_id, owner_team_id,
+                    owner_service_account_id, created_at
+                ) VALUES ($1, $2, $3, $4, 'active', 'explicit', 'service_account', NULL, $5, $6, $7)
                 ON CONFLICT(public_id) DO UPDATE SET
                     secret_hash = excluded.secret_hash,
                     name = excluded.name,
+                    model_grant_mode = excluded.model_grant_mode,
                     owner_kind = excluded.owner_kind,
                     owner_user_id = excluded.owner_user_id,
                     owner_team_id = excluded.owner_team_id,
