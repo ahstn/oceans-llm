@@ -616,6 +616,34 @@ function ClientConfigDialog({
               </ToggleGroup>
             </div>
 
+            {activeConfig.setup.length > 0 ? (
+              <Table aria-label={`${activeConfig.label} setup`}>
+                <TableBody>
+                  {activeConfig.setup.map((item) => (
+                    <TableRow key={`${item.label}:${item.value}`}>
+                      <TableCell className="w-32 align-baseline font-medium whitespace-nowrap">
+                        {item.label}
+                      </TableCell>
+                      <TableCell className="min-w-0 align-baseline whitespace-normal text-muted-foreground">
+                        {item.href ? (
+                          <a
+                            href={item.href}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="break-words font-mono text-xs underline underline-offset-4"
+                          >
+                            {item.value}
+                          </a>
+                        ) : (
+                          <span className="break-words">{item.value}</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : null}
+
             <div className="flex min-w-0 flex-col gap-4">
               {activeConfig.blocks.map((block) => (
                 <div

@@ -1181,6 +1181,12 @@ mod tests {
         assert_eq!(items[0].client_configurations.len(), 3);
         assert_eq!(items[0].client_configurations[0].key, "opencode");
         assert!(
+            items[0].client_configurations[0]
+                .setup
+                .iter()
+                .any(|item| item.value == "~/.config/opencode/opencode.json")
+        );
+        assert!(
             items[0].client_configurations[0].blocks[0]
                 .content
                 .contains("\"cache_read\": 0.3")
@@ -1196,6 +1202,11 @@ mod tests {
                 .contains("\"tool_call\": true")
         );
         assert_eq!(items[0].client_configurations[1].key, "pi");
+        assert!(items[0].client_configurations[1].setup.iter().any(|item| {
+            item.value.contains("~/.pi/agent/models.json")
+                && item.value.contains("~/.pi/agent/settings.json")
+                && item.value.contains(".pi/settings.json")
+        }));
         assert!(
             items[0].client_configurations[1].blocks[0]
                 .content
@@ -1203,6 +1214,12 @@ mod tests {
         );
         assert_eq!(items[0].client_configurations[2].key, "claude-code");
         assert_eq!(items[0].client_configurations[2].blocks.len(), 2);
+        assert!(
+            items[0].client_configurations[2]
+                .setup
+                .iter()
+                .any(|item| item.value.contains("<gateway api token>"))
+        );
         assert!(
             items[0].client_configurations[2].blocks[0]
                 .content

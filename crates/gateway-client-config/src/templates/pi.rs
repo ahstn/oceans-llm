@@ -12,12 +12,15 @@ use crate::{
     templates::notes::thinking_notes,
     types::{
         AnthropicThinkingPolicy, ClientConfig, ClientConfigCodeBlock, ClientConfigInput,
-        ClientConfigInputSet, ClientConfigTemplate,
+        ClientConfigInputSet, ClientConfigSetupItem, ClientConfigTemplate,
     },
 };
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct PiConfigTemplate;
+
+const PI_SETTINGS_DOCS_URL: &str =
+    "https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/settings.md";
 
 impl ClientConfigTemplate for PiConfigTemplate {
     fn render(&self, input: &ClientConfigInput) -> ClientConfig {
@@ -62,6 +65,11 @@ impl PiConfigTemplate {
                 .iter()
                 .map(|input| input.model_id.clone())
                 .collect(),
+            setup: pi_setup(
+                input_set
+                    .first()
+                    .expect("Pi config rendering requires at least one model"),
+            ),
             blocks: vec![ClientConfigCodeBlock {
                 label: "models.json".to_string(),
                 filename: "models.json".to_string(),
@@ -70,6 +78,29 @@ impl PiConfigTemplate {
             notes: input_set.models.iter().flat_map(thinking_notes).collect(),
         }
     }
+}
+
+fn pi_setup(input: &ClientConfigInput) -> Vec<ClientConfigSetupItem> {
+    vec![
+        ClientConfigSetupItem {
+            label: "Configuration".to_string(),
+            value: "Use ~/.pi/agent/models.json for this provider configuration; use ~/.pi/agent/settings.json or .pi/settings.json for Pi settings.".to_string(),
+            href: None,
+        },
+        ClientConfigSetupItem {
+            label: "API key".to_string(),
+            value: format!(
+                "Set {} to a gateway API key before using this Pi configuration.",
+                input.api_key_env_var
+            ),
+            href: None,
+        },
+        ClientConfigSetupItem {
+            label: "Docs".to_string(),
+            value: PI_SETTINGS_DOCS_URL.to_string(),
+            href: Some(PI_SETTINGS_DOCS_URL.to_string()),
+        },
+    ]
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]

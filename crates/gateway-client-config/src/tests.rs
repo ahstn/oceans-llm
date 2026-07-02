@@ -1,10 +1,10 @@
 use serde_json::Value;
 
 use crate::{
-    AnthropicThinkingPolicy, ClaudeCodeConfigTemplate, ClientConfigInput, ClientConfigInputSet,
-    ClientConfigTemplate, ClientModelCapabilities, CodexConfigTemplate, OpenCodeConfigTemplate,
-    PiConfigTemplate, infer_anthropic_thinking_policy, render_default_configs,
-    render_default_configs_for_models,
+    AnthropicThinkingPolicy, ClaudeCodeConfigTemplate, ClientConfig, ClientConfigInput,
+    ClientConfigInputSet, ClientConfigTemplate, ClientModelCapabilities, CodexConfigTemplate,
+    OpenCodeConfigTemplate, PiConfigTemplate, infer_anthropic_thinking_policy,
+    render_default_configs, render_default_configs_for_models,
 };
 
 fn input(policy: Option<AnthropicThinkingPolicy>) -> ClientConfigInput {
@@ -43,6 +43,24 @@ fn non_anthropic_input() -> ClientConfigInput {
     }
 }
 
+fn setup_value<'a>(config: &'a ClientConfig, label: &str) -> &'a str {
+    config
+        .setup
+        .iter()
+        .find(|item| item.label == label)
+        .map(|item| item.value.as_str())
+        .unwrap_or_else(|| panic!("missing setup item {label}"))
+}
+
+fn setup_href<'a>(config: &'a ClientConfig, label: &str) -> &'a str {
+    config
+        .setup
+        .iter()
+        .find(|item| item.label == label)
+        .and_then(|item| item.href.as_deref())
+        .unwrap_or_else(|| panic!("missing setup href {label}"))
+}
+
 #[test]
 fn opencode_shape_includes_required_cost_and_limits() {
     let rendered = OpenCodeConfigTemplate.render(&input(Some(AnthropicThinkingPolicy::SafeEffort)));
@@ -50,6 +68,15 @@ fn opencode_shape_includes_required_cost_and_limits() {
     let model = &value["provider"]["oceans-llm"]["models"]["claude-sonnet"];
 
     assert_eq!(value["$schema"], "https://opencode.ai/config.json");
+    assert_eq!(
+        setup_value(&rendered, "Configuration"),
+        "~/.config/opencode/opencode.json"
+    );
+    assert!(setup_value(&rendered, "API key").contains("OCEANS_LLM_API_KEY"));
+    assert_eq!(
+        setup_href(&rendered, "Docs"),
+        "https://opencode.ai/docs/config/"
+    );
     assert_eq!(model["limit"]["context"], 200_000);
     assert_eq!(model["limit"]["output"], 64_000);
     assert_eq!(model["cost"]["input"], 3.0);
@@ -65,6 +92,14 @@ fn pi_shape_includes_provider_model_cost_and_windows() {
     let model = &provider["models"][0];
 
     assert_eq!(provider["baseUrl"], "http://127.0.0.1:3000/v1");
+    assert!(setup_value(&rendered, "Configuration").contains("~/.pi/agent/models.json"));
+    assert!(setup_value(&rendered, "Configuration").contains("~/.pi/agent/settings.json"));
+    assert!(setup_value(&rendered, "Configuration").contains(".pi/settings.json"));
+    assert_eq!(
+        setup_href(&rendered, "Docs"),
+        "https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/settings.md"
+    );
+    assert!(setup_value(&rendered, "API key").contains("OCEANS_LLM_API_KEY"));
     assert_eq!(provider["api"], "anthropic-messages");
     assert_eq!(provider["apiKey"], "$OCEANS_LLM_API_KEY");
     assert_eq!(provider["compat"]["forceAdaptiveThinking"], true);
@@ -444,6 +479,13 @@ fn claude_code_shape_includes_gateway_env_and_model_override() {
 
     assert_eq!(rendered.key, "claude-code");
     assert_eq!(rendered.blocks.len(), 2);
+    assert!(setup_value(&rendered, "Configuration").contains("~/.claude/settings.json"));
+    assert!(setup_value(&rendered, "Configuration").contains(".claude/settings.json"));
+    assert_eq!(
+        setup_href(&rendered, "Docs"),
+        "https://code.claude.com/docs/en/settings"
+    );
+    assert!(setup_value(&rendered, "API key").contains("<gateway api token>"));
     assert_eq!(
         gateway_settings["$schema"],
         "https://json.schemastore.org/claude-code-settings.json"
@@ -480,6 +522,12 @@ fn claude_code_shape_includes_gateway_env_and_model_override() {
             .iter()
             .any(|note| note.contains("/v1/messages"))
     );
+    assert!(
+        rendered
+            .notes
+            .iter()
+            .all(|note| !note.contains("<gateway api token>"))
+    );
 }
 
 #[test]
@@ -509,6 +557,15 @@ fn codex_shape_includes_custom_responses_provider() {
     assert_eq!(rendered.key, "codex");
     assert_eq!(rendered.label, "Codex");
     assert_eq!(rendered.blocks.len(), 1);
+    assert_eq!(
+        setup_value(&rendered, "Configuration"),
+        "~/.codex/config.toml"
+    );
+    assert!(setup_value(&rendered, "API key").contains("OCEANS_LLM_API_KEY"));
+    assert_eq!(
+        setup_href(&rendered, "Docs"),
+        "https://developers.openai.com/codex/config-reference"
+    );
     assert_eq!(rendered.blocks[0].filename, "config.toml");
     assert!(
         rendered.blocks[0]
@@ -558,7 +615,7 @@ fn codex_notes_do_not_include_thinking_variant_guidance() {
             .iter()
             .all(|note| !note.contains("thinking variants"))
     );
-    assert_eq!(rendered.notes.len(), 2);
+    assert_eq!(rendered.notes.len(), 1);
 }
 
 #[test]

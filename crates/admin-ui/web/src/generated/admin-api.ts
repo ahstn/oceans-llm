@@ -1256,12 +1256,18 @@ export interface components {
             filename: string;
             label: string;
         };
+        AdminModelClientConfigSetupItemView: {
+            href?: string | null;
+            label: string;
+            value: string;
+        };
         AdminModelClientConfigView: {
             blocks: components["schemas"]["AdminModelClientConfigBlockView"][];
             key: string;
             label: string;
             model_ids: string[];
             notes: string[];
+            setup: components["schemas"]["AdminModelClientConfigSetupItemView"][];
         };
         AdminModelPageView: {
             items: components["schemas"]["AdminModelView"][];

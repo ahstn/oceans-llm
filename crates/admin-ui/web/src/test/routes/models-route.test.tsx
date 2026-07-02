@@ -4,6 +4,83 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { ModelPageView } from '@/types/api'
 
+type ClientConfigSetup = ModelPageView['items'][number]['client_configurations'][number]['setup']
+
+const opencodeSetup = (): ClientConfigSetup => [
+  {
+    label: 'Configuration',
+    value: '~/.config/opencode/opencode.json',
+    href: null,
+  },
+  {
+    label: 'API key',
+    value: 'Set OCEANS_LLM_API_KEY to a gateway API key before using this OpenCode configuration.',
+    href: null,
+  },
+  {
+    label: 'Docs',
+    value: 'https://opencode.ai/docs/config/',
+    href: 'https://opencode.ai/docs/config/',
+  },
+]
+
+const piSetup = (): ClientConfigSetup => [
+  {
+    label: 'Configuration',
+    value:
+      'Use ~/.pi/agent/models.json for this provider configuration; use ~/.pi/agent/settings.json or .pi/settings.json for Pi settings.',
+    href: null,
+  },
+  {
+    label: 'API key',
+    value: 'Set OCEANS_LLM_API_KEY to a gateway API key before using this Pi configuration.',
+    href: null,
+  },
+  {
+    label: 'Docs',
+    value: 'https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/settings.md',
+    href: 'https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/settings.md',
+  },
+]
+
+const claudeCodeSetup = (): ClientConfigSetup => [
+  {
+    label: 'Configuration',
+    value:
+      '~/.claude/settings.json for user configuration; .claude/settings.json for project configuration.',
+    href: null,
+  },
+  {
+    label: 'API key',
+    value:
+      'Replace <gateway api token> with a gateway API key before using this Claude Code configuration.',
+    href: null,
+  },
+  {
+    label: 'Docs',
+    value: 'https://code.claude.com/docs/en/settings',
+    href: 'https://code.claude.com/docs/en/settings',
+  },
+]
+
+const codexSetup = (): ClientConfigSetup => [
+  {
+    label: 'Configuration',
+    value: '~/.codex/config.toml',
+    href: null,
+  },
+  {
+    label: 'API key',
+    value: 'Set OCEANS_LLM_API_KEY to a gateway API key before using this Codex configuration.',
+    href: null,
+  },
+  {
+    label: 'Docs',
+    value: 'https://developers.openai.com/codex/config-reference',
+    href: 'https://developers.openai.com/codex/config-reference',
+  },
+]
+
 const navigateMock = vi.fn()
 const getModelClientConfigsMock = vi.hoisted(() => vi.fn())
 
@@ -81,6 +158,7 @@ const modelPage: ModelPageView = {
           key: 'opencode',
           label: 'OpenCode',
           model_ids: ['claude-sonnet'],
+          setup: opencodeSetup(),
           blocks: [
             {
               label: 'opencode.json',
@@ -94,6 +172,7 @@ const modelPage: ModelPageView = {
           key: 'pi',
           label: 'Pi',
           model_ids: ['claude-sonnet'],
+          setup: piSetup(),
           blocks: [
             {
               label: 'models.json',
@@ -107,6 +186,7 @@ const modelPage: ModelPageView = {
           key: 'claude-code',
           label: 'Claude Code',
           model_ids: ['claude-sonnet'],
+          setup: claudeCodeSetup(),
           blocks: [
             {
               label: 'Gateway model settings',
@@ -127,6 +207,7 @@ const modelPage: ModelPageView = {
           key: 'codex',
           label: 'Codex',
           model_ids: ['claude-sonnet'],
+          setup: codexSetup(),
           blocks: [
             {
               label: 'config.toml',
@@ -298,17 +379,45 @@ describe('ModelsPage', () => {
       data: { model_keys: ['claude-sonnet'] },
     })
     expect(await screen.findByRole('dialog', { name: 'Client config' })).toBeInTheDocument()
+    expect(screen.getByText('~/.config/opencode/opencode.json')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'https://opencode.ai/docs/config/' })).toHaveAttribute(
+      'href',
+      'https://opencode.ai/docs/config/',
+    )
+    expect(
+      screen
+        .getByText('~/.config/opencode/opencode.json')
+        .compareDocumentPosition(screen.getByText(/"provider": "opencode"/)) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
     expect(screen.getByText('opencode.json')).toBeInTheDocument()
     expect(screen.getByText(/"provider": "opencode"/)).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('radio', { name: 'Pi' }))
+    expect(screen.getByText(/~\/\.pi\/agent\/settings\.json/)).toBeInTheDocument()
+    expect(screen.getByText(/\.pi\/settings\.json/)).toBeInTheDocument()
+    expect(screen.getByText(/~\/\.pi\/agent\/models\.json/)).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', {
+        name: 'https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/settings.md',
+      }),
+    ).toHaveAttribute(
+      'href',
+      'https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/settings.md',
+    )
     expect(screen.getByText('models.json')).toBeInTheDocument()
     expect(screen.getByText(/"provider": "pi"/)).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy JSON' }))
     expect(writeText).toHaveBeenCalledWith('{\n  "provider": "pi"\n}')
+    expect(writeText).not.toHaveBeenCalledWith(expect.stringContaining('~/.pi/agent/settings.json'))
 
     fireEvent.click(screen.getByRole('radio', { name: 'Claude Code' }))
+    expect(screen.getByText(/~\/\.claude\/settings\.json/)).toBeInTheDocument()
+    expect(screen.getByText(/Replace <gateway api token>/)).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: 'https://code.claude.com/docs/en/settings' }),
+    ).toHaveAttribute('href', 'https://code.claude.com/docs/en/settings')
     expect(screen.getAllByText('settings.json')).toHaveLength(2)
     expect(screen.getByText('Gateway model settings')).toBeInTheDocument()
     expect(screen.getByText('Lower token usage settings')).toBeInTheDocument()
@@ -349,6 +458,7 @@ describe('ModelsPage', () => {
                   key: 'opencode',
                   label: 'OpenCode',
                   model_ids: ['fast'],
+                  setup: opencodeSetup(),
                   blocks: [
                     {
                       label: 'opencode.json',
@@ -368,6 +478,7 @@ describe('ModelsPage', () => {
         key: 'opencode',
         label: 'OpenCode',
         model_ids: ['fast', 'claude-sonnet'],
+        setup: opencodeSetup(),
         blocks: [
           {
             label: 'opencode.json',
@@ -382,6 +493,7 @@ describe('ModelsPage', () => {
         key: 'pi',
         label: 'Pi',
         model_ids: ['fast', 'claude-sonnet'],
+        setup: piSetup(),
         blocks: [
           {
             label: 'models.json',
@@ -396,6 +508,7 @@ describe('ModelsPage', () => {
         key: 'claude-code',
         label: 'Claude Code',
         model_ids: ['claude-sonnet'],
+        setup: claudeCodeSetup(),
         blocks: [
           {
             label: 'Gateway model settings',
@@ -454,6 +567,7 @@ describe('ModelsPage', () => {
           key: 'opencode',
           label: 'OpenCode',
           model_ids: ['fast'],
+          setup: opencodeSetup(),
           blocks: [
             {
               label: 'opencode.json',
@@ -486,6 +600,7 @@ describe('ModelsPage', () => {
             key: 'opencode',
             label: 'OpenCode',
             model_ids: ['claude-sonnet', 'fast'],
+            setup: opencodeSetup(),
             blocks: [
               {
                 label: 'opencode.json',

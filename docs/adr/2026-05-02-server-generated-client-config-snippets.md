@@ -56,6 +56,10 @@ Generated snippets use `GATEWAY_CLIENT_CONFIG_BASE_URL` when the gateway process
 
 The browser origin is deliberately not used as the source of truth. Admin UI routing can differ from the public API origin local harnesses should call, especially behind ingress, path rewriting, or a split admin/API deployment.
 
+## 2026-07-02 Update: Setup Context Contract
+
+Client configurations now include structured `setup` rows alongside generated code blocks and notes. The setup rows carry install paths, API-key replacement guidance, and documentation links that must render before the first copied block. This keeps placement and credential instructions server-owned with the client templates while preserving the UI's narrow responsibility: render tabs, setup rows, blocks, notes, and copy only block content.
+
 ## Follow-ups
 
 - Replace Anthropic model-name inference with typed provider/model metadata when available.

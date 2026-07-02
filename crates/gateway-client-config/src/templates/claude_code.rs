@@ -8,12 +8,13 @@ use crate::{
     templates::notes::{ClientConfigNote, claude_code_note_items, thinking_note_items},
     types::{
         ClientConfig, ClientConfigCodeBlock, ClientConfigInput, ClientConfigInputSet,
-        ClientConfigTemplate,
+        ClientConfigSetupItem, ClientConfigTemplate,
     },
 };
 
 pub(crate) const CLAUDE_CODE_AUTH_TOKEN_PLACEHOLDER: &str = "<gateway api token>";
 
+const CLAUDE_CODE_SETTINGS_DOCS_URL: &str = "https://code.claude.com/docs/en/settings";
 const CLAUDE_CODE_SETTINGS_SCHEMA: &str = "https://json.schemastore.org/claude-code-settings.json";
 const CLAUDE_CODE_LOWER_TOKEN_USAGE_ENV: &[(&str, &str)] = &[
     ("CLAUDE_CODE_ENABLE_TELEMETRY", "0"),
@@ -62,6 +63,7 @@ impl ClaudeCodeConfigTemplate {
             key: "claude-code".to_string(),
             label: "Claude Code".to_string(),
             model_ids: inputs.iter().map(|input| input.model_id.clone()).collect(),
+            setup: claude_code_setup(),
             blocks: vec![
                 ClientConfigCodeBlock {
                     label: "Gateway model settings".to_string(),
@@ -77,6 +79,31 @@ impl ClaudeCodeConfigTemplate {
             notes: claude_code_notes_for_models(&inputs, first),
         }
     }
+}
+
+fn claude_code_setup() -> Vec<ClientConfigSetupItem> {
+    vec![
+        ClientConfigSetupItem {
+            label: "Configuration".to_string(),
+            value:
+                "~/.claude/settings.json for user configuration; .claude/settings.json for project configuration."
+                    .to_string(),
+            href: None,
+        },
+        ClientConfigSetupItem {
+            label: "API key".to_string(),
+            value: format!(
+                "Replace {} with a gateway API key before using this Claude Code configuration.",
+                CLAUDE_CODE_AUTH_TOKEN_PLACEHOLDER
+            ),
+            href: None,
+        },
+        ClientConfigSetupItem {
+            label: "Docs".to_string(),
+            value: CLAUDE_CODE_SETTINGS_DOCS_URL.to_string(),
+            href: Some(CLAUDE_CODE_SETTINGS_DOCS_URL.to_string()),
+        },
+    ]
 }
 
 fn unique_claude_code_inputs(inputs: Vec<&ClientConfigInput>) -> Vec<&ClientConfigInput> {
