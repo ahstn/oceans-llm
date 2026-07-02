@@ -11,11 +11,9 @@ This page is the admin, user, caller, and client map for the gateway.
 ## Running The Gateway
 
 - Local access, bootstrap admin, and control-plane access: [Runtime Bootstrap and Access](setup/runtime-bootstrap-and-access.md)
-- local versus deploy caveats: [Deploy and Operations](setup/deploy-and-operations.md)
-- YAML shape, auth modes, provider fields, and config limits:
-  - [Configuration Reference](configuration/configuration-reference.md)
-- Budgets, spend windows, alerts, and reporting:
-  - [Budgets](access/budgets.md)
+- Deployment Artifacts, Database Migrations and general Operations: [Deploy and Operations](setup/deploy-and-operations.md)
+- YAML shape, auth modes, provider fields, and config limits: [Configuration Reference](configuration/configuration-reference.md)
+- Budgets, spend windows, alerts, and reporting: [Budgets](access/budgets.md)
 
 ### MCP
 - Server registration and upstream auth modes: [MCP Servers](configuration/mcp-servers.md)
@@ -30,16 +28,11 @@ This page is the admin, user, caller, and client map for the gateway.
 
 ## Maintaining The Platform
 
-- Action-oriented recovery and upgrade work:
-  - [Admin Runbooks](operations/operator-runbooks.md)
-- Request-log payload policy and retention purge:
-  - [Observability and Request Logs](operations/observability-and-request-logs.md)
-- Cross-cutting request path across routing, logging, pricing, and spend:
-  - [Request Lifecycle and Failure Modes](reference/request-lifecycle-and-failure-modes.md)
-- Provider API family support, OpenAI-compatible route quirks, and compatibility follow-up work:
-  - [Provider API Compatibility](reference/provider-api-compatibility.md)
-- Admin UI capability map and live surface maturity:
-  - [Admin Control Plane](access/admin-control-plane.md)
+- Action-oriented recovery and upgrade work: [Admin Runbooks](operations/operator-runbooks.md)
+- Request-log payload policy and retention purge: [Observability and Request Logs](operations/observability-and-request-logs.md)
+- Cross-cutting request path across routing, logging, pricing, and spend: [Request Lifecycle and Failure Modes](reference/request-lifecycle-and-failure-modes.md)
+- Provider API family support, OpenAI-compatible route quirks, and compatibility follow-up work: [Provider API Compatibility](reference/provider-api-compatibility.md)
+- Admin UI capability map and live surface maturity: [Admin Control Plane](access/admin-control-plane.md)
 
 ## Sections
 
