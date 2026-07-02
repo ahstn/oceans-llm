@@ -30,10 +30,7 @@ export default defineConfig({
       { text: "Home", link: "/" },
       { text: "Getting Started", link: "/getting-started" },
       { text: "Setup", link: "/setup/runtime-bootstrap-and-access" },
-      {
-        text: "Reference",
-        link: "/reference/request-lifecycle-and-failure-modes",
-      },
+      { text: "Contributing & Internal", link: "/reference/release-process" },
     ],
     sidebar: [
       {
@@ -51,7 +48,6 @@ export default defineConfig({
             text: "Deploy and Operations",
             link: "/setup/deploy-and-operations",
           },
-          { text: "MCP Client Setup", link: "/setup/mcp-client-setup" },
           { text: "Kubernetes and Helm", link: "/setup/kubernetes-and-helm" },
         ],
       },
@@ -74,19 +70,35 @@ export default defineConfig({
             text: "Pricing Catalog and Accounting",
             link: "/configuration/pricing-catalog-and-accounting",
           },
-          { text: "MCP Servers", link: "/configuration/mcp-servers" },
         ],
       },
       {
         text: "Providers",
         items: [
           { text: "OpenRouter", link: "/providers/openrouter" },
-          { text: "AWS Bedrock", link: "/providers/aws-bedrock" },
           {
-            text: "Google Cloud Run OpenAI-Compatible",
+            text: "AWS Bedrock", link: "/providers/aws-bedrock", items: [
+              { text: "OpenAI Models", link: "/providers/aws-bedrock-openai-gpt-55" },
+            ]
+          },
+          {
+            text: "Google Cloud Run",
             link: "/providers/gcp-cloud-run-openai-compat",
           },
           { text: "Google Vertex AI", link: "/providers/gcp-vertex" },
+        ],
+      },
+      {
+        text: "MCP",
+        items: [
+          { text: "Client Setup", link: "/mcp/mcp-client-setup" },
+          { text: "MCP Servers", link: "/configuration/mcp-servers" },
+          { text: "MCP Tool Access", link: "/mcp/mcp-tool-access" },
+          { text: "Invocation Logs", link: "/mcp/mcp-invocations" },
+          {
+            text: "Registry and Discovery",
+            link: "/mcp/mcp-registry-and-discovery",
+          },
         ],
       },
       {
@@ -105,14 +117,6 @@ export default defineConfig({
                 text: "Request Logs",
                 link: "/operations/observability/request-logs",
               },
-              {
-                text: "MCP Invocations",
-                link: "/operations/observability/mcp-invocations",
-              },
-              {
-                text: "MCP Registry and Discovery",
-                link: "/operations/observability/mcp-registry-and-discovery",
-              },
             ],
           },
           {
@@ -127,7 +131,6 @@ export default defineConfig({
         items: [
           { text: "Identity and Access", link: "/access/identity-and-access" },
           { text: "Service Accounts", link: "/access/service-accounts" },
-          { text: "MCP Tool Access", link: "/access/mcp-tool-access" },
           { text: "Budgets", link: "/access/budgets" },
           { text: "OIDC and SSO", link: "/access/oidc-and-sso-status" },
           {

@@ -1,6 +1,6 @@
 # Budgets
 
-`See also`: [Service Accounts](service-accounts.md), [MCP Tool Access](mcp-tool-access.md), [Admin Control Plane](admin-control-plane.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Data Relationships](../reference/data-relationships.md)
+`See also`: [Service Accounts](service-accounts.md), [MCP Tool Access](../mcp/mcp-tool-access.md), [Admin Control Plane](admin-control-plane.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Data Relationships](../reference/data-relationships.md)
 
 Budgets limit or monitor gateway spend for principals that can generate spend.
 

@@ -1,6 +1,6 @@
 # MCP Invocations
 
-`See also`: [Observability and Request Logs](../observability-and-request-logs.md), [MCP Registry and Discovery](mcp-registry-and-discovery.md), [Request Logs](request-logs.md), [Identity and Access](../../access/identity-and-access.md), [Admin Control Plane](../../access/admin-control-plane.md), [Data Relationships](../../reference/data-relationships.md), [Request Lifecycle and Failure Modes](../../reference/request-lifecycle-and-failure-modes.md)
+`See also`: [Observability and Request Logs](../operations/observability-and-request-logs.md), [MCP Registry and Discovery](mcp-registry-and-discovery.md), [Request Logs](../operations/observability/request-logs.md), [Identity and Access](../access/identity-and-access.md), [Admin Control Plane](../access/admin-control-plane.md), [Data Relationships](../reference/data-relationships.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md)
 
 MCP invocation logs are the durable audit view for individual MCP tool calls. They are narrower than request logs: one request can produce zero, one, or many tool invocation rows.
 
@@ -91,9 +91,9 @@ Policy-denied `tools/call` requests are logged before upstream execution. Allowe
 
 ## What This Page Does Not Own
 
-- request-log payload policy and stream parsing: [Observability and Request Logs](../observability-and-request-logs.md)
-- request lifecycle failure classes: [Request Lifecycle and Failure Modes](../../reference/request-lifecycle-and-failure-modes.md)
-- user, team, and API-key ownership policy: [Identity and Access](../../access/identity-and-access.md)
+- request-log payload policy and stream parsing: [Observability and Request Logs](../operations/observability-and-request-logs.md)
+- request lifecycle failure classes: [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md)
+- user, team, and API-key ownership policy: [Identity and Access](../access/identity-and-access.md)
 
 ## Validation
 

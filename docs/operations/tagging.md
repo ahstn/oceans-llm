@@ -2,9 +2,9 @@
 
 `See also`: [Observability and Request Logs](observability-and-request-logs.md), [Request Logs](observability/request-logs.md), [Identity and Access](../access/identity-and-access.md), [Budgets and Spending](budgets-and-spending.md), [Data Relationships](../reference/data-relationships.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md)
 
-Tags are bounded key/value metadata that admins and callers can use to connect Oceans activity to their own systems. They are meant for attribution, filtering, export, and reconciliation, not for authorization or secret storage.
+Tags are bounded key/value metadata that admins and callers can use to connect Oceans activity to their own systems. They are intended for attribution, filtering, export, and reconciliation, not for authorization or secret storage.
 
-Use tags when the built-in ownership fields are not enough. Oceans already records durable users, teams, service accounts, API keys, providers, models, request ids, and spend ledger rows. Tags add admin-controlled and caller-controlled dimensions such as cost center, application, workload, deployment, environment, or external owner id.
+Tags add admin and user controlled dimensions such as cost center, application, workload, deployment, environment, or external owner id.
 
 ## Tag Surfaces
 
@@ -52,7 +52,7 @@ Tag rules are intentionally strict.
 
 The reserved keys are owned by the universal request-tag headers. Use those headers for request service, component, and environment. Use different names such as `app`, `workload`, `tenant`, or `deployment` for bespoke dimensions.
 
-## Request Tags
+## Using Tags in Requests
 
 Clients can attach request tags with these headers:
 
@@ -63,7 +63,7 @@ Clients can attach request tags with these headers:
 
 The universal headers are optional and may only be sent once each.
 
-`x-oceans-tags` is also optional, may only be sent once, and uses semicolon-separated key/value pairs:
+`x-oceans-tags` is also optional, but is intended for bespoke dimensions and uses semicolon-separated key/value pairs:
 
 ```text
 x-oceans-tags: cost-center=platform; workload=agent-harness
@@ -71,13 +71,11 @@ x-oceans-tags: cost-center=platform; workload=agent-harness
 
 Request tags are captured at the gateway boundary and written to request-log data when request logging persists a row for that request. The request-log list supports filters for `service`, `component`, `env`, and one bespoke `tag_key`/`tag_value` pair.
 
-Request tags describe the caller's view of one request. They do not change identity ownership, budget enforcement, model access, or API-key permissions.
-
 ## Identity Tags
 
 Admins can set tags on users and teams from the admin identity UI.
 
-Identity tags describe durable ownership context. They are useful when the organization has external systems that do not map cleanly to Oceans user or team names, such as:
+Identity tags help communicate ownership context. They are useful when an organization has external systems that do not map cleanly to Oceans user or team names, such as:
 
 - cost allocation hierarchies
 - internal product or workload catalogs
