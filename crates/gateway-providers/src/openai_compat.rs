@@ -1320,6 +1320,29 @@ mod tests {
     }
 
     #[test]
+    fn builds_responses_request_preserves_image_generation_for_openai_compat() {
+        let provider = provider();
+        let mut request = responses_request(false);
+        request.tools = Some(json!([
+            {"type": "image_generation"},
+            {"type": "function", "name": "lookup"}
+        ]));
+        request.tool_choice = Some(json!({"type": "image_generation"}));
+        let context = default_context();
+
+        let built = provider
+            .build_responses_request(&request, &context)
+            .expect("build request");
+        let body_json = request_body_json(&built);
+
+        assert_eq!(body_json["tools"], request.tools.expect("tools"));
+        assert_eq!(
+            body_json["tool_choice"],
+            json!({"type": "image_generation"})
+        );
+    }
+
+    #[test]
     fn build_responses_stream_request_enforces_stream_without_chat_stream_options() {
         let provider = provider();
         let request = responses_request(false);

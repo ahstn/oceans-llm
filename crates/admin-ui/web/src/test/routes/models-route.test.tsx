@@ -213,7 +213,7 @@ const modelPage: ModelPageView = {
               label: 'config.toml',
               filename: 'config.toml',
               content:
-                'model = "claude-sonnet"\nmodel_provider = "oceans-llm"\n\n[model_providers.oceans-llm]\nname = "oceans-llm"\nbase_url = "http://127.0.0.1:3000/v1"\nenv_key = "OCEANS_LLM_API_KEY"\nwire_api = "responses"\n',
+                'model = "claude-sonnet"\nmodel_reasoning_effort = "medium"\nmodel_provider = "oceans-llm"\n\n[model_providers.oceans-llm]\nname = "oceans-llm"\nbase_url = "http://127.0.0.1:3000/v1"\nenv_key = "OCEANS_LLM_API_KEY"\nenv_key_instructions = "Set OCEANS_LLM_API_KEY in your environment"\nrequires_openai_auth = false\nwire_api = "responses"\n\n[analytics]\nenabled = false\n\n[otel]\nlog_user_prompt = false\n',
             },
           ],
           notes: ['Add this provider configuration to user-level ~/.codex/config.toml.'],
@@ -347,7 +347,7 @@ describe('ModelsPage', () => {
     expect(within(table).queryByText('Gemini fallback on Vertex')).not.toBeInTheDocument()
   })
 
-  it('opens client config dialog, switches tabs, and copies active JSON', async () => {
+  it('opens client config dialog, switches tabs, and copies active config blocks', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.assign(navigator, {
       clipboard: { writeText },
@@ -442,12 +442,16 @@ describe('ModelsPage', () => {
     ).toHaveAttribute('href', 'https://developers.openai.com/codex/config-reference')
     expect(screen.getByText('config.toml')).toBeInTheDocument()
     expect(screen.getByText(/model = "claude-sonnet"/)).toBeInTheDocument()
+    expect(screen.getByText(/model_reasoning_effort = "medium"/)).toBeInTheDocument()
     expect(screen.getByText(/\[model_providers.oceans-llm\]/)).toBeInTheDocument()
+    expect(screen.getByText(/env_key_instructions = "Set OCEANS_LLM_API_KEY in your environment"/)).toBeInTheDocument()
+    expect(screen.getByText(/\[analytics\]/)).toBeInTheDocument()
+    expect(screen.getByText(/log_user_prompt = false/)).toBeInTheDocument()
     expect(screen.getByText(/wire_api = "responses"/)).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy TOML' }))
     expect(writeText).toHaveBeenLastCalledWith(
-      'model = "claude-sonnet"\nmodel_provider = "oceans-llm"\n\n[model_providers.oceans-llm]\nname = "oceans-llm"\nbase_url = "http://127.0.0.1:3000/v1"\nenv_key = "OCEANS_LLM_API_KEY"\nwire_api = "responses"\n',
+      'model = "claude-sonnet"\nmodel_reasoning_effort = "medium"\nmodel_provider = "oceans-llm"\n\n[model_providers.oceans-llm]\nname = "oceans-llm"\nbase_url = "http://127.0.0.1:3000/v1"\nenv_key = "OCEANS_LLM_API_KEY"\nenv_key_instructions = "Set OCEANS_LLM_API_KEY in your environment"\nrequires_openai_auth = false\nwire_api = "responses"\n\n[analytics]\nenabled = false\n\n[otel]\nlog_user_prompt = false\n',
     )
   })
 

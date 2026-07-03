@@ -1,4 +1,5 @@
 use serde_json::Value;
+use toml::Value as TomlValue;
 
 use crate::{
     AnthropicThinkingPolicy, ClaudeCodeConfigTemplate, ClientConfig, ClientConfigInput,
@@ -552,7 +553,12 @@ fn claude_code_sets_default_fable_model_env_var() {
 
 #[test]
 fn codex_shape_includes_custom_responses_provider() {
-    let rendered = CodexConfigTemplate.render(&input(Some(AnthropicThinkingPolicy::SafeEffort)));
+    let mut input = input(Some(AnthropicThinkingPolicy::SafeEffort));
+    input.provider_id = "oceans".to_string();
+    input.provider_name = "OpenAI using LLM proxy".to_string();
+    input.gateway_base_url = "https://oceans.example.com/v1".to_string();
+    input.api_key_env_var = "OCEANS_API_KEY".to_string();
+    let rendered = CodexConfigTemplate.render(&input);
 
     assert_eq!(rendered.key, "codex");
     assert_eq!(rendered.label, "Codex");
@@ -561,42 +567,37 @@ fn codex_shape_includes_custom_responses_provider() {
         setup_value(&rendered, "Configuration"),
         "~/.codex/config.toml"
     );
-    assert!(setup_value(&rendered, "API key").contains("OCEANS_LLM_API_KEY"));
+    assert!(setup_value(&rendered, "API key").contains("OCEANS_API_KEY"));
     assert_eq!(
         setup_href(&rendered, "Docs"),
         "https://developers.openai.com/codex/config-reference"
     );
     assert_eq!(rendered.blocks[0].filename, "config.toml");
-    assert!(
-        rendered.blocks[0]
-            .content
-            .contains("model = \"claude-sonnet\"")
+
+    let content = &rendered.blocks[0].content;
+    let toml: TomlValue = content.parse().expect("codex config toml");
+    assert_eq!(toml["model"].as_str(), Some("claude-sonnet"));
+    assert_eq!(toml["model_reasoning_effort"].as_str(), Some("medium"));
+    assert_eq!(toml["model_provider"].as_str(), Some("oceans"));
+
+    let provider = &toml["model_providers"]["oceans"];
+    assert_eq!(provider["name"].as_str(), Some("OpenAI using LLM proxy"));
+    assert_eq!(
+        provider["base_url"].as_str(),
+        Some("https://oceans.example.com/v1")
     );
-    assert!(
-        rendered.blocks[0]
-            .content
-            .contains("model_provider = \"oceans-llm\"")
+    assert_eq!(provider["env_key"].as_str(), Some("OCEANS_API_KEY"));
+    assert_eq!(
+        provider["env_key_instructions"].as_str(),
+        Some("Set OCEANS_API_KEY in your environment")
     );
-    assert!(
-        rendered.blocks[0]
-            .content
-            .contains("[model_providers.oceans-llm]")
-    );
-    assert!(
-        rendered.blocks[0]
-            .content
-            .contains("base_url = \"http://127.0.0.1:3000/v1\"")
-    );
-    assert!(
-        rendered.blocks[0]
-            .content
-            .contains("env_key = \"OCEANS_LLM_API_KEY\"")
-    );
-    assert!(
-        rendered.blocks[0]
-            .content
-            .contains("wire_api = \"responses\"")
-    );
+    assert_eq!(provider["requires_openai_auth"].as_bool(), Some(false));
+    assert_eq!(provider["wire_api"].as_str(), Some("responses"));
+    assert_eq!(toml["analytics"]["enabled"].as_bool(), Some(false));
+    assert_eq!(toml["otel"]["log_user_prompt"].as_bool(), Some(false));
+
+    assert_eq!(content.matches("https://oceans.example.com/v1").count(), 1);
+    assert!(!content.contains("]("));
     assert!(
         rendered
             .notes
