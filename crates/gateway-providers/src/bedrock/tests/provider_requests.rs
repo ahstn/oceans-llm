@@ -534,6 +534,101 @@ async fn rejects_mantle_openai_responses_when_image_generation_tool_forces_actio
 }
 
 #[tokio::test]
+async fn rejects_mantle_openai_responses_when_allowed_tools_requires_image_generation() {
+    let provider = mantle_bearer_provider();
+    let mut request = responses_request(false);
+    request.tools = Some(json!([
+        {"type": "image_generation"},
+        {"type": "function", "name": "lookup", "parameters": {"type": "object"}}
+    ]));
+    request.tool_choice = Some(json!({
+        "type": "allowed_tools",
+        "mode": "required",
+        "tools": [{"type": "image_generation"}]
+    }));
+    let context = context_with_api_style(
+        "openai.gpt-5.5",
+        AwsBedrockApiStyle::MantleOpenaiResponses,
+        Some("/openai/v1"),
+    );
+
+    let error = provider
+        .build_responses_request(&request, &context, false)
+        .await
+        .expect_err("required allowed_tools image generation is rejected")
+        .to_string();
+
+    assert!(error.contains("image_generation"));
+    assert!(error.contains("openai.gpt-5.5"));
+}
+
+#[tokio::test]
+async fn builds_mantle_openai_responses_request_prunes_allowed_image_generation_tools() {
+    let provider = mantle_bearer_provider();
+    let mut request = responses_request(false);
+    request.tools = Some(json!([
+        {"type": "image_generation"},
+        {"type": "function", "name": "lookup", "parameters": {"type": "object"}}
+    ]));
+    request.tool_choice = Some(json!({
+        "type": "allowed_tools",
+        "mode": "auto",
+        "tools": [
+            {"type": "image_generation"},
+            {"type": "function", "name": "lookup"}
+        ]
+    }));
+    let context = context_with_api_style(
+        "openai.gpt-5.5",
+        AwsBedrockApiStyle::MantleOpenaiResponses,
+        Some("/openai/v1"),
+    );
+
+    let built = provider
+        .build_responses_request(&request, &context, false)
+        .await
+        .expect("request");
+    let body: Value =
+        serde_json::from_slice(built.body().unwrap().as_bytes().unwrap()).expect("json body");
+    let tools = body["tools"].as_array().expect("tools");
+    let allowed_tools = body["tool_choice"]["tools"]
+        .as_array()
+        .expect("allowed tools");
+
+    assert_eq!(tools.len(), 1);
+    assert_eq!(tools[0]["type"], "function");
+    assert_eq!(allowed_tools.len(), 1);
+    assert_eq!(allowed_tools[0]["type"], "function");
+}
+
+#[tokio::test]
+async fn builds_mantle_openai_responses_request_with_function_named_image_generation() {
+    let provider = mantle_bearer_provider();
+    let mut request = responses_request(false);
+    request.tools = Some(json!([
+        {"type": "function", "name": "image_generation", "parameters": {"type": "object"}}
+    ]));
+    request.tool_choice = Some(json!({"type": "function", "name": "image_generation"}));
+    let context = context_with_api_style(
+        "openai.gpt-5.5",
+        AwsBedrockApiStyle::MantleOpenaiResponses,
+        Some("/openai/v1"),
+    );
+
+    let built = provider
+        .build_responses_request(&request, &context, false)
+        .await
+        .expect("request");
+    let body: Value =
+        serde_json::from_slice(built.body().unwrap().as_bytes().unwrap()).expect("json body");
+
+    assert_eq!(body["tools"][0]["type"], "function");
+    assert_eq!(body["tools"][0]["name"], "image_generation");
+    assert_eq!(body["tool_choice"]["type"], "function");
+    assert_eq!(body["tool_choice"]["name"], "image_generation");
+}
+
+#[tokio::test]
 async fn strips_image_generation_added_by_route_extra_body() {
     let provider = mantle_bearer_provider();
     let request = responses_request(false);
@@ -560,6 +655,30 @@ async fn strips_image_generation_added_by_route_extra_body() {
 
     assert_eq!(tools.len(), 1);
     assert_eq!(tools[0]["type"], "function");
+}
+
+#[tokio::test]
+async fn strips_single_object_image_generation_added_by_route_extra_body() {
+    let provider = mantle_bearer_provider();
+    let request = responses_request(false);
+    let mut context = context_with_api_style(
+        "openai.gpt-5.5",
+        AwsBedrockApiStyle::MantleOpenaiResponses,
+        Some("/openai/v1"),
+    );
+    context
+        .extra_body
+        .insert("tools".to_string(), json!({"type": "image_generation"}));
+
+    let built = provider
+        .build_responses_request(&request, &context, false)
+        .await
+        .expect("request");
+    let body: Value =
+        serde_json::from_slice(built.body().unwrap().as_bytes().unwrap()).expect("json body");
+
+    assert!(body.get("tools").is_none());
+    assert!(body.get("tool_choice").is_none());
 }
 
 #[tokio::test]

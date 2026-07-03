@@ -37,8 +37,6 @@ impl ClientConfigTemplate for CodexConfigTemplate {
             model: input.model_id.clone(),
             model_reasoning_effort: CODEX_MODEL_REASONING_EFFORT,
             model_provider: input.provider_id.clone(),
-            requires_openai_auth: false,
-            openai_base_url: input.gateway_base_url.clone(),
             model_providers,
             analytics: CodexAnalyticsConfig { enabled: false },
             otel: CodexOtelConfig {
@@ -89,8 +87,6 @@ struct CodexConfigToml {
     model: String,
     model_reasoning_effort: &'static str,
     model_provider: String,
-    requires_openai_auth: bool,
-    openai_base_url: String,
     model_providers: BTreeMap<String, CodexModelProviderConfig>,
     analytics: CodexAnalyticsConfig,
     otel: CodexOtelConfig,

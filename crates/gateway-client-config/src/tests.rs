@@ -579,11 +579,6 @@ fn codex_shape_includes_custom_responses_provider() {
     assert_eq!(toml["model"].as_str(), Some("claude-sonnet"));
     assert_eq!(toml["model_reasoning_effort"].as_str(), Some("medium"));
     assert_eq!(toml["model_provider"].as_str(), Some("oceans"));
-    assert_eq!(toml["requires_openai_auth"].as_bool(), Some(false));
-    assert_eq!(
-        toml["openai_base_url"].as_str(),
-        Some("https://oceans.example.com/v1")
-    );
 
     let provider = &toml["model_providers"]["oceans"];
     assert_eq!(provider["name"].as_str(), Some("OpenAI using LLM proxy"));
@@ -601,7 +596,7 @@ fn codex_shape_includes_custom_responses_provider() {
     assert_eq!(toml["analytics"]["enabled"].as_bool(), Some(false));
     assert_eq!(toml["otel"]["log_user_prompt"].as_bool(), Some(false));
 
-    assert_eq!(content.matches("https://oceans.example.com/v1").count(), 2);
+    assert_eq!(content.matches("https://oceans.example.com/v1").count(), 1);
     assert!(!content.contains("]("));
     assert!(
         rendered
