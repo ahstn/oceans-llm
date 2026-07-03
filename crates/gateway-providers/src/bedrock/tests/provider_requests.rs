@@ -513,6 +513,27 @@ async fn rejects_mantle_openai_responses_when_tool_choice_requires_image_generat
 }
 
 #[tokio::test]
+async fn rejects_mantle_openai_responses_when_image_generation_tool_forces_action() {
+    let provider = mantle_bearer_provider();
+    let mut request = responses_request(false);
+    request.tools = Some(json!([{"type": "image_generation", "action": "generate"}]));
+    let context = context_with_api_style(
+        "openai.gpt-5.5",
+        AwsBedrockApiStyle::MantleOpenaiResponses,
+        Some("/openai/v1"),
+    );
+
+    let error = provider
+        .build_responses_request(&request, &context, false)
+        .await
+        .expect_err("forced image generation is rejected")
+        .to_string();
+
+    assert!(error.contains("image_generation"));
+    assert!(error.contains("openai.gpt-5.5"));
+}
+
+#[tokio::test]
 async fn strips_image_generation_added_by_route_extra_body() {
     let provider = mantle_bearer_provider();
     let request = responses_request(false);

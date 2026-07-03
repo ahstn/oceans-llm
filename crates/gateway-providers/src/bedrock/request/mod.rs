@@ -164,8 +164,11 @@ fn enforce_bedrock_responses_hosted_tool_compatibility(
                 OPENAI_HOSTED_IMAGE_GENERATION_TOOL_TYPE,
             )
         });
+    let tools_require_image_generation = object.get("tools").is_some_and(|tools| {
+        tools_require_tool_type(tools, OPENAI_HOSTED_IMAGE_GENERATION_TOOL_TYPE)
+    });
 
-    if tool_choice_requires_image_generation {
+    if tool_choice_requires_image_generation || tools_require_image_generation {
         tracing::warn!(
             request_id = %context.request_id,
             provider_key = %context.provider_key,
@@ -223,6 +226,13 @@ fn tools_contain_tool_type(tools: &Value, tool_type: &str) -> bool {
     }
 }
 
+fn tools_require_tool_type(tools: &Value, tool_type: &str) -> bool {
+    match tools {
+        Value::Array(items) => items.iter().any(|tool| tool_requires_type(tool, tool_type)),
+        tool => tool_requires_type(tool, tool_type),
+    }
+}
+
 fn strip_tool_type_from_tools(tools: &mut Value, tool_type: &str) -> usize {
     let Value::Array(items) = tools else {
         return 0;
@@ -242,6 +252,15 @@ fn tool_choice_requires_tool_type(
     }
 
     tool_choice_is_required(tool_choice) && tools_have_only_tool_type(tools, tool_type)
+}
+
+fn tool_requires_type(tool: &Value, tool_type: &str) -> bool {
+    tool_is_type(tool, tool_type)
+        && tool
+            .as_object()
+            .and_then(|object| object.get("action"))
+            .and_then(Value::as_str)
+            .is_some_and(|action| action != "auto")
 }
 
 fn tool_choice_selects_type(tool_choice: &Value, tool_type: &str) -> bool {
