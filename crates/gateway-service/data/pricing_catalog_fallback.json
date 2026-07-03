@@ -2,7 +2,7 @@
   "metadata": {
     "source": "vendored_models_dev",
     "etag": "\"5a07ec61e0d2b4d45e8d2fd80bdb23ab\"",
-    "fetched_at": "2026-07-03T06:14:15.259957Z"
+    "fetched_at": "2026-07-03T06:16:11.843196Z"
   },
   "providers": {
     "amazon-bedrock": {

@@ -6,6 +6,58 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.13.0] - 2026-07-03
+### :rocket: New features
+- *(gateway)* Allow api keys to grant all models by @ahstn
+- *(gateway)* Add declarative service account config by @ahstn
+- *(gateway)* Add declarative service account config by @ahstn in [#209](https://github.com/ahstn/oceans-llm/pull/209)
+- *(gateway)* Allow api keys to grant all models by @ahstn in [#210](https://github.com/ahstn/oceans-llm/pull/210)
+- *(admin)* Add client config setup context by @ahstn
+- *(admin)* Add client config setup context by @ahstn in [#212](https://github.com/ahstn/oceans-llm/pull/212)
+
+### :bug: Bug fixes
+- *(test)* Repair api key all-model ci coverage by @ahstn
+- *(test)* Repair api key all-model ci coverage by @ahstn in [#211](https://github.com/ahstn/oceans-llm/pull/211)
+- *(gateway)* Address api key grant review feedback by @ahstn
+- *(admin)* Refresh pricing before releases by @ahstn
+- *(admin)* Refresh pricing before releases by @ahstn in [#207](https://github.com/ahstn/oceans-llm/pull/207)
+- *(gateway)* Harden service account key handling by @ahstn
+- *(e2e)* Seed service account config with new shape by @ahstn
+
+### Build
+- Post release tasks - v0.12.0 by @ahstn
+
+### Changed
+- Merge origin/main into api key all-model branch by @ahstn
+- Align docs navigation with admin UI by @ahstn
+- Merge remote-tracking branch 'origin/codex/docs-cohesion' into docs/split-docs-navigation by @ahstn
+- Polish docs sidebar layout by @ahstn
+- Split docs navigation surfaces by @ahstn
+- Refine docs getting started index by @ahstn
+- Simplify getting started docs index by @ahstn
+
+### Documentation
+- Slight rewording of Cloud Run docs by @ahstn
+- Moving mcp docs to a common folder by @ahstn
+- Refactoring styling by @ahstn
+- Updating aws provider guidance by @ahstn
+- Updating tagging docs by @ahstn
+- Clarify docs audience guidance by @ahstn
+- Split docs navigation surfaces by @ahstn in [#215](https://github.com/ahstn/oceans-llm/pull/215)
+- Updating docs
+
+### Miscellaneous
+- Changes as per pr by @ahstn
+- Updating client config docs screenshot by @ahstn
+- Merge 'docs/split-docs-navigation'
+- *(version)* V0.13.0
+
+### Testing
+- *(admin)* Cover codex setup rows by @ahstn
+
+
+
+
 ## [0.12.0] - 2026-07-01
 ### :rocket: New features
 - *(gateway)* Implement oidc sso by @ahstn
@@ -138,7 +190,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Miscellaneous
 - Upgrade bun deps by @ahstn
 - Refresh shadcn skill lock hash by @ahstn
-- *(version)* V0.12.0
+- *(version)* V0.12.0 by @ahstn
 
 ### Testing
 - *(gateway)* Preserve env vars in MCP guards by @ahstn
@@ -522,6 +574,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+[0.13.0]: https://github.com/ahstn/oceans-llm/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/ahstn/oceans-llm/compare/v0.8.0...v0.12.0
 [0.8.0]: https://github.com/ahstn/oceans-llm/compare/v0.6.0...v0.8.0
 [0.6.0]: https://github.com/ahstn/oceans-llm/compare/v0.5.0...v0.6.0
