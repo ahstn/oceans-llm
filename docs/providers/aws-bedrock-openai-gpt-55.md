@@ -114,6 +114,18 @@ models:
 
 Projects apply to OpenAI-compatible Mantle routes. Do not rely on caller-supplied inbound headers for project routing; configure `OpenAI-Project` in the selected route.
 
+## Hosted Tool Compatibility
+
+GPT-5.5 on Bedrock Mantle is configured as a Responses-first route through `api_style: mantle_openai_responses`. The `tools: true` capability in the examples means the route can attempt supported tool-bearing Responses workflows; it does not mean Bedrock supports every OpenAI-hosted tool.
+
+Bedrock Mantle currently does not support the OpenAI-hosted `image_generation` Responses tool. Direct OpenAI GPT-5.5 can support hosted image generation, but the Bedrock OpenAI-compatible path has a narrower feature set.
+
+Oceans strips opportunistic `image_generation` tool declarations before forwarding ordinary Bedrock-backed coding workflows. If a request explicitly requires image generation, for example through `tool_choice: { "type": "image_generation" }`, Oceans fails locally with a deterministic 400 instead of forwarding the request and exposing an opaque Bedrock validation error.
+
+Revisit this shim when Bedrock Mantle supports hosted `image_generation`, or when Oceans grows explicit hosted-tool capabilities that can route image-generation-required requests to a provider that actually supports them.
+
+For the broader rule, see [Provider API Compatibility](../reference/provider-api-compatibility.md#hosted-responses-tools).
+
 ## Caller Usage
 
 Call the gateway's `/v1/responses` endpoint with the configured gateway model id:

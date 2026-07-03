@@ -13,12 +13,13 @@ Generated snippets are available for:
 - [OpenCode]
 - [Pi]
 - [Claude Code]
+- [Codex]
 
 The snippets use the gateway model ids shown in the Models table. API keys are still created and governed in Oceans; the local client config only tells the harness which gateway URL, key variable, and model ids to use.
 
 By default, snippets use the local development gateway base URL `http://127.0.0.1:3000/v1`. Production deployments should set `GATEWAY_CLIENT_CONFIG_BASE_URL` on the gateway process, or `gateway.clientConfigGatewayBaseUrl` in the Helm chart, to the public gateway API base URL users can reach, for example `https://gateway.example.com/v1`.
 
-OpenCode and Pi can include multiple selected models in one generated file. When the selection mixes Anthropic Messages models and OpenAI-compatible models, Oceans emits separate provider entries so each provider keeps the correct client adapter. Claude Code only includes selected models that use Anthropic Messages; non-Anthropic selections are ignored for the Claude Code tab instead of generating invalid overrides.
+OpenCode and Pi can include multiple selected models in one generated file. When the selection mixes Anthropic Messages models and OpenAI-compatible models, Oceans emits separate provider entries so each provider keeps the correct client adapter. Claude Code only includes selected models that use Anthropic Messages; non-Anthropic selections are ignored for the Claude Code tab instead of generating invalid overrides. Codex snippets require a single Responses-capable model selection.
 
 ## OpenCode
 
@@ -42,6 +43,14 @@ Claude Code appends Anthropic endpoints such as `/v1/messages` and `/v1/models` 
 
 The same dialog also shows a second `settings.json` block for a smaller local Claude Code experience. It disables telemetry, experimental betas, 1M context, and related UI/reporting behavior, and sets a lower auto-compact window.
 
+## Codex
+
+The Codex tab emits `config.toml` content for the user-level Codex configuration at `~/.codex/config.toml`. Codex ignores provider, auth, and telemetry keys from project-local `.codex/config.toml` files, so copy this block into the user-level config unless the Codex docs say otherwise.
+
+Oceans includes Codex only when the selection contains one Responses-capable model. The generated TOML uses the selected gateway model id, configured gateway base URL, Oceans provider id/name, and gateway API-key environment variable. It also sets `wire_api = "responses"`, disables OpenAI auth for the proxy provider, disables analytics, disables OTEL prompt logging, and sets `model_reasoning_effort = "medium"` for a predictable default.
+
+Responses-compatible Bedrock routes can still support only a subset of OpenAI-hosted tools. For example, Bedrock Mantle GPT-5.5 is usable through Codex over the Responses API but does not support the OpenAI-hosted `image_generation` tool; see [Provider API Compatibility](../reference/provider-api-compatibility.md#hosted-responses-tools).
+
 ## Budgets And Access
 
 Client snippets do not grant access by themselves. A request is accepted only when the gateway API key is active, the caller has model access, and any applicable hard budget still has room.
@@ -59,3 +68,4 @@ Use `/admin/spend-controls` to configure those budgets. For the full taxonomy an
 [opencode configuration docs]: https://opencode.ai/docs/config/
 [pi settings docs]: https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/settings.md
 [claude code]: https://code.claude.com/docs/en/settings
+[codex]: https://developers.openai.com/codex/config-reference

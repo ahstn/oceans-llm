@@ -38,7 +38,7 @@ This matrix is about current execution support, not provider marketing claims.
 | `gcp_cloud_run_openai_compat` | Supported through the OpenAI-compatible adapter with Cloud Run ID-token auth. | Supported when the deployed service exposes an OpenAI-compatible Responses endpoint. Chat Completions profile transforms do not apply. | Supported when the deployed service exposes an OpenAI-compatible embeddings endpoint. |
 | `gcp_vertex` with `google/*` upstream models | Supported for the current Vertex chat path when route capabilities allow it. | Not implemented; keep route `responses: false`. | Not implemented in this slice; keep route `embeddings: false`. |
 | `gcp_vertex` with `anthropic/*` upstream models | Supported for Chat Completions and Anthropic Messages when route capabilities allow it. Tool use is supported for text/tool workflows. | Not implemented; keep route `responses: false`. | Not applicable. |
-| `aws_bedrock` | Supported through explicit `compatibility.aws_bedrock.api_style`: Runtime Converse, Runtime Anthropic InvokeModel, Runtime OpenAI Chat, Mantle OpenAI Chat, or Mantle Anthropic Messages. Streaming uses the configured style's stream contract. | Supported for `api_style: mantle_openai_responses` with an OpenAI base path such as `/openai/v1`. | Not implemented; keep route `embeddings: false`. |
+| `aws_bedrock` | Supported through explicit `compatibility.aws_bedrock.api_style`: Runtime Converse, Runtime Anthropic InvokeModel, Runtime OpenAI Chat, Mantle OpenAI Chat, or Mantle Anthropic Messages. Streaming uses the configured style's stream contract. | Supported for `api_style: mantle_openai_responses` with an OpenAI base path such as `/openai/v1`. This is the Bedrock-supported Responses subset, not full direct-OpenAI hosted-tool parity. | Not implemented; keep route `embeddings: false`. |
 
 Route capability flags are still useful when a provider implementation does not support a public API family. They make failures happen at the gateway edge instead of later inside the provider adapter.
 
@@ -104,6 +104,16 @@ Effective capability is the intersection of configured route metadata and provid
 For example, a Vertex Google chat route should normally set `responses: false` and `embeddings: false` until those provider paths are implemented. Otherwise the route may look viable from config alone and still fail when the provider adapter rejects the unsupported API family.
 
 For Cloud Run OpenAI-compatible routes, set capabilities to the endpoints exposed by the deployed service. The gateway adapter can construct Chat Completions, Responses, embeddings, and streams through the OpenAI-compatible path, but a vLLM deployment might only enable some of those endpoints.
+
+### Hosted Responses Tools
+
+Route `capabilities.tools` is a coarse gateway gate. It means a route can attempt tool-bearing requests at all; it does not claim support for every OpenAI Responses hosted tool type.
+
+Hosted tools such as `image_generation` are provider- and deployment-specific. Function, custom, namespace, tool-search, and MCP workflows can be available on a route even when an OpenAI-hosted tool is not.
+
+For `aws_bedrock` routes using `api_style: mantle_openai_responses`, Bedrock exposes an OpenAI-compatible Responses subset. Bedrock Mantle GPT-5.5 does not support the OpenAI-hosted `image_generation` tool even though direct OpenAI GPT-5.5 can. Oceans strips opportunistic `image_generation` tool declarations for ordinary Bedrock-backed coding workflows and fails locally when a request explicitly requires image generation, so callers receive a deterministic gateway 400 instead of an upstream Bedrock validation error.
+
+If Oceans later routes between providers based on hosted-tool support, that should become an explicit capability dimension instead of overloading `tools`.
 
 ## Cloud Run OpenAI-Compatible Auth
 

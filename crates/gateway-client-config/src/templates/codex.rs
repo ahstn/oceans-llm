@@ -12,6 +12,7 @@ use crate::{
 };
 
 const CODEX_WIRE_API_RESPONSES: &str = "responses";
+const CODEX_MODEL_REASONING_EFFORT: &str = "medium";
 const CODEX_CONFIG_DOCS_URL: &str = "https://developers.openai.com/codex/config-reference";
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -26,14 +27,23 @@ impl ClientConfigTemplate for CodexConfigTemplate {
                 name: input.provider_name.clone(),
                 base_url: input.gateway_base_url.clone(),
                 env_key: input.api_key_env_var.clone(),
+                env_key_instructions: format!("Set {} in your environment", input.api_key_env_var),
+                requires_openai_auth: false,
                 wire_api: CODEX_WIRE_API_RESPONSES,
             },
         );
 
         let config = CodexConfigToml {
             model: input.model_id.clone(),
+            model_reasoning_effort: CODEX_MODEL_REASONING_EFFORT,
             model_provider: input.provider_id.clone(),
+            requires_openai_auth: false,
+            openai_base_url: input.gateway_base_url.clone(),
             model_providers,
+            analytics: CodexAnalyticsConfig { enabled: false },
+            otel: CodexOtelConfig {
+                log_user_prompt: false,
+            },
         };
 
         ClientConfig {
@@ -77,8 +87,13 @@ fn codex_setup(input: &ClientConfigInput) -> Vec<ClientConfigSetupItem> {
 #[derive(Debug, Serialize)]
 struct CodexConfigToml {
     model: String,
+    model_reasoning_effort: &'static str,
     model_provider: String,
+    requires_openai_auth: bool,
+    openai_base_url: String,
     model_providers: BTreeMap<String, CodexModelProviderConfig>,
+    analytics: CodexAnalyticsConfig,
+    otel: CodexOtelConfig,
 }
 
 #[derive(Debug, Serialize)]
@@ -86,5 +101,17 @@ struct CodexModelProviderConfig {
     name: String,
     base_url: String,
     env_key: String,
+    env_key_instructions: String,
+    requires_openai_auth: bool,
     wire_api: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct CodexAnalyticsConfig {
+    enabled: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct CodexOtelConfig {
+    log_user_prompt: bool,
 }
