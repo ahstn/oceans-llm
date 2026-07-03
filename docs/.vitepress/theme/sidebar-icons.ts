@@ -37,6 +37,7 @@ type HugeIconNode = readonly [
 
 const sidebarIcons: Record<string, readonly HugeIconNode[]> = {
   "/getting-started": BookOpen01Icon,
+  "/overview-features": Rocket01Icon,
   "/setup/runtime-bootstrap-and-access": Rocket01Icon,
   "/setup/deploy-and-operations": CloudServerIcon,
   "/mcp/mcp-client-setup": ComputerTerminal01Icon,
