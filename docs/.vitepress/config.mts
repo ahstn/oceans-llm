@@ -3,7 +3,10 @@ import { defineConfig } from "vitepress";
 const primarySidebar = [
   {
     text: "Getting Started",
-    items: [{ text: "Documentation Index", link: "/getting-started" }],
+    items: [
+      { text: "Documentation Index", link: "/getting-started" },
+      { text: "Overview and Features", link: "/overview-features" }
+    ],
   },
   {
     text: "Setup",
