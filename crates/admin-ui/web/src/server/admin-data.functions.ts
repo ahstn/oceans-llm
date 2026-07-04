@@ -351,6 +351,10 @@ export const getTeams = createServerFn({ method: 'GET' }).handler(async () => {
   return listTeams()
 })
 
+export const getServiceAccounts = createServerFn({ method: 'GET' }).handler(async () => {
+  return listServiceAccounts()
+})
+
 export const getAuthSession = createServerFn({ method: 'GET' }).handler(async () => {
   return getSession()
 })

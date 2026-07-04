@@ -5,6 +5,7 @@ import type { ApiKeysPayload } from '@/types/api'
 
 const routeMock = {
   useLoaderData: vi.fn(),
+  useSearch: vi.fn(),
 }
 
 class ResizeObserverMock {
@@ -107,6 +108,8 @@ describe('ApiKeysPage', () => {
     vi.stubGlobal('ResizeObserver', ResizeObserverMock)
     routeMock.useLoaderData.mockReset()
     routeMock.useLoaderData.mockReturnValue({ data: basePayload })
+    routeMock.useSearch.mockReset()
+    routeMock.useSearch.mockReturnValue({ api_key_id: undefined })
     routerMock.invalidate.mockClear()
     createGatewayApiKeyMock.mockReset()
     revokeGatewayApiKeyMock.mockReset()
@@ -318,6 +321,18 @@ describe('ApiKeysPage', () => {
         'gwk_prod_2.secret-value',
       ),
     )
+  })
+
+  it('opens the targeted manage dialog from the api_key_id search param', async () => {
+    routeMock.useSearch.mockReturnValue({ api_key_id: 'api_key_1' })
+
+    const { ApiKeysPage } = await import('@/routes/api-keys')
+
+    render(<ApiKeysPage />)
+
+    const dialog = await screen.findByRole('dialog', { name: 'Manage API key' })
+    expect(within(dialog).getByText('Production Gateway')).toBeInTheDocument()
+    expect(within(dialog).getByText('gwk_prod_liv****')).toBeInTheDocument()
   })
 
   it('opens the manage dialog and updates model access when the selection changes', async () => {

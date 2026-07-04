@@ -82,6 +82,7 @@ export const adminNavSections: AdminNavSection[] = [
     items: [
       { label: 'Teams', to: '/identity/teams', icon: UserGroupIcon },
       { label: 'Users', to: '/identity/users', icon: UserIcon },
+      { label: 'Service Accounts', to: '/identity/service-accounts', icon: RoboticIcon },
     ],
   },
 ]

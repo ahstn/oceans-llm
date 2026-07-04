@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
@@ -35,7 +35,10 @@ export function useApiKeysPageState({
   items,
   users,
   service_accounts,
-}: Pick<ApiKeysPayload, 'items' | 'users' | 'service_accounts'>) {
+  focusedApiKeyId,
+}: Pick<ApiKeysPayload, 'items' | 'users' | 'service_accounts'> & {
+  focusedApiKeyId?: string
+}) {
   const router = useRouter()
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [form, setForm] = useState<CreateApiKeyInput>(initialForm)
@@ -96,6 +99,14 @@ export function useApiKeysPageState({
     setManageForm(initialManageForm)
     setManageDialog({ mode: 'closed' })
   }
+
+  useEffect(() => {
+    if (!focusedApiKeyId || !items.some((item) => item.id === focusedApiKeyId)) {
+      return
+    }
+
+    openManageDialog(focusedApiKeyId)
+  }, [focusedApiKeyId, items])
 
   function updateOwnerKind(ownerKind: CreateApiKeyInput['owner_kind']) {
     setForm((current) => ({

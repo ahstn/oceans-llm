@@ -28,6 +28,7 @@ import { Route as McpAccessRouteImport } from './routes/mcp/access'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as IdentityUsersRouteImport } from './routes/identity/users'
 import { Route as IdentityTeamsRouteImport } from './routes/identity/teams'
+import { Route as IdentityServiceAccountsRouteImport } from './routes/identity/service-accounts'
 
 const SpendControlsRoute = SpendControlsRouteImport.update({
   id: '/spend-controls',
@@ -128,6 +129,11 @@ const IdentityTeamsRoute = IdentityTeamsRouteImport.update({
   path: '/identity/teams',
   getParentRoute: () => rootRouteImport,
 } as any)
+const IdentityServiceAccountsRoute = IdentityServiceAccountsRouteImport.update({
+  id: '/identity/service-accounts',
+  path: '/identity/service-accounts',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -138,6 +144,7 @@ export interface FileRoutesByFullPath {
   '/models': typeof ModelsRoute
   '/review-agent': typeof ReviewAgentRoute
   '/spend-controls': typeof SpendControlsRoute
+  '/identity/service-accounts': typeof IdentityServiceAccountsRoute
   '/identity/teams': typeof IdentityTeamsRoute
   '/identity/users': typeof IdentityUsersRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -159,6 +166,7 @@ export interface FileRoutesByTo {
   '/models': typeof ModelsRoute
   '/review-agent': typeof ReviewAgentRoute
   '/spend-controls': typeof SpendControlsRoute
+  '/identity/service-accounts': typeof IdentityServiceAccountsRoute
   '/identity/teams': typeof IdentityTeamsRoute
   '/identity/users': typeof IdentityUsersRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -181,6 +189,7 @@ export interface FileRoutesById {
   '/models': typeof ModelsRoute
   '/review-agent': typeof ReviewAgentRoute
   '/spend-controls': typeof SpendControlsRoute
+  '/identity/service-accounts': typeof IdentityServiceAccountsRoute
   '/identity/teams': typeof IdentityTeamsRoute
   '/identity/users': typeof IdentityUsersRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -204,6 +213,7 @@ export interface FileRouteTypes {
     | '/models'
     | '/review-agent'
     | '/spend-controls'
+    | '/identity/service-accounts'
     | '/identity/teams'
     | '/identity/users'
     | '/invite/$token'
@@ -225,6 +235,7 @@ export interface FileRouteTypes {
     | '/models'
     | '/review-agent'
     | '/spend-controls'
+    | '/identity/service-accounts'
     | '/identity/teams'
     | '/identity/users'
     | '/invite/$token'
@@ -246,6 +257,7 @@ export interface FileRouteTypes {
     | '/models'
     | '/review-agent'
     | '/spend-controls'
+    | '/identity/service-accounts'
     | '/identity/teams'
     | '/identity/users'
     | '/invite/$token'
@@ -268,6 +280,7 @@ export interface RootRouteChildren {
   ModelsRoute: typeof ModelsRoute
   ReviewAgentRoute: typeof ReviewAgentRoute
   SpendControlsRoute: typeof SpendControlsRoute
+  IdentityServiceAccountsRoute: typeof IdentityServiceAccountsRoute
   IdentityTeamsRoute: typeof IdentityTeamsRoute
   IdentityUsersRoute: typeof IdentityUsersRoute
   InviteTokenRoute: typeof InviteTokenRoute
@@ -416,6 +429,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IdentityTeamsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/identity/service-accounts': {
+      id: '/identity/service-accounts'
+      path: '/identity/service-accounts'
+      fullPath: '/identity/service-accounts'
+      preLoaderRoute: typeof IdentityServiceAccountsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -428,6 +448,7 @@ const rootRouteChildren: RootRouteChildren = {
   ModelsRoute: ModelsRoute,
   ReviewAgentRoute: ReviewAgentRoute,
   SpendControlsRoute: SpendControlsRoute,
+  IdentityServiceAccountsRoute: IdentityServiceAccountsRoute,
   IdentityTeamsRoute: IdentityTeamsRoute,
   IdentityUsersRoute: IdentityUsersRoute,
   InviteTokenRoute: InviteTokenRoute,
