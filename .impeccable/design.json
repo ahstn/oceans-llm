@@ -1,0 +1,156 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-04T00:00:00.000Z",
+  "title": "Design System: Oceans Gateway Admin",
+  "extensions": {
+    "colorMeta": {
+      "logo-ocean-blue": {
+        "role": "primary",
+        "displayName": "Logo Ocean Blue",
+        "canonical": "#006f9f",
+        "tonalRamp": ["oklch(0.18 0.07 235)", "oklch(0.28 0.10 235)", "oklch(0.38 0.12 235)", "#006f9f", "#0b83ad", "oklch(0.70 0.09 225)", "#b7dde4", "oklch(0.94 0.03 220)"]
+      },
+      "logo-wave-blue": {
+        "role": "primary",
+        "displayName": "Logo Wave Blue",
+        "canonical": "#0b83ad",
+        "tonalRamp": ["oklch(0.20 0.07 230)", "oklch(0.30 0.10 230)", "oklch(0.40 0.12 230)", "#006f9f", "#0b83ad", "oklch(0.72 0.09 225)", "#b7dde4", "oklch(0.95 0.03 220)"]
+      },
+      "logo-mist-blue": {
+        "role": "neutral",
+        "displayName": "Logo Mist Blue",
+        "canonical": "#b7dde4",
+        "tonalRamp": ["oklch(0.24 0.04 225)", "oklch(0.34 0.05 225)", "oklch(0.48 0.06 225)", "oklch(0.62 0.06 225)", "oklch(0.76 0.05 225)", "#b7dde4", "oklch(0.90 0.03 220)", "oklch(0.96 0.015 220)"]
+      },
+      "implementation-primary-green": {
+        "role": "primary",
+        "displayName": "Implementation Primary Green",
+        "canonical": "oklch(0.508 0.118 165.612)",
+        "tonalRamp": ["oklch(0.18 0.05 166)", "oklch(0.28 0.07 166)", "oklch(0.38 0.09 166)", "oklch(0.508 0.118 165.612)", "oklch(0.596 0.145 163.225)", "oklch(0.696 0.17 162.48)", "oklch(0.845 0.143 164.978)", "oklch(0.94 0.05 166)"]
+      },
+      "background-dark": {
+        "role": "neutral",
+        "displayName": "Console Background",
+        "canonical": "oklch(0.145 0 0)",
+        "tonalRamp": ["oklch(0.10 0 0)", "oklch(0.145 0 0)", "oklch(0.205 0 0)", "oklch(0.269 0 0)", "oklch(0.42 0 0)", "oklch(0.56 0 0)", "oklch(0.708 0 0)", "oklch(0.985 0 0)"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Auth and error surfaces only; not routine cards." },
+      "headline": { "displayName": "Headline", "purpose": "Card titles and page-local section headings." },
+      "body": { "displayName": "Body", "purpose": "Operational copy, descriptions, and readable form text." },
+      "label": { "displayName": "Label", "purpose": "Buttons, fields, nav rows, badges, and metadata." }
+    },
+    "tokens": {
+      "shadows": [
+        {
+          "name": "panel-shadow",
+          "value": "0 20px 45px color-mix(in oklch, black 86%, var(--primary) 14% / 0.24)",
+          "purpose": "Reserved for elevated panels requiring separation from dark background."
+        },
+        {
+          "name": "soft-shadow",
+          "value": "0 12px 28px color-mix(in oklch, black 88%, var(--primary) 12% / 0.14)",
+          "purpose": "Rare ambient separation for important floating UI."
+        }
+      ],
+      "motion": [
+        {
+          "name": "state-transition",
+          "value": "150ms-250ms transition-colors/transition-all",
+          "purpose": "Compact product UI feedback for hover, focus, active, and disclosure state."
+        }
+      ],
+      "breakpoints": [
+        { "name": "sm", "value": "640px" },
+        { "name": "md", "value": "768px" },
+        { "name": "lg", "value": "1024px" },
+        { "name": "xl", "value": "1280px" }
+      ]
+    }
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Compact primary action using the current implementation primary token.",
+      "html": "<button class=\"ds-btn-primary\">Create API key</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; height: 2rem; gap: 0.375rem; padding: 0 0.625rem; border: 1px solid transparent; border-radius: var(--radius-lg, 0.45rem); background: var(--color-primary); color: var(--color-primary-foreground); font: 500 0.875rem/1.25 var(--font-sans); white-space: nowrap; transition: background-color 180ms ease-out, transform 180ms ease-out, box-shadow 180ms ease-out; } .ds-btn-primary:hover { background: color-mix(in oklch, var(--color-primary) 80%, transparent); } .ds-btn-primary:active { transform: translateY(1px); } .ds-btn-primary:focus-visible { outline: none; border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent); }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Muted action for filtering, cancelling, and secondary workflows.",
+      "html": "<button class=\"ds-btn-secondary\">Apply filters</button>",
+      "css": ".ds-btn-secondary { display: inline-flex; align-items: center; justify-content: center; height: 2rem; padding: 0 0.625rem; border: 1px solid transparent; border-radius: var(--radius-lg, 0.45rem); background: var(--secondary); color: var(--secondary-foreground); font: 500 0.875rem/1.25 var(--font-sans); transition: background-color 180ms ease-out, box-shadow 180ms ease-out; } .ds-btn-secondary:hover { background: color-mix(in oklch, var(--secondary) 80%, transparent); } .ds-btn-secondary:focus-visible { outline: none; border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent); }"
+    },
+    {
+      "name": "Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Compact dark-mode text field with visible focus ring.",
+      "html": "<input class=\"ds-input\" placeholder=\"Service\" />",
+      "css": ".ds-input { width: 100%; height: 2rem; min-width: 0; border: 1px solid var(--input); border-radius: var(--radius-lg, 0.45rem); background: color-mix(in oklch, var(--input) 30%, transparent); color: var(--foreground); padding: 0.25rem 0.625rem; font: 400 0.875rem/1.5 var(--font-sans); transition: border-color 180ms ease-out, box-shadow 180ms ease-out; } .ds-input::placeholder { color: var(--muted-foreground); } .ds-input:focus-visible { outline: none; border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent); } .ds-input:disabled { cursor: not-allowed; opacity: 0.5; }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Flat tonal panel with ring structure instead of decorative elevation.",
+      "html": "<section class=\"ds-card\"><h3>Request Logs</h3><p>Inspect request execution, latency, and sanitized payloads.</p></section>",
+      "css": ".ds-card { display: flex; flex-direction: column; gap: 1rem; overflow: hidden; border-radius: calc(var(--radius, 0.45rem) * 1.4); background: var(--card); color: var(--card-foreground); padding: 1rem; font: 400 0.875rem/1.5 var(--font-sans); box-shadow: 0 0 0 1px color-mix(in oklch, var(--foreground) 10%, transparent); } .ds-card h3 { margin: 0; font: 500 1rem/1.375 var(--font-sans); } .ds-card p { margin: 0; color: var(--muted-foreground); }"
+    },
+    {
+      "name": "Badge",
+      "kind": "chip",
+      "refersTo": "badge-status",
+      "description": "Compact pill for state and metadata, not decoration.",
+      "html": "<span class=\"ds-badge\">active</span>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; justify-content: center; height: 1.25rem; width: fit-content; gap: 0.25rem; border: 1px solid transparent; border-radius: 9999px; background: color-mix(in oklch, var(--color-success, var(--primary)) 24%, transparent); color: var(--color-success, var(--primary)); padding: 0.125rem 0.5rem; font: 500 0.75rem/1 var(--font-sans); white-space: nowrap; } .ds-badge:focus-visible { outline: none; border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent); }"
+    },
+    {
+      "name": "Sidebar Nav Item",
+      "kind": "nav",
+      "refersTo": "navigation",
+      "description": "Compact sidebar row with icon, label, and clear active state.",
+      "html": "<a class=\"ds-nav-item ds-nav-item-active\" href=\"#\"><span class=\"ds-nav-icon\">OC</span><span>API Keys</span></a>",
+      "css": ".ds-nav-item { display: flex; align-items: center; gap: 0.5rem; height: 2rem; border-radius: var(--radius-lg, 0.45rem); padding: 0 0.5rem; color: var(--sidebar-foreground); font: 400 0.875rem/1.25 var(--font-sans); text-decoration: none; transition: background-color 180ms ease-out, color 180ms ease-out; } .ds-nav-item:hover { background: var(--sidebar-accent); color: var(--sidebar-accent-foreground); } .ds-nav-item-active { background: var(--sidebar-accent); color: var(--sidebar-accent-foreground); font-weight: 500; } .ds-nav-icon { display: inline-flex; align-items: center; justify-content: center; width: 1.125rem; height: 1.125rem; font-size: 0.625rem; } .ds-nav-item:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--sidebar-ring) 50%, transparent); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Gateway Console",
+    "overview": "Oceans Gateway Admin is a focused, technical operations console that should feel native to the gateway runtime. Its visual language is dark, restrained, and state-forward: charcoal surfaces, crisp borders, compact controls, and a single accent role used to identify primary action and active state. The system currently ships with a green implementation primary token, but the brand direction is to move that role toward the blues in docs/public/images/oceans-logo-square.png.",
+    "keyCharacteristics": [
+      "Dark operations console with same-origin product feel.",
+      "Tonal layering over decorative shadow.",
+      "Compact, familiar controls for experienced admins.",
+      "Precise labels, visible state, and quiet hierarchy.",
+      "Logo-derived ocean blues are the intended primary color direction."
+    ],
+    "rules": [
+      { "name": "The Accent Scarcity Rule", "body": "The primary accent identifies action, active state, or meaningful status. It is not decoration and should stay below roughly 10% of a screen.", "section": "colors" },
+      { "name": "The Logo Blue Migration Rule", "body": "New visual work may reference the logo-blue direction, but implementation must not mix green and blue primaries on one surface. Replace the primary token first, then compose screens around it.", "section": "colors" },
+      { "name": "The One-Family Rule", "body": "Do not introduce display fonts or decorative pairings in the admin UI. Product trust comes from consistency, not typographic novelty.", "section": "typography" },
+      { "name": "The Identifier Rule", "body": "Use monospace only when the string is machine-like: request IDs, keys, JSON, config snippets, or code. Do not make the whole console terminal-themed.", "section": "typography" },
+      { "name": "The Border-First Rule", "body": "If a surface can be understood with a tonal layer and 1px border, do not add a shadow.", "section": "elevation" },
+      { "name": "The No Ghost-Card Rule", "body": "Do not pair decorative 1px borders with wide soft shadows on routine cards or buttons. Choose structure or elevation, not both.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do use the existing token system in src/styles/globals.css before adding new values.",
+      "Do keep routine admin surfaces compact, legible, and state-rich.",
+      "Do use tonal layers and borders to organize dense data before reaching for shadows.",
+      "Do reserve primary color for primary actions, active navigation, selected state, and meaningful status.",
+      "Do migrate primary green to logo-derived ocean blue as a token-level change before designing blue-first screens.",
+      "Do keep focus states visible and test dense forms with keyboard navigation."
+    ],
+    "donts": [
+      "Don't make decorative SaaS dashboards: no glossy cards, vanity metrics, busy gradients, or ornamental chart chrome.",
+      "Don't simplify away operational detail around permissions, budgets, request behavior, lifecycle state, or destructive actions.",
+      "Don't use gradient text, side-stripe card accents, decorative grid backgrounds, or glassmorphism as default styling.",
+      "Don't introduce display fonts, oversized radii, or theatrical page-load motion into the product UI.",
+      "Don't mix the current green primary and future logo-blue primary on one screen; complete the token migration first."
+    ]
+  }
+}
