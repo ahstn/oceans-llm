@@ -33,6 +33,32 @@ teams:
   - id: operations
     name: Operations
 
+service_accounts:
+  - id: local-ci-runner
+    name: Local CI Runner
+    team: platform
+    budget:
+      cadence: daily
+      amount_usd: "25.0000"
+      hard_limit: true
+      timezone: UTC
+    keys:
+      - id: primary
+        name: Local CI Runner Key
+        auto_create: true
+        allowed_models:
+          - openai-fast-v2
+          - gemini-fast
+
+  - id: local-eval-worker
+    name: Local Eval Worker
+    team: research
+    budget:
+      cadence: daily
+      amount_usd: "15.0000"
+      hard_limit: true
+      timezone: UTC
+
 users:
   - name: Alice Platform Lead
     email: alice@platform.local
