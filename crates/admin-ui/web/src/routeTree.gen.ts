@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SpendControlsRouteImport } from './routes/spend-controls'
+import { Route as ReviewAgentRouteImport } from './routes/review-agent'
 import { Route as ModelsRouteImport } from './routes/models'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ChangePasswordRouteImport } from './routes/change-password'
@@ -27,10 +28,16 @@ import { Route as McpAccessRouteImport } from './routes/mcp/access'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as IdentityUsersRouteImport } from './routes/identity/users'
 import { Route as IdentityTeamsRouteImport } from './routes/identity/teams'
+import { Route as IdentityServiceAccountsRouteImport } from './routes/identity/service-accounts'
 
 const SpendControlsRoute = SpendControlsRouteImport.update({
   id: '/spend-controls',
   path: '/spend-controls',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReviewAgentRoute = ReviewAgentRouteImport.update({
+  id: '/review-agent',
+  path: '/review-agent',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ModelsRoute = ModelsRouteImport.update({
@@ -122,6 +129,11 @@ const IdentityTeamsRoute = IdentityTeamsRouteImport.update({
   path: '/identity/teams',
   getParentRoute: () => rootRouteImport,
 } as any)
+const IdentityServiceAccountsRoute = IdentityServiceAccountsRouteImport.update({
+  id: '/identity/service-accounts',
+  path: '/identity/service-accounts',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -130,7 +142,9 @@ export interface FileRoutesByFullPath {
   '/change-password': typeof ChangePasswordRoute
   '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
+  '/review-agent': typeof ReviewAgentRoute
   '/spend-controls': typeof SpendControlsRoute
+  '/identity/service-accounts': typeof IdentityServiceAccountsRoute
   '/identity/teams': typeof IdentityTeamsRoute
   '/identity/users': typeof IdentityUsersRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -150,7 +164,9 @@ export interface FileRoutesByTo {
   '/change-password': typeof ChangePasswordRoute
   '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
+  '/review-agent': typeof ReviewAgentRoute
   '/spend-controls': typeof SpendControlsRoute
+  '/identity/service-accounts': typeof IdentityServiceAccountsRoute
   '/identity/teams': typeof IdentityTeamsRoute
   '/identity/users': typeof IdentityUsersRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -171,7 +187,9 @@ export interface FileRoutesById {
   '/change-password': typeof ChangePasswordRoute
   '/login': typeof LoginRoute
   '/models': typeof ModelsRoute
+  '/review-agent': typeof ReviewAgentRoute
   '/spend-controls': typeof SpendControlsRoute
+  '/identity/service-accounts': typeof IdentityServiceAccountsRoute
   '/identity/teams': typeof IdentityTeamsRoute
   '/identity/users': typeof IdentityUsersRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -193,7 +211,9 @@ export interface FileRouteTypes {
     | '/change-password'
     | '/login'
     | '/models'
+    | '/review-agent'
     | '/spend-controls'
+    | '/identity/service-accounts'
     | '/identity/teams'
     | '/identity/users'
     | '/invite/$token'
@@ -213,7 +233,9 @@ export interface FileRouteTypes {
     | '/change-password'
     | '/login'
     | '/models'
+    | '/review-agent'
     | '/spend-controls'
+    | '/identity/service-accounts'
     | '/identity/teams'
     | '/identity/users'
     | '/invite/$token'
@@ -233,7 +255,9 @@ export interface FileRouteTypes {
     | '/change-password'
     | '/login'
     | '/models'
+    | '/review-agent'
     | '/spend-controls'
+    | '/identity/service-accounts'
     | '/identity/teams'
     | '/identity/users'
     | '/invite/$token'
@@ -254,7 +278,9 @@ export interface RootRouteChildren {
   ChangePasswordRoute: typeof ChangePasswordRoute
   LoginRoute: typeof LoginRoute
   ModelsRoute: typeof ModelsRoute
+  ReviewAgentRoute: typeof ReviewAgentRoute
   SpendControlsRoute: typeof SpendControlsRoute
+  IdentityServiceAccountsRoute: typeof IdentityServiceAccountsRoute
   IdentityTeamsRoute: typeof IdentityTeamsRoute
   IdentityUsersRoute: typeof IdentityUsersRoute
   InviteTokenRoute: typeof InviteTokenRoute
@@ -275,6 +301,13 @@ declare module '@tanstack/react-router' {
       path: '/spend-controls'
       fullPath: '/spend-controls'
       preLoaderRoute: typeof SpendControlsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/review-agent': {
+      id: '/review-agent'
+      path: '/review-agent'
+      fullPath: '/review-agent'
+      preLoaderRoute: typeof ReviewAgentRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/models': {
@@ -396,6 +429,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IdentityTeamsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/identity/service-accounts': {
+      id: '/identity/service-accounts'
+      path: '/identity/service-accounts'
+      fullPath: '/identity/service-accounts'
+      preLoaderRoute: typeof IdentityServiceAccountsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -406,7 +446,9 @@ const rootRouteChildren: RootRouteChildren = {
   ChangePasswordRoute: ChangePasswordRoute,
   LoginRoute: LoginRoute,
   ModelsRoute: ModelsRoute,
+  ReviewAgentRoute: ReviewAgentRoute,
   SpendControlsRoute: SpendControlsRoute,
+  IdentityServiceAccountsRoute: IdentityServiceAccountsRoute,
   IdentityTeamsRoute: IdentityTeamsRoute,
   IdentityUsersRoute: IdentityUsersRoute,
   InviteTokenRoute: InviteTokenRoute,

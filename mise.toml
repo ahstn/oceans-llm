@@ -105,7 +105,7 @@ run = "cargo test --workspace && bun run --cwd crates/admin-ui/web test && mise 
 
 [tasks.gateway-serve]
 description = "Run local `gateway serve` against `gateway.yaml`"
-run = "cargo run -p gateway --bin gateway -- serve"
+run = 'OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}" cargo run -p gateway --bin gateway -- serve'
 
 [tasks.gateway-migrate]
 description = "Run local `gateway migrate --apply` against `gateway.yaml`"
@@ -117,7 +117,7 @@ run = "cargo run -p gateway --bin gateway -- bootstrap-admin"
 
 [tasks.gateway-seed-config]
 description = "Run local `gateway seed-config` against `gateway.yaml`"
-run = "cargo run -p gateway --bin gateway -- seed-config"
+run = 'OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}" cargo run -p gateway --bin gateway -- seed-config'
 
 [tasks.gateway-purge-request-logs-dry-run]
 description = "Preview request-log purge against `gateway.yaml`; override retention with RETENTION=1d|3d|7d"
@@ -138,12 +138,12 @@ env = { POSTGRES_URL = { required = true } }
 run = 'cargo run -p gateway --bin gateway -- --config gateway.prod.yaml purge-request-logs --retention "${RETENTION:-7d}"'
 
 [tasks.gateway-seed-local-demo]
-description = "Seed the local-only demo dataset (teams, users, budgets, api keys, request history) against `gateway.yaml`"
-run = "cargo run -p gateway --bin gateway -- seed-local-demo"
+description = "Seed the local-only demo dataset (teams, users, service accounts, budgets, api keys, request history) against `gateway.yaml`"
+run = 'OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}" cargo run -p gateway --bin gateway -- seed-local-demo'
 
 [tasks.gateway-reset-local-demo]
 description = "Recreate local `gateway.db` with the local-only demo dataset"
-run = "rm -f gateway.db && cargo run -p gateway --bin gateway -- seed-local-demo"
+run = 'rm -f gateway.db && OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}" cargo run -p gateway --bin gateway -- seed-local-demo'
 
 [tasks.gateway-serve-prod]
 description = "Run production-shaped local `gateway serve` against `gateway.prod.yaml`"
@@ -177,8 +177,12 @@ GATEWAY_PORT="${PORT:-8080}"
 ADMIN_UI_INTERNAL_PORT="${ADMIN_UI_INTERNAL_PORT:-3001}"
 ADMIN_UI_UPSTREAM="${ADMIN_UI_UPSTREAM:-http://localhost:${ADMIN_UI_INTERNAL_PORT}}"
 
+export OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}"
+
 if [[ ! -f "$ROOT_DIR/gateway.db" ]]; then
   cargo run -p gateway --bin gateway -- seed-local-demo
+else
+  cargo run -p gateway --bin gateway -- seed-config
 fi
 
 

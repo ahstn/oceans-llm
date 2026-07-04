@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
@@ -35,7 +35,10 @@ export function useApiKeysPageState({
   items,
   users,
   service_accounts,
-}: Pick<ApiKeysPayload, 'items' | 'users' | 'service_accounts'>) {
+  focusedApiKeyId,
+}: Pick<ApiKeysPayload, 'items' | 'users' | 'service_accounts'> & {
+  focusedApiKeyId?: string
+}) {
   const router = useRouter()
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [form, setForm] = useState<CreateApiKeyInput>(initialForm)
@@ -43,6 +46,7 @@ export function useApiKeysPageState({
   const [createdResult, setCreatedResult] = useState<CreateApiKeyResult | null>(null)
   const [manageDialog, setManageDialog] = useState<ManageDialogState>({ mode: 'closed' })
   const [isMutating, setIsMutating] = useState(false)
+  const handledFocusedApiKeyId = useRef<string | null>(null)
 
   const selectedOwnerLabel =
     form.owner_kind === 'user'
@@ -96,6 +100,23 @@ export function useApiKeysPageState({
     setManageForm(initialManageForm)
     setManageDialog({ mode: 'closed' })
   }
+
+  useEffect(() => {
+    if (!focusedApiKeyId) {
+      handledFocusedApiKeyId.current = null
+      return
+    }
+
+    if (
+      handledFocusedApiKeyId.current === focusedApiKeyId ||
+      !items.some((item) => item.id === focusedApiKeyId)
+    ) {
+      return
+    }
+
+    handledFocusedApiKeyId.current = focusedApiKeyId
+    openManageDialog(focusedApiKeyId)
+  }, [focusedApiKeyId, items])
 
   function updateOwnerKind(ownerKind: CreateApiKeyInput['owner_kind']) {
     setForm((current) => ({

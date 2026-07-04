@@ -64,8 +64,7 @@ export type GenerateModelClientConfigsResponse =
 export type ReviewAgentRepositoryView = components['schemas']['ReviewAgentRepositoryView']
 export type ReviewAgentSettingsView = components['schemas']['ReviewAgentSettingsView']
 export type ReviewAgentRunView = components['schemas']['ReviewAgentRunView']
-export type ReviewAgentRepositoriesPayload =
-  components['schemas']['ReviewAgentRepositoriesPayload']
+export type ReviewAgentRepositoriesPayload = components['schemas']['ReviewAgentRepositoriesPayload']
 export type ReviewAgentRepositoryPayload = components['schemas']['ReviewAgentRepositoryPayload']
 export type ReviewAgentRunsPayload = components['schemas']['ReviewAgentRunsPayload']
 export type ReviewAgentWorkflowPayload = components['schemas']['ReviewAgentWorkflowPayload']
@@ -80,6 +79,14 @@ export type ReviewAgentListQuery = NonNullable<
 export type ReviewAgentRunsQuery = NonNullable<
   operations['list_review_agent_runs']['parameters']['query']
 >
+export type ServiceAccountView = components['schemas']['AdminServiceAccountView']
+export type ServiceAccountsPayload = components['schemas']['AdminServiceAccountsPayload']
+
+export interface ReviewAgentOverviewPayload {
+  repositories: ReviewAgentRepositoryView[]
+  service_accounts: ServiceAccountView[]
+  runs: ReviewAgentRunView[]
+}
 
 export type RequestTagView = components['schemas']['RequestTagView']
 export type RequestLogTagsView = components['schemas']['RequestTagsView']
