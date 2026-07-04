@@ -35,7 +35,6 @@ import {
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { GeneratedAvatar } from '@/components/ui/generated-avatar'
 import { Input } from '@/components/ui/input'
-import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group'
 import { requireAdminSession } from '@/routes/-admin-guard'
 import {
   Select,
@@ -811,7 +810,7 @@ export function ReviewAgentPage() {
 
           {selectedRepo && updateForm ? (
             <SidebarProvider
-              className="min-h-0 items-start"
+              className="min-h-0 min-w-0 items-start overflow-hidden"
               style={{ '--sidebar-width': '14rem' } as CSSProperties}
             >
               <Sidebar
@@ -841,7 +840,7 @@ export function ReviewAgentPage() {
                 </SidebarContent>
               </Sidebar>
 
-              <main className="flex max-h-[680px] min-h-[520px] flex-1 flex-col overflow-hidden">
+              <main className="flex max-h-[680px] min-h-[520px] min-w-0 flex-1 flex-col overflow-hidden">
                 <header className="flex shrink-0 flex-col gap-4 border-b border-[color:var(--color-border)] px-6 py-5">
                   <div className="flex items-start gap-3">
                     <GeneratedAvatar kind="team" name={selectedRepo.full_name} size={44} />
@@ -933,7 +932,7 @@ export function ReviewAgentPage() {
                           </Field>
                         </FieldGroup>
 
-                        <div className="flex flex-col gap-3">
+                        <div className="flex flex-col divide-y divide-[color:var(--color-border)] border-y border-[color:var(--color-border)]">
                           {featureToggles.map((toggle) => (
                             <SettingToggleRow
                               key={toggle.key}
@@ -1072,8 +1071,8 @@ export function ReviewAgentPage() {
                     ) : null}
 
                     {selectedRepoSection === 'setup' ? (
-                      <div className="flex flex-col gap-4">
-                        <Alert>
+                      <div className="flex min-w-0 flex-col gap-4 overflow-hidden">
+                        <Alert className="min-w-0 overflow-hidden">
                           <AlertTitle>Finish setup in the repository</AlertTitle>
                           <AlertDescription>
                             Create an API key for the bound service account, store it as the
@@ -1083,9 +1082,9 @@ export function ReviewAgentPage() {
                           </AlertDescription>
                         </Alert>
 
-                        <FieldGroup>
-                          <div className="grid gap-4 sm:grid-cols-2">
-                            <Field>
+                        <FieldGroup className="min-w-0 overflow-hidden">
+                          <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+                            <Field className="min-w-0">
                               <FieldLabel htmlFor="workflow-action-ref">Action ref</FieldLabel>
                               <Input
                                 id="workflow-action-ref"
@@ -1103,7 +1102,7 @@ export function ReviewAgentPage() {
                               </FieldDescription>
                             </Field>
 
-                            <Field>
+                            <Field className="min-w-0">
                               <FieldLabel htmlFor="workflow-secret-name">
                                 API key secret name
                               </FieldLabel>
@@ -1148,36 +1147,10 @@ export function ReviewAgentPage() {
                         ) : null}
 
                         {workflow ? (
-                          <div className="flex flex-col gap-3">
-                            <Field>
-                              <FieldLabel htmlFor="workflow-file-name">Workflow file</FieldLabel>
-                              <InputGroup>
-                                <InputGroupInput
-                                  id="workflow-file-name"
-                                  readOnly
-                                  value={`.github/workflows/${workflow.file_name}`}
-                                />
-                                <InputGroupAddon align="inline-end">
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() =>
-                                      handleCopy(
-                                        `.github/workflows/${workflow.file_name}`,
-                                        'File path copied',
-                                      )
-                                    }
-                                  >
-                                    Copy
-                                  </Button>
-                                </InputGroupAddon>
-                              </InputGroup>
-                            </Field>
-
-                            <div className="flex flex-col gap-2">
-                              <div className="flex items-center justify-between">
-                                <p className="text-sm font-semibold text-[var(--color-text)]">
+                          <div className="flex min-w-0 flex-col gap-3 overflow-hidden">
+                            <div className="flex min-w-0 flex-col gap-2">
+                              <div className="flex min-w-0 items-center justify-between gap-3">
+                                <p className="min-w-0 truncate text-sm font-semibold text-[var(--color-text)]">
                                   Generated workflow
                                 </p>
                                 <Button
@@ -1189,7 +1162,7 @@ export function ReviewAgentPage() {
                                   Copy YAML
                                 </Button>
                               </div>
-                              <pre className="max-h-72 overflow-auto rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4 font-mono text-xs leading-relaxed text-[var(--color-text)]">
+                              <pre className="max-h-72 max-w-full min-w-0 overflow-auto rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4 font-mono text-xs leading-relaxed whitespace-pre text-[var(--color-text)]">
                                 {workflow.yaml}
                               </pre>
                             </div>
@@ -1314,8 +1287,8 @@ function SettingToggleRow({
   onChange: (value: boolean) => void
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 rounded-lg border border-[color:var(--color-border)] p-4">
-      <div className="flex flex-col gap-1">
+    <div className="flex items-start justify-between gap-4 py-4">
+      <div className="flex min-w-0 flex-col gap-1">
         <p className="text-sm font-semibold text-[var(--color-text)]">{label}</p>
         <p className="text-sm text-[var(--color-text-muted)]">{description}</p>
       </div>
@@ -1328,8 +1301,13 @@ function SettingToggleRow({
           }
         }}
         aria-label={label}
+        className="shrink-0 overflow-hidden rounded-lg border border-[color:var(--color-border)]"
       >
-        <ToggleGroupItem value="on" aria-label={`${label} on`}>
+        <ToggleGroupItem
+          value="on"
+          aria-label={`${label} on`}
+          className="border-r border-[color:var(--color-border)]"
+        >
           On
         </ToggleGroupItem>
         <ToggleGroupItem value="off" aria-label={`${label} off`}>

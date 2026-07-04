@@ -234,9 +234,8 @@ describe('ReviewAgentPage', () => {
 
     await waitFor(() => expect(screen.getByText(/name: Oceans Review Agent/)).toBeInTheDocument())
 
-    expect(screen.getByLabelText('Workflow file')).toHaveValue(
-      '.github/workflows/oceans-review-agent.yml',
-    )
+    expect(screen.queryByLabelText('Workflow file')).not.toBeInTheDocument()
+    expect(screen.getByText('.github/workflows/oceans-review-agent.yml')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Copy YAML' })).toBeInTheDocument()
   })
 })
