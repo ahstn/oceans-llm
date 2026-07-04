@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
@@ -46,6 +46,7 @@ export function useApiKeysPageState({
   const [createdResult, setCreatedResult] = useState<CreateApiKeyResult | null>(null)
   const [manageDialog, setManageDialog] = useState<ManageDialogState>({ mode: 'closed' })
   const [isMutating, setIsMutating] = useState(false)
+  const handledFocusedApiKeyId = useRef<string | null>(null)
 
   const selectedOwnerLabel =
     form.owner_kind === 'user'
@@ -101,10 +102,19 @@ export function useApiKeysPageState({
   }
 
   useEffect(() => {
-    if (!focusedApiKeyId || !items.some((item) => item.id === focusedApiKeyId)) {
+    if (!focusedApiKeyId) {
+      handledFocusedApiKeyId.current = null
       return
     }
 
+    if (
+      handledFocusedApiKeyId.current === focusedApiKeyId ||
+      !items.some((item) => item.id === focusedApiKeyId)
+    ) {
+      return
+    }
+
+    handledFocusedApiKeyId.current = focusedApiKeyId
     openManageDialog(focusedApiKeyId)
   }, [focusedApiKeyId, items])
 

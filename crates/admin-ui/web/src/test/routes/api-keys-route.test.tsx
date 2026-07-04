@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ApiKeysPayload } from '@/types/api'
@@ -105,6 +105,7 @@ const basePayload: ApiKeysPayload = {
 
 describe('ApiKeysPage', () => {
   beforeEach(() => {
+    cleanup()
     vi.stubGlobal('ResizeObserver', ResizeObserverMock)
     routeMock.useLoaderData.mockReset()
     routeMock.useLoaderData.mockReturnValue({ data: basePayload })
@@ -333,6 +334,29 @@ describe('ApiKeysPage', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Manage API key' })
     expect(within(dialog).getByText('Production Gateway')).toBeInTheDocument()
     expect(within(dialog).getByText('gwk_prod_liv****')).toBeInTheDocument()
+  })
+
+  it('does not reopen an already dismissed api_key_id deeplink after items refresh', async () => {
+    routeMock.useSearch.mockReturnValue({ api_key_id: 'api_key_1' })
+
+    const { ApiKeysPage } = await import('@/routes/api-keys')
+
+    const { rerender } = render(<ApiKeysPage />)
+
+    const dialog = await screen.findByRole('dialog', { name: 'Manage API key' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        ...basePayload,
+        items: basePayload.items.map((item) => ({ ...item })),
+      },
+    })
+    rerender(<ApiKeysPage />)
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
   it('opens the manage dialog and updates model access when the selection changes', async () => {

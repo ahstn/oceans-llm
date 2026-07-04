@@ -471,12 +471,12 @@ export const getReviewAgentOverview = createServerFn({ method: 'GET' }).handler(
     listServiceAccounts(),
   ])
 
-  const runsByRepository = await Promise.all(
+  const runsByRepository = await Promise.allSettled(
     repositories.data.items.map((repository) => listReviewAgentRuns(repository.id, { limit: 10 })),
   )
 
   const runs = runsByRepository
-    .flatMap((envelope) => envelope.data.items)
+    .flatMap((result) => (result.status === 'fulfilled' ? result.value.data.items : []))
     .sort((a, b) => b.created_at.localeCompare(a.created_at))
     .slice(0, 25)
 

@@ -1,4 +1,11 @@
-import { useEffect, useState, useTransition, type CSSProperties, type FormEvent } from 'react'
+import {
+  useEffect,
+  useState,
+  useTransition,
+  type CSSProperties,
+  type FormEvent,
+  type KeyboardEvent,
+} from 'react'
 import {
   Cancel01Icon,
   Configuration01Icon,
@@ -350,6 +357,15 @@ export function ReviewAgentPage() {
         toast.error(getErrorMessage(error))
       }
     })
+  }
+
+  function handleWorkflowInputKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== 'Enter') {
+      return
+    }
+
+    event.preventDefault()
+    void generateWorkflow()
   }
 
   async function generateWorkflow() {
@@ -1089,6 +1105,7 @@ export function ReviewAgentPage() {
                               <Input
                                 id="workflow-action-ref"
                                 value={workflowForm.action_ref}
+                                onKeyDown={handleWorkflowInputKeyDown}
                                 onChange={(event) =>
                                   setWorkflowForm((current) => ({
                                     ...current,
@@ -1109,6 +1126,7 @@ export function ReviewAgentPage() {
                               <Input
                                 id="workflow-secret-name"
                                 value={workflowForm.api_key_secret_name}
+                                onKeyDown={handleWorkflowInputKeyDown}
                                 onChange={(event) =>
                                   setWorkflowForm((current) => ({
                                     ...current,

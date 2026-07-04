@@ -19,6 +19,7 @@ const routerMock = {
 
 const createRepoMock = vi.fn()
 const renderWorkflowMock = vi.fn()
+const updateRepoMock = vi.fn()
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
@@ -38,7 +39,7 @@ vi.mock('@/server/admin-data.functions', () => ({
   getReviewAgentOverview: vi.fn(),
   reactivateReviewAgentRepo: vi.fn(),
   renderReviewAgentRepoWorkflow: (...args: unknown[]) => renderWorkflowMock(...args),
-  updateReviewAgentRepo: vi.fn(),
+  updateReviewAgentRepo: (...args: unknown[]) => updateRepoMock(...args),
 }))
 
 const oceansRepo: ReviewAgentRepositoryView = {
@@ -157,6 +158,7 @@ describe('ReviewAgentPage', () => {
     routerMock.navigate.mockClear()
     createRepoMock.mockReset()
     renderWorkflowMock.mockReset()
+    updateRepoMock.mockReset()
   })
 
   it('teaches the next step when no repositories are configured', async () => {
@@ -237,5 +239,31 @@ describe('ReviewAgentPage', () => {
     expect(screen.queryByLabelText('Workflow file')).not.toBeInTheDocument()
     expect(screen.getByText('.github/workflows/oceans-review-agent.yml')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Copy YAML' })).toBeInTheDocument()
+  })
+
+  it('generates the workflow instead of saving settings when Enter is pressed in setup inputs', async () => {
+    routeMock.useLoaderData.mockReturnValue({ data: seedPayload })
+    routeMock.useSearch.mockReturnValue({ repo_id: 'repo_oceans', repo_section: 'setup' })
+    renderWorkflowMock.mockResolvedValue({
+      data: {
+        yaml: 'name: Oceans Review Agent\non: pull_request',
+        file_name: 'oceans-review-agent.yml',
+        action_ref: 'main',
+        api_key_secret_name: 'OCEANS_API_KEY',
+        oceans_url: 'https://oceans.example.test',
+      },
+    })
+
+    const { ReviewAgentPage } = await import('@/routes/review-agent')
+
+    render(<ReviewAgentPage />)
+
+    await waitFor(() => expect(renderWorkflowMock).toHaveBeenCalledTimes(1))
+    renderWorkflowMock.mockClear()
+
+    fireEvent.keyDown(screen.getByLabelText('Action ref'), { key: 'Enter' })
+
+    await waitFor(() => expect(renderWorkflowMock).toHaveBeenCalledTimes(1))
+    expect(updateRepoMock).not.toHaveBeenCalled()
   })
 })

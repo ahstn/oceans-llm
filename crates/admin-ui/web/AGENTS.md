@@ -20,6 +20,7 @@
 ## Dialogs
 - Detail dialogs with multiple sections should use a sidebar navigation pattern.
 - Keep section tabs such as Overview, Configuration, Tools, and Credentials inside the dialog instead of expanding page-level complexity.
+- Inside dialogs, prefer single-sided borders (`border-t`, `border-b`, `border-y`, `divide-y`, or `border-r` for sidebars) to separate elements, inputs, items, and sections. Avoid wrapping every setting or row in a full four-sided border unless it is a distinct nested surface.
 - Dialog content must be width-contained:
   - use `min-w-0` on flex/grid children
   - use `max-w-full` where long content can appear
