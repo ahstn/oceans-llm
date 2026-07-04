@@ -22,11 +22,11 @@
         "canonical": "#b7dde4",
         "tonalRamp": ["oklch(0.24 0.04 225)", "oklch(0.34 0.05 225)", "oklch(0.48 0.06 225)", "oklch(0.62 0.06 225)", "oklch(0.76 0.05 225)", "#b7dde4", "oklch(0.90 0.03 220)", "oklch(0.96 0.015 220)"]
       },
-      "implementation-primary-green": {
-        "role": "primary",
-        "displayName": "Implementation Primary Green",
-        "canonical": "oklch(0.508 0.118 165.612)",
-        "tonalRamp": ["oklch(0.18 0.05 166)", "oklch(0.28 0.07 166)", "oklch(0.38 0.09 166)", "oklch(0.508 0.118 165.612)", "oklch(0.596 0.145 163.225)", "oklch(0.696 0.17 162.48)", "oklch(0.845 0.143 164.978)", "oklch(0.94 0.05 166)"]
+      "success-green": {
+        "role": "semantic",
+        "displayName": "Success Green",
+        "canonical": "oklch(0.696 0.17 162.48)",
+        "tonalRamp": ["oklch(0.20 0.05 162)", "oklch(0.30 0.07 162)", "oklch(0.42 0.10 162)", "oklch(0.54 0.13 162)", "oklch(0.696 0.17 162.48)", "oklch(0.80 0.12 162)", "oklch(0.90 0.06 162)", "oklch(0.96 0.025 162)"]
       },
       "background-dark": {
         "role": "neutral",
@@ -74,7 +74,7 @@
       "name": "Primary Button",
       "kind": "button",
       "refersTo": "button-primary",
-      "description": "Compact primary action using the current implementation primary token.",
+      "description": "Compact primary action using the logo-derived ocean primary token.",
       "html": "<button class=\"ds-btn-primary\">Create API key</button>",
       "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; height: 2rem; gap: 0.375rem; padding: 0 0.625rem; border: 1px solid transparent; border-radius: var(--radius-lg, 0.45rem); background: var(--color-primary); color: var(--color-primary-foreground); font: 500 0.875rem/1.25 var(--font-sans); white-space: nowrap; transition: background-color 180ms ease-out, transform 180ms ease-out, box-shadow 180ms ease-out; } .ds-btn-primary:hover { background: color-mix(in oklch, var(--color-primary) 80%, transparent); } .ds-btn-primary:active { transform: translateY(1px); } .ds-btn-primary:focus-visible { outline: none; border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent); }"
     },
@@ -121,17 +121,17 @@
   ],
   "narrative": {
     "northStar": "The Gateway Console",
-    "overview": "Oceans Gateway Admin is a focused, technical operations console that should feel native to the gateway runtime. Its visual language is dark, restrained, and state-forward: charcoal surfaces, crisp borders, compact controls, and a single accent role used to identify primary action and active state. The system currently ships with a green implementation primary token, but the brand direction is to move that role toward the blues in docs/public/images/oceans-logo-square.png.",
+    "overview": "Oceans Gateway Admin is a focused, technical operations console that should feel native to the gateway runtime. Its visual language is dark, restrained, and state-forward: charcoal surfaces, crisp borders, compact controls, and a single ocean-blue accent role used to identify primary action and active state. Green is reserved for semantic success, not brand identity.",
     "keyCharacteristics": [
       "Dark operations console with same-origin product feel.",
       "Tonal layering over decorative shadow.",
       "Compact, familiar controls for experienced admins.",
       "Precise labels, visible state, and quiet hierarchy.",
-      "Logo-derived ocean blues are the intended primary color direction."
+      "Logo-derived ocean blues are the primary color direction."
     ],
     "rules": [
       { "name": "The Accent Scarcity Rule", "body": "The primary accent identifies action, active state, or meaningful status. It is not decoration and should stay below roughly 10% of a screen.", "section": "colors" },
-      { "name": "The Logo Blue Migration Rule", "body": "New visual work may reference the logo-blue direction, but implementation must not mix green and blue primaries on one surface. Replace the primary token first, then compose screens around it.", "section": "colors" },
+      { "name": "The Logo Blue Rule", "body": "Primary action, active navigation, focus color, and brand charts use the logo-blue family. Green is semantic success only.", "section": "colors" },
       { "name": "The One-Family Rule", "body": "Do not introduce display fonts or decorative pairings in the admin UI. Product trust comes from consistency, not typographic novelty.", "section": "typography" },
       { "name": "The Identifier Rule", "body": "Use monospace only when the string is machine-like: request IDs, keys, JSON, config snippets, or code. Do not make the whole console terminal-themed.", "section": "typography" },
       { "name": "The Border-First Rule", "body": "If a surface can be understood with a tonal layer and 1px border, do not add a shadow.", "section": "elevation" },
@@ -142,7 +142,7 @@
       "Do keep routine admin surfaces compact, legible, and state-rich.",
       "Do use tonal layers and borders to organize dense data before reaching for shadows.",
       "Do reserve primary color for primary actions, active navigation, selected state, and meaningful status.",
-      "Do migrate primary green to logo-derived ocean blue as a token-level change before designing blue-first screens.",
+      "Do keep logo-derived ocean blue as the primary action, focus, active-state, and chart-ramp family.",
       "Do keep focus states visible and test dense forms with keyboard navigation."
     ],
     "donts": [
@@ -150,7 +150,7 @@
       "Don't simplify away operational detail around permissions, budgets, request behavior, lifecycle state, or destructive actions.",
       "Don't use gradient text, side-stripe card accents, decorative grid backgrounds, or glassmorphism as default styling.",
       "Don't introduce display fonts, oversized radii, or theatrical page-load motion into the product UI.",
-      "Don't mix the current green primary and future logo-blue primary on one screen; complete the token migration first."
+      "Don't use green as brand color; reserve it for semantic success only."
     ]
   }
 }

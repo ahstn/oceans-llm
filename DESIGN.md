@@ -5,8 +5,8 @@ colors:
   logo-ocean-blue: "#006f9f"
   logo-wave-blue: "#0b83ad"
   logo-mist-blue: "#b7dde4"
-  implementation-primary-green: "oklch(0.508 0.118 165.612)"
-  background-dark: "oklch(0.145 0 0)"
+  success-green: "oklch(0.696 0.17 162.48)"
+  background-dark: "oklch(0.145 0.012 238)"
   foreground-light: "oklch(0.985 0 0)"
   card-dark: "oklch(0.205 0 0)"
   muted-dark: "oklch(0.269 0 0)"
@@ -49,7 +49,7 @@ spacing:
   xl: "2rem"
 components:
   button-primary:
-    backgroundColor: "{colors.implementation-primary-green}"
+    backgroundColor: "{colors.logo-ocean-blue}"
     textColor: "{colors.foreground-light}"
     rounded: "{rounded.lg}"
     height: "2rem"
@@ -81,7 +81,7 @@ components:
 
 Oceans Gateway Admin is a focused, technical operations console that should feel native to the gateway runtime. Its visual language is dark, restrained, and state-forward: charcoal surfaces, crisp borders, compact controls, and a single accent role used to identify primary action and active state.
 
-The system currently ships with a green implementation primary token, but the brand direction is to move that role toward the blues in `docs/public/images/oceans-logo-square.png`: deep ocean blue for primary action, brighter wave blue for emphasis, and pale mist blue for logo-derived supporting surfaces. Until that token replacement lands in code, use the existing `--primary` token for implementation consistency and treat the logo blues as the target color direction.
+The system now uses the blues in `docs/public/images/oceans-logo-square.png` as the primary brand direction: deep ocean blue for primary action, brighter wave blue for emphasis and chart progression, and pale mist blue for logo-derived supporting surfaces. Green is reserved for semantic success, not brand identity.
 
 This system rejects decorative SaaS dashboards, glossy vanity-metric cards, busy gradients, and consumer-friendly simplification that hides operational detail. The interface earns trust by showing real state clearly and keeping mutations scoped, legible, and reversible where possible.
 
@@ -95,14 +95,14 @@ This system rejects decorative SaaS dashboards, glossy vanity-metric cards, busy
 
 ## 2. Colors
 
-The palette is a charcoal console with a restrained operational accent: current code uses green for `--primary`; future brand alignment should replace it with the logo's ocean-blue family.
+The palette is a charcoal console with a restrained operational accent: logo-derived ocean blue owns primary actions, active state, focus color, and the chart ramp.
 
 ### Primary
 
 - **Logo Ocean Blue** (`#006f9f`): target primary action and selected-state color, derived from the darkest visible wave in the logo asset. Use where the current implementation uses `--primary` after the color replacement lands.
 - **Logo Wave Blue** (`#0b83ad`): target secondary emphasis for charts, highlights, and active indicators that need separation from the primary action blue.
 - **Logo Mist Blue** (`#b7dde4`): target pale supporting color for logo-adjacent assets and rare low-emphasis brand surfaces; do not use it as body text on dark surfaces.
-- **Implementation Primary Green** (`oklch(0.508 0.118 165.612)`): current `--primary` token in code. Use this until the logo-blue replacement is implemented so shipped UI remains internally consistent.
+- **Success Green** (`oklch(0.696 0.17 162.48)`): semantic success only. Do not use green for brand, navigation, or primary actions.
 
 ### Neutral
 
@@ -122,7 +122,7 @@ The palette is a charcoal console with a restrained operational accent: current 
 
 **The Accent Scarcity Rule.** The primary accent identifies action, active state, or meaningful status. It is not decoration and should stay below roughly 10% of a screen.
 
-**The Logo Blue Migration Rule.** New visual work may reference the logo-blue direction, but implementation must not mix green and blue primaries on one surface. Replace the primary token first, then compose screens around it.
+**The Logo Blue Rule.** Primary action, active navigation, focus color, and brand charts use the logo-blue family. Green is semantic success only.
 
 ## 3. Typography
 
@@ -166,7 +166,7 @@ Oceans Gateway Admin uses tonal layers and borders before shadows. Cards and pan
 ### Buttons
 
 - **Shape:** compact rounded rectangle (`rounded-lg`, derived from `--radius: 0.45rem`).
-- **Primary:** current implementation uses `bg-primary text-primary-foreground`, height `2rem`, horizontal padding `0.625rem`, medium `0.875rem` text.
+- **Primary:** implementation uses logo-ocean `bg-primary text-primary-foreground`, height `2rem`, horizontal padding `0.625rem`, medium `0.875rem` text.
 - **Hover / Focus:** hover adjusts fill opacity; focus uses visible `ring-3` and ring color, not glow decoration.
 - **Secondary / Outline / Ghost:** secondary uses muted tonal fill, outline uses border plus transparent/dim fill, ghost uses hover fill only.
 - **Active:** non-menu buttons can translate down by `1px`; keep this tactile and subtle.
@@ -208,7 +208,7 @@ Tables, virtualized lists, filters, sheets, and detail panes are signature surfa
 - **Do** keep routine admin surfaces compact, legible, and state-rich.
 - **Do** use tonal layers and borders to organize dense data before reaching for shadows.
 - **Do** reserve primary color for primary actions, active navigation, selected state, and meaningful status.
-- **Do** migrate primary green to logo-derived ocean blue as a token-level change before designing blue-first screens.
+- **Do** keep logo-derived ocean blue as the primary action, focus, active-state, and chart-ramp family.
 - **Do** keep focus states visible and test dense forms with keyboard navigation.
 
 ### Don't:
@@ -217,4 +217,4 @@ Tables, virtualized lists, filters, sheets, and detail panes are signature surfa
 - **Don't** simplify away operational detail around permissions, budgets, request behavior, lifecycle state, or destructive actions.
 - **Don't** use gradient text, side-stripe card accents, decorative grid backgrounds, or glassmorphism as default styling.
 - **Don't** introduce display fonts, oversized radii, or theatrical page-load motion into the product UI.
-- **Don't** mix the current green primary and future logo-blue primary on one screen; complete the token migration first.
+- **Don't** use green as brand color; reserve it for semantic success only.
