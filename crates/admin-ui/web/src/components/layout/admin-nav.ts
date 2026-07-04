@@ -1,4 +1,5 @@
 import {
+  GitPullRequestIcon,
   HomeIcon,
   McpServerIcon,
   Notification03Icon,
@@ -30,6 +31,7 @@ export const adminNavSections: AdminNavSection[] = [
       { label: 'API Keys', to: '/api-keys', icon: SearchIcon },
       { label: 'Models', to: '/models', icon: HomeIcon },
       { label: 'MCP', to: '/mcp', icon: McpServerIcon },
+      { label: 'Review Agent', to: '/review-agent', icon: GitPullRequestIcon },
     ],
   },
   {

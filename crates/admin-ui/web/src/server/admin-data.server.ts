@@ -52,7 +52,17 @@ import type {
   RequestLogDetailView,
   RequestLogFiltersInput,
   RequestLogPageView,
+  ReviewAgentListQuery,
+  ReviewAgentRepositoriesPayload,
+  ReviewAgentRepositoryPayload,
+  ReviewAgentRunsPayload,
+  ReviewAgentRunsQuery,
+  ReviewAgentWorkflowInput,
+  ReviewAgentWorkflowPayload,
+  CreateReviewAgentRepositoryInput,
+  UpdateReviewAgentRepositoryInput,
   RevokeApiKeyResult,
+  ServiceAccountsPayload,
   SpendBudgetsView,
   SpendOwnerKind,
   SpendReportView,
@@ -503,6 +513,94 @@ export async function previewMcpEffectiveAccess(
       params: { query: params },
     }),
   )
+}
+
+export async function listReviewAgentRepositories(
+  params?: ReviewAgentListQuery,
+): Promise<ApiEnvelope<ReviewAgentRepositoriesPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.GET('/api/v1/admin/review-agent/repositories', {
+      params: { query: params },
+    }),
+  )
+}
+
+export async function createReviewAgentRepository(
+  input: CreateReviewAgentRepositoryInput,
+): Promise<ApiEnvelope<ReviewAgentRepositoryPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.POST('/api/v1/admin/review-agent/repositories', { body: input }),
+  )
+}
+
+export async function updateReviewAgentRepository(
+  repositoryId: string,
+  input: UpdateReviewAgentRepositoryInput,
+): Promise<ApiEnvelope<ReviewAgentRepositoryPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.PATCH('/api/v1/admin/review-agent/repositories/{repository_id}', {
+      params: { path: { repository_id: repositoryId } },
+      body: input,
+    }),
+  )
+}
+
+export async function disableReviewAgentRepository(
+  repositoryId: string,
+): Promise<ApiEnvelope<ReviewAgentRepositoryPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.POST('/api/v1/admin/review-agent/repositories/{repository_id}/disable', {
+      params: { path: { repository_id: repositoryId } },
+    }),
+  )
+}
+
+export async function reactivateReviewAgentRepository(
+  repositoryId: string,
+): Promise<ApiEnvelope<ReviewAgentRepositoryPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.POST('/api/v1/admin/review-agent/repositories/{repository_id}/reactivate', {
+      params: { path: { repository_id: repositoryId } },
+    }),
+  )
+}
+
+export async function listReviewAgentRuns(
+  repositoryId: string,
+  params?: ReviewAgentRunsQuery,
+): Promise<ApiEnvelope<ReviewAgentRunsPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.GET('/api/v1/admin/review-agent/repositories/{repository_id}/runs', {
+      params: {
+        path: { repository_id: repositoryId },
+        query: params,
+      },
+    }),
+  )
+}
+
+export async function renderReviewAgentWorkflow(
+  repositoryId: string,
+  input: ReviewAgentWorkflowInput,
+): Promise<ApiEnvelope<ReviewAgentWorkflowPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.POST('/api/v1/admin/review-agent/repositories/{repository_id}/workflow', {
+      params: { path: { repository_id: repositoryId } },
+      body: input,
+    }),
+  )
+}
+
+export async function listServiceAccounts(): Promise<ApiEnvelope<ServiceAccountsPayload>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(await client.GET('/api/v1/admin/identity/service-accounts'))
 }
 
 export async function listTeams(): Promise<ApiEnvelope<IdentityTeamsPayload>> {
