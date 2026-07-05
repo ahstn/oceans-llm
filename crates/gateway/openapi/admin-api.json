@@ -4472,6 +4472,27 @@
           }
         }
       },
+      "AdminModelAllowlistView": {
+        "type": "object",
+        "required": [
+          "users",
+          "teams"
+        ],
+        "properties": {
+          "teams": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "users": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "AdminModelClientConfigBlockView": {
         "type": "object",
         "required": [
@@ -4609,6 +4630,16 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "allowlist": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AdminModelAllowlistView"
+              }
             ]
           },
           "cache_read_cost_per_million_tokens_usd_10000": {

@@ -837,6 +837,14 @@ mod tests {
             Ok(Vec::new())
         }
 
+        async fn list_model_allowlists_for_models(
+            &self,
+            _model_ids: &[Uuid],
+        ) -> Result<std::collections::HashMap<Uuid, gateway_core::ModelAllowlistPolicy>, StoreError>
+        {
+            Ok(std::collections::HashMap::new())
+        }
+
         async fn list_routes_for_model(
             &self,
             _model_id: Uuid,

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use crate::shared::parse_uuid;
 
 use super::*;
 
@@ -88,6 +89,81 @@ impl ModelRepository for LibsqlStore {
         }
 
         Ok(models)
+    }
+
+    async fn list_model_allowlists_for_models(
+        &self,
+        model_ids: &[Uuid],
+    ) -> Result<HashMap<Uuid, ModelAllowlistPolicy>, StoreError> {
+        if model_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let placeholders = (0..model_ids.len())
+            .map(|index| format!("?{}", index + 1))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let params = model_ids
+            .iter()
+            .map(|model_id| libsql::Value::Text(model_id.to_string()))
+            .collect::<Vec<_>>();
+
+        let user_query = format!(
+            "SELECT model_id, normalized_email FROM model_allowlist_users \
+             WHERE model_id IN ({placeholders}) ORDER BY model_id ASC, normalized_email ASC"
+        );
+        let mut user_rows = self
+            .connection
+            .query(&user_query, params.clone())
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?;
+
+        let mut policies = HashMap::new();
+        while let Some(row) = user_rows
+            .next()
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?
+        {
+            let model_id = parse_uuid(&row.get::<String>(0).map_err(to_query_error)?)?;
+            let normalized_email = row.get(1).map_err(to_query_error)?;
+            policies
+                .entry(model_id)
+                .or_insert_with(|| ModelAllowlistPolicy {
+                    users: Vec::new(),
+                    teams: Vec::new(),
+                })
+                .users
+                .push(normalized_email);
+        }
+
+        let team_query = format!(
+            "SELECT model_id, team_key FROM model_allowlist_teams \
+             WHERE model_id IN ({placeholders}) ORDER BY model_id ASC, team_key ASC"
+        );
+        let mut team_rows = self
+            .connection
+            .query(&team_query, params)
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?;
+
+        while let Some(row) = team_rows
+            .next()
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))?
+        {
+            let model_id = parse_uuid(&row.get::<String>(0).map_err(to_query_error)?)?;
+            let team_key = row.get(1).map_err(to_query_error)?;
+            policies
+                .entry(model_id)
+                .or_insert_with(|| ModelAllowlistPolicy {
+                    users: Vec::new(),
+                    teams: Vec::new(),
+                })
+                .teams
+                .push(team_key);
+        }
+
+        Ok(policies)
     }
 
     async fn list_routes_for_model(&self, model_id: Uuid) -> Result<Vec<ModelRoute>, StoreError> {

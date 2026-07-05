@@ -20,8 +20,8 @@ use crate::{
         McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
         McpToolInvocationRecord, McpToolTokenEstimateRecord, McpToolsetRecord,
         McpToolsetToolRecord, McpUpstreamCredentialBindingRecord,
-        McpUpstreamCredentialOwnerScopeKind, ModelPricingRecord, ModelRoute, Money4,
-        NewApiKeyRecord, NewExternalMcpServerRecord, NewMcpAggregateSessionRecord,
+        McpUpstreamCredentialOwnerScopeKind, ModelAllowlistPolicy, ModelPricingRecord, ModelRoute,
+        Money4, NewApiKeyRecord, NewExternalMcpServerRecord, NewMcpAggregateSessionRecord,
         NewMcpToolsetRecord, NewReviewAgentRepositoryRecord, NewReviewAgentRunRecord,
         PricingCatalogCacheRecord, ProviderCapabilities, ProviderConnection,
         ProviderRequestContext, RequestAttemptRecord, RequestLogDetail, RequestLogPage,
@@ -211,6 +211,19 @@ pub trait ModelRepository: Send + Sync {
         &self,
         api_key_id: Uuid,
     ) -> Result<Vec<GatewayModel>, StoreError>;
+
+    async fn list_model_allowlists_for_models(
+        &self,
+        model_ids: &[Uuid],
+    ) -> Result<HashMap<Uuid, ModelAllowlistPolicy>, StoreError>;
+
+    async fn get_model_allowlist(
+        &self,
+        model_id: Uuid,
+    ) -> Result<Option<ModelAllowlistPolicy>, StoreError> {
+        let mut policies = self.list_model_allowlists_for_models(&[model_id]).await?;
+        Ok(policies.remove(&model_id))
+    }
     async fn list_routes_for_model(&self, model_id: Uuid) -> Result<Vec<ModelRoute>, StoreError>;
 
     async fn list_routes_for_models(

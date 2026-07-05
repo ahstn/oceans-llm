@@ -60,6 +60,7 @@ mod tests {
         UpsertMcpUpstreamCredentialBindingRecord, UpsertReviewAgentPullRequestRecord,
         UsageLedgerRecord, UsagePricingStatus, UserStatus,
     };
+    use gateway_core::domain::ModelAllowlistPolicy;
     use serde_json::{Map, json};
     use serial_test::serial;
     use sqlx::Row;
@@ -235,6 +236,7 @@ mod tests {
             tags: Vec::new(),
             rank: 10,
             routes: Vec::new(),
+            allowlist: None,
         }];
 
         store
@@ -940,6 +942,7 @@ mod tests {
                 capabilities: ProviderCapabilities::all_enabled(),
                 compatibility: Default::default(),
             }],
+            allowlist: None,
         }];
         let api_keys = vec![SeedApiKey {
             name: "dev".to_string(),
@@ -1500,6 +1503,7 @@ mod tests {
                     capabilities: ProviderCapabilities::all_enabled(),
                     compatibility: Default::default(),
                 }],
+                allowlist: None,
             },
             SeedModel {
                 model_key: "reasoning".to_string(),
@@ -1518,6 +1522,7 @@ mod tests {
                     capabilities: ProviderCapabilities::all_enabled(),
                     compatibility: Default::default(),
                 }],
+                allowlist: None,
             },
         ];
         let api_keys = vec![SeedApiKey {
@@ -2706,6 +2711,7 @@ mod tests {
                     ..Default::default()
                 },
             }],
+            allowlist: None,
         }];
 
         let api_keys = vec![SeedApiKey {
@@ -3033,14 +3039,12 @@ mod tests {
                     provider_type: "openai_compat".to_string(),
                     config: json!({}),
                     secrets: None,
-                }], &[SeedModel {
-                    model_key: "fast".to_string(),
-                    alias_target_model_key: None,
-                    description: None,
-                    tags: Vec::new(),
-                    rank: 10,
-                    routes: Vec::new(),
-                }], &[SeedApiKey {
+                }], &[SeedModel { model_key: "fast".to_string(),
+                alias_target_model_key: None,
+                description: None,
+                tags: Vec::new(),
+                rank: 10,
+                routes: Vec::new(), allowlist: None, }], &[SeedApiKey {
                     name: "dev".to_string(),
                     public_id: "dev123".to_string(),
                     secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
@@ -3224,14 +3228,12 @@ mod tests {
                     provider_type: "openai_compat".to_string(),
                     config: json!({}),
                     secrets: None,
-                }], &[SeedModel {
-                    model_key: "fast".to_string(),
-                    alias_target_model_key: None,
-                    description: None,
-                    tags: Vec::new(),
-                    rank: 10,
-                    routes: Vec::new(),
-                }], &[SeedApiKey {
+                }], &[SeedModel { model_key: "fast".to_string(),
+                alias_target_model_key: None,
+                description: None,
+                tags: Vec::new(),
+                rank: 10,
+                routes: Vec::new(), allowlist: None, }], &[SeedApiKey {
                     name: "dev".to_string(),
                     public_id: "dev123".to_string(),
                     secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
@@ -3399,14 +3401,12 @@ mod tests {
                     provider_type: "openai_compat".to_string(),
                     config: json!({}),
                     secrets: None,
-                }], &[SeedModel {
-                    model_key: "fast".to_string(),
-                    alias_target_model_key: None,
-                    description: None,
-                    tags: Vec::new(),
-                    rank: 10,
-                    routes: Vec::new(),
-                }], &[SeedApiKey {
+                }], &[SeedModel { model_key: "fast".to_string(),
+                alias_target_model_key: None,
+                description: None,
+                tags: Vec::new(),
+                rank: 10,
+                routes: Vec::new(), allowlist: None, }], &[SeedApiKey {
                     name: "dev".to_string(),
                     public_id: "dev123".to_string(),
                     secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
@@ -3662,14 +3662,12 @@ mod tests {
                     provider_type: "openai_compat".to_string(),
                     config: json!({}),
                     secrets: None,
-                }], &[SeedModel {
-                    model_key: "fast".to_string(),
-                    alias_target_model_key: None,
-                    description: None,
-                    tags: Vec::new(),
-                    rank: 10,
-                    routes: Vec::new(),
-                }], &[SeedApiKey {
+                }], &[SeedModel { model_key: "fast".to_string(),
+                alias_target_model_key: None,
+                description: None,
+                tags: Vec::new(),
+                rank: 10,
+                routes: Vec::new(), allowlist: None, }], &[SeedApiKey {
                     name: "dev".to_string(),
                     public_id: "dev123".to_string(),
                     secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
@@ -3915,6 +3913,7 @@ mod tests {
                 tags: vec!["fast".to_string()],
                 rank: 10,
                 routes: Vec::new(),
+                allowlist: None,
             },
             SeedModel {
                 model_key: "fast-v2".to_string(),
@@ -3933,6 +3932,7 @@ mod tests {
                     capabilities: ProviderCapabilities::all_enabled(),
                     compatibility: Default::default(),
                 }],
+                allowlist: None,
             },
         ];
 
@@ -3995,6 +3995,164 @@ mod tests {
             .expect("target routes");
         assert_eq!(routes.len(), 1);
         assert_eq!(routes[0].upstream_model, "gpt-5");
+    }
+
+    async fn exercise_model_allowlist_seed<S>(store: &S)
+    where
+        S: GatewayStore + ModelRepository + Sync,
+    {
+        let empty = store
+            .list_model_allowlists_for_models(&[])
+            .await
+            .expect("empty allowlist batch");
+        assert!(empty.is_empty());
+
+        let initial_models = vec![
+            SeedModel {
+                model_key: "fast".to_string(),
+                alias_target_model_key: Some("fast-v2".to_string()),
+                description: Some("alias".to_string()),
+                tags: Vec::new(),
+                rank: 10,
+                routes: Vec::new(),
+                allowlist: Some(ModelAllowlistPolicy {
+                    users: vec!["z@example.com".to_string(), "a@example.com".to_string()],
+                    teams: vec!["team-z".to_string(), "team-a".to_string()],
+                }),
+            },
+            SeedModel {
+                model_key: "fast-v2".to_string(),
+                alias_target_model_key: None,
+                description: Some("target".to_string()),
+                tags: Vec::new(),
+                rank: 20,
+                routes: Vec::new(),
+                allowlist: Some(ModelAllowlistPolicy {
+                    users: vec!["target@example.com".to_string()],
+                    teams: Vec::new(),
+                }),
+            },
+        ];
+        store
+            .seed_from_inputs(&[], &initial_models, &[], &[], &[], &[], &[], &[])
+            .await
+            .expect("initial seed");
+
+        let alias_model = store
+            .get_model_by_key("fast")
+            .await
+            .expect("query alias model")
+            .expect("alias model exists");
+        let target_model = store
+            .get_model_by_key("fast-v2")
+            .await
+            .expect("query target model")
+            .expect("target model exists");
+        let initial_policies = store
+            .list_model_allowlists_for_models(&[target_model.id, alias_model.id])
+            .await
+            .expect("initial policy batch");
+        assert_eq!(
+            initial_policies.get(&alias_model.id),
+            Some(&ModelAllowlistPolicy {
+                users: vec!["a@example.com".to_string(), "z@example.com".to_string()],
+                teams: vec!["team-a".to_string(), "team-z".to_string()],
+            })
+        );
+        assert_eq!(
+            initial_policies.get(&target_model.id),
+            Some(&ModelAllowlistPolicy {
+                users: vec!["target@example.com".to_string()],
+                teams: Vec::new(),
+            })
+        );
+
+        let updated_models = vec![
+            SeedModel {
+                model_key: "fast".to_string(),
+                alias_target_model_key: Some("fast-v2".to_string()),
+                description: Some("alias".to_string()),
+                tags: Vec::new(),
+                rank: 10,
+                routes: Vec::new(),
+                allowlist: Some(ModelAllowlistPolicy {
+                    users: vec!["only@example.com".to_string()],
+                    teams: vec!["team-b".to_string()],
+                }),
+            },
+            SeedModel {
+                model_key: "fast-v2".to_string(),
+                alias_target_model_key: None,
+                description: Some("target".to_string()),
+                tags: Vec::new(),
+                rank: 20,
+                routes: Vec::new(),
+                allowlist: None,
+            },
+        ];
+        store
+            .seed_from_inputs(&[], &updated_models, &[], &[], &[], &[], &[], &[])
+            .await
+            .expect("updated seed");
+
+        let updated_policies = store
+            .list_model_allowlists_for_models(&[alias_model.id, target_model.id])
+            .await
+            .expect("updated policy batch");
+        assert_eq!(
+            updated_policies.get(&alias_model.id),
+            Some(&ModelAllowlistPolicy {
+                users: vec!["only@example.com".to_string()],
+                teams: vec!["team-b".to_string()],
+            })
+        );
+        assert!(!updated_policies.contains_key(&target_model.id));
+        assert_eq!(
+            store
+                .get_model_allowlist(target_model.id)
+                .await
+                .expect("target policy lookup"),
+            None
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_model_allowlist_seed_replaces_and_clears() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        exercise_model_allowlist_seed(&store).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_model_allowlist_seed_replaces_and_clears() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!("skipping postgres model allowlist test because TEST_POSTGRES_URL is not set");
+            return;
+        };
+
+        run_migrations_with_options(&StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        })
+        .await
+        .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        exercise_model_allowlist_seed(&store).await;
+
+        store.pool().close().await;
+        drop_postgres_test_database(&test_db).await;
     }
 
     #[tokio::test]
@@ -6130,6 +6288,7 @@ mod tests {
                 capabilities: ProviderCapabilities::all_enabled(),
                 compatibility: Default::default(),
             }],
+            allowlist: None,
         }];
         let api_keys = vec![SeedApiKey {
             name: "dev".to_string(),
@@ -6441,6 +6600,7 @@ mod tests {
                 ),
                 compatibility: Default::default(),
             }],
+            allowlist: None,
         }];
         let api_keys = vec![SeedApiKey {
             name: "dev".to_string(),
@@ -6993,6 +7153,7 @@ mod tests {
                 capabilities: ProviderCapabilities::all_enabled(),
                 compatibility: Default::default(),
             }],
+            allowlist: None,
         }];
         let api_keys = vec![SeedApiKey {
             name: "dev".to_string(),
@@ -7309,6 +7470,7 @@ mod tests {
                 tags: vec!["fast".to_string()],
                 rank: 10,
                 routes: Vec::new(),
+                allowlist: None,
             },
             SeedModel {
                 model_key: "fast-v2".to_string(),
@@ -7327,6 +7489,7 @@ mod tests {
                     capabilities: ProviderCapabilities::all_enabled(),
                     compatibility: Default::default(),
                 }],
+                allowlist: None,
             },
         ];
         let api_keys = vec![SeedApiKey {

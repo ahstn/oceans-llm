@@ -64,6 +64,7 @@ use gateway_core::{
     UsagePricingStatus, UserOauthAuthRecord, UserOidcAuthRecord, UserPasswordAuthRecord,
     UserRecord, UserSessionRecord, UserStatus,
 };
+use gateway_core::domain::ModelAllowlistPolicy;
 use time::OffsetDateTime;
 use uuid::Uuid;
 

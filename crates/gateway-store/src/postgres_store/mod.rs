@@ -62,6 +62,7 @@ use gateway_core::{
     UsagePricingStatus, UserOauthAuthRecord, UserOidcAuthRecord, UserPasswordAuthRecord,
     UserRecord, UserSessionRecord, UserStatus,
 };
+use gateway_core::domain::ModelAllowlistPolicy;
 use sqlx::{
     PgPool, Row,
     postgres::{PgPoolOptions, PgRow},

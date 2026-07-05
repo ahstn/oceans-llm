@@ -256,7 +256,7 @@ export function ModelsPage() {
                 className="hidden min-w-0 overflow-hidden rounded-md border border-[color:var(--color-border)] md:block"
                 data-testid="models-desktop-table"
               >
-                <Table className="min-w-[92rem] table-fixed">
+                <Table className="min-w-[108rem] table-fixed">
                   <TableHeader className="bg-[color:var(--color-surface-muted)]">
                     <TableRow>
                       <TableHead className="w-[3rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
@@ -285,6 +285,9 @@ export function ModelsPage() {
                       </TableHead>
                       <TableHead className="w-[18rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
                         Capabilities
+                      </TableHead>
+                      <TableHead className="w-[16rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                        Model allowlist
                       </TableHead>
                       <TableHead className="w-[10rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
                         Client config
@@ -385,6 +388,9 @@ export function ModelsPage() {
                         </TableCell>
                         <TableCell className="px-3 py-3 whitespace-normal">
                           <CapabilityBadges model={model} />
+                        </TableCell>
+                        <TableCell className="px-3 py-3 whitespace-normal">
+                          <ModelAllowlistDetail model={model} compact />
                         </TableCell>
                         <TableCell className="px-3 py-3 whitespace-normal">
                           <ClientConfigButton model={model} onOpen={openSingleClientConfig} compact />
@@ -503,6 +509,10 @@ function ModelCard({
             }
           />
           <MetricDetail label="Capabilities" value={<CapabilityBadges model={model} />} />
+          <MetricDetail
+            label="Model allowlist"
+            value={<ModelAllowlistDetail model={model} />}
+          />
         </dl>
         <ModelNotes model={model} />
         <ClientConfigButton model={model} onOpen={onOpenClientConfig} />
@@ -740,6 +750,48 @@ function ModelStatusIndicator({ status }: { status: string }) {
       </TooltipTrigger>
       <TooltipContent sideOffset={6}>{status}</TooltipContent>
     </Tooltip>
+  )
+}
+
+function ModelAllowlistDetail({
+  compact = false,
+  model,
+}: {
+  compact?: boolean
+  model: ModelView
+}) {
+  if (!model.allowlist) {
+    return (
+      <span className="text-[var(--color-text-soft)]">
+        Unrestricted by model allowlist
+      </span>
+    )
+  }
+
+  const refs = [
+    { label: 'Users', values: model.allowlist.users },
+    { label: 'Teams', values: model.allowlist.teams },
+  ].filter((entry) => entry.values.length > 0)
+
+  if (refs.length === 0) {
+    return <span className="text-[var(--color-text-soft)]">No users or teams listed</span>
+  }
+
+  return (
+    <div className="flex min-w-0 flex-col gap-2">
+      {refs.map((entry) => (
+        <div key={entry.label} className="flex min-w-0 flex-col gap-1">
+          <span className="text-xs font-medium text-[var(--color-text-soft)]">{entry.label}</span>
+          <div className="flex min-w-0 flex-wrap gap-1">
+            {entry.values.map((value) => (
+              <Badge key={`${entry.label}:${value}`} variant={compact ? 'secondary' : undefined}>
+                {value}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
   )
 }
 

@@ -173,6 +173,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V36__api_key_model_grant_mode.sql"),
         postgres_sql: include_str!("../migrations/postgres/V36__api_key_model_grant_mode.sql"),
     },
+    MigrationManifest {
+        version: 37,
+        name: "model_allowlists",
+        checksum: "V37__model_allowlists.sql",
+        libsql_sql: include_str!("../migrations/V37__model_allowlists.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V37__model_allowlists.sql"),
+    },
 ];
 
 #[cfg(test)]

@@ -63,6 +63,8 @@ const ACTIVE_APPLICATION_TABLES: &[&str] = &[
     "user_model_allowlist",
     "team_model_allowlist",
     "service_account_model_allowlist",
+    "model_allowlist_users",
+    "model_allowlist_teams",
     "api_keys",
     "api_key_model_grants",
     "audit_logs",

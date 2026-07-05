@@ -2079,6 +2079,12 @@ pub struct GatewayModel {
     pub rank: i32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ModelAllowlistPolicy {
+    pub users: Vec<String>,
+    pub teams: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelRoute {
     pub id: Uuid,
@@ -2485,6 +2491,7 @@ pub struct SeedModel {
     pub rank: i32,
     #[serde(default)]
     pub routes: Vec<SeedModelRoute>,
+    pub allowlist: Option<ModelAllowlistPolicy>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,6 +1,6 @@
 # Identity and Access
 
-`See also`: [MCP Servers](../configuration/mcp-servers.md), [MCP Client Setup](../mcp/mcp-client-setup.md), [Data Relationships](../contributing/reference/data-relationships.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Service Accounts](service-accounts.md), [OIDC and SSO](oidc-and-sso-status.md), [Admin Control Plane](admin-control-plane.md), [Budgets and Spending](../contributing/operations/budgets-and-spending.md), [Tagging](../operations/tagging.md), [MCP Invocations](../mcp/mcp-invocations.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../adr/2026-05-10-team-service-accounts.md), [ADR: Admin Identity Lifecycle and Team Member Workflow Hardening](../adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md)
+`See also`: [MCP Servers](../configuration/mcp-servers.md), [MCP Client Setup](../mcp/mcp-client-setup.md), [Data Relationships](../contributing/reference/data-relationships.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Service Accounts](service-accounts.md), [OIDC and SSO](oidc-and-sso-status.md), [Admin Control Plane](admin-control-plane.md), [Budgets](budgets.md), [Tagging](../operations/tagging.md), [MCP Invocations](../mcp/mcp-invocations.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../adr/2026-05-10-team-service-accounts.md), [ADR: Admin Identity Lifecycle and Team Member Workflow Hardening](../adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md)
 
 This page describes the live identity model across the gateway and admin control plane.
 
@@ -132,14 +132,21 @@ Use [oidc-and-sso-status.md](oidc-and-sso-status.md) for the practical SSO contr
 
 Effective model access is layered:
 
-1. API key grant mode for the authenticated user or service account credential
-2. team allowlist when the team is `restricted`
-3. service-account allowlist when the service account is `restricted`
-4. user allowlist when the user is `restricted`
+1. API-key grant mode for the authenticated user or service-account credential.
+2. Team allowlist when the team is `restricted`.
+3. Service-account allowlist when the service account is `restricted`.
+4. User allowlist when the user is `restricted`.
+5. Model-level allowlist when the requested gateway model declares `allowlist` in config.
 
-API keys can use `model_grant_mode='explicit'` with rows in `api_key_model_grants`, or `model_grant_mode='all'` to track every current and future gateway model. Owner restrictions always intersect that baseline; `all` never bypasses team, service-account, or user allowlists.
+API keys can use `model_grant_mode='explicit'` with rows in `api_key_model_grants`, or `model_grant_mode='all'` to track every current and future gateway model. Owner restrictions always intersect that baseline; `all` never bypasses team, service-account, user, or model-level allowlists.
 
-For service accounts, the team allowlist applies through the owning team and the service account allowlist applies directly when restricted. User allowlists do not apply because service accounts are not users. Admin-managed service-account API keys require explicit model grants so automation credentials stay deliberately scoped.
+Principal-centric restrictions answer "which models may this principal use?" Model-level allowlists answer "which users or teams may use this model?" They are separate overlays and both must pass.
+
+For human users, a model-level allowlist passes when either the normalized user email or the user's effective team key is listed. Unknown refs in the model config are allowed and become useful if a matching user or team exists later.
+
+For service accounts, the team allowlist applies through the owning team and the service-account allowlist applies directly when restricted. User allowlists do not apply because service accounts are not users. Admin-managed service-account API keys require explicit model grants so automation credentials stay deliberately scoped.
+
+In v1, service-account-owned API keys are denied for models that have a model-level allowlist. Use a human user-owned key for allowlisted model traffic, or leave the model without a model-level allowlist when service-account automation must call it.
 
 ## MCP Gateway API-Key Contract
 
@@ -217,7 +224,7 @@ Team-scoped management rules live in [service-accounts.md](service-accounts.md).
 - startup and first access:
   - [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md)
 - spend ownership effects:
-  - [budgets-and-spending.md](../contributing/operations/budgets-and-spending.md)
+  - [budgets.md](budgets.md)
 - request resolution effects:
   - [model-routing-and-api-behavior.md](../configuration/model-routing-and-api-behavior.md)
 - non-human gateway access:

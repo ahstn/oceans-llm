@@ -71,7 +71,9 @@ Team budget scopes do not exist. Migration-only references to historical team bu
 
 ## Enforcement Order
 
-Budget checks run after model resolution and before provider execution, then again after provider execution when actual usage and pricing are known.
+Budget checks run after authentication, model access evaluation, and model resolution. API-key grants, principal-centric allowlists, and model-level allowlists can deny a request before the budget guard runs; those denials do not consume budget windows.
+
+For allowed requests, budget checks run before provider execution, then again after provider execution when actual usage and pricing are known.
 
 Human user traffic evaluates:
 

@@ -519,6 +519,14 @@ impl ModelRepository for AnyStore {
         dispatch_store!(self, list_models_for_api_key(api_key_id))
     }
 
+    async fn list_model_allowlists_for_models(
+        &self,
+        model_ids: &[Uuid],
+    ) -> Result<std::collections::HashMap<Uuid, gateway_core::domain::ModelAllowlistPolicy>, StoreError>
+    {
+        dispatch_store!(self, list_model_allowlists_for_models(model_ids))
+    }
+
     async fn list_routes_for_model(
         &self,
         model_id: Uuid,

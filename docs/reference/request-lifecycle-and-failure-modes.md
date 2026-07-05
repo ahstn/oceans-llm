@@ -1,6 +1,6 @@
 # Request Lifecycle and Failure Modes
 
-`See also`: [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](provider-api-compatibility.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md), [Budgets and Spending](../contributing/operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../mcp/mcp-invocations.md), [Configuration Reference](../configuration/configuration-reference.md), [Identity and Access](../access/identity-and-access.md), [Data Relationships](../contributing/reference/data-relationships.md), [ADR: V1 Runtime Simplification for Routing and Streaming](../adr/2026-03-15-v1-runtime-simplification.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md)
+`See also`: [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](provider-api-compatibility.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md), [Budgets](../access/budgets.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../mcp/mcp-invocations.md), [Configuration Reference](../configuration/configuration-reference.md), [Identity and Access](../access/identity-and-access.md), [Data Relationships](../contributing/reference/data-relationships.md), [ADR: V1 Runtime Simplification for Routing and Streaming](../adr/2026-03-15-v1-runtime-simplification.md)
 
 This page is the cross-cutting view. Neighboring docs own their own policy slices. This page explains how those slices connect during one request.
 
@@ -21,17 +21,19 @@ The live request path is single-route in this slice.
 
 1. The HTTP middleware assigns one canonical request id from `x-request-id` or generates one when absent.
 2. The gateway authenticates the API key.
-3. The allowed gateway model set is reduced by API-key grants and any user or team allowlists.
+3. The allowed gateway model set is reduced by API-key grants, principal-centric allowlists, and model-level allowlists.
+   - For human user-owned keys, a model-level allowlist passes when the user email or effective team key is listed.
+   - For service-account-owned keys, a model-level allowlist denies the model in v1.
 4. The requested model is resolved.
    - A concrete model key stays concrete.
-   - A `tag:` selector picks one allowed gateway model.
-   - An alias resolves to a canonical execution model.
+   - A `tag:` selector picks one allowed gateway model; blocked allowlisted candidates are skipped.
+   - An alias resolves to a canonical execution model after gateway-model authorization. Alias and target allowlists are independent.
 5. The route planner builds an ordered route list.
    - Lower `priority` wins first.
    - `weight` only matters inside the same priority bucket.
    - Disabled routes and non-positive weights drop out.
 6. Capability filtering removes routes that cannot satisfy the API family and feature requirements. For example, `/v1/responses` requires `responses`, while `/v1/chat/completions` requires `chat_completions`.
-7. The budget guard runs before provider execution.
+7. The budget guard runs after access and model resolution, before provider execution.
    - hard-limit rejection returns `429 budget_exceeded`
    - no provider call occurs on this path
 8. Route compatibility metadata is passed into the provider adapter.
@@ -211,5 +213,5 @@ For the current observability cleanup notes, see [observability-and-request-logs
 - identity and ownership policy: [identity-and-access.md](../access/identity-and-access.md)
 - route-planning contract and endpoint behavior: [model-routing-and-api-behavior.md](../configuration/model-routing-and-api-behavior.md)
 - exact pricing coverage rules: [pricing-catalog-and-accounting.md](../configuration/pricing-catalog-and-accounting.md)
-- budget windows and spend APIs: [budgets-and-spending.md](../contributing/operations/budgets-and-spending.md)
+- budget behavior and setup: [budgets.md](../access/budgets.md); implementation details: [budgets-and-spending.md](../contributing/operations/budgets-and-spending.md)
 - request-log storage and payload policy: [observability-and-request-logs.md](../operations/observability-and-request-logs.md)
