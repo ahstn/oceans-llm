@@ -176,12 +176,8 @@ struct GoogleEmbeddingOutput {
     token_count: Option<i64>,
 }
 
-fn is_supported_vertex_embedding_model(model_id: &str) -> bool {
-    is_supported_vertex_text_embedding_model_id(model_id)
-}
-
 fn validate_vertex_embedding_model(model_id: &str) -> Result<(), ProviderError> {
-    if is_supported_vertex_embedding_model(model_id) {
+    if is_supported_vertex_text_embedding_model_id(model_id) {
         return Ok(());
     }
 

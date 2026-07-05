@@ -129,6 +129,7 @@ models:
           tools: false
           vision: true
           json_schema: false
+```
 
 The checked-in examples are opinionated. They are not the full config space.
 
