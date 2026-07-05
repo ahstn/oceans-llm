@@ -32,6 +32,24 @@ Pricing states are explicit:
 
 Only `priced` and `legacy_estimated` rows count toward budget windows and spend totals. `unpriced` and `usage_missing` rows remain report-visible accounting-quality signals.
 
+## Embeddings Ledger Behavior
+
+Embedding requests use the same ledger and budget enforcement path as chat and Responses requests.
+
+For native Vertex text embeddings:
+
+- successful priced rows record `operation: embeddings` in request-log metadata and a normal `usage_cost_events` row for the authenticated owner
+- Vertex `statistics.token_count` (`:predict`) or `usageMetadata.promptTokenCount` (`google/gemini-embedding-2` `:embedContent`) is normalized into prompt/input token usage
+- completion/output tokens are zero or absent for pricing purposes
+- the gateway must not convert characters or bytes into token counts
+- `priced` rows count toward the corresponding budget scope for the authenticated owner: user budget, service-account budget, and any matching user-model budget
+- `usage_missing` rows are written when Vertex does not return usable token counts; they remain visible but do not count toward budget windows
+- `unpriced` rows are written when usage exists but no exact pricing row can be resolved; they remain visible but do not count toward budget windows
+
+The Vertex provider's Google Cloud `auth.mode: service_account` credential is not an ownership scope. Budget ownership still comes from the gateway API key: `user:<user_id>` for human callers or `service_account:<service_account_id>` for gateway service-account callers.
+
+Duplicate request-id handling is unchanged for embeddings. A repeated `(request_id, ownership_scope_key)` is rejected before another ledger write or another round of budget math.
+
 ## Budget Scopes
 
 Budgets are stored in the generic `budgets` table. `scope_key` is canonical and has one active budget at a time.

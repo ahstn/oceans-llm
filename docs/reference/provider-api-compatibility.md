@@ -23,7 +23,7 @@ The Responses API is a first-class API family. It is not translated through Chat
 | --- | --- | --- | --- |
 | OpenAI Chat Completions | Supported for `openai_compat` providers | `crates/gateway-providers/src/openai_compat.rs` | Route-level `openai_compat` profile can declare request-shape quirks and streaming usage support. |
 | OpenAI Responses API | Supported for `openai_compat` providers | `crates/gateway-providers/src/openai_compat.rs` | Uses a distinct typed request/core/provider boundary and preserves Responses event-stream semantics. |
-| OpenAI Embeddings | Supported for `openai_compat` providers | `crates/gateway-providers/src/openai_compat.rs` | Uses the same route/provider resolution path; no compatibility transforms are applied in this slice. |
+| OpenAI Embeddings | Supported for `openai_compat` providers and native Vertex text-embedding routes | `crates/gateway-providers/src/openai_compat.rs`, `crates/gateway-providers/src/vertex.rs` | OpenAI-compatible providers receive the OpenAI-shaped request. Vertex text embeddings use a provider-specific `:predict` mapper with explicit local validation. |
 | Anthropic Messages | Supported for `/v1/messages` and `/messages` through the chat execution boundary | `crates/gateway/src/http/handlers.rs`, `crates/gateway-providers/src/vertex.rs` | Accepts Anthropic Messages request shape and returns Anthropic Messages response/SSE for chat-capable routes such as Anthropic-on-Vertex. |
 | Google Generative AI | Not implemented as a direct API-key provider path | Follow-up issue | Vertex Google transport exists; direct Google native API needs separate auth, request, and stream mapping. |
 | Cross-provider multimodal files/images | Partial, provider-dependent | Follow-up issue | Needs explicit request body and accounting semantics across OpenAI-compatible, Vertex Google, Anthropic, and Google native APIs. |
@@ -36,7 +36,7 @@ This matrix is about current execution support, not provider marketing claims.
 | --- | --- | --- | --- |
 | `openai_compat` | Supported. Chat Completions route profiles can rewrite known request-shape quirks. | Supported through the distinct Responses request/provider path. Chat Completions profile transforms do not apply. | Supported. No route compatibility transforms apply in this slice. |
 | `gcp_cloud_run_openai_compat` | Supported through the OpenAI-compatible adapter with Cloud Run ID-token auth. | Supported when the deployed service exposes an OpenAI-compatible Responses endpoint. Chat Completions profile transforms do not apply. | Supported when the deployed service exposes an OpenAI-compatible embeddings endpoint. |
-| `gcp_vertex` with `google/*` upstream models | Supported for the current Vertex chat path when route capabilities allow it. | Not implemented; keep route `responses: false`. | Not implemented in this slice; keep route `embeddings: false`. |
+| `gcp_vertex` with `google/*` upstream models | Supported for the current Vertex chat path when route capabilities allow it. | Not implemented; keep route `responses: false`. | Supported only for explicit text-embedding routes using `google/gemini-embedding-001`, `google/gemini-embedding-2`, `google/text-embedding-005`, or `google/text-multilingual-embedding-002` with `embeddings: true`. Google chat and multimodal routes should keep `embeddings: false`. |
 | `gcp_vertex` with `anthropic/*` upstream models | Supported for Chat Completions and Anthropic Messages when route capabilities allow it. Tool use is supported for text/tool workflows. | Not implemented; keep route `responses: false`. | Not applicable. |
 | `aws_bedrock` | Supported through explicit `compatibility.aws_bedrock.api_style`: Runtime Converse, Runtime Anthropic InvokeModel, Runtime OpenAI Chat, Mantle OpenAI Chat, or Mantle Anthropic Messages. Streaming uses the configured style's stream contract. | Supported for `api_style: mantle_openai_responses` with an OpenAI base path such as `/openai/v1`. This is the Bedrock-supported Responses subset, not full direct-OpenAI hosted-tool parity. | Not implemented; keep route `embeddings: false`. |
 
@@ -101,7 +101,7 @@ Effective capability is the intersection of configured route metadata and provid
 - Provider implementations still enforce what they can actually execute.
 - Capability defaults are permissive, so routes for partial providers should set unsupported API families to `false`.
 
-For example, a Vertex Google chat route should normally set `responses: false` and `embeddings: false` until those provider paths are implemented. Otherwise the route may look viable from config alone and still fail when the provider adapter rejects the unsupported API family.
+For example, a Vertex Google chat route should normally set `responses: false` and `embeddings: false`. A separate Vertex text-embedding route can set `embeddings: true` only when its `upstream_model` is one of the supported Google embedding models. Otherwise the route may look viable from config alone and still fail when provider capability checks reject the unsupported API family or model.
 
 For Cloud Run OpenAI-compatible routes, set capabilities to the endpoints exposed by the deployed service. The gateway adapter can construct Chat Completions, Responses, embeddings, and streams through the OpenAI-compatible path, but a vLLM deployment might only enable some of those endpoints.
 
@@ -157,6 +157,49 @@ Provider metadata preservation is not yet request-side replay. The current Verte
 Vertex Claude route capabilities should stay aligned with tested gateway behavior, not only upstream model capability. Function tools, tool-result continuations, and streaming tool-use deltas are supported for Anthropic-on-Vertex text/tool workflows. Image/document content blocks remain unsupported in the current mapper and should keep `vision: false`; broader multimodal matrices remain tracked by [issue #91](https://github.com/ahstn/oceans-llm/issues/91) and [issue #93](https://github.com/ahstn/oceans-llm/issues/93).
 
 Vertex Google publisher routes remain separate from Anthropic-on-Vertex. `google/*` upstream models use Vertex `generateContent` and `streamGenerateContent`; Anthropic Messages fields such as `thinking`, `output_config`, and `anthropic_version` do not apply to those routes.
+
+## Google Vertex Text Embeddings
+
+Native Vertex text embeddings are available through the public OpenAI-compatible `POST /v1/embeddings` endpoint for these Google publisher models:
+
+- `google/gemini-embedding-001`
+- `google/gemini-embedding-2`
+- `google/text-embedding-005`
+- `google/text-multilingual-embedding-002`
+
+The route should be embedding-only unless you have separately tested another API family for the same upstream model:
+
+```yaml
+capabilities:
+  chat_completions: false
+  responses: false
+  embeddings: true
+  stream: false
+  tools: false
+  vision: false
+  json_schema: false
+```
+
+Compatibility contract:
+
+| Public field or behavior | Vertex mapping or outcome |
+| --- | --- |
+| `input: "text"` | One Vertex text embedding request and one OpenAI-compatible `data[0]` embedding. `google/gemini-embedding-2` uses Vertex `:embedContent`; the other supported models use Vertex `:predict`. |
+| `input: ["a", "b"]` | Independent embedding operations with OpenAI-compatible indexes preserved in request order. |
+| Token arrays, nested arrays, non-string values, empty arrays, empty strings, multimodal/base64 payloads | Rejected locally with `invalid_request`. |
+| `dimensions` | `parameters.outputDimensionality` for `:predict` models; `embedContentConfig.outputDimensionality` for `google/gemini-embedding-2`; must be positive and within the model's supported maximum. |
+| `output_dimensionality` / `outputDimensionality` | Aliases for `dimensions`; conflicts are rejected. |
+| `encoding_format` omitted or `float` | Accepted; response embeddings are float vectors. |
+| `encoding_format: "base64"` | Rejected locally. |
+| `task_type` | `instances[].task_type` for `:predict` models; rejected for `google/gemini-embedding-2`, which expects task instructions in the input text. |
+| `input_type` | Alias for `task_type` on `:predict` models; conflicts are rejected. Rejected for `google/gemini-embedding-2`. |
+| `title` | Accepted only for retrieval-document embeddings on `:predict` models. Rejected for `google/gemini-embedding-2`. |
+| `auto_truncate` / `autoTruncate` | `parameters.autoTruncate` for `:predict` models; conflicts are rejected. Rejected for `google/gemini-embedding-2`. |
+
+Responses are normalized to the OpenAI embeddings list shape: `object: "list"`, ordered `data[]`, `data[].object: "embedding"`, `data[].index`, float vectors, `model`, and `usage` when Vertex returns real token counts. Missing token counts become `usage_missing`; exact catalog misses become `unpriced`. Neither state consumes budget.
+
+Anthropic-on-Vertex routes and Google chat/multimodal models do not implement embeddings.
+
 
 ## AWS Bedrock Runtime Anthropic Claude
 
@@ -301,7 +344,7 @@ Current durable accounting only relies on:
 
 Responses usage is normalized from `usage.input_tokens`, `usage.output_tokens`, and `usage.total_tokens` into the gateway's prompt/completion/total accounting columns. Streaming Responses usage is read from completed response events with `response.usage`.
 
-Provider-specific cache, reasoning, image, audio, and modality counters remain follow-up work. Until those semantics are explicit, successful requests may still become `usage_missing` or `unpriced`.
+Vertex text embeddings normalize real provider token counts into prompt/input token usage: `predictions[].embeddings.statistics.token_count` for Vertex `:predict` text-embedding models and `usageMetadata.promptTokenCount` for `google/gemini-embedding-2`. The gateway does not infer tokens from character or byte counts. Provider-specific cache, reasoning, image, audio, and modality counters remain follow-up work. Until those semantics are explicit, successful requests may still become `usage_missing` or `unpriced`.
 
 ## Research References
 
@@ -321,7 +364,6 @@ These items are intentionally outside this first slice:
 - cross-provider tool-call streaming normalization fixtures: [issue #91](https://github.com/ahstn/oceans-llm/issues/91)
 - cache, reasoning, and modality token accounting: [issue #92](https://github.com/ahstn/oceans-llm/issues/92)
 - multimodal image/file compatibility across provider families: [issue #93](https://github.com/ahstn/oceans-llm/issues/93)
-- Vertex embeddings provider support: [issue #103](https://github.com/ahstn/oceans-llm/issues/103)
 - Bedrock Runtime Anthropic streaming over `InvokeModelWithResponseStream`: [issue #139](https://github.com/ahstn/oceans-llm/issues/139)
 - Anthropic thinking block replay for tool-use continuations: [issue #140](https://github.com/ahstn/oceans-llm/issues/140)
 - Vertex Claude multimodal parity: [issue #141](https://github.com/ahstn/oceans-llm/issues/141)

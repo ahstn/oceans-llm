@@ -3764,6 +3764,33 @@
             ]
           }
         },
+        "gemini-embedding-2": {
+          "id": "gemini-embedding-2",
+          "display_name": "Gemini Embedding 2",
+          "release_date": "2026-04-22",
+          "last_updated": "2026-07-01",
+          "cost": {
+            "input": "0.2000",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null
+          },
+          "limit": {
+            "context": 8192,
+            "input": null,
+            "output": 1
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "gemini-flash-latest": {
           "id": "gemini-flash-latest",
           "display_name": "Gemini Flash Latest",

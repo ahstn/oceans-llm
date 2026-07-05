@@ -80,6 +80,42 @@ One common request path looks like this:
   - `usage_cost_events.pricing_status` becomes `priced`
   - the service-account budget window includes the charge
 
+## Vertex Embeddings Example
+
+Native Vertex text embeddings follow the same cross-cutting lifecycle as other `/v1/*` requests:
+
+- Request:
+  - `POST /v1/embeddings`
+  - model is `gemini-embedding`
+  - input is `["query text", "document text"]`
+- Resolution:
+  - `gemini-embedding` resolves to a route with `provider: vertex-global`
+  - `upstream_model` is `google/gemini-embedding-001`
+- Capability filter:
+  - the route has `embeddings: true`
+  - unrelated families such as `chat_completions` and `responses` are disabled on that route
+- Provider execution:
+  - the Vertex adapter validates text-only input and supported parameters
+  - the adapter calls Vertex `:predict` for legacy text-embedding models or `:embedContent` for `google/gemini-embedding-2`, fanning out array input when needed while preserving output indexes
+- Logging:
+  - request logs record `operation: embeddings`
+  - request-log attempts record the Vertex provider execution attempt when a summary row is written
+- Accounting:
+  - Vertex provider token counts are aggregated into prompt/input token usage (`statistics.token_count` for `:predict`, `usageMetadata.promptTokenCount` for `:embedContent`)
+  - exact Google Vertex pricing produces a `priced` ledger row
+  - user, service-account, and matching user-model budget windows include the charge
+
+Important failure examples:
+
+| Failure | Lifecycle point | Outcome |
+| --- | --- | --- |
+| Gemini chat route has `embeddings: false` | capability filtering | The route is removed before Vertex execution. |
+| Route uses unsupported `google/gemini-2.0-flash` for embeddings | provider support validation | The request fails with a deterministic invalid-request error instead of treating all `google/*` models as embedding-capable. |
+| `input` is a token array, nested array, non-string, empty array, or empty string | provider-local request validation | The request fails locally before the upstream call. |
+| `encoding_format: "base64"` | provider-local request validation | The request fails locally because native Vertex embeddings return float vectors only in this slice. |
+| Vertex omits token counts | accounting | The request can still succeed, but the ledger status is `usage_missing` and budgets are not consumed. |
+| Pricing catalog lacks an exact embedding model/rate | accounting | The request can still succeed, but the ledger status is `unpriced` and budgets are not consumed. |
+
 ## Model Visibility Versus Execution
 
 A model can be visible and still fail at runtime.

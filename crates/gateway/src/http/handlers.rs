@@ -19,6 +19,7 @@ use gateway_core::{
     anthropic_messages_request_to_core, core_chat_request_to_openai, openai_chat_request_to_core,
     openai_embeddings_request_to_core, openai_responses_request_to_core,
     protocol::{anthropic::anthropic_message_from_openai_chat, openai::ModelCard},
+    vertex_route_capabilities_for_upstream_model,
 };
 use gateway_service::{
     McpAccess, McpTokenOverhead, McpTokenOverheadInput, RequestLogContext, RequestLogIconMetadata,
@@ -1064,13 +1065,30 @@ pub async fn v1_embeddings(
     let value = match provider.embeddings(&core_request, &context).await {
         Ok(value) => normalize_response_model(value, &resolved.selection.requested_model.model_key),
         Err(error) => {
+            let (provider_error, partial_provider_usage) = split_partial_provider_error(error);
+            if let Some(provider_usage) = partial_provider_usage {
+                finalize_successful_usage_accounting(
+                    &state,
+                    UsageAccountingContext {
+                        auth: &auth,
+                        model: &resolved.selection.execution_model,
+                        route: &route,
+                        request_id: &request_id,
+                        labels: labels.clone(),
+                        operation: "embeddings",
+                    },
+                    provider_usage,
+                )
+                .await;
+            }
+
             let (error, attempt) = provider_error_attempt(
                 &request_log_context,
                 &route,
                 RequestAttemptStatus::ProviderError,
                 false,
                 attempt_started_at,
-                error,
+                provider_error,
                 requirements,
             );
             best_effort_log_non_stream_failure(
@@ -1149,11 +1167,11 @@ fn route_effective_provider_capabilities(
     provider: &dyn ProviderClient,
     route: &gateway_core::ModelRoute,
 ) -> ProviderCapabilities {
-    let mut capabilities = provider.capabilities();
-    if provider.provider_type() == "gcp_vertex" && !route.upstream_model.starts_with("anthropic/") {
-        capabilities.tools = false;
+    if provider.provider_type() == "gcp_vertex" {
+        return vertex_route_capabilities_for_upstream_model(Some(&route.upstream_model));
     }
-    capabilities
+
+    provider.capabilities()
 }
 
 fn provider_error_attempt(
@@ -1753,6 +1771,16 @@ fn usage_value_from_response(value: &Value) -> Option<Value> {
     value.get("usage").cloned()
 }
 
+fn split_partial_provider_error(error: ProviderError) -> (ProviderError, Option<Option<Value>>) {
+    match error {
+        ProviderError::PartialUsage {
+            source,
+            provider_usage,
+        } => (*source, Some(provider_usage)),
+        error => (error, None),
+    }
+}
+
 fn latency_ms_since(started_at: Instant) -> i64 {
     i64::try_from(started_at.elapsed().as_millis()).unwrap_or(i64::MAX)
 }
@@ -1898,16 +1926,183 @@ fn extract_request_headers(headers: &HeaderMap) -> BTreeMap<String, String> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use async_trait::async_trait;
     use axum::Extension;
     use axum::body::to_bytes;
     use axum::http::{HeaderMap, HeaderValue};
-    use gateway_core::GatewayError;
-    use serde_json::Value;
+    use gateway_core::{
+        CoreChatRequest, CoreEmbeddingsRequest, CoreRequestRequirements, CoreResponsesRequest,
+        GatewayError, ModelRoute, ProviderCapabilities, ProviderClient, ProviderError,
+        ProviderRegistry, ProviderRequestContext, ProviderStream,
+    };
+    use serde_json::{Value, json};
     use tower_http::request_id::RequestId;
 
     use super::{
         anthropic_error_response, canonical_request_id, extract_anthropic_authorization_header,
+        route_effective_provider_capabilities, select_first_eligible_route,
+        split_partial_provider_error,
     };
+
+    struct StaticProvider {
+        provider_type: &'static str,
+        capabilities: ProviderCapabilities,
+    }
+
+    #[async_trait]
+    impl ProviderClient for StaticProvider {
+        fn provider_key(&self) -> &str {
+            "vertex"
+        }
+
+        fn provider_type(&self) -> &str {
+            self.provider_type
+        }
+
+        fn capabilities(&self) -> ProviderCapabilities {
+            self.capabilities
+        }
+
+        async fn chat_completions(
+            &self,
+            _request: &CoreChatRequest,
+            _context: &ProviderRequestContext,
+        ) -> Result<Value, ProviderError> {
+            Err(ProviderError::NotImplemented("test provider".to_string()))
+        }
+
+        async fn chat_completions_stream(
+            &self,
+            _request: &CoreChatRequest,
+            _context: &ProviderRequestContext,
+        ) -> Result<ProviderStream, ProviderError> {
+            Err(ProviderError::NotImplemented("test provider".to_string()))
+        }
+
+        async fn embeddings(
+            &self,
+            _request: &CoreEmbeddingsRequest,
+            _context: &ProviderRequestContext,
+        ) -> Result<Value, ProviderError> {
+            Err(ProviderError::NotImplemented("test provider".to_string()))
+        }
+
+        async fn responses(
+            &self,
+            _request: &CoreResponsesRequest,
+            _context: &ProviderRequestContext,
+        ) -> Result<Value, ProviderError> {
+            Err(ProviderError::NotImplemented("test provider".to_string()))
+        }
+
+        async fn responses_stream(
+            &self,
+            _request: &CoreResponsesRequest,
+            _context: &ProviderRequestContext,
+        ) -> Result<ProviderStream, ProviderError> {
+            Err(ProviderError::NotImplemented("test provider".to_string()))
+        }
+    }
+
+    fn route(upstream_model: &str, capabilities: ProviderCapabilities) -> ModelRoute {
+        ModelRoute {
+            id: uuid::Uuid::new_v4(),
+            model_id: uuid::Uuid::new_v4(),
+            provider_key: "vertex".to_string(),
+            upstream_model: upstream_model.to_string(),
+            priority: 0,
+            weight: 1.0,
+            enabled: true,
+            extra_headers: Default::default(),
+            extra_body: Default::default(),
+            capabilities,
+            compatibility: Default::default(),
+        }
+    }
+
+    #[test]
+    fn vertex_route_effective_capabilities_are_route_aware_for_embeddings() {
+        let provider = StaticProvider {
+            provider_type: "gcp_vertex",
+            capabilities: ProviderCapabilities::all_enabled(),
+        };
+
+        let embedding_route = route(
+            "google/gemini-embedding-001",
+            ProviderCapabilities::all_enabled(),
+        );
+        let embedding_capabilities =
+            route_effective_provider_capabilities(&provider, &embedding_route)
+                .intersect(embedding_route.capabilities);
+        assert!(embedding_capabilities.embeddings);
+        assert!(!embedding_capabilities.chat_completions);
+        assert!(!embedding_capabilities.responses);
+        assert!(!embedding_capabilities.stream);
+        assert!(!embedding_capabilities.tools);
+
+        let chat_route = route(
+            "google/gemini-2.0-flash",
+            ProviderCapabilities::all_enabled(),
+        );
+        let chat_capabilities = route_effective_provider_capabilities(&provider, &chat_route)
+            .intersect(chat_route.capabilities);
+        assert!(chat_capabilities.chat_completions);
+        assert!(chat_capabilities.stream);
+        assert!(!chat_capabilities.embeddings);
+        assert!(!chat_capabilities.tools);
+
+        let anthropic_route = route(
+            "anthropic/claude-sonnet-4-6",
+            ProviderCapabilities::all_enabled(),
+        );
+        let anthropic_capabilities =
+            route_effective_provider_capabilities(&provider, &anthropic_route)
+                .intersect(anthropic_route.capabilities);
+        assert!(anthropic_capabilities.chat_completions);
+        assert!(!anthropic_capabilities.embeddings);
+        assert!(anthropic_capabilities.tools);
+    }
+
+    #[test]
+    fn vertex_embedding_route_selection_only_uses_supported_google_text_embedding_routes() {
+        let provider = Arc::new(StaticProvider {
+            provider_type: "gcp_vertex",
+            capabilities: ProviderCapabilities::all_enabled(),
+        });
+        let mut providers = ProviderRegistry::new();
+        providers.register(provider);
+        let routes = vec![
+            route("google/gemini-2.5-pro", ProviderCapabilities::all_enabled()),
+            route(
+                "anthropic/claude-sonnet-4-6",
+                ProviderCapabilities::all_enabled(),
+            ),
+            route(
+                "google/text-embedding-005",
+                ProviderCapabilities::all_enabled(),
+            ),
+        ];
+
+        let (eligible_route_count, selected) = select_first_eligible_route(
+            &providers,
+            &routes,
+            CoreRequestRequirements {
+                embeddings: true,
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(eligible_route_count, 1);
+        assert_eq!(
+            selected
+                .expect("supported embedding route")
+                .0
+                .upstream_model,
+            "google/text-embedding-005"
+        );
+    }
 
     #[test]
     fn canonical_request_id_returns_gateway_internal_error_when_extension_is_missing() {
@@ -1951,6 +2146,46 @@ mod tests {
             extract_anthropic_authorization_header(&headers).as_deref(),
             Some("Bearer gw-test-key")
         );
+    }
+
+    #[test]
+    fn split_partial_provider_error_preserves_usage_accounting_signal() {
+        let (source, provider_usage) = split_partial_provider_error(ProviderError::PartialUsage {
+            source: Box::new(ProviderError::UpstreamHttp {
+                status: 429,
+                body: "quota exhausted".to_string(),
+            }),
+            provider_usage: Some(json!({"prompt_tokens": 4, "total_tokens": 4})),
+        });
+
+        assert_eq!(
+            provider_usage,
+            Some(Some(json!({"prompt_tokens": 4, "total_tokens": 4})))
+        );
+        match source {
+            ProviderError::UpstreamHttp { status, body } => {
+                assert_eq!(status, 429);
+                assert_eq!(body, "quota exhausted");
+            }
+            other => panic!("unexpected provider error source: {other}"),
+        }
+
+        let (source, provider_usage) = split_partial_provider_error(ProviderError::PartialUsage {
+            source: Box::new(ProviderError::Transport("invalid json".to_string())),
+            provider_usage: None,
+        });
+
+        assert_eq!(provider_usage, Some(None));
+        match source {
+            ProviderError::Transport(message) => assert_eq!(message, "invalid json"),
+            other => panic!("unexpected provider error source: {other}"),
+        }
+
+        let (source, provider_usage) =
+            split_partial_provider_error(ProviderError::Transport("network down".to_string()));
+
+        assert!(matches!(source, ProviderError::Transport(message) if message == "network down"));
+        assert_eq!(provider_usage, None);
     }
 
     #[tokio::test]
