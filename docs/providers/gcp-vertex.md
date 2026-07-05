@@ -84,8 +84,9 @@ Examples verified against Anthropic and Google Cloud docs on 2026-05-01:
 | Older pinned Claude | `claude-sonnet-45-vertex` | `anthropic/claude-sonnet-4-5@20250929` | Versioned Anthropic model IDs use the `@YYYYMMDD` suffix on Vertex. |
 | Gemini chat | `gemini-flash-vertex` | `google/gemini-2.0-flash` | Uses the Vertex Google publisher request shape. |
 | Gemini embeddings | `gemini-embedding-vertex` | `google/gemini-embedding-001` | Uses Vertex text embeddings `:predict` through `/v1/embeddings`. |
-| Vertex text embeddings | `text-embedding-vertex` | `google/text-embedding-005` | Older text embedding model using the same Vertex text-embedding contract. |
-| Vertex multilingual embeddings | `text-multilingual-embedding-vertex` | `google/text-multilingual-embedding-002` | Multilingual text embedding model using the same Vertex text-embedding contract. |
+| Gemini Embedding 2 | `gemini-embedding-2-vertex` | `google/gemini-embedding-2` | Uses Vertex `:embedContent` for text-only OpenAI-compatible embeddings. |
+| Vertex text embeddings | `text-embedding-vertex` | `google/text-embedding-005` | Older text embedding model using the Vertex text-embedding `:predict` contract. |
+| Vertex multilingual embeddings | `text-multilingual-embedding-vertex` | `google/text-multilingual-embedding-002` | Multilingual text embedding model using the Vertex text-embedding `:predict` contract. |
 
 Google documents that Claude model availability varies by endpoint and region. Prefer `global` when your residency policy allows it; use `us`, `eu`, or a regional location when you need a geography-specific processing boundary.
 
@@ -253,6 +254,7 @@ Supported native Vertex text-embedding upstream models:
 | Upstream model | Default/maximum output dimensions | Notes |
 | --- | ---: | --- |
 | `google/gemini-embedding-001` | 3072 | Supports lower `dimensions` values through Vertex `outputDimensionality`. The gateway fans out array input as independent embedding operations when needed to preserve OpenAI array semantics. |
+| `google/gemini-embedding-2` | 3072 | Uses Vertex `:embedContent`. The gateway supports text-only OpenAI-compatible embeddings; image, audio, video, and PDF multimodal inputs remain unsupported on `/v1/embeddings`. `task_type`, `input_type`, `title`, and `auto_truncate` are not accepted for this model; put task instructions in the input text. |
 | `google/text-embedding-005` | 768 | Uses the same Vertex `:predict` text-embedding contract. |
 | `google/text-multilingual-embedding-002` | 768 | Uses the same Vertex `:predict` text-embedding contract. |
 
@@ -293,21 +295,21 @@ Parameter mapping:
 
 | Public request field | Vertex field | Gateway behavior |
 | --- | --- | --- |
-| `input: "text"` | `instances[].content` | Returns one embedding with `index: 0`. Empty strings are rejected locally. |
-| `input: ["a", "b"]` | independent `instances[].content` values | Returns one embedding per input in original order. Empty arrays, nested arrays, token arrays, non-string values, and multimodal payloads are rejected locally. |
-| `dimensions` | `parameters.outputDimensionality` | Must be a positive integer within the supported model maximum. |
-| `output_dimensionality` / `outputDimensionality` | `parameters.outputDimensionality` | Provider-specific aliases; conflicting aliases are rejected locally. |
+| `input: "text"` | `instances[].content` for `:predict`; `content.parts[].text` for `google/gemini-embedding-2` `:embedContent` | Returns one embedding with `index: 0`. Empty strings are rejected locally. |
+| `input: ["a", "b"]` | independent Vertex requests | Returns one embedding per input in original order. Empty arrays, nested arrays, token arrays, non-string values, and multimodal payloads are rejected locally. |
+| `dimensions` | `parameters.outputDimensionality` for `:predict`; `embedContentConfig.outputDimensionality` for `google/gemini-embedding-2` | Must be a positive integer within the supported model maximum. |
+| `output_dimensionality` / `outputDimensionality` | Same as `dimensions` | Provider-specific aliases; conflicting aliases are rejected locally. |
 | `encoding_format: "float"` or omitted | n/a | Accepted. `base64` is rejected locally. |
-| `task_type` | `instances[].task_type` | Must be one of Google's supported task enum values. |
-| `input_type` | `instances[].task_type` | Compatibility alias for `task_type`; conflicts are rejected. |
-| `title` | `instances[].title` | Accepted only for retrieval-document embeddings. |
-| `auto_truncate` / `autoTruncate` | `parameters.autoTruncate` | Boolean. When `false`, overlong input is left for Vertex to reject instead of truncating. |
+| `task_type` | `instances[].task_type` for `:predict` models only | Must be one of Google's supported task enum values. Rejected for `google/gemini-embedding-2`; put task instructions in the input text. |
+| `input_type` | Alias for `task_type` for `:predict` models only | Conflicts are rejected. Rejected for `google/gemini-embedding-2`. |
+| `title` | `instances[].title` for `:predict` models only | Accepted only for retrieval-document embeddings. Rejected for `google/gemini-embedding-2`. |
+| `auto_truncate` / `autoTruncate` | `parameters.autoTruncate` for `:predict` models only | Boolean. When `false`, overlong input is left for Vertex to reject instead of truncating. Rejected for `google/gemini-embedding-2`. |
 
 Allowed task types are `RETRIEVAL_QUERY`, `RETRIEVAL_DOCUMENT`, `SEMANTIC_SIMILARITY`, `CLASSIFICATION`, `CLUSTERING`, `QUESTION_ANSWERING`, `FACT_VERIFICATION`, and `CODE_RETRIEVAL_QUERY`.
 
 Usage, pricing, and budgets:
 
-- The gateway uses real Vertex `statistics.token_count` values only. It does not convert character counts or byte counts into tokens.
+- The gateway uses real Vertex token counts only: `predictions[].embeddings.statistics.token_count` for `:predict` models and `usageMetadata.promptTokenCount` for `google/gemini-embedding-2`. It does not convert character counts or byte counts into tokens.
 - When token counts and exact pricing are available, embedding spend is charged through the same user, service-account, and user-model budgets as other gateway traffic.
 - If Vertex omits token counts, the ledger row is `usage_missing`; if exact catalog pricing is unavailable, the row is `unpriced`. Both remain visible in reporting but do not consume budgets.
 
@@ -323,7 +325,7 @@ Troubleshooting:
 
 ## Operational Notes
 
-- Keep `responses: false` on all Vertex routes. Keep `embeddings: false` on Vertex chat routes and enable `embeddings: true` only on explicit `google/gemini-embedding-001`, `google/text-embedding-005`, or `google/text-multilingual-embedding-002` routes.
+- Keep `responses: false` on all Vertex routes. Keep `embeddings: false` on Vertex chat routes and enable `embeddings: true` only on explicit `google/gemini-embedding-001`, `google/gemini-embedding-2`, `google/text-embedding-005`, or `google/text-multilingual-embedding-002` routes.
 - Use `upstream_model: anthropic/<model-id>` for Claude and `upstream_model: google/<model-id>` for Gemini; unqualified model IDs fail at the gateway edge.
 - Vertex AI limits Anthropic request payloads to 30 MB. Large documents and many images can hit that byte limit before the model token limit.
 - Keep `json_schema: false` unless a route has explicit provider-specific overrides and tests.

@@ -11,8 +11,7 @@ use gateway_client_config::{
 use gateway_core::{
     GatewayError, GatewayModel, ModelPricingRecord, ModelRepository, ModelRoute,
     PricingCatalogRepository, PricingModalities, ProviderCapabilities, ProviderConnection,
-    ProviderRepository, is_supported_vertex_text_embedding_upstream_model,
-    vertex_text_embedding_capabilities,
+    ProviderRepository, vertex_route_capabilities_for_upstream_model,
 };
 use time::OffsetDateTime;
 use tracing::warn;
@@ -435,19 +434,7 @@ fn provider_capabilities(
 }
 
 fn vertex_route_capabilities(route: Option<&ModelRoute>) -> ProviderCapabilities {
-    let Some(route) = route else {
-        return ProviderCapabilities::chat_only_streaming();
-    };
-
-    if is_supported_vertex_text_embedding_upstream_model(&route.upstream_model) {
-        return vertex_text_embedding_capabilities();
-    }
-
-    if route.upstream_model.starts_with("anthropic/") {
-        return ProviderCapabilities::with_dimensions(true, true, false, true, true, false, true);
-    }
-
-    ProviderCapabilities::chat_only_streaming()
+    vertex_route_capabilities_for_upstream_model(route.map(|route| route.upstream_model.as_str()))
 }
 
 async fn resolve_display_pricing<R>(

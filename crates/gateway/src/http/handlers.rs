@@ -16,11 +16,10 @@ use gateway_core::{
     CoreRequestRequirements, EmbeddingsRequest, GatewayError, ModelsListResponse,
     ProviderCapabilities, ProviderClient, ProviderError, ProviderRequestContext,
     RequestAttemptRecord, RequestAttemptStatus, RequestToolCardinality, ResponsesRequest,
-    anthropic_messages_request_to_core, core_chat_request_to_openai,
-    is_supported_vertex_text_embedding_upstream_model, openai_chat_request_to_core,
+    anthropic_messages_request_to_core, core_chat_request_to_openai, openai_chat_request_to_core,
     openai_embeddings_request_to_core, openai_responses_request_to_core,
     protocol::{anthropic::anthropic_message_from_openai_chat, openai::ModelCard},
-    vertex_text_embedding_capabilities,
+    vertex_route_capabilities_for_upstream_model,
 };
 use gateway_service::{
     McpAccess, McpTokenOverhead, McpTokenOverheadInput, RequestLogContext, RequestLogIconMetadata,
@@ -1066,13 +1065,30 @@ pub async fn v1_embeddings(
     let value = match provider.embeddings(&core_request, &context).await {
         Ok(value) => normalize_response_model(value, &resolved.selection.requested_model.model_key),
         Err(error) => {
+            let (provider_error, partial_provider_usage) = split_partial_provider_error(error);
+            if let Some(provider_usage) = partial_provider_usage {
+                finalize_successful_usage_accounting(
+                    &state,
+                    UsageAccountingContext {
+                        auth: &auth,
+                        model: &resolved.selection.execution_model,
+                        route: &route,
+                        request_id: &request_id,
+                        labels: labels.clone(),
+                        operation: "embeddings",
+                    },
+                    provider_usage,
+                )
+                .await;
+            }
+
             let (error, attempt) = provider_error_attempt(
                 &request_log_context,
                 &route,
                 RequestAttemptStatus::ProviderError,
                 false,
                 attempt_started_at,
-                error,
+                provider_error,
                 requirements,
             );
             best_effort_log_non_stream_failure(
@@ -1151,18 +1167,11 @@ fn route_effective_provider_capabilities(
     provider: &dyn ProviderClient,
     route: &gateway_core::ModelRoute,
 ) -> ProviderCapabilities {
-    let mut capabilities = provider.capabilities();
     if provider.provider_type() == "gcp_vertex" {
-        if is_supported_vertex_text_embedding_upstream_model(&route.upstream_model) {
-            return vertex_text_embedding_capabilities();
-        }
-
-        capabilities.embeddings = false;
-        if !route.upstream_model.starts_with("anthropic/") {
-            capabilities.tools = false;
-        }
+        return vertex_route_capabilities_for_upstream_model(Some(&route.upstream_model));
     }
-    capabilities
+
+    provider.capabilities()
 }
 
 fn provider_error_attempt(
@@ -1762,6 +1771,16 @@ fn usage_value_from_response(value: &Value) -> Option<Value> {
     value.get("usage").cloned()
 }
 
+fn split_partial_provider_error(error: ProviderError) -> (ProviderError, Option<Option<Value>>) {
+    match error {
+        ProviderError::PartialUsage {
+            source,
+            provider_usage,
+        } => (*source, Some(provider_usage)),
+        error => (error, None),
+    }
+}
+
 fn latency_ms_since(started_at: Instant) -> i64 {
     i64::try_from(started_at.elapsed().as_millis()).unwrap_or(i64::MAX)
 }
@@ -1918,12 +1937,13 @@ mod tests {
         GatewayError, ModelRoute, ProviderCapabilities, ProviderClient, ProviderError,
         ProviderRegistry, ProviderRequestContext, ProviderStream,
     };
-    use serde_json::Value;
+    use serde_json::{Value, json};
     use tower_http::request_id::RequestId;
 
     use super::{
         anthropic_error_response, canonical_request_id, extract_anthropic_authorization_header,
         route_effective_provider_capabilities, select_first_eligible_route,
+        split_partial_provider_error,
     };
 
     struct StaticProvider {
@@ -2126,6 +2146,46 @@ mod tests {
             extract_anthropic_authorization_header(&headers).as_deref(),
             Some("Bearer gw-test-key")
         );
+    }
+
+    #[test]
+    fn split_partial_provider_error_preserves_usage_accounting_signal() {
+        let (source, provider_usage) = split_partial_provider_error(ProviderError::PartialUsage {
+            source: Box::new(ProviderError::UpstreamHttp {
+                status: 429,
+                body: "quota exhausted".to_string(),
+            }),
+            provider_usage: Some(json!({"prompt_tokens": 4, "total_tokens": 4})),
+        });
+
+        assert_eq!(
+            provider_usage,
+            Some(Some(json!({"prompt_tokens": 4, "total_tokens": 4})))
+        );
+        match source {
+            ProviderError::UpstreamHttp { status, body } => {
+                assert_eq!(status, 429);
+                assert_eq!(body, "quota exhausted");
+            }
+            other => panic!("unexpected provider error source: {other}"),
+        }
+
+        let (source, provider_usage) = split_partial_provider_error(ProviderError::PartialUsage {
+            source: Box::new(ProviderError::Transport("invalid json".to_string())),
+            provider_usage: None,
+        });
+
+        assert_eq!(provider_usage, Some(None));
+        match source {
+            ProviderError::Transport(message) => assert_eq!(message, "invalid json"),
+            other => panic!("unexpected provider error source: {other}"),
+        }
+
+        let (source, provider_usage) =
+            split_partial_provider_error(ProviderError::Transport("network down".to_string()));
+
+        assert!(matches!(source, ProviderError::Transport(message) if message == "network down"));
+        assert_eq!(provider_usage, None);
     }
 
     #[tokio::test]

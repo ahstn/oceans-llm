@@ -39,7 +39,7 @@ Embedding requests use the same ledger and budget enforcement path as chat and R
 For native Vertex text embeddings:
 
 - successful priced rows record `operation: embeddings` in request-log metadata and a normal `usage_cost_events` row for the authenticated owner
-- Vertex `statistics.token_count` is normalized into prompt/input token usage
+- Vertex `statistics.token_count` (`:predict`) or `usageMetadata.promptTokenCount` (`google/gemini-embedding-2` `:embedContent`) is normalized into prompt/input token usage
 - completion/output tokens are zero or absent for pricing purposes
 - the gateway must not convert characters or bytes into token counts
 - `priced` rows count toward human user budgets, gateway service-account budgets, and matching user model budgets

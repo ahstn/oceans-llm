@@ -22,8 +22,8 @@ The implementation should be conservative. Do not infer token usage from charact
 
 ## Decisions Already Made
 
-1. First supported scope is broader than Gemini-only: support `gemini-embedding-001` plus verified legacy Vertex text embedding models (`text-embedding-005`, `text-multilingual-embedding-002`) when covered by the same `:predict` request/response shape.
-2. Keep the synchronous OpenAI-compatible endpoint. Async batch embeddings, vector database storage, and multimodal Gemini embeddings remain out of scope.
+1. First supported scope is broader than Gemini-only: support `gemini-embedding-001` plus verified legacy Vertex text embedding models (`text-embedding-005`, `text-multilingual-embedding-002`) when covered by the same `:predict` request/response shape. A follow-up review request expanded the text-only scope to `gemini-embedding-2` through Vertex `:embedContent`.
+2. Keep the synchronous OpenAI-compatible endpoint. Async batch embeddings, vector database storage, and multimodal Gemini Embedding 2 inputs remain out of scope.
 3. Reject unsupported OpenAI features locally for this provider path instead of forwarding malformed requests to Vertex.
 4. Preserve the existing generic handler/accounting flow. Vertex-specific work belongs in provider mapping, response normalization, and capability derivation.
 5. Keep user-facing budget setup in `docs/access/budgets.md`; keep ledger/pricing/budget internals in `docs/contributing/operations/budgets-and-spending.md` and `docs/configuration/pricing-catalog-and-accounting.md`.
@@ -61,12 +61,12 @@ Observed from the codebase:
 - `crates/gateway/src/http/handlers.rs::v1_embeddings` already performs auth, model resolution, capability filtering, request logging, pre-provider budget guard, provider execution, usage accounting, and non-stream request logging.
 - `crates/gateway-core/src/protocol/openai.rs`, `crates/gateway-core/src/protocol/core.rs`, and `crates/gateway-core/src/protocol/translate.rs` preserve embeddings requests as `model`, raw JSON `input`, and flattened `extra` fields.
 - `crates/gateway-providers/src/openai_compat.rs` already forwards embeddings to OpenAI-compatible `/embeddings` upstreams.
-- `crates/gateway-providers/src/vertex.rs::embeddings` currently returns `ProviderError::InvalidRequest("vertex embeddings are not supported in this v1 runtime")`.
-- `crates/gateway-providers/src/vertex.rs::capabilities` currently advertises `embeddings: false` for the Vertex provider.
-- `crates/gateway-service/src/admin_models.rs::provider_capabilities` currently treats non-Anthropic `gcp_vertex` as `chat_only_streaming()`, so admin/model views will not show Vertex embedding support until updated.
-- `crates/gateway-service/src/pricing_catalog.rs` already maps `gcp_vertex` `google/<model_id>` routes to pricing provider `google-vertex` and model id `<model_id>`.
-- `crates/gateway-service/data/pricing_catalog_fallback.json` contains `google-vertex/gemini-embedding-001` with input pricing in the observed provider investigation.
-- `docs/providers/gcp-vertex.md`, `docs/reference/provider-api-compatibility.md`, and `docs/configuration/model-routing-and-api-behavior.md` currently say Vertex embeddings are not implemented and should be capability-gated off.
+- Initial planning found `crates/gateway-providers/src/vertex.rs::embeddings` returning `ProviderError::InvalidRequest("vertex embeddings are not supported in this v1 runtime")`; the implementation now supports the listed text-embedding routes.
+- Initial planning found `crates/gateway-providers/src/vertex.rs::capabilities` advertising `embeddings: false` for Vertex; route-aware capability derivation now lives in shared gateway-core metadata.
+- Initial planning found `crates/gateway-service/src/admin_models.rs::provider_capabilities` treating non-Anthropic `gcp_vertex` as `chat_only_streaming()`; admin/model views now use the shared Vertex route capability metadata.
+- `crates/gateway-service/src/pricing_catalog.rs` maps `gcp_vertex` `google/<model_id>` routes to pricing provider `google-vertex` and model id `<model_id>`.
+- `crates/gateway-service/data/pricing_catalog_fallback.json` contains input pricing for `google-vertex/gemini-embedding-001` and `google-vertex/gemini-embedding-2`.
+- `docs/providers/gcp-vertex.md`, `docs/reference/provider-api-compatibility.md`, and `docs/configuration/model-routing-and-api-behavior.md` document current Vertex embedding support and capability gating.
 
 ## External API Facts Used For Planning
 
@@ -76,6 +76,7 @@ Source-backed facts from external documentation and implementation references:
 - Vertex text embeddings `:predict` endpoint: `POST https://{host}/v1/projects/{project}/locations/{location}/publishers/google/models/{model}:predict`.
 - Vertex `:predict` request body for text embeddings uses `instances: [{ content, task_type?, title? }]` and optional `parameters: { autoTruncate?, outputDimensionality? }`.
 - Vertex `:predict` response shape includes `predictions[].embeddings.values` and `predictions[].embeddings.statistics.token_count`/`truncated` in the documented text-embedding response.
+- Vertex `:embedContent` response shape for `gemini-embedding-2` includes `embedding.values` and `usageMetadata.promptTokenCount`/`totalTokenCount`; use `promptTokenCount` as the real input token count when present.
 - `gemini-embedding-001` defaults to 3072 dimensions, has a 2048-token max sequence length in public docs, and supports lower output dimensions.
 - `text-embedding-005` and `text-multilingual-embedding-002` are older Vertex text embedding models with up to 768 dimensions.
 - Google task types include `RETRIEVAL_QUERY`, `RETRIEVAL_DOCUMENT`, `SEMANTIC_SIMILARITY`, `CLASSIFICATION`, `CLUSTERING`, `QUESTION_ANSWERING`, `FACT_VERIFICATION`, and `CODE_RETRIEVAL_QUERY`.
@@ -143,6 +144,7 @@ Plan:
    - `upstream_model` publisher is `google`
    - model id is in the supported text-embedding set:
      - `gemini-embedding-001`
+     - `gemini-embedding-2`
      - `text-embedding-005`
      - `text-multilingual-embedding-002`
    - route capability explicitly enables `embeddings`
@@ -179,6 +181,7 @@ Add helpers in `crates/gateway-providers/src/vertex.rs`:
 - parse and require `PublisherFamily::Google`
 - classify supported text embedding models:
   - `gemini-embedding-001`
+  - `gemini-embedding-2`
   - `text-embedding-005`
   - `text-multilingual-embedding-002`
 - return `ProviderError::InvalidRequest` for:
@@ -217,7 +220,7 @@ Supported public fields:
 
 | Public field | Vertex field | Plan |
 | --- | --- | --- |
-| `dimensions` | `parameters.outputDimensionality` | Primary OpenAI-compatible field. Require positive integer. Validate known max per model where practical: 3072 for `gemini-embedding-001`, 768 for `text-embedding-005` and `text-multilingual-embedding-002`. |
+| `dimensions` | `parameters.outputDimensionality` for `:predict`; `embedContentConfig.outputDimensionality` for `gemini-embedding-2` | Primary OpenAI-compatible field. Require positive integer. Validate known max per model where practical: 3072 for `gemini-embedding-001` and `gemini-embedding-2`, 768 for `text-embedding-005` and `text-multilingual-embedding-002`. |
 | `output_dimensionality` | `parameters.outputDimensionality` | Provider-specific alias. Reject if it conflicts with `dimensions`. |
 | `outputDimensionality` | `parameters.outputDimensionality` | Provider-native alias. Accept only if consistent with other aliases. |
 | `encoding_format` absent or `float` | n/a | Accept. |

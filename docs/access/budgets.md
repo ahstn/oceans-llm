@@ -42,13 +42,13 @@ If a user has both a user model budget and a user budget, the model-specific bud
 
 ## Embedding Spend
 
-Embedding requests use the same budget taxonomy as chat and Responses traffic. When a native Vertex embedding request has real token usage and exact pricing, the resulting spend counts toward:
+Embedding requests use the same budget taxonomy as chat and Responses traffic. When a native Vertex embedding request has real provider token usage (`statistics.token_count` for Vertex `:predict` text-embedding models or `usageMetadata.promptTokenCount` for `google/gemini-embedding-2`) and exact pricing, the resulting spend counts toward:
 
 - the caller's user budget for human-owned API keys
 - the caller service account's service-account budget for service-account-owned API keys
 - a matching user model budget when a human user calls the specific gateway embedding model
 
-Rows that are `unpriced` or `usage_missing` stay visible in spend reporting, but they do not consume hard or soft budget windows.
+Rows that are `unpriced` or `usage_missing` stay visible in spend reporting, but they do not consume hard or soft budget windows. This can happen when a provider returns embeddings without usable token counts or when the pricing catalog does not have an exact price for the selected Vertex embedding model/location.
 
 The Google Cloud service account configured under a Vertex provider's `auth.mode: service_account` is only upstream provider credential material. It is not a gateway spend principal and does not receive a service-account budget. Gateway service-account budgets apply to service accounts created in Oceans for non-human callers.
 

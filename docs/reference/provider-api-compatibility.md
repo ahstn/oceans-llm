@@ -36,7 +36,7 @@ This matrix is about current execution support, not provider marketing claims.
 | --- | --- | --- | --- |
 | `openai_compat` | Supported. Chat Completions route profiles can rewrite known request-shape quirks. | Supported through the distinct Responses request/provider path. Chat Completions profile transforms do not apply. | Supported. No route compatibility transforms apply in this slice. |
 | `gcp_cloud_run_openai_compat` | Supported through the OpenAI-compatible adapter with Cloud Run ID-token auth. | Supported when the deployed service exposes an OpenAI-compatible Responses endpoint. Chat Completions profile transforms do not apply. | Supported when the deployed service exposes an OpenAI-compatible embeddings endpoint. |
-| `gcp_vertex` with `google/*` upstream models | Supported for the current Vertex chat path when route capabilities allow it. | Not implemented; keep route `responses: false`. | Supported only for explicit text-embedding routes using `google/gemini-embedding-001`, `google/text-embedding-005`, or `google/text-multilingual-embedding-002` with `embeddings: true`. Google chat and multimodal models should keep `embeddings: false`. |
+| `gcp_vertex` with `google/*` upstream models | Supported for the current Vertex chat path when route capabilities allow it. | Not implemented; keep route `responses: false`. | Supported only for explicit text-embedding routes using `google/gemini-embedding-001`, `google/gemini-embedding-2`, `google/text-embedding-005`, or `google/text-multilingual-embedding-002` with `embeddings: true`. Google chat and multimodal routes should keep `embeddings: false`. |
 | `gcp_vertex` with `anthropic/*` upstream models | Supported for Chat Completions and Anthropic Messages when route capabilities allow it. Tool use is supported for text/tool workflows. | Not implemented; keep route `responses: false`. | Not applicable. |
 | `aws_bedrock` | Supported through explicit `compatibility.aws_bedrock.api_style`: Runtime Converse, Runtime Anthropic InvokeModel, Runtime OpenAI Chat, Mantle OpenAI Chat, or Mantle Anthropic Messages. Streaming uses the configured style's stream contract. | Supported for `api_style: mantle_openai_responses` with an OpenAI base path such as `/openai/v1`. This is the Bedrock-supported Responses subset, not full direct-OpenAI hosted-tool parity. | Not implemented; keep route `embeddings: false`. |
 
@@ -163,6 +163,7 @@ Vertex Google publisher routes remain separate from Anthropic-on-Vertex. `google
 Native Vertex text embeddings are available through the public OpenAI-compatible `POST /v1/embeddings` endpoint for these Google publisher models:
 
 - `google/gemini-embedding-001`
+- `google/gemini-embedding-2`
 - `google/text-embedding-005`
 - `google/text-multilingual-embedding-002`
 
@@ -183,17 +184,17 @@ Compatibility contract:
 
 | Public field or behavior | Vertex mapping or outcome |
 | --- | --- |
-| `input: "text"` | One Vertex text embedding request and one OpenAI-compatible `data[0]` embedding. |
+| `input: "text"` | One Vertex text embedding request and one OpenAI-compatible `data[0]` embedding. `google/gemini-embedding-2` uses Vertex `:embedContent`; the other supported models use Vertex `:predict`. |
 | `input: ["a", "b"]` | Independent embedding operations with OpenAI-compatible indexes preserved in request order. |
 | Token arrays, nested arrays, non-string values, empty arrays, empty strings, multimodal/base64 payloads | Rejected locally with `invalid_request`. |
-| `dimensions` | `parameters.outputDimensionality`; must be positive and within the model's supported maximum. |
+| `dimensions` | `parameters.outputDimensionality` for `:predict` models; `embedContentConfig.outputDimensionality` for `google/gemini-embedding-2`; must be positive and within the model's supported maximum. |
 | `output_dimensionality` / `outputDimensionality` | Aliases for `dimensions`; conflicts are rejected. |
 | `encoding_format` omitted or `float` | Accepted; response embeddings are float vectors. |
 | `encoding_format: "base64"` | Rejected locally. |
-| `task_type` | `instances[].task_type`; must use a supported Google task enum. |
-| `input_type` | Alias for `task_type`; conflicts are rejected. |
-| `title` | Accepted only for retrieval-document embeddings. |
-| `auto_truncate` / `autoTruncate` | `parameters.autoTruncate`; conflicts are rejected. |
+| `task_type` | `instances[].task_type` for `:predict` models; rejected for `google/gemini-embedding-2`, which expects task instructions in the input text. |
+| `input_type` | Alias for `task_type` on `:predict` models; conflicts are rejected. Rejected for `google/gemini-embedding-2`. |
+| `title` | Accepted only for retrieval-document embeddings on `:predict` models. Rejected for `google/gemini-embedding-2`. |
+| `auto_truncate` / `autoTruncate` | `parameters.autoTruncate` for `:predict` models; conflicts are rejected. Rejected for `google/gemini-embedding-2`. |
 
 Responses are normalized to the OpenAI embeddings list shape: `object: "list"`, ordered `data[]`, `data[].object: "embedding"`, `data[].index`, float vectors, `model`, and `usage` when Vertex returns real token counts. Missing token counts become `usage_missing`; exact catalog misses become `unpriced`. Neither state consumes budget.
 
@@ -343,7 +344,7 @@ Current durable accounting only relies on:
 
 Responses usage is normalized from `usage.input_tokens`, `usage.output_tokens`, and `usage.total_tokens` into the gateway's prompt/completion/total accounting columns. Streaming Responses usage is read from completed response events with `response.usage`.
 
-Vertex text embeddings normalize Vertex `statistics.token_count` into prompt/input token usage when the provider returns it. The gateway does not infer tokens from character or byte counts. Provider-specific cache, reasoning, image, audio, and modality counters remain follow-up work. Until those semantics are explicit, successful requests may still become `usage_missing` or `unpriced`.
+Vertex text embeddings normalize real provider token counts into prompt/input token usage: `predictions[].embeddings.statistics.token_count` for Vertex `:predict` text-embedding models and `usageMetadata.promptTokenCount` for `google/gemini-embedding-2`. The gateway does not infer tokens from character or byte counts. Provider-specific cache, reasoning, image, audio, and modality counters remain follow-up work. Until those semantics are explicit, successful requests may still become `usage_missing` or `unpriced`.
 
 ## Research References
 

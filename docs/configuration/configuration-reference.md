@@ -578,7 +578,7 @@ Routing and pricing caveats:
 - pricing identity is inferred from the publisher prefix; `google/...` routes use Google Vertex pricing and `anthropic/...` routes use Anthropic-on-Vertex pricing
 - Anthropic-on-Vertex pricing is only supported for `location=global`
 - route capabilities default permissively, so partial Vertex routes should explicitly disable unsupported API families
-- Vertex text embeddings should be configured as explicit embedding-only routes for `google/gemini-embedding-001`, `google/text-embedding-005`, or `google/text-multilingual-embedding-002`
+- Vertex text embeddings should be configured as explicit embedding-only routes for `google/gemini-embedding-001`, `google/gemini-embedding-2`, `google/text-embedding-005`, or `google/text-multilingual-embedding-002`
 - provider-specific configuration examples live in [Google Vertex AI](../providers/gcp-vertex.md)
 
 ### `aws_bedrock`
@@ -669,6 +669,8 @@ models:
     routes:
       - provider: vertex
         upstream_model: google/gemini-embedding-001
+        # google/gemini-embedding-2 is also supported for text-only embeddings
+        # through Vertex :embedContent.
         capabilities:
           chat_completions: false
           responses: false

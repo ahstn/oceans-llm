@@ -96,12 +96,12 @@ Native Vertex text embeddings follow the same cross-cutting lifecycle as other `
   - unrelated families such as `chat_completions` and `responses` are disabled on that route
 - Provider execution:
   - the Vertex adapter validates text-only input and supported parameters
-  - the adapter calls Vertex `:predict`, fanning out array input when needed while preserving output indexes
+  - the adapter calls Vertex `:predict` for legacy text-embedding models or `:embedContent` for `google/gemini-embedding-2`, fanning out array input when needed while preserving output indexes
 - Logging:
   - request logs record `operation: embeddings`
   - request-log attempts record the Vertex provider execution attempt when a summary row is written
 - Accounting:
-  - Vertex `statistics.token_count` values are aggregated into prompt/input token usage
+  - Vertex provider token counts are aggregated into prompt/input token usage (`statistics.token_count` for `:predict`, `usageMetadata.promptTokenCount` for `:embedContent`)
   - exact Google Vertex pricing produces a `priced` ledger row
   - user, service-account, and matching user-model budget windows include the charge
 

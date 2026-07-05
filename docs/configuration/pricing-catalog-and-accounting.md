@@ -70,16 +70,17 @@ Known coverage constraint:
 Native Vertex text embeddings use the same exact pricing resolver as other Vertex traffic:
 
 - `upstream_model: google/gemini-embedding-001` resolves against pricing provider `google-vertex` and pricing model `gemini-embedding-001`
+- `upstream_model: google/gemini-embedding-2` resolves against pricing provider `google-vertex` and pricing model `gemini-embedding-2`
 - `upstream_model: google/text-embedding-005` resolves against pricing provider `google-vertex` and pricing model `text-embedding-005`
 - `upstream_model: google/text-multilingual-embedding-002` resolves against pricing provider `google-vertex` and pricing model `text-multilingual-embedding-002`
 
-The mapper charges only from real provider token usage. Vertex text embeddings expose token usage through `predictions[].embeddings.statistics.token_count`; the gateway aggregates those values for array input and records them as prompt/input tokens. It does not infer token counts from characters, bytes, vector dimensions, or input count.
+The mapper charges only from real provider token usage. Vertex `:predict` text embeddings expose token usage through `predictions[].embeddings.statistics.token_count`; `google/gemini-embedding-2` exposes it through `usageMetadata.promptTokenCount` on `:embedContent`. The gateway aggregates those values for array input and records them as prompt/input tokens. It does not infer token counts from characters, bytes, vector dimensions, or input count.
 
-Embedding pricing is input-token based in this slice. `dimensions`, `output_dimensionality`, `task_type`, `input_type`, `title`, and `auto_truncate` affect the provider request and resulting vectors, but they do not select a different pricing key or billing modifier. If a future provider rate differentiates one of those dimensions, that modifier must become explicit before it is charged.
+Embedding pricing is input-token based in this slice. `dimensions` and its `output_dimensionality`/`outputDimensionality` aliases affect the provider request and resulting vectors, but they do not select a different pricing key or billing modifier. For `:predict` models, `task_type`, `input_type`, `title`, and `auto_truncate` are also request-shaping fields, not pricing keys. If a future provider rate differentiates one of those dimensions, that modifier must become explicit before it is charged.
 
 Failure-to-charge states:
 
-- `usage_missing`: Vertex returned vectors but did not return usable `token_count` values.
+- `usage_missing`: Vertex returned vectors but did not return usable token-count values.
 - `unpriced`: token usage exists, but no exact catalog row/rate exists for the selected Vertex model and location.
 
 Both states remain report-visible and do not consume hard or soft budget windows.

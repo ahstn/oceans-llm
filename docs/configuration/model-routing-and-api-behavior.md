@@ -211,6 +211,7 @@ Important differences:
 Vertex text embeddings are supported only by explicit embedding routes for supported Google publisher models:
 
 - `google/gemini-embedding-001`
+- `google/gemini-embedding-2`
 - `google/text-embedding-005`
 - `google/text-multilingual-embedding-002`
 
@@ -222,7 +223,7 @@ Examples:
 
 | Request shape | Expected route behavior |
 | --- | --- |
-| `/v1/embeddings` against an embedding-only `google/gemini-embedding-001` route | Route can pass capability filtering and execute through Vertex `:predict`. |
+| `/v1/embeddings` against an embedding-only `google/gemini-embedding-001` or `google/gemini-embedding-2` route | Route can pass capability filtering and execute through Vertex `:predict` or `:embedContent`, respectively. |
 | `/v1/embeddings` against a Gemini chat route with `embeddings: false` | Capability filtering removes the route and returns an edge error before Vertex execution. |
 | `/v1/embeddings` against `google/gemini-2.0-flash` with `embeddings: true` | Provider support checks reject the unsupported embedding model instead of treating all `google/*` models as embedding-capable. |
 | `/v1/embeddings` with `input: [[1, 2, 3]]` | The embeddings mapper rejects the unsupported OpenAI token-array/nested-array form locally. |
