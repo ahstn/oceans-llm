@@ -11,7 +11,8 @@ use gateway_client_config::{
 use gateway_core::{
     GatewayError, GatewayModel, ModelPricingRecord, ModelRepository, ModelRoute,
     PricingCatalogRepository, PricingModalities, ProviderCapabilities, ProviderConnection,
-    ProviderRepository,
+    ProviderRepository, is_supported_vertex_text_embedding_upstream_model,
+    vertex_text_embedding_capabilities,
 };
 use time::OffsetDateTime;
 use tracing::warn;
@@ -418,12 +419,7 @@ fn provider_capabilities(
         "openai_compat" | "gcp_cloud_run_openai_compat" => {
             ProviderCapabilities::openai_compat_baseline()
         }
-        "gcp_vertex"
-            if route.is_some_and(|route| route.upstream_model.starts_with("anthropic/")) =>
-        {
-            ProviderCapabilities::with_dimensions(true, true, false, true, true, false, true)
-        }
-        "gcp_vertex" => ProviderCapabilities::chat_only_streaming(),
+        "gcp_vertex" => vertex_route_capabilities(route),
         "aws_bedrock" => ProviderCapabilities {
             chat_completions: true,
             responses: true,
@@ -436,6 +432,22 @@ fn provider_capabilities(
         },
         _ => ProviderCapabilities::all_enabled(),
     }
+}
+
+fn vertex_route_capabilities(route: Option<&ModelRoute>) -> ProviderCapabilities {
+    let Some(route) = route else {
+        return ProviderCapabilities::chat_only_streaming();
+    };
+
+    if is_supported_vertex_text_embedding_upstream_model(&route.upstream_model) {
+        return vertex_text_embedding_capabilities();
+    }
+
+    if route.upstream_model.starts_with("anthropic/") {
+        return ProviderCapabilities::with_dimensions(true, true, false, true, true, false, true);
+    }
+
+    ProviderCapabilities::chat_only_streaming()
 }
 
 async fn resolve_display_pricing<R>(
@@ -535,7 +547,10 @@ mod tests {
     use time::OffsetDateTime;
     use uuid::Uuid;
 
-    use super::{AdminModelStatus, AdminModelsService, provider_capabilities};
+    use super::{
+        AdminModelStatus, AdminModelsService, effective_provider_route_capabilities,
+        provider_capabilities,
+    };
 
     #[derive(Default)]
     struct CountingRepo {
@@ -746,6 +761,88 @@ mod tests {
             created_at: now,
             updated_at: now,
         }
+    }
+
+    fn provider_connection(provider_type: &str) -> ProviderConnection {
+        ProviderConnection {
+            provider_key: "vertex".to_string(),
+            provider_type: provider_type.to_string(),
+            config: json!({}),
+            secrets: None,
+        }
+    }
+
+    fn model_route(upstream_model: &str, capabilities: ProviderCapabilities) -> ModelRoute {
+        ModelRoute {
+            id: Uuid::new_v4(),
+            model_id: Uuid::new_v4(),
+            provider_key: "vertex".to_string(),
+            upstream_model: upstream_model.to_string(),
+            priority: 0,
+            weight: 1.0,
+            enabled: true,
+            extra_headers: Default::default(),
+            extra_body: Default::default(),
+            capabilities,
+            compatibility: Default::default(),
+        }
+    }
+
+    #[test]
+    fn vertex_provider_capabilities_are_route_aware_for_embeddings() {
+        let provider = provider_connection("gcp_vertex");
+
+        let embedding_route = model_route(
+            "google/gemini-embedding-001",
+            ProviderCapabilities::all_enabled(),
+        );
+        let embedding_capabilities = provider_capabilities(&provider, Some(&embedding_route));
+        assert!(embedding_capabilities.embeddings);
+        assert!(!embedding_capabilities.chat_completions);
+        assert!(!embedding_capabilities.responses);
+        assert!(!embedding_capabilities.stream);
+        assert!(!embedding_capabilities.tools);
+
+        let chat_route = model_route(
+            "google/gemini-2.0-flash",
+            ProviderCapabilities::all_enabled(),
+        );
+        let chat_capabilities = provider_capabilities(&provider, Some(&chat_route));
+        assert!(chat_capabilities.chat_completions);
+        assert!(chat_capabilities.stream);
+        assert!(!chat_capabilities.embeddings);
+        assert!(!chat_capabilities.tools);
+
+        let anthropic_route = model_route(
+            "anthropic/claude-sonnet-4-6",
+            ProviderCapabilities::all_enabled(),
+        );
+        let anthropic_capabilities = provider_capabilities(&provider, Some(&anthropic_route));
+        assert!(anthropic_capabilities.chat_completions);
+        assert!(!anthropic_capabilities.embeddings);
+        assert!(anthropic_capabilities.tools);
+    }
+
+    #[test]
+    fn vertex_embedding_effective_capabilities_require_route_embedding_capability() {
+        let provider = provider_connection("gcp_vertex");
+        let route = model_route(
+            "google/text-multilingual-embedding-002",
+            ProviderCapabilities {
+                embeddings: false,
+                ..ProviderCapabilities::all_enabled()
+            },
+        );
+
+        let capabilities = effective_provider_route_capabilities(
+            Some(route.capabilities),
+            Some(&provider),
+            Some(&route),
+        );
+
+        assert!(!capabilities.embeddings);
+        assert!(!capabilities.chat_completions);
+        assert!(!capabilities.tools);
     }
 
     #[tokio::test]

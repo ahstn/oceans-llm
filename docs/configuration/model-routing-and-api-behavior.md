@@ -113,7 +113,7 @@ Effective capability is the intersection of route metadata and provider runtime 
 - provider implementations can still reject unsupported API families
 - partial provider routes should explicitly disable unsupported API families
 
-For example, current Vertex routes support the chat path but not the Responses path. A Vertex chat route should keep `responses: false` so `/v1/responses` fails during capability filtering instead of later inside the provider adapter.
+For example, current Vertex routes support the chat path but not the Responses path. A Vertex chat route should keep `responses: false` and `embeddings: false` so `/v1/responses` or `/v1/embeddings` fails during capability filtering instead of later inside the provider adapter. A separate Vertex text-embedding route can set `embeddings: true` for supported Google embedding models.
 
 Cloud Run OpenAI-compatible routes use the same route capability model as ordinary `openai_compat` routes. If the deployed vLLM service only exposes Chat Completions, keep `responses: false` and `embeddings: false` on that route even though the provider adapter can speak those OpenAI-compatible families when the upstream supports them.
 
@@ -208,9 +208,24 @@ Important differences:
 - record the provider execution attempt when request logging writes a summary row
 - write usage when usage can be normalized
 
-Current limitation:
+Vertex text embeddings are supported only by explicit embedding routes for supported Google publisher models:
 
-- Vertex embeddings remain out of scope in this slice and should be excluded by capability gating
+- `google/gemini-embedding-001`
+- `google/text-embedding-005`
+- `google/text-multilingual-embedding-002`
+
+Those routes should set `embeddings: true` and disable unrelated API families such as `chat_completions`, `responses`, `stream`, `tools`, `vision`, and `json_schema`. Gemini chat routes should keep `embeddings: false`.
+
+The OpenAI-compatible embeddings request supports string and array-of-strings input. The Vertex mapper rejects unsupported input forms before the provider call: token arrays, nested arrays, non-string values, empty arrays, empty strings, multimodal payloads, and `encoding_format: "base64"`.
+
+Examples:
+
+| Request shape | Expected route behavior |
+| --- | --- |
+| `/v1/embeddings` against an embedding-only `google/gemini-embedding-001` route | Route can pass capability filtering and execute through Vertex `:predict`. |
+| `/v1/embeddings` against a Gemini chat route with `embeddings: false` | Capability filtering removes the route and returns an edge error before Vertex execution. |
+| `/v1/embeddings` against `google/gemini-2.0-flash` with `embeddings: true` | Provider support checks reject the unsupported embedding model instead of treating all `google/*` models as embedding-capable. |
+| `/v1/embeddings` with `input: [[1, 2, 3]]` | The embeddings mapper rejects the unsupported OpenAI token-array/nested-array form locally. |
 
 ## Route Viability Versus Capability Mismatch
 

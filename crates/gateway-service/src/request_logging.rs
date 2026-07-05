@@ -1254,10 +1254,12 @@ mod tests {
     use async_trait::async_trait;
     use gateway_core::{
         ApiKeyModelGrantMode, ApiKeyOwnerKind, AuthMode, AuthenticatedApiKey,
-        ChatCompletionsRequest, GlobalRole, IdentityRepository, ModelAccessMode, RequestLogDetail,
-        RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult, RequestLogQuery,
-        RequestLogRecord, RequestLogRepository, RequestLogRetentionWindow, RequestTag, RequestTags,
-        StoreError, TeamMembershipRecord, TeamRecord, UserRecord, UserStatus,
+        ChatCompletionsRequest, EmbeddingsRequest, GatewayError, GlobalRole, IdentityRepository,
+        ModelAccessMode, ProviderError, RequestAttemptRecord, RequestAttemptStatus,
+        RequestLogDetail, RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult,
+        RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestLogRetentionWindow,
+        RequestTag, RequestTags, StoreError, TeamMembershipRecord, TeamRecord, UserRecord,
+        UserStatus,
     };
     use serde_json::{Value, json};
     use time::OffsetDateTime;
@@ -1280,6 +1282,7 @@ mod tests {
         users: Arc<Mutex<Vec<UserRecord>>>,
         logs: Arc<Mutex<Vec<RequestLogRecord>>>,
         payloads: Arc<Mutex<Vec<RequestLogPayloadRecord>>>,
+        attempts: Arc<Mutex<Vec<RequestAttemptRecord>>>,
     }
 
     #[test]
@@ -1443,6 +1446,20 @@ mod tests {
             Ok(())
         }
 
+        async fn insert_request_log_with_attempts(
+            &self,
+            log: &RequestLogRecord,
+            payload: Option<&RequestLogPayloadRecord>,
+            attempts: &[RequestAttemptRecord],
+        ) -> Result<(), StoreError> {
+            self.insert_request_log(log, payload).await?;
+            self.attempts
+                .lock()
+                .expect("attempts lock")
+                .extend(attempts.iter().cloned());
+            Ok(())
+        }
+
         async fn list_request_logs(
             &self,
             _query: &RequestLogQuery,
@@ -1476,10 +1493,18 @@ mod tests {
                 .iter()
                 .find(|payload| payload.request_log_id == request_log_id)
                 .cloned();
+            let attempts = self
+                .attempts
+                .lock()
+                .expect("attempts lock")
+                .iter()
+                .filter(|attempt| attempt.request_log_id == request_log_id)
+                .cloned()
+                .collect();
             Ok(RequestLogDetail {
                 log,
                 payload,
-                attempts: Vec::new(),
+                attempts,
             })
         }
 
@@ -1577,6 +1602,57 @@ mod tests {
         }
     }
 
+    fn sample_embeddings_request() -> EmbeddingsRequest {
+        EmbeddingsRequest {
+            model: "embeddings".to_string(),
+            input: json!("hello"),
+            extra: BTreeMap::new(),
+        }
+    }
+
+    fn sample_attempt(
+        request_log_id: Uuid,
+        request_id: &str,
+        status: RequestAttemptStatus,
+    ) -> RequestAttemptRecord {
+        RequestAttemptRecord {
+            request_attempt_id: Uuid::new_v4(),
+            request_log_id,
+            request_id: request_id.to_string(),
+            attempt_number: 1,
+            route_id: Uuid::new_v4(),
+            provider_key: "vertex-prod".to_string(),
+            upstream_model: "google/gemini-embedding-001".to_string(),
+            status,
+            status_code: match status {
+                RequestAttemptStatus::Success => Some(200),
+                RequestAttemptStatus::ProviderError => Some(502),
+                RequestAttemptStatus::StreamStartError | RequestAttemptStatus::StreamError => None,
+            },
+            error_code: match status {
+                RequestAttemptStatus::Success => None,
+                RequestAttemptStatus::ProviderError => Some("upstream_transport".to_string()),
+                RequestAttemptStatus::StreamStartError | RequestAttemptStatus::StreamError => {
+                    Some("stream_error".to_string())
+                }
+            },
+            error_detail: match status {
+                RequestAttemptStatus::Success => None,
+                RequestAttemptStatus::ProviderError => Some("connection reset".to_string()),
+                RequestAttemptStatus::StreamStartError | RequestAttemptStatus::StreamError => None,
+            },
+            error_detail_truncated: false,
+            retryable: matches!(status, RequestAttemptStatus::ProviderError),
+            terminal: true,
+            produced_final_response: matches!(status, RequestAttemptStatus::Success),
+            stream: false,
+            started_at: OffsetDateTime::now_utc(),
+            completed_at: Some(OffsetDateTime::now_utc()),
+            latency_ms: Some(42),
+            metadata: Default::default(),
+        }
+    }
+
     fn sample_log(request_id: &str, occurred_at: OffsetDateTime) -> RequestLogRecord {
         RequestLogRecord {
             request_log_id: Uuid::new_v4(),
@@ -1668,6 +1744,7 @@ mod tests {
             users: Arc::new(Mutex::new(vec![user_record(user_id, false)])),
             logs: Arc::new(Mutex::new(Vec::new())),
             payloads: Arc::new(Mutex::new(Vec::new())),
+            attempts: Arc::new(Mutex::new(Vec::new())),
         });
         let logging = RequestLogging::new(repo.clone());
         let auth = sample_auth(user_id);
@@ -1716,6 +1793,7 @@ mod tests {
                 sample_log("young", now),
             ])),
             payloads: Arc::new(Mutex::new(Vec::new())),
+            attempts: Arc::new(Mutex::new(Vec::new())),
         });
         let logging = RequestLogging::new(repo.clone());
 
@@ -1818,6 +1896,143 @@ mod tests {
         assert_eq!(logs[0].metadata["stream"], Value::Bool(false));
         assert!(logs[0].metadata.get("fallback_used").is_none());
         assert!(logs[0].metadata.get("attempt_count").is_none());
+    }
+
+    #[tokio::test]
+    async fn embeddings_success_log_records_operation_usage_payload_and_attempt() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let logging = RequestLogging::new(repo.clone());
+        let auth = sample_service_account_auth();
+        let context = logging.begin_embeddings_request(
+            "req_embeddings_success",
+            "embeddings",
+            "embeddings",
+            &sample_embeddings_request(),
+            &BTreeMap::new(),
+            RequestTags::default(),
+        );
+        let attempt = sample_attempt(
+            context.request_log_id,
+            &context.request_id,
+            RequestAttemptStatus::Success,
+        );
+
+        let wrote = logging
+            .log_non_stream_success(
+                &auth,
+                &context,
+                "vertex-prod",
+                sample_icon_metadata(),
+                75,
+                0,
+                &json!({
+                    "object": "list",
+                    "model": "embeddings",
+                    "data": [{"object": "embedding", "index": 0, "embedding": [0.1]}],
+                    "usage": {"prompt_tokens": 7, "total_tokens": 7}
+                }),
+                vec![attempt],
+            )
+            .await
+            .expect("embeddings success log");
+
+        assert!(wrote.wrote);
+        let detail = repo
+            .get_request_log_detail(wrote.request_log_id)
+            .await
+            .expect("request log detail");
+        assert_eq!(detail.log.request_id, "req_embeddings_success");
+        assert_eq!(detail.log.provider_key, "vertex-prod");
+        assert_eq!(detail.log.status_code, Some(200));
+        assert_eq!(detail.log.prompt_tokens, Some(7));
+        assert_eq!(detail.log.total_tokens, Some(7));
+        assert_eq!(
+            detail.log.metadata["operation"],
+            Value::String("embeddings".to_string())
+        );
+        assert_eq!(
+            detail
+                .payload
+                .as_ref()
+                .expect("captured payload")
+                .request_json["body"]["input"],
+            "hello"
+        );
+        assert_eq!(detail.attempts.len(), 1);
+        assert_eq!(detail.attempts[0].status, RequestAttemptStatus::Success);
+        assert_eq!(
+            detail.attempts[0].upstream_model,
+            "google/gemini-embedding-001"
+        );
+        assert!(detail.attempts[0].produced_final_response);
+    }
+
+    #[tokio::test]
+    async fn embeddings_provider_error_log_records_failure_payload_and_attempt() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let logging = RequestLogging::new(repo.clone());
+        let auth = sample_service_account_auth();
+        let context = logging.begin_embeddings_request(
+            "req_embeddings_failure",
+            "embeddings",
+            "embeddings",
+            &sample_embeddings_request(),
+            &BTreeMap::new(),
+            RequestTags::default(),
+        );
+        let attempt = sample_attempt(
+            context.request_log_id,
+            &context.request_id,
+            RequestAttemptStatus::ProviderError,
+        );
+        let gateway_error =
+            GatewayError::Provider(ProviderError::Transport("connection reset".to_string()));
+
+        let wrote = logging
+            .log_non_stream_failure(
+                &auth,
+                &context,
+                "vertex-prod",
+                sample_icon_metadata(),
+                90,
+                &gateway_error,
+                vec![attempt],
+            )
+            .await
+            .expect("embeddings provider error log");
+
+        assert!(wrote.wrote);
+        let detail = repo
+            .get_request_log_detail(wrote.request_log_id)
+            .await
+            .expect("request log detail");
+        assert_eq!(detail.log.request_id, "req_embeddings_failure");
+        assert_eq!(detail.log.status_code, Some(502));
+        assert_eq!(detail.log.error_code.as_deref(), Some("upstream_transport"));
+        assert_eq!(
+            detail.log.metadata["operation"],
+            Value::String("embeddings".to_string())
+        );
+        assert_eq!(
+            detail
+                .payload
+                .as_ref()
+                .expect("captured payload")
+                .response_json["body"]["error"]["code"],
+            "upstream_transport"
+        );
+        assert_eq!(detail.attempts.len(), 1);
+        assert_eq!(
+            detail.attempts[0].status,
+            RequestAttemptStatus::ProviderError
+        );
+        assert_eq!(detail.attempts[0].status_code, Some(502));
+        assert_eq!(
+            detail.attempts[0].error_code.as_deref(),
+            Some("upstream_transport")
+        );
+        assert!(detail.attempts[0].retryable);
+        assert!(!detail.attempts[0].produced_final_response);
     }
 
     #[tokio::test]

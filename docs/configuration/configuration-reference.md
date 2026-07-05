@@ -121,7 +121,14 @@ models:
     routes:
       - provider: vertex
         upstream_model: google/gemini-2.0-flash
-```
+        capabilities:
+          chat_completions: true
+          responses: false
+          embeddings: false
+          stream: true
+          tools: false
+          vision: true
+          json_schema: false
 
 The checked-in examples are opinionated. They are not the full config space.
 
@@ -567,8 +574,10 @@ Important fields:
 Routing and pricing caveats:
 
 - `upstream_model` must use `<publisher>/<model_id>`
-- pricing identity is inferred from the publisher prefix
+- pricing identity is inferred from the publisher prefix; `google/...` routes use Google Vertex pricing and `anthropic/...` routes use Anthropic-on-Vertex pricing
 - Anthropic-on-Vertex pricing is only supported for `location=global`
+- route capabilities default permissively, so partial Vertex routes should explicitly disable unsupported API families
+- Vertex text embeddings should be configured as explicit embedding-only routes for `google/gemini-embedding-001`, `google/text-embedding-005`, or `google/text-multilingual-embedding-002`
 - provider-specific configuration examples live in [Google Vertex AI](../providers/gcp-vertex.md)
 
 ### `aws_bedrock`
@@ -650,6 +659,24 @@ Capability flags default permissively. A route can constrain provider capability
 Compatibility metadata is separate from capabilities. Capabilities decide whether a route may execute; compatibility describes explicit request and stream-shape transforms for the selected provider route.
 
 Capability flags include API-family gates such as `chat_completions`, `responses`, and `embeddings`, plus feature gates such as `stream`, `tools`, `vision`, `json_schema`, and `developer_role`.
+
+Vertex embedding-only route:
+
+```yaml
+models:
+  - id: gemini-embedding
+    routes:
+      - provider: vertex
+        upstream_model: google/gemini-embedding-001
+        capabilities:
+          chat_completions: false
+          responses: false
+          embeddings: true
+          stream: false
+          tools: false
+          vision: false
+          json_schema: false
+```
 
 OpenAI-compatible route profile:
 

@@ -693,3 +693,412 @@ fn unpriced_reason_string(reason: &PricingUnpricedReason) -> String {
         PricingUnpricedReason::ModelNotFound => "model_not_found".to_string(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use async_trait::async_trait;
+    use gateway_core::{
+        ApiKeyModelGrantMode, ApiKeyOwnerKind, ApiKeyRecord, ApiKeyRepository, AuthenticatedApiKey,
+        BudgetAlertRepository, BudgetRecord, BudgetRepository, BudgetScope, GatewayModel,
+        IdentityRepository, McpToolInvocationDetail, McpToolInvocationPage,
+        McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
+        McpToolInvocationRepository, ModelRepository, ModelRoute, Money4,
+        PricingCatalogCacheRecord, PricingCatalogRepository, ProviderCapabilities,
+        ProviderConnection, ProviderRepository, RequestLogDetail, RequestLogPage,
+        RequestLogPayloadRecord, RequestLogPurgeResult, RequestLogQuery, RequestLogRecord,
+        RequestLogRepository, RouteError, RoutePlanner, StoreError, StoreHealth,
+        TeamMembershipRecord, TeamRecord, UsageLedgerRecord, UsagePricingStatus, UserRecord,
+    };
+    use serde_json::{Map, json};
+    use time::OffsetDateTime;
+    use uuid::Uuid;
+
+    use super::GatewayService;
+
+    #[derive(Clone, Default)]
+    struct UsageAccountingRepo {
+        events: Arc<Mutex<Vec<UsageLedgerRecord>>>,
+    }
+
+    struct PassThroughPlanner;
+
+    impl RoutePlanner for PassThroughPlanner {
+        fn plan_routes(&self, routes: &[ModelRoute]) -> Result<Vec<ModelRoute>, RouteError> {
+            Ok(routes.to_vec())
+        }
+    }
+
+    #[async_trait]
+    impl ApiKeyRepository for UsageAccountingRepo {
+        async fn get_api_key_by_public_id(
+            &self,
+            _public_id: &str,
+        ) -> Result<Option<ApiKeyRecord>, StoreError> {
+            Ok(None)
+        }
+
+        async fn touch_api_key_last_used(&self, _api_key_id: Uuid) -> Result<(), StoreError> {
+            Ok(())
+        }
+    }
+
+    #[async_trait]
+    impl BudgetAlertRepository for UsageAccountingRepo {}
+
+    #[async_trait]
+    impl BudgetRepository for UsageAccountingRepo {
+        async fn get_active_budget_by_scope(
+            &self,
+            _scope: &BudgetScope,
+        ) -> Result<Option<BudgetRecord>, StoreError> {
+            Ok(None)
+        }
+
+        async fn upsert_active_budget(
+            &self,
+            _scope: &BudgetScope,
+            _settings: &gateway_core::BudgetSettings,
+            _updated_at: OffsetDateTime,
+        ) -> Result<BudgetRecord, StoreError> {
+            Err(StoreError::Unexpected(
+                "upsert_active_budget is not used by usage accounting tests".to_string(),
+            ))
+        }
+
+        async fn deactivate_active_budget(
+            &self,
+            _scope: &BudgetScope,
+            _updated_at: OffsetDateTime,
+        ) -> Result<bool, StoreError> {
+            Ok(false)
+        }
+
+        async fn get_usage_ledger_by_request_and_scope(
+            &self,
+            request_id: &str,
+            ownership_scope_key: &str,
+        ) -> Result<Option<UsageLedgerRecord>, StoreError> {
+            Ok(self
+                .events
+                .lock()
+                .expect("events lock")
+                .iter()
+                .find(|event| {
+                    event.request_id == request_id
+                        && event.ownership_scope_key == ownership_scope_key
+                })
+                .cloned())
+        }
+
+        async fn sum_usage_cost_for_budget_scope_in_window(
+            &self,
+            _scope: &BudgetScope,
+            _window_start: OffsetDateTime,
+            _window_end: OffsetDateTime,
+        ) -> Result<Money4, StoreError> {
+            Ok(Money4::ZERO)
+        }
+
+        async fn insert_usage_ledger_if_absent(
+            &self,
+            event: &UsageLedgerRecord,
+        ) -> Result<bool, StoreError> {
+            let mut events = self.events.lock().expect("events lock");
+            if events.iter().any(|existing| {
+                existing.request_id == event.request_id
+                    && existing.ownership_scope_key == event.ownership_scope_key
+            }) {
+                return Ok(false);
+            }
+            events.push(event.clone());
+            Ok(true)
+        }
+    }
+
+    #[async_trait]
+    impl ModelRepository for UsageAccountingRepo {
+        async fn list_models(&self) -> Result<Vec<GatewayModel>, StoreError> {
+            Ok(Vec::new())
+        }
+
+        async fn get_model_by_key(
+            &self,
+            _model_key: &str,
+        ) -> Result<Option<GatewayModel>, StoreError> {
+            Ok(None)
+        }
+
+        async fn list_models_for_api_key(
+            &self,
+            _api_key_id: Uuid,
+        ) -> Result<Vec<GatewayModel>, StoreError> {
+            Ok(Vec::new())
+        }
+
+        async fn list_routes_for_model(
+            &self,
+            _model_id: Uuid,
+        ) -> Result<Vec<ModelRoute>, StoreError> {
+            Ok(Vec::new())
+        }
+    }
+
+    #[async_trait]
+    impl IdentityRepository for UsageAccountingRepo {
+        async fn get_user_by_id(&self, _user_id: Uuid) -> Result<Option<UserRecord>, StoreError> {
+            Ok(None)
+        }
+
+        async fn get_team_by_id(&self, _team_id: Uuid) -> Result<Option<TeamRecord>, StoreError> {
+            Ok(None)
+        }
+
+        async fn get_team_membership_for_user(
+            &self,
+            _user_id: Uuid,
+        ) -> Result<Option<TeamMembershipRecord>, StoreError> {
+            Ok(None)
+        }
+
+        async fn list_allowed_model_keys_for_user(
+            &self,
+            _user_id: Uuid,
+        ) -> Result<Vec<String>, StoreError> {
+            Ok(Vec::new())
+        }
+
+        async fn list_allowed_model_keys_for_team(
+            &self,
+            _team_id: Uuid,
+        ) -> Result<Vec<String>, StoreError> {
+            Ok(Vec::new())
+        }
+    }
+
+    #[async_trait]
+    impl PricingCatalogRepository for UsageAccountingRepo {
+        async fn get_pricing_catalog_cache(
+            &self,
+            _catalog_key: &str,
+        ) -> Result<Option<PricingCatalogCacheRecord>, StoreError> {
+            Ok(None)
+        }
+
+        async fn upsert_pricing_catalog_cache(
+            &self,
+            _cache: &PricingCatalogCacheRecord,
+        ) -> Result<(), StoreError> {
+            Ok(())
+        }
+
+        async fn touch_pricing_catalog_cache_fetched_at(
+            &self,
+            _catalog_key: &str,
+            _fetched_at: OffsetDateTime,
+        ) -> Result<(), StoreError> {
+            Ok(())
+        }
+
+        async fn list_active_model_pricing(
+            &self,
+        ) -> Result<Vec<gateway_core::ModelPricingRecord>, StoreError> {
+            Ok(Vec::new())
+        }
+
+        async fn insert_model_pricing(
+            &self,
+            _record: &gateway_core::ModelPricingRecord,
+        ) -> Result<(), StoreError> {
+            Ok(())
+        }
+
+        async fn close_model_pricing(
+            &self,
+            _model_pricing_id: Uuid,
+            _effective_end_at: OffsetDateTime,
+            _updated_at: OffsetDateTime,
+        ) -> Result<(), StoreError> {
+            Ok(())
+        }
+
+        async fn resolve_model_pricing_at(
+            &self,
+            _pricing_provider_id: &str,
+            _pricing_model_id: &str,
+            _occurred_at: OffsetDateTime,
+        ) -> Result<Option<gateway_core::ModelPricingRecord>, StoreError> {
+            Ok(None)
+        }
+    }
+
+    #[async_trait]
+    impl RequestLogRepository for UsageAccountingRepo {
+        async fn insert_request_log(
+            &self,
+            _log: &RequestLogRecord,
+            _payload: Option<&RequestLogPayloadRecord>,
+        ) -> Result<(), StoreError> {
+            Ok(())
+        }
+
+        async fn list_request_logs(
+            &self,
+            _query: &RequestLogQuery,
+        ) -> Result<RequestLogPage, StoreError> {
+            Ok(RequestLogPage {
+                items: Vec::new(),
+                page: 1,
+                page_size: 50,
+                total: 0,
+            })
+        }
+
+        async fn get_request_log_detail(
+            &self,
+            _request_log_id: Uuid,
+        ) -> Result<RequestLogDetail, StoreError> {
+            Err(StoreError::NotFound("request log not found".to_string()))
+        }
+
+        async fn purge_request_logs_older_than(
+            &self,
+            cutoff: OffsetDateTime,
+            dry_run: bool,
+        ) -> Result<RequestLogPurgeResult, StoreError> {
+            Ok(RequestLogPurgeResult {
+                cutoff,
+                dry_run,
+                matched_count: 0,
+                deleted_count: 0,
+            })
+        }
+    }
+
+    #[async_trait]
+    impl McpToolInvocationRepository for UsageAccountingRepo {
+        async fn insert_mcp_tool_invocation(
+            &self,
+            _invocation: &McpToolInvocationRecord,
+            _payload: Option<&McpToolInvocationPayloadRecord>,
+        ) -> Result<(), StoreError> {
+            Ok(())
+        }
+
+        async fn list_mcp_tool_invocations(
+            &self,
+            _query: &McpToolInvocationQuery,
+        ) -> Result<McpToolInvocationPage, StoreError> {
+            Ok(McpToolInvocationPage {
+                items: Vec::new(),
+                page: 1,
+                page_size: 50,
+                total: 0,
+            })
+        }
+
+        async fn get_mcp_tool_invocation_detail(
+            &self,
+            _mcp_tool_invocation_id: Uuid,
+        ) -> Result<McpToolInvocationDetail, StoreError> {
+            Err(StoreError::NotFound("mcp invocation not found".to_string()))
+        }
+    }
+
+    #[async_trait]
+    impl ProviderRepository for UsageAccountingRepo {
+        async fn get_provider_by_key(
+            &self,
+            _provider_key: &str,
+        ) -> Result<Option<ProviderConnection>, StoreError> {
+            Ok(None)
+        }
+    }
+
+    #[async_trait]
+    impl StoreHealth for UsageAccountingRepo {
+        async fn ping(&self) -> Result<(), StoreError> {
+            Ok(())
+        }
+    }
+
+    fn auth() -> AuthenticatedApiKey {
+        AuthenticatedApiKey {
+            id: Uuid::new_v4(),
+            public_id: "dev123".to_string(),
+            name: "dev".to_string(),
+            model_grant_mode: ApiKeyModelGrantMode::Explicit,
+            owner_kind: ApiKeyOwnerKind::User,
+            owner_user_id: Some(Uuid::new_v4()),
+            owner_team_id: None,
+            owner_service_account_id: None,
+        }
+    }
+
+    fn model(model_id: Uuid) -> GatewayModel {
+        GatewayModel {
+            id: model_id,
+            model_key: "embeddings".to_string(),
+            alias_target_model_key: None,
+            description: None,
+            tags: Vec::new(),
+            rank: 0,
+        }
+    }
+
+    fn vertex_embedding_route(model_id: Uuid) -> ModelRoute {
+        ModelRoute {
+            id: Uuid::new_v4(),
+            model_id,
+            provider_key: "vertex-prod".to_string(),
+            upstream_model: "google/gemini-embedding-001".to_string(),
+            priority: 0,
+            weight: 1.0,
+            enabled: true,
+            extra_headers: Map::new(),
+            extra_body: Map::new(),
+            capabilities: ProviderCapabilities::all_enabled(),
+            compatibility: Default::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn record_chat_usage_keeps_embedding_usage_missing_without_token_counts() {
+        let repo = Arc::new(UsageAccountingRepo::default());
+        let service = GatewayService::new(repo.clone(), Arc::new(PassThroughPlanner));
+        let auth = auth();
+        let model_id = Uuid::new_v4();
+        let model = model(model_id);
+        let route = vertex_embedding_route(model_id);
+
+        let recorded = service
+            .record_chat_usage(
+                &auth,
+                &model,
+                &route,
+                "req_missing_embedding_usage",
+                Some(json!({"statistics": {"billable_character_count": 999}})),
+                OffsetDateTime::now_utc(),
+            )
+            .await
+            .expect("usage should be recorded");
+
+        assert_eq!(recorded.pricing_status, UsagePricingStatus::UsageMissing);
+        assert_eq!(recorded.prompt_tokens, None);
+        assert_eq!(recorded.completion_tokens, None);
+        assert_eq!(recorded.total_tokens, None);
+        assert_eq!(recorded.cost_usd, None);
+
+        let events = repo.events.lock().expect("events lock");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].pricing_status, UsagePricingStatus::UsageMissing);
+        assert_eq!(events[0].prompt_tokens, None);
+        assert_eq!(events[0].completion_tokens, None);
+        assert_eq!(events[0].total_tokens, None);
+        assert_eq!(
+            events[0].provider_usage["statistics"]["billable_character_count"],
+            999
+        );
+    }
+}

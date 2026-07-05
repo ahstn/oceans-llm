@@ -7,7 +7,8 @@ use futures_util::StreamExt;
 use gateway_core::{
     CoreChatMessage, CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest,
     ProviderCapabilities, ProviderClient, ProviderError, ProviderRequestContext, ProviderStream,
-    SseEventParser, Utf8ChunkDecoder,
+    SseEventParser, Utf8ChunkDecoder, VERTEX_TEXT_EMBEDDING_MODEL_IDS,
+    is_supported_vertex_text_embedding_model_id,
 };
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
@@ -152,6 +153,44 @@ fn parse_upstream_model(
     Ok((family, publisher, model_id))
 }
 
+const VERTEX_EMBEDDING_TASK_TYPES: &[&str] = &[
+    "RETRIEVAL_QUERY",
+    "RETRIEVAL_DOCUMENT",
+    "SEMANTIC_SIMILARITY",
+    "CLASSIFICATION",
+    "CLUSTERING",
+    "QUESTION_ANSWERING",
+    "FACT_VERIFICATION",
+    "CODE_RETRIEVAL_QUERY",
+];
+
+#[derive(Debug)]
+struct GoogleEmbeddingRequestMapping {
+    bodies: Vec<Value>,
+}
+
+#[derive(Debug)]
+struct GoogleEmbeddingOutput {
+    index: usize,
+    embedding: Value,
+    token_count: Option<i64>,
+}
+
+fn is_supported_vertex_embedding_model(model_id: &str) -> bool {
+    is_supported_vertex_text_embedding_model_id(model_id)
+}
+
+fn validate_vertex_embedding_model(model_id: &str) -> Result<(), ProviderError> {
+    if is_supported_vertex_embedding_model(model_id) {
+        return Ok(());
+    }
+
+    Err(ProviderError::InvalidRequest(format!(
+        "vertex embeddings route google/{model_id} is not a supported text embedding model; supported models are {}",
+        VERTEX_TEXT_EMBEDDING_MODEL_IDS.join(", ")
+    )))
+}
+
 #[async_trait]
 impl ProviderClient for VertexProvider {
     fn provider_key(&self) -> &str {
@@ -260,12 +299,44 @@ impl ProviderClient for VertexProvider {
 
     async fn embeddings(
         &self,
-        _request: &CoreEmbeddingsRequest,
-        _context: &ProviderRequestContext,
+        request: &CoreEmbeddingsRequest,
+        context: &ProviderRequestContext,
     ) -> Result<Value, ProviderError> {
-        Err(ProviderError::InvalidRequest(
-            "vertex embeddings are not supported in this v1 runtime".to_string(),
-        ))
+        let (family, publisher, model_id) = parse_upstream_model(&context.upstream_model)?;
+        if family != PublisherFamily::Google {
+            return Err(ProviderError::InvalidRequest(
+                "vertex embeddings are only supported for google/* text embedding models"
+                    .to_string(),
+            ));
+        }
+        validate_vertex_embedding_model(model_id)?;
+
+        let mapped = map_google_embedding_request(request, context, model_id)?;
+        let endpoint = self.model_endpoint(publisher, model_id, "predict");
+        let mut outputs = Vec::with_capacity(mapped.bodies.len());
+        for (index, body) in mapped.bodies.iter().enumerate() {
+            let request = self.build_request(&endpoint, body, context).await?;
+            let response = self
+                .client
+                .execute(request)
+                .await
+                .map_err(map_reqwest_error)?;
+            let status = response.status();
+            let text = response.text().await.map_err(map_reqwest_error)?;
+            if !status.is_success() {
+                return Err(ProviderError::UpstreamHttp {
+                    status: status.as_u16(),
+                    body: text,
+                });
+            }
+
+            let value: Value = serde_json::from_str(&text).map_err(|error| {
+                ProviderError::Transport(format!("invalid JSON from vertex embeddings: {error}"))
+            })?;
+            outputs.push(extract_google_embedding_output(&value, index)?);
+        }
+
+        normalize_google_embedding_outputs(outputs, context)
     }
 
     async fn responses(
@@ -363,6 +434,295 @@ fn map_google_request(
     merge_object_overrides(&mut body, &context.extra_body);
     validate_google_stream_candidate_count(&body, stream)?;
     Ok(Value::Object(body))
+}
+
+fn map_google_embedding_request(
+    request: &CoreEmbeddingsRequest,
+    context: &ProviderRequestContext,
+    model_id: &str,
+) -> Result<GoogleEmbeddingRequestMapping, ProviderError> {
+    let inputs = vertex_embedding_inputs(&request.input)?;
+    let mut extra = request.extra.clone();
+    extra.remove("model");
+    extra.remove("input");
+    extra.remove("user");
+
+    validate_vertex_embedding_encoding_format(extra.remove("encoding_format"))?;
+    let output_dimensionality =
+        extract_vertex_embedding_output_dimensionality(&mut extra, model_id)?;
+    let task_type = extract_vertex_embedding_task_type(&mut extra)?;
+    let title = extract_optional_string_field(&mut extra, "title")?;
+    if title.is_some() && task_type.as_deref() != Some("RETRIEVAL_DOCUMENT") {
+        return Err(ProviderError::InvalidRequest(
+            "vertex embeddings title is only supported with task_type RETRIEVAL_DOCUMENT"
+                .to_string(),
+        ));
+    }
+    let auto_truncate = extract_vertex_embedding_auto_truncate(&mut extra)?;
+
+    if !extra.is_empty() {
+        let unsupported = extra.keys().cloned().collect::<Vec<_>>().join(", ");
+        return Err(ProviderError::InvalidRequest(format!(
+            "unsupported vertex embeddings request field(s): {unsupported}"
+        )));
+    }
+
+    let mut bodies = Vec::with_capacity(inputs.len());
+    for input in inputs {
+        let mut instance = Map::new();
+        instance.insert("content".to_string(), Value::String(input));
+        if let Some(task_type) = &task_type {
+            instance.insert("task_type".to_string(), Value::String(task_type.clone()));
+        }
+        if let Some(title) = &title {
+            instance.insert("title".to_string(), Value::String(title.clone()));
+        }
+
+        let mut body = Map::new();
+        body.insert(
+            "instances".to_string(),
+            Value::Array(vec![Value::Object(instance)]),
+        );
+
+        let mut parameters = Map::new();
+        if let Some(output_dimensionality) = output_dimensionality {
+            parameters.insert(
+                "outputDimensionality".to_string(),
+                Value::Number(output_dimensionality.into()),
+            );
+        }
+        if let Some(auto_truncate) = auto_truncate {
+            parameters.insert("autoTruncate".to_string(), Value::Bool(auto_truncate));
+        }
+        if !parameters.is_empty() {
+            body.insert("parameters".to_string(), Value::Object(parameters));
+        }
+
+        merge_object_overrides(&mut body, &context.extra_body);
+        bodies.push(Value::Object(body));
+    }
+
+    Ok(GoogleEmbeddingRequestMapping { bodies })
+}
+
+fn vertex_embedding_inputs(input: &Value) -> Result<Vec<String>, ProviderError> {
+    match input {
+        Value::String(value) => {
+            let value = validate_vertex_embedding_input_text(value)?;
+            Ok(vec![value.to_string()])
+        }
+        Value::Array(values) => {
+            if values.is_empty() {
+                return Err(ProviderError::InvalidRequest(
+                    "vertex embeddings input array must contain at least one string".to_string(),
+                ));
+            }
+
+            values
+                .iter()
+                .map(|value| {
+                    let Some(text) = value.as_str() else {
+                        return Err(ProviderError::InvalidRequest(
+                            "vertex embeddings input must be a string or array of strings; token arrays and multimodal inputs are not supported".to_string(),
+                        ));
+                    };
+                    validate_vertex_embedding_input_text(text).map(str::to_string)
+                })
+                .collect()
+        }
+        _ => Err(ProviderError::InvalidRequest(
+            "vertex embeddings input must be a string or array of strings".to_string(),
+        )),
+    }
+}
+
+fn validate_vertex_embedding_input_text(value: &str) -> Result<&str, ProviderError> {
+    if value.is_empty() {
+        return Err(ProviderError::InvalidRequest(
+            "vertex embeddings input strings must not be empty".to_string(),
+        ));
+    }
+    Ok(value)
+}
+
+fn validate_vertex_embedding_encoding_format(value: Option<Value>) -> Result<(), ProviderError> {
+    match value {
+        None | Some(Value::Null) => Ok(()),
+        Some(Value::String(value)) if value == "float" => Ok(()),
+        Some(Value::String(value)) => Err(ProviderError::InvalidRequest(format!(
+            "vertex embeddings encoding_format `{value}` is not supported; use `float`"
+        ))),
+        Some(_) => Err(ProviderError::InvalidRequest(
+            "vertex embeddings encoding_format must be a string".to_string(),
+        )),
+    }
+}
+
+fn extract_vertex_embedding_output_dimensionality(
+    extra: &mut BTreeMap<String, Value>,
+    model_id: &str,
+) -> Result<Option<i64>, ProviderError> {
+    let mut selected: Option<(&'static str, i64)> = None;
+    for field in [
+        "dimensions",
+        "output_dimensionality",
+        "outputDimensionality",
+    ] {
+        let Some(value) = extra.remove(field) else {
+            continue;
+        };
+        if value.is_null() {
+            continue;
+        }
+        let dimension = positive_i64_field(field, &value)?;
+        if let Some((selected_field, selected_dimension)) = selected {
+            if selected_dimension != dimension {
+                return Err(ProviderError::InvalidRequest(format!(
+                    "conflicting vertex embeddings dimensionality fields `{selected_field}` and `{field}`"
+                )));
+            }
+        } else {
+            selected = Some((field, dimension));
+        }
+    }
+
+    let Some((field, dimension)) = selected else {
+        return Ok(None);
+    };
+    let max_dimension = vertex_embedding_max_dimensions(model_id);
+    if dimension > max_dimension {
+        return Err(ProviderError::InvalidRequest(format!(
+            "vertex embeddings {field} must be <= {max_dimension} for google/{model_id}"
+        )));
+    }
+    Ok(Some(dimension))
+}
+
+fn positive_i64_field(field: &str, value: &Value) -> Result<i64, ProviderError> {
+    let Some(value) = value.as_i64() else {
+        return Err(ProviderError::InvalidRequest(format!(
+            "vertex embeddings {field} must be a positive integer"
+        )));
+    };
+    if value <= 0 {
+        return Err(ProviderError::InvalidRequest(format!(
+            "vertex embeddings {field} must be a positive integer"
+        )));
+    }
+    Ok(value)
+}
+
+fn vertex_embedding_max_dimensions(model_id: &str) -> i64 {
+    match model_id {
+        "gemini-embedding-001" => 3072,
+        "text-embedding-005" | "text-multilingual-embedding-002" => 768,
+        _ => 3072,
+    }
+}
+
+fn extract_vertex_embedding_task_type(
+    extra: &mut BTreeMap<String, Value>,
+) -> Result<Option<String>, ProviderError> {
+    let task_type = extra
+        .remove("task_type")
+        .map(|value| canonical_vertex_embedding_task_type("task_type", &value))
+        .transpose()?
+        .flatten();
+    let input_type = extra
+        .remove("input_type")
+        .map(|value| canonical_vertex_embedding_task_type("input_type", &value))
+        .transpose()?
+        .flatten();
+
+    match (task_type, input_type) {
+        (Some(task_type), Some(input_type)) if task_type != input_type => {
+            Err(ProviderError::InvalidRequest(
+                "conflicting vertex embeddings task_type and input_type fields".to_string(),
+            ))
+        }
+        (Some(task_type), _) | (_, Some(task_type)) => Ok(Some(task_type)),
+        (None, None) => Ok(None),
+    }
+}
+
+fn canonical_vertex_embedding_task_type(
+    field: &str,
+    value: &Value,
+) -> Result<Option<String>, ProviderError> {
+    if value.is_null() {
+        return Ok(None);
+    }
+    let Some(value) = value.as_str() else {
+        return Err(ProviderError::InvalidRequest(format!(
+            "vertex embeddings {field} must be a string"
+        )));
+    };
+    let normalized = value.trim().replace(['-', ' '], "_").to_ascii_uppercase();
+    let canonical = match normalized.as_str() {
+        "QUERY" | "RETRIEVAL_QUERY" => "RETRIEVAL_QUERY",
+        "DOCUMENT" | "RETRIEVAL_DOCUMENT" => "RETRIEVAL_DOCUMENT",
+        "SEMANTIC_SIMILARITY" => "SEMANTIC_SIMILARITY",
+        "CLASSIFICATION" => "CLASSIFICATION",
+        "CLUSTERING" => "CLUSTERING",
+        "QUESTION_ANSWERING" => "QUESTION_ANSWERING",
+        "FACT_VERIFICATION" => "FACT_VERIFICATION",
+        "CODE_RETRIEVAL_QUERY" => "CODE_RETRIEVAL_QUERY",
+        _ => {
+            return Err(ProviderError::InvalidRequest(format!(
+                "unsupported vertex embeddings {field} `{value}`; supported task types are {}",
+                VERTEX_EMBEDDING_TASK_TYPES.join(", ")
+            )));
+        }
+    };
+    Ok(Some(canonical.to_string()))
+}
+
+fn extract_optional_string_field(
+    extra: &mut BTreeMap<String, Value>,
+    field: &str,
+) -> Result<Option<String>, ProviderError> {
+    match extra.remove(field) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(value)) if !value.is_empty() => Ok(Some(value)),
+        Some(Value::String(_)) => Err(ProviderError::InvalidRequest(format!(
+            "vertex embeddings {field} must not be empty"
+        ))),
+        Some(_) => Err(ProviderError::InvalidRequest(format!(
+            "vertex embeddings {field} must be a string"
+        ))),
+    }
+}
+
+fn extract_vertex_embedding_auto_truncate(
+    extra: &mut BTreeMap<String, Value>,
+) -> Result<Option<bool>, ProviderError> {
+    let snake = extra
+        .remove("auto_truncate")
+        .map(|value| optional_bool_field("auto_truncate", &value))
+        .transpose()?
+        .flatten();
+    let camel = extra
+        .remove("autoTruncate")
+        .map(|value| optional_bool_field("autoTruncate", &value))
+        .transpose()?
+        .flatten();
+
+    match (snake, camel) {
+        (Some(snake), Some(camel)) if snake != camel => Err(ProviderError::InvalidRequest(
+            "conflicting vertex embeddings auto_truncate and autoTruncate fields".to_string(),
+        )),
+        (Some(value), _) | (_, Some(value)) => Ok(Some(value)),
+        (None, None) => Ok(None),
+    }
+}
+
+fn optional_bool_field(field: &str, value: &Value) -> Result<Option<bool>, ProviderError> {
+    if value.is_null() {
+        return Ok(None);
+    }
+    value.as_bool().map(Some).ok_or_else(|| {
+        ProviderError::InvalidRequest(format!("vertex embeddings {field} must be a boolean"))
+    })
 }
 
 fn map_anthropic_request(
@@ -1373,6 +1733,91 @@ fn normalize_google_response(value: &Value, context: &ProviderRequestContext) ->
     Value::Object(completion)
 }
 
+fn extract_google_embedding_output(
+    value: &Value,
+    index: usize,
+) -> Result<GoogleEmbeddingOutput, ProviderError> {
+    let prediction = value
+        .get("predictions")
+        .and_then(Value::as_array)
+        .and_then(|predictions| predictions.first())
+        .ok_or_else(|| {
+            ProviderError::Transport(
+                "invalid JSON from vertex embeddings: missing predictions[0]".to_string(),
+            )
+        })?;
+    let embedding = prediction
+        .get("embeddings")
+        .and_then(|embeddings| embeddings.get("values"))
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            ProviderError::Transport(
+                "invalid JSON from vertex embeddings: missing embeddings.values".to_string(),
+            )
+        })?;
+    if embedding.iter().any(|value| value.as_f64().is_none()) {
+        return Err(ProviderError::Transport(
+            "invalid JSON from vertex embeddings: embedding values must be numbers".to_string(),
+        ));
+    }
+    let token_count = prediction
+        .get("embeddings")
+        .and_then(|embeddings| embeddings.get("statistics"))
+        .and_then(|statistics| statistics.get("token_count"))
+        .and_then(Value::as_i64);
+
+    Ok(GoogleEmbeddingOutput {
+        index,
+        embedding: Value::Array(embedding.clone()),
+        token_count,
+    })
+}
+
+fn normalize_google_embedding_outputs(
+    outputs: Vec<GoogleEmbeddingOutput>,
+    context: &ProviderRequestContext,
+) -> Result<Value, ProviderError> {
+    let mut data = Vec::with_capacity(outputs.len());
+    let mut total_tokens: Option<i64> = Some(0);
+
+    for output in outputs {
+        if let (Some(current), Some(token_count)) = (total_tokens, output.token_count) {
+            total_tokens = Some(current.checked_add(token_count).ok_or_else(|| {
+                ProviderError::Transport(
+                    "invalid JSON from vertex embeddings: token_count overflow".to_string(),
+                )
+            })?);
+        } else {
+            total_tokens = None;
+        }
+
+        data.push(json!({
+            "object": "embedding",
+            "index": output.index,
+            "embedding": output.embedding
+        }));
+    }
+
+    let mut response = Map::new();
+    response.insert("object".to_string(), Value::String("list".to_string()));
+    response.insert("data".to_string(), Value::Array(data));
+    response.insert(
+        "model".to_string(),
+        Value::String(context.model_key.clone()),
+    );
+    if let Some(total_tokens) = total_tokens {
+        response.insert(
+            "usage".to_string(),
+            json!({
+                "prompt_tokens": total_tokens,
+                "total_tokens": total_tokens
+            }),
+        );
+    }
+
+    Ok(Value::Object(response))
+}
+
 fn normalize_anthropic_response(value: &Value, context: &ProviderRequestContext) -> Value {
     let id = value
         .get("id")
@@ -2295,14 +2740,17 @@ mod tests {
     use bytes::Bytes;
     use futures_util::StreamExt;
     use futures_util::stream;
-    use gateway_core::{CoreChatMessage, CoreChatRequest, ProviderClient, ProviderRequestContext};
+    use gateway_core::{
+        CoreChatMessage, CoreChatRequest, CoreEmbeddingsRequest, ProviderClient,
+        ProviderRequestContext,
+    };
     use serde_json::{Map, Value, json};
     use tokio::{net::TcpListener, sync::Mutex};
 
     use super::{
         JsonObjectParser, SseEventParser, VertexAuthConfig, VertexProvider, VertexProviderConfig,
-        map_anthropic_request, map_google_request, normalize_anthropic_response,
-        normalize_google_response, parse_upstream_model,
+        map_anthropic_request, map_google_embedding_request, map_google_request,
+        normalize_anthropic_response, normalize_google_response, parse_upstream_model,
     };
     use gateway_core::ProviderError;
 
@@ -3055,6 +3503,332 @@ mod tests {
     }
 
     #[test]
+    fn maps_vertex_embedding_aliases_to_predict_payload() {
+        let mut request = embedding_request(json!("document text"));
+        request.extra.insert("dimensions".to_string(), json!(128));
+        request
+            .extra
+            .insert("output_dimensionality".to_string(), json!(128));
+        request
+            .extra
+            .insert("outputDimensionality".to_string(), json!(128));
+        request
+            .extra
+            .insert("task_type".to_string(), json!("retrieval document"));
+        request
+            .extra
+            .insert("input_type".to_string(), json!("document"));
+        request
+            .extra
+            .insert("title".to_string(), json!("Doc title"));
+        request
+            .extra
+            .insert("auto_truncate".to_string(), json!(false));
+        request
+            .extra
+            .insert("autoTruncate".to_string(), json!(false));
+
+        let mapped = map_google_embedding_request(
+            &request,
+            &context("google/gemini-embedding-001"),
+            "gemini-embedding-001",
+        )
+        .expect("mapped embeddings request");
+
+        assert_eq!(mapped.bodies.len(), 1);
+        assert_eq!(mapped.bodies[0]["instances"][0]["content"], "document text");
+        assert_eq!(
+            mapped.bodies[0]["instances"][0]["task_type"],
+            "RETRIEVAL_DOCUMENT"
+        );
+        assert_eq!(mapped.bodies[0]["instances"][0]["title"], "Doc title");
+        assert_eq!(mapped.bodies[0]["parameters"]["outputDimensionality"], 128);
+        assert_eq!(mapped.bodies[0]["parameters"]["autoTruncate"], false);
+    }
+
+    #[tokio::test]
+    async fn rejects_invalid_vertex_embedding_inputs_and_alias_conflicts() {
+        let cases = [
+            (
+                "base64 encoding",
+                json!("hello"),
+                vec![("encoding_format", json!("base64"))],
+                "encoding_format `base64` is not supported",
+            ),
+            (
+                "token array",
+                json!([1, 2, 3]),
+                Vec::new(),
+                "input must be a string or array of strings",
+            ),
+            (
+                "nested array",
+                json!([["hello"]]),
+                Vec::new(),
+                "input must be a string or array of strings",
+            ),
+            (
+                "non-string scalar",
+                json!(42),
+                Vec::new(),
+                "input must be a string or array of strings",
+            ),
+            (
+                "empty string",
+                json!(""),
+                Vec::new(),
+                "input strings must not be empty",
+            ),
+            (
+                "empty array",
+                json!([]),
+                Vec::new(),
+                "input array must contain at least one string",
+            ),
+            (
+                "invalid task",
+                json!("hello"),
+                vec![("task_type", json!("search"))],
+                "unsupported vertex embeddings task_type",
+            ),
+            (
+                "conflicting dimensions",
+                json!("hello"),
+                vec![
+                    ("dimensions", json!(128)),
+                    ("outputDimensionality", json!(256)),
+                ],
+                "conflicting vertex embeddings dimensionality fields",
+            ),
+            (
+                "conflicting task aliases",
+                json!("hello"),
+                vec![
+                    ("task_type", json!("RETRIEVAL_QUERY")),
+                    ("input_type", json!("RETRIEVAL_DOCUMENT")),
+                ],
+                "conflicting vertex embeddings task_type and input_type fields",
+            ),
+            (
+                "conflicting auto truncate aliases",
+                json!("hello"),
+                vec![
+                    ("auto_truncate", json!(true)),
+                    ("autoTruncate", json!(false)),
+                ],
+                "conflicting vertex embeddings auto_truncate and autoTruncate fields",
+            ),
+        ];
+        let provider = vertex_provider_for_test("http://127.0.0.1:1".to_string());
+
+        for (name, input, extra, expected) in cases {
+            let mut request = embedding_request(input);
+            for (key, value) in extra {
+                request.extra.insert(key.to_string(), value);
+            }
+
+            let error = provider
+                .embeddings(&request, &context("google/gemini-embedding-001"))
+                .await
+                .expect_err(name)
+                .to_string();
+
+            assert!(
+                error.contains(expected),
+                "{name}: expected `{error}` to contain `{expected}`"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn vertex_embeddings_rejects_unsupported_google_chat_model_before_http() {
+        let provider = vertex_provider_for_test("http://127.0.0.1:1".to_string());
+        let request = embedding_request(json!("hello"));
+
+        let error = provider
+            .embeddings(&request, &context("google/gemini-2.0-flash"))
+            .await
+            .expect_err("chat model must not be accepted for embeddings")
+            .to_string();
+
+        assert!(error.contains("not a supported text embedding model"));
+        assert!(error.contains("gemini-embedding-001"));
+    }
+
+    #[tokio::test]
+    async fn vertex_embeddings_rejects_title_without_document_task_before_http() {
+        let requests_seen = Arc::new(Mutex::new(0usize));
+        let state = requests_seen.clone();
+        let app = Router::new()
+            .route(
+                "/v1/{*path}",
+                post(
+                    |State(requests_seen): State<Arc<Mutex<usize>>>| async move {
+                        *requests_seen.lock().await += 1;
+                        Json(json!({
+                            "predictions": [{
+                                "embeddings": {
+                                    "values": [0.25],
+                                    "statistics": {"token_count": 1}
+                                }
+                            }]
+                        }))
+                    },
+                ),
+            )
+            .with_state(state);
+
+        let host = start_router(app).await;
+        let provider = vertex_provider_for_test(format!("http://{host}"));
+        let mut request = embedding_request(json!("query text"));
+        request
+            .extra
+            .insert("task_type".to_string(), json!("RETRIEVAL_QUERY"));
+        request
+            .extra
+            .insert("title".to_string(), json!("Doc title"));
+
+        let error = provider
+            .embeddings(&request, &context("google/gemini-embedding-001"))
+            .await
+            .expect_err("title must require RETRIEVAL_DOCUMENT")
+            .to_string();
+
+        assert!(error.contains("title is only supported with task_type RETRIEVAL_DOCUMENT"));
+        assert_eq!(*requests_seen.lock().await, 0);
+    }
+
+    #[tokio::test]
+    async fn vertex_provider_google_embedding_string_executes_predict_mapping() {
+        let captured = Arc::new(Mutex::new(None::<Value>));
+        let state = captured.clone();
+        let app = Router::new()
+            .route(
+                "/v1/{*path}",
+                post(
+                    |Path(path): Path<String>,
+                     State(captured): State<Arc<Mutex<Option<Value>>>>,
+                     headers: HeaderMap,
+                     Json(payload): Json<Value>| async move {
+                        assert!(path.ends_with(
+                            "publishers/google/models/gemini-embedding-001:predict"
+                        ));
+                        assert_eq!(
+                            headers
+                                .get("authorization")
+                                .and_then(|value| value.to_str().ok()),
+                            Some("Bearer test-token")
+                        );
+                        *captured.lock().await = Some(payload);
+                        Json(json!({
+                            "predictions": [{
+                                "embeddings": {
+                                    "values": [0.25, 0.5],
+                                    "statistics": {"token_count": 3, "billable_character_count": 999}
+                                }
+                            }]
+                        }))
+                    },
+                ),
+            )
+            .with_state(state);
+
+        let host = start_router(app).await;
+        let provider = vertex_provider_for_test(format!("http://{host}"));
+        let request = embedding_request(json!("hello embeddings"));
+
+        let response = provider
+            .embeddings(&request, &context("google/gemini-embedding-001"))
+            .await
+            .expect("embedding response");
+
+        assert_eq!(response["object"], "list");
+        assert_eq!(response["model"], "fast");
+        assert_eq!(response["data"][0]["object"], "embedding");
+        assert_eq!(response["data"][0]["index"], 0);
+        assert_eq!(response["data"][0]["embedding"], json!([0.25, 0.5]));
+        assert_eq!(
+            response["usage"],
+            json!({"prompt_tokens": 3, "total_tokens": 3})
+        );
+
+        let request_payload = captured.lock().await.clone().expect("captured request");
+        assert_eq!(
+            request_payload,
+            json!({
+                "instances": [{"content": "hello embeddings"}]
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn vertex_provider_google_embedding_array_fans_out_and_preserves_order() {
+        let captured = Arc::new(Mutex::new(Vec::<Value>::new()));
+        let state = captured.clone();
+        let app = Router::new()
+            .route(
+                "/v1/{*path}",
+                post(
+                    |Path(path): Path<String>,
+                     State(captured): State<Arc<Mutex<Vec<Value>>>>,
+                     Json(payload): Json<Value>| async move {
+                        assert!(path.ends_with(
+                            "publishers/google/models/text-embedding-005:predict"
+                        ));
+                        let content = payload["instances"][0]["content"]
+                            .as_str()
+                            .expect("string content")
+                            .to_string();
+                        captured.lock().await.push(payload);
+                        match content.as_str() {
+                            "first" => Json(json!({
+                                "predictions": [{
+                                    "embeddings": {
+                                        "values": [1.0, 1.5],
+                                        "statistics": {"token_count": 2, "billable_character_count": 999}
+                                    }
+                                }]
+                            })),
+                            "second" => Json(json!({
+                                "predictions": [{
+                                    "embeddings": {
+                                        "values": [2.0, 2.5],
+                                        "statistics": {"token_count": 5, "billable_character_count": 999}
+                                    }
+                                }]
+                            })),
+                            other => panic!("unexpected embedding content: {other}"),
+                        }
+                    },
+                ),
+            )
+            .with_state(state);
+
+        let host = start_router(app).await;
+        let provider = vertex_provider_for_test(format!("http://{host}"));
+        let request = embedding_request(json!(["first", "second"]));
+
+        let response = provider
+            .embeddings(&request, &context("google/text-embedding-005"))
+            .await
+            .expect("embedding response");
+
+        assert_eq!(response["data"][0]["index"], 0);
+        assert_eq!(response["data"][0]["embedding"], json!([1.0, 1.5]));
+        assert_eq!(response["data"][1]["index"], 1);
+        assert_eq!(response["data"][1]["embedding"], json!([2.0, 2.5]));
+        assert_eq!(
+            response["usage"],
+            json!({"prompt_tokens": 7, "total_tokens": 7})
+        );
+
+        let request_payloads = captured.lock().await.clone();
+        assert_eq!(request_payloads.len(), 2);
+        assert_eq!(request_payloads[0]["instances"][0]["content"], "first");
+        assert_eq!(request_payloads[1]["instances"][0]["content"], "second");
+    }
+
+    #[test]
     fn normalizes_google_response_into_openai_shape() {
         let response = json!({
             "responseId": "resp-123",
@@ -3451,6 +4225,14 @@ data: {"type":"vertex_event"}
             model: "fast".to_string(),
             messages,
             stream: false,
+            extra: BTreeMap::new(),
+        }
+    }
+
+    fn embedding_request(input: Value) -> CoreEmbeddingsRequest {
+        CoreEmbeddingsRequest {
+            model: "fast".to_string(),
+            input,
             extra: BTreeMap::new(),
         }
     }

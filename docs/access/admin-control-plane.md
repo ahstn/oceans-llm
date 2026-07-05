@@ -46,7 +46,7 @@ That split matters for admin expectations and test scope.
 The current product contract is mixed on purpose:
 
 - identity, service accounts, spend, API keys, request logs, leaderboard, and Models are live gateway-backed surfaces
-- Models still needs richer runtime capability visibility, including Responses support
+- Models still needs richer runtime capability visibility, including Responses and embeddings support
 
 Tracked follow-up:
 

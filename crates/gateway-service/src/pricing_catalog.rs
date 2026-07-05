@@ -1164,38 +1164,66 @@ mod tests {
                         "google-vertex".to_string(),
                         PricingCatalogProviderDocument {
                             display_name: "Vertex".to_string(),
-                            models: BTreeMap::from([(
-                                "gemini-2.5-flash".to_string(),
-                                PricingCatalogModelDocument {
-                                    id: "gemini-2.5-flash".to_string(),
-                                    display_name: "Gemini 2.5 Flash".to_string(),
-                                    release_date: "2025-06-17".to_string(),
-                                    last_updated: "2025-06-17".to_string(),
-                                    cost: PricingCatalogCostDocument {
-                                        input: Some("0.3000".to_string()),
-                                        output: Some("2.5000".to_string()),
-                                        cache_read: Some("0.0750".to_string()),
-                                        cache_write: Some("0.3830".to_string()),
-                                        input_audio: None,
-                                        output_audio: None,
+                            models: BTreeMap::from([
+                                (
+                                    "gemini-2.5-flash".to_string(),
+                                    PricingCatalogModelDocument {
+                                        id: "gemini-2.5-flash".to_string(),
+                                        display_name: "Gemini 2.5 Flash".to_string(),
+                                        release_date: "2025-06-17".to_string(),
+                                        last_updated: "2025-06-17".to_string(),
+                                        cost: PricingCatalogCostDocument {
+                                            input: Some("0.3000".to_string()),
+                                            output: Some("2.5000".to_string()),
+                                            cache_read: Some("0.0750".to_string()),
+                                            cache_write: Some("0.3830".to_string()),
+                                            input_audio: None,
+                                            output_audio: None,
+                                        },
+                                        limit: PricingCatalogLimitDocument {
+                                            context: Some(1_048_576),
+                                            input: None,
+                                            output: Some(65_536),
+                                        },
+                                        modalities: PricingCatalogModalitiesDocument {
+                                            input: vec![
+                                                "text".to_string(),
+                                                "image".to_string(),
+                                                "audio".to_string(),
+                                                "video".to_string(),
+                                                "pdf".to_string(),
+                                            ],
+                                            output: vec!["text".to_string()],
+                                        },
                                     },
-                                    limit: PricingCatalogLimitDocument {
-                                        context: Some(1_048_576),
-                                        input: None,
-                                        output: Some(65_536),
+                                ),
+                                (
+                                    "gemini-embedding-001".to_string(),
+                                    PricingCatalogModelDocument {
+                                        id: "gemini-embedding-001".to_string(),
+                                        display_name: "Gemini Embedding".to_string(),
+                                        release_date: "2025-05-20".to_string(),
+                                        last_updated: "2025-05-20".to_string(),
+                                        cost: PricingCatalogCostDocument {
+                                            input: Some("0.1500".to_string()),
+                                            output: None,
+                                            cache_read: None,
+                                            cache_write: None,
+                                            input_audio: None,
+                                            output_audio: None,
+                                        },
+                                        limit: PricingCatalogLimitDocument {
+                                            context: Some(2_048),
+                                            input: None,
+                                            output: None,
+                                        },
+                                        modalities: PricingCatalogModalitiesDocument {
+                                            input: vec!["text".to_string()],
+                                            output: vec!["embedding".to_string()],
+                                        },
                                     },
-                                    modalities: PricingCatalogModalitiesDocument {
-                                        input: vec![
-                                            "text".to_string(),
-                                            "image".to_string(),
-                                            "audio".to_string(),
-                                            "video".to_string(),
-                                            "pdf".to_string(),
-                                        ],
-                                        output: vec!["text".to_string()],
-                                    },
-                                },
-                            )]),
+                                ),
+                            ]),
                         },
                     ),
                     (
@@ -1295,6 +1323,36 @@ mod tests {
                 assert_eq!(pricing.model_id, "claude-sonnet-4-6@default");
             }
             other => panic!("unexpected anthropic resolution: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn gcp_vertex_embedding_model_resolves_exact_google_vertex_pricing() {
+        let catalog = empty_catalog(
+            Arc::new(InMemoryRepo::default()),
+            "http://127.0.0.1:9/api.json".to_string(),
+        );
+
+        let resolved = catalog
+            .resolve_for_provider_connection(
+                &vertex_provider("global"),
+                &route("vertex-prod", "google/gemini-embedding-001"),
+                test_time(),
+            )
+            .await
+            .expect("resolve vertex embedding pricing");
+
+        match resolved {
+            PricingResolution::Exact { pricing } => {
+                assert_eq!(pricing.pricing_provider_id, "google-vertex");
+                assert_eq!(pricing.model_id, "gemini-embedding-001");
+                assert_eq!(
+                    pricing.input_cost_per_million_tokens,
+                    Some(Money4::from_decimal_str("0.1500").expect("money"))
+                );
+                assert_eq!(pricing.output_cost_per_million_tokens, None);
+            }
+            other => panic!("unexpected embedding pricing resolution: {other:?}"),
         }
     }
 

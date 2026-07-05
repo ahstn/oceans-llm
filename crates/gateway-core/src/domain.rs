@@ -2232,6 +2232,38 @@ impl Default for ProviderCapabilities {
     }
 }
 
+pub const VERTEX_TEXT_EMBEDDING_MODEL_IDS: &[&str] = &[
+    "gemini-embedding-001",
+    "text-embedding-005",
+    "text-multilingual-embedding-002",
+];
+
+#[must_use]
+pub fn is_supported_vertex_text_embedding_model_id(model_id: &str) -> bool {
+    VERTEX_TEXT_EMBEDDING_MODEL_IDS.contains(&model_id)
+}
+
+#[must_use]
+pub fn is_supported_vertex_text_embedding_upstream_model(upstream_model: &str) -> bool {
+    upstream_model
+        .strip_prefix("google/")
+        .is_some_and(is_supported_vertex_text_embedding_model_id)
+}
+
+#[must_use]
+pub const fn vertex_text_embedding_capabilities() -> ProviderCapabilities {
+    ProviderCapabilities {
+        chat_completions: false,
+        responses: false,
+        stream: false,
+        embeddings: true,
+        tools: false,
+        vision: false,
+        json_schema: false,
+        developer_role: false,
+    }
+}
+
 const fn default_true() -> bool {
     true
 }

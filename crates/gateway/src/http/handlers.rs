@@ -16,9 +16,11 @@ use gateway_core::{
     CoreRequestRequirements, EmbeddingsRequest, GatewayError, ModelsListResponse,
     ProviderCapabilities, ProviderClient, ProviderError, ProviderRequestContext,
     RequestAttemptRecord, RequestAttemptStatus, RequestToolCardinality, ResponsesRequest,
-    anthropic_messages_request_to_core, core_chat_request_to_openai, openai_chat_request_to_core,
+    anthropic_messages_request_to_core, core_chat_request_to_openai,
+    is_supported_vertex_text_embedding_upstream_model, openai_chat_request_to_core,
     openai_embeddings_request_to_core, openai_responses_request_to_core,
     protocol::{anthropic::anthropic_message_from_openai_chat, openai::ModelCard},
+    vertex_text_embedding_capabilities,
 };
 use gateway_service::{
     McpAccess, McpTokenOverhead, McpTokenOverheadInput, RequestLogContext, RequestLogIconMetadata,
@@ -1150,8 +1152,15 @@ fn route_effective_provider_capabilities(
     route: &gateway_core::ModelRoute,
 ) -> ProviderCapabilities {
     let mut capabilities = provider.capabilities();
-    if provider.provider_type() == "gcp_vertex" && !route.upstream_model.starts_with("anthropic/") {
-        capabilities.tools = false;
+    if provider.provider_type() == "gcp_vertex" {
+        if is_supported_vertex_text_embedding_upstream_model(&route.upstream_model) {
+            return vertex_text_embedding_capabilities();
+        }
+
+        capabilities.embeddings = false;
+        if !route.upstream_model.starts_with("anthropic/") {
+            capabilities.tools = false;
+        }
     }
     capabilities
 }
@@ -1898,16 +1907,182 @@ fn extract_request_headers(headers: &HeaderMap) -> BTreeMap<String, String> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use async_trait::async_trait;
     use axum::Extension;
     use axum::body::to_bytes;
     use axum::http::{HeaderMap, HeaderValue};
-    use gateway_core::GatewayError;
+    use gateway_core::{
+        CoreChatRequest, CoreEmbeddingsRequest, CoreRequestRequirements, CoreResponsesRequest,
+        GatewayError, ModelRoute, ProviderCapabilities, ProviderClient, ProviderError,
+        ProviderRegistry, ProviderRequestContext, ProviderStream,
+    };
     use serde_json::Value;
     use tower_http::request_id::RequestId;
 
     use super::{
         anthropic_error_response, canonical_request_id, extract_anthropic_authorization_header,
+        route_effective_provider_capabilities, select_first_eligible_route,
     };
+
+    struct StaticProvider {
+        provider_type: &'static str,
+        capabilities: ProviderCapabilities,
+    }
+
+    #[async_trait]
+    impl ProviderClient for StaticProvider {
+        fn provider_key(&self) -> &str {
+            "vertex"
+        }
+
+        fn provider_type(&self) -> &str {
+            self.provider_type
+        }
+
+        fn capabilities(&self) -> ProviderCapabilities {
+            self.capabilities
+        }
+
+        async fn chat_completions(
+            &self,
+            _request: &CoreChatRequest,
+            _context: &ProviderRequestContext,
+        ) -> Result<Value, ProviderError> {
+            Err(ProviderError::NotImplemented("test provider".to_string()))
+        }
+
+        async fn chat_completions_stream(
+            &self,
+            _request: &CoreChatRequest,
+            _context: &ProviderRequestContext,
+        ) -> Result<ProviderStream, ProviderError> {
+            Err(ProviderError::NotImplemented("test provider".to_string()))
+        }
+
+        async fn embeddings(
+            &self,
+            _request: &CoreEmbeddingsRequest,
+            _context: &ProviderRequestContext,
+        ) -> Result<Value, ProviderError> {
+            Err(ProviderError::NotImplemented("test provider".to_string()))
+        }
+
+        async fn responses(
+            &self,
+            _request: &CoreResponsesRequest,
+            _context: &ProviderRequestContext,
+        ) -> Result<Value, ProviderError> {
+            Err(ProviderError::NotImplemented("test provider".to_string()))
+        }
+
+        async fn responses_stream(
+            &self,
+            _request: &CoreResponsesRequest,
+            _context: &ProviderRequestContext,
+        ) -> Result<ProviderStream, ProviderError> {
+            Err(ProviderError::NotImplemented("test provider".to_string()))
+        }
+    }
+
+    fn route(upstream_model: &str, capabilities: ProviderCapabilities) -> ModelRoute {
+        ModelRoute {
+            id: uuid::Uuid::new_v4(),
+            model_id: uuid::Uuid::new_v4(),
+            provider_key: "vertex".to_string(),
+            upstream_model: upstream_model.to_string(),
+            priority: 0,
+            weight: 1.0,
+            enabled: true,
+            extra_headers: Default::default(),
+            extra_body: Default::default(),
+            capabilities,
+            compatibility: Default::default(),
+        }
+    }
+
+    #[test]
+    fn vertex_route_effective_capabilities_are_route_aware_for_embeddings() {
+        let provider = StaticProvider {
+            provider_type: "gcp_vertex",
+            capabilities: ProviderCapabilities::all_enabled(),
+        };
+
+        let embedding_route = route(
+            "google/gemini-embedding-001",
+            ProviderCapabilities::all_enabled(),
+        );
+        let embedding_capabilities =
+            route_effective_provider_capabilities(&provider, &embedding_route)
+                .intersect(embedding_route.capabilities);
+        assert!(embedding_capabilities.embeddings);
+        assert!(!embedding_capabilities.chat_completions);
+        assert!(!embedding_capabilities.responses);
+        assert!(!embedding_capabilities.stream);
+        assert!(!embedding_capabilities.tools);
+
+        let chat_route = route(
+            "google/gemini-2.0-flash",
+            ProviderCapabilities::all_enabled(),
+        );
+        let chat_capabilities = route_effective_provider_capabilities(&provider, &chat_route)
+            .intersect(chat_route.capabilities);
+        assert!(chat_capabilities.chat_completions);
+        assert!(chat_capabilities.stream);
+        assert!(!chat_capabilities.embeddings);
+        assert!(!chat_capabilities.tools);
+
+        let anthropic_route = route(
+            "anthropic/claude-sonnet-4-6",
+            ProviderCapabilities::all_enabled(),
+        );
+        let anthropic_capabilities =
+            route_effective_provider_capabilities(&provider, &anthropic_route)
+                .intersect(anthropic_route.capabilities);
+        assert!(anthropic_capabilities.chat_completions);
+        assert!(!anthropic_capabilities.embeddings);
+        assert!(anthropic_capabilities.tools);
+    }
+
+    #[test]
+    fn vertex_embedding_route_selection_only_uses_supported_google_text_embedding_routes() {
+        let provider = Arc::new(StaticProvider {
+            provider_type: "gcp_vertex",
+            capabilities: ProviderCapabilities::all_enabled(),
+        });
+        let mut providers = ProviderRegistry::new();
+        providers.register(provider);
+        let routes = vec![
+            route("google/gemini-2.5-pro", ProviderCapabilities::all_enabled()),
+            route(
+                "anthropic/claude-sonnet-4-6",
+                ProviderCapabilities::all_enabled(),
+            ),
+            route(
+                "google/text-embedding-005",
+                ProviderCapabilities::all_enabled(),
+            ),
+        ];
+
+        let (eligible_route_count, selected) = select_first_eligible_route(
+            &providers,
+            &routes,
+            CoreRequestRequirements {
+                embeddings: true,
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(eligible_route_count, 1);
+        assert_eq!(
+            selected
+                .expect("supported embedding route")
+                .0
+                .upstream_model,
+            "google/text-embedding-005"
+        );
+    }
 
     #[test]
     fn canonical_request_id_returns_gateway_internal_error_when_extension_is_missing() {
