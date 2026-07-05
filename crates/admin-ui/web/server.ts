@@ -7,6 +7,31 @@ const rootDirectory = path.dirname(fileURLToPath(import.meta.url))
 const clientDirectory = path.join(rootDirectory, 'dist', 'client')
 const serverEntryPoint = path.join(rootDirectory, 'dist', 'server', 'server.js')
 
+const staticAssetExtensions: Record<string, true> = {
+  '.avif': true,
+  '.css': true,
+  '.gif': true,
+  '.ico': true,
+  '.jpeg': true,
+  '.jpg': true,
+  '.js': true,
+  '.json': true,
+  '.map': true,
+  '.mjs': true,
+  '.png': true,
+  '.svg': true,
+  '.txt': true,
+  '.webmanifest': true,
+  '.webp': true,
+  '.woff': true,
+  '.woff2': true,
+}
+
+interface StaticAssetRequest {
+  path: string
+  terminal: boolean
+}
+
 const serverEntryModule = (await import(pathToFileURL(serverEntryPoint).href)) as {
   default: {
     fetch: (request: Request) => Response | Promise<Response>
@@ -15,7 +40,7 @@ const serverEntryModule = (await import(pathToFileURL(serverEntryPoint).href)) a
 
 const appHandler = serverEntryModule.default
 
-function resolveStaticAssetPath(pathname: string): string | null {
+function resolveStaticAssetRequest(pathname: string): StaticAssetRequest | null {
   if (!pathname.startsWith('/admin/')) {
     return null
   }
@@ -30,23 +55,40 @@ function resolveStaticAssetPath(pathname: string): string | null {
     return null
   }
 
-  return path.join(clientDirectory, normalizedPath)
+  const terminal =
+    normalizedPath.startsWith('assets/') ||
+    staticAssetExtensions[path.extname(normalizedPath)] === true
+
+  return {
+    path: path.join(clientDirectory, normalizedPath),
+    terminal,
+  }
 }
 
 const server = Bun.serve({
   port: PORT,
   async fetch(request) {
     const url = new URL(request.url)
-    const candidatePath = resolveStaticAssetPath(url.pathname)
+    const candidate = resolveStaticAssetRequest(url.pathname)
 
-    if (candidatePath) {
-      const file = Bun.file(candidatePath)
+    if (candidate) {
+      const file = Bun.file(candidate.path)
       if (await file.exists()) {
         return new Response(file, {
           headers: {
             'Cache-Control': url.pathname.includes('/assets/')
               ? 'public, max-age=31536000, immutable'
               : 'public, max-age=300',
+          },
+        })
+      }
+
+      if (candidate.terminal) {
+        return new Response('Static asset not found', {
+          status: 404,
+          headers: {
+            'Cache-Control': 'no-store',
+            'Content-Type': 'text/plain; charset=utf-8',
           },
         })
       }
