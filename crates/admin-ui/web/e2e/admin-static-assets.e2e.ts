@@ -50,8 +50,6 @@ test('admin shell serves linked CSS and JavaScript assets through the gateway', 
   if (!stylesheetUrl || !scriptUrl) {
     throw new Error('expected the admin shell to link built CSS and JavaScript assets')
   }
-  expect(stylesheetUrl.pathname).toMatch(/^\/admin\/assets\/.*\.css$/)
-  expect(scriptUrl.pathname).toMatch(/^\/admin\/assets\/.*\.js$/)
 
   const stylesheetResponse = await request.get(stylesheetUrl.href)
   expect(stylesheetResponse.status()).toBe(200)

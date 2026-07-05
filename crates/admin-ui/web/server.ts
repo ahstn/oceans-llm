@@ -51,7 +51,12 @@ function resolveStaticAssetRequest(pathname: string): StaticAssetRequest | null 
   }
 
   const normalizedPath = path.posix.normalize(relativePath)
-  if (normalizedPath.startsWith('../') || normalizedPath.includes('/../')) {
+  if (
+    normalizedPath === '.' ||
+    normalizedPath === '..' ||
+    normalizedPath.startsWith('../') ||
+    normalizedPath.includes('/../')
+  ) {
     return null
   }
 

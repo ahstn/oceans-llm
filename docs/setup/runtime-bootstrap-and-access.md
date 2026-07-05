@@ -186,7 +186,7 @@ The right first-access path depends on the runtime shape.
 
 ## Admin UI Static Assets
 
-The gateway proxies `/admin/*` to the admin UI runtime. The admin UI runtime must serve built static assets such as `/admin/assets/*.css`, JavaScript bundles, images, and fonts before TanStack route auth runs. Static asset misses should fail as static misses instead of falling through to the protected app router; otherwise an unauthenticated asset URL can render the login HTML with `content-type: text/html`, leaving `/admin` unstyled even though the HTML and JavaScript routes are reachable.
+The gateway proxies `/admin/*` to the admin UI runtime. The admin UI runtime must serve built static assets such as `/admin/assets/*.css`, JavaScript bundles, images, and fonts before TanStack route auth runs. Static asset misses should fail as static misses instead of falling through to the protected app router; otherwise an unauthenticated asset URL can render the login HTML with `content-type: text/html`, leaving `/admin` unstyled even though the HTML and JavaScript routes are reachable. See [`server.ts`](../../crates/admin-ui/web/server.ts) for the implementation and [issue #222](https://github.com/ahstn/oceans-llm/issues/222) for the original report.
 
 ## Startup Paths That Are Easy To Confuse
 
