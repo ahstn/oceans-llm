@@ -43,7 +43,8 @@ where
             .await?
             .ok_or_else(|| RouteError::ModelNotFound(requested_model.to_string()))?;
 
-        self.ensure_api_key_can_access_model(api_key, &model).await?;
+        self.ensure_api_key_can_access_model(api_key, &model)
+            .await?;
 
         Ok(model)
     }
@@ -280,6 +281,7 @@ fn model_allowlist_policy_allows(
     policy: &ModelAllowlistPolicy,
     context: &ApiKeyAccessContext,
 ) -> bool {
+    // v1 policy: service-account-owned keys are never granted model-level allowlists.
     if context.service_account_owned {
         return false;
     }
@@ -693,10 +695,7 @@ mod tests {
         let repo = Arc::new(AccessRepo::default());
         let user_id = Uuid::new_v4();
         let fast = model("fast", 10);
-        repo.models
-            .lock()
-            .expect("models lock")
-            .push(fast.clone());
+        repo.models.lock().expect("models lock").push(fast.clone());
         repo.users
             .lock()
             .expect("users lock")
@@ -742,10 +741,7 @@ mod tests {
         let repo = Arc::new(AccessRepo::default());
         let user_id = Uuid::new_v4();
         let fast = model("fast", 10);
-        repo.models
-            .lock()
-            .expect("models lock")
-            .push(fast.clone());
+        repo.models.lock().expect("models lock").push(fast.clone());
         repo.users
             .lock()
             .expect("users lock")
@@ -871,10 +867,10 @@ mod tests {
                 service_account_id,
                 service_account(service_account_id, team_id, ModelAccessMode::All),
             );
-        repo.grants_by_api_key.lock().expect("grants lock").insert(
-            api_key_id,
-            vec!["blocked".to_string(), "open".to_string()],
-        );
+        repo.grants_by_api_key
+            .lock()
+            .expect("grants lock")
+            .insert(api_key_id, vec!["blocked".to_string(), "open".to_string()]);
         repo.model_allowlists
             .lock()
             .expect("model allowlists lock")
@@ -908,7 +904,6 @@ mod tests {
             "open"
         );
     }
-
 
     #[tokio::test]
     async fn tag_resolution_skips_candidates_blocked_by_model_allowlist() {
@@ -1007,22 +1002,25 @@ mod tests {
             "model_not_granted"
         );
 
-        repo.model_allowlists.lock().expect("model allowlists lock").extend([
-            (
-                alias.id,
-                ModelAllowlistPolicy {
-                    users: vec!["other@example.com".to_string()],
-                    teams: Vec::new(),
-                },
-            ),
-            (
-                target.id,
-                ModelAllowlistPolicy {
-                    users: vec!["user@example.com".to_string()],
-                    teams: Vec::new(),
-                },
-            ),
-        ]);
+        repo.model_allowlists
+            .lock()
+            .expect("model allowlists lock")
+            .extend([
+                (
+                    alias.id,
+                    ModelAllowlistPolicy {
+                        users: vec!["other@example.com".to_string()],
+                        teams: Vec::new(),
+                    },
+                ),
+                (
+                    target.id,
+                    ModelAllowlistPolicy {
+                        users: vec!["user@example.com".to_string()],
+                        teams: Vec::new(),
+                    },
+                ),
+            ]);
 
         assert_eq!(
             model_keys(access.list_models_for_api_key(&auth).await.expect("models")),

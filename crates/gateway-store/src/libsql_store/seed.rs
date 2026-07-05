@@ -284,7 +284,7 @@ impl LibsqlStore {
                 for normalized_email in &allowlist.users {
                     self.connection
                         .execute(
-                            "INSERT INTO model_allowlist_users (model_id, normalized_email) VALUES (?1, ?2)",
+                            "INSERT INTO model_allowlist_users (model_id, normalized_email) VALUES (?1, ?2) ON CONFLICT(model_id, normalized_email) DO NOTHING",
                             libsql::params![model_id.to_string(), normalized_email.as_str()],
                         )
                         .await
@@ -293,7 +293,7 @@ impl LibsqlStore {
                 for team_key in &allowlist.teams {
                     self.connection
                         .execute(
-                            "INSERT INTO model_allowlist_teams (model_id, team_key) VALUES (?1, ?2)",
+                            "INSERT INTO model_allowlist_teams (model_id, team_key) VALUES (?1, ?2) ON CONFLICT(model_id, team_key) DO NOTHING",
                             libsql::params![model_id.to_string(), team_key.as_str()],
                         )
                         .await

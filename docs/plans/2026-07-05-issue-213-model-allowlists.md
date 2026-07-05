@@ -240,7 +240,7 @@ mise run admin-contract-check
 
 ### 5. Documentation
 
-User/operator docs:
+User-facing docs:
 
 - `docs/configuration/configuration-reference.md`: YAML shape, normalization, unknown refs, omitted-vs-empty, seed semantics, alias behavior, `tag:` behavior, service-account v1 denial.
 - `docs/access/identity-and-access.md`: distinguish API-key grants, principal-centric restrictions, and model-centric allowlists.

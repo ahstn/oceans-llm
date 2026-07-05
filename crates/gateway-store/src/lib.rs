@@ -32,6 +32,7 @@ pub(crate) use migrate::{MigrationTestHook, run_migrations_with_options_for_test
 mod tests {
     use std::env;
 
+    use gateway_core::domain::ModelAllowlistPolicy;
     use gateway_core::{
         ApiKeyOwnerKind, ApiKeyRepository, ApiKeySecretStorageKind, ApiKeyStatus, AuthMode,
         BudgetAlertChannel, BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus,
@@ -60,7 +61,6 @@ mod tests {
         UpsertMcpUpstreamCredentialBindingRecord, UpsertReviewAgentPullRequestRecord,
         UsageLedgerRecord, UsagePricingStatus, UserStatus,
     };
-    use gateway_core::domain::ModelAllowlistPolicy;
     use serde_json::{Map, json};
     use serial_test::serial;
     use sqlx::Row;
@@ -4116,6 +4116,98 @@ mod tests {
         );
     }
 
+    async fn exercise_model_allowlist_seed_ignores_duplicate_refs<S>(store: &S)
+    where
+        S: GatewayStore + ModelRepository + Sync,
+    {
+        let models = vec![SeedModel {
+            model_key: "restricted".to_string(),
+            alias_target_model_key: None,
+            description: Some("restricted tier".to_string()),
+            tags: Vec::new(),
+            rank: 10,
+            routes: Vec::new(),
+            allowlist: Some(ModelAllowlistPolicy {
+                users: vec![
+                    "alice@example.com".to_string(),
+                    "alice@example.com".to_string(),
+                    "bob@example.com".to_string(),
+                ],
+                teams: vec![
+                    "platform".to_string(),
+                    "platform".to_string(),
+                    "research".to_string(),
+                ],
+            }),
+        }];
+        store
+            .seed_from_inputs(&[], &models, &[], &[], &[], &[], &[], &[])
+            .await
+            .expect("seed model with duplicate allowlist refs");
+
+        let model = store
+            .get_model_by_key("restricted")
+            .await
+            .expect("query restricted model")
+            .expect("restricted model exists");
+        let policies = store
+            .list_model_allowlists_for_models(&[model.id])
+            .await
+            .expect("policy batch");
+
+        assert_eq!(
+            policies.get(&model.id),
+            Some(&ModelAllowlistPolicy {
+                users: vec![
+                    "alice@example.com".to_string(),
+                    "bob@example.com".to_string()
+                ],
+                teams: vec!["platform".to_string(), "research".to_string()],
+            })
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_model_allowlist_seed_ignores_duplicate_refs() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        exercise_model_allowlist_seed_ignores_duplicate_refs(&store).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_model_allowlist_seed_ignores_duplicate_refs() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres model allowlist duplicate refs test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        run_migrations_with_options(&StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        })
+        .await
+        .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        exercise_model_allowlist_seed_ignores_duplicate_refs(&store).await;
+
+        store.pool().close().await;
+        drop_postgres_test_database(&test_db).await;
+    }
+
     #[tokio::test]
     #[serial]
     async fn libsql_model_allowlist_seed_replaces_and_clears() {
@@ -4134,7 +4226,9 @@ mod tests {
     #[serial]
     async fn postgres_model_allowlist_seed_replaces_and_clears() {
         let Some(test_db) = create_postgres_test_database().await else {
-            eprintln!("skipping postgres model allowlist test because TEST_POSTGRES_URL is not set");
+            eprintln!(
+                "skipping postgres model allowlist test because TEST_POSTGRES_URL is not set"
+            );
             return;
         };
 

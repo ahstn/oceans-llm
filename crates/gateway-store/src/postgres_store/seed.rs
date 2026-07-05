@@ -275,7 +275,7 @@ impl PostgresStore {
             if let Some(allowlist) = &model.allowlist {
                 for normalized_email in &allowlist.users {
                     sqlx::query(
-                        "INSERT INTO model_allowlist_users (model_id, normalized_email) VALUES ($1, $2)",
+                        "INSERT INTO model_allowlist_users (model_id, normalized_email) VALUES ($1, $2) ON CONFLICT(model_id, normalized_email) DO NOTHING",
                     )
                     .bind(model_id.to_string())
                     .bind(normalized_email.as_str())
@@ -285,7 +285,7 @@ impl PostgresStore {
                 }
                 for team_key in &allowlist.teams {
                     sqlx::query(
-                        "INSERT INTO model_allowlist_teams (model_id, team_key) VALUES ($1, $2)",
+                        "INSERT INTO model_allowlist_teams (model_id, team_key) VALUES ($1, $2) ON CONFLICT(model_id, team_key) DO NOTHING",
                     )
                     .bind(model_id.to_string())
                     .bind(team_key.as_str())

@@ -3,15 +3,14 @@ use std::{collections::BTreeMap, env, fs, path::Path};
 use anyhow::{Context, bail};
 use gateway_core::{
     ApiKeySecretStorageKind, AuthMode, AwsBedrockApiStyle, AwsBedrockRouteCompatibility,
-    BudgetCadence, GlobalRole, ManagedApiKeySource, MembershipRole, Money4, OauthJitMembership,
-    OauthJitPolicy, OidcJitMembership, OidcJitPolicy, OpenAiCompatDeveloperRole,
-    OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
-    OpenRouterMaxPrice, OpenRouterPercentileCutoffs, OpenRouterPercentilePreference,
-    OpenRouterProviderRouting, OpenRouterRouteCompatibility, ProviderCapabilities,
-    RequestLogRetentionWindow, RouteCompatibility, SeedApiKeySecretMaterial, SeedBudget,
-    SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute, ModelAllowlistPolicy,
-    SeedOauthProvider, SeedOidcProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser,
-    SeedUserMembership,
+    BudgetCadence, GlobalRole, ManagedApiKeySource, MembershipRole, ModelAllowlistPolicy, Money4,
+    OauthJitMembership, OauthJitPolicy, OidcJitMembership, OidcJitPolicy,
+    OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
+    OpenAiCompatRouteCompatibility, OpenRouterMaxPrice, OpenRouterPercentileCutoffs,
+    OpenRouterPercentilePreference, OpenRouterProviderRouting, OpenRouterRouteCompatibility,
+    ProviderCapabilities, RequestLogRetentionWindow, RouteCompatibility, SeedApiKeySecretMaterial,
+    SeedBudget, SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute, SeedOauthProvider,
+    SeedOidcProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership,
     hash_gateway_key_secret, parse_gateway_api_key,
 };
 use gateway_providers::{
@@ -344,6 +343,7 @@ impl GatewayConfig {
                 }
             }
 
+            // Validate here so config loading fails even if callers never request seed models.
             if let Some(allowlist) = &model.allowlist {
                 normalize_model_allowlist(&model.id, allowlist)?;
             }
@@ -1945,6 +1945,7 @@ impl BudgetConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ModelAllowlistConfig {
     #[serde(default)]
     pub users: Vec<String>,
@@ -3414,7 +3415,10 @@ models:
         let allowlist = restricted.allowlist.as_ref().expect("restricted allowlist");
         assert_eq!(
             allowlist.users,
-            vec!["alice@example.com".to_string(), "zoe@example.com".to_string()]
+            vec![
+                "alice@example.com".to_string(),
+                "zoe@example.com".to_string()
+            ]
         );
         assert_eq!(
             allowlist.teams,
@@ -3423,11 +3427,48 @@ models:
     }
 
     #[test]
+    fn rejects_unknown_model_allowlist_keys() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+models:
+  - id: restricted
+    allowlist:
+      users:
+        - alice@example.com
+      team:
+        - platform
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-5
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("unknown field `team`"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
     fn rejects_explicit_empty_model_allowlists() {
         let tmp = tempdir().expect("tempdir");
         let config_path = tmp.path().join("gateway.yaml");
 
-        for allowlist_yaml in ["allowlist: {}", "allowlist:\n      users: []\n      teams: []"] {
+        for allowlist_yaml in [
+            "allowlist: {}",
+            "allowlist:\n      users: []\n      teams: []",
+        ] {
             write_config(
                 &config_path,
                 &format!(

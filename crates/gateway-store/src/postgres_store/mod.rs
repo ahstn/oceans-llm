@@ -18,6 +18,7 @@ mod support;
 
 use anyhow::Context;
 use async_trait::async_trait;
+use gateway_core::domain::ModelAllowlistPolicy;
 use gateway_core::{
     AdminApiKeyRepository, AdminIdentityRepository, ApiKeyModelGrantMode, ApiKeyOwnerKind,
     ApiKeyRecord, ApiKeyRepository, ApiKeySecretMaterialRecord, ApiKeySecretStorageKind,
@@ -62,7 +63,6 @@ use gateway_core::{
     UsagePricingStatus, UserOauthAuthRecord, UserOidcAuthRecord, UserPasswordAuthRecord,
     UserRecord, UserSessionRecord, UserStatus,
 };
-use gateway_core::domain::ModelAllowlistPolicy;
 use sqlx::{
     PgPool, Row,
     postgres::{PgPoolOptions, PgRow},

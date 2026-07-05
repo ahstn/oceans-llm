@@ -978,11 +978,17 @@ mod tests {
         assert_eq!(alias.supports_structured_output, Some(true));
         assert_eq!(alias.supports_attachments, Some(true));
         assert_eq!(
-            alias.allowlist.as_ref().map(|policy| policy.users.as_slice()),
+            alias
+                .allowlist
+                .as_ref()
+                .map(|policy| policy.users.as_slice()),
             Some(&["alias-user".to_string()][..])
         );
         assert_eq!(
-            alias.allowlist.as_ref().map(|policy| policy.teams.as_slice()),
+            alias
+                .allowlist
+                .as_ref()
+                .map(|policy| policy.teams.as_slice()),
             Some(&["alias-team".to_string()][..])
         );
         assert_eq!(

@@ -114,10 +114,10 @@ Model-centric overlays:
 
 - `model_allowlist_users`
   - Relationship: `model_id` + `normalized_email`
-  - Notes: `normalized_email` is stored as a string ref with no foreign key to `users`
+  - Notes: `normalized_email` is stored as a string ref with no foreign key to `users`; if a user's email changes, update the YAML config and reseed so the allowlist entry matches the new normalized email.
 - `model_allowlist_teams`
   - Relationship: `model_id` + `team_key`
-  - Notes: `team_key` is stored as a string ref with no foreign key to `teams`
+  - Notes: `team_key` is stored as a string ref with no foreign key to `teams`; if a team key changes, update the YAML config and reseed so the allowlist entry matches the new key.
 
 ### Ownership, Accounting, and Logging Tables
 

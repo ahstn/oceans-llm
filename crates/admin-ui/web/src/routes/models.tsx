@@ -780,7 +780,12 @@ function ModelAllowlistDetail({
   return (
     <div className="flex min-w-0 flex-col gap-2">
       {refs.map((entry) => (
-        <div key={entry.label} className="flex min-w-0 flex-col gap-1">
+        <div
+          key={entry.label}
+          role="group"
+          aria-label={entry.label}
+          className="flex min-w-0 flex-col gap-1"
+        >
           <span className="text-xs font-medium text-[var(--color-text-soft)]">{entry.label}</span>
           <div className="flex min-w-0 flex-wrap gap-1">
             {entry.values.map((value) => (

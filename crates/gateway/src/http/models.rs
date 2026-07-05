@@ -8,9 +8,10 @@ use gateway_service::{AdminModelSummary, AdminModelsService};
 use crate::http::{
     admin_auth::require_platform_admin,
     admin_contract::{
-        AdminModelAllowlistView, AdminModelClientConfigBlockView, AdminModelClientConfigSetupItemView,
-        AdminModelClientConfigView, AdminModelListQuery, AdminModelPageView, AdminModelView,
-        Envelope, GenerateModelClientConfigsRequest, GenerateModelClientConfigsResponse, envelope,
+        AdminModelAllowlistView, AdminModelClientConfigBlockView,
+        AdminModelClientConfigSetupItemView, AdminModelClientConfigView, AdminModelListQuery,
+        AdminModelPageView, AdminModelView, Envelope, GenerateModelClientConfigsRequest,
+        GenerateModelClientConfigsResponse, envelope,
     },
     error::AppError,
     state::AppState,
