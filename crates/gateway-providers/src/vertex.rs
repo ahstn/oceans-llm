@@ -720,7 +720,10 @@ fn vertex_embedding_max_dimensions(model_id: &str) -> i64 {
     match model_id {
         "gemini-embedding-001" | "gemini-embedding-2" => 3072,
         "text-embedding-005" | "text-multilingual-embedding-002" => 768,
-        _ => 3072,
+        _ => unreachable!(
+            "model_id is pre-validated by validate_vertex_embedding_model; \
+             add a new arm here whenever VERTEX_TEXT_EMBEDDING_MODEL_IDS is extended"
+        ),
     }
 }
 

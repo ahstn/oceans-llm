@@ -42,7 +42,7 @@ For native Vertex text embeddings:
 - Vertex `statistics.token_count` (`:predict`) or `usageMetadata.promptTokenCount` (`google/gemini-embedding-2` `:embedContent`) is normalized into prompt/input token usage
 - completion/output tokens are zero or absent for pricing purposes
 - the gateway must not convert characters or bytes into token counts
-- `priced` rows count toward human user budgets, gateway service-account budgets, and matching user model budgets
+- `priced` rows count toward the corresponding budget scope for the authenticated owner: user budget, service-account budget, and any matching user-model budget
 - `usage_missing` rows are written when Vertex does not return usable token counts; they remain visible but do not count toward budget windows
 - `unpriced` rows are written when usage exists but no exact pricing row can be resolved; they remain visible but do not count toward budget windows
 
