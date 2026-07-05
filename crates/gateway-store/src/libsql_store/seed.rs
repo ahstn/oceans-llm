@@ -265,6 +265,42 @@ impl LibsqlStore {
                 .await
                 .map_err(to_query_error)?;
 
+            self.connection
+                .execute(
+                    "DELETE FROM model_allowlist_users WHERE model_id = ?1",
+                    [model_id.to_string()],
+                )
+                .await
+                .map_err(to_query_error)?;
+            self.connection
+                .execute(
+                    "DELETE FROM model_allowlist_teams WHERE model_id = ?1",
+                    [model_id.to_string()],
+                )
+                .await
+                .map_err(to_query_error)?;
+
+            if let Some(allowlist) = &model.allowlist {
+                for normalized_email in &allowlist.users {
+                    self.connection
+                        .execute(
+                            "INSERT INTO model_allowlist_users (model_id, normalized_email) VALUES (?1, ?2) ON CONFLICT(model_id, normalized_email) DO NOTHING",
+                            libsql::params![model_id.to_string(), normalized_email.as_str()],
+                        )
+                        .await
+                        .map_err(to_query_error)?;
+                }
+                for team_key in &allowlist.teams {
+                    self.connection
+                        .execute(
+                            "INSERT INTO model_allowlist_teams (model_id, team_key) VALUES (?1, ?2) ON CONFLICT(model_id, team_key) DO NOTHING",
+                            libsql::params![model_id.to_string(), team_key.as_str()],
+                        )
+                        .await
+                        .map_err(to_query_error)?;
+                }
+            }
+
             for (route_index, route) in model.routes.iter().enumerate() {
                 let route_id = route_uuid(
                     &model.model_key,

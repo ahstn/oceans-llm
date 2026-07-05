@@ -256,6 +256,12 @@ impl From<ServiceModelIconKey> for ModelIconKeyView {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+pub struct AdminModelAllowlistView {
+    pub users: Vec<String>,
+    pub teams: Vec<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
 pub struct AdminModelView {
     pub id: String,
     pub model_id: String,
@@ -263,6 +269,7 @@ pub struct AdminModelView {
     pub alias_of: Option<String>,
     pub description: Option<String>,
     pub tags: Vec<String>,
+    pub allowlist: Option<AdminModelAllowlistView>,
     pub status: AdminModelStatusView,
     pub provider_key: Option<String>,
     pub provider_label: Option<String>,
@@ -1355,5 +1362,7 @@ mod tests {
                 .schemas
                 .contains_key("Envelope_McpToolInvocationDetailView")
         );
+        assert!(components.schemas.contains_key("AdminModelAllowlistView"));
+        assert!(components.schemas.contains_key("AdminModelView"));
     }
 }

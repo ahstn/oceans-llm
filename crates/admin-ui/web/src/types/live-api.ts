@@ -53,8 +53,13 @@ export type DeactivateBudgetInput = components['schemas']['DeactivateBudgetReque
 export type UpsertBudgetResultView = components['schemas']['UpsertBudgetResultView']
 export type DeactivateBudgetResultView = components['schemas']['DeactivateBudgetResultView']
 
-export type ModelView = components['schemas']['AdminModelView']
-export type ModelPageView = components['schemas']['AdminModelPageView']
+export type ModelAllowlistView = NonNullable<components['schemas']['AdminModelView']['allowlist']>
+export type ModelView = components['schemas']['AdminModelView'] & {
+  allowlist: ModelAllowlistView | null
+}
+export type ModelPageView = Omit<components['schemas']['AdminModelPageView'], 'items'> & {
+  items: ModelView[]
+}
 export type ModelListQuery = NonNullable<operations['list_models']['parameters']['query']>
 export type GenerateModelClientConfigsInput =
   components['schemas']['GenerateModelClientConfigsRequest']

@@ -3,13 +3,13 @@ use std::{collections::BTreeMap, env, fs, path::Path};
 use anyhow::{Context, bail};
 use gateway_core::{
     ApiKeySecretStorageKind, AuthMode, AwsBedrockApiStyle, AwsBedrockRouteCompatibility,
-    BudgetCadence, GlobalRole, ManagedApiKeySource, MembershipRole, Money4, OauthJitMembership,
-    OauthJitPolicy, OidcJitMembership, OidcJitPolicy, OpenAiCompatDeveloperRole,
-    OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
-    OpenRouterMaxPrice, OpenRouterPercentileCutoffs, OpenRouterPercentilePreference,
-    OpenRouterProviderRouting, OpenRouterRouteCompatibility, ProviderCapabilities,
-    RequestLogRetentionWindow, RouteCompatibility, SeedApiKeySecretMaterial, SeedBudget,
-    SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute, SeedOauthProvider,
+    BudgetCadence, GlobalRole, ManagedApiKeySource, MembershipRole, ModelAllowlistPolicy, Money4,
+    OauthJitMembership, OauthJitPolicy, OidcJitMembership, OidcJitPolicy,
+    OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
+    OpenAiCompatRouteCompatibility, OpenRouterMaxPrice, OpenRouterPercentileCutoffs,
+    OpenRouterPercentilePreference, OpenRouterProviderRouting, OpenRouterRouteCompatibility,
+    ProviderCapabilities, RequestLogRetentionWindow, RouteCompatibility, SeedApiKeySecretMaterial,
+    SeedBudget, SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute, SeedOauthProvider,
     SeedOidcProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership,
     hash_gateway_key_secret, parse_gateway_api_key,
 };
@@ -341,6 +341,11 @@ impl GatewayConfig {
                         model.id
                     );
                 }
+            }
+
+            // Validate here so config loading fails even if callers never request seed models.
+            if let Some(allowlist) = &model.allowlist {
+                normalize_model_allowlist(&model.id, allowlist)?;
             }
 
             for route in &model.routes {
@@ -736,33 +741,40 @@ impl GatewayConfig {
         let models = self
             .models
             .iter()
-            .map(|model| SeedModel {
-                model_key: model.id.clone(),
-                alias_target_model_key: model.alias_of.clone(),
-                description: model.description.clone(),
-                tags: model.tags.clone(),
-                rank: model.rank,
-                routes: model
-                    .routes
-                    .iter()
-                    .map(|route| SeedModelRoute {
-                        provider_key: route.provider.clone(),
-                        upstream_model: route.upstream_model.clone(),
-                        priority: route.priority,
-                        weight: route.weight,
-                        enabled: route.enabled,
-                        extra_headers: route
-                            .extra_headers
-                            .iter()
-                            .map(|(key, value)| (key.clone(), Value::String(value.clone())))
-                            .collect::<Map<String, Value>>(),
-                        extra_body: route.extra_body.clone(),
-                        capabilities: route.capabilities.clone().into_capabilities(),
-                        compatibility: route.compatibility.clone().into_compatibility(),
-                    })
-                    .collect(),
+            .map(|model| {
+                Ok(SeedModel {
+                    model_key: model.id.clone(),
+                    alias_target_model_key: model.alias_of.clone(),
+                    description: model.description.clone(),
+                    tags: model.tags.clone(),
+                    rank: model.rank,
+                    routes: model
+                        .routes
+                        .iter()
+                        .map(|route| SeedModelRoute {
+                            provider_key: route.provider.clone(),
+                            upstream_model: route.upstream_model.clone(),
+                            priority: route.priority,
+                            weight: route.weight,
+                            enabled: route.enabled,
+                            extra_headers: route
+                                .extra_headers
+                                .iter()
+                                .map(|(key, value)| (key.clone(), Value::String(value.clone())))
+                                .collect::<Map<String, Value>>(),
+                            extra_body: route.extra_body.clone(),
+                            capabilities: route.capabilities.clone().into_capabilities(),
+                            compatibility: route.compatibility.clone().into_compatibility(),
+                        })
+                        .collect(),
+                    allowlist: model
+                        .allowlist
+                        .as_ref()
+                        .map(|allowlist| normalize_model_allowlist(&model.id, allowlist))
+                        .transpose()?,
+                })
             })
-            .collect();
+            .collect::<anyhow::Result<Vec<_>>>()?;
 
         Ok(models)
     }
@@ -1933,6 +1945,15 @@ impl BudgetConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModelAllowlistConfig {
+    #[serde(default)]
+    pub users: Vec<String>,
+    #[serde(default)]
+    pub teams: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct ModelConfig {
     pub id: String,
     #[serde(default)]
@@ -1945,6 +1966,7 @@ pub struct ModelConfig {
     pub rank: i32,
     #[serde(default)]
     pub routes: Vec<ModelRouteConfig>,
+    pub allowlist: Option<ModelAllowlistConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -2481,6 +2503,32 @@ fn validate_aws_bedrock_route_compatibility(
     }
 
     Ok(())
+}
+
+fn normalize_model_allowlist(
+    model_id: &str,
+    allowlist: &ModelAllowlistConfig,
+) -> anyhow::Result<ModelAllowlistPolicy> {
+    let users = allowlist
+        .users
+        .iter()
+        .map(|email| normalize_config_email(email))
+        .collect::<anyhow::Result<std::collections::BTreeSet<_>>>()?
+        .into_iter()
+        .collect::<Vec<_>>();
+    let teams = allowlist
+        .teams
+        .iter()
+        .map(|team_key| normalize_config_team_key(team_key))
+        .collect::<anyhow::Result<std::collections::BTreeSet<_>>>()?
+        .into_iter()
+        .collect::<Vec<_>>();
+
+    if users.is_empty() && teams.is_empty() {
+        bail!("model `{model_id}` allowlist must include at least one user or team");
+    }
+
+    Ok(ModelAllowlistPolicy { users, teams })
 }
 
 fn normalize_config_email(email: &str) -> anyhow::Result<String> {
@@ -3316,6 +3364,139 @@ models:
         );
 
         GatewayConfig::from_path(&config_path).expect("config should parse");
+    }
+
+    #[test]
+    fn parses_model_allowlist_normalizes_refs_and_preserves_omitted_policy() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+models:
+  - id: unrestricted
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-4o-mini
+  - id: restricted
+    allowlist:
+      users:
+        - " Alice@Example.COM "
+        - "alice@example.com"
+        - "Zoe@Example.com"
+      teams:
+        - " platform "
+        - research
+        - platform
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-5
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let models = config.seed_models().expect("seed models");
+        let unrestricted = models
+            .iter()
+            .find(|model| model.model_key == "unrestricted")
+            .expect("unrestricted model");
+        let restricted = models
+            .iter()
+            .find(|model| model.model_key == "restricted")
+            .expect("restricted model");
+
+        assert_eq!(unrestricted.allowlist, None);
+        let allowlist = restricted.allowlist.as_ref().expect("restricted allowlist");
+        assert_eq!(
+            allowlist.users,
+            vec![
+                "alice@example.com".to_string(),
+                "zoe@example.com".to_string()
+            ]
+        );
+        assert_eq!(
+            allowlist.teams,
+            vec!["platform".to_string(), "research".to_string()]
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_model_allowlist_keys() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+models:
+  - id: restricted
+    allowlist:
+      users:
+        - alice@example.com
+      team:
+        - platform
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-5
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("unknown field `team`"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_explicit_empty_model_allowlists() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        for allowlist_yaml in [
+            "allowlist: {}",
+            "allowlist:\n      users: []\n      teams: []",
+        ] {
+            write_config(
+                &config_path,
+                &format!(
+                    r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+models:
+  - id: restricted
+    {allowlist_yaml}
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-5
+"#
+                ),
+            );
+
+            let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+            let error_text = format!("{error:#}");
+            assert!(
+                error_text.contains(
+                    "model `restricted` allowlist must include at least one user or team"
+                ),
+                "unexpected error: {error_text}"
+            );
+        }
     }
 
     #[test]

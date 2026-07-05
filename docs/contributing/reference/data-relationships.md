@@ -25,24 +25,27 @@ This document is schema-oriented. It describes the persistent relationships that
 3. `teams` 0..N `service_accounts`
 4. `api_keys` belongs to exactly one principal owner: user or service account
 5. `api_keys` may grant `all` gateway models or an explicit N..N set through `api_key_model_grants`
-6. Optional restriction overlays:
+6. Optional principal-centric restriction overlays:
    - `user_model_allowlist`
    - `team_model_allowlist`
    - `service_account_model_allowlist`
-7. `budgets` stores user, service-account, and user-model budgets with one active row per canonical scope key
-8. `usage_cost_events` records request ownership, model attribution, pricing status, and computed cost
-9. `request_logs` records the final user-visible request outcome
-10. `request_log_payloads` stores sanitized request and response bodies separately from the summary row
-11. `request_log_attempts` stores ordered upstream provider execution attempts for a request log
-12. `mcp_tool_invocations` stores individual tool-call audit rows correlated by `request_id`
-13. Request-log purge removes old request-log parents and their payload, tag, and attempt children without touching spend ledger rows
-14. `pricing_catalog_cache` stores normalized pricing snapshots used by runtime pricing resolution
-15. `model_pricing` stores effective-dated pricing rows used for historical charging
-16. `usage_cost_event_duplicates_archive` preserves duplicate-ledger migration/archive context
-17. `external_mcp_servers` stores user-added MCP server registry rows and soft-disable state
-18. `external_mcp_tools` stores discovered MCP tools, stable tool ids, schema hashes, schema versions, and active/inactive state
-19. `external_mcp_discovery_runs` stores immutable discovery attempt diagnostics
-20. `mcp_upstream_credential_bindings` stores redacted, principal-scoped upstream credentials for MCP execution
+7. Optional model-centric restriction overlays:
+   - `model_allowlist_users`
+   - `model_allowlist_teams`
+8. `budgets` stores user, service-account, and user-model budgets with one active row per canonical scope key
+9. `usage_cost_events` records request ownership, model attribution, pricing status, and computed cost
+10. `request_logs` records the final user-visible request outcome
+11. `request_log_payloads` stores sanitized request and response bodies separately from the summary row
+12. `request_log_attempts` stores ordered upstream provider execution attempts for a request log
+13. `mcp_tool_invocations` stores individual tool-call audit rows correlated by `request_id`
+14. Request-log purge removes old request-log parents and their payload, tag, and attempt children without touching spend ledger rows
+15. `pricing_catalog_cache` stores normalized pricing snapshots used by runtime pricing resolution
+16. `model_pricing` stores effective-dated pricing rows used for historical charging
+17. `usage_cost_event_duplicates_archive` preserves duplicate-ledger migration/archive context
+18. `external_mcp_servers` stores user-added MCP server registry rows and soft-disable state
+19. `external_mcp_tools` stores discovered MCP tools, stable tool ids, schema hashes, schema versions, and active/inactive state
+20. `external_mcp_discovery_runs` stores immutable discovery attempt diagnostics
+21. `mcp_upstream_credential_bindings` stores redacted, principal-scoped upstream credentials for MCP execution
 
 ## Table Catalog
 
@@ -98,12 +101,23 @@ Compatibility metadata is not a provider config fallback and is not an `extra_bo
 
 ### Authorization Overlay Tables
 
+Principal-centric overlays:
+
 - `user_model_allowlist`
   - Relationship: `user_id` + `model_id`
 - `team_model_allowlist`
   - Relationship: `team_id` + `model_id`
 - `service_account_model_allowlist`
   - Relationship: `service_account_id` + `model_id`
+
+Model-centric overlays:
+
+- `model_allowlist_users`
+  - Relationship: `model_id` + `normalized_email`
+  - Notes: `normalized_email` is stored as a string ref with no foreign key to `users`; if a user's email changes, update the YAML config and reseed so the allowlist entry matches the new normalized email.
+- `model_allowlist_teams`
+  - Relationship: `model_id` + `team_key`
+  - Notes: `team_key` is stored as a string ref with no foreign key to `teams`; if a team key changes, update the YAML config and reseed so the allowlist entry matches the new key.
 
 ### Ownership, Accounting, and Logging Tables
 
@@ -178,10 +192,15 @@ Effective model access is the intersection of:
 2. Team allowlist, only when `teams.model_access_mode='restricted'`
 3. Service-account allowlist, only when `service_accounts.model_access_mode='restricted'`
 4. User allowlist, only when `users.model_access_mode='restricted'`
+5. Model-level allowlist, only when rows exist for the requested `gateway_models.id` in `model_allowlist_users` or `model_allowlist_teams`
 
-If no owner overlay is restricted, the API-key grant baseline remains unchanged.
+If no owner overlay is restricted and no model-level allowlist exists, the API-key grant baseline remains unchanged.
 
-Service-account credentials use API-key grants plus the owning team's allowlist and their own service-account allowlist. User allowlists do not apply to service accounts. Admin-managed service-account API keys require `model_grant_mode='explicit'`.
+Principal-centric overlays (`user_model_allowlist`, `team_model_allowlist`, and `service_account_model_allowlist`) answer which models a principal may use. Model-centric overlays (`model_allowlist_users` and `model_allowlist_teams`) answer which human users or teams may use one model. The storage is deliberately separate; model-level config seeding must not mutate `model_access_mode` or write to the principal-centric allowlist tables.
+
+Human user credentials pass a model-level allowlist when either `users.email_normalized` or the effective `teams.team_key` is listed for that model. Service-account credentials use API-key grants plus the owning team's allowlist and their own service-account allowlist, but in v1 they fail models that have a model-level allowlist. User allowlists do not apply to service accounts. Admin-managed service-account API keys require `model_grant_mode='explicit'`.
+
+Model-level allowlist refs have no user/team foreign keys, so unknown emails and team keys can be stored as future-effective refs.
 
 ## Budget and Pricing Notes
 

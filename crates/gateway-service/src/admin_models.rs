@@ -9,9 +9,9 @@ use gateway_client_config::{
     infer_anthropic_thinking_policy, render_default_configs, render_default_configs_for_models,
 };
 use gateway_core::{
-    GatewayError, GatewayModel, ModelPricingRecord, ModelRepository, ModelRoute,
-    PricingCatalogRepository, PricingModalities, ProviderCapabilities, ProviderConnection,
-    ProviderRepository, vertex_route_capabilities_for_upstream_model,
+    GatewayError, GatewayModel, ModelAllowlistPolicy, ModelPricingRecord, ModelRepository,
+    ModelRoute, PricingCatalogRepository, PricingModalities, ProviderCapabilities,
+    ProviderConnection, ProviderRepository, vertex_route_capabilities_for_upstream_model,
 };
 use time::OffsetDateTime;
 use tracing::warn;
@@ -43,6 +43,7 @@ pub struct AdminModelSummary {
     pub alias_of: Option<String>,
     pub description: Option<String>,
     pub tags: Vec<String>,
+    pub allowlist: Option<ModelAllowlistPolicy>,
     pub status: AdminModelStatus,
     pub provider_key: Option<String>,
     pub provider_label: Option<String>,
@@ -154,6 +155,11 @@ where
 
         let pricing_time = OffsetDateTime::now_utc();
         let models = self.repo.list_models().await?;
+        let model_ids = models.iter().map(|model| model.id).collect::<Vec<_>>();
+        let allowlists_by_model = self
+            .repo
+            .list_model_allowlists_for_models(&model_ids)
+            .await?;
         let by_key = models
             .iter()
             .cloned()
@@ -240,6 +246,7 @@ where
                     alias_of: model.alias_target_model_key.clone(),
                     description: model.description.clone(),
                     tags: model.tags.clone(),
+                    allowlist: allowlists_by_model.get(&model.id).cloned(),
                     status,
                     provider_key: primary_route.map(|route| route.provider_key.clone()),
                     provider_label: provider_display
@@ -525,10 +532,10 @@ mod tests {
 
     use async_trait::async_trait;
     use gateway_core::{
-        GatewayError, GatewayModel, ModelPricingRecord, ModelRepository, ModelRoute, Money4,
-        PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
-        PricingProvenance, ProviderCapabilities, ProviderConnection, ProviderRepository,
-        StoreError,
+        GatewayError, GatewayModel, ModelAllowlistPolicy, ModelPricingRecord, ModelRepository,
+        ModelRoute, Money4, PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits,
+        PricingModalities, PricingProvenance, ProviderCapabilities, ProviderConnection,
+        ProviderRepository, StoreError,
     };
     use serde_json::json;
     use time::OffsetDateTime;
@@ -545,8 +552,10 @@ mod tests {
         routes_by_model: HashMap<Uuid, Vec<ModelRoute>>,
         providers_by_key: HashMap<String, ProviderConnection>,
         pricing_by_key: HashMap<(String, String), ModelPricingRecord>,
+        allowlists_by_model: HashMap<Uuid, ModelAllowlistPolicy>,
         list_routes_for_model_calls: AtomicUsize,
         list_routes_for_models_calls: AtomicUsize,
+        list_model_allowlists_for_models_calls: AtomicUsize,
         get_provider_by_key_calls: AtomicUsize,
         list_providers_by_keys_calls: AtomicUsize,
         fail_pricing_sync: AtomicBool,
@@ -574,6 +583,23 @@ mod tests {
             _api_key_id: Uuid,
         ) -> Result<Vec<GatewayModel>, StoreError> {
             Ok(Vec::new())
+        }
+
+        async fn list_model_allowlists_for_models(
+            &self,
+            model_ids: &[Uuid],
+        ) -> Result<HashMap<Uuid, ModelAllowlistPolicy>, StoreError> {
+            self.list_model_allowlists_for_models_calls
+                .fetch_add(1, Ordering::SeqCst);
+            Ok(model_ids
+                .iter()
+                .filter_map(|model_id| {
+                    self.allowlists_by_model
+                        .get(model_id)
+                        .cloned()
+                        .map(|policy| (*model_id, policy))
+                })
+                .collect())
         }
 
         async fn list_routes_for_model(
@@ -896,6 +922,22 @@ mod tests {
                     &["text", "image"],
                 ),
             )]),
+            allowlists_by_model: HashMap::from([
+                (
+                    alias_model_id,
+                    ModelAllowlistPolicy {
+                        users: vec!["alias-user".to_string()],
+                        teams: vec!["alias-team".to_string()],
+                    },
+                ),
+                (
+                    execution_model_id,
+                    ModelAllowlistPolicy {
+                        users: vec!["base-user".to_string()],
+                        teams: vec!["base-team".to_string()],
+                    },
+                ),
+            ]),
             ..Default::default()
         });
 
@@ -906,6 +948,11 @@ mod tests {
         assert_eq!(repo.list_routes_for_models_calls.load(Ordering::SeqCst), 1);
         assert_eq!(repo.list_routes_for_model_calls.load(Ordering::SeqCst), 0);
         assert_eq!(repo.list_providers_by_keys_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            repo.list_model_allowlists_for_models_calls
+                .load(Ordering::SeqCst),
+            1
+        );
         assert_eq!(repo.get_provider_by_key_calls.load(Ordering::SeqCst), 0);
 
         let alias = items
@@ -930,6 +977,20 @@ mod tests {
         assert_eq!(alias.supports_tool_calling, Some(true));
         assert_eq!(alias.supports_structured_output, Some(true));
         assert_eq!(alias.supports_attachments, Some(true));
+        assert_eq!(
+            alias
+                .allowlist
+                .as_ref()
+                .map(|policy| policy.users.as_slice()),
+            Some(&["alias-user".to_string()][..])
+        );
+        assert_eq!(
+            alias
+                .allowlist
+                .as_ref()
+                .map(|policy| policy.teams.as_slice()),
+            Some(&["alias-team".to_string()][..])
+        );
         assert_eq!(
             alias
                 .client_configurations

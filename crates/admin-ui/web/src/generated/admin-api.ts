@@ -1268,6 +1268,10 @@ export interface components {
             team_name?: string | null;
             team_role?: string | null;
         };
+        AdminModelAllowlistView: {
+            teams: string[];
+            users: string[];
+        };
         AdminModelClientConfigBlockView: {
             content: string;
             filename: string;
@@ -1299,6 +1303,7 @@ export interface components {
         AdminModelStatusView: "healthy" | "degraded";
         AdminModelView: {
             alias_of?: string | null;
+            allowlist?: null | components["schemas"]["AdminModelAllowlistView"];
             /** Format: int64 */
             cache_read_cost_per_million_tokens_usd_10000?: number | null;
             client_configurations: components["schemas"]["AdminModelClientConfigView"][];

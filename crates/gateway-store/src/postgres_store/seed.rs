@@ -261,6 +261,40 @@ impl PostgresStore {
                 .await
                 .map_err(to_query_error)?;
 
+            sqlx::query("DELETE FROM model_allowlist_users WHERE model_id = $1")
+                .bind(model_id.to_string())
+                .execute(&self.pool)
+                .await
+                .map_err(to_query_error)?;
+            sqlx::query("DELETE FROM model_allowlist_teams WHERE model_id = $1")
+                .bind(model_id.to_string())
+                .execute(&self.pool)
+                .await
+                .map_err(to_query_error)?;
+
+            if let Some(allowlist) = &model.allowlist {
+                for normalized_email in &allowlist.users {
+                    sqlx::query(
+                        "INSERT INTO model_allowlist_users (model_id, normalized_email) VALUES ($1, $2) ON CONFLICT(model_id, normalized_email) DO NOTHING",
+                    )
+                    .bind(model_id.to_string())
+                    .bind(normalized_email.as_str())
+                    .execute(&self.pool)
+                    .await
+                    .map_err(to_query_error)?;
+                }
+                for team_key in &allowlist.teams {
+                    sqlx::query(
+                        "INSERT INTO model_allowlist_teams (model_id, team_key) VALUES ($1, $2) ON CONFLICT(model_id, team_key) DO NOTHING",
+                    )
+                    .bind(model_id.to_string())
+                    .bind(team_key.as_str())
+                    .execute(&self.pool)
+                    .await
+                    .map_err(to_query_error)?;
+                }
+            }
+
             for (route_index, route) in model.routes.iter().enumerate() {
                 let route_id = route_uuid(
                     &model.model_key,

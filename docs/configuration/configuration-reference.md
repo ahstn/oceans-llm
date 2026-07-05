@@ -640,6 +640,40 @@ Important fields:
 - `rank`
 - `routes`
 - `alias_of`
+- `allowlist`
+
+### Model Allowlists
+
+`models[*].allowlist` is an optional model-centric authorization policy. It answers "which human users or teams may use this gateway model?" It is separate from API-key grants and from principal-centric user, team, and service-account model restrictions.
+
+Example:
+
+```yaml
+models:
+  - id: finance-gpt-4o
+    tags: [finance, fast]
+    allowlist:
+      users:
+        - Analyst@Example.com
+      teams:
+        - Finance
+    routes:
+      - provider: openrouter
+        upstream_model: openai/gpt-4o
+```
+
+Rules that matter:
+
+- `users` entries are normalized like config users: trimmed and lowercased email refs.
+- `teams` entries are normalized like config team keys.
+- Duplicate refs are collapsed deterministically after normalization.
+- Unknown user and team refs are accepted. They are string refs so a future user or team can become effective without changing the model config.
+- Omitting `allowlist` means the model has no model-level deny policy. During config seed reconciliation for that configured model, omission clears any previously stored model-level allowlist.
+- `allowlist: {}`, `users: []` with `teams: []`, or refs that normalize to empty sets are invalid startup config.
+- A human user-owned API key may use an allowlisted model when the normalized user email or the user's effective team key appears in the model allowlist.
+- A service-account-owned API key is denied for a model that has a model-level allowlist in v1, even when the owning team key appears in the allowlist.
+- Aliases are independent gateway model keys. An allowlist on an alias does not inherit from the target model, and an allowlist on the target does not automatically apply to the alias.
+- `tag:` selectors evaluate effective accessible models. Allowlisted models that the caller cannot use are skipped as tag candidates.
 
 ## Route Config
 

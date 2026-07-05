@@ -50,6 +50,8 @@ Configured gateway models are either:
 
 A model cannot define both routes and `alias_of`.
 
+Aliases are independent gateway model keys for authorization. An allowlist on an alias does not inherit from the target model, and an allowlist on the target model does not automatically apply to the alias.
+
 ## `tag:` Selectors
 
 The request `model` field can be:
@@ -60,7 +62,9 @@ The request `model` field can be:
 Tag selectors use AND semantics.
 
 - every requested tag must exist on the chosen model
-- selection only considers models already allowed for the authenticated API key
+- selection only considers models in the caller's effective accessible set
+- API-key grants, principal-centric restrictions, and model-level allowlists all contribute to that effective set
+- blocked allowlisted models are skipped as candidates rather than selected and denied later
 - candidates are ordered by model `rank`, then model key
 
 ## Routes, Priority, and Weight
@@ -257,5 +261,5 @@ The open retry/fallback policy work must amend this section when it lands; see [
   - [request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md)
 - exact pricing coverage:
   - [pricing-catalog-and-accounting.md](pricing-catalog-and-accounting.md)
-- spend enforcement and budget windows:
-  - [budgets-and-spending.md](../contributing/operations/budgets-and-spending.md)
+- budget behavior and setup:
+  - [budgets.md](../access/budgets.md)

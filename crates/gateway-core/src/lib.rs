@@ -32,7 +32,7 @@ pub use domain::{
     McpToolTokenEstimateRecord, McpToolsetRecord, McpToolsetStatus, McpToolsetToolRecord,
     McpUpstreamCredentialBindingRecord, McpUpstreamCredentialMaterialKind,
     McpUpstreamCredentialOwnerScopeKind, McpUpstreamSecretStorageKind, MembershipRole,
-    ModelAccessMode, ModelPricingRecord, ModelRoute, Money4, NewApiKeyRecord,
+    ModelAccessMode, ModelAllowlistPolicy, ModelPricingRecord, ModelRoute, Money4, NewApiKeyRecord,
     NewExternalMcpServerRecord, NewMcpAggregateSessionRecord, NewMcpToolsetRecord,
     NewReviewAgentRepositoryRecord, NewReviewAgentRunRecord, OauthJitMembership, OauthJitPolicy,
     OauthLoginStateRecord, OauthProviderRecord, OidcJitMembership, OidcJitPolicy,

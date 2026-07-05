@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { ModelsPage } from '@/routes/models'
 import type { ModelPageView } from '@/types/api'
 
 type ClientConfigSetup = ModelPageView['items'][number]['client_configurations'][number]['setup']
@@ -81,13 +82,13 @@ const codexSetup = (): ClientConfigSetup => [
   },
 ]
 
-const navigateMock = vi.fn()
+const navigateMock = vi.hoisted(() => vi.fn())
 const getModelClientConfigsMock = vi.hoisted(() => vi.fn())
 
-const routeMock = {
+const routeMock = vi.hoisted(() => ({
   useLoaderData: vi.fn(),
   useSearch: vi.fn(),
-}
+}))
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
@@ -127,6 +128,7 @@ const modelPage: ModelPageView = {
       supports_structured_output: true,
       supports_attachments: true,
       tags: ['fast', 'cheap'],
+      allowlist: null,
       status: 'healthy',
       client_configurations: [],
     },
@@ -152,6 +154,10 @@ const modelPage: ModelPageView = {
       supports_structured_output: true,
       supports_attachments: false,
       tags: ['anthropic', 'reasoning'],
+      allowlist: {
+        users: ['alice@example.com', 'bob@example.com'],
+        teams: ['platform'],
+      },
       status: 'healthy',
       client_configurations: [
         {
@@ -242,6 +248,7 @@ const modelPage: ModelPageView = {
       supports_structured_output: true,
       supports_attachments: true,
       tags: ['fast', 'fallback'],
+      allowlist: null,
       status: 'degraded',
       client_configurations: [],
     },
@@ -261,10 +268,8 @@ describe('ModelsPage', () => {
     routeMock.useSearch.mockReturnValue({ page: 1, page_size: 30 })
   })
 
-  it('renders dedicated mobile and desktop model layouts from the same payload', async () => {
+  it('renders dedicated mobile and desktop model layouts from the same payload', () => {
     routeMock.useLoaderData.mockReturnValue({ data: modelPage })
-
-    const { ModelsPage } = await import('@/routes/models')
 
     render(
       <TooltipProvider>
@@ -279,10 +284,8 @@ describe('ModelsPage', () => {
     ).toBeInTheDocument()
   })
 
-  it('renders the desktop table with the expected column order and stacked routing cells', async () => {
+  it('renders the desktop table with the expected column order and stacked routing cells', () => {
     routeMock.useLoaderData.mockReturnValue({ data: modelPage })
-
-    const { ModelsPage } = await import('@/routes/models')
 
     render(
       <TooltipProvider>
@@ -304,6 +307,7 @@ describe('ModelsPage', () => {
       'Cost / 1M tokens',
       'Context window',
       'Capabilities',
+      'Model allowlist',
       'Client config',
     ])
 
@@ -327,13 +331,89 @@ describe('ModelsPage', () => {
     expect(within(backupCells[5] as HTMLElement).getByText('Output')).toBeInTheDocument()
     expect(within(backupCells[6] as HTMLElement).getByText('Streaming')).toBeInTheDocument()
     expect(within(backupCells[6] as HTMLElement).getByText('Vision')).toBeInTheDocument()
-    expect(within(backupCells[7] as HTMLElement).getByText('—')).toBeInTheDocument()
+    expect(within(backupCells[8] as HTMLElement).getByText('—')).toBeInTheDocument()
   })
 
-  it('does not render the notes column in the desktop table', async () => {
+  it('renders model allowlists in the desktop table as read-only details', () => {
     routeMock.useLoaderData.mockReturnValue({ data: modelPage })
 
-    const { ModelsPage } = await import('@/routes/models')
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+
+    const table = screen.getAllByTestId('models-desktop-table')[0]
+    expect(within(table).getByRole('columnheader', { name: 'Model allowlist' })).toBeInTheDocument()
+
+    const fastRow = within(table).getByText('fast').closest('tr')
+    expect(fastRow).not.toBeNull()
+    const fastAllowlistCell = within(fastRow as HTMLElement).getAllByRole('cell')[7] as HTMLElement
+    expect(within(fastAllowlistCell).getByText('Unrestricted by model allowlist')).toBeInTheDocument()
+
+    const claudeRow = within(table).getByText('claude-sonnet').closest('tr')
+    expect(claudeRow).not.toBeNull()
+    const claudeAllowlistCell = within(claudeRow as HTMLElement).getAllByRole('cell')[7] as HTMLElement
+    expect(within(claudeAllowlistCell).getByText('Users')).toBeInTheDocument()
+    expect(within(claudeAllowlistCell).getByText('alice@example.com')).toBeInTheDocument()
+    expect(within(claudeAllowlistCell).getByText('bob@example.com')).toBeInTheDocument()
+    expect(within(claudeAllowlistCell).getByText('Teams')).toBeInTheDocument()
+    expect(within(claudeAllowlistCell).getByText('platform')).toBeInTheDocument()
+
+    for (const allowlistCell of [fastAllowlistCell, claudeAllowlistCell]) {
+      expect(within(allowlistCell).queryByRole('button')).not.toBeInTheDocument()
+      expect(within(allowlistCell).queryByRole('link')).not.toBeInTheDocument()
+      expect(within(allowlistCell).queryByRole('checkbox')).not.toBeInTheDocument()
+      expect(within(allowlistCell).queryByRole('textbox')).not.toBeInTheDocument()
+    }
+  })
+
+  it('renders model allowlists in mobile cards as read-only details', () => {
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+
+    const mobileList = screen.getByTestId('models-mobile-list')
+    const claudeCard = within(mobileList)
+      .getByRole('heading', { name: 'claude-sonnet' })
+      .closest('[data-slot="card"]')
+    expect(claudeCard).not.toBeNull()
+    const claudeAllowlist = within(claudeCard as HTMLElement)
+      .getByText('Model allowlist')
+      .closest('div')
+    expect(claudeAllowlist).not.toBeNull()
+    expect(within(claudeAllowlist as HTMLElement).getByText('Users')).toBeInTheDocument()
+    expect(within(claudeAllowlist as HTMLElement).getByText('alice@example.com')).toBeInTheDocument()
+    expect(within(claudeAllowlist as HTMLElement).getByText('bob@example.com')).toBeInTheDocument()
+    expect(within(claudeAllowlist as HTMLElement).getByText('Teams')).toBeInTheDocument()
+    expect(within(claudeAllowlist as HTMLElement).getByText('platform')).toBeInTheDocument()
+
+    const fastCard = within(mobileList)
+      .getByRole('heading', { name: 'fast' })
+      .closest('[data-slot="card"]')
+    expect(fastCard).not.toBeNull()
+    const fastAllowlist = within(fastCard as HTMLElement)
+      .getByText('Model allowlist')
+      .closest('div')
+    expect(fastAllowlist).not.toBeNull()
+    expect(
+      within(fastAllowlist as HTMLElement).getByText('Unrestricted by model allowlist'),
+    ).toBeInTheDocument()
+
+    for (const allowlistDetail of [claudeAllowlist, fastAllowlist]) {
+      expect(within(allowlistDetail as HTMLElement).queryByRole('button')).not.toBeInTheDocument()
+      expect(within(allowlistDetail as HTMLElement).queryByRole('link')).not.toBeInTheDocument()
+      expect(within(allowlistDetail as HTMLElement).queryByRole('checkbox')).not.toBeInTheDocument()
+      expect(within(allowlistDetail as HTMLElement).queryByRole('textbox')).not.toBeInTheDocument()
+    }
+  })
+
+  it('does not render the notes column in the desktop table', () => {
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
 
     render(
       <TooltipProvider>
@@ -357,8 +437,6 @@ describe('ModelsPage', () => {
       meta: {},
     })
     routeMock.useLoaderData.mockReturnValue({ data: modelPage })
-
-    const { ModelsPage } = await import('@/routes/models')
 
     render(
       <TooltipProvider>
@@ -538,8 +616,6 @@ describe('ModelsPage', () => {
     })
     routeMock.useLoaderData.mockReturnValue({ data: mixedPage })
 
-    const { ModelsPage } = await import('@/routes/models')
-
     render(
       <TooltipProvider>
         <ModelsPage />
@@ -628,8 +704,6 @@ describe('ModelsPage', () => {
       meta: {},
     })
     routeMock.useLoaderData.mockReturnValue({ data: pageOne })
-
-    const { ModelsPage } = await import('@/routes/models')
 
     const { rerender } = render(
       <TooltipProvider>

@@ -2,7 +2,7 @@
 
 `See also`: [Service Accounts](service-accounts.md), [MCP Tool Access](../mcp/mcp-tool-access.md), [Admin Control Plane](admin-control-plane.md), [Budgets and Spending](../contributing/operations/budgets-and-spending.md), [Data Relationships](../contributing/reference/data-relationships.md)
 
-Budgets limit or monitor gateway spend for principals that can generate spend.
+Budgets limit or monitor gateway spend for principals that can generate spend. They are spend controls, not model authorization controls; API-key grants and model access policies decide whether a caller may use a model before budget enforcement runs.
 
 ## Budget Taxonomy
 
@@ -25,9 +25,15 @@ MCP tool grants and toolsets are separate access controls. MCP token-overhead es
 
 ## Hard And Soft Budgets
 
-Hard budgets reject new chargeable traffic when the active window is already exhausted or when the completed request would push spend past the budget.
+Hard budgets reject new chargeable traffic when the active window is already exhausted. If a request starts under the limit but its final priced usage would push the window over the budget, the gateway rejects that completed charge before recording it as spend.
 
-Soft budgets never reject traffic. They are useful for alerting and reporting.
+Soft budgets never reject traffic. They are useful for alerting and reporting when a team wants visibility before enforcing a hard cap.
+
+Both hard and soft budgets use an active window by cadence:
+
+- daily
+- weekly
+- monthly
 
 ## Overlap Rules
 
@@ -38,7 +44,7 @@ For human user traffic, Oceans checks budgets in this order:
 
 For service-account traffic, Oceans checks only the service-account budget.
 
-If a user has both a user model budget and a user budget, the model-specific budget is evaluated first. Both can still alert independently.
+If a user has both a user model budget and a user budget, the model-specific budget is evaluated first. Both can still alert independently. Budgets do not grant model access; a request blocked by API-key grants or an allowlist never reaches the budget gate.
 
 ## Embedding Spend
 
@@ -79,9 +85,16 @@ The page has three budget sections:
 - Service Account Budgets
 - User Model Budgets
 
-Use User Budgets for normal human access. Use Service Account Budgets before activating automation credentials. Use User Model Budgets when one user needs a lower or separate limit for a specific model.
+Use User Budgets for normal human access. Choose the user, cadence, amount, timezone, and whether the budget is hard or soft.
 
-To set a user budget, choose the user, cadence, amount, and whether the budget is hard or soft. To set a service-account budget, choose the service account and the same budget controls; active service-account API keys require this budget. To set a user model budget, choose the user and model selector, then set the cadence, amount, and hard-limit behavior.
+Use Service Account Budgets before activating automation credentials. Choose the service account and the same budget controls. Active service-account API keys require this budget.
+
+Use User Model Budgets when one user needs a lower or separate limit for a specific model. Choose the user, then choose either:
+
+- a gateway model from the model selector, when the gateway model id is known
+- the exact trimmed upstream model name only for fallback cases where no gateway model id is available
+
+Then set cadence, amount, timezone, and hard-limit behavior.
 
 ## Config-Seeded Service Accounts
 
