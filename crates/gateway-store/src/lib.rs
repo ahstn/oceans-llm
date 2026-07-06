@@ -37,30 +37,30 @@ mod tests {
         ApiKeyOwnerKind, ApiKeyRepository, ApiKeySecretStorageKind, ApiKeyStatus, AuthMode,
         BudgetAlertChannel, BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus,
         BudgetAlertHistoryQuery, BudgetAlertRecord, BudgetAlertRepository, BudgetCadence,
-        BudgetModelSelector, BudgetRepository, BudgetScope, BudgetSettings, BudgetSourceKind,
-        ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus,
-        ExternalMcpServerStatus, ExternalMcpTransport, GlobalRole, IdentityRepository,
-        ManagedApiKeySource, McpRegistryRepository, McpToolInvocationPayloadRecord,
-        McpToolInvocationQuery, McpToolInvocationRecord, McpToolInvocationRepository,
-        McpToolInvocationStatus, McpToolPolicyResult, McpUpstreamCredentialMaterialKind,
-        McpUpstreamCredentialOwnerScopeKind, McpUpstreamCredentialRepository,
-        McpUpstreamSecretStorageKind, MembershipRole, ModelPricingRecord, ModelRepository, Money4,
-        NewExternalMcpServerRecord, NewReviewAgentRepositoryRecord, NewReviewAgentRunRecord,
-        OauthJitPolicy, OidcLoginStateRecord, OpenAiCompatDeveloperRole,
-        OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
-        PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
-        PricingProvenance, ProviderCapabilities, RequestAttemptRecord, RequestAttemptStatus,
-        RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository,
-        RequestTag, RequestTags, RequestToolCardinality, ReviewAgentProvider,
-        ReviewAgentPullRequestState, ReviewAgentRepository, ReviewAgentRepositoryStatus,
-        ReviewAgentRunStatus, ReviewAgentSettings, RouteCompatibility, SeedApiKey,
-        SeedApiKeySecretMaterial, SeedBudget, SeedHumanBudgetDefaults,
-        SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute, SeedOauthProvider,
-        SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership,
-        SeedUserModelBudgetDefault, ServiceAccountStatus, StoreError, StoreHealth,
-        UpdateExternalMcpServerRecord, UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord,
-        UpsertMcpUpstreamCredentialBindingRecord, UpsertReviewAgentPullRequestRecord,
-        UsageLedgerRecord, UsagePricingStatus, UserStatus,
+        BudgetModelSelector, BudgetRepository, BudgetScope, BudgetSettings, BudgetSource,
+        BudgetSourceKind, ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord,
+        ExternalMcpDiscoveryStatus, ExternalMcpServerStatus, ExternalMcpTransport, GlobalRole,
+        IdentityRepository, ManagedApiKeySource, McpRegistryRepository,
+        McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
+        McpToolInvocationRepository, McpToolInvocationStatus, McpToolPolicyResult,
+        McpUpstreamCredentialMaterialKind, McpUpstreamCredentialOwnerScopeKind,
+        McpUpstreamCredentialRepository, McpUpstreamSecretStorageKind, MembershipRole,
+        ModelPricingRecord, ModelRepository, Money4, NewExternalMcpServerRecord,
+        NewReviewAgentRepositoryRecord, NewReviewAgentRunRecord, OauthJitPolicy,
+        OidcLoginStateRecord, OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField,
+        OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility, PricingCatalogCacheRecord,
+        PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
+        ProviderCapabilities, RequestAttemptRecord, RequestAttemptStatus, RequestLogPayloadRecord,
+        RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestTag, RequestTags,
+        RequestToolCardinality, ReviewAgentProvider, ReviewAgentPullRequestState,
+        ReviewAgentRepository, ReviewAgentRepositoryStatus, ReviewAgentRunStatus,
+        ReviewAgentSettings, RouteCompatibility, SeedApiKey, SeedApiKeySecretMaterial, SeedBudget,
+        SeedHumanBudgetDefaults, SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute,
+        SeedOauthProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser,
+        SeedUserMembership, SeedUserModelBudgetDefault, ServiceAccountStatus, StoreError,
+        StoreHealth, UpdateExternalMcpServerRecord, UpdateReviewAgentRunRecord,
+        UpsertExternalMcpToolRecord, UpsertMcpUpstreamCredentialBindingRecord,
+        UpsertReviewAgentPullRequestRecord, UsageLedgerRecord, UsagePricingStatus, UserStatus,
     };
     use serde_json::{Map, json};
     use serial_test::serial;
@@ -2429,6 +2429,99 @@ mod tests {
                 .await
                 .expect_err("check should fail");
         assert!(error.to_string().contains("pending migrations"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_budget_source_migration_marks_legacy_inactive_budgets_as_deactivated() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        let db = libsql::Builder::new_local(db_path.to_str().expect("db path"))
+            .build()
+            .await
+            .expect("db");
+        let conn = db.connect().expect("connection");
+
+        conn.execute(
+            r#"
+            CREATE TABLE IF NOT EXISTS refinery_schema_history (
+                version INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                applied_on INTEGER NOT NULL,
+                checksum TEXT NOT NULL
+            )
+            "#,
+            (),
+        )
+        .await
+        .expect("schema history");
+
+        for migration in MIGRATION_REGISTRY
+            .iter()
+            .filter(|migration| migration.version < 38)
+        {
+            conn.execute_batch(migration.sql_for(MigrationBackend::Libsql))
+                .await
+                .unwrap_or_else(|error| panic!("apply migration {}: {error}", migration.version));
+            conn.execute(
+                r#"
+                INSERT INTO refinery_schema_history (version, name, applied_on, checksum)
+                VALUES (?1, ?2, unixepoch(), ?3)
+                "#,
+                libsql::params![migration.version as i64, migration.name, migration.checksum],
+            )
+            .await
+            .unwrap_or_else(|error| panic!("record migration {}: {error}", migration.version));
+        }
+
+        let now = OffsetDateTime::now_utc().unix_timestamp();
+        let user_id = Uuid::new_v4();
+        conn.execute(
+            r#"
+            INSERT INTO users (
+              user_id, name, email, email_normalized, global_role, auth_mode, status,
+              request_logging_enabled, model_access_mode, created_at, updated_at
+            ) VALUES (?1, 'User One', 'user@example.com', 'user@example.com', 'user', 'password', 'active', 1, 'all', ?2, ?2)
+            "#,
+            libsql::params![user_id.to_string(), now],
+        )
+        .await
+        .expect("user");
+        conn.execute(
+            r#"
+            INSERT INTO budgets (
+                budget_id, scope_kind, scope_key, user_id, cadence, amount_10000,
+                hard_limit, timezone, is_active, created_at, updated_at
+            ) VALUES (?1, 'user', ?2, ?3, 'daily', 100000, 1, 'UTC', 0, ?4, ?4)
+            "#,
+            libsql::params![
+                Uuid::new_v4().to_string(),
+                format!("budget:v1:user:{user_id}"),
+                user_id.to_string(),
+                now
+            ],
+        )
+        .await
+        .expect("legacy inactive budget");
+
+        run_migrations(&db_path).await.expect("apply v38");
+
+        let mut rows = conn
+            .query(
+                "SELECT source_kind, source_key FROM budgets WHERE user_id = ?1",
+                [user_id.to_string()],
+            )
+            .await
+            .expect("source query");
+        let row = rows
+            .next()
+            .await
+            .expect("source row fetch")
+            .expect("source row");
+        let source_kind: String = row.get(0).expect("source kind");
+        let source_key: String = row.get(1).expect("source key");
+        assert_eq!(source_kind, "manual");
+        assert_eq!(source_key, "deactivated");
     }
 
     #[tokio::test]
@@ -5846,6 +5939,77 @@ mod tests {
                 .await
                 .expect("load model budget after deactivation")
                 .is_none()
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_guarded_config_budget_upsert_does_not_recreate_after_deactivation() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+        let user = store
+            .create_identity_user(
+                "User",
+                "user@example.com",
+                "user@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
+            .await
+            .expect("user");
+        let scope = BudgetScope::User {
+            user_id: user.user_id,
+        };
+        let settings = BudgetSettings {
+            cadence: BudgetCadence::Daily,
+            amount_usd: Money4::from_scaled(700_000),
+            hard_limit: true,
+            timezone: "UTC".to_string(),
+        };
+        let source = BudgetSource::config_user_default();
+        let now = OffsetDateTime::now_utc();
+
+        store
+            .upsert_active_budget_with_source(&scope, &settings, &source, now)
+            .await
+            .expect("config default budget");
+        store
+            .deactivate_active_budget(&scope, now + Duration::seconds(1))
+            .await
+            .expect("manual deactivation");
+
+        let guarded = store
+            .upsert_active_budget_with_source_guard(
+                &scope,
+                &settings,
+                &source,
+                Some(&source),
+                now + Duration::seconds(2),
+            )
+            .await
+            .expect("guarded upsert");
+        assert!(guarded.is_none());
+        assert!(
+            store
+                .get_active_budget_by_scope(&scope)
+                .await
+                .expect("active budget")
+                .is_none()
+        );
+        assert!(
+            store
+                .get_latest_budget_by_scope(&scope)
+                .await
+                .expect("latest budget")
+                .expect("latest budget exists")
+                .source
+                .is_manual_deactivation()
         );
     }
 

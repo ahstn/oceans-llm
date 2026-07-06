@@ -182,39 +182,28 @@ impl BudgetRepository for LibsqlStore {
             self.connection
                 .execute(
                     r#"
-                    INSERT INTO budgets (
-                        budget_id, scope_kind, scope_key, user_id, service_account_id, model_id,
-                        upstream_model, cadence, amount_10000, hard_limit, timezone, is_active,
-                        created_at, updated_at, source_kind, source_key
-                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1, ?12, ?13, ?14, ?15)
-                    ON CONFLICT(scope_key) WHERE is_active = 1
-                    DO UPDATE SET
-                        cadence = excluded.cadence,
-                        amount_10000 = excluded.amount_10000,
-                        hard_limit = excluded.hard_limit,
-                        timezone = excluded.timezone,
-                        source_kind = excluded.source_kind,
-                        source_key = excluded.source_key,
-                        updated_at = excluded.updated_at
-                    WHERE budgets.source_kind = ?16
-                      AND budgets.source_key IS ?17
+                    UPDATE budgets
+                    SET cadence = ?1,
+                        amount_10000 = ?2,
+                        hard_limit = ?3,
+                        timezone = ?4,
+                        source_kind = ?5,
+                        source_key = ?6,
+                        updated_at = ?7
+                    WHERE scope_key = ?8
+                      AND is_active = 1
+                      AND source_kind = ?9
+                      AND source_key IS ?10
                     "#,
                     libsql::params![
-                        Uuid::new_v4().to_string(),
-                        scope.kind().as_str(),
-                        scope.scope_key(),
-                        scope.user_id().map(|id| id.to_string()),
-                        scope.service_account_id().map(|id| id.to_string()),
-                        scope.model_id().map(|id| id.to_string()),
-                        scope.upstream_model().map(ToOwned::to_owned),
                         settings.cadence.as_str(),
                         settings.amount_usd.as_scaled_i64(),
                         if settings.hard_limit { 1 } else { 0 },
                         settings.timezone.clone(),
-                        updated_at.unix_timestamp(),
-                        updated_at.unix_timestamp(),
                         source.kind.as_str(),
                         source.key.clone(),
+                        updated_at.unix_timestamp(),
+                        scope.scope_key(),
                         expected_source.kind.as_str(),
                         expected_source.key.clone(),
                     ],

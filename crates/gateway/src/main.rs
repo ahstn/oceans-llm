@@ -298,8 +298,8 @@ async fn run_seed_local_demo_command(config: &GatewayConfig) -> anyhow::Result<(
             .context("failed to initialize gateway store")?,
     );
     let human_budget_defaults = config.seed_human_budget_defaults()?;
-    ensure_bootstrap_admin(&store, &config.auth.bootstrap_admin, &human_budget_defaults).await?;
     seed_config(store.as_ref(), config).await?;
+    ensure_bootstrap_admin(&store, &config.auth.bootstrap_admin, &human_budget_defaults).await?;
     let raw_keys = seed_local_demo_data(store.as_ref()).await?;
 
     println!("seeded local demo dataset");

@@ -5,5 +5,11 @@ ALTER TABLE budgets
 ALTER TABLE budgets
   ADD COLUMN source_key TEXT;
 
+UPDATE budgets
+SET source_key = 'deactivated'
+WHERE is_active = 0
+  AND source_kind = 'manual'
+  AND source_key IS NULL;
+
 CREATE INDEX IF NOT EXISTS budgets_source_idx
   ON budgets (source_kind, source_key, is_active);
