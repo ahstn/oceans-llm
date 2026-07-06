@@ -1,3 +1,4 @@
+use crate::shared::parse_uuid;
 use std::collections::HashMap;
 
 use super::*;
@@ -58,6 +59,78 @@ impl ModelRepository for PostgresStore {
         .map_err(to_query_error)?;
 
         rows.iter().map(decode_gateway_model).collect()
+    }
+
+    async fn list_model_allowlists_for_models(
+        &self,
+        model_ids: &[Uuid],
+    ) -> Result<HashMap<Uuid, ModelAllowlistPolicy>, StoreError> {
+        if model_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let mut user_builder = sqlx::QueryBuilder::<sqlx::Postgres>::new(
+            "SELECT model_id, normalized_email FROM model_allowlist_users WHERE model_id IN (",
+        );
+        {
+            let mut separated = user_builder.separated(", ");
+            for model_id in model_ids {
+                separated.push_bind(model_id.to_string());
+            }
+        }
+        user_builder.push(" ) ORDER BY model_id ASC, normalized_email ASC");
+
+        let user_rows = user_builder
+            .build()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(to_query_error)?;
+
+        let mut policies = HashMap::new();
+        for row in &user_rows {
+            let model_id = parse_uuid(&row.try_get::<String, _>(0).map_err(to_query_error)?)?;
+            let normalized_email = row.try_get(1).map_err(to_query_error)?;
+            policies
+                .entry(model_id)
+                .or_insert_with(|| ModelAllowlistPolicy {
+                    users: Vec::new(),
+                    teams: Vec::new(),
+                })
+                .users
+                .push(normalized_email);
+        }
+
+        let mut team_builder = sqlx::QueryBuilder::<sqlx::Postgres>::new(
+            "SELECT model_id, team_key FROM model_allowlist_teams WHERE model_id IN (",
+        );
+        {
+            let mut separated = team_builder.separated(", ");
+            for model_id in model_ids {
+                separated.push_bind(model_id.to_string());
+            }
+        }
+        team_builder.push(" ) ORDER BY model_id ASC, team_key ASC");
+
+        let team_rows = team_builder
+            .build()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(to_query_error)?;
+
+        for row in &team_rows {
+            let model_id = parse_uuid(&row.try_get::<String, _>(0).map_err(to_query_error)?)?;
+            let team_key = row.try_get(1).map_err(to_query_error)?;
+            policies
+                .entry(model_id)
+                .or_insert_with(|| ModelAllowlistPolicy {
+                    users: Vec::new(),
+                    teams: Vec::new(),
+                })
+                .teams
+                .push(team_key);
+        }
+
+        Ok(policies)
     }
 
     async fn list_routes_for_model(&self, model_id: Uuid) -> Result<Vec<ModelRoute>, StoreError> {

@@ -19,6 +19,7 @@ gateway:
   containerPort: 8080
   configMountPath: /app/gateway.yaml
   allowLiteralSecretsInConfig: false
+  clientConfigGatewayBaseUrl: ""
   config:
     server:
       bind: "0.0.0.0:8080"
@@ -32,7 +33,6 @@ gateway:
         email: admin@local
         password: env.GATEWAY_BOOTSTRAP_ADMIN_PASSWORD
         require_password_change: true
-      seed_api_keys: []
     request_logging:
       payloads:
         capture_mode: redacted_payloads
@@ -43,6 +43,7 @@ gateway:
     providers: []
     models: []
     teams: []
+    service_accounts: []
     users: []
   extraEnv: []
   extraEnvFrom: []

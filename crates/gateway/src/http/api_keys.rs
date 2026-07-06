@@ -4,13 +4,14 @@ use axum::{
     http::HeaderMap,
 };
 use gateway_core::{
-    AdminApiKeyRepository, ApiKeyOwnerKind, AuthError, GatewayError, GlobalRole,
-    IdentityRepository, MembershipRole, UserStatus,
+    AdminApiKeyRepository, ApiKeyModelGrantMode, ApiKeyOwnerKind, AuthError, GatewayError,
+    GlobalRole, IdentityRepository, MembershipRole, UserStatus,
 };
 use gateway_service::{
     AdminApiKeyModelOption, AdminApiKeyService, AdminApiKeyServiceAccountOwner, AdminApiKeySummary,
     AdminApiKeyUserOwner, AdminApiKeysPayload as ServiceAdminApiKeysPayload,
-    CreateAdminApiKeyInput, CreateAdminApiKeyResult, UpdateAdminApiKeyInput,
+    CreateAdminApiKeyInput, CreateAdminApiKeyResult, RevealAdminApiKeySecretResult,
+    UpdateAdminApiKeyInput,
 };
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -45,6 +46,7 @@ pub struct AdminApiKeyView {
     owner_service_account_key: Option<String>,
     owner_service_account_team_id: Option<String>,
     owner_service_account_team_key: Option<String>,
+    model_grant_mode: ApiKeyModelGrantModeView,
     model_keys: Vec<String>,
     created_at: String,
     last_used_at: Option<String>,
@@ -83,6 +85,7 @@ pub struct CreateApiKeyRequest {
     owner_user_id: Option<String>,
     owner_team_id: Option<String>,
     owner_service_account_id: Option<String>,
+    model_grant_mode: ApiKeyModelGrantModeView,
     model_keys: Vec<String>,
 }
 
@@ -94,7 +97,33 @@ pub struct CreateApiKeyResponse {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateApiKeyRequest {
+    model_grant_mode: ApiKeyModelGrantModeView,
     model_keys: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ApiKeyModelGrantModeView {
+    All,
+    Explicit,
+}
+
+impl ApiKeyModelGrantModeView {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::Explicit => "explicit",
+        }
+    }
+}
+
+impl From<ApiKeyModelGrantMode> for ApiKeyModelGrantModeView {
+    fn from(value: ApiKeyModelGrantMode) -> Self {
+        match value {
+            ApiKeyModelGrantMode::All => Self::All,
+            ApiKeyModelGrantMode::Explicit => Self::Explicit,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -105,6 +134,11 @@ pub struct UpdateApiKeyResponse {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct RevokeApiKeyResponse {
     api_key: AdminApiKeyView,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct RevealApiKeySecretResponse {
+    raw_key: String,
 }
 
 #[utoipa::path(
@@ -147,6 +181,7 @@ pub async fn create_api_key(
             owner_user_id: request.owner_user_id,
             owner_team_id: request.owner_team_id,
             owner_service_account_id: request.owner_service_account_id,
+            model_grant_mode: request.model_grant_mode.as_str().to_string(),
             model_keys: request.model_keys,
         })
         .await?;
@@ -177,6 +212,7 @@ pub async fn update_api_key(
         .update_api_key(
             api_key_id,
             UpdateAdminApiKeyInput {
+                model_grant_mode: request.model_grant_mode.as_str().to_string(),
                 model_keys: request.model_keys,
             },
         )
@@ -211,6 +247,27 @@ pub async fn revoke_api_key(
     })))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/admin/api-keys/{api_key_id}/secret/reveal",
+    params(("api_key_id" = String, Path, description = "API key identifier")),
+    responses((status = 200, body = Envelope<RevealApiKeySecretResponse>)),
+    security(("session_cookie" = []))
+)]
+pub async fn reveal_api_key_secret(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(api_key_id): Path<String>,
+) -> Result<Json<Envelope<RevealApiKeySecretResponse>>, AppError> {
+    let api_key_id = parse_uuid(&api_key_id, "api_key_id")?;
+    authorize_reveal_api_key_secret(&state, &headers, api_key_id).await?;
+
+    let service = AdminApiKeyService::new(state.store.clone());
+    let result = service.reveal_api_key_secret(api_key_id).await?;
+
+    Ok(Json(envelope(map_reveal_result(result))))
+}
+
 enum ApiKeyAdminScope {
     Platform,
     Team(Uuid),
@@ -241,6 +298,43 @@ async fn require_api_key_admin_scope(
     }
 
     Ok(ApiKeyAdminScope::Team(membership.team_id))
+}
+
+async fn authorize_reveal_api_key_secret(
+    state: &AppState,
+    headers: &HeaderMap,
+    api_key_id: Uuid,
+) -> Result<(), AppError> {
+    let actor = require_authenticated_session(state, headers).await?;
+    if actor.status != UserStatus::Active {
+        return Err(insufficient_privileges());
+    }
+    if actor.global_role == GlobalRole::PlatformAdmin {
+        return Ok(());
+    }
+
+    let membership = state
+        .store
+        .get_team_membership_for_user(actor.user_id)
+        .await?
+        .ok_or_else(insufficient_privileges)?;
+    if !matches!(
+        membership.role,
+        MembershipRole::Owner | MembershipRole::Admin
+    ) {
+        return Err(insufficient_privileges());
+    }
+    let api_key = state
+        .store
+        .get_api_key_by_id(api_key_id)
+        .await?
+        .ok_or_else(insufficient_privileges)?;
+    if api_key.owner_kind != ApiKeyOwnerKind::ServiceAccount
+        || api_key.owner_team_id != Some(membership.team_id)
+    {
+        return Err(insufficient_privileges());
+    }
+    Ok(())
 }
 
 async fn authorize_create_api_key(
@@ -336,6 +430,12 @@ fn map_create_result(result: CreateAdminApiKeyResult) -> CreateApiKeyResponse {
     }
 }
 
+fn map_reveal_result(result: RevealAdminApiKeySecretResult) -> RevealApiKeySecretResponse {
+    RevealApiKeySecretResponse {
+        raw_key: result.raw_key,
+    }
+}
+
 fn map_api_key_summary(api_key: AdminApiKeySummary) -> AdminApiKeyView {
     AdminApiKeyView {
         id: api_key.id.to_string(),
@@ -352,6 +452,7 @@ fn map_api_key_summary(api_key: AdminApiKeySummary) -> AdminApiKeyView {
             .owner_service_account_team_id
             .map(|value| value.to_string()),
         owner_service_account_team_key: api_key.owner_service_account_team_key,
+        model_grant_mode: api_key.model_grant_mode.into(),
         model_keys: api_key.model_keys,
         created_at: format_timestamp(api_key.created_at),
         last_used_at: api_key.last_used_at.map(format_timestamp),

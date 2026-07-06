@@ -18,7 +18,7 @@
 
 - [../configuration/configuration-reference.md](../configuration/configuration-reference.md)
 - [../access/identity-and-access.md](../access/identity-and-access.md)
-- [../operations/budgets-and-spending.md](../operations/budgets-and-spending.md)
+- [../operations/budgets-and-spending.md](../contributing/operations/budgets-and-spending.md)
 - [../setup/runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md)
 
 ## Context
@@ -193,7 +193,7 @@ Canonical docs updated with the new contract:
 
 - [../configuration/configuration-reference.md](../configuration/configuration-reference.md)
 - [../access/identity-and-access.md](../access/identity-and-access.md)
-- [../operations/budgets-and-spending.md](../operations/budgets-and-spending.md)
+- [../operations/budgets-and-spending.md](../contributing/operations/budgets-and-spending.md)
 - [../setup/runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md)
 - [../access/oidc-and-sso-status.md](../access/oidc-and-sso-status.md)
 

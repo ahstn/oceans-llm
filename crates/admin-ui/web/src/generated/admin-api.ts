@@ -52,6 +52,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/api-keys/{api_key_id}/secret/reveal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reveal_api_key_secret"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/identity/service-accounts": {
         parameters: {
             query?: never;
@@ -500,6 +516,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/models/client-configs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["generate_model_client_configs"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/observability/harness-usage": {
         parameters: {
             query?: never;
@@ -590,6 +622,102 @@ export interface paths {
         get: operations["get_request_log_detail"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/review-agent/repositories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_review_agent_repositories"];
+        put?: never;
+        post: operations["create_review_agent_repository"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/review-agent/repositories/{repository_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_review_agent_repository"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["update_review_agent_repository"];
+        trace?: never;
+    };
+    "/api/v1/admin/review-agent/repositories/{repository_id}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["disable_review_agent_repository"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/review-agent/repositories/{repository_id}/reactivate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reactivate_review_agent_repository"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/review-agent/repositories/{repository_id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_review_agent_runs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/review-agent/repositories/{repository_id}/workflow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["render_review_agent_workflow"];
         delete?: never;
         options?: never;
         head?: never;
@@ -884,10 +1012,191 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/review-agent/action/config/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["resolve_review_agent_action_config"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/review-agent/action/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["start_review_agent_action_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/review-agent/action/runs/{run_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["complete_review_agent_action_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/review-agent/action/runs/{run_id}/fail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["fail_review_agent_action_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/review-agent/action/runs/{run_id}/heartbeat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["heartbeat_review_agent_action_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ActionConfigOverridesRequest: {
+            diagrams_enabled?: boolean | null;
+            inline_review_enabled?: boolean | null;
+            linked_issue_assessment_enabled?: boolean | null;
+            linked_issue_detection_enabled?: boolean | null;
+            /** Format: int64 */
+            max_inline_comments?: number | null;
+            model_execution_mode?: string | null;
+            model_id?: string | null;
+            pr_summary_enabled?: boolean | null;
+            provider_key?: string | null;
+            request_changes_on_high_severity?: boolean | null;
+        };
+        ActionConfigResolveRequest: {
+            event_name: string;
+            overrides?: components["schemas"]["ActionConfigOverridesRequest"];
+            pull_request: components["schemas"]["ActionPullRequestRequest"];
+            repository: components["schemas"]["ActionRepositoryIdentityRequest"];
+        };
+        ActionConfigResolveResponse: {
+            effective_config: unknown;
+            overrides_applied: unknown;
+            overrides_rejected: unknown;
+            pull_request_id: string;
+            reporting: unknown;
+            repository: components["schemas"]["ReviewAgentRepositoryView"];
+        };
+        ActionPullRequestRequest: {
+            author_login?: string | null;
+            base_repository_full_name: string;
+            base_sha?: string | null;
+            head_repository_full_name: string;
+            head_sha?: string | null;
+            is_draft: boolean;
+            /** Format: int64 */
+            pr_number: number;
+            provider_pr_id?: string | null;
+            title?: string | null;
+        };
+        ActionRepositoryIdentityRequest: {
+            external_repository_id?: string | null;
+            full_name: string;
+            name: string;
+            owner: string;
+            provider: string;
+        };
+        ActionRunFailRequest: {
+            error_summary: string;
+            metrics: components["schemas"]["ActionRunMetricsRequest"];
+        };
+        ActionRunHeartbeatRequest: {
+            status?: string | null;
+        };
+        ActionRunMetricsRequest: {
+            /** Format: int64 */
+            additions?: number | null;
+            /** Format: int64 */
+            changed_loc?: number | null;
+            degraded_features_json?: unknown;
+            /** Format: int64 */
+            deletions?: number | null;
+            diagram_status?: string | null;
+            /** Format: int64 */
+            duration_ms?: number | null;
+            /** Format: int64 */
+            files_changed?: number | null;
+            /** Format: int64 */
+            inline_comments_created?: number | null;
+            /** Format: int64 */
+            inline_comments_failed?: number | null;
+            /** Format: int64 */
+            inline_comments_skipped?: number | null;
+            /** Format: int64 */
+            inline_comments_updated?: number | null;
+            /** Format: int64 */
+            linked_issue_count?: number | null;
+            linked_issue_status?: string | null;
+            managed_comment_action?: string | null;
+            managed_comment_id?: string | null;
+            managed_comment_status?: string | null;
+            review_event_status?: string | null;
+            /** Format: int64 */
+            stale_comments_deleted?: number | null;
+            status?: string | null;
+            summary_status?: string | null;
+        };
+        ActionRunResponse: {
+            run: components["schemas"]["ReviewAgentRunView"];
+        };
+        ActionRunStartRequest: {
+            effective_config_json: unknown;
+            event_name: string;
+            /** Format: int64 */
+            github_run_attempt?: number | null;
+            github_run_id?: string | null;
+            model_execution_mode?: string | null;
+            model_key?: string | null;
+            provider_key?: string | null;
+            pull_request: components["schemas"]["ActionPullRequestRequest"];
+            repository: components["schemas"]["ActionRepositoryIdentityRequest"];
+        };
         AddTeamMembersRequest: {
             user_ids: string[];
         };
@@ -914,6 +1223,7 @@ export interface components {
             created_at: string;
             id: string;
             last_used_at?: string | null;
+            model_grant_mode: components["schemas"]["ApiKeyModelGrantModeView"];
             model_keys: string[];
             name: string;
             owner_email?: string | null;
@@ -958,12 +1268,27 @@ export interface components {
             team_name?: string | null;
             team_role?: string | null;
         };
-        AdminModelClientConfigView: {
+        AdminModelAllowlistView: {
+            teams: string[];
+            users: string[];
+        };
+        AdminModelClientConfigBlockView: {
             content: string;
             filename: string;
+            label: string;
+        };
+        AdminModelClientConfigSetupItemView: {
+            href?: string | null;
+            label: string;
+            value: string;
+        };
+        AdminModelClientConfigView: {
+            blocks: components["schemas"]["AdminModelClientConfigBlockView"][];
             key: string;
             label: string;
+            model_ids: string[];
             notes: string[];
+            setup: components["schemas"]["AdminModelClientConfigSetupItemView"][];
         };
         AdminModelPageView: {
             items: components["schemas"]["AdminModelView"][];
@@ -978,6 +1303,7 @@ export interface components {
         AdminModelStatusView: "healthy" | "degraded";
         AdminModelView: {
             alias_of?: string | null;
+            allowlist?: null | components["schemas"]["AdminModelAllowlistView"];
             /** Format: int64 */
             cache_read_cost_per_million_tokens_usd_10000?: number | null;
             client_configurations: components["schemas"]["AdminModelClientConfigView"][];
@@ -1092,6 +1418,8 @@ export interface components {
             teams: components["schemas"]["AdminTeamManagementView"][];
             users: components["schemas"]["AdminTeamAssignableUserView"][];
         };
+        /** @enum {string} */
+        ApiKeyModelGrantModeView: "all" | "explicit";
         AuthSessionUserView: {
             email: string;
             global_role: string;
@@ -1198,6 +1526,7 @@ export interface components {
             status: string;
         };
         CreateApiKeyRequest: {
+            model_grant_mode: components["schemas"]["ApiKeyModelGrantModeView"];
             model_keys: string[];
             name: string;
             owner_kind: string;
@@ -1227,6 +1556,16 @@ export interface components {
             description?: string | null;
             display_name: string;
             toolset_key: string;
+        };
+        CreateReviewAgentRepositoryRequest: {
+            external_repository_id?: string | null;
+            full_name: string;
+            name: string;
+            owner: string;
+            provider: string;
+            service_account_id: string;
+            settings?: null | components["schemas"]["ReviewAgentSettingsView"];
+            settings_json?: unknown;
         };
         CreateServiceAccountRequest: {
             name: string;
@@ -1274,6 +1613,23 @@ export interface components {
             deactivated: boolean;
             scope: components["schemas"]["BudgetScopeView"];
             scope_key: string;
+        };
+        Envelope_ActionConfigResolveResponse: {
+            data: {
+                effective_config: unknown;
+                overrides_applied: unknown;
+                overrides_rejected: unknown;
+                pull_request_id: string;
+                reporting: unknown;
+                repository: components["schemas"]["ReviewAgentRepositoryView"];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_ActionRunResponse: {
+            data: {
+                run: components["schemas"]["ReviewAgentRunView"];
+            };
+            meta: components["schemas"]["ResponseMeta"];
         };
         Envelope_AdminApiKeysPayload: {
             data: {
@@ -1405,6 +1761,12 @@ export interface components {
                 deactivated: boolean;
                 scope: components["schemas"]["BudgetScopeView"];
                 scope_key: string;
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_GenerateModelClientConfigsResponse: {
+            data: {
+                client_configurations: components["schemas"]["AdminModelClientConfigView"][];
             };
             meta: components["schemas"]["ResponseMeta"];
         };
@@ -1604,6 +1966,40 @@ export interface components {
             };
             meta: components["schemas"]["ResponseMeta"];
         };
+        Envelope_RevealApiKeySecretResponse: {
+            data: {
+                raw_key: string;
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_ReviewAgentRepositoriesPayload: {
+            data: {
+                items: components["schemas"]["ReviewAgentRepositoryView"][];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_ReviewAgentRepositoryPayload: {
+            data: {
+                repository: components["schemas"]["ReviewAgentRepositoryView"];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_ReviewAgentRunsPayload: {
+            data: {
+                items: components["schemas"]["ReviewAgentRunView"][];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_ReviewAgentWorkflowPayload: {
+            data: {
+                action_ref: string;
+                api_key_secret_name: string;
+                file_name: string;
+                oceans_url: string;
+                yaml: string;
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
         Envelope_RevokeApiKeyResponse: {
             data: {
                 api_key: components["schemas"]["AdminApiKeyView"];
@@ -1648,6 +2044,12 @@ export interface components {
                 scope_key: string;
             };
             meta: components["schemas"]["ResponseMeta"];
+        };
+        GenerateModelClientConfigsRequest: {
+            model_keys: string[];
+        };
+        GenerateModelClientConfigsResponse: {
+            client_configurations: components["schemas"]["AdminModelClientConfigView"][];
         };
         HarnessUsageChartHarnessView: {
             agent_harness_key: string;
@@ -2022,6 +2424,7 @@ export interface components {
             agent_harness_key: string;
             agent_harness_label: string;
             api_key_id: string;
+            api_key_name?: string | null;
             /** Format: int64 */
             completion_tokens?: number | null;
             error_code?: string | null;
@@ -2046,13 +2449,16 @@ export interface components {
             resolved_model_key: string;
             response_payload_truncated: boolean;
             service_account_id?: string | null;
+            service_account_name?: string | null;
             /** Format: int64 */
             status_code?: number | null;
             team_id?: string | null;
             tool_cardinality: components["schemas"]["RequestToolCardinalityView"];
             /** Format: int64 */
             total_tokens?: number | null;
+            user_email?: string | null;
             user_id?: string | null;
+            user_name?: string | null;
         };
         RequestMcpTokenOverheadView: {
             /** Format: int64 */
@@ -2109,6 +2515,100 @@ export interface components {
         };
         ResponseMeta: {
             generated_at: string;
+        };
+        RevealApiKeySecretResponse: {
+            raw_key: string;
+        };
+        ReviewAgentRepositoriesPayload: {
+            items: components["schemas"]["ReviewAgentRepositoryView"][];
+        };
+        ReviewAgentRepositoryPayload: {
+            repository: components["schemas"]["ReviewAgentRepositoryView"];
+        };
+        ReviewAgentRepositoryView: {
+            created_at: string;
+            external_repository_id?: string | null;
+            full_name: string;
+            id: string;
+            name: string;
+            owner: string;
+            provider: string;
+            service_account_id: string;
+            settings: components["schemas"]["ReviewAgentSettingsView"];
+            settings_json: unknown;
+            status: string;
+            updated_at: string;
+        };
+        ReviewAgentRunView: {
+            /** Format: int64 */
+            additions?: number | null;
+            /** Format: int64 */
+            changed_loc?: number | null;
+            created_at: string;
+            degraded_features_json?: unknown;
+            /** Format: int64 */
+            deletions?: number | null;
+            diagram_status?: string | null;
+            /** Format: int64 */
+            duration_ms?: number | null;
+            effective_config_json: unknown;
+            error_summary?: string | null;
+            /** Format: int64 */
+            files_changed?: number | null;
+            finished_at?: string | null;
+            /** Format: int64 */
+            github_run_attempt?: number | null;
+            github_run_id?: string | null;
+            head_sha?: string | null;
+            heartbeat_at?: string | null;
+            id: string;
+            /** Format: int64 */
+            inline_comments_created?: number | null;
+            /** Format: int64 */
+            inline_comments_failed?: number | null;
+            /** Format: int64 */
+            inline_comments_skipped?: number | null;
+            /** Format: int64 */
+            inline_comments_updated?: number | null;
+            /** Format: int64 */
+            linked_issue_count?: number | null;
+            linked_issue_status?: string | null;
+            managed_comment_action?: string | null;
+            managed_comment_id?: string | null;
+            managed_comment_status?: string | null;
+            model_execution_mode?: string | null;
+            model_key?: string | null;
+            provider_key?: string | null;
+            pull_request_id?: string | null;
+            repository_id: string;
+            review_event_status?: string | null;
+            /** Format: int64 */
+            stale_comments_deleted?: number | null;
+            started_at?: string | null;
+            status: string;
+            summary_status?: string | null;
+            updated_at: string;
+        };
+        ReviewAgentRunsPayload: {
+            items: components["schemas"]["ReviewAgentRunView"][];
+        };
+        ReviewAgentSettingsView: {
+            default_model_key?: string | null;
+            diagrams_enabled: boolean;
+            inline_review_enabled: boolean;
+            linked_issue_assessment_enabled: boolean;
+            linked_issue_detection_enabled: boolean;
+            /** Format: int64 */
+            max_inline_comments?: number | null;
+            pr_summary_enabled: boolean;
+            request_changes_on_high_severity: boolean;
+        };
+        ReviewAgentWorkflowPayload: {
+            action_ref: string;
+            api_key_secret_name: string;
+            file_name: string;
+            oceans_url: string;
+            yaml: string;
         };
         RevokeApiKeyResponse: {
             api_key: components["schemas"]["AdminApiKeyView"];
@@ -2216,6 +2716,7 @@ export interface components {
             destination_team_id: string;
         };
         UpdateApiKeyRequest: {
+            model_grant_mode: components["schemas"]["ApiKeyModelGrantModeView"];
             model_keys: string[];
         };
         UpdateApiKeyResponse: {
@@ -2235,6 +2736,16 @@ export interface components {
         UpdateMcpToolsetRequest: {
             description?: string | null;
             display_name: string;
+        };
+        UpdateReviewAgentRepositoryRequest: {
+            external_repository_id?: string | null;
+            full_name: string;
+            name: string;
+            owner: string;
+            service_account_id: string;
+            settings: components["schemas"]["ReviewAgentSettingsView"];
+            settings_json?: unknown;
+            status: string;
         };
         UpdateServiceAccountRequest: {
             name: string;
@@ -2297,6 +2808,11 @@ export interface components {
             /** Format: uuid */
             target_id: string;
             target_kind: string;
+        };
+        WorkflowRenderRequest: {
+            action_ref?: string | null;
+            api_key_secret_name?: string | null;
+            oceans_url?: string | null;
         };
     };
     responses: never;
@@ -2393,6 +2909,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_RevokeApiKeyResponse"];
+                };
+            };
+        };
+    };
+    reveal_api_key_secret: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description API key identifier */
+                api_key_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_RevealApiKeySecretResponse"];
                 };
             };
         };
@@ -2811,6 +3349,14 @@ export interface operations {
                     "application/json": components["schemas"]["Envelope_McpCredentialBindingsPayload"];
                 };
             };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
         };
     };
     upsert_mcp_credential_binding: {
@@ -2832,6 +3378,14 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_McpCredentialBindingPayload"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
                 };
             };
         };
@@ -3309,6 +3863,29 @@ export interface operations {
             };
         };
     };
+    generate_model_client_configs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateModelClientConfigsRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_GenerateModelClientConfigsResponse"];
+                };
+            };
+        };
+    };
     get_harness_usage: {
         parameters: {
             query?: {
@@ -3478,6 +4055,196 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
+                };
+            };
+        };
+    };
+    list_review_agent_repositories: {
+        parameters: {
+            query?: {
+                status?: string | null;
+                limit?: number | null;
+                offset?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_ReviewAgentRepositoriesPayload"];
+                };
+            };
+        };
+    };
+    create_review_agent_repository: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateReviewAgentRepositoryRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_ReviewAgentRepositoryPayload"];
+                };
+            };
+        };
+    };
+    get_review_agent_repository: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Review Agent repository ID */
+                repository_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_ReviewAgentRepositoryPayload"];
+                };
+            };
+        };
+    };
+    update_review_agent_repository: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Review Agent repository ID */
+                repository_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateReviewAgentRepositoryRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_ReviewAgentRepositoryPayload"];
+                };
+            };
+        };
+    };
+    disable_review_agent_repository: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Review Agent repository ID */
+                repository_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_ReviewAgentRepositoryPayload"];
+                };
+            };
+        };
+    };
+    reactivate_review_agent_repository: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Review Agent repository ID */
+                repository_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_ReviewAgentRepositoryPayload"];
+                };
+            };
+        };
+    };
+    list_review_agent_runs: {
+        parameters: {
+            query?: {
+                pr_number?: number | null;
+                limit?: number | null;
+                offset?: number | null;
+            };
+            header?: never;
+            path: {
+                /** @description Review Agent repository ID */
+                repository_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_ReviewAgentRunsPayload"];
+                };
+            };
+        };
+    };
+    render_review_agent_workflow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Review Agent repository ID */
+                repository_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowRenderRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_ReviewAgentWorkflowPayload"];
                 };
             };
         };
@@ -3906,6 +4673,130 @@ export interface operations {
                 };
                 content: {
                     "text/csv": string;
+                };
+            };
+        };
+    };
+    resolve_review_agent_action_config: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActionConfigResolveRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_ActionConfigResolveResponse"];
+                };
+            };
+        };
+    };
+    start_review_agent_action_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActionRunStartRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_ActionRunResponse"];
+                };
+            };
+        };
+    };
+    complete_review_agent_action_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Review Agent run ID */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActionRunMetricsRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_ActionRunResponse"];
+                };
+            };
+        };
+    };
+    fail_review_agent_action_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Review Agent run ID */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActionRunFailRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_ActionRunResponse"];
+                };
+            };
+        };
+    };
+    heartbeat_review_agent_action_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Review Agent run ID */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActionRunHeartbeatRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_ActionRunResponse"];
                 };
             };
         };

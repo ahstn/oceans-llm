@@ -1,0 +1,60 @@
+name: Oceans LLM Review Agent
+description: Run the Oceans LLM review agent on same-repository pull requests.
+inputs:
+  oceans-url:
+    description: Base URL for the Oceans LLM gateway.
+    required: true
+  oceans-api-key:
+    description: Service account API key bound to this repository in Oceans.
+    required: true
+  model-id:
+    description: Optional model key override.
+    required: false
+  model-mode:
+    description: Optional execution mode override, either oceans or direct.
+    required: false
+  provider-key:
+    description: Optional direct-provider credential key configured in Oceans.
+    required: false
+  inline-review:
+    description: Enable inline PR review comments.
+    required: false
+  pr-summary:
+    description: Enable a managed top-level PR summary comment.
+    required: false
+  diagrams:
+    description: Enable diagram generation.
+    required: false
+  linked-issue-detection:
+    description: Enable linked issue detection.
+    required: false
+  linked-issue-assessment:
+    description: Enable linked issue assessment.
+    required: false
+  timeout-minutes:
+    description: Maximum Pi execution time in minutes.
+    required: false
+    default: "20"
+  max-inline-comments:
+    description: Maximum number of inline review comments to publish.
+    required: false
+  request-changes-on-high-severity:
+    description: Request changes when high-severity findings are present.
+    required: false
+  dry-run:
+    description: Run without publishing GitHub comments or reviews.
+    required: false
+    default: "false"
+  debug:
+    description: Enable extra diagnostic logging without secrets or raw review text.
+    required: false
+    default: "false"
+  pi-binary:
+    description: Explicit Pi binary path. Use until a packaged Pi runtime artifact is available.
+    required: false
+  github-token:
+    description: GitHub token for PR access and publishing. Defaults to GITHUB_TOKEN.
+    required: false
+runs:
+  using: node24
+  main: dist/index.js

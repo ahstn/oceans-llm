@@ -179,6 +179,7 @@ async fn handle_post(
     }
 }
 
+
 fn list_builtin_tools(id: JsonRpcId) -> Response<Body> {
     let tools = vec![
         search_tools_definition(),
@@ -305,7 +306,7 @@ async fn call_catalog_tool(
                 None,
             );
         }
-        Err(error) => return mcp_error_response(error),
+        Err(error) => return aggregate_gateway_error(id, error, json!({"address": input.address})),
     };
     if let Some(schema_hash) = input.schema_hash.as_deref()
         && schema_hash != record.tool.schema_hash
@@ -350,7 +351,13 @@ async fn call_catalog_tool(
                 json!({"address": input.address, "server_key": record.server.server_key}),
             );
         }
-        Err(error) => return mcp_error_response(error),
+        Err(error) => {
+            return aggregate_gateway_error(
+                id,
+                error,
+                json!({"address": input.address, "server_key": record.server.server_key}),
+            );
+        }
     };
 
     let client =
@@ -358,7 +365,11 @@ async fn call_catalog_tool(
             Ok(client) => client,
             Err(error) => {
                 let gateway_error = map_mcp_client_error(error);
-                return mcp_error_response(gateway_error);
+                return aggregate_gateway_error(
+                    id,
+                    gateway_error,
+                    json!({"address": input.address, "server_key": record.server.server_key}),
+                );
             }
         };
     let arguments = if input.arguments.is_null() {
@@ -478,6 +489,14 @@ fn aggregate_tool_error(
             .unwrap_or_else(serialization_error),
         None,
     )
+}
+
+fn aggregate_gateway_error(
+    id: JsonRpcId,
+    error: GatewayError,
+    structured: Value,
+) -> Response<Body> {
+    aggregate_tool_error(id, error.to_string(), error.error_code(), structured)
 }
 
 fn upstream_timeout(upstream: &gateway_service::McpGatewayUpstream) -> StdDuration {

@@ -8,6 +8,7 @@ mod any_store_mcp_aggregate_sessions;
 mod any_store_mcp_credentials;
 mod any_store_mcp_registry;
 mod any_store_mcp_token_overhead;
+mod any_store_review_agent;
 mod libsql_store;
 mod migrate;
 mod migration_registry;
@@ -31,27 +32,34 @@ pub(crate) use migrate::{MigrationTestHook, run_migrations_with_options_for_test
 mod tests {
     use std::env;
 
+    use gateway_core::domain::ModelAllowlistPolicy;
     use gateway_core::{
-        ApiKeyOwnerKind, ApiKeyRepository, AuthMode, BudgetAlertChannel, BudgetAlertDeliveryRecord,
-        BudgetAlertDeliveryStatus, BudgetAlertHistoryQuery, BudgetAlertRecord,
-        BudgetAlertRepository, BudgetCadence, BudgetRepository, BudgetScope, BudgetSettings,
-        ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus,
-        ExternalMcpServerStatus, ExternalMcpTransport, GlobalRole, IdentityRepository,
+        ApiKeyOwnerKind, ApiKeyRepository, ApiKeySecretStorageKind, ApiKeyStatus, AuthMode,
+        BudgetAlertChannel, BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus,
+        BudgetAlertHistoryQuery, BudgetAlertRecord, BudgetAlertRepository, BudgetCadence,
+        BudgetRepository, BudgetScope, BudgetSettings, ExternalMcpAuthMode,
+        ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus, ExternalMcpServerStatus,
+        ExternalMcpTransport, GlobalRole, IdentityRepository, ManagedApiKeySource,
         McpRegistryRepository, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
         McpToolInvocationRecord, McpToolInvocationRepository, McpToolInvocationStatus,
         McpToolPolicyResult, McpUpstreamCredentialMaterialKind,
         McpUpstreamCredentialOwnerScopeKind, McpUpstreamCredentialRepository,
         McpUpstreamSecretStorageKind, MembershipRole, ModelPricingRecord, ModelRepository, Money4,
-        NewExternalMcpServerRecord, OidcLoginStateRecord, OpenAiCompatDeveloperRole,
+        NewExternalMcpServerRecord, NewReviewAgentRepositoryRecord, NewReviewAgentRunRecord,
+        OauthJitPolicy, OidcLoginStateRecord, OpenAiCompatDeveloperRole,
         OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
         PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
         PricingProvenance, ProviderCapabilities, RequestAttemptRecord, RequestAttemptStatus,
         RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository,
-        RequestTag, RequestTags, RequestToolCardinality, RouteCompatibility, SeedApiKey,
-        SeedBudget, SeedModel, SeedModelRoute, SeedProvider, SeedTeam, SeedUser,
-        SeedUserMembership, StoreError, StoreHealth, UpdateExternalMcpServerRecord,
-        UpsertExternalMcpToolRecord, UpsertMcpUpstreamCredentialBindingRecord, UsageLedgerRecord,
-        UsagePricingStatus, UserStatus,
+        RequestTag, RequestTags, RequestToolCardinality, ReviewAgentProvider,
+        ReviewAgentPullRequestState, ReviewAgentRepository, ReviewAgentRepositoryStatus,
+        ReviewAgentRunStatus, ReviewAgentSettings, RouteCompatibility, SeedApiKey,
+        SeedApiKeySecretMaterial, SeedBudget, SeedManagedServiceAccountApiKey, SeedModel,
+        SeedModelRoute, SeedOauthProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser,
+        SeedUserMembership, ServiceAccountStatus, StoreError, StoreHealth,
+        UpdateExternalMcpServerRecord, UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord,
+        UpsertMcpUpstreamCredentialBindingRecord, UpsertReviewAgentPullRequestRecord,
+        UsageLedgerRecord, UsagePricingStatus, UserStatus,
     };
     use serde_json::{Map, json};
     use serial_test::serial;
@@ -87,6 +95,376 @@ mod tests {
             team_key: "seed-workloads".to_string(),
             team_name: "Seed Workloads".to_string(),
         }]
+    }
+
+    fn seed_api_key_service_accounts() -> Vec<SeedServiceAccount> {
+        vec![SeedServiceAccount {
+            service_account_key: "seed-workloads".to_string(),
+            service_account_name: "Seed Workloads".to_string(),
+            team_key: "seed-workloads".to_string(),
+            budget: SeedBudget {
+                cadence: BudgetCadence::Daily,
+                amount_usd: Money4::from_scaled(100_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            },
+            managed_api_keys: Vec::new(),
+        }]
+    }
+
+    fn managed_key_service_accounts(public_id: &str, secret_hash: &str) -> Vec<SeedServiceAccount> {
+        vec![SeedServiceAccount {
+            service_account_key: "ci-indexer".to_string(),
+            service_account_name: "CI Indexer".to_string(),
+            team_key: "seed-workloads".to_string(),
+            budget: SeedBudget {
+                cadence: BudgetCadence::Daily,
+                amount_usd: Money4::from_scaled(250_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            },
+            managed_api_keys: vec![SeedManagedServiceAccountApiKey {
+                config_key: "default".to_string(),
+                name: "CI Indexer".to_string(),
+                auto_create: true,
+                source: ManagedApiKeySource::Generated,
+                public_id: Some(public_id.to_string()),
+                secret_hash: Some(secret_hash.to_string()),
+                secret_material: Some(SeedApiKeySecretMaterial {
+                    storage_kind: ApiKeySecretStorageKind::EncryptedBlob,
+                    secret_ciphertext: format!("ciphertext-{public_id}"),
+                    secret_nonce: format!("nonce-{public_id}"),
+                    secret_key_id: "test-key".to_string(),
+                }),
+                allowed_models: vec!["fast".to_string()],
+            }],
+        }]
+    }
+
+    fn generated_key_without_material_service_accounts() -> Vec<SeedServiceAccount> {
+        vec![SeedServiceAccount {
+            service_account_key: "generated-worker".to_string(),
+            service_account_name: "Generated Worker".to_string(),
+            team_key: "seed-workloads".to_string(),
+            budget: SeedBudget {
+                cadence: BudgetCadence::Daily,
+                amount_usd: Money4::from_scaled(250_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            },
+            managed_api_keys: vec![SeedManagedServiceAccountApiKey {
+                config_key: "default".to_string(),
+                name: "Generated Worker".to_string(),
+                auto_create: true,
+                source: ManagedApiKeySource::Generated,
+                public_id: None,
+                secret_hash: None,
+                secret_material: None,
+                allowed_models: vec!["fast".to_string()],
+            }],
+        }]
+    }
+
+    fn configured_key_service_accounts(
+        public_id: &str,
+        secret_hash: &str,
+    ) -> Vec<SeedServiceAccount> {
+        vec![SeedServiceAccount {
+            service_account_key: "ci-rotator".to_string(),
+            service_account_name: "CI Rotator".to_string(),
+            team_key: "seed-workloads".to_string(),
+            budget: SeedBudget {
+                cadence: BudgetCadence::Daily,
+                amount_usd: Money4::from_scaled(250_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            },
+            managed_api_keys: vec![SeedManagedServiceAccountApiKey {
+                config_key: "default".to_string(),
+                name: "CI Rotator".to_string(),
+                auto_create: true,
+                source: ManagedApiKeySource::ConfiguredValue,
+                public_id: Some(public_id.to_string()),
+                secret_hash: Some(secret_hash.to_string()),
+                secret_material: Some(SeedApiKeySecretMaterial {
+                    storage_kind: ApiKeySecretStorageKind::EncryptedBlob,
+                    secret_ciphertext: format!("ciphertext-{public_id}"),
+                    secret_nonce: format!("nonce-{public_id}"),
+                    secret_key_id: "test-key".to_string(),
+                }),
+                allowed_models: vec!["fast".to_string()],
+            }],
+        }]
+    }
+
+    fn seed_github_oauth_provider_with_domains(domains: Vec<&str>) -> SeedOauthProvider {
+        SeedOauthProvider {
+            provider_key: "github".to_string(),
+            provider_type: "github".to_string(),
+            label: "GitHub".to_string(),
+            client_id: "client-id".to_string(),
+            client_secret_ref: "literal.secret".to_string(),
+            scopes: vec!["read:user".to_string(), "user:email".to_string()],
+            allowed_email_domains: domains.into_iter().map(str::to_string).collect(),
+            sso_email_verification_enabled: true,
+            enabled: true,
+            jit: OauthJitPolicy::default(),
+        }
+    }
+
+    async fn exercise_managed_service_account_seed<S>(store: &S)
+    where
+        S: GatewayStore + Sync,
+    {
+        unsafe {
+            env::set_var(
+                "OCEANS_API_KEY_SECRET_ENCRYPTION_KEY",
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+            );
+        }
+
+        let providers = vec![SeedProvider {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: json!({}),
+            secrets: None,
+        }];
+        let models = vec![SeedModel {
+            model_key: "fast".to_string(),
+            alias_target_model_key: None,
+            description: None,
+            tags: Vec::new(),
+            rank: 10,
+            routes: Vec::new(),
+            allowlist: None,
+        }];
+
+        store
+            .seed_from_inputs(
+                &providers,
+                &models,
+                &[],
+                &managed_key_service_accounts("managed123", "hash-v1"),
+                &[],
+                &[],
+                &seed_api_key_teams(),
+                &[],
+            )
+            .await
+            .expect("seed managed key");
+
+        store
+            .seed_from_inputs(
+                &providers,
+                &models,
+                &[],
+                &generated_key_without_material_service_accounts(),
+                &[],
+                &[],
+                &seed_api_key_teams(),
+                &[],
+            )
+            .await
+            .expect("seed generated managed key without provided material");
+        let generated_service_account = store
+            .list_service_accounts()
+            .await
+            .expect("list service accounts")
+            .into_iter()
+            .find(|account| account.service_account_key == "generated-worker")
+            .expect("generated service account exists");
+        let generated_keys = store
+            .list_api_keys()
+            .await
+            .expect("list api keys")
+            .into_iter()
+            .filter(|key| {
+                key.owner_service_account_id == Some(generated_service_account.service_account_id)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(generated_keys.len(), 1);
+        assert_eq!(generated_keys[0].status, ApiKeyStatus::Active);
+        assert!(
+            store
+                .get_api_key_secret_material(generated_keys[0].id)
+                .await
+                .expect("load generated secret material")
+                .is_some()
+        );
+
+        unsafe {
+            env::remove_var("OCEANS_API_KEY_SECRET_ENCRYPTION_KEY");
+        }
+        store
+            .seed_from_inputs(
+                &providers,
+                &models,
+                &[],
+                &generated_key_without_material_service_accounts(),
+                &[],
+                &[],
+                &seed_api_key_teams(),
+                &[],
+            )
+            .await
+            .expect("reseed generated managed key without encryption key");
+
+        let api_key = store
+            .get_api_key_by_public_id("managed123")
+            .await
+            .expect("load managed key")
+            .expect("managed api key exists");
+        assert_eq!(api_key.name, "CI Indexer");
+        assert_eq!(api_key.secret_hash, "hash-v1");
+        assert_eq!(api_key.owner_kind, ApiKeyOwnerKind::ServiceAccount);
+        assert!(api_key.owner_service_account_id.is_some());
+
+        let material = store
+            .get_api_key_secret_material(api_key.id)
+            .await
+            .expect("load secret material")
+            .expect("secret material exists");
+        assert_eq!(
+            material.storage_kind,
+            ApiKeySecretStorageKind::EncryptedBlob
+        );
+        assert_eq!(material.secret_ciphertext, "ciphertext-managed123");
+        assert_eq!(material.secret_nonce, "nonce-managed123");
+        assert_eq!(material.secret_key_id, "test-key");
+        assert_eq!(material.last_retrieved_at, None);
+
+        let retrieved_at = material.created_at + Duration::seconds(10);
+        store
+            .touch_api_key_secret_material_retrieved(api_key.id, retrieved_at)
+            .await
+            .expect("touch retrieved timestamp");
+        let touched = store
+            .get_api_key_secret_material(api_key.id)
+            .await
+            .expect("reload secret material")
+            .expect("secret material still exists");
+        assert_eq!(touched.last_retrieved_at, Some(retrieved_at));
+
+        let disabled_at = retrieved_at + Duration::seconds(1);
+        let service_account_id = api_key
+            .owner_service_account_id
+            .expect("managed key has service account owner");
+        store
+            .disable_service_account(service_account_id, disabled_at)
+            .await
+            .expect("disable service account");
+        store
+            .revoke_api_key(api_key.id, disabled_at)
+            .await
+            .expect("revoke managed key");
+
+        store
+            .seed_from_inputs(
+                &providers,
+                &models,
+                &[],
+                &managed_key_service_accounts("managed456", "hash-v2"),
+                &[],
+                &[],
+                &seed_api_key_teams(),
+                &[],
+            )
+            .await
+            .expect("seed managed key idempotent");
+
+        let stable_key = store
+            .get_api_key_by_public_id("managed123")
+            .await
+            .expect("load stable managed key")
+            .expect("managed api key remains under original public id");
+        assert_eq!(stable_key.id, api_key.id);
+        assert_eq!(stable_key.secret_hash, "hash-v1");
+        assert_eq!(stable_key.status, ApiKeyStatus::Revoked);
+        assert_eq!(stable_key.revoked_at, Some(disabled_at));
+        assert!(
+            store
+                .get_api_key_by_public_id("managed456")
+                .await
+                .expect("query replacement public id")
+                .is_none()
+        );
+        let stable_material = store
+            .get_api_key_secret_material(api_key.id)
+            .await
+            .expect("reload stable material")
+            .expect("secret material remains");
+        assert_eq!(stable_material.secret_ciphertext, "ciphertext-managed123");
+        assert_eq!(stable_material.last_retrieved_at, Some(retrieved_at));
+        let disabled_service_account =
+            IdentityRepository::get_service_account_by_id(store, service_account_id)
+                .await
+                .expect("load disabled service account")
+                .expect("disabled service account exists");
+        assert_eq!(
+            disabled_service_account.status,
+            ServiceAccountStatus::Disabled
+        );
+        assert_eq!(disabled_service_account.disabled_at, Some(disabled_at));
+
+        store
+            .seed_from_inputs(
+                &providers,
+                &models,
+                &[],
+                &configured_key_service_accounts("configured123", "hash-configured-v1"),
+                &[],
+                &[],
+                &seed_api_key_teams(),
+                &[],
+            )
+            .await
+            .expect("seed configured managed key");
+        let original_configured_key = store
+            .get_api_key_by_public_id("configured123")
+            .await
+            .expect("load configured key")
+            .expect("configured api key exists");
+
+        store
+            .seed_from_inputs(
+                &providers,
+                &models,
+                &[],
+                &configured_key_service_accounts("configured456", "hash-configured-v2"),
+                &[],
+                &[],
+                &seed_api_key_teams(),
+                &[],
+            )
+            .await
+            .expect("rotate configured managed key");
+
+        let revoked_configured_key = store
+            .get_api_key_by_public_id("configured123")
+            .await
+            .expect("load original configured key")
+            .expect("original configured key remains");
+        assert_eq!(revoked_configured_key.id, original_configured_key.id);
+        assert_eq!(revoked_configured_key.status, ApiKeyStatus::Revoked);
+        assert!(revoked_configured_key.revoked_at.is_some());
+
+        let rotated_configured_key = store
+            .get_api_key_by_public_id("configured456")
+            .await
+            .expect("load rotated configured key")
+            .expect("rotated configured key exists");
+        assert_ne!(rotated_configured_key.id, original_configured_key.id);
+        assert_eq!(rotated_configured_key.status, ApiKeyStatus::Active);
+        assert_eq!(rotated_configured_key.secret_hash, "hash-configured-v2");
+        let rotated_material = store
+            .get_api_key_secret_material(rotated_configured_key.id)
+            .await
+            .expect("load rotated material")
+            .expect("rotated secret material exists");
+        assert_eq!(
+            rotated_material.secret_ciphertext,
+            "ciphertext-configured456"
+        );
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -142,6 +520,268 @@ mod tests {
             computed_cost_usd: Money4::from_scaled(computed_cost_10000),
             occurred_at,
         }
+    }
+
+    async fn exercise_review_agent_repository<S>(store: &S)
+    where
+        S: GatewayStore + ReviewAgentRepository,
+    {
+        let unique = Uuid::new_v4().to_string();
+        let suffix = &unique[..8];
+        let now = OffsetDateTime::now_utc();
+        let team = store
+            .create_team(
+                &format!("review-agent-{suffix}"),
+                &format!("Review Agent {suffix}"),
+            )
+            .await
+            .expect("create review agent team");
+        let service_account = store
+            .create_service_account(
+                team.team_id,
+                &format!("review-agent-{suffix}"),
+                &format!("Review Agent {suffix}"),
+                now,
+            )
+            .await
+            .expect("create review agent service account");
+
+        let repository = store
+            .create_review_agent_repository(&NewReviewAgentRepositoryRecord {
+                provider: ReviewAgentProvider::Github,
+                external_repository_id: Some(format!("repo-{suffix}")),
+                owner: "ahstn".to_string(),
+                name: format!("review-agent-{suffix}"),
+                full_name: format!("ahstn/review-agent-{suffix}"),
+                service_account_id: service_account.service_account_id,
+                settings: ReviewAgentSettings {
+                    default_model_key: Some("fast".to_string()),
+                    max_inline_comments: Some(25),
+                    ..ReviewAgentSettings::default()
+                },
+                settings_json: json!({"review_profile": "default"}),
+                created_at: now,
+            })
+            .await
+            .expect("create review agent repository");
+
+        assert_eq!(repository.status, ReviewAgentRepositoryStatus::Active);
+        assert_eq!(
+            repository.service_account_id,
+            service_account.service_account_id
+        );
+        assert!(repository.settings.inline_review_enabled);
+        assert!(repository.settings.pr_summary_enabled);
+        assert!(!repository.settings.diagrams_enabled);
+        assert!(repository.settings.linked_issue_detection_enabled);
+        assert!(!repository.settings.linked_issue_assessment_enabled);
+        assert!(!repository.settings.request_changes_on_high_severity);
+        assert_eq!(
+            repository.settings.default_model_key.as_deref(),
+            Some("fast")
+        );
+
+        let by_identity = store
+            .get_review_agent_repository_by_identity(
+                ReviewAgentProvider::Github,
+                repository.external_repository_id.as_deref(),
+                &repository.owner,
+                &repository.name,
+            )
+            .await
+            .expect("load repository by identity")
+            .expect("repository by identity");
+        assert_eq!(by_identity.repository_id, repository.repository_id);
+
+        let duplicate_active = store
+            .create_review_agent_repository(&NewReviewAgentRepositoryRecord {
+                provider: ReviewAgentProvider::Github,
+                external_repository_id: None,
+                owner: repository.owner.clone(),
+                name: repository.name.clone(),
+                full_name: repository.full_name.clone(),
+                service_account_id: service_account.service_account_id,
+                settings: ReviewAgentSettings::default(),
+                settings_json: json!({}),
+                created_at: now,
+            })
+            .await;
+        assert!(duplicate_active.is_err());
+
+        let pull_request = store
+            .upsert_review_agent_pull_request(&UpsertReviewAgentPullRequestRecord {
+                repository_id: repository.repository_id,
+                provider_pr_id: Some(format!("pr-{suffix}-42")),
+                pr_number: 42,
+                title: Some("Add Review Agent persistence".to_string()),
+                author_login: Some("octocat".to_string()),
+                state: ReviewAgentPullRequestState::Open,
+                head_sha: Some("abc123".to_string()),
+                base_sha: Some("def456".to_string()),
+                head_repository_full_name: Some(repository.full_name.clone()),
+                base_repository_full_name: Some(repository.full_name.clone()),
+                is_draft: false,
+                updated_at: now,
+            })
+            .await
+            .expect("upsert pull request");
+        assert_eq!(pull_request.pr_number, 42);
+        assert_eq!(pull_request.state, ReviewAgentPullRequestState::Open);
+
+        let updated_pull_request = store
+            .upsert_review_agent_pull_request(&UpsertReviewAgentPullRequestRecord {
+                title: Some("Updated title".to_string()),
+                state: ReviewAgentPullRequestState::Merged,
+                updated_at: now + Duration::seconds(5),
+                ..UpsertReviewAgentPullRequestRecord {
+                    repository_id: repository.repository_id,
+                    provider_pr_id: Some(format!("pr-{suffix}-42")),
+                    pr_number: 42,
+                    title: Some("Add Review Agent persistence".to_string()),
+                    author_login: Some("octocat".to_string()),
+                    state: ReviewAgentPullRequestState::Open,
+                    head_sha: Some("abc123".to_string()),
+                    base_sha: Some("def456".to_string()),
+                    head_repository_full_name: Some(repository.full_name.clone()),
+                    base_repository_full_name: Some(repository.full_name.clone()),
+                    is_draft: false,
+                    updated_at: now,
+                }
+            })
+            .await
+            .expect("update pull request");
+        assert_eq!(
+            updated_pull_request.pull_request_id,
+            pull_request.pull_request_id
+        );
+        assert_eq!(updated_pull_request.title.as_deref(), Some("Updated title"));
+        assert_eq!(
+            updated_pull_request.state,
+            ReviewAgentPullRequestState::Merged
+        );
+
+        let run = store
+            .start_review_agent_run(&NewReviewAgentRunRecord {
+                repository_id: repository.repository_id,
+                pull_request_id: Some(pull_request.pull_request_id),
+                head_sha: Some("abc123".to_string()),
+                github_run_id: Some(format!("run-{suffix}")),
+                github_run_attempt: Some(1),
+                status: ReviewAgentRunStatus::InProgress,
+                started_at: Some(now),
+                model_execution_mode: Some("oceans".to_string()),
+                provider_key: Some("openai-prod".to_string()),
+                model_key: Some("fast".to_string()),
+                effective_config_json: json!({
+                    "inline_review_enabled": true,
+                    "pr_summary_enabled": true,
+                    "diagrams_enabled": false,
+                    "linked_issue_detection_enabled": true,
+                    "linked_issue_assessment_enabled": false
+                }),
+                created_at: now,
+            })
+            .await
+            .expect("start review run");
+        assert_eq!(run.status, ReviewAgentRunStatus::InProgress);
+
+        let duplicate_run = store
+            .start_review_agent_run(&NewReviewAgentRunRecord {
+                status: ReviewAgentRunStatus::Queued,
+                created_at: now + Duration::seconds(10),
+                ..NewReviewAgentRunRecord {
+                    repository_id: repository.repository_id,
+                    pull_request_id: Some(pull_request.pull_request_id),
+                    head_sha: Some("abc123".to_string()),
+                    github_run_id: Some(format!("run-{suffix}")),
+                    github_run_attempt: Some(1),
+                    status: ReviewAgentRunStatus::InProgress,
+                    started_at: Some(now),
+                    model_execution_mode: Some("oceans".to_string()),
+                    provider_key: Some("openai-prod".to_string()),
+                    model_key: Some("fast".to_string()),
+                    effective_config_json: json!({}),
+                    created_at: now,
+                }
+            })
+            .await
+            .expect("duplicate github attempt is idempotent");
+        assert_eq!(duplicate_run.run_id, run.run_id);
+
+        let finished_at = now + Duration::seconds(30);
+        let completed = store
+            .update_review_agent_run(&UpdateReviewAgentRunRecord {
+                run_id: run.run_id,
+                status: ReviewAgentRunStatus::Succeeded,
+                heartbeat_at: Some(finished_at),
+                finished_at: Some(finished_at),
+                duration_ms: Some(30_000),
+                files_changed: Some(3),
+                additions: Some(120),
+                deletions: Some(15),
+                changed_loc: Some(135),
+                inline_comments_created: Some(2),
+                inline_comments_updated: Some(1),
+                inline_comments_skipped: Some(4),
+                inline_comments_failed: Some(0),
+                stale_comments_deleted: Some(1),
+                managed_comment_id: Some("issue-comment-1".to_string()),
+                managed_comment_action: Some("updated".to_string()),
+                managed_comment_status: Some("published".to_string()),
+                review_event_status: Some("comment".to_string()),
+                summary_status: Some("published".to_string()),
+                diagram_status: Some("disabled".to_string()),
+                linked_issue_count: Some(2),
+                linked_issue_status: Some("detected".to_string()),
+                degraded_features_json: Some(json!(["diagrams"])),
+                error_summary: None,
+                updated_at: finished_at,
+            })
+            .await
+            .expect("complete review run");
+
+        assert_eq!(completed.status, ReviewAgentRunStatus::Succeeded);
+        assert_eq!(completed.files_changed, Some(3));
+        assert_eq!(completed.inline_comments_created, Some(2));
+        assert_eq!(
+            completed.managed_comment_id.as_deref(),
+            Some("issue-comment-1")
+        );
+        assert_eq!(completed.linked_issue_count, Some(2));
+        assert_eq!(completed.degraded_features_json, Some(json!(["diagrams"])));
+
+        let runs = store
+            .list_review_agent_runs_for_repository(repository.repository_id, Some(42), 10, 0)
+            .await
+            .expect("list repository runs");
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].run_id, run.run_id);
+
+        let disabled = store
+            .set_review_agent_repository_status(
+                repository.repository_id,
+                ReviewAgentRepositoryStatus::Disabled,
+                finished_at,
+            )
+            .await
+            .expect("disable repository");
+        assert_eq!(disabled.status, ReviewAgentRepositoryStatus::Disabled);
+
+        let replacement = store
+            .create_review_agent_repository(&NewReviewAgentRepositoryRecord {
+                provider: ReviewAgentProvider::Github,
+                external_repository_id: None,
+                owner: repository.owner,
+                name: repository.name,
+                full_name: repository.full_name,
+                service_account_id: service_account.service_account_id,
+                settings: ReviewAgentSettings::default(),
+                settings_json: json!({}),
+                created_at: finished_at,
+            })
+            .await
+            .expect("same owner/name can be configured after disabling prior repo");
+        assert_eq!(replacement.status, ReviewAgentRepositoryStatus::Active);
     }
 
     async fn assert_focus_export_aggregates<S>(
@@ -303,20 +943,13 @@ mod tests {
                 capabilities: ProviderCapabilities::all_enabled(),
                 compatibility: Default::default(),
             }],
+            allowlist: None,
         }];
         let api_keys = vec![SeedApiKey {
             name: "dev".to_string(),
             public_id: "dev123".to_string(),
             secret_hash: "hash".to_string(),
             service_account_key: "seed-workloads".to_string(),
-            service_account_name: "Seed Workloads".to_string(),
-            service_account_team_key: "seed-workloads".to_string(),
-            service_account_budget: SeedBudget {
-                cadence: BudgetCadence::Daily,
-                amount_usd: Money4::from_scaled(100_000),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-            },
             allowed_models: vec!["fast".to_string()],
         }];
 
@@ -325,6 +958,7 @@ mod tests {
                 &providers,
                 &models,
                 &api_keys,
+                &seed_api_key_service_accounts(),
                 &[],
                 &[],
                 &seed_api_key_teams(),
@@ -768,13 +1402,15 @@ mod tests {
         assert_eq!(user_filtered.len(), 1);
 
         let last_used_at = now + Duration::minutes(5);
-        store
-            .touch_mcp_upstream_credential_binding_last_used(
-                binding.credential_binding_id,
-                last_used_at,
-            )
-            .await
-            .expect("touch last used");
+        assert!(
+            store
+                .touch_mcp_upstream_credential_binding_last_used(
+                    binding.credential_binding_id,
+                    last_used_at,
+                )
+                .await
+                .expect("touch last used")
+        );
         let touched = store
             .get_active_mcp_upstream_credential_binding(server.mcp_server_id, &scope_key)
             .await
@@ -800,6 +1436,15 @@ mod tests {
                 .await
                 .expect("get revoked credential")
                 .is_none()
+        );
+        assert!(
+            !store
+                .touch_mcp_upstream_credential_binding_last_used(
+                    binding.credential_binding_id,
+                    now + Duration::minutes(15),
+                )
+                .await
+                .expect("touch revoked credential")
         );
         assert_eq!(
             store
@@ -888,6 +1533,7 @@ mod tests {
                     capabilities: ProviderCapabilities::all_enabled(),
                     compatibility: Default::default(),
                 }],
+                allowlist: None,
             },
             SeedModel {
                 model_key: "reasoning".to_string(),
@@ -906,6 +1552,7 @@ mod tests {
                     capabilities: ProviderCapabilities::all_enabled(),
                     compatibility: Default::default(),
                 }],
+                allowlist: None,
             },
         ];
         let api_keys = vec![SeedApiKey {
@@ -913,14 +1560,6 @@ mod tests {
             public_id: "dev123".to_string(),
             secret_hash: "hash".to_string(),
             service_account_key: "seed-workloads".to_string(),
-            service_account_name: "Seed Workloads".to_string(),
-            service_account_team_key: "seed-workloads".to_string(),
-            service_account_budget: SeedBudget {
-                cadence: BudgetCadence::Daily,
-                amount_usd: Money4::from_scaled(100_000),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-            },
             allowed_models: vec!["fast".to_string(), "reasoning".to_string()],
         }];
         store
@@ -928,6 +1567,7 @@ mod tests {
                 &providers,
                 &models,
                 &api_keys,
+                &seed_api_key_service_accounts(),
                 &[],
                 &[],
                 &seed_api_key_teams(),
@@ -1425,6 +2065,112 @@ mod tests {
             .await
             .expect("consume reused state");
         assert!(reused.is_none());
+
+        store.pool().close().await;
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_review_agent_repository_persists_prs_runs_and_metrics() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        exercise_review_agent_repository(&store).await;
+
+        let mut tables = store
+            .connection()
+            .query(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'review_agent_%'",
+                (),
+            )
+            .await
+            .expect("list review agent tables");
+        let mut table_names = Vec::new();
+        while let Some(row) = tables.next().await.expect("next table") {
+            table_names.push(row.get::<String>(0).expect("table name"));
+        }
+        assert!(!table_names.contains(&"review_agent_tokens".to_string()));
+
+        let mut columns = store
+            .connection()
+            .query("PRAGMA table_info(review_agent_runs)", ())
+            .await
+            .expect("review agent run columns");
+        let mut column_names = Vec::new();
+        while let Some(row) = columns.next().await.expect("next column") {
+            column_names.push(row.get::<String>(1).expect("column name"));
+        }
+        for prohibited in [
+            "raw_diff",
+            "code_snapshot",
+            "prompt",
+            "transcript",
+            "model_output",
+        ] {
+            assert!(
+                column_names
+                    .iter()
+                    .all(|column| !column.contains(prohibited)),
+                "review_agent_runs should not persist {prohibited}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_review_agent_repository_persists_prs_runs_and_metrics() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!("skipping postgres review agent test because TEST_POSTGRES_URL is not set");
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options)
+            .await
+            .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        exercise_review_agent_repository(&store).await;
+
+        let token_table_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'review_agent_tokens'",
+        )
+        .fetch_one(store.pool())
+        .await
+        .expect("check token table");
+        assert_eq!(token_table_count, 0);
+
+        let column_names: Vec<String> = sqlx::query_scalar(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'review_agent_runs'",
+        )
+        .fetch_all(store.pool())
+        .await
+        .expect("review agent run columns");
+        for prohibited in [
+            "raw_diff",
+            "code_snapshot",
+            "prompt",
+            "transcript",
+            "model_output",
+        ] {
+            assert!(
+                column_names
+                    .iter()
+                    .all(|column| !column.contains(prohibited)),
+                "review_agent_runs should not persist {prohibited}"
+            );
+        }
 
         store.pool().close().await;
         drop_postgres_test_database(&test_db).await;
@@ -1995,6 +2741,7 @@ mod tests {
                     ..Default::default()
                 },
             }],
+            allowlist: None,
         }];
 
         let api_keys = vec![SeedApiKey {
@@ -2002,14 +2749,6 @@ mod tests {
             public_id: "dev123".to_string(),
             secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
             service_account_key: "seed-workloads".to_string(),
-            service_account_name: "Seed Workloads".to_string(),
-            service_account_team_key: "seed-workloads".to_string(),
-            service_account_budget: SeedBudget {
-                cadence: BudgetCadence::Daily,
-                amount_usd: Money4::from_scaled(100_000),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-            },
             allowed_models: vec!["fast".to_string()],
         }];
 
@@ -2018,6 +2757,7 @@ mod tests {
                 &providers,
                 &models,
                 &api_keys,
+                &seed_api_key_service_accounts(),
                 &[],
                 &[],
                 &seed_api_key_teams(),
@@ -2031,6 +2771,7 @@ mod tests {
                 &providers,
                 &models,
                 &api_keys,
+                &seed_api_key_service_accounts(),
                 &[],
                 &[],
                 &seed_api_key_teams(),
@@ -2230,6 +2971,48 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn libsql_seed_reconciles_managed_service_account_api_keys() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        exercise_managed_service_account_seed(&store).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_seed_reconciles_managed_service_account_api_keys() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres managed api key seed test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options)
+            .await
+            .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        exercise_managed_service_account_seed(&store).await;
+
+        drop(store);
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn libsql_mcp_tool_invocations_round_trip_and_filter() {
         let tmp = tempdir().expect("tempdir");
         let db_path = tmp.path().join("gateway.db");
@@ -2286,28 +3069,18 @@ mod tests {
                     provider_type: "openai_compat".to_string(),
                     config: json!({}),
                     secrets: None,
-                }], &[SeedModel {
-                    model_key: "fast".to_string(),
-                    alias_target_model_key: None,
-                    description: None,
-                    tags: Vec::new(),
-                    rank: 10,
-                    routes: Vec::new(),
-                }], &[SeedApiKey {
+                }], &[SeedModel { model_key: "fast".to_string(),
+                alias_target_model_key: None,
+                description: None,
+                tags: Vec::new(),
+                rank: 10,
+                routes: Vec::new(), allowlist: None, }], &[SeedApiKey {
                     name: "dev".to_string(),
                     public_id: "dev123".to_string(),
                     secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
             service_account_key: "seed-workloads".to_string(),
-            service_account_name: "Seed Workloads".to_string(),
-            service_account_team_key: "seed-workloads".to_string(),
-            service_account_budget: SeedBudget {
-                cadence: BudgetCadence::Daily,
-                amount_usd: Money4::from_scaled(100_000),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-            },
                     allowed_models: vec!["fast".to_string()],
-                }], &[], &[], &seed_api_key_teams(), &[])
+                }], &seed_api_key_service_accounts(), &[], &[], &seed_api_key_teams(), &[])
             .await
             .expect("seed");
         let api_key = store
@@ -2485,28 +3258,18 @@ mod tests {
                     provider_type: "openai_compat".to_string(),
                     config: json!({}),
                     secrets: None,
-                }], &[SeedModel {
-                    model_key: "fast".to_string(),
-                    alias_target_model_key: None,
-                    description: None,
-                    tags: Vec::new(),
-                    rank: 10,
-                    routes: Vec::new(),
-                }], &[SeedApiKey {
+                }], &[SeedModel { model_key: "fast".to_string(),
+                alias_target_model_key: None,
+                description: None,
+                tags: Vec::new(),
+                rank: 10,
+                routes: Vec::new(), allowlist: None, }], &[SeedApiKey {
                     name: "dev".to_string(),
                     public_id: "dev123".to_string(),
                     secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
             service_account_key: "seed-workloads".to_string(),
-            service_account_name: "Seed Workloads".to_string(),
-            service_account_team_key: "seed-workloads".to_string(),
-            service_account_budget: SeedBudget {
-                cadence: BudgetCadence::Daily,
-                amount_usd: Money4::from_scaled(100_000),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-            },
                     allowed_models: vec!["fast".to_string()],
-                }], &[], &[], &seed_api_key_teams(), &[])
+                }], &seed_api_key_service_accounts(), &[], &[], &seed_api_key_teams(), &[])
             .await
             .expect("seed");
         let api_key = store
@@ -2654,6 +3417,505 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn libsql_deletes_request_logs_and_usage_events_by_request_ids() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+        store
+            .seed_from_inputs(&[SeedProvider {
+                    provider_key: "openai-prod".to_string(),
+                    provider_type: "openai_compat".to_string(),
+                    config: json!({}),
+                    secrets: None,
+                }], &[SeedModel { model_key: "fast".to_string(),
+                alias_target_model_key: None,
+                description: None,
+                tags: Vec::new(),
+                rank: 10,
+                routes: Vec::new(), allowlist: None, }], &[SeedApiKey {
+                    name: "dev".to_string(),
+                    public_id: "dev123".to_string(),
+                    secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
+            service_account_key: "seed-workloads".to_string(),
+                    allowed_models: vec!["fast".to_string()],
+                }], &seed_api_key_service_accounts(), &[], &[], &seed_api_key_teams(), &[])
+            .await
+            .expect("seed");
+        let api_key = store
+            .get_api_key_by_public_id("dev123")
+            .await
+            .expect("query key")
+            .expect("api key should exist");
+
+        let now = OffsetDateTime::now_utc();
+        let seeded_log = RequestLogRecord {
+            request_log_id: Uuid::new_v4(),
+            request_id: "demo-req-001".to_string(),
+            api_key_id: api_key.id,
+            user_id: None,
+            team_id: api_key.owner_team_id,
+            service_account_id: None,
+            model_key: "fast".to_string(),
+            resolved_model_key: "fast".to_string(),
+            provider_key: "openai-prod".to_string(),
+            status_code: Some(200),
+            latency_ms: Some(42),
+            prompt_tokens: Some(1),
+            completion_tokens: Some(2),
+            total_tokens: Some(3),
+            error_code: None,
+            has_payload: true,
+            request_payload_truncated: false,
+            response_payload_truncated: false,
+            request_tags: RequestTags {
+                service: Some("svc".to_string()),
+                component: None,
+                env: None,
+                bespoke: vec![RequestTag {
+                    key: "tenant".to_string(),
+                    value: "alpha".to_string(),
+                }],
+            },
+            tool_cardinality: RequestToolCardinality::default(),
+            user_agent_raw: None,
+            agent_harness_key: "unknown".to_string(),
+            agent_harness_label: "Unknown".to_string(),
+            metadata: Map::new(),
+            occurred_at: now - Duration::hours(2),
+        };
+        let kept_log = RequestLogRecord {
+            request_log_id: Uuid::new_v4(),
+            request_id: "req-kept".to_string(),
+            has_payload: false,
+            request_tags: RequestTags::default(),
+            occurred_at: now,
+            ..seeded_log.clone()
+        };
+        let payload = RequestLogPayloadRecord {
+            request_log_id: seeded_log.request_log_id,
+            request_json: json!({"prompt": "seeded"}),
+            response_json: json!({"ok": true}),
+        };
+        let attempt = RequestAttemptRecord {
+            request_attempt_id: Uuid::new_v4(),
+            request_log_id: seeded_log.request_log_id,
+            request_id: seeded_log.request_id.clone(),
+            attempt_number: 1,
+            route_id: Uuid::new_v4(),
+            provider_key: "openai-prod".to_string(),
+            upstream_model: "gpt-4o-mini".to_string(),
+            status: RequestAttemptStatus::Success,
+            status_code: Some(200),
+            error_code: None,
+            error_detail: None,
+            error_detail_truncated: false,
+            retryable: false,
+            terminal: true,
+            produced_final_response: true,
+            stream: false,
+            started_at: seeded_log.occurred_at,
+            completed_at: Some(seeded_log.occurred_at + Duration::milliseconds(42)),
+            latency_ms: Some(42),
+            metadata: Map::new(),
+        };
+
+        store
+            .insert_request_log_with_attempts(&seeded_log, Some(&payload), &[attempt])
+            .await
+            .expect("insert seeded request log");
+        store
+            .insert_request_log(&kept_log, None)
+            .await
+            .expect("insert kept request log");
+
+        let seeded_event = build_usage_ledger_record(
+            "demo-req-001",
+            "user:scope-demo".to_string(),
+            api_key.id,
+            None,
+            None,
+            None,
+            None,
+            "gpt-4o-mini",
+            UsagePricingStatus::Priced,
+            1_000,
+            now - Duration::hours(2),
+        );
+        let kept_event = build_usage_ledger_record(
+            "req-kept",
+            "user:scope-kept".to_string(),
+            api_key.id,
+            None,
+            None,
+            None,
+            None,
+            "gpt-4o-mini",
+            UsagePricingStatus::Priced,
+            2_000,
+            now,
+        );
+        assert!(
+            store
+                .insert_usage_ledger_if_absent(&seeded_event)
+                .await
+                .expect("insert seeded usage event")
+        );
+        assert!(
+            store
+                .insert_usage_ledger_if_absent(&kept_event)
+                .await
+                .expect("insert kept usage event")
+        );
+
+        let request_ids = vec!["demo-req-001".to_string()];
+        assert_eq!(
+            store
+                .delete_request_logs_by_request_ids(&request_ids)
+                .await
+                .expect("delete seeded request logs"),
+            1
+        );
+        assert_eq!(
+            store
+                .delete_usage_ledger_events_by_request_ids(&request_ids)
+                .await
+                .expect("delete seeded usage events"),
+            1
+        );
+
+        assert!(
+            store
+                .get_request_log_detail(seeded_log.request_log_id)
+                .await
+                .is_err()
+        );
+        assert!(
+            store
+                .get_request_log_detail(kept_log.request_log_id)
+                .await
+                .is_ok()
+        );
+        assert!(
+            store
+                .get_usage_ledger_by_request_and_scope("demo-req-001", "user:scope-demo")
+                .await
+                .expect("seeded usage lookup")
+                .is_none()
+        );
+        assert!(
+            store
+                .get_usage_ledger_by_request_and_scope("req-kept", "user:scope-kept")
+                .await
+                .expect("kept usage lookup")
+                .is_some()
+        );
+
+        // Repeat deletes are no-ops, which is what makes reseeding idempotent.
+        assert_eq!(
+            store
+                .delete_request_logs_by_request_ids(&request_ids)
+                .await
+                .expect("repeat request log delete"),
+            0
+        );
+        assert_eq!(
+            store
+                .delete_usage_ledger_events_by_request_ids(&request_ids)
+                .await
+                .expect("repeat usage event delete"),
+            0
+        );
+        assert_eq!(
+            store
+                .delete_request_logs_by_request_ids(&[])
+                .await
+                .expect("empty request log delete"),
+            0
+        );
+
+        let db = libsql::Builder::new_local(db_path)
+            .build()
+            .await
+            .expect("libsql db");
+        let connection = db.connect().expect("libsql connection");
+        let mut rows = connection
+            .query(
+                r#"
+                SELECT
+                    (SELECT COUNT(*) FROM request_log_payloads),
+                    (SELECT COUNT(*) FROM request_log_tags),
+                    (SELECT COUNT(*) FROM request_log_attempts)
+                "#,
+                (),
+            )
+            .await
+            .expect("child counts");
+        let row = rows
+            .next()
+            .await
+            .expect("child count row")
+            .expect("child count row exists");
+        let payload_count: i64 = row.get(0).expect("payload count");
+        let tag_count: i64 = row.get(1).expect("tag count");
+        let attempt_count: i64 = row.get(2).expect("attempt count");
+        assert_eq!((payload_count, tag_count, attempt_count), (0, 0, 0));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_deletes_request_logs_and_usage_events_by_request_ids() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres request log delete test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options)
+            .await
+            .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+        store
+            .seed_from_inputs(&[SeedProvider {
+                    provider_key: "openai-prod".to_string(),
+                    provider_type: "openai_compat".to_string(),
+                    config: json!({}),
+                    secrets: None,
+                }], &[SeedModel { model_key: "fast".to_string(),
+                alias_target_model_key: None,
+                description: None,
+                tags: Vec::new(),
+                rank: 10,
+                routes: Vec::new(), allowlist: None, }], &[SeedApiKey {
+                    name: "dev".to_string(),
+                    public_id: "dev123".to_string(),
+                    secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
+            service_account_key: "seed-workloads".to_string(),
+                    allowed_models: vec!["fast".to_string()],
+                }], &seed_api_key_service_accounts(), &[], &[], &seed_api_key_teams(), &[])
+            .await
+            .expect("seed");
+        let api_key = store
+            .get_api_key_by_public_id("dev123")
+            .await
+            .expect("query key")
+            .expect("api key should exist");
+
+        let now = OffsetDateTime::now_utc();
+        let seeded_log = RequestLogRecord {
+            request_log_id: Uuid::new_v4(),
+            request_id: "demo-req-pg-001".to_string(),
+            api_key_id: api_key.id,
+            user_id: None,
+            team_id: api_key.owner_team_id,
+            service_account_id: None,
+            model_key: "fast".to_string(),
+            resolved_model_key: "fast".to_string(),
+            provider_key: "openai-prod".to_string(),
+            status_code: Some(200),
+            latency_ms: Some(42),
+            prompt_tokens: Some(1),
+            completion_tokens: Some(2),
+            total_tokens: Some(3),
+            error_code: None,
+            has_payload: true,
+            request_payload_truncated: false,
+            response_payload_truncated: false,
+            request_tags: RequestTags {
+                service: Some("svc".to_string()),
+                component: None,
+                env: None,
+                bespoke: vec![RequestTag {
+                    key: "tenant".to_string(),
+                    value: "alpha".to_string(),
+                }],
+            },
+            tool_cardinality: RequestToolCardinality::default(),
+            user_agent_raw: None,
+            agent_harness_key: "unknown".to_string(),
+            agent_harness_label: "Unknown".to_string(),
+            metadata: Map::new(),
+            occurred_at: now - Duration::hours(2),
+        };
+        let kept_log = RequestLogRecord {
+            request_log_id: Uuid::new_v4(),
+            request_id: "req-kept-postgres".to_string(),
+            has_payload: false,
+            request_tags: RequestTags::default(),
+            occurred_at: now,
+            ..seeded_log.clone()
+        };
+        let payload = RequestLogPayloadRecord {
+            request_log_id: seeded_log.request_log_id,
+            request_json: json!({"prompt": "seeded"}),
+            response_json: json!({"ok": true}),
+        };
+        let attempt = RequestAttemptRecord {
+            request_attempt_id: Uuid::new_v4(),
+            request_log_id: seeded_log.request_log_id,
+            request_id: seeded_log.request_id.clone(),
+            attempt_number: 1,
+            route_id: Uuid::new_v4(),
+            provider_key: "openai-prod".to_string(),
+            upstream_model: "gpt-4o-mini".to_string(),
+            status: RequestAttemptStatus::Success,
+            status_code: Some(200),
+            error_code: None,
+            error_detail: None,
+            error_detail_truncated: false,
+            retryable: false,
+            terminal: true,
+            produced_final_response: true,
+            stream: false,
+            started_at: seeded_log.occurred_at,
+            completed_at: Some(seeded_log.occurred_at + Duration::milliseconds(42)),
+            latency_ms: Some(42),
+            metadata: Map::new(),
+        };
+
+        store
+            .insert_request_log_with_attempts(&seeded_log, Some(&payload), &[attempt])
+            .await
+            .expect("insert seeded request log");
+        store
+            .insert_request_log(&kept_log, None)
+            .await
+            .expect("insert kept request log");
+
+        let seeded_event = build_usage_ledger_record(
+            "demo-req-pg-001",
+            "user:scope-demo".to_string(),
+            api_key.id,
+            None,
+            None,
+            None,
+            None,
+            "gpt-4o-mini",
+            UsagePricingStatus::Priced,
+            1_000,
+            now - Duration::hours(2),
+        );
+        let kept_event = build_usage_ledger_record(
+            "req-kept-postgres",
+            "user:scope-kept".to_string(),
+            api_key.id,
+            None,
+            None,
+            None,
+            None,
+            "gpt-4o-mini",
+            UsagePricingStatus::Priced,
+            2_000,
+            now,
+        );
+        assert!(
+            store
+                .insert_usage_ledger_if_absent(&seeded_event)
+                .await
+                .expect("insert seeded usage event")
+        );
+        assert!(
+            store
+                .insert_usage_ledger_if_absent(&kept_event)
+                .await
+                .expect("insert kept usage event")
+        );
+
+        let request_ids = vec!["demo-req-pg-001".to_string()];
+        assert_eq!(
+            store
+                .delete_request_logs_by_request_ids(&request_ids)
+                .await
+                .expect("delete seeded request logs"),
+            1
+        );
+        assert_eq!(
+            store
+                .delete_usage_ledger_events_by_request_ids(&request_ids)
+                .await
+                .expect("delete seeded usage events"),
+            1
+        );
+
+        assert!(
+            store
+                .get_request_log_detail(seeded_log.request_log_id)
+                .await
+                .is_err()
+        );
+        assert!(
+            store
+                .get_request_log_detail(kept_log.request_log_id)
+                .await
+                .is_ok()
+        );
+        assert!(
+            store
+                .get_usage_ledger_by_request_and_scope("demo-req-pg-001", "user:scope-demo")
+                .await
+                .expect("seeded usage lookup")
+                .is_none()
+        );
+        assert!(
+            store
+                .get_usage_ledger_by_request_and_scope("req-kept-postgres", "user:scope-kept")
+                .await
+                .expect("kept usage lookup")
+                .is_some()
+        );
+
+        // Repeat deletes are no-ops, which is what makes reseeding idempotent.
+        assert_eq!(
+            store
+                .delete_request_logs_by_request_ids(&request_ids)
+                .await
+                .expect("repeat request log delete"),
+            0
+        );
+        assert_eq!(
+            store
+                .delete_usage_ledger_events_by_request_ids(&request_ids)
+                .await
+                .expect("repeat usage event delete"),
+            0
+        );
+
+        let pool = sqlx::PgPool::connect(&test_db.database_url)
+            .await
+            .expect("postgres pool");
+        let row = sqlx::query(
+            r#"
+            SELECT
+                (SELECT COUNT(*) FROM request_log_payloads),
+                (SELECT COUNT(*) FROM request_log_tags),
+                (SELECT COUNT(*) FROM request_log_attempts)
+            "#,
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("child counts");
+        let payload_count: i64 = row.try_get(0).expect("payload count");
+        let tag_count: i64 = row.try_get(1).expect("tag count");
+        let attempt_count: i64 = row.try_get(2).expect("attempt count");
+        assert_eq!((payload_count, tag_count, attempt_count), (0, 0, 0));
+
+        pool.close().await;
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn libsql_alias_backed_models_round_trip_through_store() {
         let tmp = tempdir().expect("tempdir");
         let db_path = tmp.path().join("gateway.db");
@@ -2681,6 +3943,7 @@ mod tests {
                 tags: vec!["fast".to_string()],
                 rank: 10,
                 routes: Vec::new(),
+                allowlist: None,
             },
             SeedModel {
                 model_key: "fast-v2".to_string(),
@@ -2699,6 +3962,7 @@ mod tests {
                     capabilities: ProviderCapabilities::all_enabled(),
                     compatibility: Default::default(),
                 }],
+                allowlist: None,
             },
         ];
 
@@ -2707,14 +3971,6 @@ mod tests {
             public_id: "dev123".to_string(),
             secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
             service_account_key: "seed-workloads".to_string(),
-            service_account_name: "Seed Workloads".to_string(),
-            service_account_team_key: "seed-workloads".to_string(),
-            service_account_budget: SeedBudget {
-                cadence: BudgetCadence::Daily,
-                amount_usd: Money4::from_scaled(100_000),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-            },
             allowed_models: vec!["fast".to_string()],
         }];
 
@@ -2723,6 +3979,7 @@ mod tests {
                 &providers,
                 &models,
                 &api_keys,
+                &seed_api_key_service_accounts(),
                 &[],
                 &[],
                 &seed_api_key_teams(),
@@ -2768,6 +4025,258 @@ mod tests {
             .expect("target routes");
         assert_eq!(routes.len(), 1);
         assert_eq!(routes[0].upstream_model, "gpt-5");
+    }
+
+    async fn exercise_model_allowlist_seed<S>(store: &S)
+    where
+        S: GatewayStore + ModelRepository + Sync,
+    {
+        let empty = store
+            .list_model_allowlists_for_models(&[])
+            .await
+            .expect("empty allowlist batch");
+        assert!(empty.is_empty());
+
+        let initial_models = vec![
+            SeedModel {
+                model_key: "fast".to_string(),
+                alias_target_model_key: Some("fast-v2".to_string()),
+                description: Some("alias".to_string()),
+                tags: Vec::new(),
+                rank: 10,
+                routes: Vec::new(),
+                allowlist: Some(ModelAllowlistPolicy {
+                    users: vec!["z@example.com".to_string(), "a@example.com".to_string()],
+                    teams: vec!["team-z".to_string(), "team-a".to_string()],
+                }),
+            },
+            SeedModel {
+                model_key: "fast-v2".to_string(),
+                alias_target_model_key: None,
+                description: Some("target".to_string()),
+                tags: Vec::new(),
+                rank: 20,
+                routes: Vec::new(),
+                allowlist: Some(ModelAllowlistPolicy {
+                    users: vec!["target@example.com".to_string()],
+                    teams: Vec::new(),
+                }),
+            },
+        ];
+        store
+            .seed_from_inputs(&[], &initial_models, &[], &[], &[], &[], &[], &[])
+            .await
+            .expect("initial seed");
+
+        let alias_model = store
+            .get_model_by_key("fast")
+            .await
+            .expect("query alias model")
+            .expect("alias model exists");
+        let target_model = store
+            .get_model_by_key("fast-v2")
+            .await
+            .expect("query target model")
+            .expect("target model exists");
+        let initial_policies = store
+            .list_model_allowlists_for_models(&[target_model.id, alias_model.id])
+            .await
+            .expect("initial policy batch");
+        assert_eq!(
+            initial_policies.get(&alias_model.id),
+            Some(&ModelAllowlistPolicy {
+                users: vec!["a@example.com".to_string(), "z@example.com".to_string()],
+                teams: vec!["team-a".to_string(), "team-z".to_string()],
+            })
+        );
+        assert_eq!(
+            initial_policies.get(&target_model.id),
+            Some(&ModelAllowlistPolicy {
+                users: vec!["target@example.com".to_string()],
+                teams: Vec::new(),
+            })
+        );
+
+        let updated_models = vec![
+            SeedModel {
+                model_key: "fast".to_string(),
+                alias_target_model_key: Some("fast-v2".to_string()),
+                description: Some("alias".to_string()),
+                tags: Vec::new(),
+                rank: 10,
+                routes: Vec::new(),
+                allowlist: Some(ModelAllowlistPolicy {
+                    users: vec!["only@example.com".to_string()],
+                    teams: vec!["team-b".to_string()],
+                }),
+            },
+            SeedModel {
+                model_key: "fast-v2".to_string(),
+                alias_target_model_key: None,
+                description: Some("target".to_string()),
+                tags: Vec::new(),
+                rank: 20,
+                routes: Vec::new(),
+                allowlist: None,
+            },
+        ];
+        store
+            .seed_from_inputs(&[], &updated_models, &[], &[], &[], &[], &[], &[])
+            .await
+            .expect("updated seed");
+
+        let updated_policies = store
+            .list_model_allowlists_for_models(&[alias_model.id, target_model.id])
+            .await
+            .expect("updated policy batch");
+        assert_eq!(
+            updated_policies.get(&alias_model.id),
+            Some(&ModelAllowlistPolicy {
+                users: vec!["only@example.com".to_string()],
+                teams: vec!["team-b".to_string()],
+            })
+        );
+        assert!(!updated_policies.contains_key(&target_model.id));
+        assert_eq!(
+            store
+                .get_model_allowlist(target_model.id)
+                .await
+                .expect("target policy lookup"),
+            None
+        );
+    }
+
+    async fn exercise_model_allowlist_seed_ignores_duplicate_refs<S>(store: &S)
+    where
+        S: GatewayStore + ModelRepository + Sync,
+    {
+        let models = vec![SeedModel {
+            model_key: "restricted".to_string(),
+            alias_target_model_key: None,
+            description: Some("restricted tier".to_string()),
+            tags: Vec::new(),
+            rank: 10,
+            routes: Vec::new(),
+            allowlist: Some(ModelAllowlistPolicy {
+                users: vec![
+                    "alice@example.com".to_string(),
+                    "alice@example.com".to_string(),
+                    "bob@example.com".to_string(),
+                ],
+                teams: vec![
+                    "platform".to_string(),
+                    "platform".to_string(),
+                    "research".to_string(),
+                ],
+            }),
+        }];
+        store
+            .seed_from_inputs(&[], &models, &[], &[], &[], &[], &[], &[])
+            .await
+            .expect("seed model with duplicate allowlist refs");
+
+        let model = store
+            .get_model_by_key("restricted")
+            .await
+            .expect("query restricted model")
+            .expect("restricted model exists");
+        let policies = store
+            .list_model_allowlists_for_models(&[model.id])
+            .await
+            .expect("policy batch");
+
+        assert_eq!(
+            policies.get(&model.id),
+            Some(&ModelAllowlistPolicy {
+                users: vec![
+                    "alice@example.com".to_string(),
+                    "bob@example.com".to_string()
+                ],
+                teams: vec!["platform".to_string(), "research".to_string()],
+            })
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_model_allowlist_seed_ignores_duplicate_refs() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        exercise_model_allowlist_seed_ignores_duplicate_refs(&store).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_model_allowlist_seed_ignores_duplicate_refs() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres model allowlist duplicate refs test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        run_migrations_with_options(&StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        })
+        .await
+        .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        exercise_model_allowlist_seed_ignores_duplicate_refs(&store).await;
+
+        store.pool().close().await;
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_model_allowlist_seed_replaces_and_clears() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        exercise_model_allowlist_seed(&store).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_model_allowlist_seed_replaces_and_clears() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres model allowlist test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        run_migrations_with_options(&StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        })
+        .await
+        .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        exercise_model_allowlist_seed(&store).await;
+
+        store.pool().close().await;
+        drop_postgres_test_database(&test_db).await;
     }
 
     #[tokio::test]
@@ -3293,8 +4802,9 @@ mod tests {
             .execute(
                 r#"
                 INSERT INTO api_keys (
-                  id, public_id, secret_hash, name, status, owner_kind, owner_user_id, owner_team_id, created_at
-                ) VALUES (?1, 'invalid_owner', 'hash', 'invalid', 'active', 'user', NULL, NULL, ?2)
+                  id, public_id, secret_hash, name, status, model_grant_mode,
+                  owner_kind, owner_user_id, owner_team_id, created_at
+                ) VALUES (?1, 'invalid_owner', 'hash', 'invalid', 'active', 'explicit', 'user', NULL, NULL, ?2)
                 "#,
                 libsql::params![Uuid::new_v4().to_string(), now],
             )
@@ -3337,9 +4847,9 @@ mod tests {
             .execute(
                 r#"
                 INSERT INTO api_keys (
-                  id, public_id, secret_hash, name, status, owner_kind,
+                  id, public_id, secret_hash, name, status, model_grant_mode, owner_kind,
                   owner_user_id, owner_team_id, owner_service_account_id, created_at
-                ) VALUES (?1, 'invalid_service_team', 'hash', 'invalid', 'active',
+                ) VALUES (?1, 'invalid_service_team', 'hash', 'invalid', 'active', 'explicit',
                   'service_account', NULL, ?2, ?3, ?4)
                 "#,
                 libsql::params![
@@ -3425,7 +4935,8 @@ mod tests {
         conn.execute(
             r#"
             INSERT INTO api_keys (
-              id, public_id, secret_hash, name, status, owner_kind, owner_user_id, owner_team_id, created_at
+              id, public_id, secret_hash, name, status,
+              owner_kind, owner_user_id, owner_team_id, created_at
             ) VALUES (?1, 'pub_user', 'hash', 'User key', 'active', 'user', ?2, NULL, ?3)
             "#,
             libsql::params![api_key_id.to_string(), user_id.to_string(), now],
@@ -3792,6 +5303,128 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn libsql_seed_round_trips_oauth_provider_allowed_email_domains() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        store
+            .seed_from_inputs(
+                &[],
+                &[],
+                &[],
+                &[],
+                &[],
+                &[seed_github_oauth_provider_with_domains(vec!["test.com"])],
+                &[],
+                &[],
+            )
+            .await
+            .expect("seed provider");
+        let providers = store
+            .list_enabled_oauth_providers()
+            .await
+            .expect("list oauth providers");
+        assert_eq!(providers.len(), 1);
+        assert_eq!(
+            providers[0].allowed_email_domains,
+            vec!["test.com".to_string()]
+        );
+        assert!(providers[0].sso_email_verification_enabled);
+
+        let mut updated_provider =
+            seed_github_oauth_provider_with_domains(vec!["example.com", "team.example.com"]);
+        updated_provider.sso_email_verification_enabled = false;
+        store
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[updated_provider], &[], &[])
+            .await
+            .expect("update provider");
+        let provider = store
+            .get_enabled_oauth_provider_by_key("github")
+            .await
+            .expect("get oauth provider")
+            .expect("provider exists");
+        assert_eq!(
+            provider.allowed_email_domains,
+            vec!["example.com".to_string(), "team.example.com".to_string()]
+        );
+        assert!(!provider.sso_email_verification_enabled);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_seed_round_trips_oauth_provider_allowed_email_domains() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres oauth provider allowed email domains test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options)
+            .await
+            .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        store
+            .seed_from_inputs(
+                &[],
+                &[],
+                &[],
+                &[],
+                &[],
+                &[seed_github_oauth_provider_with_domains(vec!["test.com"])],
+                &[],
+                &[],
+            )
+            .await
+            .expect("seed provider");
+        let providers = store
+            .list_enabled_oauth_providers()
+            .await
+            .expect("list oauth providers");
+        assert_eq!(providers.len(), 1);
+        assert_eq!(
+            providers[0].allowed_email_domains,
+            vec!["test.com".to_string()]
+        );
+        assert!(providers[0].sso_email_verification_enabled);
+
+        let mut updated_provider =
+            seed_github_oauth_provider_with_domains(vec!["example.com", "team.example.com"]);
+        updated_provider.sso_email_verification_enabled = false;
+        store
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[updated_provider], &[], &[])
+            .await
+            .expect("update provider");
+        let provider = store
+            .get_enabled_oauth_provider_by_key("github")
+            .await
+            .expect("get oauth provider")
+            .expect("provider exists");
+        assert_eq!(
+            provider.allowed_email_domains,
+            vec!["example.com".to_string(), "team.example.com".to_string()]
+        );
+        assert!(!provider.sso_email_verification_enabled);
+
+        store.pool().close().await;
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn libsql_seed_reconciles_declarative_teams_users_memberships_and_budgets() {
         let tmp = tempdir().expect("tempdir");
         let db_path = tmp.path().join("gateway.db");
@@ -3833,7 +5466,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &initial_teams, &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &initial_teams, &initial_users)
             .await
             .expect("initial seed");
 
@@ -3900,11 +5533,11 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &updated_teams, &updated_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &updated_teams, &updated_users)
             .await
             .expect("updated seed");
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &updated_teams, &updated_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &updated_teams, &updated_users)
             .await
             .expect("updated seed idempotent");
 
@@ -3995,7 +5628,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &initial_teams, &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &initial_teams, &initial_users)
             .await
             .expect("initial seed");
 
@@ -4035,7 +5668,7 @@ mod tests {
         }];
 
         let error = store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &invalid_teams, &invalid_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &invalid_teams, &invalid_users)
             .await
             .expect_err("seed should fail");
         assert!(
@@ -4087,7 +5720,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &[], &initial_users)
             .await
             .expect("initial seed");
 
@@ -4125,7 +5758,7 @@ mod tests {
         }];
 
         let error = store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &invalid_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &[], &invalid_users)
             .await
             .expect_err("seed should fail");
         assert!(
@@ -4192,7 +5825,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &[], &initial_users)
             .await
             .expect("initial seed");
 
@@ -4220,7 +5853,7 @@ mod tests {
         }];
 
         let error = store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &invalid_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &[], &invalid_users)
             .await
             .expect_err("seed should fail");
         assert!(
@@ -4291,7 +5924,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &initial_teams, &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &initial_teams, &initial_users)
             .await
             .expect("initial seed");
 
@@ -4358,11 +5991,11 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &updated_teams, &updated_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &updated_teams, &updated_users)
             .await
             .expect("updated seed");
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &updated_teams, &updated_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &updated_teams, &updated_users)
             .await
             .expect("updated seed idempotent");
 
@@ -4467,7 +6100,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &initial_teams, &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &initial_teams, &initial_users)
             .await
             .expect("initial seed");
 
@@ -4507,7 +6140,7 @@ mod tests {
         }];
 
         let error = store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &invalid_teams, &invalid_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &invalid_teams, &invalid_users)
             .await
             .expect_err("seed should fail");
         assert!(
@@ -4574,7 +6207,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &[], &initial_users)
             .await
             .expect("initial seed");
 
@@ -4612,7 +6245,7 @@ mod tests {
         }];
 
         let error = store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &invalid_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &[], &invalid_users)
             .await
             .expect_err("seed should fail");
         assert!(
@@ -4693,7 +6326,7 @@ mod tests {
         }];
 
         store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &initial_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &[], &initial_users)
             .await
             .expect("initial seed");
 
@@ -4721,7 +6354,7 @@ mod tests {
         }];
 
         let error = store
-            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &invalid_users)
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &[], &invalid_users)
             .await
             .expect_err("seed should fail");
         assert!(
@@ -4779,20 +6412,13 @@ mod tests {
                 capabilities: ProviderCapabilities::all_enabled(),
                 compatibility: Default::default(),
             }],
+            allowlist: None,
         }];
         let api_keys = vec![SeedApiKey {
             name: "dev".to_string(),
             public_id: "dev123".to_string(),
             secret_hash: "hash".to_string(),
             service_account_key: "seed-workloads".to_string(),
-            service_account_name: "Seed Workloads".to_string(),
-            service_account_team_key: "seed-workloads".to_string(),
-            service_account_budget: SeedBudget {
-                cadence: BudgetCadence::Daily,
-                amount_usd: Money4::from_scaled(100_000),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-            },
             allowed_models: vec!["fast".to_string()],
         }];
         store
@@ -4800,6 +6426,7 @@ mod tests {
                 &providers,
                 &models,
                 &api_keys,
+                &seed_api_key_service_accounts(),
                 &[],
                 &[],
                 &seed_api_key_teams(),
@@ -5097,20 +6724,13 @@ mod tests {
                 ),
                 compatibility: Default::default(),
             }],
+            allowlist: None,
         }];
         let api_keys = vec![SeedApiKey {
             name: "dev".to_string(),
             public_id: "dev123".to_string(),
             secret_hash: "hash".to_string(),
             service_account_key: "seed-workloads".to_string(),
-            service_account_name: "Seed Workloads".to_string(),
-            service_account_team_key: "seed-workloads".to_string(),
-            service_account_budget: SeedBudget {
-                cadence: BudgetCadence::Daily,
-                amount_usd: Money4::from_scaled(100_000),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-            },
             allowed_models: vec!["fast".to_string()],
         }];
 
@@ -5119,6 +6739,7 @@ mod tests {
                 &providers,
                 &models,
                 &api_keys,
+                &seed_api_key_service_accounts(),
                 &[],
                 &[],
                 &seed_api_key_teams(),
@@ -5656,20 +7277,13 @@ mod tests {
                 capabilities: ProviderCapabilities::all_enabled(),
                 compatibility: Default::default(),
             }],
+            allowlist: None,
         }];
         let api_keys = vec![SeedApiKey {
             name: "dev".to_string(),
             public_id: "dev123".to_string(),
             secret_hash: "hash".to_string(),
             service_account_key: "seed-workloads".to_string(),
-            service_account_name: "Seed Workloads".to_string(),
-            service_account_team_key: "seed-workloads".to_string(),
-            service_account_budget: SeedBudget {
-                cadence: BudgetCadence::Daily,
-                amount_usd: Money4::from_scaled(100_000),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-            },
             allowed_models: vec!["fast".to_string()],
         }];
         store
@@ -5677,6 +7291,7 @@ mod tests {
                 &providers,
                 &models,
                 &api_keys,
+                &seed_api_key_service_accounts(),
                 &[],
                 &[],
                 &seed_api_key_teams(),
@@ -5979,6 +7594,7 @@ mod tests {
                 tags: vec!["fast".to_string()],
                 rank: 10,
                 routes: Vec::new(),
+                allowlist: None,
             },
             SeedModel {
                 model_key: "fast-v2".to_string(),
@@ -5997,6 +7613,7 @@ mod tests {
                     capabilities: ProviderCapabilities::all_enabled(),
                     compatibility: Default::default(),
                 }],
+                allowlist: None,
             },
         ];
         let api_keys = vec![SeedApiKey {
@@ -6004,14 +7621,6 @@ mod tests {
             public_id: "dev123".to_string(),
             secret_hash: "hash".to_string(),
             service_account_key: "seed-workloads".to_string(),
-            service_account_name: "Seed Workloads".to_string(),
-            service_account_team_key: "seed-workloads".to_string(),
-            service_account_budget: SeedBudget {
-                cadence: BudgetCadence::Daily,
-                amount_usd: Money4::from_scaled(100_000),
-                hard_limit: true,
-                timezone: "UTC".to_string(),
-            },
             allowed_models: vec!["fast".to_string()],
         }];
 
@@ -6020,6 +7629,7 @@ mod tests {
                 &providers,
                 &models,
                 &api_keys,
+                &seed_api_key_service_accounts(),
                 &[],
                 &[],
                 &seed_api_key_teams(),

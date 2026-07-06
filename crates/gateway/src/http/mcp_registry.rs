@@ -464,7 +464,10 @@ pub async fn revoke_mcp_grant(
     get,
     path = "/api/v1/admin/mcp/credential-bindings",
     params(McpCredentialBindingsQuery),
-    responses((status = 200, body = Envelope<McpCredentialBindingsPayload>)),
+    responses(
+        (status = 200, body = Envelope<McpCredentialBindingsPayload>),
+        (status = 400, body = OpenAiErrorEnvelopeView)
+    ),
     security(("session_cookie" = []))
 )]
 pub async fn list_mcp_credential_bindings(
@@ -497,7 +500,10 @@ pub async fn list_mcp_credential_bindings(
     put,
     path = "/api/v1/admin/mcp/credential-bindings",
     request_body = UpsertMcpCredentialBindingRequest,
-    responses((status = 200, body = Envelope<McpCredentialBindingPayload>)),
+    responses(
+        (status = 200, body = Envelope<McpCredentialBindingPayload>),
+        (status = 400, body = OpenAiErrorEnvelopeView)
+    ),
     security(("session_cookie" = []))
 )]
 pub async fn upsert_mcp_credential_binding(
@@ -538,9 +544,10 @@ pub async fn upsert_mcp_credential_binding(
 pub async fn revoke_mcp_credential_binding(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Path(credential_binding_id): Path<Uuid>,
+    Path(credential_binding_id): Path<String>,
 ) -> Result<Json<Envelope<McpCredentialBindingsPayload>>, AppError> {
     require_platform_admin(&state, &headers).await?;
+    let credential_binding_id = parse_uuid(&credential_binding_id, "credential_binding_id")?;
     let service = McpCredentialService::new(state.store.clone());
     service.revoke_binding(credential_binding_id).await?;
     Ok(Json(envelope(McpCredentialBindingsPayload {

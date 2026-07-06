@@ -2,6 +2,7 @@ experimental_monorepo_root = true
 
 [settings]
 experimental = true
+env_shell_expand = true
 
 [monorepo]
 config_roots = ["docs", "crates/gateway-store"]
@@ -18,6 +19,10 @@ git-cliff = "latest"
 cocogitto = "latest"
 prek = "latest"
 "npm:agent-browser" = "latest"
+
+[env]
+CARGO_TARGET_DIR = "$HOME/.cache/cargo/target/"
+CARGO_BUILD_BUILD_DIR = "$HOME/.cache/cargo/build/"
 
 [tasks.install]
 description = "Install or update tool versions from mise.toml"
@@ -98,8 +103,8 @@ cmp crates/gateway-code-mode-wasmtime/guest/code_mode_guest.wasm "$tmpdir/code_m
 
 [tasks.lint]
 description = "Run Rust and admin UI linting"
-depends = ["ui-install"]
-run = "cargo clippy --workspace --all-targets -- -D warnings && bun run --cwd crates/admin-ui/web lint"
+depends = ["ui-install", "review-agent-action-install"]
+run = "cargo clippy --workspace --all-targets -- -D warnings && bun run --cwd crates/admin-ui/web lint && mise run review-agent-action-check"
 
 [tasks.build]
 description = "Build Rust crates and admin UI bundle"
@@ -112,12 +117,12 @@ run = "cargo run -p gateway --bin gateway -- serve"
 
 [tasks.test]
 description = "Run Rust and admin UI tests"
-depends = ["ui-install"]
-run = "cargo test --workspace && bun run --cwd crates/admin-ui/web test"
+depends = ["ui-install", "review-agent-action-install"]
+run = "cargo test --workspace && bun run --cwd crates/admin-ui/web test && mise run review-agent-action-test"
 
 [tasks.gateway-serve]
 description = "Run local `gateway serve` against `gateway.yaml`"
-run = "cargo run -p gateway --bin gateway -- serve"
+run = 'OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}" cargo run -p gateway --bin gateway -- serve'
 
 [tasks.gateway-migrate]
 description = "Run local `gateway migrate --apply` against `gateway.yaml`"
@@ -129,7 +134,7 @@ run = "cargo run -p gateway --bin gateway -- bootstrap-admin"
 
 [tasks.gateway-seed-config]
 description = "Run local `gateway seed-config` against `gateway.yaml`"
-run = "cargo run -p gateway --bin gateway -- seed-config"
+run = 'OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}" cargo run -p gateway --bin gateway -- seed-config'
 
 [tasks.gateway-purge-request-logs-dry-run]
 description = "Preview request-log purge against `gateway.yaml`; override retention with RETENTION=1d|3d|7d"
@@ -150,12 +155,12 @@ env = { POSTGRES_URL = { required = true } }
 run = 'cargo run -p gateway --bin gateway -- --config gateway.prod.yaml purge-request-logs --retention "${RETENTION:-7d}"'
 
 [tasks.gateway-seed-local-demo]
-description = "Seed the local-only demo dataset (teams, users, budgets, api keys, request history) against `gateway.yaml`"
-run = "cargo run -p gateway --bin gateway -- seed-local-demo"
+description = "Seed the local-only demo dataset (teams, users, service accounts, budgets, api keys, request history) against `gateway.yaml`"
+run = 'OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}" cargo run -p gateway --bin gateway -- seed-local-demo'
 
 [tasks.gateway-reset-local-demo]
 description = "Recreate local `gateway.db` with the local-only demo dataset"
-run = "rm -f gateway.db && cargo run -p gateway --bin gateway -- seed-local-demo"
+run = 'rm -f gateway.db && OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}" cargo run -p gateway --bin gateway -- seed-local-demo'
 
 [tasks.gateway-serve-prod]
 description = "Run production-shaped local `gateway serve` against `gateway.prod.yaml`"
@@ -189,8 +194,12 @@ GATEWAY_PORT="${PORT:-8080}"
 ADMIN_UI_INTERNAL_PORT="${ADMIN_UI_INTERNAL_PORT:-3001}"
 ADMIN_UI_UPSTREAM="${ADMIN_UI_UPSTREAM:-http://localhost:${ADMIN_UI_INTERNAL_PORT}}"
 
+export OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}"
+
 if [[ ! -f "$ROOT_DIR/gateway.db" ]]; then
   cargo run -p gateway --bin gateway -- seed-local-demo
+else
+  cargo run -p gateway --bin gateway -- seed-config
 fi
 
 
@@ -269,6 +278,30 @@ run = "bun run --cwd crates/admin-ui/web fmt"
 description = "Run admin UI tests"
 run = "bun run --cwd crates/admin-ui/web test"
 
+[tasks.review-agent-action-install]
+description = "Install review agent action dependencies"
+run = "bun install --cwd actions/review-agent --frozen-lockfile"
+
+[tasks.review-agent-action-build]
+description = "Build the checked-in review agent action dist bundle"
+depends = ["review-agent-action-install"]
+run = "bun run --cwd actions/review-agent build"
+
+[tasks.review-agent-action-test]
+description = "Run review agent action unit tests"
+depends = ["review-agent-action-install"]
+run = "bun run --cwd actions/review-agent test"
+
+[tasks.review-agent-action-check]
+description = "Typecheck, test, verify dist, and smoke test the review agent action"
+depends = ["review-agent-action-install"]
+run = """
+bun run --cwd actions/review-agent typecheck
+bun run --cwd actions/review-agent test
+bun run --cwd actions/review-agent check:dist
+bun run --cwd actions/review-agent smoke:no-install
+"""
+
 [tasks.e2e-install]
 description = "Install Playwright Chromium for the end-to-end suite"
 depends = ["ui-install"]
@@ -285,6 +318,7 @@ run = "bun run --cwd crates/admin-ui/web test:e2e"
 
 [tasks.release]
 description = "Analyze commits and dispatch the release workflow when a release is pending"
+depends = ["sync-pricing-catalog"]
 env = { GITHUB_TOKEN = { required = true } }
 # Cocogitto is used purely for version bumping and publishing tags.
 # git-cliff, might be able to replace it entirely, but failed when an initial tag didn't exist.

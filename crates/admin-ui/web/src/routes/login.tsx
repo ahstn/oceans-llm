@@ -35,7 +35,7 @@ export const Route = createFileRoute('/login')({
   component: LoginPage,
 })
 
-function LoginPage() {
+export function LoginPage() {
   const search = Route.useSearch()
   const oidcLoginOptions = Route.useLoaderData()
   const oidcProviders = oidcLoginOptions.oidcProviders
@@ -161,13 +161,15 @@ function ssoRedirectTarget(redirect: string | undefined) {
   return '/admin'
 }
 
-function ssoErrorMessage(code: string | undefined) {
+export function ssoErrorMessage(code: string | undefined) {
   switch (code) {
     case 'access_denied':
     case 'denied':
       return 'Access was denied for this SSO account.'
     case 'unmatched_identity':
       return 'This SSO account is not allowed to sign in.'
+    case 'github_unverified_email':
+      return 'GitHub did not return a primary verified email for this account. Verify your primary email at https://github.com/settings/emails, then try signing in again.'
     case 'state_expired':
       return 'The SSO sign-in request expired. Start sign-in again.'
     case 'state_invalid':

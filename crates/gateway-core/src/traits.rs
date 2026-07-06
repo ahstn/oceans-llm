@@ -10,26 +10,30 @@ use uuid::Uuid;
 use crate::{
     budgets::{BudgetRecord, BudgetScope, BudgetScopeKind, BudgetSettings},
     domain::{
-        ApiKeyRecord, BudgetAlertDeliveryRecord, BudgetAlertDispatchTask, BudgetAlertHistoryPage,
-        BudgetAlertHistoryQuery, BudgetAlertRecord, ExternalMcpDiscoveryRunRecord,
-        ExternalMcpServerRecord, ExternalMcpToolRecord, FocusExportAggregateRecord,
-        FocusExportDiagnosticsRecord, GatewayModel, HarnessUsageBucketRecord,
-        HarnessUsageLeaderRecord, McpAccessResolution, McpAggregateSessionRecord,
-        McpCatalogAccessResolution, McpGrantSubject, McpToolGrantRecord, McpToolGrantSubjectKind,
-        McpToolGrantTargetKind, McpToolInvocationDetail, McpToolInvocationPage,
-        McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
-        McpToolTokenEstimateRecord, McpToolsetRecord, McpToolsetToolRecord,
-        McpUpstreamCredentialBindingRecord, McpUpstreamCredentialOwnerScopeKind,
-        ModelPricingRecord, ModelRoute, Money4, NewApiKeyRecord, NewExternalMcpServerRecord,
-        NewMcpAggregateSessionRecord, NewMcpToolsetRecord, PricingCatalogCacheRecord,
-        ProviderCapabilities, ProviderConnection, ProviderRequestContext, RequestAttemptRecord,
-        RequestLogDetail, RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult,
-        RequestLogQuery, RequestLogRecord, RequestMcpTokenOverheadRecord, ServiceAccountRecord,
-        SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord,
-        TeamMembershipRecord, TeamRecord, UpdateExternalMcpServerRecord, UpdateMcpToolsetRecord,
+        ApiKeyModelGrantMode, ApiKeyRecord, BudgetAlertDeliveryRecord, BudgetAlertDispatchTask,
+        BudgetAlertHistoryPage, BudgetAlertHistoryQuery, BudgetAlertRecord,
+        ExternalMcpDiscoveryRunRecord, ExternalMcpServerRecord, ExternalMcpToolRecord,
+        FocusExportAggregateRecord, FocusExportDiagnosticsRecord, GatewayModel,
+        HarnessUsageBucketRecord, HarnessUsageLeaderRecord, McpAccessResolution,
+        McpAggregateSessionRecord, McpCatalogAccessResolution, McpGrantSubject, McpToolGrantRecord,
+        McpToolGrantSubjectKind, McpToolGrantTargetKind, McpToolInvocationDetail,
+        McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
+        McpToolInvocationRecord, McpToolTokenEstimateRecord, McpToolsetRecord,
+        McpToolsetToolRecord, McpUpstreamCredentialBindingRecord,
+        McpUpstreamCredentialOwnerScopeKind, ModelAllowlistPolicy, ModelPricingRecord, ModelRoute,
+        Money4, NewApiKeyRecord, NewExternalMcpServerRecord, NewMcpAggregateSessionRecord,
+        NewMcpToolsetRecord, NewReviewAgentRepositoryRecord, NewReviewAgentRunRecord,
+        PricingCatalogCacheRecord, ProviderCapabilities, ProviderConnection,
+        ProviderRequestContext, RequestAttemptRecord, RequestLogDetail, RequestLogPage,
+        RequestLogPayloadRecord, RequestLogPurgeResult, RequestLogQuery, RequestLogRecord,
+        RequestMcpTokenOverheadRecord, ReviewAgentProvider, ReviewAgentPullRequestRecord,
+        ReviewAgentRepositoryRecord, ReviewAgentRepositoryStatus, ReviewAgentRunRecord,
+        ServiceAccountRecord, SpendDailyAggregateRecord, SpendModelAggregateRecord,
+        SpendOwnerAggregateRecord, TeamMembershipRecord, TeamRecord, UpdateExternalMcpServerRecord,
+        UpdateMcpToolsetRecord, UpdateReviewAgentRepositoryRecord, UpdateReviewAgentRunRecord,
         UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
-        UpsertMcpUpstreamCredentialBindingRecord, UsageLeaderboardBucketRecord,
-        UsageLeaderboardUserRecord, UsageLedgerRecord, UserRecord,
+        UpsertMcpUpstreamCredentialBindingRecord, UpsertReviewAgentPullRequestRecord,
+        UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord, UsageLedgerRecord, UserRecord,
     },
     error::{ProviderError, RouteError, StoreError},
     protocol::core::{ChatRequest, EmbeddingsRequest, ResponsesRequest},
@@ -64,9 +68,42 @@ pub trait AdminApiKeyRepository: Send + Sync {
 
     async fn create_api_key(&self, api_key: &NewApiKeyRecord) -> Result<ApiKeyRecord, StoreError>;
 
-    async fn replace_api_key_model_grants(
+    async fn get_api_key_secret_material(
         &self,
         api_key_id: Uuid,
+    ) -> Result<Option<crate::ApiKeySecretMaterialRecord>, StoreError> {
+        let _ = api_key_id;
+        Err(StoreError::Unexpected(
+            "api key secret material is not implemented for this repository".to_string(),
+        ))
+    }
+
+    async fn upsert_api_key_secret_material(
+        &self,
+        material: &crate::ApiKeySecretMaterialRecord,
+    ) -> Result<(), StoreError> {
+        let _ = material;
+        Err(StoreError::Unexpected(
+            "api key secret material is not implemented for this repository".to_string(),
+        ))
+    }
+
+    async fn touch_api_key_secret_material_retrieved(
+        &self,
+        api_key_id: Uuid,
+        retrieved_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        let _ = api_key_id;
+        let _ = retrieved_at;
+        Err(StoreError::Unexpected(
+            "api key secret material retrieval is not implemented for this repository".to_string(),
+        ))
+    }
+
+    async fn replace_api_key_model_access(
+        &self,
+        api_key_id: Uuid,
+        model_grant_mode: ApiKeyModelGrantMode,
         model_ids: &[Uuid],
     ) -> Result<(), StoreError>;
 
@@ -78,6 +115,95 @@ pub trait AdminApiKeyRepository: Send + Sync {
 }
 
 #[async_trait]
+pub trait ReviewAgentRepository: Send + Sync {
+    async fn list_review_agent_repositories(
+        &self,
+        status: Option<ReviewAgentRepositoryStatus>,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<ReviewAgentRepositoryRecord>, StoreError>;
+
+    async fn list_review_agent_repositories_for_team(
+        &self,
+        team_id: Uuid,
+        status: Option<ReviewAgentRepositoryStatus>,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<ReviewAgentRepositoryRecord>, StoreError>;
+
+    async fn get_review_agent_repository(
+        &self,
+        repository_id: Uuid,
+    ) -> Result<Option<ReviewAgentRepositoryRecord>, StoreError>;
+
+    async fn get_review_agent_repository_by_identity(
+        &self,
+        provider: ReviewAgentProvider,
+        external_repository_id: Option<&str>,
+        owner: &str,
+        name: &str,
+    ) -> Result<Option<ReviewAgentRepositoryRecord>, StoreError>;
+
+    async fn create_review_agent_repository(
+        &self,
+        input: &NewReviewAgentRepositoryRecord,
+    ) -> Result<ReviewAgentRepositoryRecord, StoreError>;
+
+    async fn update_review_agent_repository(
+        &self,
+        input: &UpdateReviewAgentRepositoryRecord,
+    ) -> Result<ReviewAgentRepositoryRecord, StoreError>;
+
+    async fn set_review_agent_repository_status(
+        &self,
+        repository_id: Uuid,
+        status: ReviewAgentRepositoryStatus,
+        updated_at: OffsetDateTime,
+    ) -> Result<ReviewAgentRepositoryRecord, StoreError>;
+
+    async fn upsert_review_agent_pull_request(
+        &self,
+        input: &UpsertReviewAgentPullRequestRecord,
+    ) -> Result<ReviewAgentPullRequestRecord, StoreError>;
+
+    async fn get_review_agent_pull_request(
+        &self,
+        repository_id: Uuid,
+        pr_number: i64,
+    ) -> Result<Option<ReviewAgentPullRequestRecord>, StoreError>;
+
+    async fn start_review_agent_run(
+        &self,
+        input: &NewReviewAgentRunRecord,
+    ) -> Result<ReviewAgentRunRecord, StoreError>;
+
+    async fn get_review_agent_run(
+        &self,
+        run_id: Uuid,
+    ) -> Result<Option<ReviewAgentRunRecord>, StoreError>;
+
+    async fn get_review_agent_run_by_github_attempt(
+        &self,
+        repository_id: Uuid,
+        github_run_id: &str,
+        github_run_attempt: i64,
+    ) -> Result<Option<ReviewAgentRunRecord>, StoreError>;
+
+    async fn update_review_agent_run(
+        &self,
+        input: &UpdateReviewAgentRunRecord,
+    ) -> Result<ReviewAgentRunRecord, StoreError>;
+
+    async fn list_review_agent_runs_for_repository(
+        &self,
+        repository_id: Uuid,
+        pr_number: Option<i64>,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<ReviewAgentRunRecord>, StoreError>;
+}
+
+#[async_trait]
 pub trait ModelRepository: Send + Sync {
     async fn list_models(&self) -> Result<Vec<GatewayModel>, StoreError>;
     async fn get_model_by_key(&self, model_key: &str) -> Result<Option<GatewayModel>, StoreError>;
@@ -85,6 +211,19 @@ pub trait ModelRepository: Send + Sync {
         &self,
         api_key_id: Uuid,
     ) -> Result<Vec<GatewayModel>, StoreError>;
+
+    async fn list_model_allowlists_for_models(
+        &self,
+        model_ids: &[Uuid],
+    ) -> Result<HashMap<Uuid, ModelAllowlistPolicy>, StoreError>;
+
+    async fn get_model_allowlist(
+        &self,
+        model_id: Uuid,
+    ) -> Result<Option<ModelAllowlistPolicy>, StoreError> {
+        let mut policies = self.list_model_allowlists_for_models(&[model_id]).await?;
+        Ok(policies.remove(&model_id))
+    }
     async fn list_routes_for_model(&self, model_id: Uuid) -> Result<Vec<ModelRoute>, StoreError>;
 
     async fn list_routes_for_models(
@@ -313,6 +452,17 @@ pub trait BudgetRepository: Send + Sync {
         &self,
         event: &UsageLedgerRecord,
     ) -> Result<bool, StoreError>;
+
+    async fn delete_usage_ledger_events_by_request_ids(
+        &self,
+        request_ids: &[String],
+    ) -> Result<u64, StoreError> {
+        let _ = request_ids;
+        Err(StoreError::Unexpected(
+            "delete_usage_ledger_events_by_request_ids is not implemented for this repository"
+                .to_string(),
+        ))
+    }
 }
 
 #[async_trait]
@@ -433,6 +583,16 @@ pub trait RequestLogRepository: Send + Sync {
         cutoff: OffsetDateTime,
         dry_run: bool,
     ) -> Result<RequestLogPurgeResult, StoreError>;
+
+    async fn delete_request_logs_by_request_ids(
+        &self,
+        request_ids: &[String],
+    ) -> Result<u64, StoreError> {
+        let _ = request_ids;
+        Err(StoreError::Unexpected(
+            "delete_request_logs_by_request_ids is not implemented for this repository".to_string(),
+        ))
+    }
 }
 
 #[async_trait]
@@ -652,7 +812,7 @@ pub trait McpUpstreamCredentialRepository: Send + Sync {
         &self,
         credential_binding_id: Uuid,
         last_used_at: OffsetDateTime,
-    ) -> Result<(), StoreError>;
+    ) -> Result<bool, StoreError>;
 }
 
 #[async_trait]

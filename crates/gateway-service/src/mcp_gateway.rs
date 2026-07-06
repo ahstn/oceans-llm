@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use gateway_core::{
     AuthenticatedApiKey, ExternalMcpAuthMode, ExternalMcpServerRecord, ExternalMcpServerStatus,
-    GatewayError, McpRegistryRepository, McpToolInvocationStatus,
+    GatewayError, IdentityRepository, McpRegistryRepository, McpToolInvocationStatus,
     McpUpstreamCredentialRepository, ProviderError, StoreError,
 };
 use gateway_mcp::McpClientError;
@@ -88,7 +88,7 @@ where
 
 impl<R> McpGatewayService<R>
 where
-    R: McpRegistryRepository + McpUpstreamCredentialRepository,
+    R: McpRegistryRepository + McpUpstreamCredentialRepository + IdentityRepository,
 {
     pub async fn prepare_upstream_for_auth(
         &self,

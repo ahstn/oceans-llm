@@ -1,4 +1,48 @@
-use crate::protocol::{core, openai};
+use std::collections::BTreeMap;
+
+use crate::protocol::{anthropic, core, openai};
+
+#[must_use]
+pub fn anthropic_messages_request_to_core(
+    request: &anthropic::AnthropicMessagesRequest,
+) -> core::ChatRequest {
+    let mut messages = Vec::new();
+    if let Some(system) = &request.system {
+        messages.push(core::ChatMessage {
+            role: "system".to_string(),
+            content: system.clone(),
+            name: None,
+            extra: BTreeMap::new(),
+        });
+    }
+    messages.extend(request.messages.iter().map(|message| core::ChatMessage {
+        role: message.role.clone(),
+        content: message.content.clone(),
+        name: None,
+        extra: message.extra.clone(),
+    }));
+
+    let mut extra = request.extra.clone();
+    if let Some(max_tokens) = &request.max_tokens {
+        extra.insert("max_tokens".to_string(), max_tokens.clone());
+    }
+    if let Some(tools) = &request.tools {
+        extra.insert("tools".to_string(), tools.clone());
+    }
+    if let Some(tool_choice) = &request.tool_choice {
+        extra.insert("tool_choice".to_string(), tool_choice.clone());
+    }
+    if let Some(thinking) = &request.thinking {
+        extra.insert("thinking".to_string(), thinking.clone());
+    }
+
+    core::ChatRequest {
+        model: request.model.clone(),
+        messages,
+        stream: request.stream,
+        extra,
+    }
+}
 
 #[must_use]
 pub fn openai_chat_request_to_core(request: &openai::ChatCompletionsRequest) -> core::ChatRequest {
@@ -101,11 +145,13 @@ mod tests {
     use serde_json::{Value, json};
 
     use crate::protocol::{
+        anthropic::{AnthropicMessage, AnthropicMessagesRequest},
         openai::{ChatCompletionsRequest, ChatMessage, EmbeddingsRequest, ResponsesRequest},
         translate::{
-            core_chat_request_to_openai, core_embeddings_request_to_openai,
-            core_responses_request_to_openai, openai_chat_request_to_core,
-            openai_embeddings_request_to_core, openai_responses_request_to_core,
+            anthropic_messages_request_to_core, core_chat_request_to_openai,
+            core_embeddings_request_to_openai, core_responses_request_to_openai,
+            openai_chat_request_to_core, openai_embeddings_request_to_core,
+            openai_responses_request_to_core,
         },
     };
 
@@ -142,6 +188,37 @@ mod tests {
         assert_eq!(translated_back.messages, openai_request.messages);
         assert_eq!(translated_back.stream, openai_request.stream);
         assert_eq!(translated_back.extra, openai_request.extra);
+    }
+
+    #[test]
+    fn anthropic_messages_request_maps_to_tool_capable_core_chat() {
+        let request = AnthropicMessagesRequest {
+            model: "claude".to_string(),
+            system: Some(json!("be terse")),
+            messages: vec![AnthropicMessage {
+                role: "user".to_string(),
+                content: json!("hi"),
+                extra: BTreeMap::new(),
+            }],
+            max_tokens: Some(json!(64)),
+            stream: true,
+            tools: Some(json!([{
+                "name": "noop",
+                "input_schema": {"type":"object","properties":{}}
+            }])),
+            tool_choice: None,
+            thinking: None,
+            extra: BTreeMap::new(),
+        };
+
+        let core = anthropic_messages_request_to_core(&request);
+        let requirements = core.requirements();
+
+        assert_eq!(core.messages[0].role, "system");
+        assert_eq!(core.extra["max_tokens"], json!(64));
+        assert!(requirements.chat_completions);
+        assert!(requirements.stream);
+        assert!(requirements.tools);
     }
 
     #[test]

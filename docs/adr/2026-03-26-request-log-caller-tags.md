@@ -15,7 +15,7 @@
 
 Before this change, request logs already had a useful split:
 
-- [`request_logs`](../reference/data-relationships.md) held hot summary fields used by the observability list views.
+- [`request_logs`](../contributing/reference/data-relationships.md) held hot summary fields used by the observability list views.
 - `request_log_payloads` held sanitized request and response bodies for detail inspection.
 
 That shape worked well for provider, model, latency, status, and payload inspection, but it had a blind spot: teams sharing one API key could not reliably attribute traffic back to the calling service or component. Operators could answer "what happened to this request?" but not "which caller produced this class of requests?" without inferring from payloads or external systems.

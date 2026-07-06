@@ -100,13 +100,8 @@ providers:
       credentials_path: env.GCP_SERVICE_ACCOUNT_JSON
 
 teams:
-  - key: platform
+  - id: platform
     name: Platform
-    budget:
-      cadence: monthly
-      amount_usd: "500.0000"
-      hard_limit: true
-      timezone: UTC
 
 users:
   - name: Platform Admin
@@ -127,6 +122,14 @@ models:
     routes:
       - provider: vertex
         upstream_model: google/gemini-2.0-flash
+        capabilities:
+          chat_completions: true
+          responses: false
+          embeddings: false
+          stream: true
+          tools: false
+          vision: true
+          json_schema: false
 ```
 
 The checked-in examples are opinionated. They are not the full config space.
@@ -258,28 +261,47 @@ Important distinctions:
 - `bootstrap_admin.require_password_change` changes first-login behavior
 - `bootstrap_admin.password` must be `literal.*` or `env.*`
 
-Seeded API keys are gateway caller credentials. They are useful for bootstrap automation and service-account workloads, but they are not upstream cloud provider service-account credentials. Each seeded key creates or reconciles an explicit gateway service account with an owning team and active budget.
+Service accounts are gateway workload identities owned by teams. They are not upstream cloud provider service-account credentials. Each declared service account must reference an existing team and define an active budget. Managed keys under the service account are gateway caller credentials.
 
-Example seeded gateway key:
+Example service account with one managed gateway key:
 
 ```yaml
-auth:
-  seed_api_keys:
-    - name: ci-indexer
-      value: env.CI_INDEXER_GATEWAY_API_KEY
-      service_account:
-        key: ci-indexer
-        name: CI Indexer
-        team: platform
-        budget:
-          cadence: daily
-          amount_usd: "25.0000"
-          hard_limit: true
-          timezone: UTC
-      allowed_models:
-        - gpt-4o-mini
-        - gemini-fast
+service_accounts:
+  - id: ci-indexer
+    name: CI Indexer
+    team: platform
+    budget:
+      cadence: daily
+      amount_usd: "25.0000"
+      hard_limit: true
+      timezone: UTC
+    keys:
+      - id: primary
+        name: CI Indexer Primary
+        auto_create: true
+        value: env.CI_INDEXER_GATEWAY_API_KEY
+        allowed_models:
+          - gpt-4o-mini
+          - gemini-fast
 ```
+
+Important service-account fields:
+
+- `id`: stable config key for the gateway service account; names can change
+- `name`: display name; defaults to `id`
+- `team`: owning `teams[*].id`; team moves are rejected by seed reconciliation
+- `budget`: required active service-account budget
+- `keys`: managed gateway API keys for this service account
+
+Important managed-key fields:
+
+- `id`: stable config key for the managed key under the service account
+- `name`: display name; defaults to `id`
+- `auto_create`: defaults to `true`; generated material is used only when no managed key exists yet
+- `value`: optional `env.*` or `literal.*` gateway API key value, used to import or rotate a known value
+- `allowed_models`: reconciled model grants for the key
+
+Managed key material is encrypted before storage so it can be revealed later to authenticated platform admins or active team owners/admins of the owning team. Set `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY` to a base64-encoded 32-byte key before using config-created managed keys or creating service-account-owned keys in the admin UI.
 
 Operational guidance:
 
@@ -287,7 +309,7 @@ Operational guidance:
 - grant only the gateway models the workload needs
 - declare the owning team in `teams`
 - set a service-account budget before activating service-account traffic
-- rotate by creating or seeding a replacement key, moving the caller, then revoking or removing the old key
+- rotate configured values by changing `keys[*].value`; generated keys are create-only and are not rotated on restart
 
 OIDC providers use authorization-code login with provider discovery and ID-token verification:
 
@@ -318,10 +340,35 @@ auth:
         client_id: env.GITHUB_OAUTH_CLIENT_ID
         client_secret: env.GITHUB_OAUTH_CLIENT_SECRET
         scopes: [read:user, user:email]
+        sso_email_verification_enabled: true
+        allowed_email_domains:
+          - example.com
         enabled: true
         jit:
           enabled: false
 ```
+
+Important GitHub OAuth provider fields:
+
+- `key`: gateway-local provider key used by invited OAuth users
+- `label`: admin-login display label
+- `provider_type`: must be `github`
+- `client_id`
+- `client_secret`
+- `scopes`: must include `user:email`
+- `sso_email_verification_enabled`
+  - optional
+  - defaults to `true`
+  - when `true`, GitHub OAuth requires the account's primary email to be verified by GitHub
+  - when `false`, Oceans accepts GitHub's primary email even when GitHub has not verified it
+- `allowed_email_domains`
+  - optional
+  - defaults to an empty list, which keeps the existing invite/JIT behavior without a domain restriction
+  - entries are normalized by trimming whitespace, converting to lowercase, and removing trailing dots
+  - empty entries, email addresses, URLs, wildcards, single-label values, names with invalid DNS characters, and duplicates after normalization are rejected at startup
+  - matching is case-insensitive and exact on the selected primary email's domain part
+- `enabled`
+- `jit`
 
 For GitHub setup steps and callback URL rules, see [GitHub OAuth SSO Setup for Admins](../access/github-oauth-admin-setup.md).
 
@@ -335,7 +382,6 @@ Important `teams` fields:
 
 - `key`
 - `name`
-- `budget`
 
 Important `users` fields:
 
@@ -352,7 +398,7 @@ Important `users` fields:
 
 Validation rules that matter:
 
-- team keys must be unique
+- team IDs must be unique
 - `system-legacy` has no reserved meaning and is not a compatibility owner
 - user emails are normalized and must be unique
 - `admin@local` is reserved for the bootstrap admin
@@ -362,19 +408,20 @@ Validation rules that matter:
 - membership roles can be `admin` or `member`
 - membership role `owner` is rejected
 - budget amounts must be non-negative
+- teams are not budget principals
 
 Seed semantics that matter:
 
-- listed teams are upserted by `teams[*].key`
+- listed teams are upserted by `teams[*].id`
+- listed service accounts are upserted by `service_accounts[*].id`
+- listed managed service-account keys are upserted by `service_accounts[*].keys[*].id`
 - listed users are upserted by normalized email
 - new config-seeded users are created as `invited`
-- listed membership and active-budget state is reconciled for listed users and teams
-- omitting a `budget` block for a listed user or team deactivates that owner's active budget
-- unlisted teams and users are left untouched
+- listed membership and active-budget state is reconciled for listed users
+- omitting a `budget` block for a listed user deactivates that user's active budget
+- unlisted teams, service accounts, keys, and users are left untouched
 
 OIDC and OAuth provider existence is validated at seed time against enabled runtime providers, not YAML parse time.
-
-Service accounts are managed by admins. They are not a replacement spelling for `auth.seed_api_keys`.
 
 ## `budget_alerts`
 
@@ -480,6 +527,7 @@ When `enabled: true`, startup constructs the sandbox backend and fails loudly if
 Supported provider types in the checked-in configs:
 
 - `openai_compat`
+- `gcp_cloud_run_openai_compat`
 - `gcp_vertex`
 - `aws_bedrock`
 
@@ -488,6 +536,9 @@ Supported provider types in the checked-in configs:
 | Provider type | Auth field | Expected secret material |
 | --- | --- | --- |
 | `openai_compat` | `auth.token` | bearer-style token |
+| `gcp_cloud_run_openai_compat` | `auth.mode: adc` | Google ADC or metadata-server identity credentials that can mint Cloud Run ID tokens |
+| `gcp_cloud_run_openai_compat` | `auth.mode: service_account` | Google Cloud service-account JSON through `credentials_path` or an equivalent mounted secret path |
+| `gcp_cloud_run_openai_compat` | `auth.mode: bearer` | pre-minted Cloud Run ID token for constrained debugging only |
 | `gcp_vertex` | `auth.mode: adc` | ADC available in the runtime environment |
 | `gcp_vertex` | `auth.mode: service_account` | upstream Google Cloud service-account JSON through `credentials_path` or an equivalent mounted secret path |
 | `aws_bedrock` | `auth.mode: bearer` | Bedrock bearer token, often `env.AWS_BEARER_TOKEN_BEDROCK` |
@@ -519,6 +570,52 @@ Validation rules that matter:
 - `pricing_provider_id` cannot be empty
 - `pricing_provider_id` must map to a supported internal pricing family
 
+OpenRouter uses this generic provider type with `base_url: https://openrouter.ai/api/v1`. Keep arbitrary OpenAI-compatible endpoints on plain `openai_compat`; add route-level `compatibility.openrouter` only when the route needs OpenRouter provider-selection policy such as ZDR, provider allow/deny lists, provider order, latency preference, or price ceilings. See [OpenRouter](../providers/openrouter.md).
+
+### `gcp_cloud_run_openai_compat`
+
+Important fields:
+
+- `id`
+- `base_url`
+- `audience`
+  - optional
+  - defaults to the HTTPS service origin from `base_url`
+- `pricing_provider_id`
+- `auth.mode`
+  - `adc`
+  - `service_account`
+  - `bearer`
+- `auth_header`
+  - optional
+  - `authorization`
+  - `x_serverless_authorization`
+- optional `display.label`
+- optional `display.icon_key`
+
+Example:
+
+```yaml
+providers:
+  - id: gemma-cloud-run
+    type: gcp_cloud_run_openai_compat
+    base_url: https://gemma-service-abc-uc.a.run.app/v1
+    pricing_provider_id: google-vertex
+    auth:
+      mode: adc
+```
+
+Validation rules that matter:
+
+- `base_url` must be an absolute HTTPS URL with a host
+- `audience`, when set, cannot be empty
+- `pricing_provider_id` cannot be empty
+- `pricing_provider_id` must map to a supported internal pricing family
+- `service_account.credentials_path` and `bearer.token` cannot be empty
+- unknown provider or auth fields are rejected
+
+Provider-specific examples live in [Google Cloud Run OpenAI-Compatible Models](../providers/gcp-cloud-run-openai-compat.md).
+
 ### `gcp_vertex`
 
 Important fields:
@@ -534,8 +631,10 @@ Important fields:
 Routing and pricing caveats:
 
 - `upstream_model` must use `<publisher>/<model_id>`
-- pricing identity is inferred from the publisher prefix
+- pricing identity is inferred from the publisher prefix; `google/...` routes use Google Vertex pricing and `anthropic/...` routes use Anthropic-on-Vertex pricing
 - Anthropic-on-Vertex pricing is only supported for `location=global`
+- route capabilities default permissively, so partial Vertex routes should explicitly disable unsupported API families
+- Vertex text embeddings should be configured as explicit embedding-only routes for `google/gemini-embedding-001`, `google/gemini-embedding-2`, `google/text-embedding-005`, or `google/text-multilingual-embedding-002`
 - provider-specific configuration examples live in [Google Vertex AI](../providers/gcp-vertex.md)
 
 ### `aws_bedrock`
@@ -597,6 +696,40 @@ Important fields:
 - `rank`
 - `routes`
 - `alias_of`
+- `allowlist`
+
+### Model Allowlists
+
+`models[*].allowlist` is an optional model-centric authorization policy. It answers "which human users or teams may use this gateway model?" It is separate from API-key grants and from principal-centric user, team, and service-account model restrictions.
+
+Example:
+
+```yaml
+models:
+  - id: finance-gpt-4o
+    tags: [finance, fast]
+    allowlist:
+      users:
+        - Analyst@Example.com
+      teams:
+        - Finance
+    routes:
+      - provider: openrouter
+        upstream_model: openai/gpt-4o
+```
+
+Rules that matter:
+
+- `users` entries are normalized like config users: trimmed and lowercased email refs.
+- `teams` entries are normalized like config team keys.
+- Duplicate refs are collapsed deterministically after normalization.
+- Unknown user and team refs are accepted. They are string refs so a future user or team can become effective without changing the model config.
+- Omitting `allowlist` means the model has no model-level deny policy. During config seed reconciliation for that configured model, omission clears any previously stored model-level allowlist.
+- `allowlist: {}`, `users: []` with `teams: []`, or refs that normalize to empty sets are invalid startup config.
+- A human user-owned API key may use an allowlisted model when the normalized user email or the user's effective team key appears in the model allowlist.
+- A service-account-owned API key is denied for a model that has a model-level allowlist in v1, even when the owning team key appears in the allowlist.
+- Aliases are independent gateway model keys. An allowlist on an alias does not inherit from the target model, and an allowlist on the target does not automatically apply to the alias.
+- `tag:` selectors evaluate effective accessible models. Allowlisted models that the caller cannot use are skipped as tag candidates.
 
 ## Route Config
 
@@ -618,6 +751,26 @@ Compatibility metadata is separate from capabilities. Capabilities decide whethe
 
 Capability flags include API-family gates such as `chat_completions`, `responses`, and `embeddings`, plus feature gates such as `stream`, `tools`, `vision`, `json_schema`, and `developer_role`.
 
+Vertex embedding-only route:
+
+```yaml
+models:
+  - id: gemini-embedding
+    routes:
+      - provider: vertex
+        upstream_model: google/gemini-embedding-001
+        # google/gemini-embedding-2 is also supported for text-only embeddings
+        # through Vertex :embedContent.
+        capabilities:
+          chat_completions: false
+          responses: false
+          embeddings: true
+          stream: false
+          tools: false
+          vision: false
+          json_schema: false
+```
+
 OpenAI-compatible route profile:
 
 ```yaml
@@ -633,6 +786,28 @@ models:
             developer_role: system
             reasoning_effort: omit
             supports_stream_usage: true
+```
+
+OpenRouter route policy:
+
+```yaml
+models:
+  - id: openrouter-fast-zdr
+    routes:
+      - provider: openrouter
+        upstream_model: openai/gpt-4o-mini
+        compatibility:
+          openrouter:
+            provider:
+              zdr: true
+              only: [openai, anthropic]
+              ignore: [deepinfra]
+              order: [openai, anthropic]
+              preferred_max_latency:
+                p90: 2.5
+              max_price:
+                prompt: 1.0
+                completion: 2.0
 ```
 
 AWS Bedrock route profile:
@@ -676,6 +851,19 @@ OpenAI-compatible profile defaults:
 | `reasoning_effort` | `passthrough` | `passthrough`, `omit`, `reasoning_object` |
 | `supports_stream_usage` | `false` | `true`, `false` |
 
+OpenRouter policy fields:
+
+| Field | Default | Supported values |
+| --- | --- | --- |
+| `zdr` | unset | `true`, `false` |
+| `only` | `[]` | non-empty OpenRouter provider slugs |
+| `ignore` | `[]` | non-empty OpenRouter provider slugs |
+| `order` | `[]` | non-empty OpenRouter provider slugs in preferred order |
+| `preferred_max_latency` | unset | positive number, or object with positive `p50`, `p75`, `p90`, `p99` values in seconds |
+| `max_price` | unset | object with one or more non-negative `prompt`, `completion`, `request`, or `image` ceilings |
+
+`compatibility.openrouter` is valid only on OpenRouter `openai_compat` providers. Do not set both `compatibility.openrouter.provider` and `extra_body.provider` on the same route.
+
 The current `openai_compat` profile fields are Chat Completions transforms. `/v1/responses` is a separate supported API family and is not adapted by reusing Chat Completions compatibility shims.
 
 Do not use `extra_body` for compatibility transforms. `extra_body` remains for additive provider-specific overrides, and the typed compatibility profile remains authoritative when a declared transform conflicts with an additive override.
@@ -709,6 +897,25 @@ models:
             supports_stream_usage: true
 ```
 
+OpenRouter routes can also declare upstream provider routing policy explicitly:
+
+```yaml
+models:
+  - id: openrouter-private
+    routes:
+      - provider: openrouter
+        upstream_model: anthropic/claude-sonnet-4.6
+        compatibility:
+          openrouter:
+            provider:
+              zdr: true
+              only: [anthropic]
+              preferred_max_latency: 3.0
+              max_price:
+                prompt: 3.0
+                completion: 15.0
+```
+
 Vertex Google routes use the Vertex provider and a publisher-qualified upstream model:
 
 ```yaml
@@ -721,6 +928,24 @@ models:
           chat_completions: true
           responses: false
           embeddings: false
+```
+
+Cloud Run vLLM routes use the Cloud Run OpenAI-compatible provider and can set tested vLLM/Gemma request controls through `extra_body`:
+
+```yaml
+models:
+  - id: gemma-cloud-run
+    routes:
+      - provider: gemma-cloud-run
+        upstream_model: google/gemma-4-12b-it
+        capabilities:
+          chat_completions: true
+          responses: false
+          embeddings: false
+        extra_body:
+          chat_template_kwargs:
+            enable_thinking: true
+          skip_special_tokens: false
 ```
 
 Bedrock routes can execute Chat Completions through Claude native Messages, Converse, and ConverseStream depending on the upstream model and request shape. Keep Responses and embeddings disabled:
@@ -788,6 +1013,6 @@ Later failures are usually runtime problems such as:
 - cross-cutting request cause and effect:
   - [request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md)
 - spend windows and budget policy:
-  - [budgets-and-spending.md](../operations/budgets-and-spending.md)
+  - [budgets-and-spending.md](../contributing/operations/budgets-and-spending.md)
 - OIDC and SSO behavior:
   - [oidc-and-sso-status.md](../access/oidc-and-sso-status.md)

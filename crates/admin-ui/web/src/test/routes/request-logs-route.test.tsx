@@ -38,8 +38,12 @@ const items: RequestLogView[] = [
     request_log_id: 'reqlog_1',
     request_id: 'req_1',
     api_key_id: 'api_key_1',
+    api_key_name: 'Checkout Service Key',
     user_id: 'user_1',
+    user_name: 'Alice Example',
+    user_email: 'alice@example.com',
     team_id: null,
+    service_account_name: null,
     model_key: 'gpt-4.1-mini',
     resolved_model_key: 'gpt-4.1-mini',
     provider_key: 'openai',
@@ -99,6 +103,10 @@ describe('RequestLogsPage', () => {
 
     expect(screen.getByTestId('request-log-mobile-list')).toBeInTheDocument()
     expect(screen.getByTestId('request-log-desktop-table')).toBeInTheDocument()
+    // 12 rows × 56 px (requestLogDesktopPreviewRows × requestLogRowEstimatePx)
+    expect(screen.getByTestId('request-log-desktop-table-viewport')).toHaveStyle({
+      height: '672px',
+    })
     expect(
       screen.getByText(
         'Inspect single-route request execution, latency, and sanitized payloads without dropping into raw traces.',
@@ -110,43 +118,52 @@ describe('RequestLogsPage', () => {
     expect(screen.getAllByText(/exposed 2/)).toHaveLength(2)
     expect(screen.getAllByText(/called 0/)).toHaveLength(2)
     expect(screen.getAllByText(/MCP n\/a/)).toHaveLength(2)
-    expect(screen.getAllByText('Chat Completions')).toHaveLength(2)
-    expect(screen.getByText('service:checkout')).toBeInTheDocument()
-    expect(screen.getByText('component:pricing_api')).toBeInTheDocument()
-    expect(screen.getByText('env:prod')).toBeInTheDocument()
-    expect(screen.getByText('feature:guest_checkout')).toBeInTheDocument()
+    expect(screen.getAllByText('Checkout Service Key')).toHaveLength(2)
+    expect(screen.getAllByText('Alice Example')).toHaveLength(2)
+    expect(screen.getByText('alice@example.com')).toBeInTheDocument()
+    expect(screen.getAllByText('2026-03-10 11:32')).toHaveLength(2)
+    expect(screen.queryByText('Chat Completions')).not.toBeInTheDocument()
+    expect(screen.queryByText('redacted payloads')).not.toBeInTheDocument()
+    expect(screen.queryByText('payload')).not.toBeInTheDocument()
   })
 
-  it('renders known and unknown operation metadata without hiding stream badges', async () => {
-    const responsesItem: RequestLogView = {
+  it('renders service-account and unknown callers with sensible fallbacks', async () => {
+    const serviceAccountItem: RequestLogView = {
       ...items[0],
       request_log_id: 'reqlog_2',
       request_id: 'req_2',
-      metadata: {
-        operation: 'responses',
-        stream: true,
-      },
+      api_key_name: 'Nightly Rollup Key',
+      user_id: null,
+      user_name: null,
+      user_email: null,
+      service_account_name: 'Batch Jobs Account',
     }
-    const unknownOperationItem: RequestLogView = {
+    const unknownCallerItem: RequestLogView = {
       ...items[0],
       request_log_id: 'reqlog_3',
       request_id: 'req_3',
-      metadata: {
-        operation: 'batch_predictions',
-        stream: false,
-      },
+      api_key_name: null,
+      user_id: null,
+      user_name: null,
+      user_email: null,
+      service_account_name: null,
     }
     routeMock.useLoaderData.mockReturnValue({
-      data: { items: [items[0], responsesItem, unknownOperationItem], total: 3 },
+      data: { items: [serviceAccountItem, unknownCallerItem], total: 2 },
     })
 
     const { RequestLogsPage } = await import('@/routes/observability/request-logs')
 
     render(<RequestLogsPage />)
 
-    expect(screen.getByText('Responses')).toBeInTheDocument()
-    expect(screen.getByText('Batch Predictions')).toBeInTheDocument()
-    expect(screen.getByText('stream')).toBeInTheDocument()
+    // The mocked virtualizer renders only the first row in the desktop table,
+    // so the second item is asserted via the mobile list alone.
+    expect(screen.getAllByText('Batch Jobs Account')).toHaveLength(2)
+    expect(screen.getAllByText('service account').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Nightly Rollup Key')).toHaveLength(2)
+    expect(screen.getAllByText('Unknown')).toHaveLength(1)
+    // Keys without a resolved name fall back to the raw api key id.
+    expect(screen.getAllByText('api_key_1')).toHaveLength(1)
   })
 
   it('renders request-log detail without fallback-era fields', async () => {
@@ -201,6 +218,12 @@ describe('RequestLogsPage', () => {
     const dialog = screen.getByRole('dialog')
     expect(within(dialog).getByText('Operation')).toBeInTheDocument()
     expect(within(dialog).getByText('Chat Completions')).toBeInTheDocument()
+    expect(within(dialog).getByText('API Key')).toBeInTheDocument()
+    expect(within(dialog).getByText('Checkout Service Key')).toBeInTheDocument()
+    expect(within(dialog).getByText('Caller')).toBeInTheDocument()
+    expect(within(dialog).getByText('Alice Example · alice@example.com')).toBeInTheDocument()
+    expect(within(dialog).getByText('service:checkout')).toBeInTheDocument()
+    expect(within(dialog).getByText('feature:guest_checkout')).toBeInTheDocument()
     expect(screen.queryByText('Attempt Count')).not.toBeInTheDocument()
     expect(screen.queryByText('Fallback')).not.toBeInTheDocument()
     expect(screen.getByText('MCP & Tools')).toBeInTheDocument()
@@ -210,7 +233,6 @@ describe('RequestLogsPage', () => {
     expect(screen.getByText('Tools Called')).toBeInTheDocument()
     expect(screen.getAllByText('0').length).toBeGreaterThan(0)
     expect(screen.getAllByText('n/a').length).toBeGreaterThan(0)
-    expect(screen.getByText('Payload Policy')).toBeInTheDocument()
     expect(screen.getByText('Provider Attempts')).toBeInTheDocument()
     expect(screen.getByText('#1')).toBeInTheDocument()
     expect(screen.getAllByText('success').length).toBeGreaterThan(0)
@@ -218,8 +240,19 @@ describe('RequestLogsPage', () => {
     expect(screen.getAllByText('gpt-4.1-mini').length).toBeGreaterThan(0)
     expect(screen.getByText('terminal')).toBeInTheDocument()
     expect(screen.getByText('final response')).toBeInTheDocument()
-    expect(screen.getAllByText('redacted payloads').length).toBeGreaterThan(0)
+    expect(screen.queryByText('Payload Policy')).not.toBeInTheDocument()
     expect(screen.getByText(/"prompt": "ping"/)).toBeInTheDocument()
+    expect(screen.getByText(/"output": "pong"/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Request' }))
+
+    expect(screen.getByText(/"prompt": "ping"/)).toBeInTheDocument()
+    expect(screen.queryByText(/"output": "pong"/)).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Response' }))
+
+    expect(screen.queryByText(/"prompt": "ping"/)).not.toBeInTheDocument()
+    expect(screen.getByText(/"output": "pong"/)).toBeInTheDocument()
   })
 
   it('renders the summary-only no-payload state in detail', async () => {
@@ -250,11 +283,8 @@ describe('RequestLogsPage', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Inspect' })[0])
 
     await waitFor(() => {
-      expect(screen.getByText('Payload capture state')).toBeInTheDocument()
+      expect(screen.getAllByText('No payload stored')).toHaveLength(2)
     })
-
-    expect(screen.getAllByText('No payload stored')).toHaveLength(2)
-    expect(screen.getAllByText('summary only').length).toBeGreaterThan(0)
   })
 
   it('renders an error banner when detail lookup fails', async () => {

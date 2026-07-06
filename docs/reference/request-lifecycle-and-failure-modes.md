@@ -1,6 +1,6 @@
 # Request Lifecycle and Failure Modes
 
-`See also`: [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](provider-api-compatibility.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../operations/observability/mcp-invocations.md), [Configuration Reference](../configuration/configuration-reference.md), [Identity and Access](../access/identity-and-access.md), [Data Relationships](data-relationships.md), [ADR: V1 Runtime Simplification for Routing and Streaming](../adr/2026-03-15-v1-runtime-simplification.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md)
+`See also`: [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](provider-api-compatibility.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md), [Budgets](../access/budgets.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../mcp/mcp-invocations.md), [Configuration Reference](../configuration/configuration-reference.md), [Identity and Access](../access/identity-and-access.md), [Data Relationships](../contributing/reference/data-relationships.md), [ADR: V1 Runtime Simplification for Routing and Streaming](../adr/2026-03-15-v1-runtime-simplification.md)
 
 This page is the cross-cutting view. Neighboring docs own their own policy slices. This page explains how those slices connect during one request.
 
@@ -21,17 +21,19 @@ The live request path is single-route in this slice.
 
 1. The HTTP middleware assigns one canonical request id from `x-request-id` or generates one when absent.
 2. The gateway authenticates the API key.
-3. The allowed gateway model set is reduced by API-key grants and any user or team allowlists.
+3. The allowed gateway model set is reduced by API-key grants, principal-centric allowlists, and model-level allowlists.
+   - For human user-owned keys, a model-level allowlist passes when the user email or effective team key is listed.
+   - For service-account-owned keys, a model-level allowlist denies the model in v1.
 4. The requested model is resolved.
    - A concrete model key stays concrete.
-   - A `tag:` selector picks one allowed gateway model.
-   - An alias resolves to a canonical execution model.
+   - A `tag:` selector picks one allowed gateway model; blocked allowlisted candidates are skipped.
+   - An alias resolves to a canonical execution model after gateway-model authorization. Alias and target allowlists are independent.
 5. The route planner builds an ordered route list.
    - Lower `priority` wins first.
    - `weight` only matters inside the same priority bucket.
    - Disabled routes and non-positive weights drop out.
 6. Capability filtering removes routes that cannot satisfy the API family and feature requirements. For example, `/v1/responses` requires `responses`, while `/v1/chat/completions` requires `chat_completions`.
-7. The budget guard runs before provider execution.
+7. The budget guard runs after access and model resolution, before provider execution.
    - hard-limit rejection returns `429 budget_exceeded`
    - no provider call occurs on this path
 8. Route compatibility metadata is passed into the provider adapter.
@@ -79,6 +81,42 @@ One common request path looks like this:
   - pricing resolves exactly
   - `usage_cost_events.pricing_status` becomes `priced`
   - the service-account budget window includes the charge
+
+## Vertex Embeddings Example
+
+Native Vertex text embeddings follow the same cross-cutting lifecycle as other `/v1/*` requests:
+
+- Request:
+  - `POST /v1/embeddings`
+  - model is `gemini-embedding`
+  - input is `["query text", "document text"]`
+- Resolution:
+  - `gemini-embedding` resolves to a route with `provider: vertex-global`
+  - `upstream_model` is `google/gemini-embedding-001`
+- Capability filter:
+  - the route has `embeddings: true`
+  - unrelated families such as `chat_completions` and `responses` are disabled on that route
+- Provider execution:
+  - the Vertex adapter validates text-only input and supported parameters
+  - the adapter calls Vertex `:predict` for legacy text-embedding models or `:embedContent` for `google/gemini-embedding-2`, fanning out array input when needed while preserving output indexes
+- Logging:
+  - request logs record `operation: embeddings`
+  - request-log attempts record the Vertex provider execution attempt when a summary row is written
+- Accounting:
+  - Vertex provider token counts are aggregated into prompt/input token usage (`statistics.token_count` for `:predict`, `usageMetadata.promptTokenCount` for `:embedContent`)
+  - exact Google Vertex pricing produces a `priced` ledger row
+  - user, service-account, and matching user-model budget windows include the charge
+
+Important failure examples:
+
+| Failure | Lifecycle point | Outcome |
+| --- | --- | --- |
+| Gemini chat route has `embeddings: false` | capability filtering | The route is removed before Vertex execution. |
+| Route uses unsupported `google/gemini-2.0-flash` for embeddings | provider support validation | The request fails with a deterministic invalid-request error instead of treating all `google/*` models as embedding-capable. |
+| `input` is a token array, nested array, non-string, empty array, or empty string | provider-local request validation | The request fails locally before the upstream call. |
+| `encoding_format: "base64"` | provider-local request validation | The request fails locally because native Vertex embeddings return float vectors only in this slice. |
+| Vertex omits token counts | accounting | The request can still succeed, but the ledger status is `usage_missing` and budgets are not consumed. |
+| Pricing catalog lacks an exact embedding model/rate | accounting | The request can still succeed, but the ledger status is `unpriced` and budgets are not consumed. |
 
 ## Model Visibility Versus Execution
 
@@ -175,5 +213,5 @@ For the current observability cleanup notes, see [observability-and-request-logs
 - identity and ownership policy: [identity-and-access.md](../access/identity-and-access.md)
 - route-planning contract and endpoint behavior: [model-routing-and-api-behavior.md](../configuration/model-routing-and-api-behavior.md)
 - exact pricing coverage rules: [pricing-catalog-and-accounting.md](../configuration/pricing-catalog-and-accounting.md)
-- budget windows and spend APIs: [budgets-and-spending.md](../operations/budgets-and-spending.md)
+- budget behavior and setup: [budgets.md](../access/budgets.md); implementation details: [budgets-and-spending.md](../contributing/operations/budgets-and-spending.md)
 - request-log storage and payload policy: [observability-and-request-logs.md](../operations/observability-and-request-logs.md)

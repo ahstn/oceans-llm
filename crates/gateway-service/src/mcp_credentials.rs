@@ -1,13 +1,8 @@
 use std::collections::BTreeMap;
 
-use aes_gcm::{
-    Aes256Gcm, KeyInit,
-    aead::{Aead, OsRng, rand_core::RngCore},
-};
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use gateway_core::{
     ApiKeyOwnerKind, AuthenticatedApiKey, ExternalMcpServerRecord, GatewayError,
-    McpUpstreamCredentialBindingRecord, McpUpstreamCredentialMaterialKind,
+    IdentityRepository, McpUpstreamCredentialBindingRecord, McpUpstreamCredentialMaterialKind,
     McpUpstreamCredentialOwnerScopeKind, McpUpstreamCredentialRepository,
     McpUpstreamSecretStorageKind, StoreError, UpsertMcpUpstreamCredentialBindingRecord,
 };
@@ -15,6 +10,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Map;
 use time::OffsetDateTime;
 use uuid::Uuid;
+
+use crate::secret_storage::{
+    EncryptedSecret, decrypt_secret_with_key, encrypt_secret_with_key, validate_secret_key_env,
+};
 
 const CREDENTIAL_KEY_ENV: &str = "OCEANS_MCP_CREDENTIAL_ENCRYPTION_KEY";
 const CREDENTIAL_KEY_ID: &str = "env/OCEANS_MCP_CREDENTIAL_ENCRYPTION_KEY";
@@ -80,7 +79,7 @@ where
 
     pub fn validate_runtime_configuration() -> Result<(), GatewayError> {
         if std::env::var(CREDENTIAL_KEY_ENV).is_ok() {
-            credential_cipher_key()?;
+            validate_secret_key_env(CREDENTIAL_KEY_ENV)?;
         }
         Ok(())
     }
@@ -89,9 +88,12 @@ where
         &self,
         auth: &AuthenticatedApiKey,
         server: &ExternalMcpServerRecord,
-    ) -> Result<ResolvedMcpCredential, GatewayError> {
+    ) -> Result<ResolvedMcpCredential, GatewayError>
+    where
+        R: IdentityRepository,
+    {
         let mut expired_candidate_seen = false;
-        for owner_scope_key in credential_lookup_order(auth)? {
+        for owner_scope_key in credential_lookup_order(self.repo.as_ref(), auth).await? {
             let Some(binding) = self
                 .repo
                 .get_active_mcp_upstream_credential_binding(server.mcp_server_id, &owner_scope_key)
@@ -107,12 +109,18 @@ where
                 continue;
             }
             let headers = credential_headers(&binding, &server.server_key)?;
-            self.repo
+            let touched = self
+                .repo
                 .touch_mcp_upstream_credential_binding_last_used(
                     binding.credential_binding_id,
                     OffsetDateTime::now_utc(),
                 )
                 .await?;
+            if !touched {
+                return Err(GatewayError::McpCredentialRequired {
+                    server_key: server.server_key.clone(),
+                });
+            }
             return Ok(ResolvedMcpCredential {
                 headers,
                 credential_binding_id: binding.credential_binding_id,
@@ -149,7 +157,7 @@ where
                         McpUpstreamSecretStorageKind::EncryptedBlob,
                         Some(encrypted.ciphertext),
                         Some(encrypted.nonce),
-                        Some(CREDENTIAL_KEY_ID.to_string()),
+                        Some(encrypted.key_id.to_string()),
                         None,
                     )
                 }
@@ -286,7 +294,13 @@ pub fn credential_owner_scope_key(
     }
 }
 
-fn credential_lookup_order(auth: &AuthenticatedApiKey) -> Result<Vec<String>, GatewayError> {
+async fn credential_lookup_order<R>(
+    repo: &R,
+    auth: &AuthenticatedApiKey,
+) -> Result<Vec<String>, GatewayError>
+where
+    R: IdentityRepository + ?Sized,
+{
     match auth.owner_kind {
         ApiKeyOwnerKind::User => {
             let user_id = auth
@@ -298,7 +312,14 @@ fn credential_lookup_order(auth: &AuthenticatedApiKey) -> Result<Vec<String>, Ga
                 None,
                 None,
             )?];
-            if let Some(team_id) = auth.owner_team_id {
+            let team_id = match auth.owner_team_id {
+                Some(team_id) => Some(team_id),
+                None => repo
+                    .get_team_membership_for_user(user_id)
+                    .await?
+                    .map(|membership| membership.team_id),
+            };
+            if let Some(team_id) = team_id {
                 keys.push(credential_owner_scope_key(
                     McpUpstreamCredentialOwnerScopeKind::Team,
                     None,
@@ -413,76 +434,26 @@ fn validate_header_name(header_name: &str) -> Result<(), GatewayError> {
     Ok(())
 }
 
-struct EncryptedSecret {
-    ciphertext: String,
-    nonce: String,
-}
-
 fn encrypt_secret(secret: &str) -> Result<EncryptedSecret, GatewayError> {
-    let key = credential_cipher_key()?;
-    let cipher = Aes256Gcm::new_from_slice(&key).map_err(|error| {
-        GatewayError::Internal(format!("invalid credential cipher key: {error}"))
-    })?;
-    let mut nonce_bytes = [0_u8; 12];
-    OsRng.fill_bytes(&mut nonce_bytes);
-    let ciphertext = cipher
-        .encrypt((&nonce_bytes).into(), secret.as_bytes())
-        .map_err(|error| {
-            GatewayError::Internal(format!("failed encrypting MCP credential: {error}"))
-        })?;
-    Ok(EncryptedSecret {
-        ciphertext: BASE64.encode(ciphertext),
-        nonce: BASE64.encode(nonce_bytes),
-    })
+    encrypt_secret_with_key(
+        secret,
+        CREDENTIAL_KEY_ENV,
+        CREDENTIAL_KEY_ID,
+        "MCP credential",
+    )
 }
 
 fn decrypt_binding_secret(
     binding: &McpUpstreamCredentialBindingRecord,
 ) -> Result<String, GatewayError> {
-    if binding.secret_key_id.as_deref() != Some(CREDENTIAL_KEY_ID) {
-        return Err(GatewayError::InvalidRequest(
-            "MCP credential was encrypted with an unknown key id".to_string(),
-        ));
-    }
-    let key = credential_cipher_key()?;
-    let nonce = BASE64
-        .decode(binding.secret_nonce.as_deref().unwrap_or_default())
-        .map_err(|error| {
-            GatewayError::InvalidRequest(format!("credential nonce is invalid: {error}"))
-        })?;
-    let ciphertext = BASE64
-        .decode(binding.secret_ciphertext.as_deref().unwrap_or_default())
-        .map_err(|error| {
-            GatewayError::InvalidRequest(format!("credential ciphertext is invalid: {error}"))
-        })?;
-    let cipher = Aes256Gcm::new_from_slice(&key).map_err(|error| {
-        GatewayError::Internal(format!("invalid credential cipher key: {error}"))
-    })?;
-    let plaintext = cipher
-        .decrypt(nonce.as_slice().into(), ciphertext.as_ref())
-        .map_err(|_| {
-            GatewayError::InvalidRequest("MCP credential could not be decrypted".to_string())
-        })?;
-    String::from_utf8(plaintext).map_err(|error| {
-        GatewayError::InvalidRequest(format!("credential secret is not UTF-8: {error}"))
-    })
-}
-
-fn credential_cipher_key() -> Result<Vec<u8>, GatewayError> {
-    let raw = std::env::var(CREDENTIAL_KEY_ENV).map_err(|_| {
-        GatewayError::InvalidRequest(format!(
-            "{CREDENTIAL_KEY_ENV} must be configured before encrypted MCP credentials can be used"
-        ))
-    })?;
-    let key = BASE64.decode(raw.trim()).map_err(|error| {
-        GatewayError::InvalidRequest(format!("{CREDENTIAL_KEY_ENV} must be base64: {error}"))
-    })?;
-    if key.len() != 32 {
-        return Err(GatewayError::InvalidRequest(format!(
-            "{CREDENTIAL_KEY_ENV} must decode to exactly 32 bytes"
-        )));
-    }
-    Ok(key)
+    decrypt_secret_with_key(
+        binding.secret_ciphertext.as_deref().unwrap_or_default(),
+        binding.secret_nonce.as_deref().unwrap_or_default(),
+        binding.secret_key_id.as_deref().unwrap_or_default(),
+        CREDENTIAL_KEY_ENV,
+        CREDENTIAL_KEY_ID,
+        "MCP credential",
+    )
 }
 
 fn validate_credential_secret_ref(secret_ref: &str) -> Result<(), GatewayError> {
@@ -554,10 +525,12 @@ fn redact_binding(binding: McpUpstreamCredentialBindingRecord) -> RedactedMcpCre
 mod tests {
     use super::*;
     use async_trait::async_trait;
+    use base64::Engine as _;
     use base64::engine::general_purpose::STANDARD as BASE64;
     use gateway_core::{
-        ExternalMcpAuthMode, ExternalMcpDiscoveryStatus, ExternalMcpServerStatus,
-        ExternalMcpTransport, StoreError,
+        ApiKeyModelGrantMode, ExternalMcpAuthMode, ExternalMcpDiscoveryStatus,
+        ExternalMcpServerStatus, ExternalMcpTransport, MembershipRole, StoreError,
+        TeamMembershipRecord, TeamRecord, UserRecord,
     };
     use std::{collections::HashMap, sync::Mutex};
     use time::Duration;
@@ -585,7 +558,7 @@ mod tests {
         unsafe {
             std::env::set_var(CREDENTIAL_KEY_ENV, BASE64.encode([0_u8; 31]));
         }
-        assert!(credential_cipher_key().is_err());
+        assert!(validate_secret_key_env(CREDENTIAL_KEY_ENV).is_err());
         match previous {
             Some(value) => unsafe {
                 std::env::set_var(CREDENTIAL_KEY_ENV, value);
@@ -633,6 +606,7 @@ mod tests {
             id: Uuid::new_v4(),
             public_id: "gwk_test".to_string(),
             name: "test".to_string(),
+            model_grant_mode: ApiKeyModelGrantMode::Explicit,
             owner_kind: ApiKeyOwnerKind::ServiceAccount,
             owner_user_id: None,
             owner_team_id: Some(team_id),
@@ -678,16 +652,18 @@ mod tests {
                 team_key.clone(),
                 binding(&server, &team_key, "env/OCEANS_MCP_CREDENTIAL_TEAM"),
             ),
-        ]);
+        ])
+        .with_membership(user_id, team_id);
         let _team_secret = EnvVarGuard::set("OCEANS_MCP_CREDENTIAL_TEAM", "team-token");
         let service = McpCredentialService::new(std::sync::Arc::new(repo));
         let auth = AuthenticatedApiKey {
             id: Uuid::new_v4(),
             public_id: "gwk_test".to_string(),
             name: "test".to_string(),
+            model_grant_mode: ApiKeyModelGrantMode::Explicit,
             owner_kind: ApiKeyOwnerKind::User,
             owner_user_id: Some(user_id),
-            owner_team_id: Some(team_id),
+            owner_team_id: None,
             owner_service_account_id: None,
         };
 
@@ -701,6 +677,47 @@ mod tests {
             Some("Bearer team-token")
         );
         assert_eq!(resolved.owner_scope_key, team_key);
+    }
+
+    #[tokio::test]
+    async fn revoked_during_touch_returns_credential_required() {
+        let user_id = Uuid::new_v4();
+        let server = server_record();
+        let user_key = credential_owner_scope_key(
+            McpUpstreamCredentialOwnerScopeKind::User,
+            Some(user_id),
+            None,
+            None,
+        )
+        .expect("user key");
+        let repo = ArcCredentialRepo::new([(
+            user_key,
+            binding(
+                &server,
+                &format!("mcp_credential:v1:user:{user_id}"),
+                "env/OCEANS_MCP_CREDENTIAL_USER",
+            ),
+        )])
+        .with_touch_succeeds(false);
+        let _user_secret = EnvVarGuard::set("OCEANS_MCP_CREDENTIAL_USER", "user-token");
+        let service = McpCredentialService::new(std::sync::Arc::new(repo));
+        let auth = AuthenticatedApiKey {
+            id: Uuid::new_v4(),
+            public_id: "gwk_test".to_string(),
+            name: "test".to_string(),
+            model_grant_mode: ApiKeyModelGrantMode::Explicit,
+            owner_kind: ApiKeyOwnerKind::User,
+            owner_user_id: Some(user_id),
+            owner_team_id: None,
+            owner_service_account_id: None,
+        };
+
+        let error = service
+            .resolve_for_auth(&auth, &server)
+            .await
+            .expect_err("lost revocation race");
+
+        assert_eq!(error.error_code(), "credential_required");
     }
 
     #[tokio::test]
@@ -722,6 +739,7 @@ mod tests {
             id: Uuid::new_v4(),
             public_id: "gwk_test".to_string(),
             name: "test".to_string(),
+            model_grant_mode: ApiKeyModelGrantMode::Explicit,
             owner_kind: ApiKeyOwnerKind::User,
             owner_user_id: Some(user_id),
             owner_team_id: None,
@@ -761,6 +779,7 @@ mod tests {
             id: Uuid::new_v4(),
             public_id: "gwk_test".to_string(),
             name: "test".to_string(),
+            model_grant_mode: ApiKeyModelGrantMode::Explicit,
             owner_kind: ApiKeyOwnerKind::User,
             owner_user_id: Some(user_id),
             owner_team_id: None,
@@ -813,7 +832,9 @@ mod tests {
     }
 
     struct ArcCredentialRepo {
-        bindings: Mutex<HashMap<String, McpUpstreamCredentialBindingRecord>>,
+        bindings: Mutex<HashMap<(Uuid, String), McpUpstreamCredentialBindingRecord>>,
+        memberships: Mutex<HashMap<Uuid, Uuid>>,
+        touch_succeeds: Mutex<bool>,
     }
 
     impl ArcCredentialRepo {
@@ -821,8 +842,28 @@ mod tests {
             bindings: impl IntoIterator<Item = (String, McpUpstreamCredentialBindingRecord)>,
         ) -> Self {
             Self {
-                bindings: Mutex::new(bindings.into_iter().collect()),
+                bindings: Mutex::new(
+                    bindings
+                        .into_iter()
+                        .map(|(key, binding)| ((binding.mcp_server_id, key), binding))
+                        .collect(),
+                ),
+                memberships: Mutex::new(HashMap::new()),
+                touch_succeeds: Mutex::new(true),
             }
+        }
+
+        fn with_membership(self, user_id: Uuid, team_id: Uuid) -> Self {
+            self.memberships
+                .lock()
+                .expect("memberships")
+                .insert(user_id, team_id);
+            self
+        }
+
+        fn with_touch_succeeds(self, succeeds: bool) -> Self {
+            *self.touch_succeeds.lock().expect("touch succeeds") = succeeds;
+            self
         }
     }
 
@@ -837,14 +878,14 @@ mod tests {
 
         async fn get_active_mcp_upstream_credential_binding(
             &self,
-            _mcp_server_id: Uuid,
+            mcp_server_id: Uuid,
             owner_scope_key: &str,
         ) -> Result<Option<McpUpstreamCredentialBindingRecord>, StoreError> {
             Ok(self
                 .bindings
                 .lock()
                 .expect("bindings")
-                .get(owner_scope_key)
+                .get(&(mcp_server_id, owner_scope_key.to_string()))
                 .cloned())
         }
 
@@ -870,8 +911,54 @@ mod tests {
             &self,
             _credential_binding_id: Uuid,
             _last_used_at: OffsetDateTime,
-        ) -> Result<(), StoreError> {
-            Ok(())
+        ) -> Result<bool, StoreError> {
+            Ok(*self.touch_succeeds.lock().expect("touch succeeds"))
+        }
+    }
+
+    #[async_trait]
+    impl IdentityRepository for ArcCredentialRepo {
+        async fn get_user_by_id(&self, _user_id: Uuid) -> Result<Option<UserRecord>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn get_team_by_id(&self, _team_id: Uuid) -> Result<Option<TeamRecord>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn get_team_membership_for_user(
+            &self,
+            user_id: Uuid,
+        ) -> Result<Option<TeamMembershipRecord>, StoreError> {
+            Ok(self
+                .memberships
+                .lock()
+                .expect("memberships")
+                .get(&user_id)
+                .map(|team_id| {
+                    let now = OffsetDateTime::now_utc();
+                    TeamMembershipRecord {
+                        team_id: *team_id,
+                        user_id,
+                        role: MembershipRole::Member,
+                        created_at: now,
+                        updated_at: now,
+                    }
+                }))
+        }
+
+        async fn list_allowed_model_keys_for_user(
+            &self,
+            _user_id: Uuid,
+        ) -> Result<Vec<String>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn list_allowed_model_keys_for_team(
+            &self,
+            _team_id: Uuid,
+        ) -> Result<Vec<String>, StoreError> {
+            unimplemented!()
         }
     }
 

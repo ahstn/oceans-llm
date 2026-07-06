@@ -9,7 +9,7 @@
   - [#65: Refine declarative teams/users config for hardened SSO and OIDC identities](https://github.com/ahstn/oceans-llm/issues/65)
 - Related Docs:
   - [OIDC and SSO](../access/oidc-and-sso-status.md)
-  - [Testing Authentication Locally](../development/authentication-testing.md)
+  - [Testing Authentication Locally](../contributing/development/authentication-testing.md)
   - [ADR: Authentik Local SSO Test IdP](2026-05-15-authentik-local-sso-test-idp.md)
 
 ## Context

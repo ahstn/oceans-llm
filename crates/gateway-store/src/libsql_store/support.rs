@@ -26,13 +26,14 @@ pub(super) async fn list_allowed_model_keys(
 
 pub(super) fn decode_api_key(row: &libsql::Row) -> Result<ApiKeyRecord, StoreError> {
     let id: String = row.get(0).map_err(to_query_error)?;
-    let owner_kind: String = row.get(5).map_err(to_query_error)?;
-    let owner_user_id: Option<String> = row.get(6).map_err(to_query_error)?;
-    let owner_team_id: Option<String> = row.get(7).map_err(to_query_error)?;
-    let owner_service_account_id: Option<String> = row.get(8).map_err(to_query_error)?;
-    let created_at: i64 = row.get(9).map_err(to_query_error)?;
-    let last_used_at: Option<i64> = row.get(10).map_err(to_query_error)?;
-    let revoked_at: Option<i64> = row.get(11).map_err(to_query_error)?;
+    let model_grant_mode: String = row.get(5).map_err(to_query_error)?;
+    let owner_kind: String = row.get(6).map_err(to_query_error)?;
+    let owner_user_id: Option<String> = row.get(7).map_err(to_query_error)?;
+    let owner_team_id: Option<String> = row.get(8).map_err(to_query_error)?;
+    let owner_service_account_id: Option<String> = row.get(9).map_err(to_query_error)?;
+    let created_at: i64 = row.get(10).map_err(to_query_error)?;
+    let last_used_at: Option<i64> = row.get(11).map_err(to_query_error)?;
+    let revoked_at: Option<i64> = row.get(12).map_err(to_query_error)?;
 
     Ok(ApiKeyRecord {
         id: parse_uuid(&id)?,
@@ -45,6 +46,11 @@ pub(super) fn decode_api_key(row: &libsql::Row) -> Result<ApiKeyRecord, StoreErr
                 StoreError::Serialization(format!("unknown api key status `{status}`"))
             })?
         },
+        model_grant_mode: ApiKeyModelGrantMode::from_db(&model_grant_mode).ok_or_else(|| {
+            StoreError::Serialization(format!(
+                "unknown api key model grant mode `{model_grant_mode}`"
+            ))
+        })?,
         owner_kind: ApiKeyOwnerKind::from_db(&owner_kind).ok_or_else(|| {
             StoreError::Serialization(format!("unknown owner kind `{owner_kind}`"))
         })?,
@@ -57,6 +63,31 @@ pub(super) fn decode_api_key(row: &libsql::Row) -> Result<ApiKeyRecord, StoreErr
         created_at: unix_to_datetime(created_at)?,
         last_used_at: last_used_at.map(unix_to_datetime).transpose()?,
         revoked_at: revoked_at.map(unix_to_datetime).transpose()?,
+    })
+}
+
+pub(super) fn decode_api_key_secret_material(
+    row: &libsql::Row,
+) -> Result<ApiKeySecretMaterialRecord, StoreError> {
+    let api_key_id: String = row.get(0).map_err(to_query_error)?;
+    let storage_kind: String = row.get(1).map_err(to_query_error)?;
+    let created_at: i64 = row.get(5).map_err(to_query_error)?;
+    let updated_at: i64 = row.get(6).map_err(to_query_error)?;
+    let last_retrieved_at: Option<i64> = row.get(7).map_err(to_query_error)?;
+
+    Ok(ApiKeySecretMaterialRecord {
+        api_key_id: parse_uuid(&api_key_id)?,
+        storage_kind: ApiKeySecretStorageKind::from_db(&storage_kind).ok_or_else(|| {
+            StoreError::Serialization(format!(
+                "unknown api key secret storage kind `{storage_kind}`"
+            ))
+        })?,
+        secret_ciphertext: row.get(2).map_err(to_query_error)?,
+        secret_nonce: row.get(3).map_err(to_query_error)?,
+        secret_key_id: row.get(4).map_err(to_query_error)?,
+        created_at: unix_to_datetime(created_at)?,
+        updated_at: unix_to_datetime(updated_at)?,
+        last_retrieved_at: last_retrieved_at.map(unix_to_datetime).transpose()?,
     })
 }
 
@@ -335,8 +366,10 @@ pub(super) fn decode_oauth_provider_record(
     let jit_team_key: Option<String> = row.get(10).map_err(to_query_error)?;
     let jit_team_role: Option<String> = row.get(11).map_err(to_query_error)?;
     let jit_request_logging_enabled: i64 = row.get(12).map_err(to_query_error)?;
-    let created_at: i64 = row.get(13).map_err(to_query_error)?;
-    let updated_at: i64 = row.get(14).map_err(to_query_error)?;
+    let allowed_email_domains_json: String = row.get(13).map_err(to_query_error)?;
+    let sso_email_verification_enabled: i64 = row.get(14).map_err(to_query_error)?;
+    let created_at: i64 = row.get(15).map_err(to_query_error)?;
+    let updated_at: i64 = row.get(16).map_err(to_query_error)?;
     let provider_key: String = row.get(1).map_err(to_query_error)?;
     let label: Option<String> = row.get(6).map_err(to_query_error)?;
 
@@ -352,6 +385,9 @@ pub(super) fn decode_oauth_provider_record(
         client_secret_ref: row.get(7).map_err(to_query_error)?,
         scopes: serde_json::from_str(&scopes_json)
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
+        allowed_email_domains: serde_json::from_str(&allowed_email_domains_json)
+            .map_err(|error| StoreError::Serialization(error.to_string()))?,
+        sso_email_verification_enabled: sso_email_verification_enabled == 1,
         enabled: enabled == 1,
         jit: OauthJitPolicy {
             enabled: jit_enabled == 1,

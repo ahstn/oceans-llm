@@ -298,11 +298,31 @@ fn stream_failure_from_value(value: &Value) -> Option<StreamFailureSummary> {
 }
 
 fn usage_value_from_stream_event(value: &Value) -> Option<&Value> {
-    value.get("usage").or_else(|| {
+    let usage = value.get("usage").or_else(|| {
         value
             .get("response")
             .and_then(|response| response.get("usage"))
-    })
+    })?;
+    if is_synthetic_anthropic_zero_usage(value, usage) {
+        return None;
+    }
+    Some(usage)
+}
+
+fn is_synthetic_anthropic_zero_usage(value: &Value, usage: &Value) -> bool {
+    value.get("type").and_then(Value::as_str) == Some("message_delta")
+        && value
+            .get("delta")
+            .and_then(|delta| delta.get("stop_reason"))
+            .and_then(Value::as_str)
+            .is_some()
+        && usage.get("input_tokens").and_then(Value::as_i64) == Some(0)
+        && usage.get("output_tokens").and_then(Value::as_i64) == Some(0)
+        && usage
+            .get("total_tokens")
+            .and_then(Value::as_i64)
+            .unwrap_or(0)
+            == 0
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -349,6 +369,7 @@ fn tool_call_identities_from_value(value: &Value) -> Vec<ToolCallIdentity> {
     let mut identities = Vec::new();
     collect_chat_tool_call_identities(value, &mut identities);
     collect_responses_tool_call_identities(value, &mut identities);
+    collect_anthropic_messages_tool_call_identities(value, &mut identities);
     identities
 }
 
@@ -391,6 +412,26 @@ fn collect_responses_tool_call_identities(value: &Value, identities: &mut Vec<To
 
     if let Some(delta) = value.get("delta") {
         collect_tool_call_item_identity(delta, identities, false);
+    }
+}
+
+fn collect_anthropic_messages_tool_call_identities(
+    value: &Value,
+    identities: &mut Vec<ToolCallIdentity>,
+) {
+    if value.get("type").and_then(Value::as_str) == Some("content_block_start")
+        && let Some(content_block) = value.get("content_block")
+        && content_block.get("type").and_then(Value::as_str) == Some("tool_use")
+    {
+        push_tool_call_identity(content_block, identities, true);
+    }
+
+    if let Some(content) = value.get("content").and_then(Value::as_array) {
+        for item in content {
+            if item.get("type").and_then(Value::as_str) == Some("tool_use") {
+                push_tool_call_identity(item, identities, true);
+            }
+        }
     }
 }
 
@@ -948,7 +989,25 @@ pub fn classify_agent_harness(user_agent: Option<&str>) -> AgentHarness {
             label: "Opencode",
         };
     }
-    if looks_like_pi_user_agent(user_agent, &lower) {
+    if lower.starts_with("claude-cli/") {
+        return AgentHarness {
+            key: "claude_cli",
+            label: "Claude CLI",
+        };
+    }
+    if lower.starts_with("dspy/") {
+        return AgentHarness {
+            key: "dspy",
+            label: "DSPy",
+        };
+    }
+    if lower.starts_with("curl/") {
+        return AgentHarness {
+            key: "curl",
+            label: "curl",
+        };
+    }
+    if lower.starts_with("pi/") {
         return AgentHarness {
             key: "pi",
             label: "Pi",
@@ -982,13 +1041,6 @@ pub fn classify_agent_harness(user_agent: Option<&str>) -> AgentHarness {
     }
 
     AgentHarness::UNKNOWN
-}
-
-fn looks_like_pi_user_agent(user_agent: &str, lower: &str) -> bool {
-    lower.starts_with("pi/")
-        && user_agent.contains(" (")
-        && user_agent.ends_with(')')
-        && (lower.contains("; bun/") || lower.contains("; node/"))
 }
 
 #[must_use]
@@ -1201,11 +1253,13 @@ mod tests {
 
     use async_trait::async_trait;
     use gateway_core::{
-        ApiKeyOwnerKind, AuthMode, AuthenticatedApiKey, ChatCompletionsRequest, GlobalRole,
-        IdentityRepository, ModelAccessMode, RequestLogDetail, RequestLogPage,
-        RequestLogPayloadRecord, RequestLogPurgeResult, RequestLogQuery, RequestLogRecord,
-        RequestLogRepository, RequestLogRetentionWindow, RequestTag, RequestTags, StoreError,
-        TeamMembershipRecord, TeamRecord, UserRecord, UserStatus,
+        ApiKeyModelGrantMode, ApiKeyOwnerKind, AuthMode, AuthenticatedApiKey,
+        ChatCompletionsRequest, EmbeddingsRequest, GatewayError, GlobalRole, IdentityRepository,
+        ModelAccessMode, ProviderError, RequestAttemptRecord, RequestAttemptStatus,
+        RequestLogDetail, RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult,
+        RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestLogRetentionWindow,
+        RequestTag, RequestTags, StoreError, TeamMembershipRecord, TeamRecord, UserRecord,
+        UserStatus,
     };
     use serde_json::{Value, json};
     use time::OffsetDateTime;
@@ -1228,6 +1282,7 @@ mod tests {
         users: Arc<Mutex<Vec<UserRecord>>>,
         logs: Arc<Mutex<Vec<RequestLogRecord>>>,
         payloads: Arc<Mutex<Vec<RequestLogPayloadRecord>>>,
+        attempts: Arc<Mutex<Vec<RequestAttemptRecord>>>,
     }
 
     #[test]
@@ -1235,14 +1290,32 @@ mod tests {
         let cases = [
             ("opencode/1.2.3", "opencode", "Opencode"),
             ("opencode/1.2.3-beta.1", "opencode", "Opencode"),
+            (
+                "opencode/1.16.0 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14",
+                "opencode",
+                "Opencode",
+            ),
             ("pi/0.4.0 (darwin; bun/1.2.19; arm64)", "pi", "Pi"),
             ("pi/0.4.0 (linux; node/v22.14.0; x64)", "pi", "Pi"),
+            ("pi/0.4.0", "pi", "Pi"),
             ("claude-code/2.1.89 (cli)", "claude_code", "Claude Code"),
+            (
+                "claude-cli/2.1.170 (external, claude-vscode, agent-sdk/0.3.165)",
+                "claude_cli",
+                "Claude CLI",
+            ),
+            (
+                "claude-cli/2.1.158 (external, cli)",
+                "claude_cli",
+                "Claude CLI",
+            ),
             (
                 "Claude-User (claude-code/2.1.83; +https://support.anthropic.com/)",
                 "claude_code",
                 "Claude Code",
             ),
+            ("DSPy/3.2.1", "dspy", "DSPy"),
+            ("curl/8.7.1", "curl", "curl"),
             (
                 "GeminiCLI/0.37.0/gemini-pro (linux; x64; terminal)",
                 "gemini_cli",
@@ -1373,6 +1446,20 @@ mod tests {
             Ok(())
         }
 
+        async fn insert_request_log_with_attempts(
+            &self,
+            log: &RequestLogRecord,
+            payload: Option<&RequestLogPayloadRecord>,
+            attempts: &[RequestAttemptRecord],
+        ) -> Result<(), StoreError> {
+            self.insert_request_log(log, payload).await?;
+            self.attempts
+                .lock()
+                .expect("attempts lock")
+                .extend(attempts.iter().cloned());
+            Ok(())
+        }
+
         async fn list_request_logs(
             &self,
             _query: &RequestLogQuery,
@@ -1406,10 +1493,18 @@ mod tests {
                 .iter()
                 .find(|payload| payload.request_log_id == request_log_id)
                 .cloned();
+            let attempts = self
+                .attempts
+                .lock()
+                .expect("attempts lock")
+                .iter()
+                .filter(|attempt| attempt.request_log_id == request_log_id)
+                .cloned()
+                .collect();
             Ok(RequestLogDetail {
                 log,
                 payload,
-                attempts: Vec::new(),
+                attempts,
             })
         }
 
@@ -1470,6 +1565,7 @@ mod tests {
             id: Uuid::new_v4(),
             public_id: "dev123".to_string(),
             name: "dev".to_string(),
+            model_grant_mode: ApiKeyModelGrantMode::Explicit,
             owner_kind: ApiKeyOwnerKind::User,
             owner_user_id: Some(user_id),
             owner_team_id: None,
@@ -1482,6 +1578,7 @@ mod tests {
             id: Uuid::new_v4(),
             public_id: "dev123".to_string(),
             name: "dev".to_string(),
+            model_grant_mode: ApiKeyModelGrantMode::Explicit,
             owner_kind: ApiKeyOwnerKind::ServiceAccount,
             owner_user_id: None,
             owner_team_id: Some(Uuid::new_v4()),
@@ -1502,6 +1599,57 @@ mod tests {
             messages: Vec::new(),
             stream,
             extra: BTreeMap::new(),
+        }
+    }
+
+    fn sample_embeddings_request() -> EmbeddingsRequest {
+        EmbeddingsRequest {
+            model: "embeddings".to_string(),
+            input: json!("hello"),
+            extra: BTreeMap::new(),
+        }
+    }
+
+    fn sample_attempt(
+        request_log_id: Uuid,
+        request_id: &str,
+        status: RequestAttemptStatus,
+    ) -> RequestAttemptRecord {
+        RequestAttemptRecord {
+            request_attempt_id: Uuid::new_v4(),
+            request_log_id,
+            request_id: request_id.to_string(),
+            attempt_number: 1,
+            route_id: Uuid::new_v4(),
+            provider_key: "vertex-prod".to_string(),
+            upstream_model: "google/gemini-embedding-001".to_string(),
+            status,
+            status_code: match status {
+                RequestAttemptStatus::Success => Some(200),
+                RequestAttemptStatus::ProviderError => Some(502),
+                RequestAttemptStatus::StreamStartError | RequestAttemptStatus::StreamError => None,
+            },
+            error_code: match status {
+                RequestAttemptStatus::Success => None,
+                RequestAttemptStatus::ProviderError => Some("upstream_transport".to_string()),
+                RequestAttemptStatus::StreamStartError | RequestAttemptStatus::StreamError => {
+                    Some("stream_error".to_string())
+                }
+            },
+            error_detail: match status {
+                RequestAttemptStatus::Success => None,
+                RequestAttemptStatus::ProviderError => Some("connection reset".to_string()),
+                RequestAttemptStatus::StreamStartError | RequestAttemptStatus::StreamError => None,
+            },
+            error_detail_truncated: false,
+            retryable: matches!(status, RequestAttemptStatus::ProviderError),
+            terminal: true,
+            produced_final_response: matches!(status, RequestAttemptStatus::Success),
+            stream: false,
+            started_at: OffsetDateTime::now_utc(),
+            completed_at: Some(OffsetDateTime::now_utc()),
+            latency_ms: Some(42),
+            metadata: Default::default(),
         }
     }
 
@@ -1596,6 +1744,7 @@ mod tests {
             users: Arc::new(Mutex::new(vec![user_record(user_id, false)])),
             logs: Arc::new(Mutex::new(Vec::new())),
             payloads: Arc::new(Mutex::new(Vec::new())),
+            attempts: Arc::new(Mutex::new(Vec::new())),
         });
         let logging = RequestLogging::new(repo.clone());
         let auth = sample_auth(user_id);
@@ -1644,6 +1793,7 @@ mod tests {
                 sample_log("young", now),
             ])),
             payloads: Arc::new(Mutex::new(Vec::new())),
+            attempts: Arc::new(Mutex::new(Vec::new())),
         });
         let logging = RequestLogging::new(repo.clone());
 
@@ -1678,6 +1828,7 @@ mod tests {
             id: Uuid::new_v4(),
             public_id: "dev123".to_string(),
             name: "dev".to_string(),
+            model_grant_mode: ApiKeyModelGrantMode::Explicit,
             owner_kind: ApiKeyOwnerKind::ServiceAccount,
             owner_user_id: None,
             owner_team_id: Some(team_id),
@@ -1745,6 +1896,143 @@ mod tests {
         assert_eq!(logs[0].metadata["stream"], Value::Bool(false));
         assert!(logs[0].metadata.get("fallback_used").is_none());
         assert!(logs[0].metadata.get("attempt_count").is_none());
+    }
+
+    #[tokio::test]
+    async fn embeddings_success_log_records_operation_usage_payload_and_attempt() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let logging = RequestLogging::new(repo.clone());
+        let auth = sample_service_account_auth();
+        let context = logging.begin_embeddings_request(
+            "req_embeddings_success",
+            "embeddings",
+            "embeddings",
+            &sample_embeddings_request(),
+            &BTreeMap::new(),
+            RequestTags::default(),
+        );
+        let attempt = sample_attempt(
+            context.request_log_id,
+            &context.request_id,
+            RequestAttemptStatus::Success,
+        );
+
+        let wrote = logging
+            .log_non_stream_success(
+                &auth,
+                &context,
+                "vertex-prod",
+                sample_icon_metadata(),
+                75,
+                0,
+                &json!({
+                    "object": "list",
+                    "model": "embeddings",
+                    "data": [{"object": "embedding", "index": 0, "embedding": [0.1]}],
+                    "usage": {"prompt_tokens": 7, "total_tokens": 7}
+                }),
+                vec![attempt],
+            )
+            .await
+            .expect("embeddings success log");
+
+        assert!(wrote.wrote);
+        let detail = repo
+            .get_request_log_detail(wrote.request_log_id)
+            .await
+            .expect("request log detail");
+        assert_eq!(detail.log.request_id, "req_embeddings_success");
+        assert_eq!(detail.log.provider_key, "vertex-prod");
+        assert_eq!(detail.log.status_code, Some(200));
+        assert_eq!(detail.log.prompt_tokens, Some(7));
+        assert_eq!(detail.log.total_tokens, Some(7));
+        assert_eq!(
+            detail.log.metadata["operation"],
+            Value::String("embeddings".to_string())
+        );
+        assert_eq!(
+            detail
+                .payload
+                .as_ref()
+                .expect("captured payload")
+                .request_json["body"]["input"],
+            "hello"
+        );
+        assert_eq!(detail.attempts.len(), 1);
+        assert_eq!(detail.attempts[0].status, RequestAttemptStatus::Success);
+        assert_eq!(
+            detail.attempts[0].upstream_model,
+            "google/gemini-embedding-001"
+        );
+        assert!(detail.attempts[0].produced_final_response);
+    }
+
+    #[tokio::test]
+    async fn embeddings_provider_error_log_records_failure_payload_and_attempt() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let logging = RequestLogging::new(repo.clone());
+        let auth = sample_service_account_auth();
+        let context = logging.begin_embeddings_request(
+            "req_embeddings_failure",
+            "embeddings",
+            "embeddings",
+            &sample_embeddings_request(),
+            &BTreeMap::new(),
+            RequestTags::default(),
+        );
+        let attempt = sample_attempt(
+            context.request_log_id,
+            &context.request_id,
+            RequestAttemptStatus::ProviderError,
+        );
+        let gateway_error =
+            GatewayError::Provider(ProviderError::Transport("connection reset".to_string()));
+
+        let wrote = logging
+            .log_non_stream_failure(
+                &auth,
+                &context,
+                "vertex-prod",
+                sample_icon_metadata(),
+                90,
+                &gateway_error,
+                vec![attempt],
+            )
+            .await
+            .expect("embeddings provider error log");
+
+        assert!(wrote.wrote);
+        let detail = repo
+            .get_request_log_detail(wrote.request_log_id)
+            .await
+            .expect("request log detail");
+        assert_eq!(detail.log.request_id, "req_embeddings_failure");
+        assert_eq!(detail.log.status_code, Some(502));
+        assert_eq!(detail.log.error_code.as_deref(), Some("upstream_transport"));
+        assert_eq!(
+            detail.log.metadata["operation"],
+            Value::String("embeddings".to_string())
+        );
+        assert_eq!(
+            detail
+                .payload
+                .as_ref()
+                .expect("captured payload")
+                .response_json["body"]["error"]["code"],
+            "upstream_transport"
+        );
+        assert_eq!(detail.attempts.len(), 1);
+        assert_eq!(
+            detail.attempts[0].status,
+            RequestAttemptStatus::ProviderError
+        );
+        assert_eq!(detail.attempts[0].status_code, Some(502));
+        assert_eq!(
+            detail.attempts[0].error_code.as_deref(),
+            Some("upstream_transport")
+        );
+        assert!(detail.attempts[0].retryable);
+        assert!(!detail.attempts[0].produced_final_response);
     }
 
     #[tokio::test]
@@ -1918,6 +2206,7 @@ mod tests {
             id: Uuid::new_v4(),
             public_id: "dev123".to_string(),
             name: "dev".to_string(),
+            model_grant_mode: ApiKeyModelGrantMode::Explicit,
             owner_kind: ApiKeyOwnerKind::ServiceAccount,
             owner_user_id: None,
             owner_team_id: Some(Uuid::new_v4()),
@@ -2102,6 +2391,24 @@ data: {"usage":{"prompt_tokens":4,"completion_tokens":5,"total_tokens":9}}
     }
 
     #[test]
+    fn collector_ignores_synthetic_anthropic_zero_usage_fallback() {
+        let mut collector = StreamResponseCollector::default();
+
+        collector.observe_chunk(
+            br#"event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":0,"output_tokens":0}}
+
+event: message_stop
+data: {"type":"message_stop"}
+
+"#,
+        );
+        collector.finish();
+
+        assert_eq!(collector.usage(), None);
+    }
+
+    #[test]
     fn collector_reassembles_split_utf8_and_error_frames() {
         let mut collector = StreamResponseCollector::default();
 
@@ -2248,6 +2555,27 @@ data: {"output":[{"id":"call_2","type":"function_call"}]}
 data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"city\""}}]}}]}
 
 data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":":\"London\"}"}}]}}]}
+
+"#,
+        );
+        collector.finish();
+
+        assert_eq!(collector.invoked_tool_count(), 1);
+    }
+
+    #[test]
+    fn stream_collector_counts_anthropic_messages_tool_use_starts() {
+        let mut collector = StreamResponseCollector::default();
+
+        collector.observe_chunk(
+            br#"event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"lookup","input":{}}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{}"}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_1","name":"lookup","input":{}}}
 
 "#,
         );

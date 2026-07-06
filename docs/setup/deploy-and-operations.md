@@ -1,6 +1,6 @@
 # Deploy and Operations
 
-`See also`: [Oceans LLM Gateway](../../README.md), [Configuration Reference](../configuration/configuration-reference.md), [Runtime Bootstrap and Access](runtime-bootstrap-and-access.md), [Admin Runbooks](../operations/operator-runbooks.md), [Deploy](../../deploy/README.md), [Release Process](../reference/release-process.md)
+`See also`: [Oceans LLM Gateway](../../README.md), [Configuration Reference](../configuration/configuration-reference.md), [Runtime Bootstrap and Access](runtime-bootstrap-and-access.md), [Admin Runbooks](../operations/operator-runbooks.md), [Deploy](../../deploy/README.md), [Release Process](../contributing/reference/release-process.md)
 
 This page owns the runtime shape. It does not own the action-by-action runbooks.
 
@@ -122,7 +122,7 @@ Current image support is not symmetric:
   - `linux/amd64`
   - `linux/arm64`
 
-Release mechanics live in [release-process.md](../reference/release-process.md). Upgrade and recovery steps live in [operator-runbooks.md](../operations/operator-runbooks.md).
+Release mechanics live in [release-process.md](../contributing/reference/release-process.md). Upgrade and recovery steps live in [operator-runbooks.md](../operations/operator-runbooks.md).
 
 The release workflow also publishes the Helm chart after both deployable images build successfully. Consumers install the chart from `oci://ghcr.io/ahstn/charts/oceans-llm` with an explicit chart version.
 

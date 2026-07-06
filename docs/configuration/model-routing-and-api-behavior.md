@@ -1,6 +1,6 @@
 # Model Routing and API Behavior
 
-`See also`: [Configuration Reference](configuration-reference.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Data Relationships](../reference/data-relationships.md), [Identity and Access](../access/identity-and-access.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Pricing Catalog and Accounting](pricing-catalog-and-accounting.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [ADR: Model Aliases and Provider-Only Route Config](../adr/2026-03-10-model-aliases-and-provider-route-config.md), [ADR: Capability-Aware Route Gating with Strict Fail-Fast Validation](../adr/2026-03-13-capability-aware-route-gating.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md)
+`See also`: [Configuration Reference](configuration-reference.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Data Relationships](../contributing/reference/data-relationships.md), [Identity and Access](../access/identity-and-access.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Pricing Catalog and Accounting](pricing-catalog-and-accounting.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [ADR: Model Aliases and Provider-Only Route Config](../adr/2026-03-10-model-aliases-and-provider-route-config.md), [ADR: Capability-Aware Route Gating with Strict Fail-Fast Validation](../adr/2026-03-13-capability-aware-route-gating.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md)
 
 This page explains how the public `/v1/*` surface resolves a request into one concrete route.
 
@@ -23,6 +23,8 @@ The live public endpoints are:
 
 - `GET /v1/models`
 - `POST /v1/chat/completions`
+- `POST /v1/messages`
+- `POST /messages`
 - `POST /v1/responses`
 - `POST /v1/embeddings`
 
@@ -48,6 +50,8 @@ Configured gateway models are either:
 
 A model cannot define both routes and `alias_of`.
 
+Aliases are independent gateway model keys for authorization. An allowlist on an alias does not inherit from the target model, and an allowlist on the target model does not automatically apply to the alias.
+
 ## `tag:` Selectors
 
 The request `model` field can be:
@@ -58,7 +62,9 @@ The request `model` field can be:
 Tag selectors use AND semantics.
 
 - every requested tag must exist on the chosen model
-- selection only considers models already allowed for the authenticated API key
+- selection only considers models in the caller's effective accessible set
+- API-key grants, principal-centric restrictions, and model-level allowlists all contribute to that effective set
+- blocked allowlisted models are skipped as candidates rather than selected and denied later
 - candidates are ordered by model `rank`, then model key
 
 ## Routes, Priority, and Weight
@@ -111,7 +117,9 @@ Effective capability is the intersection of route metadata and provider runtime 
 - provider implementations can still reject unsupported API families
 - partial provider routes should explicitly disable unsupported API families
 
-For example, current Vertex routes support the chat path but not the Responses path. A Vertex chat route should keep `responses: false` so `/v1/responses` fails during capability filtering instead of later inside the provider adapter.
+For example, current Vertex routes support the chat path but not the Responses path. A Vertex chat route should keep `responses: false` and `embeddings: false` so `/v1/responses` or `/v1/embeddings` fails during capability filtering instead of later inside the provider adapter. A separate Vertex text-embedding route can set `embeddings: true` for supported Google embedding models.
+
+Cloud Run OpenAI-compatible routes use the same route capability model as ordinary `openai_compat` routes. If the deployed vLLM service only exposes Chat Completions, keep `responses: false` and `embeddings: false` on that route even though the provider adapter can speak those OpenAI-compatible families when the upstream supports them.
 
 ## Compatibility Profiles
 
@@ -124,7 +132,11 @@ Capabilities and compatibility have different jobs:
 
 OpenAI-compatible route profiles currently cover deterministic Chat Completions transforms such as `store` removal, token field renaming, `developer` role rewriting, `reasoning_effort` handling, and stream usage requests. Responses uses a separate typed request/provider path; Chat Completions transforms must not be used as Responses shims.
 
+OpenRouter routes can also define `compatibility.openrouter.provider` policy. That policy is serialized into the upstream Chat Completions request body as OpenRouter's `provider` object after Oceans has selected one gateway route. OpenRouter `order`, `only`, `ignore`, `zdr`, latency, and price settings affect OpenRouter's upstream provider selection for that one request; they do not change Oceans route `priority`, route `weight`, or the current single-route execution behavior.
+
 See [provider-api-compatibility.md](../reference/provider-api-compatibility.md) for the compatibility matrix and field-level contract.
+
+Cloud Run vLLM/Gemma controls such as `chat_template_kwargs.enable_thinking` and `skip_special_tokens` are additive upstream request fields. Put them in route `extra_body`, not in a compatibility profile.
 
 ## Worked Request Path
 
@@ -172,6 +184,12 @@ Current behavior highlights:
 - successful requests write usage when usage can be normalized
 - request logs store both requested and resolved model identity
 
+## `/v1/messages`
+
+`POST /v1/messages` and the unversioned `POST /messages` alias accept Anthropic Messages-compatible request bodies for chat-capable routes. The gateway authenticates Anthropic-style `x-api-key` headers, converts the Messages request into the internal chat request boundary for model resolution and provider execution, then returns Anthropic-compatible response payloads or Messages SSE events.
+
+For Anthropic-on-Vertex Claude routes, the Messages path supports text messages, `system`, `max_tokens`, `stream`, `tools`, `tool_choice`, and `thinking` fields that are compatible with the Vertex Anthropic mapper. OpenAI Chat Completions requests with function tools use the same Vertex tool mapping. Routes that cannot support tools should keep `tools: false` so capability filtering fails at the gateway edge.
+
 ## `/v1/responses`
 
 `POST /v1/responses` follows the same authentication, model resolution, route planning, budget guard, logging, and ledger flow as Chat Completions.
@@ -194,9 +212,25 @@ Important differences:
 - record the provider execution attempt when request logging writes a summary row
 - write usage when usage can be normalized
 
-Current limitation:
+Vertex text embeddings are supported only by explicit embedding routes for supported Google publisher models:
 
-- Vertex embeddings remain out of scope in this slice and should be excluded by capability gating
+- `google/gemini-embedding-001`
+- `google/gemini-embedding-2`
+- `google/text-embedding-005`
+- `google/text-multilingual-embedding-002`
+
+Those routes should set `embeddings: true` and disable unrelated API families such as `chat_completions`, `responses`, `stream`, `tools`, `vision`, and `json_schema`. Gemini chat routes should keep `embeddings: false`.
+
+The OpenAI-compatible embeddings request supports string and array-of-strings input. The Vertex mapper rejects unsupported input forms before the provider call: token arrays, nested arrays, non-string values, empty arrays, empty strings, multimodal payloads, and `encoding_format: "base64"`.
+
+Examples:
+
+| Request shape | Expected route behavior |
+| --- | --- |
+| `/v1/embeddings` against an embedding-only `google/gemini-embedding-001` or `google/gemini-embedding-2` route | Route can pass capability filtering and execute through Vertex `:predict` or `:embedContent`, respectively. |
+| `/v1/embeddings` against a Gemini chat route with `embeddings: false` | Capability filtering removes the route and returns an edge error before Vertex execution. |
+| `/v1/embeddings` against `google/gemini-2.0-flash` with `embeddings: true` | Provider support checks reject the unsupported embedding model instead of treating all `google/*` models as embedding-capable. |
+| `/v1/embeddings` with `input: [[1, 2, 3]]` | The embeddings mapper rejects the unsupported OpenAI token-array/nested-array form locally. |
 
 ## Route Viability Versus Capability Mismatch
 
@@ -227,5 +261,5 @@ The open retry/fallback policy work must amend this section when it lands; see [
   - [request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md)
 - exact pricing coverage:
   - [pricing-catalog-and-accounting.md](pricing-catalog-and-accounting.md)
-- spend enforcement and budget windows:
-  - [budgets-and-spending.md](../operations/budgets-and-spending.md)
+- budget behavior and setup:
+  - [budgets.md](../access/budgets.md)

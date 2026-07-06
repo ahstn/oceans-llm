@@ -442,6 +442,32 @@ impl ApiKeyStatus {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApiKeyModelGrantMode {
+    All,
+    Explicit,
+}
+
+impl ApiKeyModelGrantMode {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::Explicit => "explicit",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "all" => Some(Self::All),
+            "explicit" => Some(Self::Explicit),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiKeyRecord {
     pub id: Uuid,
@@ -449,6 +475,7 @@ pub struct ApiKeyRecord {
     pub secret_hash: String,
     pub name: String,
     pub status: ApiKeyStatus,
+    pub model_grant_mode: ApiKeyModelGrantMode,
     pub owner_kind: ApiKeyOwnerKind,
     pub owner_user_id: Option<Uuid>,
     pub owner_team_id: Option<Uuid>,
@@ -463,6 +490,7 @@ pub struct NewApiKeyRecord {
     pub name: String,
     pub public_id: String,
     pub secret_hash: String,
+    pub model_grant_mode: ApiKeyModelGrantMode,
     pub owner_kind: ApiKeyOwnerKind,
     pub owner_user_id: Option<Uuid>,
     pub owner_team_id: Option<Uuid>,
@@ -568,6 +596,8 @@ pub struct OauthProviderRecord {
     pub client_id: String,
     pub client_secret_ref: String,
     pub scopes: Vec<String>,
+    pub allowed_email_domains: Vec<String>,
+    pub sso_email_verification_enabled: bool,
     pub enabled: bool,
     pub jit: OauthJitPolicy,
     pub created_at: OffsetDateTime,
@@ -2082,6 +2112,12 @@ pub struct GatewayModel {
     pub rank: i32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ModelAllowlistPolicy {
+    pub users: Vec<String>,
+    pub teams: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelRoute {
     pub id: Uuid,
@@ -2235,16 +2271,126 @@ impl Default for ProviderCapabilities {
     }
 }
 
+pub const VERTEX_TEXT_EMBEDDING_MODEL_IDS: &[&str] = &[
+    "gemini-embedding-001",
+    "gemini-embedding-2",
+    "text-embedding-005",
+    "text-multilingual-embedding-002",
+];
+
+#[must_use]
+pub fn is_supported_vertex_text_embedding_model_id(model_id: &str) -> bool {
+    VERTEX_TEXT_EMBEDDING_MODEL_IDS.contains(&model_id)
+}
+
+#[must_use]
+pub fn is_supported_vertex_text_embedding_upstream_model(upstream_model: &str) -> bool {
+    upstream_model
+        .strip_prefix("google/")
+        .is_some_and(is_supported_vertex_text_embedding_model_id)
+}
+
+#[must_use]
+pub const fn vertex_text_embedding_capabilities() -> ProviderCapabilities {
+    ProviderCapabilities {
+        chat_completions: false,
+        responses: false,
+        stream: false,
+        embeddings: true,
+        tools: false,
+        vision: false,
+        json_schema: false,
+        developer_role: false,
+    }
+}
+
+#[must_use]
+pub fn vertex_route_capabilities_for_upstream_model(
+    upstream_model: Option<&str>,
+) -> ProviderCapabilities {
+    let Some(upstream_model) = upstream_model else {
+        return ProviderCapabilities::chat_only_streaming();
+    };
+
+    if is_supported_vertex_text_embedding_upstream_model(upstream_model) {
+        return vertex_text_embedding_capabilities();
+    }
+
+    if upstream_model.starts_with("anthropic/") {
+        return ProviderCapabilities::with_dimensions(true, true, false, true, true, false, true);
+    }
+
+    ProviderCapabilities::chat_only_streaming()
+}
+
 const fn default_true() -> bool {
     true
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct RouteCompatibility {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub openai_compat: Option<OpenAiCompatRouteCompatibility>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub openrouter: Option<OpenRouterRouteCompatibility>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aws_bedrock: Option<AwsBedrockRouteCompatibility>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct OpenRouterRouteCompatibility {
+    pub provider: OpenRouterProviderRouting,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
+pub struct OpenRouterProviderRouting {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub zdr: Option<bool>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub only: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ignore: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub order: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preferred_max_latency: Option<OpenRouterPercentilePreference>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_price: Option<OpenRouterMaxPrice>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum OpenRouterPercentilePreference {
+    Number(f64),
+    Percentiles(OpenRouterPercentileCutoffs),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
+pub struct OpenRouterPercentileCutoffs {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub p50: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub p75: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub p90: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub p99: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
+pub struct OpenRouterMaxPrice {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completion: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -2378,6 +2524,7 @@ pub struct SeedModel {
     pub rank: i32,
     #[serde(default)]
     pub routes: Vec<SeedModelRoute>,
+    pub allowlist: Option<ModelAllowlistPolicy>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2386,11 +2533,89 @@ pub struct SeedApiKey {
     pub public_id: String,
     pub secret_hash: String,
     pub service_account_key: String,
-    pub service_account_name: String,
-    pub service_account_team_key: String,
-    pub service_account_budget: SeedBudget,
     #[serde(default)]
     pub allowed_models: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeedServiceAccount {
+    pub service_account_key: String,
+    pub service_account_name: String,
+    pub team_key: String,
+    pub budget: SeedBudget,
+    #[serde(default)]
+    pub managed_api_keys: Vec<SeedManagedServiceAccountApiKey>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeedManagedServiceAccountApiKey {
+    pub config_key: String,
+    pub name: String,
+    pub auto_create: bool,
+    pub source: ManagedApiKeySource,
+    pub public_id: Option<String>,
+    pub secret_hash: Option<String>,
+    pub secret_material: Option<SeedApiKeySecretMaterial>,
+    #[serde(default)]
+    pub allowed_models: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ManagedApiKeySource {
+    Generated,
+    ConfiguredValue,
+}
+
+impl ManagedApiKeySource {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Generated => "generated",
+            Self::ConfiguredValue => "configured_value",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeedApiKeySecretMaterial {
+    pub storage_kind: ApiKeySecretStorageKind,
+    pub secret_ciphertext: String,
+    pub secret_nonce: String,
+    pub secret_key_id: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ApiKeySecretStorageKind {
+    EncryptedBlob,
+}
+
+impl ApiKeySecretStorageKind {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::EncryptedBlob => "encrypted_blob",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "encrypted_blob" => Some(Self::EncryptedBlob),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiKeySecretMaterialRecord {
+    pub api_key_id: Uuid,
+    pub storage_kind: ApiKeySecretStorageKind,
+    pub secret_ciphertext: String,
+    pub secret_nonce: String,
+    pub secret_key_id: String,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+    pub last_retrieved_at: Option<OffsetDateTime>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2414,6 +2639,8 @@ pub struct SeedOauthProvider {
     pub client_id: String,
     pub client_secret_ref: String,
     pub scopes: Vec<String>,
+    pub allowed_email_domains: Vec<String>,
+    pub sso_email_verification_enabled: bool,
     pub enabled: bool,
     pub jit: OauthJitPolicy,
 }
@@ -2454,4 +2681,315 @@ pub struct SeedUser {
     pub membership: Option<SeedUserMembership>,
     #[serde(default)]
     pub budget: Option<SeedBudget>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewAgentProvider {
+    Github,
+}
+
+impl ReviewAgentProvider {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Github => "github",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "github" => Some(Self::Github),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewAgentRepositoryStatus {
+    Active,
+    Disabled,
+    Archived,
+}
+
+impl ReviewAgentRepositoryStatus {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Disabled => "disabled",
+            Self::Archived => "archived",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "active" => Some(Self::Active),
+            "disabled" => Some(Self::Disabled),
+            "archived" => Some(Self::Archived),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewAgentPullRequestState {
+    Open,
+    Closed,
+    Merged,
+    Unknown,
+}
+
+impl ReviewAgentPullRequestState {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Closed => "closed",
+            Self::Merged => "merged",
+            Self::Unknown => "unknown",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "open" => Some(Self::Open),
+            "closed" => Some(Self::Closed),
+            "merged" => Some(Self::Merged),
+            "unknown" => Some(Self::Unknown),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewAgentRunStatus {
+    Queued,
+    InProgress,
+    Succeeded,
+    Failed,
+    Cancelled,
+    Skipped,
+}
+
+impl ReviewAgentRunStatus {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::InProgress => "in_progress",
+            Self::Succeeded => "succeeded",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+            Self::Skipped => "skipped",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "queued" => Some(Self::Queued),
+            "in_progress" => Some(Self::InProgress),
+            "succeeded" => Some(Self::Succeeded),
+            "failed" => Some(Self::Failed),
+            "cancelled" => Some(Self::Cancelled),
+            "skipped" => Some(Self::Skipped),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReviewAgentSettings {
+    pub inline_review_enabled: bool,
+    pub pr_summary_enabled: bool,
+    pub diagrams_enabled: bool,
+    pub linked_issue_detection_enabled: bool,
+    pub linked_issue_assessment_enabled: bool,
+    pub default_model_key: Option<String>,
+    pub max_inline_comments: Option<i64>,
+    pub request_changes_on_high_severity: bool,
+}
+
+impl Default for ReviewAgentSettings {
+    fn default() -> Self {
+        Self {
+            inline_review_enabled: true,
+            pr_summary_enabled: true,
+            diagrams_enabled: false,
+            linked_issue_detection_enabled: true,
+            linked_issue_assessment_enabled: false,
+            default_model_key: None,
+            max_inline_comments: None,
+            request_changes_on_high_severity: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReviewAgentRepositoryRecord {
+    pub repository_id: Uuid,
+    pub provider: ReviewAgentProvider,
+    pub external_repository_id: Option<String>,
+    pub owner: String,
+    pub name: String,
+    pub full_name: String,
+    pub service_account_id: Uuid,
+    pub status: ReviewAgentRepositoryStatus,
+    pub settings: ReviewAgentSettings,
+    pub settings_json: Value,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct NewReviewAgentRepositoryRecord {
+    pub provider: ReviewAgentProvider,
+    pub external_repository_id: Option<String>,
+    pub owner: String,
+    pub name: String,
+    pub full_name: String,
+    pub service_account_id: Uuid,
+    pub settings: ReviewAgentSettings,
+    pub settings_json: Value,
+    pub created_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UpdateReviewAgentRepositoryRecord {
+    pub repository_id: Uuid,
+    pub external_repository_id: Option<String>,
+    pub owner: String,
+    pub name: String,
+    pub full_name: String,
+    pub service_account_id: Uuid,
+    pub status: ReviewAgentRepositoryStatus,
+    pub settings: ReviewAgentSettings,
+    pub settings_json: Value,
+    pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReviewAgentPullRequestRecord {
+    pub pull_request_id: Uuid,
+    pub repository_id: Uuid,
+    pub provider_pr_id: Option<String>,
+    pub pr_number: i64,
+    pub title: Option<String>,
+    pub author_login: Option<String>,
+    pub state: ReviewAgentPullRequestState,
+    pub head_sha: Option<String>,
+    pub base_sha: Option<String>,
+    pub head_repository_full_name: Option<String>,
+    pub base_repository_full_name: Option<String>,
+    pub is_draft: bool,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UpsertReviewAgentPullRequestRecord {
+    pub repository_id: Uuid,
+    pub provider_pr_id: Option<String>,
+    pub pr_number: i64,
+    pub title: Option<String>,
+    pub author_login: Option<String>,
+    pub state: ReviewAgentPullRequestState,
+    pub head_sha: Option<String>,
+    pub base_sha: Option<String>,
+    pub head_repository_full_name: Option<String>,
+    pub base_repository_full_name: Option<String>,
+    pub is_draft: bool,
+    pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReviewAgentRunRecord {
+    pub run_id: Uuid,
+    pub repository_id: Uuid,
+    pub pull_request_id: Option<Uuid>,
+    pub head_sha: Option<String>,
+    pub github_run_id: Option<String>,
+    pub github_run_attempt: Option<i64>,
+    pub status: ReviewAgentRunStatus,
+    pub started_at: Option<OffsetDateTime>,
+    pub heartbeat_at: Option<OffsetDateTime>,
+    pub finished_at: Option<OffsetDateTime>,
+    pub duration_ms: Option<i64>,
+    pub files_changed: Option<i64>,
+    pub additions: Option<i64>,
+    pub deletions: Option<i64>,
+    pub changed_loc: Option<i64>,
+    pub inline_comments_created: Option<i64>,
+    pub inline_comments_updated: Option<i64>,
+    pub inline_comments_skipped: Option<i64>,
+    pub inline_comments_failed: Option<i64>,
+    pub stale_comments_deleted: Option<i64>,
+    pub managed_comment_id: Option<String>,
+    pub managed_comment_action: Option<String>,
+    pub managed_comment_status: Option<String>,
+    pub review_event_status: Option<String>,
+    pub summary_status: Option<String>,
+    pub diagram_status: Option<String>,
+    pub linked_issue_count: Option<i64>,
+    pub linked_issue_status: Option<String>,
+    pub model_execution_mode: Option<String>,
+    pub provider_key: Option<String>,
+    pub model_key: Option<String>,
+    pub effective_config_json: Value,
+    pub degraded_features_json: Option<Value>,
+    pub error_summary: Option<String>,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct NewReviewAgentRunRecord {
+    pub repository_id: Uuid,
+    pub pull_request_id: Option<Uuid>,
+    pub head_sha: Option<String>,
+    pub github_run_id: Option<String>,
+    pub github_run_attempt: Option<i64>,
+    pub status: ReviewAgentRunStatus,
+    pub started_at: Option<OffsetDateTime>,
+    pub model_execution_mode: Option<String>,
+    pub provider_key: Option<String>,
+    pub model_key: Option<String>,
+    pub effective_config_json: Value,
+    pub created_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UpdateReviewAgentRunRecord {
+    pub run_id: Uuid,
+    pub status: ReviewAgentRunStatus,
+    pub heartbeat_at: Option<OffsetDateTime>,
+    pub finished_at: Option<OffsetDateTime>,
+    pub duration_ms: Option<i64>,
+    pub files_changed: Option<i64>,
+    pub additions: Option<i64>,
+    pub deletions: Option<i64>,
+    pub changed_loc: Option<i64>,
+    pub inline_comments_created: Option<i64>,
+    pub inline_comments_updated: Option<i64>,
+    pub inline_comments_skipped: Option<i64>,
+    pub inline_comments_failed: Option<i64>,
+    pub stale_comments_deleted: Option<i64>,
+    pub managed_comment_id: Option<String>,
+    pub managed_comment_action: Option<String>,
+    pub managed_comment_status: Option<String>,
+    pub review_event_status: Option<String>,
+    pub summary_status: Option<String>,
+    pub diagram_status: Option<String>,
+    pub linked_issue_count: Option<i64>,
+    pub linked_issue_status: Option<String>,
+    pub degraded_features_json: Option<Value>,
+    pub error_summary: Option<String>,
+    pub updated_at: OffsetDateTime,
 }

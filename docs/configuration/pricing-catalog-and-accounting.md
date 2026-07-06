@@ -1,6 +1,6 @@
 # Pricing Catalog and Accounting
 
-`See also`: [Configuration Reference](configuration-reference.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Data Relationships](../reference/data-relationships.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Budgets and Spending](../operations/budgets-and-spending.md), [ADR: Hybrid Pricing Catalog from models.dev](../adr/2026-03-06-hybrid-pricing-catalog.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md)
+`See also`: [Configuration Reference](configuration-reference.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Data Relationships](../contributing/reference/data-relationships.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Budgets and Spending](../contributing/operations/budgets-and-spending.md), [ADR: Hybrid Pricing Catalog from models.dev](../adr/2026-03-06-hybrid-pricing-catalog.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md)
 
 This page explains how the gateway turns provider usage into durable pricing records and why some successful requests are intentionally not charged.
 
@@ -64,6 +64,26 @@ Current exact-only coverage is intentionally narrow:
 Known coverage constraint:
 
 - Anthropic-on-Vertex pricing is only supported for `location=global`
+
+## Vertex Text Embedding Pricing
+
+Native Vertex text embeddings use the same exact pricing resolver as other Vertex traffic:
+
+- `upstream_model: google/gemini-embedding-001` resolves against pricing provider `google-vertex` and pricing model `gemini-embedding-001`
+- `upstream_model: google/gemini-embedding-2` resolves against pricing provider `google-vertex` and pricing model `gemini-embedding-2`
+- `upstream_model: google/text-embedding-005` resolves against pricing provider `google-vertex` and pricing model `text-embedding-005`
+- `upstream_model: google/text-multilingual-embedding-002` resolves against pricing provider `google-vertex` and pricing model `text-multilingual-embedding-002`
+
+The mapper charges only from real provider token usage. Vertex `:predict` text embeddings expose token usage through `predictions[].embeddings.statistics.token_count`; `google/gemini-embedding-2` exposes it through `usageMetadata.promptTokenCount` on `:embedContent`. The gateway aggregates those values for array input and records them as prompt/input tokens. It does not infer token counts from characters, bytes, vector dimensions, or input count.
+
+Embedding pricing is input-token based in this slice. `dimensions` and its `output_dimensionality`/`outputDimensionality` aliases affect the provider request and resulting vectors, but they do not select a different pricing key or billing modifier. For `:predict` models, `task_type`, `input_type`, `title`, and `auto_truncate` are also request-shaping fields, not pricing keys. If a future provider rate differentiates one of those dimensions, that modifier must become explicit before it is charged.
+
+Failure-to-charge states:
+
+- `usage_missing`: Vertex returned vectors but did not return usable token-count values.
+- `unpriced`: token usage exists, but no exact catalog row/rate exists for the selected Vertex model and location.
+
+Both states remain report-visible and do not consume hard or soft budget windows.
 
 ## Why Requests Become `unpriced`
 
@@ -138,4 +158,4 @@ Budget enforcement only uses priced totals.
 - `priced` and `legacy_estimated` rows count
 - `unpriced` and `usage_missing` rows do not count
 
-Use [budgets-and-spending.md](../operations/budgets-and-spending.md) for budget windows and spend APIs.
+Use [budgets-and-spending.md](../contributing/operations/budgets-and-spending.md) for budget windows and spend APIs.

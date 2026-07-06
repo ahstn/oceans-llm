@@ -4,7 +4,16 @@
 
 This page shows how to configure OpenAI GPT-5.5 through Amazon Bedrock Mantle. It is for admins configuring gateway routes for users.
 
-AWS lists GPT-5.5 with model ID `openai.gpt-5.5`, launch Region `us-east-2`, endpoint kind `bedrock-mantle`, and Responses path `https://bedrock-mantle.{region}.api.aws/openai/v1/responses`: [AWS model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-55.html). The AWS launch post and OpenAI Bedrock guide use the same Mantle base URL shape: [AWS launch post](https://aws.amazon.com/blogs/aws/get-started-with-openai-gpt-5-5-gpt-5-4-models-and-codex-on-amazon-bedrock/) and [OpenAI Amazon Bedrock guide](https://developers.openai.com/api/docs/guides/amazon-bedrock).
+AWS lists GPT-5.5 with the following configuration:
+- model ID `openai.gpt-5.5`,
+- launch Region `us-east-2`,
+- endpoint kind `bedrock-mantle`,
+- responses path `https://bedrock-mantle.{region}.api.aws/openai/v1/responses`:
+
+For more information and official documentation from AWS and OpenAI, see:
+- [GPT-5.5 | AWS Bedrock Documentation]
+- [Get started with OpenAI Models on Amazon Bedrock | AWS Blog]
+- [OpenAI models in Amazon Bedrock | OpenAI Developers]
 
 ## Bedrock API Key
 
@@ -105,6 +114,18 @@ models:
 
 Projects apply to OpenAI-compatible Mantle routes. Do not rely on caller-supplied inbound headers for project routing; configure `OpenAI-Project` in the selected route.
 
+## Hosted Tool Compatibility
+
+GPT-5.5 on Bedrock Mantle is configured as a Responses-first route through `api_style: mantle_openai_responses`. The `tools: true` capability in the examples means the route can attempt supported tool-bearing Responses workflows; it does not mean Bedrock supports every OpenAI-hosted tool.
+
+Bedrock Mantle currently does not support the OpenAI-hosted `image_generation` Responses tool. Direct OpenAI GPT-5.5 can support hosted image generation, but the Bedrock OpenAI-compatible path has a narrower feature set.
+
+Oceans strips opportunistic `image_generation` tool declarations before forwarding ordinary Bedrock-backed coding workflows. If a request explicitly requires image generation, for example through `tool_choice: { "type": "image_generation" }`, Oceans fails locally with a deterministic 400 instead of forwarding the request and exposing an opaque Bedrock validation error.
+
+Revisit this shim when Bedrock Mantle supports hosted `image_generation`, or when Oceans grows explicit hosted-tool capabilities that can route image-generation-required requests to a provider that actually supports them.
+
+For the broader rule, see [Provider API Compatibility](../reference/provider-api-compatibility.md#hosted-responses-tools).
+
 ## Caller Usage
 
 Call the gateway's `/v1/responses` endpoint with the configured gateway model id:
@@ -117,3 +138,7 @@ Call the gateway's `/v1/responses` endpoint with the configured gateway model id
 ```
 
 Use `/v1/chat/completions` only for routes configured with a Chat Completions API style. GPT-5.5 on Bedrock is configured here as Responses-first with `mantle_openai_responses`.
+
+[GPT-5.5 | AWS Bedrock Documentation]: https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-55.html
+[Get started with OpenAI Models on Amazon Bedrock | AWS Blog]: https://aws.amazon.com/blogs/aws/get-started-with-openai-gpt-5-5-gpt-5-4-models-and-codex-on-amazon-bedrock/
+[OpenAI models in Amazon Bedrock | OpenAI Developers]: https://developers.openai.com/api/docs/guides/amazon-bedrock

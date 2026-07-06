@@ -7,7 +7,6 @@ database:
   url: env.POSTGRES_URL
 
 auth:
-  seed_api_keys: []
   bootstrap_admin:
     enabled: true
     email: admin@local

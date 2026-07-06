@@ -187,7 +187,10 @@ fn infer_provider_icon_key(
     provider_type: Option<&str>,
     provider_config: Option<&Value>,
 ) -> ProviderIconKey {
-    if provider_type == Some("gcp_vertex") {
+    if matches!(
+        provider_type,
+        Some("gcp_vertex" | "gcp_cloud_run_openai_compat")
+    ) {
         return ProviderIconKey::VertexAI;
     }
 
@@ -215,7 +218,7 @@ fn infer_provider_icon_key(
         ProviderIconKey::OpenRouter
     } else if provider_key.contains("anthropic") {
         ProviderIconKey::Anthropic
-    } else if provider_key.contains("vertex") {
+    } else if provider_key.contains("vertex") || provider_key.contains("cloud-run") {
         ProviderIconKey::VertexAI
     } else if is_aws_provider_candidate(&provider_key) {
         ProviderIconKey::AWS
@@ -365,6 +368,34 @@ mod tests {
             provider_key: "vertex-claude".to_string(),
             provider_type: "gcp_vertex".to_string(),
             config: json!({"project_id": "demo"}),
+            secrets: None,
+        };
+
+        let display = resolve_provider_display(&provider.provider_key, Some(&provider));
+        assert_eq!(display.label, "Google Vertex AI");
+        assert_eq!(display.icon_key, ProviderIconKey::VertexAI);
+    }
+
+    #[test]
+    fn cloud_run_provider_type_defaults_to_vertex_ai_provider_icon() {
+        let provider = ProviderConnection {
+            provider_key: "gemma-run".to_string(),
+            provider_type: "gcp_cloud_run_openai_compat".to_string(),
+            config: json!({"base_url": "https://gemma-service.run.app/v1"}),
+            secrets: None,
+        };
+
+        let display = resolve_provider_display(&provider.provider_key, Some(&provider));
+        assert_eq!(display.label, "Google Vertex AI");
+        assert_eq!(display.icon_key, ProviderIconKey::VertexAI);
+    }
+
+    #[test]
+    fn cloud_run_provider_key_defaults_to_vertex_ai_provider_icon() {
+        let provider = ProviderConnection {
+            provider_key: "gemma-cloud-run".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: json!({"base_url": "https://inference.example.com/v1"}),
             secrets: None,
         };
 

@@ -1,9 +1,9 @@
 # MCP Servers
 
-`See also`: [MCP Client Setup](../setup/mcp-client-setup.md), [MCP Tool Access](../access/mcp-tool-access.md), [Identity and Access](../access/identity-and-access.md), [Admin Control Plane](../access/admin-control-plane.md), [MCP Registry and Discovery](../operations/observability/mcp-registry-and-discovery.md)
+`See also`: [MCP Client Setup](../mcp/mcp-client-setup.md), [MCP Tool Access](../mcp/mcp-tool-access.md), [Identity and Access](../access/identity-and-access.md), [Admin Control Plane](../access/admin-control-plane.md), [MCP Registry and Discovery](../contributing/mcp/mcp-registry-and-discovery.md)
 
 
-![MCP Servers Page](../public/images/screenshot-mcp-servers.png)
+![MCP Servers Page](../public/images/mcp-servers-page.png)
 
 Oceans can register external Streamable HTTP MCP servers and expose them to MCP clients through three gateway data-plane routes:
 
@@ -17,9 +17,9 @@ Oceans can register external Streamable HTTP MCP servers and expose them to MCP 
 
 `/mcp/{server_key}` is the direct proxy endpoint. The gateway authenticates the caller with an Oceans API key, looks up the active registered server, applies any gateway-managed upstream credential, and proxies the MCP Streamable HTTP request to the registered server URL.
 
-`/code-mode-mcp` is the Code Mode endpoint. When enabled, it exposes `explore` and `execute` tools that run sandboxed JavaScript over the caller's granted tools; see [MCP Client Setup](../setup/mcp-client-setup.md). When Code Mode is not enabled, the route returns not found.
+`/code-mode-mcp` is the Code Mode endpoint. When enabled, it exposes `explore` and `execute` tools that run sandboxed JavaScript over the caller's granted tools; see [MCP Client Setup](../mcp/mcp-client-setup.md). When Code Mode is not enabled, the route returns not found.
 
-Discovered tools are not automatically callable. Configure explicit MCP tool or toolset grants before clients can see tools in `tools/list` or call them with `tools/call`; see [MCP Tool Access](../access/mcp-tool-access.md).
+Discovered tools are not automatically callable. Configure explicit MCP tool or toolset grants before clients can see tools in `tools/list` or call them with `tools/call`; see [MCP Tool Access](../mcp/mcp-tool-access.md).
 
 ## Add a Server
 
@@ -29,6 +29,10 @@ Platform admins manage servers in the admin UI:
 /admin/mcp/servers
 ```
 
+The Servers tab is the registry workspace. It separates durable server records from
+the recommended catalog so admins can see exactly which upstreams are registered
+and which entries are only suggestions.
+
 The page supports:
 
 - importing a recommended catalog entry
@@ -36,9 +40,50 @@ The page supports:
 - editing display name, URL, auth mode, auth config, and timeout
 - disabling a server
 - refreshing discovery
-- inspecting discovered tools, schema hashes, schema versions, active state, and timestamps
+- opening a server detail dialog to inspect overview, configuration, discovered
+  tools, and credential bindings
 
-The corresponding admin API surface is documented for maintainers in [MCP Registry and Discovery](../operations/observability/mcp-registry-and-discovery.md).
+The corresponding admin API surface is documented for maintainers in [MCP Registry and Discovery](../contributing/mcp/mcp-registry-and-discovery.md).
+
+## View Discovered Tools
+
+Open a server from the Servers table, then use the **Tools** tab in the detail
+dialog.
+
+![MCP server tools dialog](../public/images/mcp-server-tools-dialog.png)
+
+Each discovered tool row is collapsed by default. The collapsed row shows:
+
+- selector checkbox
+- tool name
+- description, truncated when long
+- active/inactive status
+
+Expand a row to inspect:
+
+- stable Oceans tool id
+- upstream tool name
+- schema version
+- persisted JSON input schema
+
+The JSON schema is the contract that `describe_tool` returns for aggregate MCP
+clients and the schema that direct `tools/call` requests are checked against.
+Schema hashes remain part of the backend drift contract, but the admin UI keeps
+the row focused on the values humans need when selecting tools.
+
+When one or more active tools are selected, use **Add to toolset** to move to the
+Toolsets workflow with those tools preselected. Inactive tools remain visible for
+audit and drift review, but they cannot be selected or called.
+
+## Recommended Catalog
+
+Recommended entries are curated shortcuts for common MCP servers. They are not
+tenant records, do not imply access, and are never executed until an admin
+imports or customizes them into a registered server.
+
+Use **Import** when the catalog defaults are acceptable. Use **Customize** when
+you need to review or change the key, URL, auth mode, timeout, or display name
+before registration.
 
 ## Server Keys
 

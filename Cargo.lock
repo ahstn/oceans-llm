@@ -13,7 +13,7 @@ dependencies = [
 
 [[package]]
 name = "admin-ui"
-version = "0.9.0"
+version = "0.14.0"
 dependencies = [
  "axum 0.8.8",
  "http 1.4.0",
@@ -1808,10 +1808,11 @@ dependencies = [
 
 [[package]]
 name = "gateway"
-version = "0.9.0"
+version = "0.14.0"
 dependencies = [
  "admin-ui",
  "anyhow",
+ "async-stream",
  "async-trait",
  "axum 0.8.8",
  "chrono",
@@ -1854,10 +1855,11 @@ dependencies = [
 
 [[package]]
 name = "gateway-client-config"
-version = "0.9.0"
+version = "0.14.0"
 dependencies = [
  "serde",
  "serde_json",
+ "toml",
 ]
 
 [[package]]
@@ -1876,9 +1878,12 @@ dependencies = [
 
 [[package]]
 name = "gateway-core"
-version = "0.9.0"
+version = "0.14.0"
 dependencies = [
+ "aes-gcm",
+ "argon2",
  "async-trait",
+ "base64 0.22.1",
  "bytes",
  "futures-core",
  "serde",
@@ -1890,7 +1895,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-mcp"
-version = "0.9.0"
+version = "0.14.0"
 dependencies = [
  "futures-util",
  "reqwest",
@@ -1904,7 +1909,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-providers"
-version = "0.9.0"
+version = "0.14.0"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1913,6 +1918,7 @@ dependencies = [
  "aws-sigv4",
  "aws-smithy-runtime-api",
  "axum 0.8.8",
+ "base64 0.22.1",
  "bytes",
  "futures-util",
  "gateway-core",
@@ -1931,7 +1937,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-service"
-version = "0.9.0"
+version = "0.14.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -1958,7 +1964,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-store"
-version = "0.9.0"
+version = "0.14.0"
 dependencies = [
  "anyhow",
  "async-trait",

@@ -1,6 +1,6 @@
 # OIDC and SSO
 
-`See also`: [Identity and Access](identity-and-access.md), [GitHub OAuth SSO Setup for Admins](github-oauth-admin-setup.md), [Testing Authentication Locally](../development/authentication-testing.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Configuration Reference](../configuration/configuration-reference.md), [Deploy and Operations](../setup/deploy-and-operations.md), [Admin Control Plane](admin-control-plane.md), [ADR: Identity Foundation for Users, Teams, and API Key Ownership](../adr/2026-03-05-identity-foundation.md), [ADR: Authentik Local SSO Test IdP](../adr/2026-05-15-authentik-local-sso-test-idp.md), [ADR: Local SSO Compose Fixture and Browser Origin](../adr/2026-05-15-local-sso-compose-fixture-and-browser-origin.md)
+`See also`: [Identity and Access](identity-and-access.md), [GitHub OAuth SSO Setup for Admins](github-oauth-admin-setup.md), [Testing Authentication Locally](../contributing/development/authentication-testing.md), [Runtime Bootstrap and Access](../setup/runtime-bootstrap-and-access.md), [Configuration Reference](../configuration/configuration-reference.md), [Deploy and Operations](../setup/deploy-and-operations.md), [Admin Control Plane](admin-control-plane.md), [ADR: Identity Foundation for Users, Teams, and API Key Ownership](../adr/2026-03-05-identity-foundation.md), [ADR: Authentik Local SSO Test IdP](../adr/2026-05-15-authentik-local-sso-test-idp.md), [ADR: Local SSO Compose Fixture and Browser Origin](../adr/2026-05-15-local-sso-compose-fixture-and-browser-origin.md)
 
 Oceans LLM supports OIDC and OAuth SSO for the admin control plane. The browser ends each flow with the same `ogw_session` HttpOnly cookie used by password login.
 
@@ -14,9 +14,10 @@ The OIDC/OAuth flow includes:
 - `/api/v1/auth/oidc/start` performs provider discovery and redirects with state, nonce, and PKCE
 - `/api/v1/auth/oidc/callback` consumes one-time state, exchanges the authorization code, verifies the ID token and nonce, and issues the existing `ogw_session` cookie
 - `/api/v1/auth/oauth/start` redirects to the OAuth provider with one-time state and PKCE
-- `/api/v1/auth/oauth/callback/github` consumes one-time state, exchanges the code with GitHub, resolves verified email + numeric subject, and issues `ogw_session`
+- `/api/v1/auth/oauth/callback/github` consumes one-time state, exchanges the code with GitHub, resolves numeric subject plus the selected primary email, and issues `ogw_session`
 - invited/config-declared OIDC users activate on first successful provider login
 - provider-specific JIT user creation can assign explicit global role, team membership, and request logging defaults
+- direct GitHub OAuth requires a GitHub-verified primary email by default, can use `sso_email_verification_enabled: false` as an admin escape hatch, and can restrict sign-in and JIT provisioning to configured email domains
 - local Authentik compose profiles provide a repeatable manual IdP fixture
 
 ## Security Boundary
@@ -28,6 +29,7 @@ Account linking is intentionally conservative:
 - existing `(provider, sub)` links win
 - invited/config-declared OIDC users with matching normalized email and provider link are activated and linked
 - unmatched identities use the provider's explicit JIT policy
+- GitHub OAuth `sso_email_verification_enabled` and `allowed_email_domains` are enforced before account linking, invite activation, JIT creation, or session issuance
 - existing password/local users with the same email are rejected instead of auto-linked
 
 ## Practical Admin Impact
@@ -47,7 +49,7 @@ The repo ships an opt-in Authentik fixture for local/manual SSO testing:
 - [../../deploy/config/gateway.local.yaml](../../deploy/config/gateway.local.yaml) enables the local Authentik provider and JIT policy for that compose path.
 - [../../deploy/compose.yaml](../../deploy/compose.yaml) includes the same `sso` profile for image-based deploy runs.
 - [../../deploy/authentik/oceans-llm-blueprint.yaml](../../deploy/authentik/oceans-llm-blueprint.yaml) creates the `Oceans LLM` OIDC application and the `sso-user@example.com` test user.
-- [../development/authentication-testing.md](../development/authentication-testing.md) owns the local testing procedure, URLs, and fixture passwords.
+- [../development/authentication-testing.md](../contributing/development/authentication-testing.md) owns the local testing procedure, URLs, and fixture passwords.
 
 Run it with:
 
@@ -128,6 +130,6 @@ The matching local Authentik application must use:
 
 - user lifecycle and team rules: [identity-and-access.md](identity-and-access.md)
 - config field syntax for providers: [configuration-reference.md](../configuration/configuration-reference.md)
-- local auth test procedure: [authentication-testing.md](../development/authentication-testing.md)
+- local auth test procedure: [authentication-testing.md](../contributing/development/authentication-testing.md)
 - admin UI capability map: [admin-control-plane.md](admin-control-plane.md)
 - deploy topology and first-access behavior: [deploy-and-operations.md](../setup/deploy-and-operations.md), [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md)

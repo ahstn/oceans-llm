@@ -136,13 +136,59 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
     },
     MigrationManifest {
         version: 32,
-        name: "mcp_code_mode_invocation_linkage",
-        checksum: "V32__mcp_code_mode_invocation_linkage.sql",
-        libsql_sql: include_str!("../migrations/V32__mcp_code_mode_invocation_linkage.sql"),
+        name: "oauth_provider_allowed_email_domains",
+        checksum: "V32__oauth_provider_allowed_email_domains.sql",
+        libsql_sql: include_str!("../migrations/V32__oauth_provider_allowed_email_domains.sql"),
         postgres_sql: include_str!(
-            "../migrations/postgres/V32__mcp_code_mode_invocation_linkage.sql"
+            "../migrations/postgres/V32__oauth_provider_allowed_email_domains.sql"
         ),
     },
+    MigrationManifest {
+        version: 33,
+        name: "oauth_provider_sso_email_verification",
+        checksum: "V33__oauth_provider_sso_email_verification.sql",
+        libsql_sql: include_str!("../migrations/V33__oauth_provider_sso_email_verification.sql"),
+        postgres_sql: include_str!(
+            "../migrations/postgres/V33__oauth_provider_sso_email_verification.sql"
+        ),
+    },
+    MigrationManifest {
+        version: 34,
+        name: "review_agent",
+        checksum: "V34__review_agent.sql",
+        libsql_sql: include_str!("../migrations/V34__review_agent.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V34__review_agent.sql"),
+    },
+    MigrationManifest {
+        version: 35,
+        name: "managed_api_key_secrets",
+        checksum: "V35__managed_api_key_secrets.sql",
+        libsql_sql: include_str!("../migrations/V35__managed_api_key_secrets.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V35__managed_api_key_secrets.sql"),
+    },
+    MigrationManifest {
+        version: 36,
+        name: "api_key_model_grant_mode",
+        checksum: "V36__api_key_model_grant_mode.sql",
+        libsql_sql: include_str!("../migrations/V36__api_key_model_grant_mode.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V36__api_key_model_grant_mode.sql"),
+    },
+    MigrationManifest {
+        version: 37,
+        name: "model_allowlists",
+        checksum: "V37__model_allowlists.sql",
+        libsql_sql: include_str!("../migrations/V37__model_allowlists.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V37__model_allowlists.sql"),
+    },
+    MigrationManifest {
+        version: 38,
+        name: "mcp_code_mode_invocation_linkage",
+        checksum: "V38__mcp_code_mode_invocation_linkage.sql",
+        libsql_sql: include_str!("../migrations/V38__mcp_code_mode_invocation_linkage.sql"),
+        postgres_sql: include_str!(
+            "../migrations/postgres/V38__mcp_code_mode_invocation_linkage.sql"
+        ),
+    }
 ];
 
 #[cfg(test)]

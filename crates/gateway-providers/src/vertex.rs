@@ -5,9 +5,10 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use futures_util::StreamExt;
 use gateway_core::{
-    CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest, ProviderCapabilities,
-    ProviderClient, ProviderError, ProviderRequestContext, ProviderStream, SseEventParser,
-    Utf8ChunkDecoder,
+    CoreChatMessage, CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest,
+    ProviderCapabilities, ProviderClient, ProviderError, ProviderRequestContext, ProviderStream,
+    SseEventParser, Utf8ChunkDecoder, VERTEX_TEXT_EMBEDDING_MODEL_IDS,
+    is_supported_vertex_text_embedding_model_id,
 };
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
@@ -152,6 +153,54 @@ fn parse_upstream_model(
     Ok((family, publisher, model_id))
 }
 
+const VERTEX_EMBEDDING_TASK_TYPES: &[&str] = &[
+    "RETRIEVAL_QUERY",
+    "RETRIEVAL_DOCUMENT",
+    "SEMANTIC_SIMILARITY",
+    "CLASSIFICATION",
+    "CLUSTERING",
+    "QUESTION_ANSWERING",
+    "FACT_VERIFICATION",
+    "CODE_RETRIEVAL_QUERY",
+];
+
+const VERTEX_EMBED_CONTENT_MODEL_IDS: &[&str] = &["gemini-embedding-2"];
+
+#[derive(Debug)]
+struct GoogleEmbeddingRequestMapping {
+    bodies: Vec<Value>,
+}
+
+#[derive(Debug)]
+struct GoogleEmbeddingOutput {
+    index: usize,
+    embedding: Value,
+    token_count: Option<i64>,
+}
+
+fn validate_vertex_embedding_model(model_id: &str) -> Result<(), ProviderError> {
+    if is_supported_vertex_text_embedding_model_id(model_id) {
+        return Ok(());
+    }
+
+    Err(ProviderError::InvalidRequest(format!(
+        "vertex embeddings route google/{model_id} is not a supported text embedding model; supported models are {}",
+        VERTEX_TEXT_EMBEDDING_MODEL_IDS.join(", ")
+    )))
+}
+
+fn uses_vertex_embed_content(model_id: &str) -> bool {
+    VERTEX_EMBED_CONTENT_MODEL_IDS.contains(&model_id)
+}
+
+fn vertex_embedding_method(model_id: &str) -> &'static str {
+    if uses_vertex_embed_content(model_id) {
+        "embedContent"
+    } else {
+        "predict"
+    }
+}
+
 #[async_trait]
 impl ProviderClient for VertexProvider {
     fn provider_key(&self) -> &str {
@@ -163,7 +212,7 @@ impl ProviderClient for VertexProvider {
     }
 
     fn capabilities(&self) -> ProviderCapabilities {
-        ProviderCapabilities::chat_only_streaming()
+        ProviderCapabilities::with_dimensions(true, true, false, true, true, false, true)
     }
 
     async fn chat_completions(
@@ -260,12 +309,75 @@ impl ProviderClient for VertexProvider {
 
     async fn embeddings(
         &self,
-        _request: &CoreEmbeddingsRequest,
-        _context: &ProviderRequestContext,
+        request: &CoreEmbeddingsRequest,
+        context: &ProviderRequestContext,
     ) -> Result<Value, ProviderError> {
-        Err(ProviderError::InvalidRequest(
-            "vertex embeddings are not supported in this v1 runtime".to_string(),
-        ))
+        let (family, publisher, model_id) = parse_upstream_model(&context.upstream_model)?;
+        if family != PublisherFamily::Google {
+            return Err(ProviderError::InvalidRequest(
+                "vertex embeddings are only supported for google/* text embedding models"
+                    .to_string(),
+            ));
+        }
+        validate_vertex_embedding_model(model_id)?;
+
+        let mapped = map_google_embedding_request(request, context, model_id)?;
+        let endpoint = self.model_endpoint(publisher, model_id, vertex_embedding_method(model_id));
+        let mut outputs = Vec::with_capacity(mapped.bodies.len());
+        for (index, body) in mapped.bodies.iter().enumerate() {
+            let request = self.build_request(&endpoint, body, context).await?;
+            let response = match self.client.execute(request).await {
+                Ok(response) => response,
+                Err(error) => {
+                    return Err(partial_google_embedding_failure(
+                        map_reqwest_error(error),
+                        &outputs,
+                        false,
+                    ));
+                }
+            };
+            let status = response.status();
+            let text = match response.text().await {
+                Ok(text) => text,
+                Err(error) => {
+                    return Err(partial_google_embedding_failure(
+                        map_reqwest_error(error),
+                        &outputs,
+                        true,
+                    ));
+                }
+            };
+            if !status.is_success() {
+                return Err(partial_google_embedding_failure(
+                    ProviderError::UpstreamHttp {
+                        status: status.as_u16(),
+                        body: text,
+                    },
+                    &outputs,
+                    false,
+                ));
+            }
+
+            let value: Value = match serde_json::from_str(&text) {
+                Ok(value) => value,
+                Err(error) => {
+                    return Err(partial_google_embedding_failure(
+                        ProviderError::Transport(format!(
+                            "invalid JSON from vertex embeddings: {error}"
+                        )),
+                        &outputs,
+                        true,
+                    ));
+                }
+            };
+            let output = match extract_google_embedding_output(&value, index, model_id) {
+                Ok(output) => output,
+                Err(error) => return Err(partial_google_embedding_failure(error, &outputs, true)),
+            };
+            outputs.push(output);
+        }
+
+        normalize_google_embedding_outputs(outputs, context)
     }
 
     async fn responses(
@@ -365,6 +477,361 @@ fn map_google_request(
     Ok(Value::Object(body))
 }
 
+fn map_google_embedding_request(
+    request: &CoreEmbeddingsRequest,
+    context: &ProviderRequestContext,
+    model_id: &str,
+) -> Result<GoogleEmbeddingRequestMapping, ProviderError> {
+    let inputs = vertex_embedding_inputs(&request.input)?;
+    let mut extra = request.extra.clone();
+    extra.remove("model");
+    extra.remove("input");
+    extra.remove("user");
+
+    validate_vertex_embedding_encoding_format(extra.remove("encoding_format"))?;
+    let output_dimensionality =
+        extract_vertex_embedding_output_dimensionality(&mut extra, model_id)?;
+
+    if uses_vertex_embed_content(model_id) {
+        return map_google_embed_content_request(inputs, extra, output_dimensionality, context);
+    }
+
+    let task_type = extract_vertex_embedding_task_type(&mut extra)?;
+    let title = extract_optional_string_field(&mut extra, "title")?;
+    if title.is_some() && task_type.as_deref() != Some("RETRIEVAL_DOCUMENT") {
+        return Err(ProviderError::InvalidRequest(
+            "vertex embeddings title is only supported with task_type RETRIEVAL_DOCUMENT"
+                .to_string(),
+        ));
+    }
+    let auto_truncate = extract_vertex_embedding_auto_truncate(&mut extra)?;
+    if !extra.is_empty() {
+        let unsupported = extra.keys().cloned().collect::<Vec<_>>().join(", ");
+        return Err(ProviderError::InvalidRequest(format!(
+            "unsupported vertex embeddings request field(s): {unsupported}"
+        )));
+    }
+
+    let mut bodies = Vec::with_capacity(inputs.len());
+    for input in inputs {
+        let mut instance = Map::new();
+        instance.insert("content".to_string(), Value::String(input));
+        if let Some(task_type) = &task_type {
+            instance.insert("task_type".to_string(), Value::String(task_type.clone()));
+        }
+        if let Some(title) = &title {
+            instance.insert("title".to_string(), Value::String(title.clone()));
+        }
+
+        let mut body = Map::new();
+        body.insert(
+            "instances".to_string(),
+            Value::Array(vec![Value::Object(instance)]),
+        );
+
+        let mut parameters = Map::new();
+        if let Some(output_dimensionality) = output_dimensionality {
+            parameters.insert(
+                "outputDimensionality".to_string(),
+                Value::Number(output_dimensionality.into()),
+            );
+        }
+        if let Some(auto_truncate) = auto_truncate {
+            parameters.insert("autoTruncate".to_string(), Value::Bool(auto_truncate));
+        }
+        if !parameters.is_empty() {
+            body.insert("parameters".to_string(), Value::Object(parameters));
+        }
+
+        merge_object_overrides(&mut body, &context.extra_body);
+        bodies.push(Value::Object(body));
+    }
+
+    Ok(GoogleEmbeddingRequestMapping { bodies })
+}
+
+fn map_google_embed_content_request(
+    inputs: Vec<String>,
+    mut extra: BTreeMap<String, Value>,
+    output_dimensionality: Option<i64>,
+    context: &ProviderRequestContext,
+) -> Result<GoogleEmbeddingRequestMapping, ProviderError> {
+    reject_vertex_embed_content_only_field(&mut extra, "task_type")?;
+    reject_vertex_embed_content_only_field(&mut extra, "input_type")?;
+    reject_vertex_embed_content_only_field(&mut extra, "title")?;
+    reject_vertex_embed_content_only_field(&mut extra, "auto_truncate")?;
+    reject_vertex_embed_content_only_field(&mut extra, "autoTruncate")?;
+
+    if !extra.is_empty() {
+        let unsupported = extra.keys().cloned().collect::<Vec<_>>().join(", ");
+        return Err(ProviderError::InvalidRequest(format!(
+            "unsupported vertex embeddings request field(s): {unsupported}"
+        )));
+    }
+
+    let mut bodies = Vec::with_capacity(inputs.len());
+    for input in inputs {
+        let mut body = Map::new();
+        body.insert(
+            "content".to_string(),
+            json!({
+                "parts": [
+                    { "text": input }
+                ]
+            }),
+        );
+
+        if let Some(output_dimensionality) = output_dimensionality {
+            body.insert(
+                "embedContentConfig".to_string(),
+                json!({
+                    "outputDimensionality": output_dimensionality
+                }),
+            );
+        }
+
+        merge_object_overrides(&mut body, &context.extra_body);
+        bodies.push(Value::Object(body));
+    }
+
+    Ok(GoogleEmbeddingRequestMapping { bodies })
+}
+
+fn reject_vertex_embed_content_only_field(
+    extra: &mut BTreeMap<String, Value>,
+    field: &str,
+) -> Result<(), ProviderError> {
+    match extra.remove(field) {
+        None | Some(Value::Null) => Ok(()),
+        Some(_) => Err(ProviderError::InvalidRequest(format!(
+            "vertex embeddings google/gemini-embedding-2 does not support `{field}`; put task instructions in the input text"
+        ))),
+    }
+}
+
+fn vertex_embedding_inputs(input: &Value) -> Result<Vec<String>, ProviderError> {
+    match input {
+        Value::String(value) => {
+            let value = validate_vertex_embedding_input_text(value)?;
+            Ok(vec![value.to_string()])
+        }
+        Value::Array(values) => {
+            if values.is_empty() {
+                return Err(ProviderError::InvalidRequest(
+                    "vertex embeddings input array must contain at least one string".to_string(),
+                ));
+            }
+
+            values
+                .iter()
+                .map(|value| {
+                    let Some(text) = value.as_str() else {
+                        return Err(ProviderError::InvalidRequest(
+                            "vertex embeddings input must be a string or array of strings; token arrays and multimodal inputs are not supported".to_string(),
+                        ));
+                    };
+                    validate_vertex_embedding_input_text(text).map(str::to_string)
+                })
+                .collect()
+        }
+        _ => Err(ProviderError::InvalidRequest(
+            "vertex embeddings input must be a string or array of strings".to_string(),
+        )),
+    }
+}
+
+fn validate_vertex_embedding_input_text(value: &str) -> Result<&str, ProviderError> {
+    if value.is_empty() {
+        return Err(ProviderError::InvalidRequest(
+            "vertex embeddings input strings must not be empty".to_string(),
+        ));
+    }
+    Ok(value)
+}
+
+fn validate_vertex_embedding_encoding_format(value: Option<Value>) -> Result<(), ProviderError> {
+    match value {
+        None | Some(Value::Null) => Ok(()),
+        Some(Value::String(value)) if value == "float" => Ok(()),
+        Some(Value::String(value)) => Err(ProviderError::InvalidRequest(format!(
+            "vertex embeddings encoding_format `{value}` is not supported; use `float`"
+        ))),
+        Some(_) => Err(ProviderError::InvalidRequest(
+            "vertex embeddings encoding_format must be a string".to_string(),
+        )),
+    }
+}
+
+fn extract_vertex_embedding_output_dimensionality(
+    extra: &mut BTreeMap<String, Value>,
+    model_id: &str,
+) -> Result<Option<i64>, ProviderError> {
+    let mut selected: Option<(&'static str, i64)> = None;
+    for field in [
+        "dimensions",
+        "output_dimensionality",
+        "outputDimensionality",
+    ] {
+        let Some(value) = extra.remove(field) else {
+            continue;
+        };
+        if value.is_null() {
+            continue;
+        }
+        let dimension = positive_i64_field(field, &value)?;
+        if let Some((selected_field, selected_dimension)) = selected {
+            if selected_dimension != dimension {
+                return Err(ProviderError::InvalidRequest(format!(
+                    "conflicting vertex embeddings dimensionality fields `{selected_field}` and `{field}`"
+                )));
+            }
+        } else {
+            selected = Some((field, dimension));
+        }
+    }
+
+    let Some((field, dimension)) = selected else {
+        return Ok(None);
+    };
+    let max_dimension = vertex_embedding_max_dimensions(model_id);
+    if dimension > max_dimension {
+        return Err(ProviderError::InvalidRequest(format!(
+            "vertex embeddings {field} must be <= {max_dimension} for google/{model_id}"
+        )));
+    }
+    Ok(Some(dimension))
+}
+
+fn positive_i64_field(field: &str, value: &Value) -> Result<i64, ProviderError> {
+    let Some(value) = value.as_i64() else {
+        return Err(ProviderError::InvalidRequest(format!(
+            "vertex embeddings {field} must be a positive integer"
+        )));
+    };
+    if value <= 0 {
+        return Err(ProviderError::InvalidRequest(format!(
+            "vertex embeddings {field} must be a positive integer"
+        )));
+    }
+    Ok(value)
+}
+
+fn vertex_embedding_max_dimensions(model_id: &str) -> i64 {
+    match model_id {
+        "gemini-embedding-001" | "gemini-embedding-2" => 3072,
+        "text-embedding-005" | "text-multilingual-embedding-002" => 768,
+        _ => unreachable!(
+            "model_id is pre-validated by validate_vertex_embedding_model; \
+             add a new arm here whenever VERTEX_TEXT_EMBEDDING_MODEL_IDS is extended"
+        ),
+    }
+}
+
+fn extract_vertex_embedding_task_type(
+    extra: &mut BTreeMap<String, Value>,
+) -> Result<Option<String>, ProviderError> {
+    let task_type = extra
+        .remove("task_type")
+        .map(|value| canonical_vertex_embedding_task_type("task_type", &value))
+        .transpose()?
+        .flatten();
+    let input_type = extra
+        .remove("input_type")
+        .map(|value| canonical_vertex_embedding_task_type("input_type", &value))
+        .transpose()?
+        .flatten();
+
+    match (task_type, input_type) {
+        (Some(task_type), Some(input_type)) if task_type != input_type => {
+            Err(ProviderError::InvalidRequest(
+                "conflicting vertex embeddings task_type and input_type fields".to_string(),
+            ))
+        }
+        (Some(task_type), _) | (_, Some(task_type)) => Ok(Some(task_type)),
+        (None, None) => Ok(None),
+    }
+}
+
+fn canonical_vertex_embedding_task_type(
+    field: &str,
+    value: &Value,
+) -> Result<Option<String>, ProviderError> {
+    if value.is_null() {
+        return Ok(None);
+    }
+    let Some(value) = value.as_str() else {
+        return Err(ProviderError::InvalidRequest(format!(
+            "vertex embeddings {field} must be a string"
+        )));
+    };
+    let normalized = value.trim().replace(['-', ' '], "_").to_ascii_uppercase();
+    let canonical = match normalized.as_str() {
+        "QUERY" | "RETRIEVAL_QUERY" => "RETRIEVAL_QUERY",
+        "DOCUMENT" | "RETRIEVAL_DOCUMENT" => "RETRIEVAL_DOCUMENT",
+        "SEMANTIC_SIMILARITY" => "SEMANTIC_SIMILARITY",
+        "CLASSIFICATION" => "CLASSIFICATION",
+        "CLUSTERING" => "CLUSTERING",
+        "QUESTION_ANSWERING" => "QUESTION_ANSWERING",
+        "FACT_VERIFICATION" => "FACT_VERIFICATION",
+        "CODE_RETRIEVAL_QUERY" => "CODE_RETRIEVAL_QUERY",
+        _ => {
+            return Err(ProviderError::InvalidRequest(format!(
+                "unsupported vertex embeddings {field} `{value}`; supported task types are {}",
+                VERTEX_EMBEDDING_TASK_TYPES.join(", ")
+            )));
+        }
+    };
+    Ok(Some(canonical.to_string()))
+}
+
+fn extract_optional_string_field(
+    extra: &mut BTreeMap<String, Value>,
+    field: &str,
+) -> Result<Option<String>, ProviderError> {
+    match extra.remove(field) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(value)) if !value.is_empty() => Ok(Some(value)),
+        Some(Value::String(_)) => Err(ProviderError::InvalidRequest(format!(
+            "vertex embeddings {field} must not be empty"
+        ))),
+        Some(_) => Err(ProviderError::InvalidRequest(format!(
+            "vertex embeddings {field} must be a string"
+        ))),
+    }
+}
+
+fn extract_vertex_embedding_auto_truncate(
+    extra: &mut BTreeMap<String, Value>,
+) -> Result<Option<bool>, ProviderError> {
+    let snake = extra
+        .remove("auto_truncate")
+        .map(|value| optional_bool_field("auto_truncate", &value))
+        .transpose()?
+        .flatten();
+    let camel = extra
+        .remove("autoTruncate")
+        .map(|value| optional_bool_field("autoTruncate", &value))
+        .transpose()?
+        .flatten();
+
+    match (snake, camel) {
+        (Some(snake), Some(camel)) if snake != camel => Err(ProviderError::InvalidRequest(
+            "conflicting vertex embeddings auto_truncate and autoTruncate fields".to_string(),
+        )),
+        (Some(value), _) | (_, Some(value)) => Ok(Some(value)),
+        (None, None) => Ok(None),
+    }
+}
+
+fn optional_bool_field(field: &str, value: &Value) -> Result<Option<bool>, ProviderError> {
+    if value.is_null() {
+        return Ok(None);
+    }
+    value.as_bool().map(Some).ok_or_else(|| {
+        ProviderError::InvalidRequest(format!("vertex embeddings {field} must be a boolean"))
+    })
+}
+
 fn map_anthropic_request(
     request: &CoreChatRequest,
     context: &ProviderRequestContext,
@@ -387,10 +854,16 @@ fn map_anthropic_request(
                 instructions.push(message_content_as_text(&message.content)?);
             }
             "user" | "assistant" => {
-                let content = map_anthropic_content(&message.content)?;
+                let content = map_anthropic_message_content(message)?;
                 messages.push(json!({
                     "role": message.role,
                     "content": content
+                }));
+            }
+            "tool" => {
+                messages.push(json!({
+                    "role": "user",
+                    "content": [map_openai_tool_result(message)?]
                 }));
             }
             other => {
@@ -431,6 +904,7 @@ fn map_anthropic_request(
     }
 
     merge_object_overrides(&mut body, &context.extra_body);
+    convert_openai_tools_for_anthropic(&mut body)?;
     apply_vertex_anthropic_thinking_compatibility(&mut body, &context.upstream_model)?;
     validate_vertex_anthropic_sampling_fields(&mut body, &context.upstream_model)?;
     Ok(Value::Object(body))
@@ -449,7 +923,7 @@ fn claude_thinking_policy(upstream_model: &str) -> ClaudeThinkingPolicy {
     let model = upstream_model.to_ascii_lowercase();
     if model.contains("claude-mythos-preview") {
         ClaudeThinkingPolicy::MythosPreview
-    } else if is_opus_4_7_or_later(&model) {
+    } else if is_adaptive_only_claude(&model) {
         ClaudeThinkingPolicy::AdaptiveOnly
     } else if model.contains("claude-opus-4-6") || model.contains("claude-sonnet-4-6") {
         ClaudeThinkingPolicy::AdaptivePreferred
@@ -458,6 +932,20 @@ fn claude_thinking_policy(upstream_model: &str) -> ClaudeThinkingPolicy {
     } else {
         ClaudeThinkingPolicy::ManualOnly
     }
+}
+
+fn is_adaptive_only_claude(model: &str) -> bool {
+    is_opus_4_7_or_later(model)
+        || contains_exact_claude_model_marker(model, "claude-fable-5")
+        || contains_exact_claude_model_marker(model, "claude-sonnet-5")
+}
+
+fn contains_exact_claude_model_marker(model: &str, marker: &str) -> bool {
+    model.split(marker).skip(1).any(|rest| {
+        rest.chars().next().is_none_or(|ch| {
+            ch.is_ascii_whitespace() || matches!(ch, '/' | ':' | '@' | ',' | ')' | ']')
+        })
+    })
 }
 
 fn is_opus_4_7_or_later(model: &str) -> bool {
@@ -800,7 +1288,7 @@ fn validate_vertex_anthropic_sampling_fields(
             continue;
         }
         return Err(ProviderError::InvalidRequest(format!(
-            "`{field}` is not supported with non-default values for `{upstream_model}`; omit the field for Claude Opus 4.7+"
+            "`{field}` is not supported with non-default values for `{upstream_model}`; omit the field for adaptive-only Claude models"
         )));
     }
 
@@ -976,8 +1464,30 @@ fn map_google_parts(content: &Value) -> Result<Vec<Value>, ProviderError> {
     }
 }
 
+fn map_anthropic_message_content(message: &CoreChatMessage) -> Result<Value, ProviderError> {
+    let mut content = match map_anthropic_content(&message.content)? {
+        Value::String(text) if text.is_empty() => Vec::new(),
+        Value::String(text) => vec![json!({"type":"text","text":text})],
+        Value::Array(items) => items,
+        _ => Vec::new(),
+    };
+    content.extend(map_openai_assistant_tool_uses(message)?);
+
+    if content.is_empty() {
+        Ok(Value::String(String::new()))
+    } else if content.len() == 1 && is_plain_anthropic_text_block(&content[0]) {
+        Ok(content[0]
+            .get("text")
+            .cloned()
+            .unwrap_or_else(|| Value::String(String::new())))
+    } else {
+        Ok(Value::Array(content))
+    }
+}
+
 fn map_anthropic_content(content: &Value) -> Result<Value, ProviderError> {
     match content {
+        Value::Null => Ok(Value::String(String::new())),
         Value::String(value) => Ok(Value::String(value.clone())),
         Value::Array(items) => {
             let mut mapped = Vec::new();
@@ -999,7 +1509,14 @@ fn map_anthropic_content(content: &Value) -> Result<Value, ProviderError> {
                                 "text content entries must include a string `text`".to_string(),
                             )
                         })?;
-                        mapped.push(json!({"type":"text","text":text}));
+                        if kind == "text" {
+                            mapped.push(Value::Object(object.clone()));
+                        } else {
+                            mapped.push(json!({"type":"text","text":text}));
+                        }
+                    }
+                    "tool_use" | "tool_result" => {
+                        mapped.push(Value::Object(object.clone()));
                     }
                     other => {
                         return Err(ProviderError::InvalidRequest(format!(
@@ -1014,6 +1531,186 @@ fn map_anthropic_content(content: &Value) -> Result<Value, ProviderError> {
             "message content must be a string or typed content array".to_string(),
         )),
     }
+}
+
+fn is_plain_anthropic_text_block(value: &Value) -> bool {
+    let Some(object) = value.as_object() else {
+        return false;
+    };
+    object.len() == 2
+        && object.get("type").and_then(Value::as_str) == Some("text")
+        && object.get("text").and_then(Value::as_str).is_some()
+}
+
+fn map_openai_assistant_tool_uses(message: &CoreChatMessage) -> Result<Vec<Value>, ProviderError> {
+    let Some(tool_calls) = message.extra.get("tool_calls") else {
+        return Ok(Vec::new());
+    };
+    let calls = tool_calls.as_array().ok_or_else(|| {
+        ProviderError::InvalidRequest("assistant tool_calls must be an array".to_string())
+    })?;
+    let mut mapped = Vec::new();
+    for call in calls {
+        let object = call.as_object().ok_or_else(|| {
+            ProviderError::InvalidRequest(
+                "assistant tool_calls entries must be objects".to_string(),
+            )
+        })?;
+        if object.get("type").and_then(Value::as_str) != Some("function") {
+            return Err(ProviderError::InvalidRequest(
+                "only function tool_calls are supported for anthropic vertex mapping".to_string(),
+            ));
+        }
+        let id = object.get("id").and_then(Value::as_str).ok_or_else(|| {
+            ProviderError::InvalidRequest(
+                "assistant tool_calls entries must include `id`".to_string(),
+            )
+        })?;
+        let function = object
+            .get("function")
+            .and_then(Value::as_object)
+            .ok_or_else(|| {
+                ProviderError::InvalidRequest(
+                    "assistant function tool_calls must include `function`".to_string(),
+                )
+            })?;
+        let name = function
+            .get("name")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                ProviderError::InvalidRequest(
+                    "assistant function tool_calls must include function.name".to_string(),
+                )
+            })?;
+        let input = parse_openai_tool_arguments(function)?;
+        mapped.push(json!({
+            "type": "tool_use",
+            "id": id,
+            "name": name,
+            "input": input
+        }));
+    }
+    Ok(mapped)
+}
+
+fn parse_openai_tool_arguments(function: &Map<String, Value>) -> Result<Value, ProviderError> {
+    let Some(arguments) = function.get("arguments") else {
+        return Ok(Value::Object(Map::new()));
+    };
+    let arguments = arguments.as_str().ok_or_else(|| {
+        ProviderError::InvalidRequest(
+            "assistant function tool_calls arguments must be a JSON string".to_string(),
+        )
+    })?;
+    serde_json::from_str::<Value>(arguments).map_err(|error| {
+        ProviderError::InvalidRequest(format!(
+            "assistant function tool_calls arguments must contain valid JSON: {error}"
+        ))
+    })
+}
+
+fn map_openai_tool_result(message: &CoreChatMessage) -> Result<Value, ProviderError> {
+    let tool_use_id = message
+        .extra
+        .get("tool_call_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            ProviderError::InvalidRequest("tool messages must include `tool_call_id`".to_string())
+        })?;
+    Ok(json!({
+        "type": "tool_result",
+        "tool_use_id": tool_use_id,
+        "content": message_content_as_text(&message.content)?
+    }))
+}
+
+fn convert_openai_tools_for_anthropic(body: &mut Map<String, Value>) -> Result<(), ProviderError> {
+    if let Some(tools) = body.get_mut("tools") {
+        convert_openai_function_tools(tools)?;
+    }
+    if body
+        .get("tool_choice")
+        .and_then(Value::as_str)
+        .is_some_and(|choice| choice == "none")
+    {
+        body.remove("tool_choice");
+    } else if let Some(tool_choice) = body.get_mut("tool_choice") {
+        convert_openai_tool_choice(tool_choice)?;
+    }
+    Ok(())
+}
+
+fn convert_openai_function_tools(value: &mut Value) -> Result<(), ProviderError> {
+    let Some(tools) = value.as_array_mut() else {
+        return Err(ProviderError::InvalidRequest(
+            "tools must be an array for anthropic vertex mapping".to_string(),
+        ));
+    };
+    for tool in tools {
+        let Some(object) = tool.as_object_mut() else {
+            return Err(ProviderError::InvalidRequest(
+                "tools entries must be objects for anthropic vertex mapping".to_string(),
+            ));
+        };
+        if object.get("type").and_then(Value::as_str) != Some("function") {
+            continue;
+        }
+        let function = object.remove("function").ok_or_else(|| {
+            ProviderError::InvalidRequest("function tools must include `function`".to_string())
+        })?;
+        let function = function.as_object().ok_or_else(|| {
+            ProviderError::InvalidRequest(
+                "function tools must include an object `function`".to_string(),
+            )
+        })?;
+        let name = function.get("name").cloned().ok_or_else(|| {
+            ProviderError::InvalidRequest("function tools must include function.name".to_string())
+        })?;
+        let input_schema = function
+            .get("parameters")
+            .cloned()
+            .unwrap_or_else(|| json!({"type":"object","properties":{}}));
+        object.remove("type");
+        object.insert("name".to_string(), name);
+        if let Some(description) = function.get("description").cloned() {
+            object.insert("description".to_string(), description);
+        }
+        object.insert("input_schema".to_string(), input_schema);
+    }
+    Ok(())
+}
+
+fn convert_openai_tool_choice(value: &mut Value) -> Result<(), ProviderError> {
+    match value {
+        Value::String(choice) if choice == "required" => {
+            *value = json!({"type":"any"});
+        }
+        Value::String(choice) if choice == "auto" => {
+            *value = json!({"type":choice});
+        }
+        Value::Object(object) if object.get("type").and_then(Value::as_str) == Some("function") => {
+            let name = object
+                .get("function")
+                .and_then(Value::as_object)
+                .and_then(|function| function.get("name"))
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    ProviderError::InvalidRequest(
+                        "function tool_choice must include function.name".to_string(),
+                    )
+                })?
+                .to_string();
+            *value = json!({"type":"tool","name":name});
+        }
+        Value::Object(_) => {}
+        Value::Null => {}
+        _ => {
+            return Err(ProviderError::InvalidRequest(
+                "unsupported tool_choice for anthropic vertex mapping".to_string(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn extract_google_generation_config(extra: &mut BTreeMap<String, Value>) -> Map<String, Value> {
@@ -1143,6 +1840,153 @@ fn normalize_google_response(value: &Value, context: &ProviderRequestContext) ->
     Value::Object(completion)
 }
 
+fn extract_google_embedding_output(
+    value: &Value,
+    index: usize,
+    model_id: &str,
+) -> Result<GoogleEmbeddingOutput, ProviderError> {
+    if uses_vertex_embed_content(model_id) {
+        return extract_google_embed_content_output(value, index);
+    }
+    let prediction = value
+        .get("predictions")
+        .and_then(Value::as_array)
+        .and_then(|predictions| predictions.first())
+        .ok_or_else(|| {
+            ProviderError::Transport(
+                "invalid JSON from vertex embeddings: missing predictions[0]".to_string(),
+            )
+        })?;
+    let embedding = prediction
+        .get("embeddings")
+        .and_then(|embeddings| embeddings.get("values"))
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            ProviderError::Transport(
+                "invalid JSON from vertex embeddings: missing embeddings.values".to_string(),
+            )
+        })?;
+    if embedding.iter().any(|value| value.as_f64().is_none()) {
+        return Err(ProviderError::Transport(
+            "invalid JSON from vertex embeddings: embedding values must be numbers".to_string(),
+        ));
+    }
+    let token_count = prediction
+        .get("embeddings")
+        .and_then(|embeddings| embeddings.get("statistics"))
+        .and_then(|statistics| statistics.get("token_count"))
+        .and_then(Value::as_i64);
+
+    Ok(GoogleEmbeddingOutput {
+        index,
+        embedding: Value::Array(embedding.clone()),
+        token_count,
+    })
+}
+
+fn extract_google_embed_content_output(
+    value: &Value,
+    index: usize,
+) -> Result<GoogleEmbeddingOutput, ProviderError> {
+    let embedding = value
+        .get("embedding")
+        .and_then(|embedding| embedding.get("values"))
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            ProviderError::Transport(
+                "invalid JSON from vertex embeddings: missing embedding.values".to_string(),
+            )
+        })?;
+    if embedding.iter().any(|value| value.as_f64().is_none()) {
+        return Err(ProviderError::Transport(
+            "invalid JSON from vertex embeddings: embedding values must be numbers".to_string(),
+        ));
+    }
+    let token_count = value
+        .get("usageMetadata")
+        .and_then(|usage| usage.get("promptTokenCount"))
+        .or_else(|| {
+            value
+                .get("usageMetadata")
+                .and_then(|usage| usage.get("totalTokenCount"))
+        })
+        .and_then(Value::as_i64);
+
+    Ok(GoogleEmbeddingOutput {
+        index,
+        embedding: Value::Array(embedding.clone()),
+        token_count,
+    })
+}
+
+fn partial_google_embedding_failure(
+    source: ProviderError,
+    outputs: &[GoogleEmbeddingOutput],
+    record_empty_usage: bool,
+) -> ProviderError {
+    if outputs.is_empty() && !record_empty_usage {
+        return source;
+    }
+
+    ProviderError::PartialUsage {
+        source: Box::new(source),
+        provider_usage: google_embedding_usage_from_outputs(outputs).unwrap_or(None),
+    }
+}
+
+fn google_embedding_usage_from_outputs(
+    outputs: &[GoogleEmbeddingOutput],
+) -> Result<Option<Value>, ProviderError> {
+    let mut total_tokens: Option<i64> = Some(0);
+    for output in outputs {
+        if let (Some(current), Some(token_count)) = (total_tokens, output.token_count) {
+            total_tokens = Some(current.checked_add(token_count).ok_or_else(|| {
+                ProviderError::Transport(
+                    "invalid JSON from vertex embeddings: token_count overflow".to_string(),
+                )
+            })?);
+        } else {
+            total_tokens = None;
+        }
+    }
+
+    Ok(total_tokens.map(|total_tokens| {
+        json!({
+            "prompt_tokens": total_tokens,
+            "total_tokens": total_tokens
+        })
+    }))
+}
+
+fn normalize_google_embedding_outputs(
+    outputs: Vec<GoogleEmbeddingOutput>,
+    context: &ProviderRequestContext,
+) -> Result<Value, ProviderError> {
+    let mut data = Vec::with_capacity(outputs.len());
+    let usage = google_embedding_usage_from_outputs(&outputs)?;
+
+    for output in outputs {
+        data.push(json!({
+            "object": "embedding",
+            "index": output.index,
+            "embedding": output.embedding
+        }));
+    }
+
+    let mut response = Map::new();
+    response.insert("object".to_string(), Value::String("list".to_string()));
+    response.insert("data".to_string(), Value::Array(data));
+    response.insert(
+        "model".to_string(),
+        Value::String(context.model_key.clone()),
+    );
+    if let Some(usage) = usage {
+        response.insert("usage".to_string(), usage);
+    }
+
+    Ok(Value::Object(response))
+}
+
 fn normalize_anthropic_response(value: &Value, context: &ProviderRequestContext) -> Value {
     let id = value
         .get("id")
@@ -1181,6 +2025,10 @@ fn normalize_anthropic_response(value: &Value, context: &ProviderRequestContext)
             "provider_metadata".to_string(),
             vertex_reasoning_metadata("anthropic_messages", thinking_blocks),
         );
+    }
+    let tool_calls = extract_anthropic_tool_calls(blocks);
+    if !tool_calls.is_empty() {
+        message.insert("tool_calls".to_string(), Value::Array(tool_calls));
     }
 
     let mut completion = Map::new();
@@ -1241,6 +2089,32 @@ fn extract_anthropic_thinking_blocks(blocks: &[Value]) -> Vec<Value> {
                 Some(Value::Object(normalized))
             }
             _ => None,
+        })
+        .collect()
+}
+
+fn extract_anthropic_tool_calls(blocks: &[Value]) -> Vec<Value> {
+    blocks
+        .iter()
+        .filter_map(|block| {
+            if block.get("type").and_then(Value::as_str) != Some("tool_use") {
+                return None;
+            }
+            let id = block.get("id").and_then(Value::as_str)?;
+            let name = block.get("name").and_then(Value::as_str)?;
+            let arguments = block
+                .get("input")
+                .cloned()
+                .unwrap_or_else(|| Value::Object(Map::new()))
+                .to_string();
+            Some(json!({
+                "id": id,
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "arguments": arguments
+                }
+            }))
         })
         .collect()
 }
@@ -1329,6 +2203,77 @@ fn map_anthropic_usage(value: &Value) -> Option<Value> {
         "completion_tokens": completion,
         "total_tokens": prompt + completion
     }))
+}
+
+fn map_anthropic_stream_usage(value: &Value) -> Option<Value> {
+    let usage = value
+        .get("usage")
+        .or_else(|| {
+            value
+                .get("message")
+                .and_then(|message| message.get("usage"))
+        })?
+        .as_object()?;
+    let mut mapped = Map::new();
+    if let Some(prompt) = usage.get("input_tokens").and_then(Value::as_i64) {
+        mapped.insert("prompt_tokens".to_string(), json!(prompt));
+    }
+    if let Some(completion) = usage.get("output_tokens").and_then(Value::as_i64) {
+        mapped.insert("completion_tokens".to_string(), json!(completion));
+    }
+    if let Some(total) = usage.get("total_tokens").and_then(Value::as_i64) {
+        mapped.insert("total_tokens".to_string(), json!(total));
+    } else if let (Some(prompt), Some(completion)) = (
+        mapped.get("prompt_tokens").and_then(Value::as_i64),
+        mapped.get("completion_tokens").and_then(Value::as_i64),
+    ) {
+        mapped.insert("total_tokens".to_string(), json!(prompt + completion));
+    }
+
+    if mapped.is_empty() {
+        None
+    } else {
+        Some(Value::Object(mapped))
+    }
+}
+
+fn merge_openai_stream_usage(latest: &mut Option<Value>, usage: &Value) -> Value {
+    let usage = openai_usage_with_known_fields(usage.clone(), latest.as_ref());
+    *latest = Some(usage.clone());
+    usage
+}
+
+fn openai_usage_with_known_fields(usage: Value, latest: Option<&Value>) -> Value {
+    let prompt_tokens = merged_usage_counter(&usage, latest, "prompt_tokens");
+    let completion_tokens = merged_usage_counter(&usage, latest, "completion_tokens");
+    let total_tokens = match (prompt_tokens, completion_tokens) {
+        (Some(prompt), Some(completion)) => prompt.saturating_add(completion),
+        _ => merged_usage_counter(&usage, latest, "total_tokens").unwrap_or(0),
+    };
+
+    let mut object = usage.as_object().cloned().unwrap_or_default();
+    if let Some(prompt_tokens) = prompt_tokens {
+        object.insert("prompt_tokens".to_string(), json!(prompt_tokens));
+    }
+    if let Some(completion_tokens) = completion_tokens {
+        object.insert("completion_tokens".to_string(), json!(completion_tokens));
+    }
+    object.insert("total_tokens".to_string(), json!(total_tokens));
+    Value::Object(object)
+}
+
+fn merged_usage_counter(usage: &Value, latest: Option<&Value>, field: &str) -> Option<i64> {
+    let incoming = usage.get(field).and_then(Value::as_i64);
+    let previous = latest
+        .and_then(|latest| latest.get(field))
+        .and_then(Value::as_i64);
+
+    match (incoming, previous) {
+        (Some(incoming), Some(previous)) => Some(incoming.max(previous)),
+        (Some(incoming), None) => Some(incoming),
+        (None, Some(previous)) => Some(previous),
+        (None, None) => None,
+    }
 }
 
 fn extract_google_candidate_text(candidate: &Value) -> String {
@@ -1514,11 +2459,15 @@ fn normalize_anthropic_stream<S>(
 where
     S: futures_util::stream::Stream<Item = Result<Bytes, reqwest::Error>> + Send + 'static,
 {
+    // Split plan: move Anthropic SSE state, usage merging, and event mapping into
+    // a focused Vertex Anthropic stream module when this normalizer next grows.
     Box::pin(stream! {
         let mut parser = SseEventParser::default();
         let mut role_emitted = false;
         let mut finish_emitted = false;
         let mut stream_failed = false;
+        let mut tool_block_indexes = BTreeMap::<i64, i64>::new();
+        let mut latest_usage = None;
         futures_util::pin_mut!(upstream);
 
         'stream_loop: while let Some(chunk) = upstream.next().await {
@@ -1557,7 +2506,7 @@ where
 
                 match kind {
                     "message_start" if !role_emitted => {
-                        let delta = openai_chunk(
+                        let mut delta = openai_chunk(
                             &stream_id,
                             created,
                             &model,
@@ -1565,10 +2514,15 @@ where
                             None,
                             None,
                         );
+                        if let Some(usage) = map_anthropic_stream_usage(&payload) {
+                            let usage = merge_openai_stream_usage(&mut latest_usage, &usage);
+                            delta["usage"] = usage;
+                        }
                         yield Ok(openai_sse_chunk(&delta));
                         role_emitted = true;
                     }
                     "content_block_delta" => {
+                        let block_index = payload.get("index").and_then(Value::as_i64);
                         let delta = payload.get("delta").and_then(Value::as_object);
                         let delta_type = delta
                             .and_then(|delta| delta.get("type"))
@@ -1585,6 +2539,38 @@ where
                                 &model,
                                 Some("assistant").filter(|_| !role_emitted),
                                 Some(text),
+                                None,
+                            );
+                            yield Ok(openai_sse_chunk(&chunk));
+                            role_emitted = true;
+                        } else if delta_type == Some("input_json_delta")
+                            && let (Some(_block_index), Some(tool_call_index), Some(partial_json)) = (
+                                block_index,
+                                block_index.and_then(|index| tool_block_indexes.get(&index).copied()),
+                                delta
+                                    .and_then(|delta| delta.get("partial_json"))
+                                    .and_then(Value::as_str),
+                            )
+                        {
+                            let mut outbound_delta = Map::new();
+                            if !role_emitted {
+                                outbound_delta.insert(
+                                    "role".to_string(),
+                                    Value::String("assistant".to_string()),
+                                );
+                            }
+                            outbound_delta.insert(
+                                "tool_calls".to_string(),
+                                json!([{
+                                    "index": tool_call_index,
+                                    "function": {"arguments": partial_json}
+                                }]),
+                            );
+                            let chunk = openai_delta_chunk(
+                                &stream_id,
+                                created,
+                                &model,
+                                Value::Object(outbound_delta),
                                 None,
                             );
                             yield Ok(openai_sse_chunk(&chunk));
@@ -1618,7 +2604,49 @@ where
                         }
                     }
                     "content_block_start" => {
-                        if let Some(block) = payload
+                        if let Some(content_block) = payload
+                            .get("content_block")
+                            .and_then(Value::as_object)
+                            && content_block.get("type").and_then(Value::as_str) == Some("tool_use")
+                        {
+                            let block_index = payload.get("index").and_then(Value::as_i64).unwrap_or(0);
+                            let tool_call_index = i64::try_from(tool_block_indexes.len()).unwrap_or(i64::MAX);
+                            tool_block_indexes.insert(block_index, tool_call_index);
+                            let mut outbound_delta = Map::new();
+                            if !role_emitted {
+                                outbound_delta.insert(
+                                    "role".to_string(),
+                                    Value::String("assistant".to_string()),
+                                );
+                            }
+                            outbound_delta.insert(
+                                "tool_calls".to_string(),
+                                json!([{
+                                    "index": tool_call_index,
+                                    "id": content_block
+                                        .get("id")
+                                        .and_then(Value::as_str)
+                                        .unwrap_or("toolu_vertex"),
+                                    "type": "function",
+                                    "function": {
+                                        "name": content_block
+                                            .get("name")
+                                            .and_then(Value::as_str)
+                                            .unwrap_or("tool"),
+                                        "arguments": ""
+                                    }
+                                }]),
+                            );
+                            let chunk = openai_delta_chunk(
+                                &stream_id,
+                                created,
+                                &model,
+                                Value::Object(outbound_delta),
+                                None,
+                            );
+                            yield Ok(openai_sse_chunk(&chunk));
+                            role_emitted = true;
+                        } else if let Some(block) = payload
                             .get("content_block")
                             .and_then(Value::as_object)
                             .and_then(normalize_anthropic_thinking_start)
@@ -1649,13 +2677,15 @@ where
                         }
                     }
                     "message_delta" => {
+                        let usage = map_anthropic_stream_usage(&payload)
+                            .map(|usage| merge_openai_stream_usage(&mut latest_usage, &usage));
                         if let Some(reason) = payload
                             .get("delta")
                             .and_then(Value::as_object)
                             .and_then(|delta| delta.get("stop_reason"))
                             .and_then(Value::as_str)
                         {
-                            let finish = openai_chunk(
+                            let mut finish = openai_chunk(
                                 &stream_id,
                                 created,
                                 &model,
@@ -1663,8 +2693,18 @@ where
                                 None,
                                 Some(map_anthropic_finish_reason(reason)),
                             );
+                            if let Some(usage) = usage {
+                                finish["usage"] = usage;
+                            }
                             yield Ok(openai_sse_chunk(&finish));
                             finish_emitted = true;
+                        } else if let Some(usage) = usage {
+                            yield Ok(openai_sse_chunk(&openai_usage_chunk(
+                                &stream_id,
+                                created,
+                                &model,
+                                usage,
+                            )));
                         }
                     }
                     "message_stop" if !finish_emitted => {
@@ -1839,6 +2879,17 @@ fn openai_delta_chunk(
     })
 }
 
+fn openai_usage_chunk(id: &str, created: i64, model: &str, usage: Value) -> Value {
+    json!({
+        "id": id,
+        "object": "chat.completion.chunk",
+        "created": created,
+        "model": model,
+        "choices": [],
+        "usage": usage
+    })
+}
+
 fn openai_sse_chunk(value: &Value) -> Bytes {
     Bytes::from(format!("data: {value}\n\n"))
 }
@@ -1858,14 +2909,17 @@ mod tests {
     use bytes::Bytes;
     use futures_util::StreamExt;
     use futures_util::stream;
-    use gateway_core::{CoreChatMessage, CoreChatRequest, ProviderClient, ProviderRequestContext};
+    use gateway_core::{
+        CoreChatMessage, CoreChatRequest, CoreEmbeddingsRequest, ProviderClient,
+        ProviderRequestContext,
+    };
     use serde_json::{Map, Value, json};
     use tokio::{net::TcpListener, sync::Mutex};
 
     use super::{
         JsonObjectParser, SseEventParser, VertexAuthConfig, VertexProvider, VertexProviderConfig,
-        map_anthropic_request, map_google_request, normalize_anthropic_response,
-        normalize_google_response, parse_upstream_model,
+        map_anthropic_request, map_google_embedding_request, map_google_request,
+        normalize_anthropic_response, normalize_google_response, parse_upstream_model,
     };
     use gateway_core::ProviderError;
 
@@ -2036,30 +3090,249 @@ mod tests {
     }
 
     #[test]
-    fn maps_vertex_opus_4_7_reasoning_effort_to_adaptive_thinking() {
+    fn vertex_provider_advertises_tool_capable_chat() {
+        let provider = vertex_provider_for_test("http://127.0.0.1:1".to_string());
+        let capabilities = provider.capabilities();
+
+        assert!(capabilities.chat_completions);
+        assert!(capabilities.stream);
+        assert!(capabilities.tools);
+        assert!(capabilities.developer_role);
+    }
+
+    #[test]
+    fn maps_openai_tools_tool_calls_and_tool_results_to_anthropic_payload() {
+        let mut assistant_extra = BTreeMap::new();
+        assistant_extra.insert(
+            "tool_calls".to_string(),
+            json!([{
+                "id": "call_123",
+                "type": "function",
+                "function": {
+                    "name": "lookup",
+                    "arguments": "{\"city\":\"London\"}"
+                }
+            }]),
+        );
+        let mut tool_extra = BTreeMap::new();
+        tool_extra.insert("tool_call_id".to_string(), json!("call_123"));
+        let mut request = chat_request(vec![
+            CoreChatMessage {
+                role: "user".to_string(),
+                content: Value::String("weather?".to_string()),
+                name: None,
+                extra: BTreeMap::new(),
+            },
+            CoreChatMessage {
+                role: "assistant".to_string(),
+                content: Value::Null,
+                name: None,
+                extra: assistant_extra,
+            },
+            CoreChatMessage {
+                role: "tool".to_string(),
+                content: Value::String("sunny".to_string()),
+                name: Some("lookup".to_string()),
+                extra: tool_extra,
+            },
+        ]);
+        request.extra.insert(
+            "tools".to_string(),
+            json!([{
+                "type": "function",
+                "function": {
+                    "name": "lookup",
+                    "description": "Look up weather",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"city": {"type": "string"}},
+                        "required": ["city"]
+                    }
+                }
+            }]),
+        );
+        request.extra.insert(
+            "tool_choice".to_string(),
+            json!({"type":"function","function":{"name":"lookup"}}),
+        );
+
+        let mapped =
+            map_anthropic_request(&request, &context("anthropic/claude-sonnet-4-6"), false)
+                .expect("mapped");
+
+        assert_eq!(
+            mapped["tools"][0],
+            json!({
+                "name": "lookup",
+                "description": "Look up weather",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"city": {"type": "string"}},
+                    "required": ["city"]
+                }
+            })
+        );
+        assert_eq!(
+            mapped["tool_choice"],
+            json!({"type":"tool","name":"lookup"})
+        );
+        assert_eq!(
+            mapped["messages"][1]["content"][0],
+            json!({
+                "type": "tool_use",
+                "id": "call_123",
+                "name": "lookup",
+                "input": {"city": "London"}
+            })
+        );
+        assert_eq!(
+            mapped["messages"][2]["content"][0],
+            json!({
+                "type": "tool_result",
+                "tool_use_id": "call_123",
+                "content": "sunny"
+            })
+        );
+    }
+
+    #[test]
+    fn omits_openai_none_tool_choice_for_anthropic_payload() {
         let mut request = chat_request(vec![CoreChatMessage {
             role: "user".to_string(),
-            content: Value::String("think carefully".to_string()),
+            content: Value::String("do not use tools".to_string()),
             name: None,
             extra: BTreeMap::new(),
         }]);
-        request.extra.insert("model".to_string(), json!("fast"));
         request
             .extra
-            .insert("reasoning_effort".to_string(), json!("xhigh"));
-        request.extra.insert("temperature".to_string(), json!(1.0));
-        request.extra.insert("top_p".to_string(), json!(1.0));
+            .insert("tool_choice".to_string(), json!("none"));
 
-        let mapped = map_anthropic_request(&request, &context("anthropic/claude-opus-4-7"), false)
-            .expect("mapped");
+        let mapped =
+            map_anthropic_request(&request, &context("anthropic/claude-sonnet-4-6"), false)
+                .expect("mapped");
 
-        assert_eq!(mapped["anthropic_version"], "vertex-2023-10-16");
-        assert_eq!(mapped["thinking"], json!({ "type": "adaptive" }));
-        assert_eq!(mapped["output_config"], json!({ "effort": "xhigh" }));
-        assert!(mapped.get("reasoning_effort").is_none());
-        assert!(mapped.get("model").is_none());
-        assert!(mapped.get("temperature").is_none());
-        assert!(mapped.get("top_p").is_none());
+        assert!(mapped.get("tool_choice").is_none());
+    }
+
+    #[test]
+    fn rejects_malformed_openai_tool_call_arguments_for_anthropic_payload() {
+        let mut assistant_extra = BTreeMap::new();
+        assistant_extra.insert(
+            "tool_calls".to_string(),
+            json!([{
+                "id": "call_123",
+                "type": "function",
+                "function": {
+                    "name": "lookup",
+                    "arguments": "{\"city\":"
+                }
+            }]),
+        );
+        let request = chat_request(vec![
+            CoreChatMessage {
+                role: "user".to_string(),
+                content: Value::String("weather?".to_string()),
+                name: None,
+                extra: BTreeMap::new(),
+            },
+            CoreChatMessage {
+                role: "assistant".to_string(),
+                content: Value::Null,
+                name: None,
+                extra: assistant_extra,
+            },
+        ]);
+
+        let error = map_anthropic_request(&request, &context("anthropic/claude-sonnet-4-6"), false)
+            .expect_err("malformed arguments should fail");
+
+        assert!(error.to_string().contains("valid JSON"));
+    }
+
+    #[test]
+    fn preserves_anthropic_text_block_metadata_for_prompt_caching() {
+        let request = chat_request(vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: json!([{
+                "type": "text",
+                "text": "cached prompt",
+                "cache_control": {"type": "ephemeral"}
+            }]),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+
+        let mapped =
+            map_anthropic_request(&request, &context("anthropic/claude-sonnet-4-6"), false)
+                .expect("mapped");
+
+        assert_eq!(
+            mapped["messages"][0]["content"][0]["cache_control"],
+            json!({"type": "ephemeral"})
+        );
+    }
+
+    #[test]
+    fn preserves_native_anthropic_tools_for_messages_requests() {
+        let mut request = chat_request(vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: json!([
+                {"type":"text","text":"use the tool"},
+                {"type":"tool_result","tool_use_id":"toolu_1","content":"ok"}
+            ]),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+        request.extra.insert(
+            "tools".to_string(),
+            json!([{
+                "name": "lookup",
+                "description": "Look up weather",
+                "input_schema": {"type": "object", "properties": {}}
+            }]),
+        );
+
+        let mapped =
+            map_anthropic_request(&request, &context("anthropic/claude-sonnet-4-6"), false)
+                .expect("mapped");
+
+        assert_eq!(mapped["tools"][0]["name"], "lookup");
+        assert_eq!(mapped["tools"][0]["input_schema"]["type"], "object");
+        assert_eq!(mapped["messages"][0]["content"][1]["type"], "tool_result");
+    }
+
+    #[test]
+    fn maps_vertex_adaptive_only_claude_reasoning_effort_to_adaptive_thinking() {
+        for upstream_model in [
+            "anthropic/claude-fable-5",
+            "anthropic/claude-opus-4-7",
+            "anthropic/claude-opus-4-8",
+            "anthropic/claude-sonnet-5",
+        ] {
+            let mut request = chat_request(vec![CoreChatMessage {
+                role: "user".to_string(),
+                content: Value::String("think carefully".to_string()),
+                name: None,
+                extra: BTreeMap::new(),
+            }]);
+            request.extra.insert("model".to_string(), json!("fast"));
+            request
+                .extra
+                .insert("reasoning_effort".to_string(), json!("xhigh"));
+            request.extra.insert("temperature".to_string(), json!(1.0));
+            request.extra.insert("top_p".to_string(), json!(1.0));
+
+            let mapped =
+                map_anthropic_request(&request, &context(upstream_model), false).expect("mapped");
+
+            assert_eq!(mapped["anthropic_version"], "vertex-2023-10-16");
+            assert_eq!(mapped["thinking"], json!({ "type": "adaptive" }));
+            assert_eq!(mapped["output_config"], json!({ "effort": "xhigh" }));
+            assert!(mapped.get("reasoning_effort").is_none());
+            assert!(mapped.get("model").is_none());
+            assert!(mapped.get("temperature").is_none());
+            assert!(mapped.get("top_p").is_none());
+        }
     }
 
     #[test]
@@ -2269,27 +3542,53 @@ mod tests {
     }
 
     #[test]
-    fn rejects_vertex_opus_4_7_manual_thinking_budget() {
+    fn rejects_vertex_adaptive_only_manual_thinking_budget() {
+        for upstream_model in [
+            "anthropic/claude-fable-5",
+            "anthropic/claude-opus-4-7",
+            "anthropic/claude-opus-4-8",
+            "anthropic/claude-sonnet-5",
+        ] {
+            let mut request = chat_request(vec![CoreChatMessage {
+                role: "user".to_string(),
+                content: Value::String("think carefully".to_string()),
+                name: None,
+                extra: BTreeMap::new(),
+            }]);
+            request.extra.insert(
+                "thinking".to_string(),
+                json!({ "type": "enabled", "budget_tokens": 4096 }),
+            );
+
+            let error = map_anthropic_request(&request, &context(upstream_model), false)
+                .expect_err("manual thinking should be rejected");
+
+            match error {
+                ProviderError::InvalidRequest(message) => {
+                    assert!(message.contains("thinking.type: enabled"));
+                }
+                other => panic!("unexpected error: {other}"),
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_vertex_near_match_adaptive_only_claude_ids() {
         let mut request = chat_request(vec![CoreChatMessage {
             role: "user".to_string(),
             content: Value::String("think carefully".to_string()),
             name: None,
             extra: BTreeMap::new(),
         }]);
-        request.extra.insert(
-            "thinking".to_string(),
-            json!({ "type": "enabled", "budget_tokens": 4096 }),
-        );
+        request
+            .extra
+            .insert("reasoning_effort".to_string(), json!("high"));
 
-        let error = map_anthropic_request(&request, &context("anthropic/claude-opus-4-7"), false)
-            .expect_err("manual thinking should be rejected");
+        let error = map_anthropic_request(&request, &context("anthropic/claude-sonnet-50"), false)
+            .expect_err("near-match model should not be adaptive-only")
+            .to_string();
 
-        match error {
-            ProviderError::InvalidRequest(message) => {
-                assert!(message.contains("thinking.type: enabled"));
-            }
-            other => panic!("unexpected error: {other}"),
-        }
+        assert!(error.contains("manual thinking budget"));
     }
 
     #[test]
@@ -2311,7 +3610,7 @@ mod tests {
         match error {
             ProviderError::InvalidRequest(message) => {
                 assert!(message.contains("temperature"));
-                assert!(message.contains("Claude Opus 4.7+"));
+                assert!(message.contains("adaptive-only Claude models"));
             }
             other => panic!("unexpected error: {other}"),
         }
@@ -2373,6 +3672,540 @@ mod tests {
     }
 
     #[test]
+    fn maps_vertex_embedding_aliases_to_predict_payload() {
+        let mut request = embedding_request(json!("document text"));
+        request.extra.insert("dimensions".to_string(), json!(128));
+        request
+            .extra
+            .insert("output_dimensionality".to_string(), json!(128));
+        request
+            .extra
+            .insert("outputDimensionality".to_string(), json!(128));
+        request
+            .extra
+            .insert("task_type".to_string(), json!("retrieval document"));
+        request
+            .extra
+            .insert("input_type".to_string(), json!("document"));
+        request
+            .extra
+            .insert("title".to_string(), json!("Doc title"));
+        request
+            .extra
+            .insert("auto_truncate".to_string(), json!(false));
+        request
+            .extra
+            .insert("autoTruncate".to_string(), json!(false));
+
+        let mapped = map_google_embedding_request(
+            &request,
+            &context("google/gemini-embedding-001"),
+            "gemini-embedding-001",
+        )
+        .expect("mapped embeddings request");
+
+        assert_eq!(mapped.bodies.len(), 1);
+        assert_eq!(mapped.bodies[0]["instances"][0]["content"], "document text");
+        assert_eq!(
+            mapped.bodies[0]["instances"][0]["task_type"],
+            "RETRIEVAL_DOCUMENT"
+        );
+        assert_eq!(mapped.bodies[0]["instances"][0]["title"], "Doc title");
+        assert_eq!(mapped.bodies[0]["parameters"]["outputDimensionality"], 128);
+        assert_eq!(mapped.bodies[0]["parameters"]["autoTruncate"], false);
+    }
+
+    #[tokio::test]
+    async fn rejects_invalid_vertex_embedding_inputs_and_alias_conflicts() {
+        let cases = [
+            (
+                "base64 encoding",
+                json!("hello"),
+                vec![("encoding_format", json!("base64"))],
+                "encoding_format `base64` is not supported",
+            ),
+            (
+                "token array",
+                json!([1, 2, 3]),
+                Vec::new(),
+                "input must be a string or array of strings",
+            ),
+            (
+                "nested array",
+                json!([["hello"]]),
+                Vec::new(),
+                "input must be a string or array of strings",
+            ),
+            (
+                "non-string scalar",
+                json!(42),
+                Vec::new(),
+                "input must be a string or array of strings",
+            ),
+            (
+                "empty string",
+                json!(""),
+                Vec::new(),
+                "input strings must not be empty",
+            ),
+            (
+                "empty array",
+                json!([]),
+                Vec::new(),
+                "input array must contain at least one string",
+            ),
+            (
+                "invalid task",
+                json!("hello"),
+                vec![("task_type", json!("search"))],
+                "unsupported vertex embeddings task_type",
+            ),
+            (
+                "conflicting dimensions",
+                json!("hello"),
+                vec![
+                    ("dimensions", json!(128)),
+                    ("outputDimensionality", json!(256)),
+                ],
+                "conflicting vertex embeddings dimensionality fields",
+            ),
+            (
+                "conflicting task aliases",
+                json!("hello"),
+                vec![
+                    ("task_type", json!("RETRIEVAL_QUERY")),
+                    ("input_type", json!("RETRIEVAL_DOCUMENT")),
+                ],
+                "conflicting vertex embeddings task_type and input_type fields",
+            ),
+            (
+                "conflicting auto truncate aliases",
+                json!("hello"),
+                vec![
+                    ("auto_truncate", json!(true)),
+                    ("autoTruncate", json!(false)),
+                ],
+                "conflicting vertex embeddings auto_truncate and autoTruncate fields",
+            ),
+        ];
+        let provider = vertex_provider_for_test("http://127.0.0.1:1".to_string());
+
+        for (name, input, extra, expected) in cases {
+            let mut request = embedding_request(input);
+            for (key, value) in extra {
+                request.extra.insert(key.to_string(), value);
+            }
+
+            let error = provider
+                .embeddings(&request, &context("google/gemini-embedding-001"))
+                .await
+                .expect_err(name)
+                .to_string();
+
+            assert!(
+                error.contains(expected),
+                "{name}: expected `{error}` to contain `{expected}`"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn vertex_embeddings_rejects_unsupported_google_chat_model_before_http() {
+        let provider = vertex_provider_for_test("http://127.0.0.1:1".to_string());
+        let request = embedding_request(json!("hello"));
+
+        let error = provider
+            .embeddings(&request, &context("google/gemini-2.0-flash"))
+            .await
+            .expect_err("chat model must not be accepted for embeddings")
+            .to_string();
+
+        assert!(error.contains("not a supported text embedding model"));
+        assert!(error.contains("gemini-embedding-001"));
+    }
+
+    #[tokio::test]
+    async fn vertex_embeddings_rejects_title_without_document_task_before_http() {
+        let requests_seen = Arc::new(Mutex::new(0usize));
+        let state = requests_seen.clone();
+        let app = Router::new()
+            .route(
+                "/v1/{*path}",
+                post(
+                    |State(requests_seen): State<Arc<Mutex<usize>>>| async move {
+                        *requests_seen.lock().await += 1;
+                        Json(json!({
+                            "predictions": [{
+                                "embeddings": {
+                                    "values": [0.25],
+                                    "statistics": {"token_count": 1}
+                                }
+                            }]
+                        }))
+                    },
+                ),
+            )
+            .with_state(state);
+
+        let host = start_router(app).await;
+        let provider = vertex_provider_for_test(format!("http://{host}"));
+        let mut request = embedding_request(json!("query text"));
+        request
+            .extra
+            .insert("task_type".to_string(), json!("RETRIEVAL_QUERY"));
+        request
+            .extra
+            .insert("title".to_string(), json!("Doc title"));
+
+        let error = provider
+            .embeddings(&request, &context("google/gemini-embedding-001"))
+            .await
+            .expect_err("title must require RETRIEVAL_DOCUMENT")
+            .to_string();
+
+        assert!(error.contains("title is only supported with task_type RETRIEVAL_DOCUMENT"));
+        assert_eq!(*requests_seen.lock().await, 0);
+    }
+
+    #[tokio::test]
+    async fn vertex_provider_google_embedding_string_executes_predict_mapping() {
+        let captured = Arc::new(Mutex::new(None::<Value>));
+        let state = captured.clone();
+        let app = Router::new()
+            .route(
+                "/v1/{*path}",
+                post(
+                    |Path(path): Path<String>,
+                     State(captured): State<Arc<Mutex<Option<Value>>>>,
+                     headers: HeaderMap,
+                     Json(payload): Json<Value>| async move {
+                        assert!(path.ends_with(
+                            "publishers/google/models/gemini-embedding-001:predict"
+                        ));
+                        assert_eq!(
+                            headers
+                                .get("authorization")
+                                .and_then(|value| value.to_str().ok()),
+                            Some("Bearer test-token")
+                        );
+                        *captured.lock().await = Some(payload);
+                        Json(json!({
+                            "predictions": [{
+                                "embeddings": {
+                                    "values": [0.25, 0.5],
+                                    "statistics": {"token_count": 3, "billable_character_count": 999}
+                                }
+                            }]
+                        }))
+                    },
+                ),
+            )
+            .with_state(state);
+
+        let host = start_router(app).await;
+        let provider = vertex_provider_for_test(format!("http://{host}"));
+        let request = embedding_request(json!("hello embeddings"));
+
+        let response = provider
+            .embeddings(&request, &context("google/gemini-embedding-001"))
+            .await
+            .expect("embedding response");
+
+        assert_eq!(response["object"], "list");
+        assert_eq!(response["model"], "fast");
+        assert_eq!(response["data"][0]["object"], "embedding");
+        assert_eq!(response["data"][0]["index"], 0);
+        assert_eq!(response["data"][0]["embedding"], json!([0.25, 0.5]));
+        assert_eq!(
+            response["usage"],
+            json!({"prompt_tokens": 3, "total_tokens": 3})
+        );
+
+        let request_payload = captured.lock().await.clone().expect("captured request");
+        assert_eq!(
+            request_payload,
+            json!({
+                "instances": [{"content": "hello embeddings"}]
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn vertex_provider_google_embedding_array_fans_out_and_preserves_order() {
+        let captured = Arc::new(Mutex::new(Vec::<Value>::new()));
+        let state = captured.clone();
+        let app = Router::new()
+            .route(
+                "/v1/{*path}",
+                post(
+                    |Path(path): Path<String>,
+                     State(captured): State<Arc<Mutex<Vec<Value>>>>,
+                     Json(payload): Json<Value>| async move {
+                        assert!(path.ends_with(
+                            "publishers/google/models/text-embedding-005:predict"
+                        ));
+                        let content = payload["instances"][0]["content"]
+                            .as_str()
+                            .expect("string content")
+                            .to_string();
+                        captured.lock().await.push(payload);
+                        match content.as_str() {
+                            "first" => Json(json!({
+                                "predictions": [{
+                                    "embeddings": {
+                                        "values": [1.0, 1.5],
+                                        "statistics": {"token_count": 2, "billable_character_count": 999}
+                                    }
+                                }]
+                            })),
+                            "second" => Json(json!({
+                                "predictions": [{
+                                    "embeddings": {
+                                        "values": [2.0, 2.5],
+                                        "statistics": {"token_count": 5, "billable_character_count": 999}
+                                    }
+                                }]
+                            })),
+                            other => panic!("unexpected embedding content: {other}"),
+                        }
+                    },
+                ),
+            )
+            .with_state(state);
+
+        let host = start_router(app).await;
+        let provider = vertex_provider_for_test(format!("http://{host}"));
+        let request = embedding_request(json!(["first", "second"]));
+
+        let response = provider
+            .embeddings(&request, &context("google/text-embedding-005"))
+            .await
+            .expect("embedding response");
+
+        assert_eq!(response["data"][0]["index"], 0);
+        assert_eq!(response["data"][0]["embedding"], json!([1.0, 1.5]));
+        assert_eq!(response["data"][1]["index"], 1);
+        assert_eq!(response["data"][1]["embedding"], json!([2.0, 2.5]));
+        assert_eq!(
+            response["usage"],
+            json!({"prompt_tokens": 7, "total_tokens": 7})
+        );
+
+        let request_payloads = captured.lock().await.clone();
+        assert_eq!(request_payloads.len(), 2);
+        assert_eq!(request_payloads[0]["instances"][0]["content"], "first");
+        assert_eq!(request_payloads[1]["instances"][0]["content"], "second");
+    }
+
+    #[tokio::test]
+    async fn vertex_provider_google_gemini_embedding_2_executes_embed_content_mapping() {
+        let captured = Arc::new(Mutex::new(Vec::<Value>::new()));
+        let state = captured.clone();
+        let app =
+            Router::new()
+                .route(
+                    "/v1/{*path}",
+                    post(
+                        |Path(path): Path<String>,
+                         State(captured): State<Arc<Mutex<Vec<Value>>>>,
+                         Json(payload): Json<Value>| async move {
+                            assert!(path.ends_with(
+                                "publishers/google/models/gemini-embedding-2:embedContent"
+                            ));
+                            let text = payload["content"]["parts"][0]["text"]
+                                .as_str()
+                                .expect("text part")
+                                .to_string();
+                            captured.lock().await.push(payload);
+                            match text.as_str() {
+                                "first" => Json(json!({
+                                    "embedding": {"values": [1.0, 1.5]},
+                                    "usageMetadata": {
+                                        "promptTokenCount": 2,
+                                        "totalTokenCount": 999
+                                    }
+                                })),
+                                "second" => Json(json!({
+                                    "embedding": {"values": [2.0, 2.5]},
+                                    "usageMetadata": {
+                                        "promptTokenCount": 5,
+                                        "totalTokenCount": 999
+                                    }
+                                })),
+                                other => panic!("unexpected embedding text: {other}"),
+                            }
+                        },
+                    ),
+                )
+                .with_state(state);
+
+        let host = start_router(app).await;
+        let provider = vertex_provider_for_test(format!("http://{host}"));
+        let mut request = embedding_request(json!(["first", "second"]));
+        request.extra.insert("dimensions".to_string(), json!(256));
+        request
+            .extra
+            .insert("output_dimensionality".to_string(), json!(256));
+        request
+            .extra
+            .insert("outputDimensionality".to_string(), json!(256));
+
+        let response = provider
+            .embeddings(&request, &context("google/gemini-embedding-2"))
+            .await
+            .expect("embedding response");
+
+        assert_eq!(response["object"], "list");
+        assert_eq!(response["model"], "fast");
+        assert_eq!(response["data"][0]["index"], 0);
+        assert_eq!(response["data"][0]["embedding"], json!([1.0, 1.5]));
+        assert_eq!(response["data"][1]["index"], 1);
+        assert_eq!(response["data"][1]["embedding"], json!([2.0, 2.5]));
+        assert_eq!(
+            response["usage"],
+            json!({"prompt_tokens": 7, "total_tokens": 7})
+        );
+
+        let request_payloads = captured.lock().await.clone();
+        assert_eq!(request_payloads.len(), 2);
+        assert_eq!(
+            request_payloads[0],
+            json!({
+                "content": {"parts": [{"text": "first"}]},
+                "embedContentConfig": {"outputDimensionality": 256}
+            })
+        );
+        assert_eq!(
+            request_payloads[1],
+            json!({
+                "content": {"parts": [{"text": "second"}]},
+                "embedContentConfig": {"outputDimensionality": 256}
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn vertex_provider_google_gemini_embedding_2_rejects_predict_only_fields_before_http() {
+        let requests_seen = Arc::new(Mutex::new(0usize));
+        let state = requests_seen.clone();
+        let app = Router::new()
+            .route(
+                "/v1/{*path}",
+                post(
+                    |State(requests_seen): State<Arc<Mutex<usize>>>| async move {
+                        *requests_seen.lock().await += 1;
+                        Json(json!({
+                            "embedding": {"values": [0.25]},
+                            "usageMetadata": {"promptTokenCount": 1}
+                        }))
+                    },
+                ),
+            )
+            .with_state(state);
+
+        let host = start_router(app).await;
+        let provider = vertex_provider_for_test(format!("http://{host}"));
+        let cases = [
+            ("task_type", json!("RETRIEVAL_QUERY")),
+            ("input_type", json!("query")),
+            ("title", json!("Doc title")),
+            ("auto_truncate", json!(false)),
+        ];
+
+        for (field, value) in cases {
+            let mut request = embedding_request(json!("hello embeddings"));
+            request.extra.insert(field.to_string(), value);
+
+            let error = provider
+                .embeddings(&request, &context("google/gemini-embedding-2"))
+                .await
+                .expect_err(field)
+                .to_string();
+
+            assert!(
+                error.contains(&format!("does not support `{field}`")),
+                "{field}: unexpected error `{error}`"
+            );
+        }
+        assert_eq!(*requests_seen.lock().await, 0);
+    }
+
+    #[tokio::test]
+    async fn vertex_provider_google_gemini_embedding_2_returns_partial_usage_after_fanout_failure()
+    {
+        let captured = Arc::new(Mutex::new(Vec::<Value>::new()));
+        let state = captured.clone();
+        let app =
+            Router::new()
+                .route(
+                    "/v1/{*path}",
+                    post(
+                        |Path(path): Path<String>,
+                         State(captured): State<Arc<Mutex<Vec<Value>>>>,
+                         Json(payload): Json<Value>| async move {
+                            assert!(path.ends_with(
+                                "publishers/google/models/gemini-embedding-2:embedContent"
+                            ));
+                            let text = payload["content"]["parts"][0]["text"]
+                                .as_str()
+                                .expect("text part")
+                                .to_string();
+                            captured.lock().await.push(payload);
+                            match text.as_str() {
+                                "first" => (
+                                    StatusCode::OK,
+                                    Json(json!({
+                                        "embedding": {"values": [1.0, 1.5]},
+                                        "usageMetadata": {"promptTokenCount": 4}
+                                    })),
+                                ),
+                                "second" => (
+                                    StatusCode::TOO_MANY_REQUESTS,
+                                    Json(json!({"error": {"message": "quota exhausted"}})),
+                                ),
+                                other => panic!("unexpected embedding text: {other}"),
+                            }
+                        },
+                    ),
+                )
+                .with_state(state);
+
+        let host = start_router(app).await;
+        let provider = vertex_provider_for_test(format!("http://{host}"));
+        let request = embedding_request(json!(["first", "second"]));
+
+        let error = provider
+            .embeddings(&request, &context("google/gemini-embedding-2"))
+            .await
+            .expect_err("second fan-out call should return provider error with partial usage");
+
+        match error {
+            ProviderError::PartialUsage {
+                source,
+                provider_usage,
+            } => {
+                assert_eq!(
+                    provider_usage,
+                    Some(json!({"prompt_tokens": 4, "total_tokens": 4}))
+                );
+                match *source {
+                    ProviderError::UpstreamHttp { status, body } => {
+                        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS.as_u16());
+                        assert!(body.contains("quota exhausted"));
+                    }
+                    other => panic!("unexpected partial usage source: {other}"),
+                }
+            }
+            other => panic!("unexpected error: {other}"),
+        }
+
+        let request_payloads = captured.lock().await.clone();
+        assert_eq!(request_payloads.len(), 2);
+        assert_eq!(request_payloads[0]["content"]["parts"][0]["text"], "first");
+        assert_eq!(request_payloads[1]["content"]["parts"][0]["text"], "second");
+    }
+
+    #[test]
     fn normalizes_google_response_into_openai_shape() {
         let response = json!({
             "responseId": "resp-123",
@@ -2400,6 +4233,36 @@ mod tests {
         assert_eq!(normalized["choices"][0]["message"]["content"], "hello");
         assert_eq!(normalized["usage"]["prompt_tokens"], 5);
         assert_eq!(normalized["usage"]["completion_tokens"], 7);
+    }
+
+    #[test]
+    fn normalizes_anthropic_tool_use_response_into_openai_tool_calls() {
+        let response = json!({
+            "id":"msg_123",
+            "content":[{
+                "type":"tool_use",
+                "id":"toolu_123",
+                "name":"lookup",
+                "input":{"city":"London"}
+            }],
+            "stop_reason":"tool_use",
+            "usage":{"input_tokens":5,"output_tokens":7}
+        });
+        let normalized =
+            normalize_anthropic_response(&response, &context("anthropic/claude-sonnet-4-6"));
+
+        assert_eq!(normalized["choices"][0]["finish_reason"], "tool_calls");
+        assert_eq!(
+            normalized["choices"][0]["message"]["tool_calls"][0],
+            json!({
+                "id": "toolu_123",
+                "type": "function",
+                "function": {
+                    "name": "lookup",
+                    "arguments": "{\"city\":\"London\"}"
+                }
+            })
+        );
     }
 
     #[test]
@@ -2648,6 +4511,77 @@ data: {"type":"vertex_event"}
         assert!(rendered.contains("data: [DONE]"));
     }
 
+    #[tokio::test]
+    async fn anthropic_stream_normalizes_tool_use_deltas() {
+        let upstream = stream::iter(vec![Ok(Bytes::from(concat!(
+            "event: message_start\n",
+            "data: {\"type\":\"message_start\"}\n\n",
+            "event: content_block_start\n",
+            "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_123\",\"name\":\"lookup\",\"input\":{}}}\n\n",
+            "event: content_block_delta\n",
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"city\\\":\"}}\n\n",
+            "event: content_block_delta\n",
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"\\\"London\\\"}\"}}\n\n",
+            "event: message_delta\n",
+            "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"}}\n\n"
+        )))]);
+        let stream = super::normalize_anthropic_stream(
+            upstream,
+            "chatcmpl-test".to_string(),
+            1,
+            "fast".to_string(),
+        );
+        let bytes: Vec<_> = stream.collect().await;
+        let rendered = bytes
+            .into_iter()
+            .map(|item| String::from_utf8(item.expect("chunk").to_vec()).expect("utf8"))
+            .collect::<String>();
+
+        assert!(rendered.contains("\"tool_calls\""));
+        assert!(rendered.contains("\"id\":\"toolu_123\""));
+        assert!(rendered.contains("\"name\":\"lookup\""));
+        assert!(rendered.contains("\"arguments\":\"{\\\"city\\\":\""));
+        assert!(rendered.contains("\"arguments\":\"\\\"London\\\"}\""));
+        assert!(rendered.contains("\"finish_reason\":\"tool_calls\""));
+        assert!(rendered.contains("data: [DONE]"));
+    }
+
+    #[tokio::test]
+    async fn anthropic_stream_preserves_usage_events() {
+        let upstream = stream::iter(vec![Ok(Bytes::from(concat!(
+            "event: message_start\n",
+            "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":9,\"output_tokens\":0}}}\n\n",
+            "event: content_block_delta\n",
+            "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"hello\"}}\n\n",
+            "event: message_delta\n",
+            "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":2}}\n\n"
+        )))]);
+        let stream = super::normalize_anthropic_stream(
+            upstream,
+            "chatcmpl-test".to_string(),
+            1,
+            "fast".to_string(),
+        );
+        let bytes: Vec<_> = stream.collect().await;
+        let rendered = bytes
+            .into_iter()
+            .map(|item| String::from_utf8(item.expect("chunk").to_vec()).expect("utf8"))
+            .collect::<String>();
+        let events = openai_stream_events(&rendered);
+
+        assert!(events.iter().any(|event| {
+            event["usage"]["prompt_tokens"] == json!(9)
+                && event["usage"]["completion_tokens"] == json!(0)
+                && event["usage"]["total_tokens"] == json!(9)
+        }));
+        assert!(events.iter().any(|event| {
+            event["choices"][0]["finish_reason"] == json!("stop")
+                && event["usage"]["prompt_tokens"] == json!(9)
+                && event["usage"]["completion_tokens"] == json!(2)
+                && event["usage"]["total_tokens"] == json!(11)
+        }));
+    }
+
     fn vertex_provider_for_test(api_host: String) -> VertexProvider {
         VertexProvider::new(VertexProviderConfig {
             provider_key: "vertex-prod".to_string(),
@@ -2672,6 +4606,14 @@ data: {"type":"vertex_event"}
         }
     }
 
+    fn embedding_request(input: Value) -> CoreEmbeddingsRequest {
+        CoreEmbeddingsRequest {
+            model: "fast".to_string(),
+            input,
+            extra: BTreeMap::new(),
+        }
+    }
+
     async fn start_router(app: Router) -> String {
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("local addr");
@@ -2679,6 +4621,19 @@ data: {"type":"vertex_event"}
             axum::serve(listener, app).await.expect("serve");
         });
         addr.to_string()
+    }
+
+    fn openai_stream_events(rendered: &str) -> Vec<Value> {
+        rendered
+            .split("\n\n")
+            .filter_map(|frame| {
+                frame
+                    .lines()
+                    .find_map(|line| line.strip_prefix("data: "))
+                    .filter(|data| *data != "[DONE]")
+                    .and_then(|data| serde_json::from_str::<Value>(data).ok())
+            })
+            .collect()
     }
 
     #[tokio::test]

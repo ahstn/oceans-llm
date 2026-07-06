@@ -1,8 +1,8 @@
 # Budgets
 
-`See also`: [Service Accounts](service-accounts.md), [MCP Tool Access](mcp-tool-access.md), [Admin Control Plane](admin-control-plane.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Data Relationships](../reference/data-relationships.md)
+`See also`: [Service Accounts](service-accounts.md), [MCP Tool Access](../mcp/mcp-tool-access.md), [Admin Control Plane](admin-control-plane.md), [Budgets and Spending](../contributing/operations/budgets-and-spending.md), [Data Relationships](../contributing/reference/data-relationships.md)
 
-Budgets limit or monitor gateway spend for principals that can generate spend.
+Budgets limit or monitor gateway spend for principals that can generate spend. They are spend controls, not model authorization controls; API-key grants and model access policies decide whether a caller may use a model before budget enforcement runs.
 
 ## Budget Taxonomy
 
@@ -27,9 +27,15 @@ MCP and Code Mode tool calls are not budgeted spend. They are recorded for obser
 
 ## Hard And Soft Budgets
 
-Hard budgets reject chargeable traffic at two points. Before the provider call, a request is rejected when the active window is already exhausted; no provider call happens in that case. After the provider call, when actual usage is priced, the request is rejected if its cost would push spend past the budget. In that second case the upstream provider call has already completed, but the caller receives a budget rejection and the over-limit cost is not recorded against the window. Operator-level enforcement detail lives in [Budgets and Spending](../operations/budgets-and-spending.md).
+Hard budgets reject chargeable traffic at two points. Before the provider call, a request is rejected when the active window is already exhausted; no provider call happens in that case. After the provider call, when actual usage is priced, the request is rejected if its cost would push spend past the budget. In that second case the upstream provider call has already completed, but the caller receives a budget rejection and the over-limit cost is not recorded against the window. Operator-level enforcement detail lives in [Budgets and Spending](../contributing/operations/budgets-and-spending.md).
 
-Soft budgets never reject traffic. They are useful for alerting and reporting.
+Soft budgets never reject traffic. They are useful for alerting and reporting when a team wants visibility before enforcing a hard cap.
+
+Both hard and soft budgets use an active window by cadence:
+
+- daily
+- weekly
+- monthly
 
 ## Overlap Rules
 
@@ -40,7 +46,30 @@ For human user traffic, Oceans checks budgets in this order:
 
 For service-account traffic, Oceans checks only the service-account budget.
 
-If a user has both a user model budget and a user budget, the model-specific budget is evaluated first. Both can still alert independently.
+If a user has both a user model budget and a user budget, the model-specific budget is evaluated first. Both can still alert independently. Budgets do not grant model access; a request blocked by API-key grants or an allowlist never reaches the budget gate.
+
+## Embedding Spend
+
+Embedding requests use the same budget taxonomy as chat and Responses traffic. When a native Vertex embedding request has real provider token usage (`statistics.token_count` for Vertex `:predict` text-embedding models or `usageMetadata.promptTokenCount` for `google/gemini-embedding-2`) and exact pricing, the resulting spend counts toward:
+
+- the caller's user budget for human-owned API keys
+- the caller service account's service-account budget for service-account-owned API keys
+- a matching user model budget when a human user calls the specific gateway embedding model
+
+Rows that are `unpriced` or `usage_missing` stay visible in spend reporting, but they do not consume hard or soft budget windows. This can happen when a provider returns embeddings without usable token counts or when the pricing catalog does not have an exact price for the selected Vertex embedding model/location.
+
+The Google Cloud service account configured under a Vertex provider's `auth.mode: service_account` is only upstream provider credential material. It is not a gateway spend principal and does not receive a service-account budget. Gateway service-account budgets apply to service accounts created in Oceans for non-human callers.
+
+To give one user a separate cap for an embedding model:
+
+1. Configure a gateway model such as `gemini-embedding` with an embedding-capable route.
+2. Open `/admin/spend-controls`.
+3. Create a User Model Budget.
+4. Select the user.
+5. Select the gateway embedding model, for example `gemini-embedding`.
+6. Choose cadence, amount, hard-limit behavior, and timezone.
+
+To cap automation that uses embeddings, create or select the gateway service account used by that workload and configure a Service Account Budget before activating its API key.
 
 ## Service Account Requirement
 
@@ -58,30 +87,37 @@ The page has three budget sections:
 - Service Account Budgets
 - User Model Budgets
 
-Use User Budgets for normal human access. Use Service Account Budgets before activating automation credentials. Use User Model Budgets when one user needs a lower or separate limit for a specific model.
+Use User Budgets for normal human access. Choose the user, cadence, amount, timezone, and whether the budget is hard or soft.
 
-To set a user budget, choose the user, cadence, amount, and whether the budget is hard or soft. To set a service-account budget, choose the service account and the same budget controls; active service-account API keys require this budget. To set a user model budget, choose the user and model selector, then set the cadence, amount, and hard-limit behavior.
+Use Service Account Budgets before activating automation credentials. Choose the service account and the same budget controls. Active service-account API keys require this budget.
+
+Use User Model Budgets when one user needs a lower or separate limit for a specific model. Choose the user, then choose either:
+
+- a gateway model from the model selector, when the gateway model id is known
+- the exact trimmed upstream model name only for fallback cases where no gateway model id is available
+
+Then set cadence, amount, timezone, and hard-limit behavior.
 
 ## Config-Seeded Service Accounts
 
-Declarative gateway API keys must define the service account they create or reconcile:
+Declarative service accounts define their owning team, budget, and managed gateway API keys:
 
 ```yaml
-auth:
-  seed_api_keys:
-    - name: ci-indexer
-      value: env.CI_INDEXER_GATEWAY_API_KEY
-      service_account:
-        key: ci-indexer
-        name: CI Indexer
-        team: platform
-        budget:
-          cadence: daily
-          amount_usd: "25.0000"
-          hard_limit: true
-          timezone: UTC
-      allowed_models:
-        - fast
+service_accounts:
+  - id: ci-indexer
+    name: CI Indexer
+    team: platform
+    budget:
+      cadence: daily
+      amount_usd: "25.0000"
+      hard_limit: true
+      timezone: UTC
+    keys:
+      - id: primary
+        name: CI Indexer Primary
+        value: env.CI_INDEXER_GATEWAY_API_KEY
+        allowed_models:
+          - fast
 ```
 
 The owning team must be declared in `teams`. The budget block is required.

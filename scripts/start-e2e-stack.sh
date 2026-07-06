@@ -26,16 +26,27 @@ E2E_UI_PORT="${E2E_UI_PORT:-33001}"
 E2E_UPSTREAM_PORT="${E2E_UPSTREAM_PORT:-38081}"
 E2E_BASE_URL="${E2E_BASE_URL:-http://127.0.0.1:${E2E_GATEWAY_PORT}}"
 E2E_GATEWAY_API_KEY="${E2E_GATEWAY_API_KEY:-gwk_e2e.secret-value}"
+E2E_API_KEY_SECRET_ENCRYPTION_KEY="${E2E_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}"
 E2E_ADMIN_EMAIL="${E2E_ADMIN_EMAIL:-admin@local}"
 E2E_ADMIN_PASSWORD="${E2E_ADMIN_PASSWORD:-admin}"
 E2E_ADMIN_NEW_PASSWORD="${E2E_ADMIN_NEW_PASSWORD:-s3cur3-passw0rd}"
-E2E_GATEWAY_BIN="${E2E_GATEWAY_BIN:-$ROOT_DIR/target/debug/gateway}"
+if [[ -n "${CARGO_TARGET_DIR:-}" ]]; then
+  DEFAULT_CARGO_TARGET_DIR="$CARGO_TARGET_DIR"
+else
+  DEFAULT_CARGO_TARGET_DIR="$("$MISE_BIN" exec -- sh -c 'printf "%s" "${CARGO_TARGET_DIR:-}"')"
+  DEFAULT_CARGO_TARGET_DIR="${DEFAULT_CARGO_TARGET_DIR:-$ROOT_DIR/target}"
+fi
+if [[ "$DEFAULT_CARGO_TARGET_DIR" != /* ]]; then
+  DEFAULT_CARGO_TARGET_DIR="$ROOT_DIR/$DEFAULT_CARGO_TARGET_DIR"
+fi
+E2E_GATEWAY_BIN="${E2E_GATEWAY_BIN:-${DEFAULT_CARGO_TARGET_DIR%/}/debug/gateway}"
 
 export E2E_GATEWAY_PORT
 export E2E_UI_PORT
 export E2E_UPSTREAM_PORT
 export E2E_BASE_URL
 export E2E_GATEWAY_API_KEY
+export E2E_API_KEY_SECRET_ENCRYPTION_KEY
 export E2E_ADMIN_EMAIL
 export E2E_ADMIN_PASSWORD
 export E2E_ADMIN_NEW_PASSWORD
@@ -62,19 +73,6 @@ database:
   path: "${DB_PATH}"
 
 auth:
-  seed_api_keys:
-    - name: "E2E Contract Key"
-      value: env.E2E_GATEWAY_API_KEY
-      service_account:
-        key: seed-api-keys
-        name: E2E Seed API Keys
-        team: e2e
-        budget:
-          cadence: daily
-          amount_usd: "25.0000"
-          hard_limit: true
-          timezone: UTC
-      allowed_models: ["fast"]
   bootstrap_admin:
     enabled: true
     email: "${E2E_ADMIN_EMAIL}"
@@ -82,8 +80,23 @@ auth:
     require_password_change: true
 
 teams:
-  - key: e2e
+  - id: e2e
     name: E2E
+
+service_accounts:
+  - id: seed-api-keys
+    name: E2E Seed API Keys
+    team: e2e
+    budget:
+      cadence: daily
+      amount_usd: "25.0000"
+      hard_limit: true
+      timezone: UTC
+    keys:
+      - id: contract
+        name: E2E Contract Key
+        value: env.E2E_GATEWAY_API_KEY
+        allowed_models: ["fast"]
 
 providers:
   - id: openai-e2e
@@ -111,7 +124,7 @@ if [[ ! -x "$E2E_GATEWAY_BIN" ]]; then
   echo "Gateway binary not found at $E2E_GATEWAY_BIN; building it before starting the E2E stack."
   (
     cd "$ROOT_DIR"
-    "$MISE_BIN" exec -- cargo build -p gateway --bin gateway
+    "$MISE_BIN" exec -- cargo build -p gateway --bin gateway --target-dir "$DEFAULT_CARGO_TARGET_DIR"
   )
 fi
 
@@ -137,6 +150,7 @@ UI_PID=$!
   ADMIN_UI_UPSTREAM="http://127.0.0.1:${E2E_UI_PORT}" \
   GATEWAY_CONFIG="$CONFIG_PATH" \
   GATEWAY_IDENTITY_TOKEN_SECRET="local-dev-identity-secret" \
+  OCEANS_API_KEY_SECRET_ENCRYPTION_KEY="$E2E_API_KEY_SECRET_ENCRYPTION_KEY" \
     "$E2E_GATEWAY_BIN"
 ) >"$GATEWAY_LOG" 2>&1 &
 GATEWAY_PID=$!

@@ -4,14 +4,17 @@ use std::{
 };
 
 use gateway_core::{
-    AdminApiKeyRepository, AdminIdentityRepository, ApiKeyOwnerKind, ApiKeyRecord, ApiKeyStatus,
+    AdminApiKeyRepository, AdminIdentityRepository, ApiKeyModelGrantMode, ApiKeyOwnerKind,
+    ApiKeyRecord, ApiKeySecretMaterialRecord, ApiKeySecretStorageKind, ApiKeyStatus,
     BudgetRepository, BudgetScope, GatewayError, GatewayModel, IdentityUserRecord, ModelRepository,
     NewApiKeyRecord, ServiceAccountRecord, StoreError, TeamRecord, UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::hash_gateway_key_secret;
+use crate::{
+    decrypt_gateway_api_key_secret, encrypt_gateway_api_key_secret, hash_gateway_key_secret,
+};
 
 type ApiKeyOwnerIds = (Option<Uuid>, Option<Uuid>, Option<Uuid>);
 
@@ -42,6 +45,7 @@ pub struct AdminApiKeySummary {
     pub owner_service_account_key: Option<String>,
     pub owner_service_account_team_id: Option<Uuid>,
     pub owner_service_account_team_key: Option<String>,
+    pub model_grant_mode: ApiKeyModelGrantMode,
     pub model_keys: Vec<String>,
     pub created_at: OffsetDateTime,
     pub last_used_at: Option<OffsetDateTime>,
@@ -80,6 +84,7 @@ pub struct CreateAdminApiKeyInput {
     pub owner_user_id: Option<String>,
     pub owner_team_id: Option<String>,
     pub owner_service_account_id: Option<String>,
+    pub model_grant_mode: String,
     pub model_keys: Vec<String>,
 }
 
@@ -91,7 +96,12 @@ pub struct CreateAdminApiKeyResult {
 
 #[derive(Debug, Clone)]
 pub struct UpdateAdminApiKeyInput {
+    pub model_grant_mode: String,
     pub model_keys: Vec<String>,
+}
+
+pub struct RevealAdminApiKeySecretResult {
+    pub raw_key: String,
 }
 
 impl<R> AdminApiKeyService<R>
@@ -198,7 +208,15 @@ where
                 ));
             }
         }
-        let granted_models = select_granted_models(&request.model_keys, &models)?;
+        let model_grant_mode = parse_model_grant_mode(&request.model_grant_mode)?;
+        if owner_kind == ApiKeyOwnerKind::ServiceAccount
+            && model_grant_mode == ApiKeyModelGrantMode::All
+        {
+            return Err(GatewayError::InvalidRequest(
+                "service-account-owned api keys require explicit model grants".to_string(),
+            ));
+        }
+        let granted_models = select_granted_models(model_grant_mode, &request.model_keys, &models)?;
 
         let public_id = Uuid::new_v4().simple().to_string();
         let secret = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
@@ -206,6 +224,11 @@ where
         let secret_hash = hash_gateway_key_secret(&secret)
             .map_err(|error| GatewayError::Internal(error.to_string()))?;
         let now = OffsetDateTime::now_utc();
+        let secret_material = if owner_kind == ApiKeyOwnerKind::ServiceAccount {
+            Some(encrypt_gateway_api_key_secret(&raw_key)?)
+        } else {
+            None
+        };
 
         let api_key = self
             .repo
@@ -213,6 +236,7 @@ where
                 name: name.to_string(),
                 public_id,
                 secret_hash,
+                model_grant_mode,
                 owner_kind,
                 owner_user_id,
                 owner_team_id,
@@ -220,12 +244,30 @@ where
                 created_at: now,
             })
             .await?;
+        if let Some(encrypted) = secret_material
+            && let Err(error) = self
+                .repo
+                .upsert_api_key_secret_material(&ApiKeySecretMaterialRecord {
+                    api_key_id: api_key.id,
+                    storage_kind: ApiKeySecretStorageKind::EncryptedBlob,
+                    secret_ciphertext: encrypted.ciphertext,
+                    secret_nonce: encrypted.nonce,
+                    secret_key_id: encrypted.key_id.to_string(),
+                    created_at: now,
+                    updated_at: now,
+                    last_retrieved_at: None,
+                })
+                .await
+        {
+            let _ = self.repo.revoke_api_key(api_key.id, now).await;
+            return Err(error.into());
+        }
         let model_ids = granted_models
             .iter()
             .map(|model| model.id)
             .collect::<Vec<_>>();
         self.repo
-            .replace_api_key_model_grants(api_key.id, &model_ids)
+            .replace_api_key_model_access(api_key.id, model_grant_mode, &model_ids)
             .await?;
 
         let granted_models = self.repo.list_models_for_api_key(api_key.id).await?;
@@ -263,6 +305,42 @@ where
         build_api_key_summary(&api_key, &users, &teams, &service_accounts, &granted_models)
     }
 
+    pub async fn reveal_api_key_secret(
+        &self,
+        api_key_id: Uuid,
+    ) -> Result<RevealAdminApiKeySecretResult, GatewayError> {
+        let api_key = self
+            .repo
+            .get_api_key_by_id(api_key_id)
+            .await?
+            .ok_or_else(|| StoreError::NotFound(format!("api key `{api_key_id}`")))?;
+        if api_key.status != ApiKeyStatus::Active {
+            return Err(GatewayError::InvalidRequest(
+                "revoked api keys cannot be revealed".to_string(),
+            ));
+        }
+
+        let material = self
+            .repo
+            .get_api_key_secret_material(api_key_id)
+            .await?
+            .ok_or_else(|| {
+                GatewayError::InvalidRequest(
+                    "api key secret is not retrievable for this key".to_string(),
+                )
+            })?;
+        let raw_key = decrypt_gateway_api_key_secret(
+            &material.secret_ciphertext,
+            &material.secret_nonce,
+            &material.secret_key_id,
+        )?;
+        self.repo
+            .touch_api_key_secret_material_retrieved(api_key_id, OffsetDateTime::now_utc())
+            .await?;
+
+        Ok(RevealAdminApiKeySecretResult { raw_key })
+    }
+
     pub async fn update_api_key(
         &self,
         api_key_id: Uuid,
@@ -284,15 +362,25 @@ where
             ));
         }
 
-        let granted_models = select_granted_models(&request.model_keys, &models)?;
+        let model_grant_mode = parse_model_grant_mode(&request.model_grant_mode)?;
+        if api_key.owner_kind == ApiKeyOwnerKind::ServiceAccount
+            && model_grant_mode == ApiKeyModelGrantMode::All
+        {
+            return Err(GatewayError::InvalidRequest(
+                "service-account-owned api keys require explicit model grants".to_string(),
+            ));
+        }
+        let granted_models = select_granted_models(model_grant_mode, &request.model_keys, &models)?;
         let model_ids = granted_models
             .iter()
             .map(|model| model.id)
             .collect::<Vec<_>>();
         self.repo
-            .replace_api_key_model_grants(api_key.id, &model_ids)
+            .replace_api_key_model_access(api_key.id, model_grant_mode, &model_ids)
             .await?;
 
+        let mut api_key = api_key;
+        api_key.model_grant_mode = model_grant_mode;
         let granted_models = self.repo.list_models_for_api_key(api_key.id).await?;
         build_api_key_summary(&api_key, &users, &teams, &service_accounts, &granted_models)
     }
@@ -391,8 +479,10 @@ fn build_api_key_summary(
         owner_service_account_key,
         owner_service_account_team_id,
         owner_service_account_team_key,
+        model_grant_mode: api_key.model_grant_mode,
         model_keys: granted_models
             .iter()
+            .filter(|_| api_key.model_grant_mode == ApiKeyModelGrantMode::Explicit)
             .map(|model| model.model_key.clone())
             .collect(),
         created_at: api_key.created_at,
@@ -515,9 +605,22 @@ fn build_service_account_owner_options(
 }
 
 fn select_granted_models(
+    model_grant_mode: ApiKeyModelGrantMode,
     raw_model_keys: &[String],
     models: &[GatewayModel],
 ) -> Result<Vec<GatewayModel>, GatewayError> {
+    if model_grant_mode == ApiKeyModelGrantMode::All {
+        let has_model_keys = raw_model_keys
+            .iter()
+            .any(|model_key| !model_key.trim().is_empty());
+        if has_model_keys {
+            return Err(GatewayError::InvalidRequest(
+                "model_keys must be empty when model_grant_mode is `all`".to_string(),
+            ));
+        }
+        return Ok(Vec::new());
+    }
+
     let mut seen = BTreeSet::new();
     let model_map = models
         .iter()
@@ -546,7 +649,121 @@ fn select_granted_models(
     Ok(selected)
 }
 
+fn parse_model_grant_mode(raw: &str) -> Result<ApiKeyModelGrantMode, GatewayError> {
+    ApiKeyModelGrantMode::from_db(raw.trim()).ok_or_else(|| {
+        GatewayError::InvalidRequest("model_grant_mode must be `all` or `explicit`".to_string())
+    })
+}
+
 fn parse_uuid(raw: &str, field_name: &str) -> Result<Uuid, GatewayError> {
     Uuid::parse_str(raw)
         .map_err(|_| GatewayError::InvalidRequest(format!("{field_name} must be a valid uuid")))
+}
+
+#[cfg(test)]
+mod tests {
+    use gateway_core::{
+        ApiKeyModelGrantMode, ApiKeyOwnerKind, ApiKeyRecord, ApiKeyStatus, AuthMode,
+        IdentityUserRecord, ModelAccessMode, UserRecord,
+    };
+
+    use super::*;
+
+    #[test]
+    fn all_mode_rejects_explicit_model_keys() {
+        let error = select_granted_models(
+            ApiKeyModelGrantMode::All,
+            &["fast".to_string()],
+            &[model("fast")],
+        )
+        .expect_err("all mode should reject explicit grants");
+
+        assert!(
+            matches!(error, GatewayError::InvalidRequest(message) if message.contains("model_keys must be empty"))
+        );
+    }
+
+    #[test]
+    fn explicit_mode_requires_at_least_one_model_key() {
+        let error = select_granted_models(ApiKeyModelGrantMode::Explicit, &[], &[model("fast")])
+            .expect_err("explicit mode should require grants");
+
+        assert!(
+            matches!(error, GatewayError::InvalidRequest(message) if message.contains("at least one model_key"))
+        );
+    }
+
+    #[test]
+    fn all_mode_summary_omits_explicit_model_key_rows() {
+        let user_id = Uuid::new_v4();
+        let summary = build_api_key_summary(
+            &api_key(user_id, ApiKeyModelGrantMode::All),
+            &[identity_user(user_id)],
+            &[],
+            &[],
+            &[model("fast")],
+        )
+        .expect("summary");
+
+        assert_eq!(summary.model_grant_mode, ApiKeyModelGrantMode::All);
+        assert!(summary.model_keys.is_empty());
+    }
+
+    fn model(model_key: &str) -> GatewayModel {
+        GatewayModel {
+            id: Uuid::new_v4(),
+            model_key: model_key.to_string(),
+            alias_target_model_key: None,
+            description: None,
+            tags: Vec::new(),
+            rank: 0,
+        }
+    }
+
+    fn api_key(owner_user_id: Uuid, model_grant_mode: ApiKeyModelGrantMode) -> ApiKeyRecord {
+        let now = OffsetDateTime::now_utc();
+        ApiKeyRecord {
+            id: Uuid::new_v4(),
+            public_id: "test".to_string(),
+            name: "Test key".to_string(),
+            secret_hash: "hash".to_string(),
+            status: ApiKeyStatus::Active,
+            model_grant_mode,
+            owner_kind: ApiKeyOwnerKind::User,
+            owner_user_id: Some(owner_user_id),
+            owner_team_id: None,
+            owner_service_account_id: None,
+            created_at: now,
+            last_used_at: None,
+            revoked_at: None,
+        }
+    }
+
+    fn identity_user(user_id: Uuid) -> IdentityUserRecord {
+        let now = OffsetDateTime::now_utc();
+        IdentityUserRecord {
+            user: UserRecord {
+                user_id,
+                name: "User".to_string(),
+                email: "user@example.com".to_string(),
+                email_normalized: "user@example.com".to_string(),
+                global_role: gateway_core::GlobalRole::User,
+                auth_mode: AuthMode::Password,
+                status: UserStatus::Active,
+                must_change_password: false,
+                request_logging_enabled: true,
+                model_access_mode: ModelAccessMode::All,
+                tags: Vec::new(),
+                created_at: now,
+                updated_at: now,
+            },
+            team_id: None,
+            team_name: None,
+            membership_role: None,
+            oidc_provider_id: None,
+            oidc_provider_key: None,
+            oauth_provider_id: None,
+            oauth_provider_key: None,
+        }
+    }
 }

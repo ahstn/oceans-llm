@@ -1,14 +1,17 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use gateway_client_config::{
-    ClientConfig, ClientConfigInput, ClientModelCapabilities, DEFAULT_API_KEY_ENV_VAR,
-    DEFAULT_GATEWAY_BASE_URL, DEFAULT_PROVIDER_ID, infer_anthropic_thinking_policy,
-    render_default_configs,
+    ClientConfig, ClientConfigInput, ClientConfigInputSet, ClientModelCapabilities,
+    DEFAULT_API_KEY_ENV_VAR, DEFAULT_GATEWAY_BASE_URL, DEFAULT_PROVIDER_ID,
+    infer_anthropic_thinking_policy, render_default_configs, render_default_configs_for_models,
 };
 use gateway_core::{
-    GatewayError, GatewayModel, ModelPricingRecord, ModelRepository, ModelRoute,
-    PricingCatalogRepository, PricingModalities, ProviderCapabilities, ProviderConnection,
-    ProviderRepository,
+    GatewayError, GatewayModel, ModelAllowlistPolicy, ModelPricingRecord, ModelRepository,
+    ModelRoute, PricingCatalogRepository, PricingModalities, ProviderCapabilities,
+    ProviderConnection, ProviderRepository, vertex_route_capabilities_for_upstream_model,
 };
 use time::OffsetDateTime;
 use tracing::warn;
@@ -40,6 +43,7 @@ pub struct AdminModelSummary {
     pub alias_of: Option<String>,
     pub description: Option<String>,
     pub tags: Vec<String>,
+    pub allowlist: Option<ModelAllowlistPolicy>,
     pub status: AdminModelStatus,
     pub provider_key: Option<String>,
     pub provider_label: Option<String>,
@@ -63,6 +67,7 @@ pub struct AdminModelSummary {
 #[derive(Debug, Clone)]
 pub struct AdminModelsService<R> {
     repo: Arc<R>,
+    client_config_gateway_base_url: String,
 }
 
 impl<R> AdminModelsService<R>
@@ -71,10 +76,73 @@ where
 {
     #[must_use]
     pub fn new(repo: Arc<R>) -> Self {
-        Self { repo }
+        Self {
+            repo,
+            client_config_gateway_base_url: DEFAULT_GATEWAY_BASE_URL.to_string(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_client_config_gateway_base_url(
+        mut self,
+        gateway_base_url: impl Into<String>,
+    ) -> Self {
+        self.client_config_gateway_base_url = gateway_base_url.into();
+        self
     }
 
     pub async fn list_models(&self) -> Result<Vec<AdminModelSummary>, GatewayError> {
+        Ok(self
+            .list_model_items()
+            .await?
+            .into_iter()
+            .map(|item| item.summary)
+            .collect())
+    }
+
+    pub async fn render_client_configurations(
+        &self,
+        model_keys: &[String],
+    ) -> Result<Vec<ClientConfig>, GatewayError> {
+        if model_keys.is_empty() {
+            return Err(GatewayError::InvalidRequest(
+                "model_keys must include at least one model".to_string(),
+            ));
+        }
+
+        let inputs_by_key = self
+            .list_model_items()
+            .await?
+            .into_iter()
+            .filter_map(|item| {
+                item.client_config_input
+                    .map(|input| (item.summary.id, input))
+            })
+            .collect::<HashMap<_, _>>();
+
+        let mut inputs = Vec::with_capacity(model_keys.len());
+        let mut seen_model_keys = HashSet::with_capacity(model_keys.len());
+        for model_key in model_keys {
+            if !seen_model_keys.insert(model_key) {
+                return Err(GatewayError::InvalidRequest(format!(
+                    "model_key `{model_key}` cannot be repeated"
+                )));
+            }
+
+            let input = inputs_by_key.get(model_key).ok_or_else(|| {
+                GatewayError::InvalidRequest(format!(
+                    "model_key `{model_key}` is not available for client config generation"
+                ))
+            })?;
+            inputs.push(input.clone());
+        }
+
+        Ok(render_default_configs_for_models(
+            ClientConfigInputSet::new(inputs),
+        ))
+    }
+
+    async fn list_model_items(&self) -> Result<Vec<AdminModelItem>, GatewayError> {
         if let Err(error) = PricingCatalog::new(self.repo.clone())
             .sync_current_snapshot()
             .await
@@ -87,6 +155,11 @@ where
 
         let pricing_time = OffsetDateTime::now_utc();
         let models = self.repo.list_models().await?;
+        let model_ids = models.iter().map(|model| model.id).collect::<Vec<_>>();
+        let allowlists_by_model = self
+            .repo
+            .list_model_allowlists_for_models(&model_ids)
+            .await?;
         let by_key = models
             .iter()
             .cloned()
@@ -150,75 +223,89 @@ where
                     .into_iter()
                     .chain([execution_model.model_key.as_str(), model.model_key.as_str()]),
             );
-            let client_configurations = build_client_configurations(ClientConfigContext {
+            let client_config_input = build_client_config_input(ClientConfigContext {
                 model: &model,
                 execution_model: &execution_model,
                 primary_route,
                 primary_provider,
                 provider_display: provider_display.as_ref(),
-                model_icon_key,
                 pricing_record: pricing_record.as_ref(),
                 route_capabilities,
+                gateway_base_url: &self.client_config_gateway_base_url,
             });
+            let client_configurations = client_config_input
+                .as_ref()
+                .map(render_default_configs)
+                .unwrap_or_default();
 
-            items.push(AdminModelSummary {
-                id: model.model_key.clone(),
-                model_id: model.id.to_string(),
-                resolved_model_key: execution_model.model_key.clone(),
-                alias_of: model.alias_target_model_key.clone(),
-                description: model.description.clone(),
-                tags: model.tags.clone(),
-                status,
-                provider_key: primary_route.map(|route| route.provider_key.clone()),
-                provider_label: provider_display
-                    .as_ref()
-                    .map(|display| display.label.clone()),
-                provider_icon_key: provider_display.map(|display| display.icon_key),
-                upstream_model: primary_route.map(|route| route.upstream_model.clone()),
-                model_icon_key,
-                input_cost_per_million_tokens_usd_10000: pricing_record.as_ref().and_then(
-                    |record| {
-                        record
-                            .input_cost_per_million_tokens
-                            .map(|value| value.as_scaled_i64())
-                    },
-                ),
-                output_cost_per_million_tokens_usd_10000: pricing_record.as_ref().and_then(
-                    |record| {
-                        record
-                            .output_cost_per_million_tokens
-                            .map(|value| value.as_scaled_i64())
-                    },
-                ),
-                cache_read_cost_per_million_tokens_usd_10000: pricing_record.as_ref().and_then(
-                    |record| {
-                        record
-                            .cache_read_cost_per_million_tokens
-                            .map(|value| value.as_scaled_i64())
-                    },
-                ),
-                context_window_tokens: pricing_record
-                    .as_ref()
-                    .and_then(|record| record.limits.context),
-                input_window_tokens: pricing_record
-                    .as_ref()
-                    .and_then(|record| record.limits.input),
-                output_window_tokens: pricing_record
-                    .as_ref()
-                    .and_then(|record| record.limits.output),
-                supports_streaming: route_capabilities.map(|caps| caps.stream),
-                supports_vision: route_capabilities.map(|caps| caps.vision),
-                supports_tool_calling: route_capabilities.map(|caps| caps.tools),
-                supports_structured_output: route_capabilities.map(|caps| caps.json_schema),
-                supports_attachments: pricing_record
-                    .as_ref()
-                    .map(|record| supports_attachments(&record.modalities)),
-                client_configurations,
+            items.push(AdminModelItem {
+                summary: AdminModelSummary {
+                    id: model.model_key.clone(),
+                    model_id: model.id.to_string(),
+                    resolved_model_key: execution_model.model_key.clone(),
+                    alias_of: model.alias_target_model_key.clone(),
+                    description: model.description.clone(),
+                    tags: model.tags.clone(),
+                    allowlist: allowlists_by_model.get(&model.id).cloned(),
+                    status,
+                    provider_key: primary_route.map(|route| route.provider_key.clone()),
+                    provider_label: provider_display
+                        .as_ref()
+                        .map(|display| display.label.clone()),
+                    provider_icon_key: provider_display.map(|display| display.icon_key),
+                    upstream_model: primary_route.map(|route| route.upstream_model.clone()),
+                    model_icon_key,
+                    input_cost_per_million_tokens_usd_10000: pricing_record.as_ref().and_then(
+                        |record| {
+                            record
+                                .input_cost_per_million_tokens
+                                .map(|value| value.as_scaled_i64())
+                        },
+                    ),
+                    output_cost_per_million_tokens_usd_10000: pricing_record.as_ref().and_then(
+                        |record| {
+                            record
+                                .output_cost_per_million_tokens
+                                .map(|value| value.as_scaled_i64())
+                        },
+                    ),
+                    cache_read_cost_per_million_tokens_usd_10000: pricing_record.as_ref().and_then(
+                        |record| {
+                            record
+                                .cache_read_cost_per_million_tokens
+                                .map(|value| value.as_scaled_i64())
+                        },
+                    ),
+                    context_window_tokens: pricing_record
+                        .as_ref()
+                        .and_then(|record| record.limits.context),
+                    input_window_tokens: pricing_record
+                        .as_ref()
+                        .and_then(|record| record.limits.input),
+                    output_window_tokens: pricing_record
+                        .as_ref()
+                        .and_then(|record| record.limits.output),
+                    supports_streaming: route_capabilities.map(|caps| caps.stream),
+                    supports_vision: route_capabilities.map(|caps| caps.vision),
+                    supports_tool_calling: route_capabilities.map(|caps| caps.tools),
+                    supports_structured_output: route_capabilities.map(|caps| caps.json_schema),
+                    supports_attachments: pricing_record
+                        .as_ref()
+                        .map(|record| supports_attachments(&record.modalities)),
+                    client_configurations,
+                },
+                client_config_input,
             });
         }
 
         Ok(items)
     }
+}
+
+#[derive(Debug, Clone)]
+struct AdminModelItem {
+    summary: AdminModelSummary,
+    client_config_input: Option<ClientConfigInput>,
 }
 
 struct ClientConfigContext<'a> {
@@ -227,27 +314,16 @@ struct ClientConfigContext<'a> {
     primary_route: Option<&'a ModelRoute>,
     primary_provider: Option<&'a ProviderConnection>,
     provider_display: Option<&'a crate::ProviderDisplayIdentity>,
-    model_icon_key: Option<ModelIconKey>,
     pricing_record: Option<&'a ModelPricingRecord>,
     route_capabilities: Option<ProviderCapabilities>,
+    gateway_base_url: &'a str,
 }
 
-fn build_client_configurations(context: ClientConfigContext<'_>) -> Vec<ClientConfig> {
-    if !is_anthropic_labeled(
-        context.model,
-        context.execution_model,
-        context.primary_route,
-        context.primary_provider,
-        context.provider_display,
-        context.model_icon_key,
-    ) {
-        return Vec::new();
-    }
-
+fn build_client_config_input(context: ClientConfigContext<'_>) -> Option<ClientConfigInput> {
+    let primary_route = context.primary_route?;
+    context.primary_provider?;
     let thinking_policy = infer_anthropic_thinking_policy(
-        context
-            .primary_route
-            .map(|route| route.upstream_model.as_str())
+        Some(primary_route.upstream_model.as_str())
             .into_iter()
             .chain(
                 context
@@ -270,8 +346,12 @@ fn build_client_configurations(context: ClientConfigContext<'_>) -> Vec<ClientCo
             ]),
     );
 
-    let capabilities = context.route_capabilities.unwrap_or_default();
-    let input = ClientConfigInput {
+    let capabilities = effective_provider_route_capabilities(
+        context.route_capabilities,
+        context.primary_provider,
+        Some(primary_route),
+    );
+    Some(ClientConfigInput {
         model_id: context.model.model_key.clone(),
         display_name: context
             .model
@@ -288,7 +368,7 @@ fn build_client_configurations(context: ClientConfigContext<'_>) -> Vec<ClientCo
             .map(|route| route.upstream_model.clone()),
         provider_id: DEFAULT_PROVIDER_ID.to_string(),
         provider_name: DEFAULT_PROVIDER_ID.to_string(),
-        gateway_base_url: DEFAULT_GATEWAY_BASE_URL.to_string(),
+        gateway_base_url: context.gateway_base_url.to_string(),
         api_key_env_var: DEFAULT_API_KEY_ENV_VAR.to_string(),
         input_cost_per_million_tokens_usd_10000: context.pricing_record.and_then(|record| {
             record
@@ -315,6 +395,7 @@ fn build_client_configurations(context: ClientConfigContext<'_>) -> Vec<ClientCo
             .pricing_record
             .and_then(|record| record.limits.output),
         capabilities: ClientModelCapabilities {
+            responses: capabilities.responses,
             tool_calling: capabilities.tools,
             attachments: context
                 .pricing_record
@@ -322,37 +403,45 @@ fn build_client_configurations(context: ClientConfigContext<'_>) -> Vec<ClientCo
             vision: capabilities.vision,
         },
         thinking_policy,
-    };
-
-    render_default_configs(&input)
+    })
 }
 
-fn is_anthropic_labeled(
-    model: &GatewayModel,
-    execution_model: &GatewayModel,
-    primary_route: Option<&ModelRoute>,
-    primary_provider: Option<&ProviderConnection>,
-    provider_display: Option<&crate::ProviderDisplayIdentity>,
-    model_icon_key: Option<ModelIconKey>,
-) -> bool {
-    matches!(
-        model_icon_key,
-        Some(ModelIconKey::Anthropic | ModelIconKey::Claude)
-    ) || provider_display.is_some_and(|display| display.icon_key == ProviderIconKey::Anthropic)
-        || [
-            Some(model.model_key.as_str()),
-            Some(execution_model.model_key.as_str()),
-            primary_route.map(|route| route.upstream_model.as_str()),
-            primary_provider.map(|provider| provider.provider_key.as_str()),
-            primary_provider.map(|provider| provider.provider_type.as_str()),
-            provider_display.map(|display| display.label.as_str()),
-        ]
-        .into_iter()
-        .flatten()
-        .any(|value| {
-            let value = value.to_ascii_lowercase();
-            value.contains("anthropic") || value.contains("claude")
-        })
+fn effective_provider_route_capabilities(
+    route_capabilities: Option<ProviderCapabilities>,
+    provider: Option<&ProviderConnection>,
+    route: Option<&ModelRoute>,
+) -> ProviderCapabilities {
+    provider
+        .map(|provider| provider_capabilities(provider, route))
+        .unwrap_or_default()
+        .intersect(route_capabilities.unwrap_or_default())
+}
+
+fn provider_capabilities(
+    provider: &ProviderConnection,
+    route: Option<&ModelRoute>,
+) -> ProviderCapabilities {
+    match provider.provider_type.as_str() {
+        "openai_compat" | "gcp_cloud_run_openai_compat" => {
+            ProviderCapabilities::openai_compat_baseline()
+        }
+        "gcp_vertex" => vertex_route_capabilities(route),
+        "aws_bedrock" => ProviderCapabilities {
+            chat_completions: true,
+            responses: true,
+            stream: true,
+            embeddings: false,
+            tools: true,
+            vision: true,
+            json_schema: true,
+            developer_role: true,
+        },
+        _ => ProviderCapabilities::all_enabled(),
+    }
+}
+
+fn vertex_route_capabilities(route: Option<&ModelRoute>) -> ProviderCapabilities {
+    vertex_route_capabilities_for_upstream_model(route.map(|route| route.upstream_model.as_str()))
 }
 
 async fn resolve_display_pricing<R>(
@@ -443,16 +532,19 @@ mod tests {
 
     use async_trait::async_trait;
     use gateway_core::{
-        GatewayModel, ModelPricingRecord, ModelRepository, ModelRoute, Money4,
-        PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
-        PricingProvenance, ProviderCapabilities, ProviderConnection, ProviderRepository,
-        StoreError,
+        GatewayError, GatewayModel, ModelAllowlistPolicy, ModelPricingRecord, ModelRepository,
+        ModelRoute, Money4, PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits,
+        PricingModalities, PricingProvenance, ProviderCapabilities, ProviderConnection,
+        ProviderRepository, StoreError,
     };
     use serde_json::json;
     use time::OffsetDateTime;
     use uuid::Uuid;
 
-    use super::{AdminModelStatus, AdminModelsService};
+    use super::{
+        AdminModelStatus, AdminModelsService, effective_provider_route_capabilities,
+        provider_capabilities,
+    };
 
     #[derive(Default)]
     struct CountingRepo {
@@ -460,8 +552,10 @@ mod tests {
         routes_by_model: HashMap<Uuid, Vec<ModelRoute>>,
         providers_by_key: HashMap<String, ProviderConnection>,
         pricing_by_key: HashMap<(String, String), ModelPricingRecord>,
+        allowlists_by_model: HashMap<Uuid, ModelAllowlistPolicy>,
         list_routes_for_model_calls: AtomicUsize,
         list_routes_for_models_calls: AtomicUsize,
+        list_model_allowlists_for_models_calls: AtomicUsize,
         get_provider_by_key_calls: AtomicUsize,
         list_providers_by_keys_calls: AtomicUsize,
         fail_pricing_sync: AtomicBool,
@@ -489,6 +583,23 @@ mod tests {
             _api_key_id: Uuid,
         ) -> Result<Vec<GatewayModel>, StoreError> {
             Ok(Vec::new())
+        }
+
+        async fn list_model_allowlists_for_models(
+            &self,
+            model_ids: &[Uuid],
+        ) -> Result<HashMap<Uuid, ModelAllowlistPolicy>, StoreError> {
+            self.list_model_allowlists_for_models_calls
+                .fetch_add(1, Ordering::SeqCst);
+            Ok(model_ids
+                .iter()
+                .filter_map(|model_id| {
+                    self.allowlists_by_model
+                        .get(model_id)
+                        .cloned()
+                        .map(|policy| (*model_id, policy))
+                })
+                .collect())
         }
 
         async fn list_routes_for_model(
@@ -665,6 +776,88 @@ mod tests {
         }
     }
 
+    fn provider_connection(provider_type: &str) -> ProviderConnection {
+        ProviderConnection {
+            provider_key: "vertex".to_string(),
+            provider_type: provider_type.to_string(),
+            config: json!({}),
+            secrets: None,
+        }
+    }
+
+    fn model_route(upstream_model: &str, capabilities: ProviderCapabilities) -> ModelRoute {
+        ModelRoute {
+            id: Uuid::new_v4(),
+            model_id: Uuid::new_v4(),
+            provider_key: "vertex".to_string(),
+            upstream_model: upstream_model.to_string(),
+            priority: 0,
+            weight: 1.0,
+            enabled: true,
+            extra_headers: Default::default(),
+            extra_body: Default::default(),
+            capabilities,
+            compatibility: Default::default(),
+        }
+    }
+
+    #[test]
+    fn vertex_provider_capabilities_are_route_aware_for_embeddings() {
+        let provider = provider_connection("gcp_vertex");
+
+        let embedding_route = model_route(
+            "google/gemini-embedding-001",
+            ProviderCapabilities::all_enabled(),
+        );
+        let embedding_capabilities = provider_capabilities(&provider, Some(&embedding_route));
+        assert!(embedding_capabilities.embeddings);
+        assert!(!embedding_capabilities.chat_completions);
+        assert!(!embedding_capabilities.responses);
+        assert!(!embedding_capabilities.stream);
+        assert!(!embedding_capabilities.tools);
+
+        let chat_route = model_route(
+            "google/gemini-2.0-flash",
+            ProviderCapabilities::all_enabled(),
+        );
+        let chat_capabilities = provider_capabilities(&provider, Some(&chat_route));
+        assert!(chat_capabilities.chat_completions);
+        assert!(chat_capabilities.stream);
+        assert!(!chat_capabilities.embeddings);
+        assert!(!chat_capabilities.tools);
+
+        let anthropic_route = model_route(
+            "anthropic/claude-sonnet-4-6",
+            ProviderCapabilities::all_enabled(),
+        );
+        let anthropic_capabilities = provider_capabilities(&provider, Some(&anthropic_route));
+        assert!(anthropic_capabilities.chat_completions);
+        assert!(!anthropic_capabilities.embeddings);
+        assert!(anthropic_capabilities.tools);
+    }
+
+    #[test]
+    fn vertex_embedding_effective_capabilities_require_route_embedding_capability() {
+        let provider = provider_connection("gcp_vertex");
+        let route = model_route(
+            "google/text-multilingual-embedding-002",
+            ProviderCapabilities {
+                embeddings: false,
+                ..ProviderCapabilities::all_enabled()
+            },
+        );
+
+        let capabilities = effective_provider_route_capabilities(
+            Some(route.capabilities),
+            Some(&provider),
+            Some(&route),
+        );
+
+        assert!(!capabilities.embeddings);
+        assert!(!capabilities.chat_completions);
+        assert!(!capabilities.tools);
+    }
+
     #[tokio::test]
     async fn list_models_batches_route_and_provider_loading() {
         let execution_model_id = Uuid::new_v4();
@@ -729,6 +922,22 @@ mod tests {
                     &["text", "image"],
                 ),
             )]),
+            allowlists_by_model: HashMap::from([
+                (
+                    alias_model_id,
+                    ModelAllowlistPolicy {
+                        users: vec!["alias-user".to_string()],
+                        teams: vec!["alias-team".to_string()],
+                    },
+                ),
+                (
+                    execution_model_id,
+                    ModelAllowlistPolicy {
+                        users: vec!["base-user".to_string()],
+                        teams: vec!["base-team".to_string()],
+                    },
+                ),
+            ]),
             ..Default::default()
         });
 
@@ -739,6 +948,11 @@ mod tests {
         assert_eq!(repo.list_routes_for_models_calls.load(Ordering::SeqCst), 1);
         assert_eq!(repo.list_routes_for_model_calls.load(Ordering::SeqCst), 0);
         assert_eq!(repo.list_providers_by_keys_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            repo.list_model_allowlists_for_models_calls
+                .load(Ordering::SeqCst),
+            1
+        );
         assert_eq!(repo.get_provider_by_key_calls.load(Ordering::SeqCst), 0);
 
         let alias = items
@@ -763,7 +977,37 @@ mod tests {
         assert_eq!(alias.supports_tool_calling, Some(true));
         assert_eq!(alias.supports_structured_output, Some(true));
         assert_eq!(alias.supports_attachments, Some(true));
-        assert!(alias.client_configurations.is_empty());
+        assert_eq!(
+            alias
+                .allowlist
+                .as_ref()
+                .map(|policy| policy.users.as_slice()),
+            Some(&["alias-user".to_string()][..])
+        );
+        assert_eq!(
+            alias
+                .allowlist
+                .as_ref()
+                .map(|policy| policy.teams.as_slice()),
+            Some(&["alias-team".to_string()][..])
+        );
+        assert_eq!(
+            alias
+                .client_configurations
+                .iter()
+                .map(|config| config.key.as_str())
+                .collect::<Vec<_>>(),
+            vec!["opencode", "pi", "codex"]
+        );
+
+        let duplicate_error = service
+            .render_client_configurations(&[
+                "friendly-alias".to_string(),
+                "friendly-alias".to_string(),
+            ])
+            .await
+            .expect_err("duplicate model keys should be rejected");
+        assert!(matches!(duplicate_error, GatewayError::InvalidRequest(_)));
     }
 
     #[tokio::test]
@@ -901,7 +1145,14 @@ mod tests {
         assert_eq!(items[0].supports_vision, Some(false));
         assert_eq!(items[0].supports_structured_output, Some(true));
         assert_eq!(items[0].supports_attachments, Some(false));
-        assert!(items[0].client_configurations.is_empty());
+        assert_eq!(
+            items[0]
+                .client_configurations
+                .iter()
+                .map(|config| config.key.as_str())
+                .collect::<Vec<_>>(),
+            vec!["opencode", "pi"]
+        );
     }
 
     #[tokio::test]
@@ -987,7 +1238,14 @@ mod tests {
         assert_eq!(items[0].supports_tool_calling, Some(true));
         assert_eq!(items[0].supports_structured_output, Some(true));
         assert_eq!(items[0].supports_attachments, None);
-        assert!(items[0].client_configurations.is_empty());
+        assert_eq!(
+            items[0]
+                .client_configurations
+                .iter()
+                .map(|config| config.key.as_str())
+                .collect::<Vec<_>>(),
+            vec!["opencode", "pi"]
+        );
     }
 
     #[tokio::test]
@@ -1005,79 +1263,214 @@ mod tests {
         pricing.cache_read_cost_per_million_tokens =
             Some(Money4::from_decimal_str("0.3000").expect("cache read cost"));
 
-        let repo = Arc::new(CountingRepo {
-            models: vec![GatewayModel {
-                id: model_id,
-                model_key: "claude-sonnet".to_string(),
-                alias_target_model_key: None,
-                description: Some("Claude Sonnet".to_string()),
-                tags: vec!["anthropic".to_string()],
-                rank: 1,
-            }],
-            routes_by_model: HashMap::from([(
-                model_id,
-                vec![ModelRoute {
-                    id: route_id,
-                    model_id,
-                    provider_key: "anthropic-prod".to_string(),
-                    upstream_model: "anthropic/claude-sonnet-4-6".to_string(),
-                    priority: 0,
-                    weight: 1.0,
-                    enabled: true,
-                    extra_headers: Default::default(),
-                    extra_body: Default::default(),
-                    capabilities: ProviderCapabilities::with_dimensions(
-                        true, false, true, true, true, true, true,
-                    ),
-                    compatibility: Default::default(),
+        let build_repo = |provider_type: &str, capabilities: ProviderCapabilities| {
+            Arc::new(CountingRepo {
+                models: vec![GatewayModel {
+                    id: model_id,
+                    model_key: "claude-sonnet".to_string(),
+                    alias_target_model_key: None,
+                    description: Some("Claude Sonnet".to_string()),
+                    tags: vec!["anthropic".to_string()],
+                    rank: 1,
                 }],
-            )]),
-            providers_by_key: HashMap::from([(
-                "anthropic-prod".to_string(),
-                ProviderConnection {
-                    provider_key: "anthropic-prod".to_string(),
-                    provider_type: "gcp_vertex".to_string(),
-                    config: json!({
-                        "display": {"label": "Anthropic", "icon_key": "anthropic"},
-                        "location": "global"
-                    }),
-                    secrets: None,
-                },
-            )]),
-            pricing_by_key: HashMap::from([(
-                (
-                    "google-vertex-anthropic".to_string(),
-                    "claude-sonnet-4-6@default".to_string(),
-                ),
-                pricing,
-            )]),
-            ..Default::default()
-        });
+                routes_by_model: HashMap::from([(
+                    model_id,
+                    vec![ModelRoute {
+                        id: route_id,
+                        model_id,
+                        provider_key: "anthropic-prod".to_string(),
+                        upstream_model: "anthropic/claude-sonnet-4-6".to_string(),
+                        priority: 0,
+                        weight: 1.0,
+                        enabled: true,
+                        extra_headers: Default::default(),
+                        extra_body: Default::default(),
+                        capabilities,
+                        compatibility: Default::default(),
+                    }],
+                )]),
+                providers_by_key: HashMap::from([(
+                    "anthropic-prod".to_string(),
+                    ProviderConnection {
+                        provider_key: "anthropic-prod".to_string(),
+                        provider_type: provider_type.to_string(),
+                        config: json!({
+                            "display": {"label": "Anthropic", "icon_key": "anthropic"},
+                            "location": "global"
+                        }),
+                        secrets: None,
+                    },
+                )]),
+                pricing_by_key: HashMap::from([(
+                    (
+                        "google-vertex-anthropic".to_string(),
+                        "claude-sonnet-4-6@default".to_string(),
+                    ),
+                    pricing.clone(),
+                )]),
+                ..Default::default()
+            })
+        };
 
-        let service = AdminModelsService::new(repo);
+        let service = AdminModelsService::new(build_repo(
+            "gcp_vertex",
+            ProviderCapabilities::with_dimensions(true, false, true, true, true, true, true),
+        ));
         let items = service.list_models().await.expect("admin models");
 
         assert_eq!(
             items[0].cache_read_cost_per_million_tokens_usd_10000,
             Some(3_000)
         );
-        assert_eq!(items[0].client_configurations.len(), 2);
+        assert_eq!(items[0].supports_tool_calling, Some(true));
+        assert_eq!(items[0].client_configurations.len(), 3);
         assert_eq!(items[0].client_configurations[0].key, "opencode");
         assert!(
             items[0].client_configurations[0]
+                .setup
+                .iter()
+                .any(|item| item.value == "~/.config/opencode/opencode.json")
+        );
+        assert!(
+            items[0].client_configurations[0].blocks[0]
                 .content
                 .contains("\"cache_read\": 0.3")
         );
         assert!(
-            items[0].client_configurations[0]
+            items[0].client_configurations[0].blocks[0]
                 .content
                 .contains("\"variants\"")
         );
-        assert_eq!(items[0].client_configurations[1].key, "pi");
         assert!(
-            items[0].client_configurations[1]
+            items[0].client_configurations[0].blocks[0]
+                .content
+                .contains("\"tool_call\": true")
+        );
+        assert_eq!(items[0].client_configurations[1].key, "pi");
+        assert!(items[0].client_configurations[1].setup.iter().any(|item| {
+            item.value.contains("~/.pi/agent/models.json")
+                && item.value.contains("~/.pi/agent/settings.json")
+                && item.value.contains(".pi/settings.json")
+        }));
+        assert!(
+            items[0].client_configurations[1].blocks[0]
                 .content
                 .contains("\"thinkingLevelMap\"")
         );
+        assert_eq!(items[0].client_configurations[2].key, "claude-code");
+        assert_eq!(items[0].client_configurations[2].blocks.len(), 2);
+        assert!(
+            items[0].client_configurations[2]
+                .setup
+                .iter()
+                .any(|item| item.value.contains("<gateway api token>"))
+        );
+        assert!(
+            items[0].client_configurations[2].blocks[0]
+                .content
+                .contains("\"modelOverrides\"")
+        );
+        assert!(
+            items[0].client_configurations[2].blocks[1]
+                .content
+                .contains("\"CLAUDE_CODE_AUTO_COMPACT_WINDOW\": \"200000\"")
+        );
+
+        let service = AdminModelsService::new(build_repo(
+            "gcp_vertex",
+            ProviderCapabilities::with_dimensions(true, false, true, true, true, true, true),
+        ))
+        .with_client_config_gateway_base_url("https://gateway.example.com/v1");
+        let items = service.list_models().await.expect("admin models");
+
+        assert!(
+            items[0].client_configurations[0].blocks[0]
+                .content
+                .contains("\"baseURL\": \"https://gateway.example.com/v1\"")
+        );
+        assert!(
+            items[0].client_configurations[2].blocks[0]
+                .content
+                .contains("\"ANTHROPIC_BASE_URL\": \"https://gateway.example.com\"")
+        );
+
+        let service = AdminModelsService::new(build_repo(
+            "gcp_vertex",
+            ProviderCapabilities {
+                chat_completions: true,
+                responses: true,
+                stream: false,
+                embeddings: true,
+                tools: true,
+                vision: true,
+                json_schema: true,
+                developer_role: true,
+            },
+        ));
+        let items = service.list_models().await.expect("admin models");
+
+        assert_eq!(items[0].client_configurations.len(), 3);
+        assert!(
+            !items[0]
+                .client_configurations
+                .iter()
+                .any(|config| config.key == "codex")
+        );
+
+        let service = AdminModelsService::new(build_repo(
+            "openai_compat",
+            ProviderCapabilities {
+                chat_completions: true,
+                responses: true,
+                stream: false,
+                embeddings: true,
+                tools: true,
+                vision: true,
+                json_schema: true,
+                developer_role: true,
+            },
+        ));
+        let items = service.list_models().await.expect("admin models");
+
+        assert_eq!(items[0].client_configurations.len(), 4);
+        assert_eq!(items[0].client_configurations[3].key, "codex");
+        assert!(
+            items[0].client_configurations[3].blocks[0]
+                .content
+                .contains("[model_providers.oceans-llm]")
+        );
+        assert!(
+            items[0].client_configurations[3].blocks[0]
+                .content
+                .contains("wire_api = \"responses\"")
+        );
+    }
+
+    #[test]
+    fn vertex_provider_capabilities_are_tool_capable_only_for_anthropic_routes() {
+        let provider = ProviderConnection {
+            provider_key: "vertex-prod".to_string(),
+            provider_type: "gcp_vertex".to_string(),
+            config: json!({}),
+            secrets: None,
+        };
+        let anthropic_route = ModelRoute {
+            id: Uuid::new_v4(),
+            model_id: Uuid::new_v4(),
+            provider_key: "vertex-prod".to_string(),
+            upstream_model: "anthropic/claude-sonnet-4-6".to_string(),
+            priority: 0,
+            weight: 1.0,
+            enabled: true,
+            extra_headers: Default::default(),
+            extra_body: Default::default(),
+            capabilities: ProviderCapabilities::all_enabled(),
+            compatibility: Default::default(),
+        };
+        let mut google_route = anthropic_route.clone();
+        google_route.upstream_model = "google/gemini-2.0-flash".to_string();
+
+        assert!(provider_capabilities(&provider, Some(&anthropic_route)).tools);
+        assert!(!provider_capabilities(&provider, Some(&google_route)).tools);
     }
 }

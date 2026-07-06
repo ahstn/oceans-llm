@@ -960,6 +960,31 @@ impl BudgetRepository for LibsqlStore {
             .map_err(|error| StoreError::Query(error.to_string()))?;
         Ok(written > 0)
     }
+
+    async fn delete_usage_ledger_events_by_request_ids(
+        &self,
+        request_ids: &[String],
+    ) -> Result<u64, StoreError> {
+        if request_ids.is_empty() {
+            return Ok(0);
+        }
+
+        let placeholders = (0..request_ids.len())
+            .map(|index| format!("?{}", index + 1))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let params = request_ids
+            .iter()
+            .map(|id| libsql::Value::Text(id.clone()))
+            .collect::<Vec<_>>();
+        self.connection
+            .execute(
+                &format!("DELETE FROM usage_cost_events WHERE request_id IN ({placeholders})"),
+                params,
+            )
+            .await
+            .map_err(|error| StoreError::Query(error.to_string()))
+    }
 }
 
 async fn sum_usage_cost_for_budget_scope(

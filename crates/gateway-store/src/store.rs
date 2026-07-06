@@ -8,10 +8,10 @@ use gateway_core::{
     McpTokenOverheadRepository, McpToolInvocationRepository, McpUpstreamCredentialRepository,
     MembershipRole, ModelRepository, OauthLoginStateRecord, OauthProviderRecord,
     OidcLoginStateRecord, OidcProviderRecord, PasswordInvitationRecord, PricingCatalogRepository,
-    ProviderRepository, RequestLogRepository, RequestTag, SeedApiKey, SeedModel, SeedOauthProvider,
-    SeedOidcProvider, SeedProvider, SeedTeam, SeedUser, StoreError, StoreHealth,
-    TeamMembershipRecord, TeamRecord, UserOauthAuthRecord, UserOidcAuthRecord,
-    UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
+    ProviderRepository, RequestLogRepository, RequestTag, ReviewAgentRepository, SeedApiKey,
+    SeedModel, SeedOauthProvider, SeedOidcProvider, SeedProvider, SeedServiceAccount, SeedTeam,
+    SeedUser, StoreError, StoreHealth, TeamMembershipRecord, TeamRecord, UserOauthAuthRecord,
+    UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -48,6 +48,7 @@ pub trait GatewayStore:
     + BudgetRepository
     + BudgetAlertRepository
     + RequestLogRepository
+    + ReviewAgentRepository
     + McpRegistryRepository
     + McpAccessRepository
     + McpAggregateSessionRepository
@@ -359,6 +360,7 @@ pub trait GatewayStore:
         providers: &[SeedProvider],
         models: &[SeedModel],
         api_keys: &[SeedApiKey],
+        service_accounts: &[SeedServiceAccount],
         oidc_providers: &[SeedOidcProvider],
         oauth_providers: &[SeedOauthProvider],
         teams: &[SeedTeam],
@@ -451,12 +453,41 @@ impl AdminApiKeyRepository for AnyStore {
         dispatch_store!(self, create_api_key(api_key))
     }
 
-    async fn replace_api_key_model_grants(
+    async fn get_api_key_secret_material(
         &self,
         api_key_id: Uuid,
+    ) -> Result<Option<gateway_core::ApiKeySecretMaterialRecord>, StoreError> {
+        dispatch_store!(self, get_api_key_secret_material(api_key_id))
+    }
+
+    async fn upsert_api_key_secret_material(
+        &self,
+        material: &gateway_core::ApiKeySecretMaterialRecord,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(self, upsert_api_key_secret_material(material))
+    }
+
+    async fn touch_api_key_secret_material_retrieved(
+        &self,
+        api_key_id: Uuid,
+        retrieved_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        dispatch_store!(
+            self,
+            touch_api_key_secret_material_retrieved(api_key_id, retrieved_at)
+        )
+    }
+
+    async fn replace_api_key_model_access(
+        &self,
+        api_key_id: Uuid,
+        model_grant_mode: gateway_core::ApiKeyModelGrantMode,
         model_ids: &[Uuid],
     ) -> Result<(), StoreError> {
-        dispatch_store!(self, replace_api_key_model_grants(api_key_id, model_ids))
+        dispatch_store!(
+            self,
+            replace_api_key_model_access(api_key_id, model_grant_mode, model_ids)
+        )
     }
 
     async fn revoke_api_key(
@@ -486,6 +517,16 @@ impl ModelRepository for AnyStore {
         api_key_id: Uuid,
     ) -> Result<Vec<gateway_core::GatewayModel>, StoreError> {
         dispatch_store!(self, list_models_for_api_key(api_key_id))
+    }
+
+    async fn list_model_allowlists_for_models(
+        &self,
+        model_ids: &[Uuid],
+    ) -> Result<
+        std::collections::HashMap<Uuid, gateway_core::domain::ModelAllowlistPolicy>,
+        StoreError,
+    > {
+        dispatch_store!(self, list_model_allowlists_for_models(model_ids))
     }
 
     async fn list_routes_for_model(
@@ -763,6 +804,13 @@ impl BudgetRepository for AnyStore {
     ) -> Result<bool, StoreError> {
         dispatch_store!(self, insert_usage_ledger_if_absent(event))
     }
+
+    async fn delete_usage_ledger_events_by_request_ids(
+        &self,
+        request_ids: &[String],
+    ) -> Result<u64, StoreError> {
+        dispatch_store!(self, delete_usage_ledger_events_by_request_ids(request_ids))
+    }
 }
 
 #[async_trait]
@@ -890,6 +938,13 @@ impl RequestLogRepository for AnyStore {
         dry_run: bool,
     ) -> Result<gateway_core::RequestLogPurgeResult, StoreError> {
         dispatch_store!(self, purge_request_logs_older_than(cutoff, dry_run))
+    }
+
+    async fn delete_request_logs_by_request_ids(
+        &self,
+        request_ids: &[String],
+    ) -> Result<u64, StoreError> {
+        dispatch_store!(self, delete_request_logs_by_request_ids(request_ids))
     }
 }
 
@@ -1571,6 +1626,7 @@ impl GatewayStore for AnyStore {
         providers: &[SeedProvider],
         models: &[SeedModel],
         api_keys: &[SeedApiKey],
+        service_accounts: &[SeedServiceAccount],
         oidc_providers: &[SeedOidcProvider],
         oauth_providers: &[SeedOauthProvider],
         teams: &[SeedTeam],
@@ -1582,6 +1638,7 @@ impl GatewayStore for AnyStore {
                 providers,
                 models,
                 api_keys,
+                service_accounts,
                 oidc_providers,
                 oauth_providers,
                 teams,

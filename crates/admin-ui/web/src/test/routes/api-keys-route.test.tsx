@@ -1,10 +1,11 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ApiKeysPayload } from '@/types/api'
 
 const routeMock = {
   useLoaderData: vi.fn(),
+  useSearch: vi.fn(),
 }
 
 class ResizeObserverMock {
@@ -55,6 +56,7 @@ const basePayload: ApiKeysPayload = {
       owner_service_account_key: null,
       owner_service_account_team_id: null,
       owner_service_account_team_key: null,
+      model_grant_mode: 'explicit',
       model_keys: ['fast'],
       created_at: '2026-03-14T12:00:00Z',
       last_used_at: '2026-03-18T09:15:00Z',
@@ -103,9 +105,12 @@ const basePayload: ApiKeysPayload = {
 
 describe('ApiKeysPage', () => {
   beforeEach(() => {
+    cleanup()
     vi.stubGlobal('ResizeObserver', ResizeObserverMock)
     routeMock.useLoaderData.mockReset()
     routeMock.useLoaderData.mockReturnValue({ data: basePayload })
+    routeMock.useSearch.mockReset()
+    routeMock.useSearch.mockReturnValue({ api_key_id: undefined })
     routerMock.invalidate.mockClear()
     createGatewayApiKeyMock.mockReset()
     revokeGatewayApiKeyMock.mockReset()
@@ -161,7 +166,8 @@ describe('ApiKeysPage', () => {
           owner_service_account_key: null,
           owner_service_account_team_id: null,
           owner_service_account_team_key: null,
-          model_keys: ['fast'],
+          model_grant_mode: 'all',
+          model_keys: [],
           created_at: '2026-03-20T09:00:00Z',
           last_used_at: null,
           revoked_at: null,
@@ -179,7 +185,6 @@ describe('ApiKeysPage', () => {
     fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Production Web' } })
     fireEvent.click(screen.getByRole('combobox', { name: 'Owner user' }))
     fireEvent.click(screen.getByRole('option', { name: /Jane Admin/ }))
-    await toggleModelSelection(dialog, 'fast')
 
     const submitButton = within(dialog).getByRole('button', { name: 'Create API key' })
     await waitFor(() => expect(submitButton).toBeEnabled())
@@ -193,7 +198,8 @@ describe('ApiKeysPage', () => {
         owner_user_id: 'user_1',
         owner_team_id: null,
         owner_service_account_id: null,
-        model_keys: ['fast'],
+        model_grant_mode: 'all',
+        model_keys: [],
       },
     })
     await waitFor(() =>
@@ -220,6 +226,7 @@ describe('ApiKeysPage', () => {
           owner_service_account_key: 'deploy-bot',
           owner_service_account_team_id: 'team_1',
           owner_service_account_team_key: 'core-platform',
+          model_grant_mode: 'explicit',
           model_keys: ['fast'],
           created_at: '2026-03-20T09:00:00Z',
           last_used_at: null,
@@ -254,6 +261,7 @@ describe('ApiKeysPage', () => {
         owner_user_id: null,
         owner_team_id: 'team_1',
         owner_service_account_id: 'service_account_1',
+        model_grant_mode: 'explicit',
         model_keys: ['fast'],
       },
     })
@@ -276,7 +284,6 @@ describe('ApiKeysPage', () => {
     fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Production Web' } })
     fireEvent.click(screen.getByRole('combobox', { name: 'Owner user' }))
     fireEvent.click(screen.getByRole('option', { name: /Jane Admin/ }))
-    await toggleModelSelection(dialog, 'fast')
 
     const submitButton = within(dialog).getByRole('button', { name: 'Create API key' })
     await waitFor(() => expect(submitButton).toBeEnabled())
@@ -300,7 +307,8 @@ describe('ApiKeysPage', () => {
           owner_service_account_key: null,
           owner_service_account_team_id: null,
           owner_service_account_team_key: null,
-          model_keys: ['fast'],
+          model_grant_mode: 'all',
+          model_keys: [],
           created_at: '2026-03-20T09:00:00Z',
           last_used_at: null,
           revoked_at: null,
@@ -316,11 +324,47 @@ describe('ApiKeysPage', () => {
     )
   })
 
+  it('opens the targeted manage dialog from the api_key_id search param', async () => {
+    routeMock.useSearch.mockReturnValue({ api_key_id: 'api_key_1' })
+
+    const { ApiKeysPage } = await import('@/routes/api-keys')
+
+    render(<ApiKeysPage />)
+
+    const dialog = await screen.findByRole('dialog', { name: 'Manage API key' })
+    expect(within(dialog).getByText('Production Gateway')).toBeInTheDocument()
+    expect(within(dialog).getByText('gwk_prod_liv****')).toBeInTheDocument()
+  })
+
+  it('does not reopen an already dismissed api_key_id deeplink after items refresh', async () => {
+    routeMock.useSearch.mockReturnValue({ api_key_id: 'api_key_1' })
+
+    const { ApiKeysPage } = await import('@/routes/api-keys')
+
+    const { rerender } = render(<ApiKeysPage />)
+
+    const dialog = await screen.findByRole('dialog', { name: 'Manage API key' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        ...basePayload,
+        items: basePayload.items.map((item) => ({ ...item })),
+      },
+    })
+    rerender(<ApiKeysPage />)
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
   it('opens the manage dialog and updates model access when the selection changes', async () => {
     updateGatewayApiKeyMock.mockResolvedValue({
       data: {
         api_key: {
           ...basePayload.items[0],
+          model_grant_mode: 'explicit',
           model_keys: ['fast', 'reasoning'],
         },
       },
@@ -351,6 +395,7 @@ describe('ApiKeysPage', () => {
       data: {
         apiKeyId: 'api_key_1',
         input: {
+          model_grant_mode: 'explicit',
           model_keys: ['fast', 'reasoning'],
         },
       },

@@ -12,6 +12,7 @@ mod models;
 mod pricing_catalog;
 mod providers;
 mod request_logs;
+mod review_agent;
 mod seed;
 mod support;
 
@@ -19,9 +20,11 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use async_trait::async_trait;
+use gateway_core::domain::ModelAllowlistPolicy;
 use gateway_core::{
-    AdminApiKeyRepository, AdminIdentityRepository, ApiKeyOwnerKind, ApiKeyRecord,
-    ApiKeyRepository, ApiKeyStatus, AuthMode, BudgetAlertChannel, BudgetAlertDeliveryRecord,
+    AdminApiKeyRepository, AdminIdentityRepository, ApiKeyModelGrantMode, ApiKeyOwnerKind,
+    ApiKeyRecord, ApiKeyRepository, ApiKeySecretMaterialRecord, ApiKeySecretStorageKind,
+    ApiKeyStatus, AuthMode, BudgetAlertChannel, BudgetAlertDeliveryRecord,
     BudgetAlertDeliveryStatus, BudgetAlertDispatchTask, BudgetAlertHistoryPage,
     BudgetAlertHistoryQuery, BudgetAlertHistoryRecord, BudgetAlertRecord, BudgetAlertRepository,
     BudgetCadence, BudgetModelSelector, BudgetRecord, BudgetRepository, BudgetScope,
@@ -42,20 +45,26 @@ use gateway_core::{
     McpUpstreamCredentialOwnerScopeKind, McpUpstreamCredentialRepository,
     McpUpstreamSecretStorageKind, MembershipRole, ModelAccessMode, ModelPricingRecord,
     ModelRepository, ModelRoute, Money4, NewApiKeyRecord, NewExternalMcpServerRecord,
-    NewMcpAggregateSessionRecord, NewMcpToolsetRecord, OauthJitMembership, OauthJitPolicy,
-    OauthLoginStateRecord, OauthProviderRecord, OidcJitMembership, OidcJitPolicy,
-    OidcLoginStateRecord, OidcProviderRecord, PasswordInvitationRecord, PricingCatalogCacheRecord,
+    NewMcpAggregateSessionRecord, NewMcpToolsetRecord, NewReviewAgentRepositoryRecord,
+    NewReviewAgentRunRecord, OauthJitMembership, OauthJitPolicy, OauthLoginStateRecord,
+    OauthProviderRecord, OidcJitMembership, OidcJitPolicy, OidcLoginStateRecord,
+    OidcProviderRecord, PasswordInvitationRecord, PricingCatalogCacheRecord,
     PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
     ProviderConnection, ProviderRepository, RequestAttemptRecord, RequestAttemptRepository,
     RequestAttemptStatus, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
     RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestMcpTokenOverheadRecord,
-    RequestTag, SYSTEM_BOOTSTRAP_ADMIN_USER_ID, ServiceAccountRecord, ServiceAccountStatus,
+    RequestTag, ReviewAgentProvider, ReviewAgentPullRequestRecord, ReviewAgentPullRequestState,
+    ReviewAgentRepository, ReviewAgentRepositoryRecord, ReviewAgentRepositoryStatus,
+    ReviewAgentRunRecord, ReviewAgentRunStatus, ReviewAgentSettings,
+    SYSTEM_BOOTSTRAP_ADMIN_USER_ID, ServiceAccountRecord, ServiceAccountStatus,
     SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord, StoreError,
     StoreHealth, TeamMembershipRecord, TeamRecord, UpdateExternalMcpServerRecord,
-    UpdateMcpToolsetRecord, UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
-    UpsertMcpUpstreamCredentialBindingRecord, UsageLeaderboardBucketRecord,
-    UsageLeaderboardUserRecord, UsageLedgerRecord, UsagePricingStatus, UserOauthAuthRecord,
-    UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
+    UpdateMcpToolsetRecord, UpdateReviewAgentRepositoryRecord, UpdateReviewAgentRunRecord,
+    UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
+    UpsertMcpUpstreamCredentialBindingRecord, UpsertReviewAgentPullRequestRecord,
+    UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord, UsageLedgerRecord,
+    UsagePricingStatus, UserOauthAuthRecord, UserOidcAuthRecord, UserPasswordAuthRecord,
+    UserRecord, UserSessionRecord, UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -656,6 +665,7 @@ impl GatewayStore for LibsqlStore {
         providers: &[gateway_core::SeedProvider],
         models: &[gateway_core::SeedModel],
         api_keys: &[gateway_core::SeedApiKey],
+        service_accounts: &[gateway_core::SeedServiceAccount],
         oidc_providers: &[gateway_core::SeedOidcProvider],
         oauth_providers: &[gateway_core::SeedOauthProvider],
         teams: &[gateway_core::SeedTeam],
@@ -665,6 +675,7 @@ impl GatewayStore for LibsqlStore {
             providers,
             models,
             api_keys,
+            service_accounts,
             oidc_providers,
             oauth_providers,
             teams,

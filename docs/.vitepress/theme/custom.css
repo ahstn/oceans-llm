@@ -8,9 +8,22 @@
     --vp-c-bg-soft: oklch(94% 0.018 218);
     --vp-c-border: oklch(82% 0.025 218);
     --vp-c-divider: oklch(86% 0.022 218);
-    --vp-font-family-base: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+    --vp-font-family-base: "Geist Variable", ui-sans-serif, sans-serif;
     --vp-font-family-mono:
         "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    --docs-scrollbar-thumb: color-mix(
+        in oklch,
+        var(--vp-c-text-3) 42%,
+        transparent
+    );
+    --docs-scrollbar-thumb-hover: color-mix(
+        in oklch,
+        var(--vp-c-text-3) 64%,
+        transparent
+    );
+    --docs-scrollbar-track: transparent;
+    --docs-wide-sidebar-layout-inset: 32px;
+    --vp-sidebar-width: 300px;
     --vp-home-hero-name-color: oklch(56% 0.13 218);
     --vp-home-hero-image-background-image: radial-gradient(
         circle at 50% 50%,
@@ -33,12 +46,57 @@
     --vp-c-brand-2: oklch(66% 0.13 211);
     --vp-c-brand-3: oklch(58% 0.11 211);
     --vp-c-brand-soft: oklch(66% 0.13 211 / 16%);
+    --docs-scrollbar-thumb: color-mix(
+        in oklch,
+        var(--vp-c-text-3) 48%,
+        transparent
+    );
+    --docs-scrollbar-thumb-hover: color-mix(
+        in oklch,
+        var(--vp-c-text-2) 68%,
+        transparent
+    );
     --vp-home-hero-name-color: oklch(77% 0.14 211);
     --vp-home-hero-image-background-image: radial-gradient(
         circle at 50% 50%,
         oklch(58% 0.16 211 / 50%),
         transparent 62%
     );
+}
+
+html,
+* {
+    scrollbar-color: var(--docs-scrollbar-thumb) var(--docs-scrollbar-track);
+    scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+    background: var(--docs-scrollbar-track);
+}
+
+*::-webkit-scrollbar-thumb {
+    min-height: 40px;
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background-color: var(--docs-scrollbar-thumb);
+    background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+    background-color: var(--docs-scrollbar-thumb-hover);
+}
+
+*::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+.VPSidebar::-webkit-scrollbar {
+    width: 7px;
 }
 
 .VPNav {
@@ -157,6 +215,17 @@
     font-size: 18px;
 }
 
+.vp-doc a {
+    border-bottom: 1px solid var(--vp-c-brand-1);
+    color: inherit;
+    text-decoration: none;
+}
+
+.vp-doc a:hover {
+    border-bottom-width: 2px;
+    color: inherit;
+}
+
 .VPSidebar {
     border-right: 1px solid var(--vp-c-divider);
     background-color: var(--vp-c-bg-alt);
@@ -181,8 +250,7 @@
 }
 
 .VPSidebarItem.level-1 > .item {
-    padding-top: 6px;
-    padding-bottom: 6px;
+    padding: 3px 0;
 }
 
 .VPSidebarItem.level-1 > .item > .link > .text {
@@ -192,6 +260,61 @@
 
 .VPSidebarItem.level-1.is-active > .item > .link > .text {
     color: var(--vp-c-brand-1);
+}
+
+.VPSidebarItem :is(.link, .VPLink.link) {
+    --docs-sidebar-icon: none;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.VPSidebarItem :is(.link, .VPLink.link)::before {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    background: currentColor;
+    content: "";
+    mask: var(--docs-sidebar-icon) center / contain no-repeat;
+    opacity: 0.82;
+}
+
+.VPSidebarItem.level-2 :is(.link, .VPLink.link)::before {
+    width: 16px;
+    height: 16px;
+}
+
+.VPSidebarItem.is-active :is(.link, .VPLink.link)::before {
+    opacity: 1;
+}
+
+@media (min-width: 1440px) {
+    :root {
+        --docs-wide-sidebar-gutter: calc(
+            (
+                    100% -
+                        (
+                            var(--vp-layout-max-width) -
+                                var(--docs-wide-sidebar-layout-inset)
+                        )
+                ) /
+                2
+        );
+        --docs-wide-sidebar-edge: calc(
+            var(--docs-wide-sidebar-gutter) + var(--vp-sidebar-width) - 32px
+        );
+    }
+
+    .Layout .VPSidebar,
+    .VPNavBar.has-sidebar.has-sidebar > .wrapper > .container > .title {
+        padding-left: max(32px, var(--docs-wide-sidebar-gutter));
+        width: var(--docs-wide-sidebar-edge);
+    }
+
+    .Layout .VPContent.has-sidebar,
+    .VPNavBar.has-sidebar.has-sidebar > .wrapper > .container > .content {
+        padding-left: var(--docs-wide-sidebar-edge);
+    }
 }
 
 @keyframes oceans-hero-gradient {

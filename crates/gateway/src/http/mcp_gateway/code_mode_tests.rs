@@ -79,6 +79,7 @@ async fn build_code_mode_test_app_with_executor(
             identity_token_secret: Arc::new("local-dev-identity-secret".to_string()),
             oidc_public_base_url: Arc::new(None),
             oauth_public_base_url: Arc::new(None),
+            client_config_gateway_base_url: Arc::new(None),
             code_mode: CodeModeState {
                 enabled,
                 executor,

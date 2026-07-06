@@ -532,13 +532,23 @@ export function TeamsPage() {
 
               <div className="hidden overflow-hidden rounded-md border border-[color:var(--color-border)] md:block">
                 <Table className="text-left">
-                  <TableHeader className="bg-[color:var(--color-surface-muted)] text-[var(--color-text-soft)]">
+                  <TableHeader className="bg-[color:var(--color-surface-muted)]">
                     <TableRow>
-                      <TableHead className="px-3 py-2 font-semibold">Team</TableHead>
-                      <TableHead className="px-3 py-2 font-semibold">Admins</TableHead>
-                      <TableHead className="px-3 py-2 font-semibold">Members</TableHead>
-                      <TableHead className="px-3 py-2 font-semibold">Status</TableHead>
-                      <TableHead className="px-3 py-2 font-semibold">Actions</TableHead>
+                      <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                        Team
+                      </TableHead>
+                      <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                        Admins
+                      </TableHead>
+                      <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                        Members
+                      </TableHead>
+                      <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                        Status
+                      </TableHead>
+                      <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                        Actions
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>

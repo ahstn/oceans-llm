@@ -1,6 +1,6 @@
 # Kubernetes and Helm
 
-`See also`: [Deploy and Operations](deploy-and-operations.md), [Runtime Bootstrap and Access](runtime-bootstrap-and-access.md), [Admin Runbooks](../operations/operator-runbooks.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Configuration Reference](../configuration/configuration-reference.md), [Release Process](../reference/release-process.md), [Deploy](../../deploy/README.md)
+`See also`: [Deploy and Operations](deploy-and-operations.md), [Runtime Bootstrap and Access](runtime-bootstrap-and-access.md), [Admin Runbooks](../operations/operator-runbooks.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Configuration Reference](../configuration/configuration-reference.md), [Release Process](../contributing/reference/release-process.md), [Deploy](../../deploy/README.md)
 
 This page owns the Kubernetes and Helm deployment contract for Oceans LLM.
 
@@ -42,6 +42,15 @@ All public HTTP traffic enters through the gateway service. The admin UI service
 
 The chart intentionally has no raw YAML fallback value. Keep deploy-specific config in values files and let the chart render the gateway config.
 
+Set `gateway.clientConfigGatewayBaseUrl` to the public gateway API base URL that admins should copy into generated client snippets. This value is rendered as `GATEWAY_CLIENT_CONFIG_BASE_URL` on the gateway pod. Use the externally reachable OpenAI-compatible base URL, including `/v1`, for example:
+
+```yaml
+gateway:
+  clientConfigGatewayBaseUrl: https://gateway.example.com/v1
+```
+
+Do not rely on the admin UI browser origin for this value. The admin UI may be served through a different ingress path or internal proxy than the API endpoint used by local harnesses.
+
 ## Secrets
 
 The gateway config supports `env.*` and `literal.*` secret references. Kubernetes installs should use env-backed references for deploy-time secrets because Helm renders `gateway.config` into a ConfigMap.
@@ -61,6 +70,7 @@ For production-like installs, provide:
 - `GATEWAY_IDENTITY_TOKEN_SECRET`
 - provider credentials referenced by `gateway.config.providers`
 - any bootstrap-admin password used by an opt-in bootstrap Job
+- `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY` when `gateway.config.service_accounts[*].keys` declares managed service-account keys
 
 The chart does not install External Secrets Operator and does not create a store.
 
@@ -152,4 +162,4 @@ mise run helm-template
 - General runtime shape: [Deploy and Operations](deploy-and-operations.md)
 - First access behavior: [Runtime Bootstrap and Access](runtime-bootstrap-and-access.md)
 - Action-oriented deployment and recovery steps: [Admin Runbooks](../operations/operator-runbooks.md)
-- Release procedure: [Release Process](../reference/release-process.md)
+- Release procedure: [Release Process](../contributing/reference/release-process.md)

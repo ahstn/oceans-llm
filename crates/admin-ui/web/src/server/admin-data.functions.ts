@@ -2,6 +2,7 @@ import { createServerFn } from '@tanstack/react-start'
 
 import {
   addTeamMembers,
+  generateModelClientConfigs,
   listApiKeys,
   listModels,
   deactivateUser,
@@ -34,6 +35,14 @@ import {
   listSpendBudgets,
   listTeams,
   listUsers,
+  listReviewAgentRepositories,
+  listReviewAgentRuns,
+  listServiceAccounts,
+  createReviewAgentRepository,
+  updateReviewAgentRepository,
+  disableReviewAgentRepository,
+  reactivateReviewAgentRepository,
+  renderReviewAgentWorkflow,
   listOauthProviders,
   listOidcProviders,
   loginWithPassword,
@@ -92,6 +101,12 @@ export const updateGatewayApiKey = createServerFn({ method: 'POST' }).handler(
 export const getModels = createServerFn({ method: 'GET' }).handler(
   async ({ data }: { data?: Parameters<typeof listModels>[0] }) => {
     return listModels(data)
+  },
+)
+
+export const getModelClientConfigs = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: Parameters<typeof generateModelClientConfigs>[0] }) => {
+    return generateModelClientConfigs(data)
   },
 )
 
@@ -336,6 +351,10 @@ export const getTeams = createServerFn({ method: 'GET' }).handler(async () => {
   return listTeams()
 })
 
+export const getServiceAccounts = createServerFn({ method: 'GET' }).handler(async () => {
+  return listServiceAccounts()
+})
+
 export const getAuthSession = createServerFn({ method: 'GET' }).handler(async () => {
   return getSession()
 })
@@ -443,6 +462,75 @@ export const resetIdentityUserOnboarding = createServerFn({ method: 'POST' }).ha
 export const resendIdentityUserPasswordInvite = createServerFn({ method: 'POST' }).handler(
   async ({ data }: { data: { userId: string } }) => {
     return resendPasswordInvite(data.userId)
+  },
+)
+
+export const getReviewAgentOverview = createServerFn({ method: 'GET' }).handler(async () => {
+  const [repositories, serviceAccounts] = await Promise.all([
+    listReviewAgentRepositories(),
+    listServiceAccounts(),
+  ])
+
+  const runsByRepository = await Promise.allSettled(
+    repositories.data.items.map((repository) => listReviewAgentRuns(repository.id, { limit: 10 })),
+  )
+
+  const runs = runsByRepository
+    .flatMap((result) => (result.status === 'fulfilled' ? result.value.data.items : []))
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))
+    .slice(0, 25)
+
+  return {
+    data: {
+      repositories: repositories.data.items,
+      service_accounts: serviceAccounts.data.service_accounts,
+      runs,
+    },
+    meta: repositories.meta,
+  }
+})
+
+export const createReviewAgentRepo = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: Parameters<typeof createReviewAgentRepository>[0] }) => {
+    return createReviewAgentRepository(data)
+  },
+)
+
+export const updateReviewAgentRepo = createServerFn({ method: 'POST' }).handler(
+  async ({
+    data,
+  }: {
+    data: {
+      repositoryId: string
+      input: Parameters<typeof updateReviewAgentRepository>[1]
+    }
+  }) => {
+    return updateReviewAgentRepository(data.repositoryId, data.input)
+  },
+)
+
+export const disableReviewAgentRepo = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: { repositoryId: string } }) => {
+    return disableReviewAgentRepository(data.repositoryId)
+  },
+)
+
+export const reactivateReviewAgentRepo = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: { repositoryId: string } }) => {
+    return reactivateReviewAgentRepository(data.repositoryId)
+  },
+)
+
+export const renderReviewAgentRepoWorkflow = createServerFn({ method: 'POST' }).handler(
+  async ({
+    data,
+  }: {
+    data: {
+      repositoryId: string
+      input: Parameters<typeof renderReviewAgentWorkflow>[1]
+    }
+  }) => {
+    return renderReviewAgentWorkflow(data.repositoryId, data.input)
   },
 )
 

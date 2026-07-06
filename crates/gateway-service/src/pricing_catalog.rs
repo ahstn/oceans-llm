@@ -362,7 +362,7 @@ fn pricing_target_for_route(provider: &ProviderConnection, route: &ModelRoute) -
     }
 
     match provider.provider_type.as_str() {
-        "openai_compat" => {
+        "openai_compat" | "gcp_cloud_run_openai_compat" => {
             let Some(pricing_provider_id) = provider
                 .config
                 .get("pricing_provider_id")
@@ -864,7 +864,7 @@ mod tests {
         PricingCatalogRepository, PricingResolution, PricingUnpricedReason, ProviderCapabilities,
         ProviderConnection, StoreError,
     };
-    use serde_json::{Number, json, to_string_pretty};
+    use serde_json::{Number, Value, json, to_string_pretty};
     use time::OffsetDateTime;
     use tokio::net::TcpListener;
     use uuid::Uuid;
@@ -873,8 +873,8 @@ mod tests {
         PRICING_CATALOG_CACHE_KEY, PricingCatalog, PricingCatalogCostDocument,
         PricingCatalogDocument, PricingCatalogLimitDocument, PricingCatalogModalitiesDocument,
         PricingCatalogModelDocument, PricingCatalogProviderDocument, PricingCatalogSnapshot,
-        PricingCatalogSnapshotMetadata, REMOTE_SOURCE, VENDORED_SOURCE,
-        normalize_bedrock_pricing_model_id, normalize_models_dev_money,
+        PricingCatalogSnapshotMetadata, PricingTarget, REMOTE_SOURCE, VENDORED_SOURCE,
+        normalize_bedrock_pricing_model_id, normalize_models_dev_money, pricing_target_for_route,
     };
 
     #[derive(Clone, Default)]
@@ -990,6 +990,26 @@ mod tests {
                 "base_url": "https://api.openai.com/v1",
                 "pricing_provider_id": pricing_provider_id
             }),
+            secrets: None,
+        }
+    }
+
+    fn cloud_run_provider(pricing_provider_id: Option<&str>) -> ProviderConnection {
+        let mut config = serde_json::Map::from_iter([(
+            "base_url".to_string(),
+            json!("https://gemma-service.run.app/v1"),
+        )]);
+        if let Some(pricing_provider_id) = pricing_provider_id {
+            config.insert(
+                "pricing_provider_id".to_string(),
+                json!(pricing_provider_id),
+            );
+        }
+
+        ProviderConnection {
+            provider_key: "gemma-cloud-run".to_string(),
+            provider_type: "gcp_cloud_run_openai_compat".to_string(),
+            config: Value::Object(config),
             secrets: None,
         }
     }
@@ -1144,38 +1164,66 @@ mod tests {
                         "google-vertex".to_string(),
                         PricingCatalogProviderDocument {
                             display_name: "Vertex".to_string(),
-                            models: BTreeMap::from([(
-                                "gemini-2.5-flash".to_string(),
-                                PricingCatalogModelDocument {
-                                    id: "gemini-2.5-flash".to_string(),
-                                    display_name: "Gemini 2.5 Flash".to_string(),
-                                    release_date: "2025-06-17".to_string(),
-                                    last_updated: "2025-06-17".to_string(),
-                                    cost: PricingCatalogCostDocument {
-                                        input: Some("0.3000".to_string()),
-                                        output: Some("2.5000".to_string()),
-                                        cache_read: Some("0.0750".to_string()),
-                                        cache_write: Some("0.3830".to_string()),
-                                        input_audio: None,
-                                        output_audio: None,
+                            models: BTreeMap::from([
+                                (
+                                    "gemini-2.5-flash".to_string(),
+                                    PricingCatalogModelDocument {
+                                        id: "gemini-2.5-flash".to_string(),
+                                        display_name: "Gemini 2.5 Flash".to_string(),
+                                        release_date: "2025-06-17".to_string(),
+                                        last_updated: "2025-06-17".to_string(),
+                                        cost: PricingCatalogCostDocument {
+                                            input: Some("0.3000".to_string()),
+                                            output: Some("2.5000".to_string()),
+                                            cache_read: Some("0.0750".to_string()),
+                                            cache_write: Some("0.3830".to_string()),
+                                            input_audio: None,
+                                            output_audio: None,
+                                        },
+                                        limit: PricingCatalogLimitDocument {
+                                            context: Some(1_048_576),
+                                            input: None,
+                                            output: Some(65_536),
+                                        },
+                                        modalities: PricingCatalogModalitiesDocument {
+                                            input: vec![
+                                                "text".to_string(),
+                                                "image".to_string(),
+                                                "audio".to_string(),
+                                                "video".to_string(),
+                                                "pdf".to_string(),
+                                            ],
+                                            output: vec!["text".to_string()],
+                                        },
                                     },
-                                    limit: PricingCatalogLimitDocument {
-                                        context: Some(1_048_576),
-                                        input: None,
-                                        output: Some(65_536),
+                                ),
+                                (
+                                    "gemini-embedding-001".to_string(),
+                                    PricingCatalogModelDocument {
+                                        id: "gemini-embedding-001".to_string(),
+                                        display_name: "Gemini Embedding".to_string(),
+                                        release_date: "2025-05-20".to_string(),
+                                        last_updated: "2025-05-20".to_string(),
+                                        cost: PricingCatalogCostDocument {
+                                            input: Some("0.1500".to_string()),
+                                            output: None,
+                                            cache_read: None,
+                                            cache_write: None,
+                                            input_audio: None,
+                                            output_audio: None,
+                                        },
+                                        limit: PricingCatalogLimitDocument {
+                                            context: Some(2_048),
+                                            input: None,
+                                            output: None,
+                                        },
+                                        modalities: PricingCatalogModalitiesDocument {
+                                            input: vec!["text".to_string()],
+                                            output: vec!["embedding".to_string()],
+                                        },
                                     },
-                                    modalities: PricingCatalogModalitiesDocument {
-                                        input: vec![
-                                            "text".to_string(),
-                                            "image".to_string(),
-                                            "audio".to_string(),
-                                            "video".to_string(),
-                                            "pdf".to_string(),
-                                        ],
-                                        output: vec!["text".to_string()],
-                                    },
-                                },
-                            )]),
+                                ),
+                            ]),
                         },
                     ),
                     (
@@ -1279,6 +1327,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn gcp_vertex_embedding_model_resolves_exact_google_vertex_pricing() {
+        let catalog = empty_catalog(
+            Arc::new(InMemoryRepo::default()),
+            "http://127.0.0.1:9/api.json".to_string(),
+        );
+
+        let resolved = catalog
+            .resolve_for_provider_connection(
+                &vertex_provider("global"),
+                &route("vertex-prod", "google/gemini-embedding-001"),
+                test_time(),
+            )
+            .await
+            .expect("resolve vertex embedding pricing");
+
+        match resolved {
+            PricingResolution::Exact { pricing } => {
+                assert_eq!(pricing.pricing_provider_id, "google-vertex");
+                assert_eq!(pricing.model_id, "gemini-embedding-001");
+                assert_eq!(
+                    pricing.input_cost_per_million_tokens,
+                    Some(Money4::from_decimal_str("0.1500").expect("money"))
+                );
+                assert_eq!(pricing.output_cost_per_million_tokens, None);
+            }
+            other => panic!("unexpected embedding pricing resolution: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
     async fn aws_bedrock_maps_supported_model_ids() {
         let catalog = empty_catalog(
             Arc::new(InMemoryRepo::default()),
@@ -1319,6 +1397,53 @@ mod tests {
                 assert_eq!(pricing.model_id, "openai.gpt-oss-120b-1:0");
             }
             other => panic!("unexpected gpt oss resolution: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cloud_run_openai_compat_routes_to_configured_pricing_provider() {
+        let target = pricing_target_for_route(
+            &cloud_run_provider(Some("google-vertex")),
+            &route("gemma-cloud-run", "gemini-2.5-flash"),
+        );
+
+        match target {
+            PricingTarget::Exact {
+                pricing_provider_id,
+                model_id,
+            } => {
+                assert_eq!(pricing_provider_id, "google-vertex");
+                assert_eq!(model_id, "gemini-2.5-flash");
+            }
+            other => panic!("unexpected pricing target: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cloud_run_openai_compat_without_pricing_provider_is_unpriced() {
+        let target = pricing_target_for_route(
+            &cloud_run_provider(None),
+            &route("gemma-cloud-run", "gemini-2.5-flash"),
+        );
+
+        match target {
+            PricingTarget::Unpriced(PricingUnpricedReason::ProviderPricingSourceMissing) => {}
+            other => panic!("unexpected pricing target: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cloud_run_openai_compat_with_unsupported_pricing_provider_is_unpriced() {
+        let target = pricing_target_for_route(
+            &cloud_run_provider(Some("local-gemma")),
+            &route("gemma-cloud-run", "gemini-2.5-flash"),
+        );
+
+        match target {
+            PricingTarget::Unpriced(PricingUnpricedReason::UnsupportedPricingProviderId(
+                provider_id,
+            )) => assert_eq!(provider_id, "local-gemma"),
+            other => panic!("unexpected pricing target: {other:?}"),
         }
     }
 

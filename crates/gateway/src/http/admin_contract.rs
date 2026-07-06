@@ -256,6 +256,12 @@ impl From<ServiceModelIconKey> for ModelIconKeyView {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+pub struct AdminModelAllowlistView {
+    pub users: Vec<String>,
+    pub teams: Vec<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
 pub struct AdminModelView {
     pub id: String,
     pub model_id: String,
@@ -263,6 +269,7 @@ pub struct AdminModelView {
     pub alias_of: Option<String>,
     pub description: Option<String>,
     pub tags: Vec<String>,
+    pub allowlist: Option<AdminModelAllowlistView>,
     pub status: AdminModelStatusView,
     pub provider_key: Option<String>,
     pub provider_label: Option<String>,
@@ -287,9 +294,34 @@ pub struct AdminModelView {
 pub struct AdminModelClientConfigView {
     pub key: String,
     pub label: String,
+    pub model_ids: Vec<String>,
+    pub setup: Vec<AdminModelClientConfigSetupItemView>,
+    pub blocks: Vec<AdminModelClientConfigBlockView>,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AdminModelClientConfigSetupItemView {
+    pub label: String,
+    pub value: String,
+    pub href: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AdminModelClientConfigBlockView {
+    pub label: String,
     pub filename: String,
     pub content: String,
-    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct GenerateModelClientConfigsRequest {
+    pub model_keys: Vec<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct GenerateModelClientConfigsResponse {
+    pub client_configurations: Vec<AdminModelClientConfigView>,
 }
 
 #[derive(Debug, Deserialize, Default, IntoParams)]
@@ -980,9 +1012,13 @@ pub struct RequestLogSummaryView {
     pub request_log_id: String,
     pub request_id: String,
     pub api_key_id: String,
+    pub api_key_name: Option<String>,
     pub user_id: Option<String>,
+    pub user_name: Option<String>,
+    pub user_email: Option<String>,
     pub team_id: Option<String>,
     pub service_account_id: Option<String>,
+    pub service_account_name: Option<String>,
     pub model_key: String,
     pub resolved_model_key: String,
     pub model_icon_key: Option<ModelIconKeyView>,
@@ -1121,9 +1157,11 @@ pub struct RequestLogPayloadView {
         crate::http::api_keys::create_api_key,
         crate::http::api_keys::update_api_key,
         crate::http::api_keys::revoke_api_key,
+        crate::http::api_keys::reveal_api_key_secret,
         crate::http::identity::list_identity_users,
         crate::http::identity::list_identity_teams,
         crate::http::models::list_models,
+        crate::http::models::generate_model_client_configs,
         crate::http::identity::create_identity_team,
         crate::http::identity::update_identity_team,
         crate::http::identity::add_identity_team_members,
@@ -1152,6 +1190,19 @@ pub struct RequestLogPayloadView {
         crate::http::identity::oauth_start,
         crate::http::identity::oauth_callback_github,
         crate::http::spend::get_spend_report,
+        crate::http::review_agent::list_review_agent_repositories,
+        crate::http::review_agent::create_review_agent_repository,
+        crate::http::review_agent::get_review_agent_repository,
+        crate::http::review_agent::update_review_agent_repository,
+        crate::http::review_agent::disable_review_agent_repository,
+        crate::http::review_agent::reactivate_review_agent_repository,
+        crate::http::review_agent::list_review_agent_runs,
+        crate::http::review_agent::render_review_agent_workflow,
+        crate::http::review_agent::resolve_review_agent_action_config,
+        crate::http::review_agent::start_review_agent_action_run,
+        crate::http::review_agent::heartbeat_review_agent_action_run,
+        crate::http::review_agent::complete_review_agent_action_run,
+        crate::http::review_agent::fail_review_agent_action_run,
         crate::http::spend::get_admin_focus_export,
         crate::http::spend::get_my_focus_export,
         crate::http::spend::list_spend_budgets,
@@ -1198,6 +1249,10 @@ impl Modify for AdminApiSecurity {
             "session_cookie",
             SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::new("ogw_session"))),
         );
+        let mut gateway_api_key =
+            utoipa::openapi::security::Http::new(utoipa::openapi::security::HttpAuthScheme::Bearer);
+        gateway_api_key.bearer_format = Some("Gateway API key".to_string());
+        components.add_security_scheme("gateway_api_key", SecurityScheme::Http(gateway_api_key));
     }
 }
 
@@ -1309,5 +1364,7 @@ mod tests {
                 .schemas
                 .contains_key("Envelope_McpToolInvocationDetailView")
         );
+        assert!(components.schemas.contains_key("AdminModelAllowlistView"));
+        assert!(components.schemas.contains_key("AdminModelView"));
     }
 }

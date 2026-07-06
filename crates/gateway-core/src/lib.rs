@@ -2,6 +2,7 @@ pub mod auth;
 pub mod budgets;
 pub mod domain;
 pub mod error;
+pub mod gateway_keys;
 pub mod protocol;
 pub mod streaming;
 pub mod traits;
@@ -13,7 +14,8 @@ pub use budgets::{
     BudgetModelSelector, BudgetRecord, BudgetScope, BudgetScopeKind, BudgetSettings,
 };
 pub use domain::{
-    ApiKeyOwnerKind, ApiKeyRecord, ApiKeyStatus, AuthMode, AwsBedrockApiStyle,
+    ApiKeyModelGrantMode, ApiKeyOwnerKind, ApiKeyRecord, ApiKeySecretMaterialRecord,
+    ApiKeySecretStorageKind, ApiKeyStatus, AuthMode, AwsBedrockApiStyle,
     AwsBedrockRouteCompatibility, BudgetAlertChannel, BudgetAlertDeliveryRecord,
     BudgetAlertDeliveryStatus, BudgetAlertDispatchTask, BudgetAlertHistoryPage,
     BudgetAlertHistoryQuery, BudgetAlertHistoryRecord, BudgetAlertRecord, BudgetCadence,
@@ -21,39 +23,54 @@ pub use domain::{
     ExternalMcpServerRecord, ExternalMcpServerStatus, ExternalMcpToolRecord, ExternalMcpTransport,
     FocusExportAggregateRecord, FocusExportDiagnosticsRecord, GatewayModel, GlobalRole,
     HarnessUsageBucketRecord, HarnessUsageLeaderRecord, IdentityUserRecord,
-    MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, McpAccessResolution, McpAggregateSessionRecord,
-    McpCatalogAccessResolution, McpCatalogToolRecord, McpGrantSubject, McpSessionSurface,
-    McpTokenEstimateConfidence,
-    McpTokenEstimateSource, McpToolGrantRecord, McpToolGrantSubjectKind, McpToolGrantTargetKind,
-    McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationPayloadRecord,
-    McpToolInvocationQuery, McpToolInvocationRecord, McpToolInvocationStatus, McpToolPolicyResult,
+    MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, ManagedApiKeySource, McpAccessResolution,
+    McpAggregateSessionRecord, McpCatalogAccessResolution, McpCatalogToolRecord, McpGrantSubject,
+    McpSessionSurface, McpTokenEstimateConfidence, McpTokenEstimateSource, McpToolGrantRecord,
+    McpToolGrantSubjectKind, McpToolGrantTargetKind, McpToolInvocationDetail,
+    McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
+    McpToolInvocationRecord, McpToolInvocationStatus, McpToolPolicyResult,
     McpToolTokenEstimateRecord, McpToolsetRecord, McpToolsetStatus, McpToolsetToolRecord,
     McpUpstreamCredentialBindingRecord, McpUpstreamCredentialMaterialKind,
     McpUpstreamCredentialOwnerScopeKind, McpUpstreamSecretStorageKind, MembershipRole,
-    ModelAccessMode, ModelPricingRecord, ModelRoute, Money4, NewApiKeyRecord,
+    ModelAccessMode, ModelAllowlistPolicy, ModelPricingRecord, ModelRoute, Money4, NewApiKeyRecord,
     NewExternalMcpServerRecord, NewMcpAggregateSessionRecord, NewMcpToolsetRecord,
-    OauthJitMembership, OauthJitPolicy, OauthLoginStateRecord, OauthProviderRecord,
-    OidcJitMembership, OidcJitPolicy, OidcLoginStateRecord, OidcProviderRecord,
-    OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
-    OpenAiCompatRouteCompatibility, PasswordInvitationRecord, PricingCatalogCacheRecord,
-    PricingLimits, PricingModalities, PricingProvenance, PricingResolution, PricingUnpricedReason,
-    ProviderCapabilities, ProviderConnection, ProviderRequestContext, RequestAttemptRecord,
-    RequestAttemptStatus, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
-    RequestLogPurgeResult, RequestLogQuery, RequestLogRecord, RequestLogRetentionWindow,
-    RequestMcpTokenOverheadRecord, RequestTag, RequestTags, RequestToolCardinality,
-    RequestToolCardinalityAverages, ResolvedModelPricing, RouteCompatibility,
-    SYSTEM_BOOTSTRAP_ADMIN_EMAIL, SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SeedApiKey, SeedBudget,
-    SeedModel, SeedModelRoute, SeedOauthProvider, SeedOidcProvider, SeedProvider, SeedTeam,
-    SeedUser, SeedUserMembership, ServiceAccountRecord, ServiceAccountStatus,
-    SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord,
-    TeamMembershipRecord, TeamRecord, UpdateExternalMcpServerRecord, UpdateMcpToolsetRecord,
-    UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
-    UpsertMcpUpstreamCredentialBindingRecord, UsageLeaderboardBucketRecord,
-    UsageLeaderboardUserRecord, UsageLedgerRecord, UsagePricingStatus, UserOauthAuthRecord,
-    UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
-    budget_window_utc,
+    NewReviewAgentRepositoryRecord, NewReviewAgentRunRecord, OauthJitMembership, OauthJitPolicy,
+    OauthLoginStateRecord, OauthProviderRecord, OidcJitMembership, OidcJitPolicy,
+    OidcLoginStateRecord, OidcProviderRecord, OpenAiCompatDeveloperRole,
+    OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
+    OpenRouterMaxPrice, OpenRouterPercentileCutoffs, OpenRouterPercentilePreference,
+    OpenRouterProviderRouting, OpenRouterRouteCompatibility, PasswordInvitationRecord,
+    PricingCatalogCacheRecord, PricingLimits, PricingModalities, PricingProvenance,
+    PricingResolution, PricingUnpricedReason, ProviderCapabilities, ProviderConnection,
+    ProviderRequestContext, RequestAttemptRecord, RequestAttemptStatus, RequestLogDetail,
+    RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult, RequestLogQuery,
+    RequestLogRecord, RequestLogRetentionWindow, RequestMcpTokenOverheadRecord, RequestTag,
+    RequestTags, RequestToolCardinality, RequestToolCardinalityAverages, ResolvedModelPricing,
+    ReviewAgentProvider, ReviewAgentPullRequestRecord, ReviewAgentPullRequestState,
+    ReviewAgentRepositoryRecord, ReviewAgentRepositoryStatus, ReviewAgentRunRecord,
+    ReviewAgentRunStatus, ReviewAgentSettings, RouteCompatibility, SYSTEM_BOOTSTRAP_ADMIN_EMAIL,
+    SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SeedApiKey, SeedApiKeySecretMaterial, SeedBudget,
+    SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute, SeedOauthProvider,
+    SeedOidcProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership,
+    ServiceAccountRecord, ServiceAccountStatus, SpendDailyAggregateRecord,
+    SpendModelAggregateRecord, SpendOwnerAggregateRecord, TeamMembershipRecord, TeamRecord,
+    UpdateExternalMcpServerRecord, UpdateMcpToolsetRecord, UpdateReviewAgentRepositoryRecord,
+    UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
+    UpsertMcpUpstreamCredentialBindingRecord, UpsertReviewAgentPullRequestRecord,
+    UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord, UsageLedgerRecord,
+    UsagePricingStatus, UserOauthAuthRecord, UserOidcAuthRecord, UserPasswordAuthRecord,
+    UserRecord, UserSessionRecord, UserStatus, VERTEX_TEXT_EMBEDDING_MODEL_IDS, budget_window_utc,
+    is_supported_vertex_text_embedding_model_id, is_supported_vertex_text_embedding_upstream_model,
+    vertex_route_capabilities_for_upstream_model, vertex_text_embedding_capabilities,
 };
 pub use error::{AuthError, GatewayError, ProviderError, RouteError, StoreError};
+pub use gateway_keys::{
+    EncryptedSecret, GATEWAY_API_KEY_SECRET_KEY_ENV, GATEWAY_API_KEY_SECRET_KEY_ID,
+    decrypt_gateway_api_key_secret, decrypt_secret_with_key, encrypt_gateway_api_key_secret,
+    encrypt_secret_with_key, generate_gateway_api_key_value, hash_gateway_key_secret,
+    validate_secret_key_env,
+};
+pub use protocol::anthropic::{AnthropicMessage, AnthropicMessagesRequest};
 pub use protocol::core::{
     ChatMessage as CoreChatMessage, ChatRequest as CoreChatRequest,
     EmbeddingsRequest as CoreEmbeddingsRequest, RequestRequirements as CoreRequestRequirements,
@@ -65,9 +82,10 @@ pub use protocol::openai::{
     ResponsesStreamEvent,
 };
 pub use protocol::translate::{
-    core_chat_request_to_openai, core_embeddings_request_to_openai,
-    core_responses_request_to_openai, openai_chat_request_to_core,
-    openai_embeddings_request_to_core, openai_responses_request_to_core,
+    anthropic_messages_request_to_core, core_chat_request_to_openai,
+    core_embeddings_request_to_openai, core_responses_request_to_openai,
+    openai_chat_request_to_core, openai_embeddings_request_to_core,
+    openai_responses_request_to_core,
 };
 pub use streaming::{ParsedSseEvent, SseEventParser, Utf8ChunkDecoder};
 pub use traits::{
@@ -76,5 +94,5 @@ pub use traits::{
     McpRegistryRepository, McpTokenOverheadRepository, McpToolInvocationRepository,
     McpUpstreamCredentialRepository, ModelRepository, PricingCatalogRepository, ProviderClient,
     ProviderRegistry, ProviderRepository, ProviderStream, RequestAttemptRepository,
-    RequestLogRepository, RoutePlanner, StoreHealth,
+    RequestLogRepository, ReviewAgentRepository, RoutePlanner, StoreHealth,
 };

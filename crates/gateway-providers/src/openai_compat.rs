@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, time::Duration};
+use std::{collections::BTreeMap, path::PathBuf, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use gateway_core::{
@@ -12,12 +12,47 @@ use serde_json::{Map, Value, json};
 
 use crate::http::{join_base_url, map_reqwest_error};
 use crate::streaming::{normalize_openai_compat_responses_stream, normalize_openai_compat_stream};
+use crate::token::{AdcIdTokenSource, CachedAccessTokenSource, ServiceAccountIdTokenSource};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BearerAuthHeader {
+    Authorization,
+    XServerlessAuthorization,
+}
+
+impl BearerAuthHeader {
+    fn apply(self, request: reqwest::RequestBuilder, token: &str) -> reqwest::RequestBuilder {
+        match self {
+            Self::Authorization => request.bearer_auth(token),
+            Self::XServerlessAuthorization => {
+                request.header("X-Serverless-Authorization", format!("Bearer {token}"))
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum CloudRunOpenAiCompatAuth {
+    Adc {
+        audience: String,
+    },
+    ServiceAccount {
+        credentials_path: PathBuf,
+        audience: String,
+    },
+    Bearer {
+        token: String,
+    },
+}
+
+#[derive(Clone)]
 pub struct OpenAiCompatConfig {
     pub provider_key: String,
+    pub provider_type: String,
     pub base_url: String,
     pub bearer_token: Option<String>,
+    pub bearer_auth_header: BearerAuthHeader,
+    pub identity_token_source: Option<CachedAccessTokenSource>,
     pub default_headers: BTreeMap<String, String>,
     pub request_timeout_ms: u64,
 }
@@ -27,11 +62,51 @@ impl OpenAiCompatConfig {
     pub fn new(provider_key: String, base_url: String) -> Self {
         Self {
             provider_key,
+            provider_type: "openai_compat".to_string(),
             base_url,
             bearer_token: None,
+            bearer_auth_header: BearerAuthHeader::Authorization,
+            identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 120_000,
         }
+    }
+
+    pub fn new_cloud_run(
+        provider_key: String,
+        base_url: String,
+        bearer_auth_header: BearerAuthHeader,
+        auth: CloudRunOpenAiCompatAuth,
+    ) -> Result<Self, ProviderError> {
+        let mut config = Self::new(provider_key, base_url);
+        config.provider_type = "gcp_cloud_run_openai_compat".to_string();
+        config.bearer_auth_header = bearer_auth_header;
+        config.apply_cloud_run_auth(auth)?;
+        Ok(config)
+    }
+
+    fn apply_cloud_run_auth(
+        &mut self,
+        auth: CloudRunOpenAiCompatAuth,
+    ) -> Result<(), ProviderError> {
+        match auth {
+            CloudRunOpenAiCompatAuth::Adc { audience } => {
+                let source = AdcIdTokenSource::new(audience)?;
+                self.identity_token_source = Some(CachedAccessTokenSource::new(Arc::new(source)));
+            }
+            CloudRunOpenAiCompatAuth::ServiceAccount {
+                credentials_path,
+                audience,
+            } => {
+                let source = ServiceAccountIdTokenSource::new(credentials_path, audience)?;
+                self.identity_token_source = Some(CachedAccessTokenSource::new(Arc::new(source)));
+            }
+            CloudRunOpenAiCompatAuth::Bearer { token } => {
+                self.bearer_token = Some(token);
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -56,6 +131,108 @@ impl OpenAiCompatProvider {
         request: &CoreChatRequest,
         context: &ProviderRequestContext,
     ) -> Result<reqwest::Request, ProviderError> {
+        self.build_chat_request_with_token(request, context, self.config.bearer_token.as_deref())
+    }
+
+    pub fn build_chat_stream_request(
+        &self,
+        request: &CoreChatRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<reqwest::Request, ProviderError> {
+        self.build_chat_stream_request_with_token(
+            request,
+            context,
+            self.config.bearer_token.as_deref(),
+        )
+    }
+
+    pub fn build_embeddings_request(
+        &self,
+        request: &CoreEmbeddingsRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<reqwest::Request, ProviderError> {
+        self.build_embeddings_request_with_token(
+            request,
+            context,
+            self.config.bearer_token.as_deref(),
+        )
+    }
+
+    pub fn build_responses_request(
+        &self,
+        request: &CoreResponsesRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<reqwest::Request, ProviderError> {
+        self.build_responses_request_with_token(
+            request,
+            context,
+            self.config.bearer_token.as_deref(),
+        )
+    }
+
+    pub fn build_responses_stream_request(
+        &self,
+        request: &CoreResponsesRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<reqwest::Request, ProviderError> {
+        self.build_responses_stream_request_with_token(
+            request,
+            context,
+            self.config.bearer_token.as_deref(),
+        )
+    }
+
+    async fn build_authenticated_chat_request(
+        &self,
+        request: &CoreChatRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<reqwest::Request, ProviderError> {
+        let token = self.auth_token().await?;
+        self.build_chat_request_with_token(request, context, token.as_deref())
+    }
+
+    async fn build_authenticated_chat_stream_request(
+        &self,
+        request: &CoreChatRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<reqwest::Request, ProviderError> {
+        let token = self.auth_token().await?;
+        self.build_chat_stream_request_with_token(request, context, token.as_deref())
+    }
+
+    async fn build_authenticated_embeddings_request(
+        &self,
+        request: &CoreEmbeddingsRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<reqwest::Request, ProviderError> {
+        let token = self.auth_token().await?;
+        self.build_embeddings_request_with_token(request, context, token.as_deref())
+    }
+
+    async fn build_authenticated_responses_request(
+        &self,
+        request: &CoreResponsesRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<reqwest::Request, ProviderError> {
+        let token = self.auth_token().await?;
+        self.build_responses_request_with_token(request, context, token.as_deref())
+    }
+
+    async fn build_authenticated_responses_stream_request(
+        &self,
+        request: &CoreResponsesRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<reqwest::Request, ProviderError> {
+        let token = self.auth_token().await?;
+        self.build_responses_stream_request_with_token(request, context, token.as_deref())
+    }
+
+    fn build_chat_request_with_token(
+        &self,
+        request: &CoreChatRequest,
+        context: &ProviderRequestContext,
+        bearer_token: Option<&str>,
+    ) -> Result<reqwest::Request, ProviderError> {
         let wire_request = core_chat_request_to_openai(request);
         let mut body = serde_json::to_value(wire_request)
             .map_err(|error| ProviderError::Transport(error.to_string()))?;
@@ -65,14 +242,16 @@ impl OpenAiCompatProvider {
                 "model".to_string(),
                 Value::String(context.upstream_model.clone()),
             );
+            normalize_anthropic_messages_tools_for_openai(object);
         }
-        self.build_request("chat/completions", body, context, false, true)
+        self.build_request("chat/completions", body, context, false, true, bearer_token)
     }
 
-    pub fn build_chat_stream_request(
+    fn build_chat_stream_request_with_token(
         &self,
         request: &CoreChatRequest,
         context: &ProviderRequestContext,
+        bearer_token: Option<&str>,
     ) -> Result<reqwest::Request, ProviderError> {
         let mut stream_request = request.clone();
         stream_request.stream = true;
@@ -85,14 +264,16 @@ impl OpenAiCompatProvider {
                 "model".to_string(),
                 Value::String(context.upstream_model.clone()),
             );
+            normalize_anthropic_messages_tools_for_openai(object);
         }
-        self.build_request("chat/completions", body, context, true, true)
+        self.build_request("chat/completions", body, context, true, true, bearer_token)
     }
 
-    pub fn build_embeddings_request(
+    fn build_embeddings_request_with_token(
         &self,
         request: &CoreEmbeddingsRequest,
         context: &ProviderRequestContext,
+        bearer_token: Option<&str>,
     ) -> Result<reqwest::Request, ProviderError> {
         let wire_request = core_embeddings_request_to_openai(request);
         let mut body = serde_json::to_value(wire_request)
@@ -105,13 +286,14 @@ impl OpenAiCompatProvider {
             );
         }
 
-        self.build_request("embeddings", body, context, false, false)
+        self.build_request("embeddings", body, context, false, false, bearer_token)
     }
 
-    pub fn build_responses_request(
+    fn build_responses_request_with_token(
         &self,
         request: &CoreResponsesRequest,
         context: &ProviderRequestContext,
+        bearer_token: Option<&str>,
     ) -> Result<reqwest::Request, ProviderError> {
         let wire_request = core_responses_request_to_openai(request);
         let mut body = serde_json::to_value(wire_request)
@@ -124,13 +306,14 @@ impl OpenAiCompatProvider {
             );
         }
 
-        self.build_request("responses", body, context, false, false)
+        self.build_request("responses", body, context, false, false, bearer_token)
     }
 
-    pub fn build_responses_stream_request(
+    fn build_responses_stream_request_with_token(
         &self,
         request: &CoreResponsesRequest,
         context: &ProviderRequestContext,
+        bearer_token: Option<&str>,
     ) -> Result<reqwest::Request, ProviderError> {
         let mut stream_request = request.clone();
         stream_request.stream = true;
@@ -145,7 +328,15 @@ impl OpenAiCompatProvider {
             );
         }
 
-        self.build_request("responses", body, context, true, false)
+        self.build_request("responses", body, context, true, false, bearer_token)
+    }
+
+    async fn auth_token(&self) -> Result<Option<String>, ProviderError> {
+        if let Some(source) = &self.config.identity_token_source {
+            return source.token().await.map(Some);
+        }
+
+        Ok(self.config.bearer_token.clone())
     }
 
     fn build_request(
@@ -155,6 +346,7 @@ impl OpenAiCompatProvider {
         context: &ProviderRequestContext,
         enforce_stream: bool,
         apply_compatibility_profile: bool,
+        bearer_token: Option<&str>,
     ) -> Result<reqwest::Request, ProviderError> {
         if let Some(object) = body.as_object_mut() {
             for (key, value) in &context.extra_body {
@@ -163,6 +355,7 @@ impl OpenAiCompatProvider {
         }
         if apply_compatibility_profile {
             apply_openai_compat_request_profile(&mut body, context);
+            apply_openrouter_routing_policy(&mut body, context)?;
         }
         if let Some(object) = body.as_object_mut()
             && enforce_stream
@@ -194,8 +387,8 @@ impl OpenAiCompatProvider {
 
         request = request.header("x-request-id", &context.request_id);
 
-        if let Some(bearer_token) = &self.config.bearer_token {
-            request = request.bearer_auth(bearer_token);
+        if let Some(bearer_token) = bearer_token {
+            request = self.config.bearer_auth_header.apply(request, bearer_token);
         }
 
         request.build().map_err(map_reqwest_error)
@@ -260,11 +453,85 @@ impl OpenAiCompatProvider {
     }
 }
 
+fn normalize_anthropic_messages_tools_for_openai(body: &mut serde_json::Map<String, Value>) {
+    if let Some(tools) = body.get_mut("tools").and_then(Value::as_array_mut) {
+        for tool in tools {
+            normalize_anthropic_messages_tool_for_openai(tool);
+        }
+    }
+
+    if let Some(tool_choice) = body.get_mut("tool_choice") {
+        normalize_anthropic_messages_tool_choice_for_openai(tool_choice);
+    }
+}
+
+fn normalize_anthropic_messages_tool_for_openai(tool: &mut Value) {
+    let Some(object) = tool.as_object_mut() else {
+        return;
+    };
+    if object.contains_key("type") || !object.contains_key("input_schema") {
+        return;
+    }
+    let Some(name) = object.get("name").cloned() else {
+        return;
+    };
+    let mut function = serde_json::Map::from_iter([
+        ("name".to_string(), name),
+        (
+            "parameters".to_string(),
+            object
+                .get("input_schema")
+                .cloned()
+                .unwrap_or_else(|| json!({"type":"object","properties":{}})),
+        ),
+    ]);
+    if let Some(description) = object.get("description").cloned() {
+        function.insert("description".to_string(), description);
+    }
+    *tool = json!({
+        "type": "function",
+        "function": Value::Object(function)
+    });
+}
+
+fn normalize_anthropic_messages_tool_choice_for_openai(tool_choice: &mut Value) {
+    let Some(object) = tool_choice.as_object() else {
+        return;
+    };
+    match object.get("type").and_then(Value::as_str) {
+        Some("auto") => *tool_choice = Value::String("auto".to_string()),
+        Some("any") => *tool_choice = Value::String("required".to_string()),
+        Some("tool") => {
+            if let Some(name) = object.get("name").and_then(Value::as_str) {
+                *tool_choice = json!({"type":"function","function":{"name":name}});
+            }
+        }
+        _ => {}
+    }
+}
+
 fn apply_openai_compat_request_profile(body: &mut Value, context: &ProviderRequestContext) {
     let Some(profile) = context.compatibility.openai_compat.as_ref() else {
         return;
     };
     apply_openai_compat_profile_to_body(body, profile);
+}
+
+fn apply_openrouter_routing_policy(
+    body: &mut Value,
+    context: &ProviderRequestContext,
+) -> Result<(), ProviderError> {
+    let Some(openrouter) = context.compatibility.openrouter.as_ref() else {
+        return Ok(());
+    };
+    let Some(object) = body.as_object_mut() else {
+        return Ok(());
+    };
+
+    let provider = serde_json::to_value(&openrouter.provider)
+        .map_err(|error| ProviderError::Transport(error.to_string()))?;
+    object.insert("provider".to_string(), provider);
+    Ok(())
 }
 
 fn apply_openai_compat_profile_to_body(body: &mut Value, profile: &OpenAiCompatRouteCompatibility) {
@@ -330,7 +597,7 @@ impl ProviderClient for OpenAiCompatProvider {
     }
 
     fn provider_type(&self) -> &str {
-        "openai_compat"
+        &self.config.provider_type
     }
 
     fn capabilities(&self) -> ProviderCapabilities {
@@ -342,7 +609,9 @@ impl ProviderClient for OpenAiCompatProvider {
         request: &CoreChatRequest,
         context: &ProviderRequestContext,
     ) -> Result<Value, ProviderError> {
-        let request = self.build_chat_request(request, context)?;
+        let request = self
+            .build_authenticated_chat_request(request, context)
+            .await?;
         self.execute_json_request(request).await
     }
 
@@ -351,7 +620,9 @@ impl ProviderClient for OpenAiCompatProvider {
         request: &CoreChatRequest,
         context: &ProviderRequestContext,
     ) -> Result<ProviderStream, ProviderError> {
-        let request = self.build_chat_stream_request(request, context)?;
+        let request = self
+            .build_authenticated_chat_stream_request(request, context)
+            .await?;
         let response = self.execute_stream_request(request).await?;
 
         Ok(normalize_openai_compat_stream(response.bytes_stream()))
@@ -362,7 +633,9 @@ impl ProviderClient for OpenAiCompatProvider {
         request: &CoreEmbeddingsRequest,
         context: &ProviderRequestContext,
     ) -> Result<Value, ProviderError> {
-        let request = self.build_embeddings_request(request, context)?;
+        let request = self
+            .build_authenticated_embeddings_request(request, context)
+            .await?;
         self.execute_json_request(request).await
     }
 
@@ -371,7 +644,9 @@ impl ProviderClient for OpenAiCompatProvider {
         request: &CoreResponsesRequest,
         context: &ProviderRequestContext,
     ) -> Result<Value, ProviderError> {
-        let request = self.build_responses_request(request, context)?;
+        let request = self
+            .build_authenticated_responses_request(request, context)
+            .await?;
         self.execute_json_request(request).await
     }
 
@@ -380,7 +655,9 @@ impl ProviderClient for OpenAiCompatProvider {
         request: &CoreResponsesRequest,
         context: &ProviderRequestContext,
     ) -> Result<ProviderStream, ProviderError> {
-        let request = self.build_responses_stream_request(request, context)?;
+        let request = self
+            .build_authenticated_responses_stream_request(request, context)
+            .await?;
         let response = self.execute_stream_request(request).await?;
 
         Ok(normalize_openai_compat_responses_stream(
@@ -404,6 +681,7 @@ mod tests {
     use axum::{
         Json, Router,
         body::Body,
+        extract::Request,
         http::StatusCode,
         response::{IntoResponse, Response},
         routing::post,
@@ -413,18 +691,23 @@ mod tests {
     use gateway_core::{
         CoreChatMessage, CoreChatRequest, CoreResponsesRequest, OpenAiCompatDeveloperRole,
         OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
-        ProviderClient, ProviderError, ProviderRequestContext, RouteCompatibility,
+        OpenRouterMaxPrice, OpenRouterPercentileCutoffs, OpenRouterPercentilePreference,
+        OpenRouterProviderRouting, OpenRouterRouteCompatibility, ProviderClient, ProviderError,
+        ProviderRequestContext, RouteCompatibility,
     };
     use serde_json::{Map, Value, json};
     use tokio::net::TcpListener;
 
-    use super::{OpenAiCompatConfig, OpenAiCompatProvider};
+    use super::{BearerAuthHeader, OpenAiCompatConfig, OpenAiCompatProvider};
 
     fn provider() -> OpenAiCompatProvider {
         OpenAiCompatProvider::new(OpenAiCompatConfig {
             provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
             bearer_token: None,
+            bearer_auth_header: super::BearerAuthHeader::Authorization,
+            identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
         })
@@ -447,6 +730,18 @@ mod tests {
         }
     }
 
+    fn context_with_openrouter_policy(
+        routing: OpenRouterProviderRouting,
+    ) -> ProviderRequestContext {
+        ProviderRequestContext {
+            compatibility: RouteCompatibility {
+                openrouter: Some(OpenRouterRouteCompatibility { provider: routing }),
+                ..Default::default()
+            },
+            ..default_context()
+        }
+    }
+
     fn request_body_json(request: &reqwest::Request) -> Value {
         let body = request
             .body()
@@ -458,8 +753,11 @@ mod tests {
     fn provider_with_base_url(base_url: String) -> OpenAiCompatProvider {
         OpenAiCompatProvider::new(OpenAiCompatConfig {
             provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
             base_url,
             bearer_token: None,
+            bearer_auth_header: super::BearerAuthHeader::Authorization,
+            identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
         })
@@ -690,8 +988,11 @@ mod tests {
 
         let provider = OpenAiCompatProvider::new(OpenAiCompatConfig {
             provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
             bearer_token: Some("test-token".to_string()),
+            bearer_auth_header: super::BearerAuthHeader::Authorization,
+            identity_token_source: None,
             default_headers,
             request_timeout_ms: 10_000,
         })
@@ -752,11 +1053,139 @@ mod tests {
     }
 
     #[test]
+    fn builds_request_with_x_serverless_authorization_header() {
+        let provider = OpenAiCompatProvider::new(OpenAiCompatConfig {
+            provider_key: "cloud-run-gemma".to_string(),
+            provider_type: "gcp_cloud_run_openai_compat".to_string(),
+            base_url: "https://gemma-service.run.app/v1".to_string(),
+            bearer_token: Some("id-token".to_string()),
+            bearer_auth_header: BearerAuthHeader::XServerlessAuthorization,
+            identity_token_source: None,
+            default_headers: BTreeMap::new(),
+            request_timeout_ms: 10_000,
+        })
+        .expect("provider");
+
+        let request = CoreChatRequest {
+            model: "gemma".to_string(),
+            messages: vec![],
+            stream: false,
+            extra: BTreeMap::new(),
+        };
+        let mut context = default_context();
+        context.provider_key = "cloud-run-gemma".to_string();
+        context.upstream_model = "google/gemma-4-12b-it".to_string();
+
+        let built = provider
+            .build_chat_request(&request, &context)
+            .expect("build request");
+        let headers = built.headers();
+
+        assert_eq!(
+            headers
+                .get("x-serverless-authorization")
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer id-token")
+        );
+        assert!(headers.get("authorization").is_none());
+        assert_eq!(provider.provider_type(), "gcp_cloud_run_openai_compat");
+    }
+
+    #[test]
+    fn openrouter_policy_serializes_provider_object_for_chat_completions() {
+        let provider = provider();
+        let request = CoreChatRequest {
+            model: "fast".to_string(),
+            messages: vec![],
+            stream: false,
+            extra: BTreeMap::new(),
+        };
+        let context = context_with_openrouter_policy(OpenRouterProviderRouting {
+            zdr: Some(true),
+            only: vec!["openai".to_string()],
+            ignore: vec!["deepinfra".to_string()],
+            order: vec!["openai".to_string(), "anthropic".to_string()],
+            preferred_max_latency: Some(OpenRouterPercentilePreference::Percentiles(
+                OpenRouterPercentileCutoffs {
+                    p90: Some(2.5),
+                    ..Default::default()
+                },
+            )),
+            max_price: Some(OpenRouterMaxPrice {
+                prompt: Some(1.0),
+                completion: Some(2.0),
+                request: Some(0.01),
+                image: Some(0.05),
+            }),
+        });
+
+        let built = provider
+            .build_chat_request(&request, &context)
+            .expect("build request");
+        let body_json = request_body_json(&built);
+
+        assert_eq!(
+            body_json["provider"],
+            json!({
+                "zdr": true,
+                "only": ["openai"],
+                "ignore": ["deepinfra"],
+                "order": ["openai", "anthropic"],
+                "preferred_max_latency": {"p90": 2.5},
+                "max_price": {
+                    "prompt": 1.0,
+                    "completion": 2.0,
+                    "request": 0.01,
+                    "image": 0.05
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn ordinary_openai_compat_chat_request_does_not_add_provider_object() {
+        let provider = provider();
+        let request = CoreChatRequest {
+            model: "fast".to_string(),
+            messages: vec![],
+            stream: false,
+            extra: BTreeMap::new(),
+        };
+
+        let built = provider
+            .build_chat_request(&request, &default_context())
+            .expect("build request");
+        let body_json = request_body_json(&built);
+
+        assert!(body_json.get("provider").is_none());
+    }
+
+    #[test]
+    fn openrouter_policy_is_not_applied_to_responses_requests() {
+        let provider = provider();
+        let request = responses_request(false);
+        let context = context_with_openrouter_policy(OpenRouterProviderRouting {
+            zdr: Some(true),
+            ..Default::default()
+        });
+
+        let built = provider
+            .build_responses_request(&request, &context)
+            .expect("build request");
+        let body_json = request_body_json(&built);
+
+        assert!(body_json.get("provider").is_none());
+    }
+
+    #[test]
     fn build_chat_stream_request_enforces_stream_true_after_overrides() {
         let provider = OpenAiCompatProvider::new(OpenAiCompatConfig {
             provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
             bearer_token: None,
+            bearer_auth_header: super::BearerAuthHeader::Authorization,
+            identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
         })
@@ -799,6 +1228,61 @@ mod tests {
     }
 
     #[test]
+    fn build_chat_request_translates_anthropic_messages_tools_for_openai_compat() {
+        let provider = provider_with_base_url("https://api.openai.com/v1".to_string());
+        let mut request = CoreChatRequest {
+            model: "fast".to_string(),
+            messages: vec![CoreChatMessage {
+                role: "user".to_string(),
+                content: Value::String("use a tool".to_string()),
+                name: None,
+                extra: BTreeMap::new(),
+            }],
+            stream: false,
+            extra: BTreeMap::new(),
+        };
+        request.extra.insert(
+            "tools".to_string(),
+            json!([{
+                "name": "lookup",
+                "description": "Look up weather",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"city": {"type": "string"}}
+                }
+            }]),
+        );
+        request.extra.insert(
+            "tool_choice".to_string(),
+            json!({"type":"tool","name":"lookup"}),
+        );
+
+        let built = provider
+            .build_chat_request(&request, &default_context())
+            .expect("build request");
+        let body_json = request_body_json(&built);
+
+        assert_eq!(
+            body_json["tools"][0],
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "lookup",
+                    "description": "Look up weather",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"city": {"type": "string"}}
+                    }
+                }
+            })
+        );
+        assert_eq!(
+            body_json["tool_choice"],
+            json!({"type":"function","function":{"name":"lookup"}})
+        );
+    }
+
+    #[test]
     fn builds_responses_request_with_expected_path_and_body() {
         let provider = provider();
         let request = responses_request(false);
@@ -833,6 +1317,29 @@ mod tests {
         assert_eq!(body_json["tools"], request.tools.expect("tools"));
         assert_eq!(body_json["parallel_tool_calls"], Value::Bool(false));
         assert_eq!(body_json["store"], Value::Bool(true));
+    }
+
+    #[test]
+    fn builds_responses_request_preserves_image_generation_for_openai_compat() {
+        let provider = provider();
+        let mut request = responses_request(false);
+        request.tools = Some(json!([
+            {"type": "image_generation"},
+            {"type": "function", "name": "lookup"}
+        ]));
+        request.tool_choice = Some(json!({"type": "image_generation"}));
+        let context = default_context();
+
+        let built = provider
+            .build_responses_request(&request, &context)
+            .expect("build request");
+        let body_json = request_body_json(&built);
+
+        assert_eq!(body_json["tools"], request.tools.expect("tools"));
+        assert_eq!(
+            body_json["tool_choice"],
+            json!({"type": "image_generation"})
+        );
     }
 
     #[test]
@@ -876,8 +1383,11 @@ mod tests {
 
         let provider = OpenAiCompatProvider::new(OpenAiCompatConfig {
             provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
             base_url: format!("http://{addr}/v1"),
             bearer_token: None,
+            bearer_auth_header: super::BearerAuthHeader::Authorization,
+            identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
         })
@@ -937,8 +1447,11 @@ mod tests {
 
         let provider = OpenAiCompatProvider::new(OpenAiCompatConfig {
             provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
             base_url: format!("http://{addr}/v1"),
             bearer_token: None,
+            bearer_auth_header: super::BearerAuthHeader::Authorization,
+            identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
         })
@@ -976,6 +1489,81 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn streams_cloud_run_openai_compat_with_serverless_auth_header() {
+        let app = Router::new().route(
+            "/v1/chat/completions",
+            post(|request: Request| async move {
+                if request
+                    .headers()
+                    .get("x-serverless-authorization")
+                    .and_then(|value| value.to_str().ok())
+                    != Some("Bearer id-token")
+                {
+                    return StatusCode::UNAUTHORIZED.into_response();
+                }
+
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .header("content-type", "text/event-stream")
+                    .body(Body::from(
+                        "data:{\"id\":\"chatcmpl-1\",\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n\
+                         data: [DONE]\n\n",
+                    ))
+                    .expect("response")
+                    .into_response()
+            }),
+        );
+
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve app");
+        });
+
+        let provider = OpenAiCompatProvider::new(OpenAiCompatConfig {
+            provider_key: "cloud-run-gemma".to_string(),
+            provider_type: "gcp_cloud_run_openai_compat".to_string(),
+            base_url: format!("http://{addr}/v1"),
+            bearer_token: Some("id-token".to_string()),
+            bearer_auth_header: BearerAuthHeader::XServerlessAuthorization,
+            identity_token_source: None,
+            default_headers: BTreeMap::new(),
+            request_timeout_ms: 10_000,
+        })
+        .expect("provider");
+
+        let request = CoreChatRequest {
+            model: "gemma".to_string(),
+            messages: vec![],
+            stream: true,
+            extra: BTreeMap::new(),
+        };
+        let context = ProviderRequestContext {
+            request_id: "req-123".to_string(),
+            model_key: "gemma".to_string(),
+            provider_key: "cloud-run-gemma".to_string(),
+            upstream_model: "google/gemma-4-12b-it".to_string(),
+            extra_headers: Map::new(),
+            extra_body: Map::new(),
+            request_headers: BTreeMap::new(),
+            compatibility: Default::default(),
+        };
+
+        let rendered = render_provider_stream(
+            provider
+                .chat_completions_stream(&request, &context)
+                .await
+                .expect("stream"),
+        )
+        .await;
+
+        assert!(rendered.contains("\"content\":\"ok\""));
+        assert!(rendered.contains("data: [DONE]\n\n"));
+    }
+
+    #[tokio::test]
     async fn stream_promotes_choice_usage_to_chunk_usage() {
         let app = Router::new().route(
             "/v1/chat/completions",
@@ -1001,8 +1589,11 @@ mod tests {
 
         let provider = OpenAiCompatProvider::new(OpenAiCompatConfig {
             provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
             base_url: format!("http://{addr}/v1"),
             bearer_token: None,
+            bearer_auth_header: super::BearerAuthHeader::Authorization,
+            identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
         })
@@ -1067,8 +1658,11 @@ mod tests {
 
         let provider = OpenAiCompatProvider::new(OpenAiCompatConfig {
             provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
             base_url: format!("http://{addr}/v1"),
             bearer_token: None,
+            bearer_auth_header: super::BearerAuthHeader::Authorization,
+            identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
         })
@@ -1132,8 +1726,11 @@ mod tests {
 
         let provider = OpenAiCompatProvider::new(OpenAiCompatConfig {
             provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
             base_url: format!("http://{addr}/v1"),
             bearer_token: None,
+            bearer_auth_header: super::BearerAuthHeader::Authorization,
+            identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
         })
@@ -1194,8 +1791,11 @@ mod tests {
 
         let provider = OpenAiCompatProvider::new(OpenAiCompatConfig {
             provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
             base_url: format!("http://{addr}/v1"),
             bearer_token: None,
+            bearer_auth_header: super::BearerAuthHeader::Authorization,
+            identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
         })
@@ -1253,8 +1853,11 @@ mod tests {
 
         let provider = OpenAiCompatProvider::new(OpenAiCompatConfig {
             provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
             base_url: format!("http://{addr}/v1"),
             bearer_token: None,
+            bearer_auth_header: super::BearerAuthHeader::Authorization,
+            identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
         })
@@ -1318,8 +1921,11 @@ mod tests {
 
         let provider = OpenAiCompatProvider::new(OpenAiCompatConfig {
             provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
             base_url: format!("http://{addr}/v1"),
             bearer_token: None,
+            bearer_auth_header: super::BearerAuthHeader::Authorization,
+            identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
         })
@@ -1379,8 +1985,11 @@ mod tests {
 
         let provider = OpenAiCompatProvider::new(OpenAiCompatConfig {
             provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
             base_url: format!("http://{addr}/v1"),
             bearer_token: None,
+            bearer_auth_header: super::BearerAuthHeader::Authorization,
+            identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
         })
@@ -1440,8 +2049,11 @@ mod tests {
 
         let provider = OpenAiCompatProvider::new(OpenAiCompatConfig {
             provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
             base_url: format!("http://{addr}/v1"),
             bearer_token: None,
+            bearer_auth_header: super::BearerAuthHeader::Authorization,
+            identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
         })
@@ -1501,8 +2113,11 @@ mod tests {
 
         let provider = OpenAiCompatProvider::new(OpenAiCompatConfig {
             provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
             base_url: format!("http://{addr}/v1"),
             bearer_token: None,
+            bearer_auth_header: super::BearerAuthHeader::Authorization,
+            identity_token_source: None,
             default_headers: BTreeMap::new(),
             request_timeout_ms: 10_000,
         })

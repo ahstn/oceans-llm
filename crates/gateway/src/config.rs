@@ -2,24 +2,37 @@ use std::{collections::BTreeMap, env, fs, path::Path};
 
 use anyhow::{Context, bail};
 use gateway_core::{
-    AuthMode, AwsBedrockApiStyle, AwsBedrockRouteCompatibility, BudgetCadence, GlobalRole,
-    MembershipRole, Money4, OauthJitMembership, OauthJitPolicy, OidcJitMembership, OidcJitPolicy,
+    ApiKeySecretStorageKind, AuthMode, AwsBedrockApiStyle, AwsBedrockRouteCompatibility,
+    BudgetCadence, GlobalRole, ManagedApiKeySource, MembershipRole, ModelAllowlistPolicy, Money4,
+    OauthJitMembership, OauthJitPolicy, OidcJitMembership, OidcJitPolicy,
     OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
-    OpenAiCompatRouteCompatibility, ProviderCapabilities, RequestLogRetentionWindow,
-    RouteCompatibility, SeedApiKey, SeedBudget, SeedModel, SeedModelRoute, SeedOauthProvider,
-    SeedOidcProvider, SeedProvider, SeedTeam, SeedUser, SeedUserMembership, parse_gateway_api_key,
+    OpenAiCompatRouteCompatibility, OpenRouterMaxPrice, OpenRouterPercentileCutoffs,
+    OpenRouterPercentilePreference, OpenRouterProviderRouting, OpenRouterRouteCompatibility,
+    ProviderCapabilities, RequestLogRetentionWindow, RouteCompatibility, SeedApiKeySecretMaterial,
+    SeedBudget, SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute, SeedOauthProvider,
+    SeedOidcProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership,
+    hash_gateway_key_secret, parse_gateway_api_key,
 };
 use gateway_providers::{
-    BedrockAuthConfig, BedrockEndpointKind, BedrockProviderConfig, OpenAiCompatConfig,
-    VertexAuthConfig, VertexProviderConfig,
+    BedrockAuthConfig, BedrockEndpointKind, BedrockProviderConfig, CloudRunOpenAiCompatAuth,
+    OpenAiCompatConfig, VertexAuthConfig, VertexProviderConfig,
 };
 use gateway_service::{
     PayloadPath, ProviderIconKey, RequestLogPayloadCaptureMode, RequestLogPayloadPolicy,
-    hash_gateway_key_secret, is_supported_pricing_provider_id, parse_payload_path,
+    encrypt_gateway_api_key_secret, is_supported_pricing_provider_id, parse_payload_path,
 };
 use gateway_store::StoreConnectionOptions;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{Map, Value, json};
+
+mod providers;
+
+pub use providers::{
+    AwsBedrockAuthConfig, AwsBedrockProviderConfig, GcpCloudRunOpenAiCompatAuthConfig,
+    GcpCloudRunOpenAiCompatAuthHeaderConfig, GcpCloudRunOpenAiCompatProviderConfig,
+    GcpVertexAuthConfig, GcpVertexProviderConfig, OpenAiCompatAuthConfig,
+    OpenAiCompatProviderConfig, ProviderConfig, ProviderDisplayConfig, ProviderTimeouts,
+};
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct GatewayConfig {
@@ -41,6 +54,8 @@ pub struct GatewayConfig {
     pub models: Vec<ModelConfig>,
     #[serde(default)]
     pub teams: Vec<TeamConfig>,
+    #[serde(default)]
+    pub service_accounts: Vec<ServiceAccountConfig>,
     #[serde(default)]
     pub users: Vec<UserConfig>,
 }
@@ -106,6 +121,56 @@ impl GatewayConfig {
                             provider.id,
                             provider.pricing_provider_id
                         );
+                    }
+                    validate_provider_display_config(
+                        provider.id.as_str(),
+                        provider.display.as_ref(),
+                    )?;
+                }
+                ProviderConfig::GcpCloudRunOpenAiCompat(provider) => {
+                    if provider.id.trim().is_empty() {
+                        bail!("gcp_cloud_run_openai_compat provider id cannot be empty");
+                    }
+                    validate_cloud_run_base_url(&provider.id, &provider.base_url)?;
+                    if provider.pricing_provider_id.trim().is_empty() {
+                        bail!(
+                            "gcp_cloud_run_openai_compat provider `{}` pricing_provider_id cannot be empty",
+                            provider.id
+                        );
+                    }
+                    if !is_supported_pricing_provider_id(&provider.pricing_provider_id) {
+                        bail!(
+                            "gcp_cloud_run_openai_compat provider `{}` pricing_provider_id `{}` is not supported",
+                            provider.id,
+                            provider.pricing_provider_id
+                        );
+                    }
+                    if let Some(audience) = provider.audience.as_deref()
+                        && audience.trim().is_empty()
+                    {
+                        bail!(
+                            "gcp_cloud_run_openai_compat provider `{}` audience cannot be empty",
+                            provider.id
+                        );
+                    }
+                    match &provider.auth {
+                        GcpCloudRunOpenAiCompatAuthConfig::Adc => {}
+                        GcpCloudRunOpenAiCompatAuthConfig::ServiceAccount { credentials_path } => {
+                            if credentials_path.trim().is_empty() {
+                                bail!(
+                                    "gcp_cloud_run_openai_compat provider `{}` service_account.credentials_path cannot be empty",
+                                    provider.id
+                                );
+                            }
+                        }
+                        GcpCloudRunOpenAiCompatAuthConfig::Bearer { token } => {
+                            if token.trim().is_empty() {
+                                bail!(
+                                    "gcp_cloud_run_openai_compat provider `{}` bearer.token cannot be empty",
+                                    provider.id
+                                );
+                            }
+                        }
                     }
                     validate_provider_display_config(
                         provider.id.as_str(),
@@ -281,15 +346,24 @@ impl GatewayConfig {
                 }
             }
 
+            // Validate here so config loading fails even if callers never request seed models.
+            if let Some(allowlist) = &model.allowlist {
+                normalize_model_allowlist(&model.id, allowlist)?;
+            }
+
             for route in &model.routes {
-                if let Some(provider) = provider_by_id.get(route.provider.as_str())
-                    && matches!(provider, ProviderConfig::GcpVertex(_))
+                let provider = provider_by_id.get(route.provider.as_str()).copied();
+
+                if provider.is_some_and(|provider| matches!(provider, ProviderConfig::GcpVertex(_)))
                 {
                     validate_vertex_upstream_model_format(&route.upstream_model)?;
                 }
-                if let Some(ProviderConfig::AwsBedrock(provider)) =
-                    provider_by_id.get(route.provider.as_str())
-                {
+                if let Some(openrouter) = &route.compatibility.openrouter {
+                    validate_openrouter_route_compatibility(
+                        &model.id, route, provider, openrouter,
+                    )?;
+                }
+                if let Some(ProviderConfig::AwsBedrock(provider)) = provider {
                     validate_aws_bedrock_route_compatibility(&model.id, route, provider)?;
                 }
             }
@@ -315,56 +389,65 @@ impl GatewayConfig {
 
         let mut team_keys = std::collections::BTreeSet::new();
         for team in &self.teams {
-            let team_key = normalize_config_team_key(&team.key)?;
+            let team_key = normalize_config_team_key(&team.id)?;
             if team.name.trim().is_empty() {
                 bail!("team `{team_key}` name cannot be empty");
             }
             if !team_keys.insert(team_key.clone()) {
-                bail!("duplicate team key `{team_key}`");
+                bail!("duplicate team id `{team_key}`");
             }
         }
 
-        let mut seed_service_accounts = std::collections::BTreeMap::new();
-        for seed_key in &self.auth.seed_api_keys {
-            if seed_key.name.trim().is_empty() {
-                bail!("auth.seed_api_keys entry name cannot be empty");
+        let mut service_account_keys = std::collections::BTreeSet::new();
+        for service_account in &self.service_accounts {
+            let service_account_key = normalize_config_service_account_key(&service_account.id)?;
+            if !service_account_keys.insert(service_account_key.clone()) {
+                bail!("duplicate service account id `{service_account_key}`");
             }
-            let service_account = &seed_key.service_account;
-            let service_account_key = normalize_config_service_account_key(&service_account.key)
-                .with_context(|| {
-                    format!("auth.seed_api_keys `{}` service_account.key", seed_key.name)
-                })?;
-            if service_account.name.trim().is_empty() {
-                bail!("seeded service account `{service_account_key}` name cannot be empty");
+            if let Some(name) = &service_account.name
+                && name.trim().is_empty()
+            {
+                bail!("service account `{service_account_key}` name cannot be empty");
             }
             let team_key = normalize_config_team_key(&service_account.team)
-                .with_context(|| format!("seeded service account `{service_account_key}` team"))?;
+                .with_context(|| format!("service account `{service_account_key}` team"))?;
             if !team_keys.contains(&team_key) {
                 bail!(
-                    "seeded service account `{service_account_key}` references unknown team `{team_key}`"
+                    "service account `{service_account_key}` references unknown team `{team_key}`"
                 );
             }
-            service_account.budget.validate(&format!(
-                "seeded service account `{service_account_key}` budget"
-            ))?;
-            let budget = service_account.budget.seed_budget().with_context(|| {
-                format!("seeded service account `{service_account_key}` budget")
-            })?;
-            let signature = SeedServiceAccountSignature {
-                name: service_account.name.trim().to_string(),
-                team_key: team_key.clone(),
-                budget_cadence: budget.cadence,
-                budget_amount_usd: budget.amount_usd,
-                budget_hard_limit: budget.hard_limit,
-                budget_timezone: budget.timezone.trim().to_string(),
-            };
-            if let Some(existing) =
-                seed_service_accounts.insert(service_account_key.clone(), signature.clone())
-                && existing != signature
-            {
-                bail!(
-                    "seeded service account `{service_account_key}` is declared with conflicting name, team, or budget settings"
-                );
+            service_account
+                .budget
+                .validate(&format!("service account `{service_account_key}` budget"))?;
+
+            let mut managed_key_ids = std::collections::BTreeSet::new();
+            for key in &service_account.keys {
+                let config_key = normalize_config_managed_api_key(&key.id)
+                    .with_context(|| format!("service account `{service_account_key}` key id"))?;
+                if !managed_key_ids.insert(config_key.clone()) {
+                    bail!(
+                        "service account `{service_account_key}` has duplicate key id `{config_key}`"
+                    );
+                }
+                if let Some(name) = &key.name
+                    && name.trim().is_empty()
+                {
+                    bail!(
+                        "service account `{service_account_key}` key `{config_key}` name cannot be empty"
+                    );
+                }
+                if !key.auto_create && key.value.is_none() {
+                    bail!(
+                        "service account `{service_account_key}` key `{config_key}` must set value when auto_create is false"
+                    );
+                }
+                for model_key in &key.allowed_models {
+                    if !model_by_id.contains_key(model_key.as_str()) {
+                        bail!(
+                            "service account `{service_account_key}` key `{config_key}` references unknown model `{model_key}`"
+                        );
+                    }
+                }
             }
         }
 
@@ -504,6 +587,54 @@ impl GatewayConfig {
                         secrets,
                     });
                 }
+                ProviderConfig::GcpCloudRunOpenAiCompat(provider) => {
+                    match &provider.auth {
+                        GcpCloudRunOpenAiCompatAuthConfig::Adc => {}
+                        GcpCloudRunOpenAiCompatAuthConfig::ServiceAccount { credentials_path } => {
+                            validate_env_reference_if_needed(credentials_path)?;
+                        }
+                        GcpCloudRunOpenAiCompatAuthConfig::Bearer { token } => {
+                            validate_env_reference_if_needed(token)?;
+                        }
+                    }
+
+                    let audience = resolved_cloud_run_audience(
+                        provider.audience.as_deref(),
+                        &provider.base_url,
+                    )
+                    .with_context(|| {
+                        format!(
+                            "gcp_cloud_run_openai_compat provider `{}` audience",
+                            provider.id
+                        )
+                    })?;
+                    let config = json!({
+                        "base_url": provider.base_url,
+                        "audience": audience,
+                        "pricing_provider_id": provider.pricing_provider_id,
+                        "auth_header": provider.auth_header,
+                        "default_headers": provider.default_headers,
+                        "timeouts": provider.timeouts,
+                        "display": provider.display,
+                    });
+
+                    let secrets = Some(match &provider.auth {
+                        GcpCloudRunOpenAiCompatAuthConfig::Adc => json!({"mode": "adc"}),
+                        GcpCloudRunOpenAiCompatAuthConfig::ServiceAccount { credentials_path } => {
+                            json!({"mode": "service_account", "credentials_path": credentials_path})
+                        }
+                        GcpCloudRunOpenAiCompatAuthConfig::Bearer { token } => {
+                            json!({"mode": "bearer", "token": token})
+                        }
+                    });
+
+                    providers.push(SeedProvider {
+                        provider_key: provider.id.clone(),
+                        provider_type: "gcp_cloud_run_openai_compat".to_string(),
+                        config,
+                        secrets,
+                    });
+                }
                 ProviderConfig::GcpVertex(provider) => {
                     if let GcpVertexAuthConfig::Bearer { token } = &provider.auth {
                         validate_env_reference_if_needed(token)?;
@@ -613,70 +744,122 @@ impl GatewayConfig {
         let models = self
             .models
             .iter()
-            .map(|model| SeedModel {
-                model_key: model.id.clone(),
-                alias_target_model_key: model.alias_of.clone(),
-                description: model.description.clone(),
-                tags: model.tags.clone(),
-                rank: model.rank,
-                routes: model
-                    .routes
-                    .iter()
-                    .map(|route| SeedModelRoute {
-                        provider_key: route.provider.clone(),
-                        upstream_model: route.upstream_model.clone(),
-                        priority: route.priority,
-                        weight: route.weight,
-                        enabled: route.enabled,
-                        extra_headers: route
-                            .extra_headers
-                            .iter()
-                            .map(|(key, value)| (key.clone(), Value::String(value.clone())))
-                            .collect::<Map<String, Value>>(),
-                        extra_body: route.extra_body.clone(),
-                        capabilities: route.capabilities.clone().into_capabilities(),
-                        compatibility: route.compatibility.clone().into_compatibility(),
-                    })
-                    .collect(),
+            .map(|model| {
+                Ok(SeedModel {
+                    model_key: model.id.clone(),
+                    alias_target_model_key: model.alias_of.clone(),
+                    description: model.description.clone(),
+                    tags: model.tags.clone(),
+                    rank: model.rank,
+                    routes: model
+                        .routes
+                        .iter()
+                        .map(|route| SeedModelRoute {
+                            provider_key: route.provider.clone(),
+                            upstream_model: route.upstream_model.clone(),
+                            priority: route.priority,
+                            weight: route.weight,
+                            enabled: route.enabled,
+                            extra_headers: route
+                                .extra_headers
+                                .iter()
+                                .map(|(key, value)| (key.clone(), Value::String(value.clone())))
+                                .collect::<Map<String, Value>>(),
+                            extra_body: route.extra_body.clone(),
+                            capabilities: route.capabilities.clone().into_capabilities(),
+                            compatibility: route.compatibility.clone().into_compatibility(),
+                        })
+                        .collect(),
+                    allowlist: model
+                        .allowlist
+                        .as_ref()
+                        .map(|allowlist| normalize_model_allowlist(&model.id, allowlist))
+                        .transpose()?,
+                })
             })
-            .collect();
+            .collect::<anyhow::Result<Vec<_>>>()?;
 
         Ok(models)
     }
 
-    pub fn seed_api_keys(&self) -> anyhow::Result<Vec<SeedApiKey>> {
-        let mut api_keys = Vec::new();
+    pub fn seed_service_accounts(&self) -> anyhow::Result<Vec<SeedServiceAccount>> {
+        self.service_accounts
+            .iter()
+            .map(|service_account| {
+                let service_account_key = normalize_config_service_account_key(&service_account.id)?;
+                let service_account_name = service_account
+                    .name
+                    .as_deref()
+                    .unwrap_or(&service_account.id)
+                    .trim()
+                    .to_string();
 
-        for seed_key in &self.auth.seed_api_keys {
-            let raw_value = resolve_env_reference(&seed_key.value)?;
-            let parsed = parse_gateway_api_key(&raw_value).with_context(|| {
-                format!("invalid gateway key configured for `{}`", seed_key.name)
-            })?;
+                let mut managed_api_keys = Vec::with_capacity(service_account.keys.len());
+                for key in &service_account.keys {
+                    let config_key = normalize_config_managed_api_key(&key.id)?;
+                    let key_name = key.name.as_deref().unwrap_or(&key.id).trim().to_string();
+                    let (source, public_id, secret_hash, secret_material) =
+                        match key.value.as_deref() {
+                            Some(value_ref) => {
+                                let raw_value =
+                                    resolve_secret_reference(value_ref).with_context(|| {
+                                        format!(
+                                            "service account `{service_account_key}` key `{config_key}` value"
+                                        )
+                                    })?;
+                                let parsed = parse_gateway_api_key(&raw_value).with_context(|| {
+                                    format!(
+                                        "invalid gateway key configured for service account `{service_account_key}` key `{config_key}`"
+                                    )
+                                })?;
+                                let secret_hash =
+                                    hash_gateway_key_secret(&parsed.secret).with_context(|| {
+                                        format!(
+                                            "failed hashing gateway key for service account `{service_account_key}` key `{config_key}`"
+                                        )
+                                    })?;
+                                let encrypted =
+                                    encrypt_gateway_api_key_secret(&raw_value).map_err(|error| {
+                                        anyhow::anyhow!(
+                                            "failed encrypting gateway key for service account `{service_account_key}` key `{config_key}`: {error}"
+                                        )
+                                    })?;
+                                (
+                                    ManagedApiKeySource::ConfiguredValue,
+                                    Some(parsed.public_id),
+                                    Some(secret_hash),
+                                    Some(SeedApiKeySecretMaterial {
+                                        storage_kind: ApiKeySecretStorageKind::EncryptedBlob,
+                                        secret_ciphertext: encrypted.ciphertext,
+                                        secret_nonce: encrypted.nonce,
+                                        secret_key_id: encrypted.key_id.to_string(),
+                                    }),
+                                )
+                            }
+                            None => (ManagedApiKeySource::Generated, None, None, None),
+                        };
 
-            let secret_hash = hash_gateway_key_secret(&parsed.secret).with_context(|| {
-                format!(
-                    "failed hashing configured gateway key for `{}`",
-                    seed_key.name
-                )
-            })?;
+                    managed_api_keys.push(SeedManagedServiceAccountApiKey {
+                        config_key,
+                        name: key_name,
+                        auto_create: key.auto_create,
+                        source,
+                        public_id,
+                        secret_hash,
+                        secret_material,
+                        allowed_models: key.allowed_models.clone(),
+                    });
+                }
 
-            api_keys.push(SeedApiKey {
-                name: seed_key.name.clone(),
-                public_id: parsed.public_id,
-                secret_hash,
-                service_account_key: normalize_config_service_account_key(
-                    &seed_key.service_account.key,
-                )?,
-                service_account_name: seed_key.service_account.name.trim().to_string(),
-                service_account_team_key: normalize_config_team_key(
-                    &seed_key.service_account.team,
-                )?,
-                service_account_budget: seed_key.service_account.budget.seed_budget()?,
-                allowed_models: seed_key.allowed_models.clone(),
-            });
-        }
-
-        Ok(api_keys)
+                Ok(SeedServiceAccount {
+                    service_account_key,
+                    service_account_name,
+                    team_key: normalize_config_team_key(&service_account.team)?,
+                    budget: service_account.budget.seed_budget()?,
+                    managed_api_keys,
+                })
+            })
+            .collect()
     }
 
     pub fn seed_oidc_providers(&self) -> anyhow::Result<Vec<SeedOidcProvider>> {
@@ -702,7 +885,7 @@ impl GatewayConfig {
             .iter()
             .map(|team| {
                 Ok(SeedTeam {
-                    team_key: normalize_config_team_key(&team.key)?,
+                    team_key: normalize_config_team_key(&team.id)?,
                     team_name: team.name.trim().to_string(),
                 })
             })
@@ -747,30 +930,74 @@ impl GatewayConfig {
             .collect()
     }
 
-    pub fn openai_compat_provider_configs(&self) -> anyhow::Result<Vec<OpenAiCompatConfig>> {
+    pub fn openai_compatible_provider_configs(&self) -> anyhow::Result<Vec<OpenAiCompatConfig>> {
         let mut configs = Vec::new();
 
         for provider in &self.providers {
-            let ProviderConfig::OpenAiCompat(provider) = provider else {
-                continue;
-            };
+            match provider {
+                ProviderConfig::OpenAiCompat(provider) => {
+                    let mut config =
+                        OpenAiCompatConfig::new(provider.id.clone(), provider.base_url.clone());
+                    config.default_headers = provider.default_headers.clone();
+                    config.request_timeout_ms = provider
+                        .timeouts
+                        .as_ref()
+                        .map(|timeouts| timeouts.total_ms)
+                        .unwrap_or(120_000);
 
-            let mut config =
-                OpenAiCompatConfig::new(provider.id.clone(), provider.base_url.clone());
-            config.default_headers = provider.default_headers.clone();
-            config.request_timeout_ms = provider
-                .timeouts
-                .as_ref()
-                .map(|timeouts| timeouts.total_ms)
-                .unwrap_or(120_000);
+                    if let Some(auth) = &provider.auth
+                        && let Some(token) = &auth.token
+                    {
+                        config.bearer_token = Some(resolve_secret_reference(token)?);
+                    }
 
-            if let Some(auth) = &provider.auth
-                && let Some(token) = &auth.token
-            {
-                config.bearer_token = Some(resolve_secret_reference(token)?);
+                    configs.push(config);
+                }
+                ProviderConfig::GcpCloudRunOpenAiCompat(provider) => {
+                    let audience = resolved_cloud_run_audience(
+                        provider.audience.as_deref(),
+                        &provider.base_url,
+                    )
+                    .with_context(|| {
+                        format!(
+                            "gcp_cloud_run_openai_compat provider `{}` audience",
+                            provider.id
+                        )
+                    })?;
+                    let auth = match &provider.auth {
+                        GcpCloudRunOpenAiCompatAuthConfig::Adc => {
+                            CloudRunOpenAiCompatAuth::Adc { audience }
+                        }
+                        GcpCloudRunOpenAiCompatAuthConfig::ServiceAccount { credentials_path } => {
+                            CloudRunOpenAiCompatAuth::ServiceAccount {
+                                credentials_path: resolve_path_reference(credentials_path)?.into(),
+                                audience,
+                            }
+                        }
+                        GcpCloudRunOpenAiCompatAuthConfig::Bearer { token } => {
+                            CloudRunOpenAiCompatAuth::Bearer {
+                                token: resolve_secret_reference(token)?,
+                            }
+                        }
+                    };
+
+                    let mut config = OpenAiCompatConfig::new_cloud_run(
+                        provider.id.clone(),
+                        provider.base_url.clone(),
+                        provider.auth_header.into_provider_header(),
+                        auth,
+                    )?;
+                    config.default_headers = provider.default_headers.clone();
+                    config.request_timeout_ms = provider
+                        .timeouts
+                        .as_ref()
+                        .map(|timeouts| timeouts.total_ms)
+                        .unwrap_or(120_000);
+
+                    configs.push(config);
+                }
+                ProviderConfig::GcpVertex(_) | ProviderConfig::AwsBedrock(_) => {}
             }
-
-            configs.push(config);
         }
 
         Ok(configs)
@@ -880,16 +1107,6 @@ impl GatewayConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct SeedServiceAccountSignature {
-    name: String,
-    team_key: String,
-    budget_cadence: BudgetCadence,
-    budget_amount_usd: Money4,
-    budget_hard_limit: bool,
-    budget_timezone: String,
-}
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct ServerConfig {
     #[serde(default = "default_bind")]
@@ -970,9 +1187,8 @@ impl DatabaseConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct AuthConfig {
-    #[serde(default)]
-    pub seed_api_keys: Vec<SeedApiKeyConfig>,
     #[serde(default)]
     pub bootstrap_admin: BootstrapAdminConfig,
     #[serde(default)]
@@ -1010,7 +1226,7 @@ impl AuthOidcConfig {
         let mut provider_keys = std::collections::BTreeSet::new();
         let team_keys = teams
             .iter()
-            .map(|team| normalize_config_team_key(&team.key))
+            .map(|team| normalize_config_team_key(&team.id))
             .collect::<anyhow::Result<std::collections::BTreeSet<_>>>()?;
 
         for provider in &self.providers {
@@ -1108,7 +1324,7 @@ impl AuthOauthConfig {
         let mut provider_keys = std::collections::BTreeSet::new();
         let team_keys = teams
             .iter()
-            .map(|team| normalize_config_team_key(&team.key))
+            .map(|team| normalize_config_team_key(&team.id))
             .collect::<anyhow::Result<std::collections::BTreeSet<_>>>()?;
 
         for provider in &self.providers {
@@ -1155,6 +1371,10 @@ impl AuthOauthConfig {
             if !provider.scopes.iter().any(|scope| scope == "user:email") {
                 bail!("oauth provider `{provider_key}` scopes must include `user:email`");
             }
+            validate_allowed_email_domains(
+                &provider.allowed_email_domains,
+                &format!("oauth provider `{provider_key}` allowed_email_domains"),
+            )?;
             if let Some(membership) = provider.jit.membership.as_ref() {
                 let team_key = normalize_config_team_key(&membership.team)
                     .with_context(|| format!("oauth provider `{provider_key}` jit team"))?;
@@ -1243,6 +1463,10 @@ pub struct OauthProviderConfig {
     pub client_secret: String,
     #[serde(default = "default_github_oauth_scopes")]
     pub scopes: Vec<String>,
+    #[serde(default)]
+    pub allowed_email_domains: Vec<String>,
+    #[serde(default = "default_sso_email_verification_enabled")]
+    pub sso_email_verification_enabled: bool,
     #[serde(default = "default_enabled")]
     pub enabled: bool,
     #[serde(default)]
@@ -1267,6 +1491,11 @@ impl OauthProviderConfig {
             },
             client_secret_ref: self.client_secret.clone(),
             scopes: self.scopes.clone(),
+            allowed_email_domains: normalize_allowed_email_domains(
+                &self.allowed_email_domains,
+                "auth.oauth.providers[].allowed_email_domains",
+            )?,
+            sso_email_verification_enabled: self.sso_email_verification_enabled,
             enabled: self.enabled,
             jit: self.jit.seed_policy()?,
         })
@@ -1762,26 +1991,36 @@ impl BootstrapAdminConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct SeedApiKeyConfig {
+#[serde(deny_unknown_fields)]
+pub struct TeamConfig {
+    pub id: String,
     pub name: String,
-    pub value: String,
-    pub service_account: SeedApiKeyServiceAccountConfig,
-    #[serde(default)]
-    pub allowed_models: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct SeedApiKeyServiceAccountConfig {
-    pub key: String,
-    pub name: String,
+#[serde(deny_unknown_fields)]
+pub struct ServiceAccountConfig {
+    pub id: String,
+    #[serde(default)]
+    pub name: Option<String>,
     pub team: String,
     pub budget: BudgetConfig,
+    #[serde(default)]
+    pub keys: Vec<ServiceAccountKeyConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct TeamConfig {
-    pub key: String,
-    pub name: String,
+#[serde(deny_unknown_fields)]
+pub struct ServiceAccountKeyConfig {
+    pub id: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default = "default_enabled")]
+    pub auto_create: bool,
+    #[serde(default)]
+    pub value: Option<String>,
+    #[serde(default)]
+    pub allowed_models: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1847,118 +2086,12 @@ impl BudgetConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum ProviderConfig {
-    #[serde(rename = "openai_compat")]
-    OpenAiCompat(OpenAiCompatProviderConfig),
-    GcpVertex(GcpVertexProviderConfig),
-    AwsBedrock(AwsBedrockProviderConfig),
-}
-
-impl ProviderConfig {
-    #[must_use]
-    pub fn id(&self) -> &str {
-        match self {
-            Self::OpenAiCompat(provider) => &provider.id,
-            Self::GcpVertex(provider) => &provider.id,
-            Self::AwsBedrock(provider) => &provider.id,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct OpenAiCompatProviderConfig {
-    pub id: String,
-    pub base_url: String,
+#[serde(deny_unknown_fields)]
+pub struct ModelAllowlistConfig {
     #[serde(default)]
-    pub pricing_provider_id: String,
+    pub users: Vec<String>,
     #[serde(default)]
-    pub auth: Option<OpenAiCompatAuthConfig>,
-    #[serde(default)]
-    pub default_headers: BTreeMap<String, String>,
-    #[serde(default)]
-    pub timeouts: Option<ProviderTimeouts>,
-    #[serde(default)]
-    pub display: Option<ProviderDisplayConfig>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct OpenAiCompatAuthConfig {
-    pub kind: String,
-    #[serde(default)]
-    pub token: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ProviderDisplayConfig {
-    #[serde(default)]
-    pub label: Option<String>,
-    #[serde(default)]
-    pub icon_key: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct GcpVertexProviderConfig {
-    pub id: String,
-    pub project_id: String,
-    #[serde(default = "default_vertex_location")]
-    pub location: String,
-    #[serde(default = "default_vertex_api_host")]
-    pub api_host: String,
-    pub auth: GcpVertexAuthConfig,
-    #[serde(default)]
-    pub default_headers: BTreeMap<String, String>,
-    #[serde(default)]
-    pub timeouts: Option<ProviderTimeouts>,
-    #[serde(default)]
-    pub display: Option<ProviderDisplayConfig>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "mode", rename_all = "snake_case")]
-pub enum GcpVertexAuthConfig {
-    Adc,
-    ServiceAccount { credentials_path: String },
-    Bearer { token: String },
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct AwsBedrockProviderConfig {
-    pub id: String,
-    pub region: String,
-    pub endpoint_kind: BedrockEndpointKind,
-    #[serde(default)]
-    pub endpoint_url: Option<String>,
-    #[serde(default)]
-    pub auth: AwsBedrockAuthConfig,
-    #[serde(default)]
-    pub default_headers: BTreeMap<String, String>,
-    #[serde(default)]
-    pub timeouts: Option<ProviderTimeouts>,
-    #[serde(default)]
-    pub display: Option<ProviderDisplayConfig>,
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-#[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
-pub enum AwsBedrockAuthConfig {
-    #[default]
-    DefaultChain,
-    Bearer {
-        token: String,
-    },
-    StaticCredentials {
-        access_key_id: String,
-        secret_access_key: String,
-        #[serde(default)]
-        session_token: Option<String>,
-    },
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ProviderTimeouts {
-    #[serde(default = "default_provider_timeout_ms")]
-    pub total_ms: u64,
+    pub teams: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1974,6 +2107,7 @@ pub struct ModelConfig {
     pub rank: i32,
     #[serde(default)]
     pub routes: Vec<ModelRouteConfig>,
+    pub allowlist: Option<ModelAllowlistConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -2051,6 +2185,8 @@ pub struct RouteCompatibilityConfig {
     #[serde(default)]
     pub openai_compat: Option<OpenAiCompatRouteCompatibilityConfig>,
     #[serde(default)]
+    pub openrouter: Option<OpenRouterRouteCompatibility>,
+    #[serde(default)]
     pub aws_bedrock: Option<AwsBedrockRouteCompatibilityConfig>,
 }
 
@@ -2060,6 +2196,7 @@ impl RouteCompatibilityConfig {
             openai_compat: self
                 .openai_compat
                 .map(OpenAiCompatRouteCompatibilityConfig::into_compatibility),
+            openrouter: self.openrouter,
             aws_bedrock: self
                 .aws_bedrock
                 .map(AwsBedrockRouteCompatibilityConfig::into_compatibility),
@@ -2157,6 +2294,239 @@ fn validate_vertex_upstream_model_format(value: &str) -> anyhow::Result<()> {
         );
     }
     Ok(())
+}
+
+fn validate_openrouter_route_compatibility(
+    model_id: &str,
+    route: &ModelRouteConfig,
+    provider: Option<&ProviderConfig>,
+    compatibility: &OpenRouterRouteCompatibility,
+) -> anyhow::Result<()> {
+    let Some(ProviderConfig::OpenAiCompat(provider)) = provider else {
+        bail!(
+            "model `{model_id}` route for provider `{}` uses compatibility.openrouter but OpenRouter routing policy requires an openai_compat provider",
+            route.provider
+        );
+    };
+
+    if !is_openrouter_endpoint(&provider.base_url) {
+        bail!(
+            "model `{model_id}` route for openai_compat provider `{}` uses compatibility.openrouter but provider base_url is not an OpenRouter endpoint",
+            provider.id
+        );
+    }
+
+    if route.extra_body.contains_key("provider") {
+        bail!(
+            "model `{model_id}` route for OpenRouter provider `{}` cannot set both compatibility.openrouter.provider and extra_body.provider",
+            provider.id
+        );
+    }
+
+    validate_openrouter_provider_routing(
+        &compatibility.provider,
+        &format!(
+            "model `{model_id}` route for OpenRouter provider `{}` compatibility.openrouter.provider",
+            provider.id
+        ),
+    )
+}
+
+fn is_openrouter_endpoint(base_url: &str) -> bool {
+    let Ok(parsed) = url::Url::parse(base_url.trim()) else {
+        return false;
+    };
+    parsed.scheme() == "https" && parsed.host_str() == Some("openrouter.ai")
+}
+
+fn validate_openrouter_provider_routing(
+    routing: &OpenRouterProviderRouting,
+    label: &str,
+) -> anyhow::Result<()> {
+    validate_non_empty_strings(&routing.only, &format!("{label}.only"))?;
+    validate_non_empty_strings(&routing.ignore, &format!("{label}.ignore"))?;
+    validate_non_empty_strings(&routing.order, &format!("{label}.order"))?;
+    validate_unique_strings(&routing.only, &format!("{label}.only"))?;
+    validate_unique_strings(&routing.ignore, &format!("{label}.ignore"))?;
+    validate_unique_strings(&routing.order, &format!("{label}.order"))?;
+    validate_openrouter_only_ignore_overlap(&routing.only, &routing.ignore, label)?;
+
+    if let Some(preference) = &routing.preferred_max_latency {
+        validate_openrouter_percentile_preference(
+            preference,
+            &format!("{label}.preferred_max_latency"),
+        )?;
+    }
+
+    if let Some(max_price) = &routing.max_price {
+        validate_openrouter_max_price(max_price, &format!("{label}.max_price"))?;
+    }
+
+    if routing.zdr.is_none()
+        && routing.only.is_empty()
+        && routing.ignore.is_empty()
+        && routing.order.is_empty()
+        && routing.preferred_max_latency.is_none()
+        && routing.max_price.is_none()
+    {
+        bail!("{label} must set at least one routing policy field");
+    }
+
+    Ok(())
+}
+
+fn validate_cloud_run_base_url(provider_id: &str, base_url: &str) -> anyhow::Result<()> {
+    let trimmed = base_url.trim();
+    if trimmed.is_empty() {
+        bail!("gcp_cloud_run_openai_compat provider `{provider_id}` base_url cannot be empty");
+    }
+    if trimmed.len() != base_url.len() {
+        bail!(
+            "gcp_cloud_run_openai_compat provider `{provider_id}` base_url cannot include leading or trailing whitespace"
+        );
+    }
+
+    let parsed = url::Url::parse(base_url).map_err(|error| {
+        anyhow::anyhow!(
+            "gcp_cloud_run_openai_compat provider `{provider_id}` base_url `{base_url}` is invalid: {error}"
+        )
+    })?;
+
+    if parsed.scheme() != "https" {
+        bail!("gcp_cloud_run_openai_compat provider `{provider_id}` base_url must use https");
+    }
+    if parsed.host().is_none() {
+        bail!("gcp_cloud_run_openai_compat provider `{provider_id}` base_url must include a host");
+    }
+
+    Ok(())
+}
+
+fn validate_openrouter_percentile_preference(
+    preference: &OpenRouterPercentilePreference,
+    label: &str,
+) -> anyhow::Result<()> {
+    match preference {
+        OpenRouterPercentilePreference::Number(value) => validate_positive_f64(*value, label),
+        OpenRouterPercentilePreference::Percentiles(percentiles) => {
+            validate_openrouter_percentile_cutoffs(percentiles, label)
+        }
+    }
+}
+
+fn validate_openrouter_percentile_cutoffs(
+    percentiles: &OpenRouterPercentileCutoffs,
+    label: &str,
+) -> anyhow::Result<()> {
+    let values = [
+        ("p50", percentiles.p50),
+        ("p75", percentiles.p75),
+        ("p90", percentiles.p90),
+        ("p99", percentiles.p99),
+    ];
+    if values.iter().all(|(_, value)| value.is_none()) {
+        bail!("{label} percentile object must set at least one of p50, p75, p90, or p99");
+    }
+    for (name, value) in values {
+        if let Some(value) = value {
+            validate_positive_f64(value, &format!("{label}.{name}"))?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_openrouter_max_price(
+    max_price: &OpenRouterMaxPrice,
+    label: &str,
+) -> anyhow::Result<()> {
+    let values = [
+        ("prompt", max_price.prompt),
+        ("completion", max_price.completion),
+        ("request", max_price.request),
+        ("image", max_price.image),
+    ];
+    if values.iter().all(|(_, value)| value.is_none()) {
+        bail!("{label} must set at least one of prompt, completion, request, or image");
+    }
+    for (name, value) in values {
+        if let Some(value) = value {
+            validate_non_negative_f64(value, &format!("{label}.{name}"))?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_non_empty_strings(values: &[String], label: &str) -> anyhow::Result<()> {
+    if values.iter().any(|value| value.trim().is_empty()) {
+        bail!("{label} entries cannot be empty");
+    }
+    Ok(())
+}
+
+fn validate_unique_strings(values: &[String], label: &str) -> anyhow::Result<()> {
+    let mut seen = std::collections::BTreeSet::new();
+    for value in values {
+        if !seen.insert(value.trim()) {
+            bail!(
+                "{label} entries must be unique; duplicate `{}`",
+                value.trim()
+            );
+        }
+    }
+    Ok(())
+}
+
+fn validate_openrouter_only_ignore_overlap(
+    only: &[String],
+    ignore: &[String],
+    label: &str,
+) -> anyhow::Result<()> {
+    let only_values = only
+        .iter()
+        .map(|value| value.trim())
+        .collect::<std::collections::BTreeSet<_>>();
+    if let Some(overlap) = ignore
+        .iter()
+        .map(|value| value.trim())
+        .find(|value| only_values.contains(value))
+    {
+        bail!("{label}.only and {label}.ignore cannot both include `{overlap}`");
+    }
+    Ok(())
+}
+
+fn validate_positive_f64(value: f64, label: &str) -> anyhow::Result<()> {
+    if !value.is_finite() || value <= 0.0 {
+        bail!("{label} must be a positive finite number");
+    }
+    Ok(())
+}
+
+fn validate_non_negative_f64(value: f64, label: &str) -> anyhow::Result<()> {
+    if !value.is_finite() || value < 0.0 {
+        bail!("{label} must be a non-negative finite number");
+    }
+    Ok(())
+}
+
+fn resolved_cloud_run_audience(
+    configured_audience: Option<&str>,
+    base_url: &str,
+) -> anyhow::Result<String> {
+    if let Some(audience) = configured_audience {
+        let trimmed = audience.trim();
+        if trimmed.is_empty() {
+            bail!("audience cannot be empty");
+        }
+        return Ok(trimmed.to_string());
+    }
+
+    let mut parsed = url::Url::parse(base_url.trim())
+        .with_context(|| format!("base_url `{base_url}` is invalid"))?;
+    parsed.set_path("/");
+    parsed.set_query(None);
+    parsed.set_fragment(None);
+    Ok(parsed.to_string())
 }
 
 fn validate_bedrock_endpoint_url(provider_id: &str, endpoint_url: &str) -> anyhow::Result<()> {
@@ -2276,6 +2646,32 @@ fn validate_aws_bedrock_route_compatibility(
     Ok(())
 }
 
+fn normalize_model_allowlist(
+    model_id: &str,
+    allowlist: &ModelAllowlistConfig,
+) -> anyhow::Result<ModelAllowlistPolicy> {
+    let users = allowlist
+        .users
+        .iter()
+        .map(|email| normalize_config_email(email))
+        .collect::<anyhow::Result<std::collections::BTreeSet<_>>>()?
+        .into_iter()
+        .collect::<Vec<_>>();
+    let teams = allowlist
+        .teams
+        .iter()
+        .map(|team_key| normalize_config_team_key(team_key))
+        .collect::<anyhow::Result<std::collections::BTreeSet<_>>>()?
+        .into_iter()
+        .collect::<Vec<_>>();
+
+    if users.is_empty() && teams.is_empty() {
+        bail!("model `{model_id}` allowlist must include at least one user or team");
+    }
+
+    Ok(ModelAllowlistPolicy { users, teams })
+}
+
 fn normalize_config_email(email: &str) -> anyhow::Result<String> {
     let normalized = email.trim().to_ascii_lowercase();
     if normalized.is_empty() || !normalized.contains('@') {
@@ -2300,6 +2696,14 @@ fn normalize_config_service_account_key(service_account_key: &str) -> anyhow::Re
     Ok(normalized)
 }
 
+fn normalize_config_managed_api_key(config_key: &str) -> anyhow::Result<String> {
+    let normalized = config_key.trim().to_string();
+    if normalized.is_empty() {
+        bail!("managed api key id cannot be empty");
+    }
+    Ok(normalized)
+}
+
 fn normalize_config_oidc_provider_key(provider_key: &str) -> anyhow::Result<String> {
     let normalized = provider_key.trim().to_string();
     if normalized.is_empty() {
@@ -2313,6 +2717,67 @@ fn normalize_config_oauth_provider_key(provider_key: &str) -> anyhow::Result<Str
     if normalized.is_empty() {
         bail!("cannot be empty");
     }
+    Ok(normalized)
+}
+
+fn normalize_allowed_email_domains(
+    domains: &[String],
+    context: &str,
+) -> anyhow::Result<Vec<String>> {
+    let mut normalized_domains = Vec::with_capacity(domains.len());
+    let mut seen = std::collections::BTreeSet::new();
+
+    for domain in domains {
+        let normalized = normalize_allowed_email_domain(domain)
+            .with_context(|| format!("{context} entry `{domain}`"))?;
+        if !seen.insert(normalized.clone()) {
+            bail!("{context} contains duplicate domain `{normalized}`");
+        }
+        normalized_domains.push(normalized);
+    }
+
+    Ok(normalized_domains)
+}
+
+fn validate_allowed_email_domains(domains: &[String], context: &str) -> anyhow::Result<()> {
+    normalize_allowed_email_domains(domains, context).map(|_| ())
+}
+
+fn normalize_allowed_email_domain(domain: &str) -> anyhow::Result<String> {
+    let normalized = domain.trim().trim_end_matches('.').to_ascii_lowercase();
+    if normalized.is_empty() {
+        bail!("cannot be empty");
+    }
+    if normalized.contains('@')
+        || normalized.contains('/')
+        || normalized.contains(':')
+        || normalized.contains('*')
+        || normalized.chars().any(char::is_whitespace)
+    {
+        bail!("must be a domain name, not an email address, URL, or wildcard");
+    }
+    if normalized.starts_with('.') || normalized.ends_with('.') || normalized.contains("..") {
+        bail!("must be a valid domain name");
+    }
+
+    let mut label_count = 0;
+    for label in normalized.split('.') {
+        label_count += 1;
+        if label.is_empty() || label.starts_with('-') || label.ends_with('-') {
+            bail!("must be a valid domain name");
+        }
+        if !label
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-')
+        {
+            bail!("must be a valid domain name");
+        }
+    }
+
+    if label_count < 2 {
+        bail!("must be a valid domain name");
+    }
+
     Ok(normalized)
 }
 
@@ -2363,10 +2828,6 @@ const fn default_postgres_max_connections() -> u32 {
     10
 }
 
-const fn default_provider_timeout_ms() -> u64 {
-    120_000
-}
-
 const fn default_model_rank() -> i32 {
     100
 }
@@ -2397,6 +2858,10 @@ fn default_oidc_scopes() -> Vec<String> {
 
 fn default_oauth_provider_type() -> String {
     "github".to_string()
+}
+
+fn default_sso_email_verification_enabled() -> bool {
+    true
 }
 
 fn default_github_oauth_scopes() -> Vec<String> {
@@ -2492,27 +2957,20 @@ const fn default_budget_alert_smtp_starttls() -> bool {
     true
 }
 
-fn default_vertex_location() -> String {
-    "global".to_string()
-}
-
-fn default_vertex_api_host() -> String {
-    "aiplatform.googleapis.com".to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use std::{env, path::Path};
 
     use gateway_core::{
-        AuthMode, AwsBedrockApiStyle, BudgetCadence, GlobalRole, MembershipRole, Money4,
-        OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
-        RequestLogRetentionWindow,
+        AuthMode, AwsBedrockApiStyle, BudgetCadence, GlobalRole, ManagedApiKeySource,
+        MembershipRole, Money4, OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField,
+        OpenAiCompatReasoningEffort, OpenRouterPercentilePreference, RequestLogRetentionWindow,
     };
+    use gateway_providers::{BearerAuthHeader, BedrockAuthConfig};
     use gateway_service::RequestLogPayloadCaptureMode;
     use tempfile::tempdir;
 
-    use super::{BedrockAuthConfig, GatewayConfig};
+    use super::GatewayConfig;
 
     fn write_config(path: &Path, yaml: &str) {
         std::fs::write(path, yaml).expect("write config");
@@ -3180,6 +3638,139 @@ models:
     }
 
     #[test]
+    fn parses_model_allowlist_normalizes_refs_and_preserves_omitted_policy() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+models:
+  - id: unrestricted
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-4o-mini
+  - id: restricted
+    allowlist:
+      users:
+        - " Alice@Example.COM "
+        - "alice@example.com"
+        - "Zoe@Example.com"
+      teams:
+        - " platform "
+        - research
+        - platform
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-5
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let models = config.seed_models().expect("seed models");
+        let unrestricted = models
+            .iter()
+            .find(|model| model.model_key == "unrestricted")
+            .expect("unrestricted model");
+        let restricted = models
+            .iter()
+            .find(|model| model.model_key == "restricted")
+            .expect("restricted model");
+
+        assert_eq!(unrestricted.allowlist, None);
+        let allowlist = restricted.allowlist.as_ref().expect("restricted allowlist");
+        assert_eq!(
+            allowlist.users,
+            vec![
+                "alice@example.com".to_string(),
+                "zoe@example.com".to_string()
+            ]
+        );
+        assert_eq!(
+            allowlist.teams,
+            vec!["platform".to_string(), "research".to_string()]
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_model_allowlist_keys() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+models:
+  - id: restricted
+    allowlist:
+      users:
+        - alice@example.com
+      team:
+        - platform
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-5
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("unknown field `team`"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_explicit_empty_model_allowlists() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        for allowlist_yaml in [
+            "allowlist: {}",
+            "allowlist:\n      users: []\n      teams: []",
+        ] {
+            write_config(
+                &config_path,
+                &format!(
+                    r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+models:
+  - id: restricted
+    {allowlist_yaml}
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-5
+"#
+                ),
+            );
+
+            let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+            let error_text = format!("{error:#}");
+            assert!(
+                error_text.contains(
+                    "model `restricted` allowlist must include at least one user or team"
+                ),
+                "unexpected error: {error_text}"
+            );
+        }
+    }
+
+    #[test]
     fn parses_route_openai_compatibility_config_into_seed_models() {
         let tmp = tempdir().expect("tempdir");
         let config_path = tmp.path().join("gateway.yaml");
@@ -3226,6 +3817,244 @@ models:
             OpenAiCompatReasoningEffort::ReasoningObject
         );
         assert!(profile.supports_stream_usage);
+    }
+
+    #[test]
+    fn parses_route_openrouter_policy_config_into_seed_models() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openrouter
+    type: openai_compat
+    base_url: https://openrouter.ai/api/v1
+    pricing_provider_id: openai
+models:
+  - id: fast
+    routes:
+      - provider: openrouter
+        upstream_model: openai/gpt-4o-mini
+        compatibility:
+          openrouter:
+            provider:
+              zdr: true
+              only: [openai, anthropic]
+              ignore: [deepinfra]
+              order: [openai, anthropic]
+              preferred_max_latency:
+                p90: 2.5
+              max_price:
+                prompt: 1.0
+                completion: 2.0
+                request: 0.01
+                image: 0.05
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let models = config.seed_models().expect("seed models");
+        let routing = &models[0].routes[0]
+            .compatibility
+            .openrouter
+            .as_ref()
+            .expect("openrouter policy")
+            .provider;
+
+        assert_eq!(routing.zdr, Some(true));
+        assert_eq!(routing.only, vec!["openai", "anthropic"]);
+        assert_eq!(routing.ignore, vec!["deepinfra"]);
+        assert_eq!(routing.order, vec!["openai", "anthropic"]);
+        match routing
+            .preferred_max_latency
+            .as_ref()
+            .expect("latency preference")
+        {
+            OpenRouterPercentilePreference::Percentiles(percentiles) => {
+                assert_eq!(percentiles.p90, Some(2.5));
+            }
+            OpenRouterPercentilePreference::Number(value) => {
+                panic!("expected percentile latency, got {value}");
+            }
+        }
+        let max_price = routing.max_price.as_ref().expect("max price");
+        assert_eq!(max_price.prompt, Some(1.0));
+        assert_eq!(max_price.completion, Some(2.0));
+        assert_eq!(max_price.request, Some(0.01));
+        assert_eq!(max_price.image, Some(0.05));
+    }
+
+    #[test]
+    fn rejects_openrouter_policy_on_non_openrouter_openai_compat_provider() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+models:
+  - id: fast
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-4o-mini
+        compatibility:
+          openrouter:
+            provider:
+              zdr: true
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("provider base_url is not an OpenRouter endpoint"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_openrouter_policy_on_openrouter_lookalike_provider_url() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openrouter-lookalike
+    type: openai_compat
+    base_url: https://openrouter.ai.evil.example/api/v1
+    pricing_provider_id: openai
+models:
+  - id: fast
+    routes:
+      - provider: openrouter-lookalike
+        upstream_model: openai/gpt-4o-mini
+        compatibility:
+          openrouter:
+            provider:
+              zdr: true
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("provider base_url is not an OpenRouter endpoint"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_openrouter_policy_on_non_https_provider_url() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openrouter-insecure
+    type: openai_compat
+    base_url: http://openrouter.ai/api/v1
+    pricing_provider_id: openai
+models:
+  - id: fast
+    routes:
+      - provider: openrouter-insecure
+        upstream_model: openai/gpt-4o-mini
+        compatibility:
+          openrouter:
+            provider:
+              zdr: true
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("provider base_url is not an OpenRouter endpoint"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_openrouter_policy_fields() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openrouter
+    type: openai_compat
+    base_url: https://openrouter.ai/api/v1
+    pricing_provider_id: openai
+models:
+  - id: fast
+    routes:
+      - provider: openrouter
+        upstream_model: openai/gpt-4o-mini
+        compatibility:
+          openrouter:
+            provider:
+              zdr: true
+              allow_fallbacks: false
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("unknown field `allow_fallbacks`"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_openrouter_policy_with_raw_extra_body_provider() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openrouter
+    type: openai_compat
+    base_url: https://openrouter.ai/api/v1
+    pricing_provider_id: openai
+models:
+  - id: fast
+    routes:
+      - provider: openrouter
+        upstream_model: openai/gpt-4o-mini
+        extra_body:
+          provider:
+            zdr: false
+        compatibility:
+          openrouter:
+            provider:
+              zdr: true
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains(
+                "cannot set both compatibility.openrouter.provider and extra_body.provider"
+            ),
+            "unexpected error: {error_text}"
+        );
     }
 
     #[test]
@@ -3718,6 +4547,178 @@ providers:
     }
 
     #[test]
+    fn parses_cloud_run_openai_compat_provider_config() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: gemma-cloud-run
+    type: gcp_cloud_run_openai_compat
+    base_url: https://gemma-service-abc-uc.a.run.app/v1
+    pricing_provider_id: google-vertex
+    auth:
+      mode: bearer
+      token: literal.debug-id-token
+    auth_header: x_serverless_authorization
+models:
+  - id: gemma-cloud-run
+    routes:
+      - provider: gemma-cloud-run
+        upstream_model: google/gemma-4-12b-it
+        extra_body:
+          chat_template_kwargs:
+            enable_thinking: true
+          skip_special_tokens: false
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let providers = config.seed_providers().expect("seed providers");
+        assert_eq!(providers[0].provider_type, "gcp_cloud_run_openai_compat");
+        assert_eq!(
+            providers[0].config["audience"],
+            "https://gemma-service-abc-uc.a.run.app/"
+        );
+        assert_eq!(
+            providers[0].config["auth_header"],
+            "x_serverless_authorization"
+        );
+
+        let runtime_configs = config
+            .openai_compatible_provider_configs()
+            .expect("runtime provider configs");
+        assert_eq!(
+            runtime_configs[0].provider_type,
+            "gcp_cloud_run_openai_compat"
+        );
+        assert_eq!(
+            runtime_configs[0].bearer_auth_header,
+            BearerAuthHeader::XServerlessAuthorization
+        );
+        assert_eq!(
+            runtime_configs[0].bearer_token.as_deref(),
+            Some("debug-id-token")
+        );
+
+        let models = config.seed_models().expect("seed models");
+        assert_eq!(
+            models[0].routes[0].extra_body["chat_template_kwargs"]["enable_thinking"],
+            true
+        );
+        assert_eq!(models[0].routes[0].extra_body["skip_special_tokens"], false);
+    }
+
+    #[test]
+    fn accepts_cloud_run_openai_compat_custom_audience() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: gemma-cloud-run
+    type: gcp_cloud_run_openai_compat
+    base_url: https://gemma.example.com/v1
+    audience: https://custom-audience.example.com
+    pricing_provider_id: google-vertex
+    auth:
+      mode: bearer
+      token: literal.debug-id-token
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let providers = config.seed_providers().expect("seed providers");
+        assert_eq!(
+            providers[0].config["audience"],
+            "https://custom-audience.example.com"
+        );
+    }
+
+    #[test]
+    fn rejects_cloud_run_openai_compat_non_https_base_url() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: gemma-cloud-run
+    type: gcp_cloud_run_openai_compat
+    base_url: http://gemma-service.run.app/v1
+    pricing_provider_id: google-vertex
+    auth:
+      mode: adc
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("base_url must use https"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_cloud_run_openai_compat_whitespace_padded_base_url() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: gemma-cloud-run
+    type: gcp_cloud_run_openai_compat
+    base_url: " https://gemma-service.run.app/v1 "
+    pricing_provider_id: google-vertex
+    auth:
+      mode: adc
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("base_url cannot include leading or trailing whitespace"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_cloud_run_openai_compat_empty_service_account_path() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: gemma-cloud-run
+    type: gcp_cloud_run_openai_compat
+    base_url: https://gemma-service.run.app/v1
+    pricing_provider_id: google-vertex
+    auth:
+      mode: service_account
+      credentials_path: ""
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("service_account.credentials_path cannot be empty"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
     fn accepts_supported_provider_display_icon_keys() {
         let tmp = tempdir().expect("tempdir");
         let config_path = tmp.path().join("gateway.yaml");
@@ -3869,7 +4870,7 @@ auth:
         client_id: oceans
         client_secret: literal.secret
 teams:
-  - key: " platform "
+  - id: " platform "
     name: Platform
 users:
   - name: Member
@@ -4000,6 +5001,7 @@ auth:
         let config = GatewayConfig::from_path(&config_path).expect("config should parse");
         let oauth_providers = config.seed_oauth_providers().expect("seed oauth providers");
         assert_eq!(oauth_providers[0].client_id, "github-client-id");
+        assert!(oauth_providers[0].sso_email_verification_enabled);
     }
 
     #[test]
@@ -4088,138 +5090,302 @@ auth:
     }
 
     #[test]
-    fn parses_seed_api_keys_with_explicit_service_account_budget() {
+    fn parses_github_oauth_allowed_email_domains_into_seed() {
         let tmp = tempdir().expect("tempdir");
         let config_path = tmp.path().join("gateway.yaml");
-        unsafe {
-            env::set_var("OCEANS_TEST_SEED_API_KEY", "gwk_abcd1234.secret-value");
-        }
 
         write_config(
             &config_path,
             r#"
 auth:
-  seed_api_keys:
-    - name: CI Indexer
-      value: env.OCEANS_TEST_SEED_API_KEY
-      service_account:
-        key: " ci-indexer "
-        name: CI Indexer
-        team: " platform "
-        budget:
-          cadence: daily
-          amount_usd: "25.0000"
-          hard_limit: true
-          timezone: UTC
-      allowed_models: [fast]
-teams:
-  - key: " platform "
-    name: Platform
+  oauth:
+    public_base_url: literal.https://gateway.example.com
+    providers:
+      - key: github
+        label: GitHub
+        provider_type: github
+        client_id: github-client-id
+        client_secret: literal.secret
+        scopes: [read:user, user:email]
+        allowed_email_domains:
+          - Test.com
+          - Engineering.Example.com.
 "#,
         );
 
         let config = GatewayConfig::from_path(&config_path).expect("config should parse");
-        let api_keys = config.seed_api_keys().expect("seed api keys");
-        assert_eq!(api_keys.len(), 1);
-        assert_eq!(api_keys[0].service_account_key, "ci-indexer");
-        assert_eq!(api_keys[0].service_account_name, "CI Indexer");
-        assert_eq!(api_keys[0].service_account_team_key, "platform");
+        let oauth_providers = config.seed_oauth_providers().expect("seed oauth providers");
         assert_eq!(
-            api_keys[0].service_account_budget.amount_usd,
-            Money4::from_scaled(250_000)
+            oauth_providers[0].allowed_email_domains,
+            vec!["test.com", "engineering.example.com"]
         );
-        assert_eq!(api_keys[0].allowed_models, ["fast"]);
     }
 
     #[test]
-    fn accepts_multiple_seed_api_keys_for_same_service_account() {
+    fn parses_github_oauth_sso_email_verification_escape_hatch() {
         let tmp = tempdir().expect("tempdir");
         let config_path = tmp.path().join("gateway.yaml");
-        unsafe {
-            env::set_var("OCEANS_TEST_SEED_API_KEY_ONE", "gwk_abcd1234.secret-one");
-            env::set_var("OCEANS_TEST_SEED_API_KEY_TWO", "gwk_wxyz9876.secret-two");
-        }
 
         write_config(
             &config_path,
             r#"
 auth:
-  seed_api_keys:
-    - name: CI Indexer One
-      value: env.OCEANS_TEST_SEED_API_KEY_ONE
-      service_account: &ci_service_account
-        key: ci-indexer
-        name: CI Indexer
-        team: platform
-        budget:
-          cadence: daily
-          amount_usd: "25.0000"
-          hard_limit: true
-          timezone: UTC
-      allowed_models: [fast]
-    - name: CI Indexer Two
-      value: env.OCEANS_TEST_SEED_API_KEY_TWO
-      service_account: *ci_service_account
-      allowed_models: [reasoning]
-teams:
-  - key: platform
-    name: Platform
+  oauth:
+    public_base_url: literal.https://gateway.example.com
+    providers:
+      - key: github
+        label: GitHub
+        provider_type: github
+        client_id: github-client-id
+        client_secret: literal.secret
+        scopes: [read:user, user:email]
+        sso_email_verification_enabled: false
 "#,
         );
 
         let config = GatewayConfig::from_path(&config_path).expect("config should parse");
-        let api_keys = config.seed_api_keys().expect("seed api keys");
-        assert_eq!(api_keys.len(), 2);
-        assert_eq!(api_keys[0].service_account_key, "ci-indexer");
-        assert_eq!(api_keys[1].service_account_key, "ci-indexer");
+        let oauth_providers = config.seed_oauth_providers().expect("seed oauth providers");
+        assert!(!oauth_providers[0].sso_email_verification_enabled);
     }
 
     #[test]
-    fn rejects_conflicting_seed_service_account_declarations() {
+    fn rejects_github_oauth_duplicate_allowed_email_domains() {
         let tmp = tempdir().expect("tempdir");
         let config_path = tmp.path().join("gateway.yaml");
-        unsafe {
-            env::set_var("OCEANS_TEST_SEED_API_KEY_ONE", "gwk_abcd1234.secret-one");
-            env::set_var("OCEANS_TEST_SEED_API_KEY_TWO", "gwk_wxyz9876.secret-two");
-        }
 
         write_config(
             &config_path,
             r#"
 auth:
-  seed_api_keys:
-    - name: CI Indexer One
-      value: env.OCEANS_TEST_SEED_API_KEY_ONE
-      service_account:
-        key: ci-indexer
-        name: CI Indexer
-        team: platform
-        budget:
-          cadence: daily
-          amount_usd: "25.0000"
-          hard_limit: true
-          timezone: UTC
-    - name: CI Indexer Two
-      value: env.OCEANS_TEST_SEED_API_KEY_TWO
-      service_account:
-        key: ci-indexer
-        name: Different Name
-        team: platform
-        budget:
-          cadence: daily
-          amount_usd: "25.0000"
-          hard_limit: true
-          timezone: UTC
-teams:
-  - key: platform
-    name: Platform
+  oauth:
+    public_base_url: literal.https://gateway.example.com
+    providers:
+      - key: github
+        label: GitHub
+        provider_type: github
+        client_id: github-client-id
+        client_secret: literal.secret
+        scopes: [read:user, user:email]
+        allowed_email_domains:
+          - Test.com
+          - test.com
 "#,
         );
 
         let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
         let error_text = format!("{error:#}");
         assert!(
-            error_text.contains("conflicting name, team, or budget settings"),
+            error_text.contains("contains duplicate domain `test.com`"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_github_oauth_invalid_allowed_email_domain() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+auth:
+  oauth:
+    public_base_url: literal.https://gateway.example.com
+    providers:
+      - key: github
+        label: GitHub
+        provider_type: github
+        client_id: github-client-id
+        client_secret: literal.secret
+        scopes: [read:user, user:email]
+        allowed_email_domains:
+          - alice@test.com
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("must be a domain name"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn parses_service_accounts_with_managed_key_and_budget() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        unsafe {
+            env::set_var("OCEANS_TEST_SEED_API_KEY", "gwk_abcd1234.secret-value");
+            env::set_var(
+                "OCEANS_API_KEY_SECRET_ENCRYPTION_KEY",
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+            );
+        }
+
+        write_config(
+            &config_path,
+            r#"
+teams:
+  - id: " platform "
+    name: Platform
+service_accounts:
+  - id: " ci-indexer "
+    name: CI Indexer
+    team: " platform "
+    budget:
+      cadence: daily
+      amount_usd: "25.0000"
+      hard_limit: true
+      timezone: UTC
+    keys:
+      - id: primary
+        name: CI Indexer Primary
+        value: env.OCEANS_TEST_SEED_API_KEY
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let service_accounts = config
+            .seed_service_accounts()
+            .expect("seed service accounts");
+        assert_eq!(service_accounts.len(), 1);
+        assert_eq!(service_accounts[0].service_account_key, "ci-indexer");
+        assert_eq!(service_accounts[0].service_account_name, "CI Indexer");
+        assert_eq!(service_accounts[0].team_key, "platform");
+        assert_eq!(
+            service_accounts[0].budget.amount_usd,
+            Money4::from_scaled(250_000)
+        );
+        assert_eq!(service_accounts[0].managed_api_keys.len(), 1);
+        let managed_key = &service_accounts[0].managed_api_keys[0];
+        assert_eq!(managed_key.config_key, "primary");
+        assert_eq!(managed_key.name, "CI Indexer Primary");
+        assert_eq!(managed_key.public_id.as_deref(), Some("abcd1234"));
+        assert!(managed_key.secret_hash.is_some());
+        assert!(managed_key.secret_material.is_some());
+    }
+
+    #[test]
+    fn accepts_multiple_managed_keys_for_same_service_account() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        unsafe {
+            env::set_var("OCEANS_TEST_SEED_API_KEY_ONE", "gwk_abcd1234.secret-one");
+            env::set_var("OCEANS_TEST_SEED_API_KEY_TWO", "gwk_wxyz9876.secret-two");
+            env::set_var(
+                "OCEANS_API_KEY_SECRET_ENCRYPTION_KEY",
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+            );
+        }
+
+        write_config(
+            &config_path,
+            r#"
+teams:
+  - id: platform
+    name: Platform
+service_accounts:
+  - id: ci-indexer
+    name: CI Indexer
+    team: platform
+    budget:
+      cadence: daily
+      amount_usd: "25.0000"
+      hard_limit: true
+      timezone: UTC
+    keys:
+      - id: primary
+        value: env.OCEANS_TEST_SEED_API_KEY_ONE
+      - id: fallback
+        value: env.OCEANS_TEST_SEED_API_KEY_TWO
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let service_accounts = config
+            .seed_service_accounts()
+            .expect("seed service accounts");
+        assert_eq!(service_accounts.len(), 1);
+        assert_eq!(service_accounts[0].managed_api_keys.len(), 2);
+        assert_eq!(
+            service_accounts[0].managed_api_keys[0].config_key,
+            "primary"
+        );
+        assert_eq!(
+            service_accounts[0].managed_api_keys[1].config_key,
+            "fallback"
+        );
+    }
+
+    #[test]
+    fn parses_generated_service_account_key_without_encryption_key() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        unsafe {
+            env::remove_var("OCEANS_API_KEY_SECRET_ENCRYPTION_KEY");
+        }
+
+        write_config(
+            &config_path,
+            r#"
+teams:
+  - id: platform
+    name: Platform
+service_accounts:
+  - id: ci-indexer
+    name: CI Indexer
+    team: platform
+    budget:
+      cadence: daily
+      amount_usd: "25.0000"
+      hard_limit: true
+      timezone: UTC
+    keys:
+      - id: primary
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let service_accounts = config
+            .seed_service_accounts()
+            .expect("seed service accounts");
+        let managed_key = &service_accounts[0].managed_api_keys[0];
+        assert_eq!(managed_key.source, ManagedApiKeySource::Generated);
+        assert_eq!(managed_key.public_id, None);
+        assert_eq!(managed_key.secret_hash, None);
+        assert!(managed_key.secret_material.is_none());
+    }
+
+    #[test]
+    fn rejects_duplicate_service_account_ids_after_normalization() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+teams:
+  - id: platform
+    name: Platform
+service_accounts:
+  - id: ci-indexer
+    team: platform
+    budget:
+      cadence: daily
+      amount_usd: "25.0000"
+  - id: " ci-indexer "
+    team: platform
+    budget:
+      cadence: daily
+      amount_usd: "25.0000"
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("duplicate service account id `ci-indexer`"),
             "unexpected error: {error_text}"
         );
     }
@@ -4233,9 +5399,9 @@ teams:
             &config_path,
             r#"
 teams:
-  - key: platform
+  - id: platform
     name: Platform
-  - key: " platform "
+  - id: " platform "
     name: Duplicate
 "#,
         );
@@ -4243,7 +5409,28 @@ teams:
         let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
         let error_text = format!("{error:#}");
         assert!(
-            error_text.contains("duplicate team key `platform`"),
+            error_text.contains("duplicate team id `platform`"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_legacy_auth_seed_api_keys_config() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+auth:
+  seed_api_keys: []
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("seed_api_keys"),
             "unexpected error: {error_text}"
         );
     }
@@ -4257,7 +5444,7 @@ teams:
             &config_path,
             r#"
 teams:
-  - key: platform
+  - id: platform
     name: Platform
 users:
   - name: Member

@@ -1,6 +1,6 @@
 # Service Accounts
 
-`See also`: [Identity and Access](identity-and-access.md), [Admin Control Plane](admin-control-plane.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Data Relationships](../reference/data-relationships.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../adr/2026-05-10-team-service-accounts.md)
+`See also`: [Identity and Access](identity-and-access.md), [Admin Control Plane](admin-control-plane.md), [Budgets](budgets.md), [Data Relationships](../contributing/reference/data-relationships.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../adr/2026-05-10-team-service-accounts.md)
 
 This page describes the intended service-account model for non-human gateway callers.
 
@@ -16,6 +16,8 @@ Service accounts are first-class gateway principals for automation, applications
 - active service-account credentials require an active service-account budget
 
 API keys remain credentials. They are not the principal for team automation. A non-human team caller authenticates with a credential attached to a service account.
+
+V1 caveat: service-account-owned API keys are denied for gateway models that declare a model-level `allowlist`. Model-level allowlists list human user email refs and team keys, but they do not grant service-account access in this slice.
 
 ## No Legacy Team-Owned Runtime Keys
 
@@ -47,8 +49,9 @@ Team owners and team admins can:
 - create service accounts for their own team
 - deactivate service accounts for their own team
 - manage credentials and grants for their own team's service accounts
+- reveal stored key material for their own team's service-account credentials
 
-Ordinary team members cannot manage service accounts. Users outside the owning team cannot manage that team's service accounts unless they are platform admins.
+Ordinary team members cannot manage service accounts or reveal stored key material. Users outside the owning team cannot manage that team's service accounts unless they are platform admins.
 
 ## Lifecycle
 

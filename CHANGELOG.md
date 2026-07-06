@@ -6,22 +6,121 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [Unreleased]
+## [0.14.0] - 2026-07-06
+### :rocket: New features
+- *(codex)* Add Bedrock-safe client config by @ahstn in [#219](https://github.com/ahstn/oceans-llm/pull/219)
+- *(dev)* Adding impeccable artifacts by @ahstn
+- *(review)* Review agent first pass by @ahstn
+- *(ui)* Migrate to blue/ocean focus color palette by @ahstn
+- *(ui)* Initial service account draft by @ahstn
+- *(gateway)* Add native Vertex embeddings by @ahstn in [#225](https://github.com/ahstn/oceans-llm/pull/225)
+- *(gateway)* Add model-level allowlists by @ahstn in [#226](https://github.com/ahstn/oceans-llm/pull/226)
+
+### :bug: Bug fixes
+- *(bedrock)* Reject forced image generation tools by @ahstn
+- *(codex)* Tighten generated config and tool guards by @ahstn
+- *(admin-ui)* Refine review agent dialog layout by @ahstn in [#221](https://github.com/ahstn/oceans-llm/pull/221)
+- *(admin-ui)* Serve static assets before auth fallback by @ahstn in [#224](https://github.com/ahstn/oceans-llm/pull/224)
+- *(gateway)* Address model allowlist review comments by @ahstn
+
+### Build
+- Post release tasks - v0.13.0 by @ahstn
+- Adding local dev service accounts by @ahstn
+
+### Changed
+- Add GNU Affero General Public License v3 by @ahstn
+
+### Documentation
+- *(identity)* Updating service account documentation by @ahstn
+
+### Miscellaneous
+- Update skills by @ahstn
+- *(version)* V0.14.0
+
+
+
+
+## [0.13.0] - 2026-07-03
+### :rocket: New features
+- *(gateway)* Allow api keys to grant all models by @ahstn
+- *(gateway)* Add declarative service account config by @ahstn in [#209](https://github.com/ahstn/oceans-llm/pull/209)
+- *(gateway)* Allow api keys to grant all models by @ahstn in [#210](https://github.com/ahstn/oceans-llm/pull/210)
+- *(admin)* Add client config setup context by @ahstn in [#212](https://github.com/ahstn/oceans-llm/pull/212)
+
+### :bug: Bug fixes
+- *(test)* Repair api key all-model ci coverage by @ahstn in [#211](https://github.com/ahstn/oceans-llm/pull/211)
+- *(gateway)* Address api key grant review feedback by @ahstn
+- *(admin)* Refresh pricing before releases by @ahstn in [#207](https://github.com/ahstn/oceans-llm/pull/207)
+- *(gateway)* Harden service account key handling by @ahstn
+- *(e2e)* Seed service account config with new shape by @ahstn
+
+### Build
+- Post release tasks - v0.12.0 by @ahstn
+
+### Changed
+- Merge origin/main into api key all-model branch by @ahstn
+- Align docs navigation with admin UI by @ahstn
+- Merge remote-tracking branch 'origin/codex/docs-cohesion' into docs/split-docs-navigation by @ahstn
+- Polish docs sidebar layout by @ahstn
+- Split docs navigation surfaces by @ahstn
+- Refine docs getting started index by @ahstn
+- Simplify getting started docs index by @ahstn
+
+### Documentation
+- Slight rewording of Cloud Run docs by @ahstn
+- Moving mcp docs to a common folder by @ahstn
+- Refactoring styling by @ahstn
+- Updating aws provider guidance by @ahstn
+- Updating tagging docs by @ahstn
+- Clarify docs audience guidance by @ahstn
+- Split docs navigation surfaces by @ahstn in [#215](https://github.com/ahstn/oceans-llm/pull/215)
+- Updating docs by @ahstn
+
+### Miscellaneous
+- Changes as per pr by @ahstn
+- Updating client config docs screenshot by @ahstn
+- Merge 'docs/split-docs-navigation' by @ahstn
+- *(version)* V0.13.0 by @ahstn
+
+### Testing
+- *(admin)* Cover codex setup rows by @ahstn
+
+
+
+
+## [0.12.0] - 2026-07-01
 ### :rocket: New features
 - *(gateway)* Implement oidc sso by @ahstn
-- *(auth)* Add direct GitHub OAuth SSO by @ahstn
-- *(auth)* Add direct GitHub OAuth SSO by @ahstn
 - *(gateway)* Implement OIDC SSO by @ahstn in [#157](https://github.com/ahstn/oceans-llm/pull/157)
 - *(auth)* Add direct GitHub OAuth SSO by @ahstn in [#158](https://github.com/ahstn/oceans-llm/pull/158)
-- *(gateway)* Export spend as FOCUS CSV by @ahstn
 - *(gateway)* Include owner tags in FOCUS export by @ahstn
 - *(gateway)* Export spend as FOCUS CSV by @ahstn in [#160](https://github.com/ahstn/oceans-llm/pull/160)
-- *(gateway)* Add external MCP registry by @ahstn
 - *(gateway)* Add external MCP registry by @ahstn in [#161](https://github.com/ahstn/oceans-llm/pull/161)
-- *(gateway)* Add MCP gateway auth and diagnostics by @ahstn
 - *(gateway)* Add MCP gateway auth and diagnostics by @ahstn in [#162](https://github.com/ahstn/oceans-llm/pull/162)
-- *(gateway)* Implement budget principal taxonomy by @ahstn
 - *(gateway)* Implement budget principal taxonomy by @ahstn in [#163](https://github.com/ahstn/oceans-llm/pull/163)
+- *(gateway)* Add bedrock mantle support by @ahstn in [#164](https://github.com/ahstn/oceans-llm/pull/164)
+- *(mcp)* Add grants and token overhead telemetry by @ahstn in [#165](https://github.com/ahstn/oceans-llm/pull/165)
+- *(gateway)* Track additional agent harness user agents by @ahstn in [#174](https://github.com/ahstn/oceans-llm/pull/174)
+- *(gateway)* Add aggregate MCP discovery endpoint by @ahstn
+- *(gateway)* Add MCP credential execution by @ahstn
+- *(gateway)* Add aggregate MCP discovery and execution by @ahstn in [#171](https://github.com/ahstn/oceans-llm/pull/171)
+- *(admin-ui)* Add Claude Code client config snippets by @ahstn in [#176](https://github.com/ahstn/oceans-llm/pull/176)
+- Use central cargo build dirs by @ahstn
+- *(admin-ui)* Redesign request log detail as wide inspect drawer by @ahstn
+- *(gateway)* Re-anchor local demo seed on every run with richer fixtures by @ahstn
+- *(gateway)* Add OpenRouter routing policy controls by @ahstn
+- *(admin-ui)* Surface api key and caller in the request logs table by @ahstn
+- *(admin-ui)* Surface api key and caller in request logs table by @ahstn in [#177](https://github.com/ahstn/oceans-llm/pull/177)
+- *(gateway)* Support Cloud Run OpenAI-compatible providers by @ahstn in [#181](https://github.com/ahstn/oceans-llm/pull/181)
+- *(gateway)* Add OpenRouter routing policy controls by @ahstn in [#180](https://github.com/ahstn/oceans-llm/pull/180)
+- *(gateway)* Restrict github oauth email domains by @ahstn in [#183](https://github.com/ahstn/oceans-llm/pull/183)
+- *(admin-ui)* Polish MCP management UI by @ahstn in [#184](https://github.com/ahstn/oceans-llm/pull/184)
+- *(gateway)* Add Codex client config by @ahstn in [#185](https://github.com/ahstn/oceans-llm/pull/185)
+- *(gateway)* Add Anthropic messages for Vertex Claude tools by @ahstn in [#186](https://github.com/ahstn/oceans-llm/pull/186)
+- Add multi-model client config generation by @ahstn
+- *(gateway)* Add multi-model client configs by @ahstn in [#189](https://github.com/ahstn/oceans-llm/pull/189)
+- *(review-agent)* Add GitHub review agent foundation by @ahstn in [#200](https://github.com/ahstn/oceans-llm/pull/200)
+- *(client-config)* Add Fable 5 adaptive config by @ahstn in [#202](https://github.com/ahstn/oceans-llm/pull/202)
 
 ### :bug: Bug fixes
 - *(gateway)* Harden oidc review findings by @ahstn
@@ -29,8 +128,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(auth)* Address GitHub OAuth PR feedback by @ahstn
 - *(auth)* Make SSO JIT retries recoverable by @ahstn
 - *(auth)* Harden OAuth provider updates by @ahstn
-- *(gateway)* Address FOCUS export review findings by @ahstn
-- *(gateway)* Address FOCUS export review follow-ups by @ahstn
 - *(gateway)* Harden MCP registry discovery by @ahstn
 - *(gateway)* Address MCP registry review feedback by @ahstn
 - *(gateway)* Tighten MCP catalog auth overrides by @ahstn
@@ -43,25 +140,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Address budget taxonomy PR feedback by @ahstn
 - Resolve budget review edge cases by @ahstn
 - Bind libsql budget query parameters conditionally by @ahstn
+- *(gateway)* Tighten bedrock responses routing by @ahstn
+- *(gateway)* Validate bedrock route capabilities by @ahstn
+- *(e2e)* Seed service account in gateway config by @ahstn
+- *(gateway)* Harden MCP credential resolution by @ahstn
+- *(gateway)* Address MCP PR review findings by @ahstn
+- *(client-config)* Correct Claude Code gateway settings by @ahstn
+- *(gateway)* Harden OpenRouter policy validation by @ahstn
+- *(gateway)* Keep Cloud Run auth inside provider boundary by @ahstn
+- Fix cloud run provider review findings by @ahstn
+- *(gateway)* Handle oauth review followups by @ahstn
+- *(admin-ui)* Address MCP review findings by @ahstn
+- *(gateway)* Refine Codex config availability by @ahstn
+- *(gateway)* Preserve Anthropic stream errors and usage by @ahstn
+- *(client-config)* Use Anthropic APIs for Claude models by @ahstn
+- *(gateway)* Address Anthropic messages PR review findings by @ahstn
+- *(gateway)* Align Messages errors and config API inference by @ahstn
+- *(gateway)* Include usage in Anthropic stream deltas by @ahstn
+- *(gateway)* Harden Anthropic stream usage accounting by @ahstn
+- *(gateway)* Include usage in Anthropic stream deltas by @ahstn in [#187](https://github.com/ahstn/oceans-llm/pull/187)
+- *(auth)* Improve github oauth email verification handling by @ahstn
+- *(auth)* Address github oauth review feedback by @ahstn
+- *(auth)* Improve github oauth email verification handling by @ahstn in [#191](https://github.com/ahstn/oceans-llm/pull/191)
+- Address client config review findings by @ahstn
+- *(review-agent)* Address PR review findings by @ahstn
+- *(providers)* Align adaptive Claude policy by @ahstn
+- *(providers)* Address adaptive Claude review by @ahstn
 
 ### Build
 - Post release tasks - v0.8.0 by @ahstn
+- Post release tasks - v0.9.0 by @ahstn
+- Post release tasks - v0.10.0 by @ahstn
+- Post release tasks - v0.10.1 by @ahstn
+- Post release tasks - v0.11.0 by @ahstn
+- Post release tasks - v0.11.1 by @ahstn
+- Post release tasks - v0.11.2 by @ahstn
+- Bump web-ui dependencies by @ahstn
 
 ### Changed
 - Add hosted MCP recommendations by @ahstn
 - Record MCP gateway auth alignment interview by @ahstn
+- *(providers)* Share openai stream normalization by @ahstn
+- Implement MCP grants and token overhead telemetry by @ahstn
+- Address MCP PR review findings by @ahstn
+- Merge remote-tracking branch 'origin/main' into codex/openrouter-routing-policy by @ahstn
+- *(gateway)* Simplify oauth domain policy helpers by @ahstn
+- Polish admin MCP workspace UI by @ahstn
+- Refine admin MCP server cards by @ahstn
+- Align admin identity and MCP tables by @ahstn
+- Polish MCP tools dialog by @ahstn
+- Document MCP admin workflows by @ahstn
+- *(client-config)* Split client renderers by concern by @ahstn
 
 ### Documentation
 - Adding more screenshots by @ahstn
 - Adding more screenshots by @ahstn
 - Address FOCUS export review notes by @ahstn
 - Updating screenshots by @ahstn
+- *(bedrock)* Make projects snippet loadable by @ahstn
+- *(client-config)* Note mixed API provider split by @ahstn
 
 ### Miscellaneous
 - Upgrade bun deps by @ahstn
+- Refresh shadcn skill lock hash by @ahstn
+- *(version)* V0.12.0 by @ahstn
 
 ### Testing
 - *(gateway)* Preserve env vars in MCP guards by @ahstn
+- *(gateway)* Address oauth domain review feedback by @ahstn
 
 
 
@@ -441,7 +587,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
-[unreleased]: https://github.com/ahstn/oceans-llm/compare/v0.8.0...HEAD
+[0.14.0]: https://github.com/ahstn/oceans-llm/compare/v0.13.0...v0.14.0
+[0.13.0]: https://github.com/ahstn/oceans-llm/compare/v0.12.0...v0.13.0
+[0.12.0]: https://github.com/ahstn/oceans-llm/compare/v0.8.0...v0.12.0
 [0.8.0]: https://github.com/ahstn/oceans-llm/compare/v0.6.0...v0.8.0
 [0.6.0]: https://github.com/ahstn/oceans-llm/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/ahstn/oceans-llm/compare/v0.4.0...v0.5.0

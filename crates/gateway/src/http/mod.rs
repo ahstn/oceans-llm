@@ -1,5 +1,6 @@
 pub mod admin_auth;
 pub mod admin_contract;
+mod anthropic_stream;
 pub mod api_keys;
 pub mod error;
 mod focus_export;
@@ -12,6 +13,7 @@ pub mod mcp_registry;
 pub mod models;
 pub mod observability;
 pub mod request_tags;
+pub mod review_agent;
 pub mod spend;
 pub mod state;
 
@@ -28,7 +30,7 @@ use tower_http::{
 
 use self::{
     api_keys::*, handlers::*, identity::*, mcp_gateway::*, mcp_registry::*, models::*,
-    observability::*, spend::*, state::AppState,
+    observability::*, review_agent::*, spend::*, state::AppState,
 };
 
 pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
@@ -47,7 +49,15 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
             "/api/v1/admin/api-keys/{api_key_id}/revoke",
             post(revoke_api_key),
         )
+        .route(
+            "/api/v1/admin/api-keys/{api_key_id}/secret/reveal",
+            post(reveal_api_key_secret),
+        )
         .route("/api/v1/admin/models", get(list_models))
+        .route(
+            "/api/v1/admin/models/client-configs",
+            post(generate_model_client_configs),
+        )
         .route(
             "/api/v1/admin/identity/users",
             get(list_identity_users).post(create_identity_user),
@@ -101,6 +111,50 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
             post(regenerate_password_invite),
         )
         .route("/api/v1/admin/spend/report", get(get_spend_report))
+        .route(
+            "/api/v1/admin/review-agent/repositories",
+            get(list_review_agent_repositories).post(create_review_agent_repository),
+        )
+        .route(
+            "/api/v1/admin/review-agent/repositories/{repository_id}",
+            get(get_review_agent_repository).patch(update_review_agent_repository),
+        )
+        .route(
+            "/api/v1/admin/review-agent/repositories/{repository_id}/disable",
+            post(disable_review_agent_repository),
+        )
+        .route(
+            "/api/v1/admin/review-agent/repositories/{repository_id}/reactivate",
+            post(reactivate_review_agent_repository),
+        )
+        .route(
+            "/api/v1/admin/review-agent/repositories/{repository_id}/runs",
+            get(list_review_agent_runs),
+        )
+        .route(
+            "/api/v1/admin/review-agent/repositories/{repository_id}/workflow",
+            post(render_review_agent_workflow),
+        )
+        .route(
+            "/api/v1/review-agent/action/config/resolve",
+            post(resolve_review_agent_action_config),
+        )
+        .route(
+            "/api/v1/review-agent/action/runs",
+            post(start_review_agent_action_run),
+        )
+        .route(
+            "/api/v1/review-agent/action/runs/{run_id}/heartbeat",
+            post(heartbeat_review_agent_action_run),
+        )
+        .route(
+            "/api/v1/review-agent/action/runs/{run_id}/complete",
+            post(complete_review_agent_action_run),
+        )
+        .route(
+            "/api/v1/review-agent/action/runs/{run_id}/fail",
+            post(fail_review_agent_action_run),
+        )
         .route("/api/v1/admin/spend/focus.csv", get(get_admin_focus_export))
         .route("/api/v1/me/spend/focus.csv", get(get_my_focus_export))
         .route(
@@ -225,6 +279,8 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
             get(oauth_callback_github),
         )
         .route("/v1/models", get(v1_models))
+        .route("/v1/messages", post(v1_messages))
+        .route("/messages", post(v1_messages))
         .route("/v1/chat/completions", post(v1_chat_completions))
         .route("/v1/responses", post(v1_responses))
         .route("/v1/embeddings", post(v1_embeddings))

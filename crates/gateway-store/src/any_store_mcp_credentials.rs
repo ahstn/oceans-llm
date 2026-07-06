@@ -93,7 +93,7 @@ impl McpUpstreamCredentialRepository for AnyStore {
         &self,
         credential_binding_id: Uuid,
         last_used_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
+    ) -> Result<bool, StoreError> {
         match self {
             Self::Libsql(store) => {
                 store

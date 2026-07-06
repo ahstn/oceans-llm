@@ -9,7 +9,7 @@ This file stays in the repo as a maintainer note for the VitePress source tree.
 - Canonical provider compatibility reference:
   - [reference/provider-api-compatibility.md](reference/provider-api-compatibility.md)
 - Migration authoring checklist:
-  - [reference/migration-authoring.md](reference/migration-authoring.md)
+  - [contributing/reference/migration-authoring.md](contributing/reference/migration-authoring.md)
 - ADRs:
   - [adr/](adr)
 - Internal notes:
@@ -20,7 +20,7 @@ This file stays in the repo as a maintainer note for the VitePress source tree.
 What lives where:
 
 - `index.md` and the section folders drive the published docs site.
-- `development/` holds local workflows for maintainers.
+- `contributing/` holds published maintainer and contributor workflows.
 - `adr/` explains why decisions were made.
 - `internal/` holds research and rough notes that should not be treated as live contract.
 - `scripts/docs-check.ts` keeps link, ownership, and nav checks close to the docs package.

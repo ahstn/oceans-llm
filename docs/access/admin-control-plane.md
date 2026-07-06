@@ -1,6 +1,6 @@
 # Admin Control Plane
 
-`See also`: [Identity and Access](identity-and-access.md), [Service Accounts](service-accounts.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../operations/observability/mcp-invocations.md), [MCP Registry and Discovery](../operations/observability/mcp-registry-and-discovery.md), [Agent Harness Usage](../operations/agent-harness-usage.md), [Admin API Contract Workflow](../reference/admin-api-contract-workflow.md), [End-to-End Contract Tests](../reference/e2e-contract-tests.md), [OIDC and SSO](oidc-and-sso-status.md)
+`See also`: [Identity and Access](identity-and-access.md), [Service Accounts](service-accounts.md), [Budgets](budgets.md), [Observability and Request Logs](../operations/observability-and-request-logs.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../mcp/mcp-invocations.md), [MCP Registry and Discovery](../contributing/mcp/mcp-registry-and-discovery.md), [Agent Harness Usage](../operations/agent-harness-usage.md), [Admin API Contract Workflow](../contributing/reference/admin-api-contract-workflow.md), [End-to-End Contract Tests](../contributing/reference/e2e-contract-tests.md), [OIDC and SSO](oidc-and-sso-status.md)
 
 This page describes what admins can actually do in the admin UI today.
 
@@ -13,7 +13,7 @@ Normal runtime model:
 - the gateway handles auth, admin APIs, and reverse proxying
 - the SSR app calls back into the gateway through the same-origin client boundary
 
-For the generated contract and artifact workflow, use [admin-api-contract-workflow.md](../reference/admin-api-contract-workflow.md).
+For the generated contract and artifact workflow, use [admin-api-contract-workflow.md](../contributing/reference/admin-api-contract-workflow.md).
 
 ## Live Gateway-Backed Surfaces
 
@@ -31,6 +31,7 @@ These areas are backed by real gateway APIs today:
 - request-log list and detail inspection
 - MCP invocation list and detail inspection
 - MCP server registry UI, recommended-server catalog, registry CRUD, soft-disable, tool list, and discovery refresh
+- generated client configuration snippets for supported model harnesses; see [Client Harness Configuration](../configuration/client-harness-configuration.md)
 
 ## Live But Still Maturing Surfaces
 
@@ -40,12 +41,14 @@ These pages now read from gateway APIs, but still have capability-detail follow-
 
 That split matters for admin expectations and test scope.
 
+The Models page also shows model-level allowlists read-only when present. `Unrestricted by model allowlist` means no model-level policy is stored for that gateway model. Listed users and teams are normalized refs from config; admins cannot edit this policy from the UI in v1.
+
 ## Admin-Visible Maturity Cues
 
 The current product contract is mixed on purpose:
 
 - identity, service accounts, spend, API keys, request logs, leaderboard, and Models are live gateway-backed surfaces
-- Models still needs richer runtime capability visibility, including Responses support
+- Models still needs richer runtime capability visibility, including Responses and embeddings support
 
 Tracked follow-up:
 
@@ -56,17 +59,18 @@ Tracked follow-up:
 
 Admins can:
 
-- list API keys with owner summary and grant list
+- list API keys with owner summary, grant mode, and grant list
 - create a new key for an explicit user or service-account owner
-- grant access to an explicit set of gateway models at creation time
+- grant access to all gateway models for user-owned keys
+- grant access to an explicit set of gateway models for user-owned or service-account-owned keys
 - copy the raw key once from the create response
-- replace model grants for an active key
+- replace model grant mode and explicit grants for an active key
 - revoke a key so runtime auth rejects it immediately
 
 For service workloads, create a service account for the workload and then create credentials on that service account:
 
 - give it a workload-specific name
-- grant only the gateway models the workload needs
+- grant only the explicit gateway models the workload needs
 - configure an active service-account budget before using active credentials
 - rotate by creating a replacement key, updating the caller secret, then revoking the old key
 
@@ -141,7 +145,8 @@ Admins can:
 - manage MCP servers from `/admin/mcp/servers`
 - inspect MCP discovery status as the current server health signal
 - refresh MCP discovery and see bounded failure feedback
-- inspect discovered MCP tool schema hashes, schema versions, active state, and discovery timestamps
+- inspect discovered MCP tools, active state, stable tool ids, schema versions, and JSON schemas
+- manage MCP toolsets, grants, upstream credential bindings, and effective-access previews from the MCP workspace
 
 Request-log payload policy is read-only in the admin UI. Admins configure it through `gateway.yaml`; see [observability-and-request-logs.md](../operations/observability-and-request-logs.md).
 
@@ -151,7 +156,7 @@ Current limits:
 - admin mutation audit logs are still tracked separately in [issue #99](https://github.com/ahstn/oceans-llm/issues/99)
 - request-log detail missing rows return `404 not_found`
 - request-log filtering ergonomics still have follow-up work
-- MCP toolsets, grants, upstream credential bindings, and effective-access previews are managed under the MCP admin API; OAuth browser setup and token refresh remain future work
+- OAuth browser setup and token refresh for MCP upstream credentials remain future work
 
 ## Service Callers Today
 
@@ -183,4 +188,4 @@ The E2E harness treats only live gateway-backed surfaces as contract flows.
 - live surfaces should gain targeted cross-layer coverage as they harden
 - maturing live pages can appear in smoke coverage before every workflow becomes business-flow coverage
 
-Use [e2e-contract-tests.md](../reference/e2e-contract-tests.md) for the test boundary.
+Use [e2e-contract-tests.md](../contributing/reference/e2e-contract-tests.md) for the test boundary.

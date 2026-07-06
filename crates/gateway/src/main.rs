@@ -117,7 +117,7 @@ where
 {
     let providers_seed = config.seed_providers()?;
     let models_seed = config.seed_models()?;
-    let api_keys_seed = config.seed_api_keys()?;
+    let service_accounts_seed = config.seed_service_accounts()?;
     let oidc_providers_seed = config.seed_oidc_providers()?;
     let oauth_providers_seed = config.seed_oauth_providers()?;
     let teams_seed = config.seed_teams()?;
@@ -127,7 +127,8 @@ where
         .seed_from_inputs(
             &providers_seed,
             &models_seed,
-            &api_keys_seed,
+            &[],
+            &service_accounts_seed,
             &oidc_providers_seed,
             &oauth_providers_seed,
             &teams_seed,
@@ -206,6 +207,10 @@ async fn run_serve_with_store(
                     .oauth
                     .resolved_public_base_url()
                     .context("failed resolving OAuth public base URL")?,
+            ),
+            client_config_gateway_base_url: Arc::new(
+                load_client_config_gateway_base_url()
+                    .context("failed resolving client config gateway base URL")?,
             ),
             code_mode: build_code_mode_state(config)?,
         },
@@ -344,9 +349,11 @@ async fn ensure_bootstrap_admin(
 fn build_provider_registry(config: &GatewayConfig) -> anyhow::Result<ProviderRegistry> {
     let mut providers = ProviderRegistry::new();
 
-    for provider_config in config.openai_compat_provider_configs()? {
-        let provider = OpenAiCompatProvider::new(provider_config)
-            .map_err(|error| anyhow::anyhow!("failed building openai_compat provider: {error}"))?;
+    for provider_config in config.openai_compatible_provider_configs()? {
+        let provider_type = provider_config.provider_type.clone();
+        let provider = OpenAiCompatProvider::new(provider_config).map_err(|error| {
+            anyhow::anyhow!("failed building {provider_type} provider: {error}")
+        })?;
         providers.register(Arc::new(provider));
     }
 
@@ -373,6 +380,39 @@ fn load_admin_ui_config() -> AdminUiConfig {
         connect_timeout_ms: env_u64("ADMIN_UI_CONNECT_TIMEOUT_MS", 750),
         request_timeout_ms: env_u64("ADMIN_UI_REQUEST_TIMEOUT_MS", 10_000),
     }
+}
+
+fn load_client_config_gateway_base_url() -> anyhow::Result<Option<String>> {
+    let raw_url = match env::var("GATEWAY_CLIENT_CONFIG_BASE_URL") {
+        Ok(raw_url) => raw_url,
+        Err(env::VarError::NotPresent) => return Ok(None),
+        Err(env::VarError::NotUnicode(_)) => {
+            anyhow::bail!("GATEWAY_CLIENT_CONFIG_BASE_URL must be valid Unicode")
+        }
+    };
+    let trimmed = raw_url.trim();
+    if trimmed.is_empty() {
+        anyhow::bail!("GATEWAY_CLIENT_CONFIG_BASE_URL cannot be empty");
+    }
+    if trimmed.len() != raw_url.len() {
+        anyhow::bail!(
+            "GATEWAY_CLIENT_CONFIG_BASE_URL cannot include leading or trailing whitespace"
+        );
+    }
+
+    let parsed = url::Url::parse(trimmed)
+        .context("GATEWAY_CLIENT_CONFIG_BASE_URL must be an absolute URL")?;
+    match parsed.scheme() {
+        "http" | "https" => {}
+        scheme => {
+            anyhow::bail!("GATEWAY_CLIENT_CONFIG_BASE_URL scheme `{scheme}` is not supported")
+        }
+    }
+    if parsed.host().is_none() {
+        anyhow::bail!("GATEWAY_CLIENT_CONFIG_BASE_URL must include a host");
+    }
+
+    Ok(Some(trimmed.trim_end_matches('/').to_string()))
 }
 
 fn spawn_pricing_catalog_refresh_loop(
