@@ -180,6 +180,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V37__model_allowlists.sql"),
         postgres_sql: include_str!("../migrations/postgres/V37__model_allowlists.sql"),
     },
+    MigrationManifest {
+        version: 38,
+        name: "budget_sources",
+        checksum: "V38__budget_sources.sql",
+        libsql_sql: include_str!("../migrations/V38__budget_sources.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V38__budget_sources.sql"),
+    },
 ];
 
 #[cfg(test)]

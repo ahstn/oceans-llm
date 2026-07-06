@@ -10,7 +10,7 @@ use gateway::{
     http::{build_router, state::AppState},
     observability,
 };
-use gateway_core::ProviderRegistry;
+use gateway_core::{ProviderRegistry, SeedHumanBudgetDefaults};
 use gateway_providers::{BedrockProvider, OpenAiCompatProvider, VertexProvider};
 use gateway_service::{
     DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, GatewayService, McpCredentialService,
@@ -119,6 +119,7 @@ where
     let oauth_providers_seed = config.seed_oauth_providers()?;
     let teams_seed = config.seed_teams()?;
     let users_seed = config.seed_users()?;
+    let human_budget_defaults = config.seed_human_budget_defaults()?;
 
     store
         .seed_from_inputs(
@@ -132,7 +133,11 @@ where
             &users_seed,
         )
         .await
-        .context("failed to seed foundational config data")
+        .context("failed to seed foundational config data")?;
+    store
+        .reconcile_human_budget_defaults(&human_budget_defaults, time::OffsetDateTime::now_utc())
+        .await
+        .context("failed to reconcile human budget defaults")
 }
 
 async fn run_serve(
@@ -156,10 +161,16 @@ async fn run_serve_with_store(
     metrics: Arc<observability::GatewayMetrics>,
     args: ServeArgs,
 ) -> anyhow::Result<()> {
+    let human_budget_defaults = Arc::new(config.seed_human_budget_defaults()?);
+
     if args.bootstrap_admin {
-        ensure_bootstrap_admin(&store, &config.auth.bootstrap_admin)
-            .await
-            .context("failed to ensure bootstrap admin access")?;
+        ensure_bootstrap_admin(
+            &store,
+            &config.auth.bootstrap_admin,
+            human_budget_defaults.as_ref(),
+        )
+        .await
+        .context("failed to ensure bootstrap admin access")?;
     }
 
     if args.seed_config {
@@ -209,6 +220,7 @@ async fn run_serve_with_store(
                 load_client_config_gateway_base_url()
                     .context("failed resolving client config gateway base URL")?,
             ),
+            budget_defaults: human_budget_defaults,
         },
         load_admin_ui_config(),
     );
@@ -261,7 +273,8 @@ async fn run_bootstrap_admin_command(config: &GatewayConfig) -> anyhow::Result<(
             .await
             .context("failed to initialize gateway store")?,
     );
-    ensure_bootstrap_admin(&store, &config.auth.bootstrap_admin).await
+    let human_budget_defaults = config.seed_human_budget_defaults()?;
+    ensure_bootstrap_admin(&store, &config.auth.bootstrap_admin, &human_budget_defaults).await
 }
 
 async fn run_seed_config_command(config: &GatewayConfig) -> anyhow::Result<()> {
@@ -284,7 +297,8 @@ async fn run_seed_local_demo_command(config: &GatewayConfig) -> anyhow::Result<(
             .await
             .context("failed to initialize gateway store")?,
     );
-    ensure_bootstrap_admin(&store, &config.auth.bootstrap_admin).await?;
+    let human_budget_defaults = config.seed_human_budget_defaults()?;
+    ensure_bootstrap_admin(&store, &config.auth.bootstrap_admin, &human_budget_defaults).await?;
     seed_config(store.as_ref(), config).await?;
     let raw_keys = seed_local_demo_data(store.as_ref()).await?;
 
@@ -308,6 +322,7 @@ fn print_migration_status(status: &MigrationStatus) {
 async fn ensure_bootstrap_admin(
     store: &Arc<AnyStore>,
     config: &BootstrapAdminConfig,
+    human_budget_defaults: &SeedHumanBudgetDefaults,
 ) -> anyhow::Result<()> {
     if !config.enabled {
         return Ok(());
@@ -330,14 +345,15 @@ async fn ensure_bootstrap_admin(
         .context("failed resolving bootstrap admin password")?;
     let password_hash =
         hash_gateway_key_secret(&password).context("failed hashing bootstrap admin password")?;
+    let now = time::OffsetDateTime::now_utc();
     store
-        .store_user_password(
-            user.user_id,
-            &password_hash,
-            time::OffsetDateTime::now_utc(),
-        )
+        .store_user_password(user.user_id, &password_hash, now)
         .await
         .context("failed storing bootstrap admin password")?;
+    store
+        .apply_human_budget_defaults_for_user(human_budget_defaults, user.user_id, now)
+        .await
+        .context("failed applying bootstrap admin budget defaults")?;
 
     Ok(())
 }

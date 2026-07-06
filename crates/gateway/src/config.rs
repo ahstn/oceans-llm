@@ -9,9 +9,10 @@ use gateway_core::{
     OpenAiCompatRouteCompatibility, OpenRouterMaxPrice, OpenRouterPercentileCutoffs,
     OpenRouterPercentilePreference, OpenRouterProviderRouting, OpenRouterRouteCompatibility,
     ProviderCapabilities, RequestLogRetentionWindow, RouteCompatibility, SeedApiKeySecretMaterial,
-    SeedBudget, SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute, SeedOauthProvider,
-    SeedOidcProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership,
-    hash_gateway_key_secret, parse_gateway_api_key,
+    SeedBudget, SeedHumanBudgetDefaults, SeedManagedServiceAccountApiKey, SeedModel,
+    SeedModelRoute, SeedOauthProvider, SeedOidcProvider, SeedProvider, SeedServiceAccount,
+    SeedTeam, SeedUser, SeedUserMembership, SeedUserModelBudgetDefault, hash_gateway_key_secret,
+    parse_gateway_api_key,
 };
 use gateway_providers::{
     BedrockAuthConfig, BedrockEndpointKind, BedrockProviderConfig, CloudRunOpenAiCompatAuth,
@@ -24,6 +25,7 @@ use gateway_service::{
 use gateway_store::StoreConnectionOptions;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
+use uuid::Uuid;
 
 mod providers;
 
@@ -44,6 +46,8 @@ pub struct GatewayConfig {
     pub auth: AuthConfig,
     #[serde(default)]
     pub budget_alerts: BudgetAlertConfig,
+    #[serde(default)]
+    pub budgets: BudgetsConfig,
     #[serde(default)]
     pub request_logging: RequestLoggingConfig,
     #[serde(default)]
@@ -384,6 +388,8 @@ impl GatewayConfig {
             }
         }
 
+        self.validate_budget_defaults(&model_by_id)?;
+
         let mut team_keys = std::collections::BTreeSet::new();
         for team in &self.teams {
             let team_key = normalize_config_team_key(&team.id)?;
@@ -545,6 +551,32 @@ impl GatewayConfig {
             if let Some(budget) = &user.budget {
                 budget.validate(&format!("user `{}` budget", user.email))?;
             }
+        }
+
+        Ok(())
+    }
+
+    fn validate_budget_defaults(
+        &self,
+        model_by_id: &BTreeMap<&str, &ModelConfig>,
+    ) -> anyhow::Result<()> {
+        if let Some(default_budget) = &self.budgets.users.default {
+            default_budget.validate("budgets.users.default")?;
+        }
+
+        let mut model_defaults = std::collections::BTreeSet::new();
+        for model_default in &self.budgets.users.model_defaults {
+            let model_key = normalize_config_model_key(&model_default.model)
+                .context("budgets.users.model_defaults model")?;
+            if !model_by_id.contains_key(model_key.as_str()) {
+                bail!("budgets.users.model_defaults references unknown model `{model_key}`");
+            }
+            if !model_defaults.insert(model_key.clone()) {
+                bail!("duplicate budgets.users.model_defaults model `{model_key}`");
+            }
+            model_default.budget.validate(&format!(
+                "budgets.users.model_defaults `{model_key}` budget"
+            ))?;
         }
 
         Ok(())
@@ -925,6 +957,35 @@ impl GatewayConfig {
                 })
             })
             .collect()
+    }
+
+    pub fn seed_human_budget_defaults(&self) -> anyhow::Result<SeedHumanBudgetDefaults> {
+        let default_user_budget = self
+            .budgets
+            .users
+            .default
+            .as_ref()
+            .map(BudgetConfig::seed_budget)
+            .transpose()?;
+        let model_defaults = self
+            .budgets
+            .users
+            .model_defaults
+            .iter()
+            .map(|model_default| {
+                let model_key = normalize_config_model_key(&model_default.model)?;
+                Ok(SeedUserModelBudgetDefault {
+                    model_id: config_model_uuid(&model_key),
+                    model_key,
+                    budget: model_default.budget.seed_budget()?,
+                })
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+
+        Ok(SeedHumanBudgetDefaults {
+            default_user_budget,
+            model_defaults,
+        })
     }
 
     pub fn openai_compatible_provider_configs(&self) -> anyhow::Result<Vec<OpenAiCompatConfig>> {
@@ -1908,6 +1969,29 @@ pub struct UserMembershipConfig {
     pub role: MembershipRole,
 }
 
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct BudgetsConfig {
+    #[serde(default)]
+    pub users: UserBudgetDefaultsConfig,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct UserBudgetDefaultsConfig {
+    #[serde(default)]
+    pub default: Option<BudgetConfig>,
+    #[serde(default)]
+    pub model_defaults: Vec<UserModelBudgetDefaultConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UserModelBudgetDefaultConfig {
+    pub model: String,
+    pub budget: BudgetConfig,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct BudgetConfig {
     pub cadence: BudgetCadence,
@@ -2545,6 +2629,21 @@ fn normalize_config_team_key(team_key: &str) -> anyhow::Result<String> {
         bail!("team key cannot be empty");
     }
     Ok(normalized)
+}
+
+fn normalize_config_model_key(model_key: &str) -> anyhow::Result<String> {
+    let normalized = model_key.trim().to_string();
+    if normalized.is_empty() {
+        bail!("model key cannot be empty");
+    }
+    Ok(normalized)
+}
+
+fn config_model_uuid(model_key: &str) -> Uuid {
+    Uuid::new_v5(
+        &Uuid::NAMESPACE_OID,
+        format!("model:{model_key}").as_bytes(),
+    )
 }
 
 fn normalize_config_service_account_key(service_account_key: &str) -> anyhow::Result<String> {
@@ -4647,6 +4746,125 @@ users:
         assert_eq!(user_budget.amount_usd, Money4::from_scaled(750_000));
         assert!(!user_budget.hard_limit);
         assert_eq!(user_budget.timezone, "Europe/London");
+    }
+
+    #[test]
+    fn parses_human_budget_defaults_into_seed_inputs() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+budgets:
+  users:
+    default:
+      cadence: daily
+      amount_usd: "70.0000"
+      hard_limit: true
+      timezone: UTC
+    model_defaults:
+      - model: " fable-5 "
+        budget:
+          cadence: daily
+          amount_usd: "40.0000"
+          hard_limit: true
+          timezone: UTC
+models:
+  - id: fable-5
+    routes:
+      - provider: openai
+        upstream_model: fable-5
+providers:
+  - id: openai
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let defaults = config
+            .seed_human_budget_defaults()
+            .expect("seed budget defaults");
+
+        let default_budget = defaults.default_user_budget.expect("default user budget");
+        assert_eq!(default_budget.cadence, BudgetCadence::Daily);
+        assert_eq!(default_budget.amount_usd, Money4::from_scaled(700_000));
+        assert!(default_budget.hard_limit);
+
+        assert_eq!(defaults.model_defaults.len(), 1);
+        assert_eq!(defaults.model_defaults[0].model_key, "fable-5");
+        assert_eq!(
+            defaults.model_defaults[0].budget.amount_usd,
+            Money4::from_scaled(400_000)
+        );
+    }
+
+    #[test]
+    fn rejects_human_budget_default_for_unknown_model() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+budgets:
+  users:
+    model_defaults:
+      - model: missing
+        budget:
+          cadence: daily
+          amount_usd: "40.0000"
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("budgets.users.model_defaults references unknown model `missing`"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_human_budget_model_defaults() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+
+        write_config(
+            &config_path,
+            r#"
+budgets:
+  users:
+    model_defaults:
+      - model: fable-5
+        budget:
+          cadence: daily
+          amount_usd: "40.0000"
+      - model: " fable-5 "
+        budget:
+          cadence: daily
+          amount_usd: "30.0000"
+models:
+  - id: fable-5
+    routes:
+      - provider: openai
+        upstream_model: fable-5
+providers:
+  - id: openai
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains("duplicate budgets.users.model_defaults model `fable-5`"),
+            "unexpected error: {error_text}"
+        );
     }
 
     #[test]

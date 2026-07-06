@@ -1483,6 +1483,10 @@ export interface components {
             hard_limit: boolean;
             timezone: string;
         };
+        BudgetSourceView: {
+            key?: string | null;
+            kind: string;
+        };
         BudgetUserModelByModelScopeRequest: {
             kind: components["schemas"]["BudgetUserModelScopeKind"];
             model_id: string;
@@ -2038,6 +2042,7 @@ export interface components {
             data: {
                 budget: components["schemas"]["BudgetSettingsView"];
                 budget_id: string;
+                budget_source: components["schemas"]["BudgetSourceView"];
                 /** Format: int64 */
                 current_window_spend_usd_10000: number;
                 scope: components["schemas"]["BudgetScopeView"];
@@ -2616,6 +2621,7 @@ export interface components {
             alert_email_ready: boolean;
             alert_recipient_summary: string;
             budget?: null | components["schemas"]["BudgetSettingsView"];
+            budget_source?: null | components["schemas"]["BudgetSourceView"];
             /** Format: int64 */
             current_window_spend_usd_10000: number;
             service_account_id: string;
@@ -2630,6 +2636,7 @@ export interface components {
             alert_recipient_summary: string;
             budget: components["schemas"]["BudgetSettingsView"];
             budget_id: string;
+            budget_source: components["schemas"]["BudgetSourceView"];
             /** Format: int64 */
             current_window_spend_usd_10000: number;
             model_id?: string | null;
@@ -2641,6 +2648,7 @@ export interface components {
             alert_email_ready: boolean;
             alert_recipient_summary: string;
             budget?: null | components["schemas"]["BudgetSettingsView"];
+            budget_source?: null | components["schemas"]["BudgetSourceView"];
             /** Format: int64 */
             current_window_spend_usd_10000: number;
             email: string;
@@ -2773,6 +2781,7 @@ export interface components {
         UpsertBudgetResultView: {
             budget: components["schemas"]["BudgetSettingsView"];
             budget_id: string;
+            budget_source: components["schemas"]["BudgetSourceView"];
             /** Format: int64 */
             current_window_spend_usd_10000: number;
             scope: components["schemas"]["BudgetScopeView"];

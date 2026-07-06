@@ -33,6 +33,97 @@ impl BudgetScopeKind {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BudgetSourceKind {
+    Manual,
+    ConfigUserOverride,
+    ConfigUserDefault,
+    ConfigUserModelDefault,
+}
+
+impl BudgetSourceKind {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Manual => "manual",
+            Self::ConfigUserOverride => "config_user_override",
+            Self::ConfigUserDefault => "config_user_default",
+            Self::ConfigUserModelDefault => "config_user_model_default",
+        }
+    }
+
+    #[must_use]
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "manual" => Some(Self::Manual),
+            "config_user_override" => Some(Self::ConfigUserOverride),
+            "config_user_default" => Some(Self::ConfigUserDefault),
+            "config_user_model_default" => Some(Self::ConfigUserModelDefault),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BudgetSource {
+    pub kind: BudgetSourceKind,
+    #[serde(default)]
+    pub key: Option<String>,
+}
+
+impl BudgetSource {
+    #[must_use]
+    pub fn manual() -> Self {
+        Self {
+            kind: BudgetSourceKind::Manual,
+            key: None,
+        }
+    }
+
+    #[must_use]
+    pub fn manual_deactivated() -> Self {
+        Self {
+            kind: BudgetSourceKind::Manual,
+            key: Some("deactivated".to_string()),
+        }
+    }
+
+    #[must_use]
+    pub fn is_manual_deactivation(&self) -> bool {
+        self.kind == BudgetSourceKind::Manual && self.key.as_deref() == Some("deactivated")
+    }
+
+    #[must_use]
+    pub fn config_user_override(email_normalized: impl Into<String>) -> Self {
+        Self {
+            kind: BudgetSourceKind::ConfigUserOverride,
+            key: Some(email_normalized.into()),
+        }
+    }
+
+    #[must_use]
+    pub fn config_user_default() -> Self {
+        Self {
+            kind: BudgetSourceKind::ConfigUserDefault,
+            key: Some("budgets.users.default".to_string()),
+        }
+    }
+
+    #[must_use]
+    pub fn config_user_model_default(model_key: impl Into<String>) -> Self {
+        Self {
+            kind: BudgetSourceKind::ConfigUserModelDefault,
+            key: Some(format!("budgets.users.model_defaults:{}", model_key.into())),
+        }
+    }
+
+    #[must_use]
+    pub fn matches(&self, other: &Self) -> bool {
+        self.kind == other.kind && self.key.as_deref() == other.key.as_deref()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum BudgetModelSelector {
     Model { model_id: Uuid },
@@ -229,6 +320,7 @@ pub struct BudgetRecord {
     pub scope: BudgetScope,
     pub scope_key: String,
     pub settings: BudgetSettings,
+    pub source: BudgetSource,
     pub is_active: bool,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,

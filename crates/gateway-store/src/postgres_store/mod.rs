@@ -26,15 +26,15 @@ use gateway_core::{
     BudgetAlertDeliveryStatus, BudgetAlertDispatchTask, BudgetAlertHistoryPage,
     BudgetAlertHistoryQuery, BudgetAlertHistoryRecord, BudgetAlertRecord, BudgetAlertRepository,
     BudgetCadence, BudgetModelSelector, BudgetRecord, BudgetRepository, BudgetScope,
-    BudgetScopeKind, BudgetSettings, ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord,
-    ExternalMcpDiscoveryStatus, ExternalMcpServerRecord, ExternalMcpServerStatus,
-    ExternalMcpToolRecord, ExternalMcpTransport, FocusExportAggregateRecord,
-    FocusExportDiagnosticsRecord, GatewayModel, GlobalRole, IdentityRepository, IdentityUserRecord,
-    MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, McpAccessRepository, McpAccessResolution,
-    McpAggregateSessionRecord, McpAggregateSessionRepository, McpCatalogAccessResolution,
-    McpCatalogToolRecord, McpGrantSubject, McpRegistryRepository, McpTokenEstimateConfidence,
-    McpTokenEstimateSource, McpTokenOverheadRepository, McpToolGrantRecord,
-    McpToolGrantSubjectKind, McpToolGrantTargetKind, McpToolInvocationDetail,
+    BudgetScopeKind, BudgetSettings, BudgetSource, BudgetSourceKind, ExternalMcpAuthMode,
+    ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus, ExternalMcpServerRecord,
+    ExternalMcpServerStatus, ExternalMcpToolRecord, ExternalMcpTransport,
+    FocusExportAggregateRecord, FocusExportDiagnosticsRecord, GatewayModel, GlobalRole,
+    IdentityRepository, IdentityUserRecord, MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, McpAccessRepository,
+    McpAccessResolution, McpAggregateSessionRecord, McpAggregateSessionRepository,
+    McpCatalogAccessResolution, McpCatalogToolRecord, McpGrantSubject, McpRegistryRepository,
+    McpTokenEstimateConfidence, McpTokenEstimateSource, McpTokenOverheadRepository,
+    McpToolGrantRecord, McpToolGrantSubjectKind, McpToolGrantTargetKind, McpToolInvocationDetail,
     McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
     McpToolInvocationRecord, McpToolInvocationRepository, McpToolInvocationStatus,
     McpToolPolicyResult, McpToolTokenEstimateRecord, McpToolsetRecord, McpToolsetStatus,
@@ -676,6 +676,23 @@ impl GatewayStore for PostgresStore {
             users,
         )
         .await
+    }
+
+    async fn reconcile_human_budget_defaults(
+        &self,
+        defaults: &gateway_core::SeedHumanBudgetDefaults,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        Self::reconcile_human_budget_defaults(self, defaults, updated_at).await
+    }
+
+    async fn apply_human_budget_defaults_for_user(
+        &self,
+        defaults: &gateway_core::SeedHumanBudgetDefaults,
+        user_id: Uuid,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        Self::apply_human_budget_defaults_for_user(self, defaults, user_id, updated_at).await
     }
 }
 

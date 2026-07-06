@@ -37,12 +37,12 @@ mod tests {
         ApiKeyOwnerKind, ApiKeyRepository, ApiKeySecretStorageKind, ApiKeyStatus, AuthMode,
         BudgetAlertChannel, BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus,
         BudgetAlertHistoryQuery, BudgetAlertRecord, BudgetAlertRepository, BudgetCadence,
-        BudgetRepository, BudgetScope, BudgetSettings, ExternalMcpAuthMode,
-        ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus, ExternalMcpServerStatus,
-        ExternalMcpTransport, GlobalRole, IdentityRepository, ManagedApiKeySource,
-        McpRegistryRepository, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
-        McpToolInvocationRecord, McpToolInvocationRepository, McpToolInvocationStatus,
-        McpToolPolicyResult, McpUpstreamCredentialMaterialKind,
+        BudgetModelSelector, BudgetRepository, BudgetScope, BudgetSettings, BudgetSourceKind,
+        ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus,
+        ExternalMcpServerStatus, ExternalMcpTransport, GlobalRole, IdentityRepository,
+        ManagedApiKeySource, McpRegistryRepository, McpToolInvocationPayloadRecord,
+        McpToolInvocationQuery, McpToolInvocationRecord, McpToolInvocationRepository,
+        McpToolInvocationStatus, McpToolPolicyResult, McpUpstreamCredentialMaterialKind,
         McpUpstreamCredentialOwnerScopeKind, McpUpstreamCredentialRepository,
         McpUpstreamSecretStorageKind, MembershipRole, ModelPricingRecord, ModelRepository, Money4,
         NewExternalMcpServerRecord, NewReviewAgentRepositoryRecord, NewReviewAgentRunRecord,
@@ -54,9 +54,10 @@ mod tests {
         RequestTag, RequestTags, RequestToolCardinality, ReviewAgentProvider,
         ReviewAgentPullRequestState, ReviewAgentRepository, ReviewAgentRepositoryStatus,
         ReviewAgentRunStatus, ReviewAgentSettings, RouteCompatibility, SeedApiKey,
-        SeedApiKeySecretMaterial, SeedBudget, SeedManagedServiceAccountApiKey, SeedModel,
-        SeedModelRoute, SeedOauthProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser,
-        SeedUserMembership, ServiceAccountStatus, StoreError, StoreHealth,
+        SeedApiKeySecretMaterial, SeedBudget, SeedHumanBudgetDefaults,
+        SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute, SeedOauthProvider,
+        SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership,
+        SeedUserModelBudgetDefault, ServiceAccountStatus, StoreError, StoreHealth,
         UpdateExternalMcpServerRecord, UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord,
         UpsertMcpUpstreamCredentialBindingRecord, UpsertReviewAgentPullRequestRecord,
         UsageLedgerRecord, UsagePricingStatus, UserStatus,
@@ -5558,13 +5559,159 @@ mod tests {
             .expect("ops team exists");
         assert_eq!(refreshed_platform.team_name, "Platform Engineering");
         let _ops_team_id = ops_team.team_id;
-        assert!(
+        assert_eq!(
             store
                 .get_active_budget_by_scope(&BudgetScope::User {
                     user_id: user.user_id,
                 })
                 .await
                 .expect("user budget after reseed")
+                .expect("user budget remains")
+                .settings
+                .amount_usd,
+            Money4::from_scaled(750_000)
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_human_budget_defaults_inherit_until_manual_override_or_deactivation() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+        let users = vec![SeedUser {
+            name: "Member".to_string(),
+            email: "member@example.com".to_string(),
+            email_normalized: "member@example.com".to_string(),
+            global_role: GlobalRole::User,
+            auth_mode: AuthMode::Password,
+            request_logging_enabled: true,
+            oidc_provider_key: None,
+            oauth_provider_key: None,
+            membership: None,
+            budget: None,
+        }];
+        let models = vec![SeedModel {
+            model_key: "fable-5".to_string(),
+            alias_target_model_key: None,
+            description: None,
+            tags: Vec::new(),
+            rank: 10,
+            routes: Vec::new(),
+            allowlist: None,
+        }];
+
+        store
+            .seed_from_inputs(&[], &models, &[], &[], &[], &[], &[], &users)
+            .await
+            .expect("seed user");
+        let user = store
+            .get_user_by_email_normalized("member@example.com")
+            .await
+            .expect("load user")
+            .expect("user exists");
+        let model_id = crate::seed::model_uuid("fable-5");
+        let defaults = SeedHumanBudgetDefaults {
+            default_user_budget: Some(SeedBudget {
+                cadence: BudgetCadence::Daily,
+                amount_usd: Money4::from_scaled(700_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            }),
+            model_defaults: vec![SeedUserModelBudgetDefault {
+                model_key: "fable-5".to_string(),
+                model_id,
+                budget: SeedBudget {
+                    cadence: BudgetCadence::Daily,
+                    amount_usd: Money4::from_scaled(400_000),
+                    hard_limit: true,
+                    timezone: "UTC".to_string(),
+                },
+            }],
+        };
+        let now = OffsetDateTime::now_utc();
+
+        store
+            .reconcile_human_budget_defaults(&defaults, now)
+            .await
+            .expect("apply defaults");
+
+        let user_scope = BudgetScope::User {
+            user_id: user.user_id,
+        };
+        let inherited_user_budget = store
+            .get_active_budget_by_scope(&user_scope)
+            .await
+            .expect("load inherited user budget")
+            .expect("inherited user budget exists");
+        assert_eq!(
+            inherited_user_budget.source.kind,
+            BudgetSourceKind::ConfigUserDefault
+        );
+        assert_eq!(
+            inherited_user_budget.settings.amount_usd,
+            Money4::from_scaled(700_000)
+        );
+
+        let model_scope = BudgetScope::UserModel {
+            user_id: user.user_id,
+            selector: BudgetModelSelector::Model { model_id },
+        };
+        let inherited_model_budget = store
+            .get_active_budget_by_scope(&model_scope)
+            .await
+            .expect("load inherited model budget")
+            .expect("inherited model budget exists");
+        assert_eq!(
+            inherited_model_budget.source.kind,
+            BudgetSourceKind::ConfigUserModelDefault
+        );
+        assert_eq!(
+            inherited_model_budget.settings.amount_usd,
+            Money4::from_scaled(400_000)
+        );
+
+        store
+            .upsert_active_budget(
+                &user_scope,
+                &BudgetSettings {
+                    cadence: BudgetCadence::Daily,
+                    amount_usd: Money4::from_scaled(250_000),
+                    hard_limit: true,
+                    timezone: "UTC".to_string(),
+                },
+                now + Duration::seconds(1),
+            )
+            .await
+            .expect("manual user override");
+        store
+            .deactivate_active_budget(&model_scope, now + Duration::seconds(1))
+            .await
+            .expect("manual model deactivation");
+        store
+            .reconcile_human_budget_defaults(&defaults, now + Duration::seconds(2))
+            .await
+            .expect("reapply defaults");
+
+        let manual_user_budget = store
+            .get_active_budget_by_scope(&user_scope)
+            .await
+            .expect("load manual user budget")
+            .expect("manual user budget remains");
+        assert_eq!(manual_user_budget.source.kind, BudgetSourceKind::Manual);
+        assert_eq!(
+            manual_user_budget.settings.amount_usd,
+            Money4::from_scaled(250_000)
+        );
+        assert!(
+            store
+                .get_active_budget_by_scope(&model_scope)
+                .await
+                .expect("load model budget after deactivation")
                 .is_none()
         );
     }
@@ -6016,14 +6163,17 @@ mod tests {
             .expect("ops team exists");
         assert_eq!(refreshed_platform.team_name, "Platform Engineering");
         let _ops_team_id = ops_team.team_id;
-        assert!(
+        assert_eq!(
             store
                 .get_active_budget_by_scope(&BudgetScope::User {
                     user_id: user.user_id,
                 })
                 .await
                 .expect("user budget after reseed")
-                .is_none()
+                .expect("user budget remains")
+                .settings
+                .amount_usd,
+            Money4::from_scaled(750_000)
         );
 
         store.pool().close().await;

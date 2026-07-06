@@ -754,6 +754,14 @@ pub async fn create_identity_user(
             .set_user_oauth_link(user.user_id, &provider.oauth_provider_id, created_at)
             .await?;
     }
+    state
+        .store
+        .apply_human_budget_defaults_for_user(
+            state.budget_defaults.as_ref(),
+            user.user_id,
+            created_at,
+        )
+        .await?;
 
     let response = build_onboarding_response(
         &state,
@@ -1968,6 +1976,10 @@ async fn create_jit_oidc_user(
         .store
         .update_user_status(user.user_id, UserStatus::Active, now)
         .await?;
+    state
+        .store
+        .apply_human_budget_defaults_for_user(state.budget_defaults.as_ref(), user.user_id, now)
+        .await?;
 
     state
         .store
@@ -2048,6 +2060,10 @@ async fn create_jit_oauth_user(
     state
         .store
         .update_user_status(user.user_id, UserStatus::Active, now)
+        .await?;
+    state
+        .store
+        .apply_human_budget_defaults_for_user(state.budget_defaults.as_ref(), user.user_id, now)
         .await?;
 
     state

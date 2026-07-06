@@ -196,10 +196,29 @@ mod tests {
             Ok(self.active_budget.clone())
         }
 
+        async fn get_latest_budget_by_scope(
+            &self,
+            _scope: &BudgetScope,
+        ) -> Result<Option<BudgetRecord>, StoreError> {
+            Ok(self.active_budget.clone())
+        }
+
         async fn upsert_active_budget(
             &self,
             _scope: &BudgetScope,
             _settings: &BudgetSettings,
+            _updated_at: OffsetDateTime,
+        ) -> Result<BudgetRecord, StoreError> {
+            self.active_budget
+                .clone()
+                .ok_or_else(|| StoreError::NotFound("budget missing".to_string()))
+        }
+
+        async fn upsert_active_budget_with_source(
+            &self,
+            _scope: &BudgetScope,
+            _settings: &BudgetSettings,
+            _source: &gateway_core::BudgetSource,
             _updated_at: OffsetDateTime,
         ) -> Result<BudgetRecord, StoreError> {
             self.active_budget
@@ -282,6 +301,7 @@ mod tests {
                 hard_limit,
                 timezone: "UTC".to_string(),
             },
+            source: gateway_core::BudgetSource::manual(),
             is_active: true,
             created_at: now,
             updated_at: now,

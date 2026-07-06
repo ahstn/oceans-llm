@@ -1,11 +1,12 @@
 use std::collections::BTreeMap;
 
 use gateway_core::{
-    ApiKeySecretStorageKind, AuthMode, BudgetScope, BudgetSettings, GlobalRole, IdentityUserRecord,
-    MembershipRole, OauthProviderRecord, OidcProviderRecord, SeedApiKeySecretMaterial,
-    SeedManagedServiceAccountApiKey, SeedServiceAccount, SeedTeam, SeedUser, StoreError,
-    TeamRecord, UserStatus, encrypt_gateway_api_key_secret, generate_gateway_api_key_value,
-    hash_gateway_key_secret, parse_gateway_api_key,
+    ApiKeySecretStorageKind, AuthMode, BudgetModelSelector, BudgetScope, BudgetSettings,
+    BudgetSource, BudgetSourceKind, GlobalRole, IdentityUserRecord, MembershipRole,
+    OauthProviderRecord, OidcProviderRecord, SeedApiKeySecretMaterial, SeedHumanBudgetDefaults,
+    SeedManagedServiceAccountApiKey, SeedServiceAccount, SeedTeam, SeedUser,
+    SeedUserModelBudgetDefault, StoreError, TeamRecord, UserStatus, encrypt_gateway_api_key_secret,
+    generate_gateway_api_key_value, hash_gateway_key_secret, parse_gateway_api_key,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -197,6 +198,148 @@ where
     Ok(())
 }
 
+pub(crate) async fn reconcile_human_budget_defaults<S>(
+    store: &S,
+    defaults: &SeedHumanBudgetDefaults,
+    now: OffsetDateTime,
+) -> Result<(), StoreError>
+where
+    S: GatewayStore + ?Sized,
+{
+    for identity_user in store.list_identity_users().await? {
+        apply_human_budget_defaults_for_user(store, defaults, identity_user.user.user_id, now)
+            .await?;
+    }
+
+    deactivate_stale_config_default_budgets(store, defaults, now).await
+}
+
+pub(crate) async fn apply_human_budget_defaults_for_user<S>(
+    store: &S,
+    defaults: &SeedHumanBudgetDefaults,
+    user_id: Uuid,
+    now: OffsetDateTime,
+) -> Result<(), StoreError>
+where
+    S: GatewayStore + ?Sized,
+{
+    if let Some(default_budget) = defaults.default_user_budget.as_ref() {
+        let scope = BudgetScope::User { user_id };
+        upsert_if_config_default_allowed(
+            store,
+            &scope,
+            &budget_settings(default_budget),
+            &BudgetSource::config_user_default(),
+            now,
+        )
+        .await?;
+    }
+
+    for model_default in &defaults.model_defaults {
+        apply_user_model_default(store, model_default, user_id, now).await?;
+    }
+
+    Ok(())
+}
+
+async fn apply_user_model_default<S>(
+    store: &S,
+    model_default: &SeedUserModelBudgetDefault,
+    user_id: Uuid,
+    now: OffsetDateTime,
+) -> Result<(), StoreError>
+where
+    S: GatewayStore + ?Sized,
+{
+    let scope = BudgetScope::UserModel {
+        user_id,
+        selector: BudgetModelSelector::Model {
+            model_id: model_default.model_id,
+        },
+    };
+    upsert_if_config_default_allowed(
+        store,
+        &scope,
+        &budget_settings(&model_default.budget),
+        &BudgetSource::config_user_model_default(&model_default.model_key),
+        now,
+    )
+    .await
+}
+
+async fn upsert_if_config_default_allowed<S>(
+    store: &S,
+    scope: &BudgetScope,
+    settings: &BudgetSettings,
+    source: &BudgetSource,
+    now: OffsetDateTime,
+) -> Result<(), StoreError>
+where
+    S: GatewayStore + ?Sized,
+{
+    if let Some(existing) = store.get_active_budget_by_scope(scope).await?
+        && !existing.source.matches(source)
+    {
+        return Ok(());
+    }
+
+    if let Some(latest) = store.get_latest_budget_by_scope(scope).await?
+        && !latest.is_active
+        && latest.source.is_manual_deactivation()
+    {
+        return Ok(());
+    }
+
+    store
+        .upsert_active_budget_with_source(scope, settings, source, now)
+        .await?;
+    Ok(())
+}
+
+async fn deactivate_stale_config_default_budgets<S>(
+    store: &S,
+    defaults: &SeedHumanBudgetDefaults,
+    now: OffsetDateTime,
+) -> Result<(), StoreError>
+where
+    S: GatewayStore + ?Sized,
+{
+    let active_model_source_keys = defaults
+        .model_defaults
+        .iter()
+        .map(|default| {
+            BudgetSource::config_user_model_default(&default.model_key)
+                .key
+                .expect("model default source key")
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+
+    for budget in store.list_active_budgets(None).await? {
+        let should_deactivate = match budget.source.kind {
+            BudgetSourceKind::ConfigUserDefault => defaults.default_user_budget.is_none(),
+            BudgetSourceKind::ConfigUserModelDefault => match budget.source.key.as_ref() {
+                Some(key) => !active_model_source_keys.contains(key),
+                None => true,
+            },
+            BudgetSourceKind::Manual | BudgetSourceKind::ConfigUserOverride => false,
+        };
+        if should_deactivate {
+            store.deactivate_active_budget(&budget.scope, now).await?;
+        }
+    }
+
+    Ok(())
+}
+
+fn budget_settings(budget: &gateway_core::SeedBudget) -> BudgetSettings {
+    BudgetSettings {
+        cadence: budget.cadence,
+        amount_usd: budget.amount_usd,
+        hard_limit: budget.hard_limit,
+        timezone: budget.timezone.clone(),
+    }
+}
+
 async fn prevalidate_seed_user<S>(
     store: &S,
     identity_users: &[IdentityUserRecord],
@@ -311,25 +454,20 @@ where
     identity_user = load_identity_user(store, existing_user.user_id).await?;
     sync_seed_user_membership(store, &identity_user, teams_by_key, seed_user, now).await?;
 
-    match &seed_user.budget {
-        Some(budget) => {
-            let scope = BudgetScope::User {
-                user_id: existing_user.user_id,
-            };
-            let settings = BudgetSettings {
-                cadence: budget.cadence,
-                amount_usd: budget.amount_usd,
-                hard_limit: budget.hard_limit,
-                timezone: budget.timezone.clone(),
-            };
-            store.upsert_active_budget(&scope, &settings, now).await?;
+    if let Some(budget) = &seed_user.budget {
+        let scope = BudgetScope::User {
+            user_id: existing_user.user_id,
+        };
+        let settings = budget_settings(budget);
+        let source = BudgetSource::config_user_override(&seed_user.email_normalized);
+        if let Some(existing) = store.get_active_budget_by_scope(&scope).await?
+            && existing.source.kind == BudgetSourceKind::Manual
+        {
+            return Ok(());
         }
-        None => {
-            let scope = BudgetScope::User {
-                user_id: existing_user.user_id,
-            };
-            store.deactivate_active_budget(&scope, now).await?;
-        }
+        store
+            .upsert_active_budget_with_source(&scope, &settings, &source, now)
+            .await?;
     }
 
     Ok(())

@@ -1,8 +1,9 @@
 use super::*;
 use crate::seed::{
-    generate_seed_api_key_material, managed_api_key_uuid, prevalidate_seed_users,
-    provided_seed_api_key_material, reconcile_seed_teams, reconcile_seed_users,
-    service_account_uuid, validate_seed_service_account_team_references,
+    apply_human_budget_defaults_for_user, generate_seed_api_key_material, managed_api_key_uuid,
+    prevalidate_seed_users, provided_seed_api_key_material, reconcile_human_budget_defaults,
+    reconcile_seed_teams, reconcile_seed_users, service_account_uuid,
+    validate_seed_service_account_team_references,
 };
 use crate::shared::{parse_uuid, serialize_json, serialize_optional_json};
 
@@ -774,5 +775,22 @@ impl PostgresStore {
         reconcile_seed_users(self, &seeded_teams, users, now).await?;
 
         Ok(())
+    }
+
+    pub async fn reconcile_human_budget_defaults(
+        &self,
+        defaults: &gateway_core::SeedHumanBudgetDefaults,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        reconcile_human_budget_defaults(self, defaults, updated_at).await
+    }
+
+    pub async fn apply_human_budget_defaults_for_user(
+        &self,
+        defaults: &gateway_core::SeedHumanBudgetDefaults,
+        user_id: Uuid,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        apply_human_budget_defaults_for_user(self, defaults, user_id, updated_at).await
     }
 }

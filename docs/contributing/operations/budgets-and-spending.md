@@ -69,6 +69,19 @@ Supported `scope_kind` values:
 
 Team budget scopes do not exist. Migration-only references to historical team budget tables are confined to migration SQL.
 
+## Budget Sources
+
+Budget rows carry source metadata:
+
+- `manual`: admin UI/API-created budgets and admin UI/API deactivation tombstones
+- `config_user_override`: explicit `users[*].budget` entries
+- `config_user_default`: inherited `budgets.users.default` rows
+- `config_user_model_default`: inherited `budgets.users.model_defaults` rows
+
+Source metadata is exposed in v1 admin spend API responses as `budget_source`. It lets the admin UI distinguish inherited rows from manual rows without guessing from scope or amount.
+
+Manual rows are precedence boundaries. Default reconciliation does not overwrite an active manual budget. Deactivation writes a manual inactive tombstone so absence continues to inherit by default, while admin/API deactivation remains the explicit escape hatch.
+
 ## Enforcement Order
 
 Budget checks run after authentication, model access evaluation, and model resolution. API-key grants, principal-centric allowlists, and model-level allowlists can deny a request before the budget guard runs; those denials do not consume budget windows.
@@ -145,6 +158,7 @@ Budget mutation requests use typed `scope` objects. Responses include:
 - typed `scope`
 - computed `scope_key`
 - settings
+- source metadata
 - current-window spend
 - alert readiness
 
@@ -173,6 +187,16 @@ Config-seeded API keys must declare the service account they create or reconcile
 - model grants
 
 There is no implicit singleton service account, no reserved `system-legacy` team, and no team-owned runtime key fallback.
+
+Human budget defaults are reconciled after ordinary config seeding:
+
+- `budgets.users.default` applies a user budget to every human user unless a manual budget or manual deactivation exists for that scope
+- `budgets.users.model_defaults` applies a user model budget to every human user for each listed gateway model unless a manual budget or manual deactivation exists for that user/model scope
+- `users[*].budget` creates a config-owned per-user override for listed users
+- omitting `users[*].budget` is a no-op for that user's budget; inheritance and manual/API state decide the active row
+- removing a config default deactivates active rows still owned by that config default source
+
+Runtime user creation paths also apply the same defaults for bootstrap admins, admin-created users, and JIT OIDC/OAuth users.
 
 ## Validation
 

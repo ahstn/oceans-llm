@@ -19,7 +19,7 @@ Supported budget types:
 - Service account budget: applies to all spend from one service account.
 - User model budget: applies to one user's spend for one gateway model or, when no gateway model id is available, one exact trimmed upstream model name.
 
-There is no global model budget. Model-specific spend control is scoped to a user through a user model budget.
+There is no standalone global model budget. Model-specific spend control is scoped to users. Admins can define config defaults that create a user model budget for every user for selected expensive models.
 
 Teams are not budget principals. Teams group users, own service accounts, and provide reporting metadata for service-account spend.
 
@@ -59,6 +59,19 @@ If a user has both a user model budget and a user budget, the model-specific bud
 
 User model budgets match the resolved gateway model id when one is available. Use the upstream model fallback only when the gateway cannot attach a model id to the ledger row; it matches the exact trimmed upstream model string.
 
+## Budget Sources
+
+Active budgets can come from:
+
+- admin UI or admin API changes
+- `users[*].budget` entries for config-seeded users
+- the global default user budget under `budgets.users.default`
+- per-model default user budgets under `budgets.users.model_defaults`
+
+Admin UI and admin API edits are manual overrides. Editing an inherited default budget converts that budget to manual, so later config reloads do not overwrite it.
+
+Deactivating an inherited budget through the admin API or UI is also a manual override. The budget remains inactive on later config reloads unless an admin creates a new manual budget or a config-seeded per-user budget explicitly owns that user's budget.
+
 ## Configure In The Admin UI
 
 Open `/admin/spend-controls`.
@@ -90,6 +103,13 @@ List budgets and current-window spend:
 curl -sS "$OCEANS_BASE_URL/api/v1/admin/spend/budgets" \
   -H "cookie: $OCEANS_ADMIN_SESSION_COOKIE"
 ```
+
+Budget list and upsert responses include `budget_source` with:
+
+- `kind`: `manual`, `config_user_override`, `config_user_default`, or `config_user_model_default`
+- `key`: source-specific metadata, such as the config path or seeded user email
+
+Any `PUT /api/v1/admin/spend/budgets` request writes a manual budget, even when the previous row was inherited from config.
 
 Create or update a user budget:
 
@@ -202,7 +222,42 @@ users:
       timezone: UTC
 ```
 
-Omitting `budget` for a listed config-seeded user deactivates that user's active user budget during seed reconciliation.
+Omitting `budget` for a listed config-seeded user does not deactivate that user's active budget. Absence inherits the global default user budget when configured, or leaves any existing manual/API state alone.
+
+Set a default user budget for all human users with `budgets.users.default`:
+
+```yaml
+budgets:
+  users:
+    default:
+      cadence: daily
+      amount_usd: "70.0000"
+      hard_limit: true
+      timezone: UTC
+```
+
+Set default user model budgets for selected gateway models with `budgets.users.model_defaults`:
+
+```yaml
+budgets:
+  users:
+    default:
+      cadence: daily
+      amount_usd: "70.0000"
+      hard_limit: true
+      timezone: UTC
+    model_defaults:
+      - model: fable-5
+        budget:
+          cadence: daily
+          amount_usd: "40.0000"
+          hard_limit: true
+          timezone: UTC
+```
+
+The `model` value is the configured gateway model id from `models[*].id`. These defaults apply to all human users, including config-seeded users, bootstrap admins, admin-created users, and JIT OIDC/OAuth users. They do not apply to service accounts.
+
+Config-seeded `users[*].budget` is a per-user override over `budgets.users.default`. Manual admin/API changes still take precedence over inherited defaults.
 
 Declarative service accounts define their owning team, budget, and managed gateway API keys:
 
@@ -226,7 +281,7 @@ service_accounts:
 
 The owning team must be declared in `teams`. The budget block is required.
 
-User model budgets are not currently part of the declarative YAML seed contract. Configure them in `/admin/spend-controls` or with `PUT /api/v1/admin/spend/budgets`.
+User-specific model budget overrides are configured in `/admin/spend-controls` or with `PUT /api/v1/admin/spend/budgets`.
 
 ## Monitor Budgets
 

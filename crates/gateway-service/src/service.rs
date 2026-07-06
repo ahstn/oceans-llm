@@ -701,10 +701,10 @@ mod tests {
     use async_trait::async_trait;
     use gateway_core::{
         ApiKeyModelGrantMode, ApiKeyOwnerKind, ApiKeyRecord, ApiKeyRepository, AuthenticatedApiKey,
-        BudgetAlertRepository, BudgetRecord, BudgetRepository, BudgetScope, GatewayModel,
-        IdentityRepository, McpToolInvocationDetail, McpToolInvocationPage,
-        McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
-        McpToolInvocationRepository, ModelRepository, ModelRoute, Money4,
+        BudgetAlertRepository, BudgetRecord, BudgetRepository, BudgetScope, BudgetSettings,
+        BudgetSource, GatewayModel, IdentityRepository, McpToolInvocationDetail,
+        McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
+        McpToolInvocationRecord, McpToolInvocationRepository, ModelRepository, ModelRoute, Money4,
         PricingCatalogCacheRecord, PricingCatalogRepository, ProviderCapabilities,
         ProviderConnection, ProviderRepository, RequestLogDetail, RequestLogPage,
         RequestLogPayloadRecord, RequestLogPurgeResult, RequestLogQuery, RequestLogRecord,
@@ -756,14 +756,34 @@ mod tests {
             Ok(None)
         }
 
+        async fn get_latest_budget_by_scope(
+            &self,
+            _scope: &BudgetScope,
+        ) -> Result<Option<BudgetRecord>, StoreError> {
+            Ok(None)
+        }
+
         async fn upsert_active_budget(
             &self,
             _scope: &BudgetScope,
-            _settings: &gateway_core::BudgetSettings,
+            _settings: &BudgetSettings,
             _updated_at: OffsetDateTime,
         ) -> Result<BudgetRecord, StoreError> {
             Err(StoreError::Unexpected(
                 "upsert_active_budget is not used by usage accounting tests".to_string(),
+            ))
+        }
+
+        async fn upsert_active_budget_with_source(
+            &self,
+            _scope: &BudgetScope,
+            _settings: &BudgetSettings,
+            _source: &BudgetSource,
+            _updated_at: OffsetDateTime,
+        ) -> Result<BudgetRecord, StoreError> {
+            Err(StoreError::Unexpected(
+                "upsert_active_budget_with_source is not used by usage accounting tests"
+                    .to_string(),
             ))
         }
 

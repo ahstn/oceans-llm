@@ -22,6 +22,7 @@ This page owns config syntax and parse-time rules. It does not own the full runt
 - `server`
 - `database`
 - `auth`
+- `budgets`
 - `budget_alerts`
 - `request_logging`
 - `providers`
@@ -89,6 +90,21 @@ auth:
     password: env.GATEWAY_BOOTSTRAP_ADMIN_PASSWORD
     require_password_change: true
 
+budgets:
+  users:
+    default:
+      cadence: daily
+      amount_usd: "70.0000"
+      hard_limit: true
+      timezone: UTC
+    model_defaults:
+      - model: gemini-2.0-flash
+        budget:
+          cadence: daily
+          amount_usd: "40.0000"
+          hard_limit: true
+          timezone: UTC
+
 providers:
   - id: vertex
     type: gcp_vertex
@@ -150,6 +166,8 @@ Important defaults from config parsing and domain deserialization:
 - `request_logging.payloads.stream_max_events` defaults to `128`
 - `request_logging.purge.enabled` defaults to `false`
 - `request_logging.purge.retention` defaults to `7d`
+- `budgets.users.default` is absent by default; when present, it creates inherited user budgets for all human users
+- `budgets.users.model_defaults` is empty by default; entries create inherited user model budgets for all human users for selected gateway models
 
 The startup meaning of bootstrap-admin lives in [runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md). Non-human data-plane access is managed through [service accounts](../access/service-accounts.md), not config-seeded legacy runtime keys.
 
@@ -395,6 +413,49 @@ Important `users` fields:
 - `membership.role`
 - `budget`
 
+## `budgets`
+
+`budgets.users` defines inherited budget policy for human users. It does not apply to service accounts.
+
+```yaml
+budgets:
+  users:
+    default:
+      cadence: daily
+      amount_usd: "70.0000"
+      hard_limit: true
+      timezone: UTC
+    model_defaults:
+      - model: fable-5
+        budget:
+          cadence: daily
+          amount_usd: "40.0000"
+          hard_limit: true
+          timezone: UTC
+```
+
+Important fields:
+
+- `users.default`: optional default user budget for all human users
+- `users.model_defaults[].model`: gateway model id from `models[*].id`
+- `users.model_defaults[].budget`: default user model budget applied per human user for that model
+
+Validation rules:
+
+- default budget amounts must be non-negative
+- model-default entries must reference an existing configured gateway model
+- duplicate model-default entries are rejected after model id normalization
+
+Runtime semantics:
+
+- defaults apply to config-seeded users, bootstrap admins, admin-created users, and JIT OIDC/OAuth users
+- `users[*].budget` is a config-seeded per-user override over `budgets.users.default`
+- admin UI/API edits convert inherited default rows to manual rows
+- admin UI/API deactivation is the escape hatch from inheritance
+- omitting a `users[*].budget` block means inherit; it does not deactivate a budget
+
+For the full budget taxonomy and precedence rules, see [budgets.md](../access/budgets.md).
+
 Validation rules that matter:
 
 - team IDs must be unique
@@ -416,8 +477,8 @@ Seed semantics that matter:
 - listed managed service-account keys are upserted by `service_accounts[*].keys[*].id`
 - listed users are upserted by normalized email
 - new config-seeded users are created as `invited`
-- listed membership and active-budget state is reconciled for listed users
-- omitting a `budget` block for a listed user deactivates that user's active budget
+- listed membership and explicit `users[*].budget` state is reconciled for listed users
+- omitting a `budget` block for a listed user inherits global defaults or leaves manual/API state untouched
 - unlisted teams, service accounts, keys, and users are left untouched
 
 OIDC and OAuth provider existence is validated at seed time against enabled runtime providers, not YAML parse time.

@@ -7,8 +7,8 @@ use axum::{
 use gateway_core::{
     ApiKeyOwnerKind, BudgetAlertChannel, BudgetAlertDeliveryStatus, BudgetAlertHistoryQuery,
     BudgetAlertRepository, BudgetCadence, BudgetModelSelector, BudgetRecord, BudgetRepository,
-    BudgetScope, BudgetScopeKind, BudgetSettings, GatewayError, IdentityRepository, MembershipRole,
-    ModelRepository, Money4, UserStatus, budget_window_utc,
+    BudgetScope, BudgetScopeKind, BudgetSettings, BudgetSource, GatewayError, IdentityRepository,
+    MembershipRole, ModelRepository, Money4, UserStatus, budget_window_utc,
 };
 use gateway_store::GatewayStore;
 use time::{Date, Duration, Month, OffsetDateTime, UtcOffset};
@@ -19,13 +19,14 @@ use crate::http::{
     admin_contract::{
         BudgetAlertHistoryItemView, BudgetAlertHistoryRequestQuery, BudgetAlertHistoryView,
         BudgetScopeRequest, BudgetScopeView, BudgetServiceAccountScopeKind,
-        BudgetServiceAccountScopeView, BudgetSettingsView, BudgetUserModelByModelScopeView,
-        BudgetUserModelByUpstreamModelScopeView, BudgetUserModelScopeKind, BudgetUserScopeKind,
-        BudgetUserScopeView, DeactivateBudgetRequest, DeactivateBudgetResultView, Envelope,
-        FocusExportQuery, FocusSelfExportQuery, SpendBudgetServiceAccountView,
-        SpendBudgetUserModelView, SpendBudgetUserView, SpendBudgetsView, SpendDailyPointView,
-        SpendModelBreakdownView, SpendOwnerBreakdownView, SpendReportQuery, SpendReportView,
-        SpendTotalsView, UpsertBudgetRequest, UpsertBudgetResultView, envelope, format_timestamp,
+        BudgetServiceAccountScopeView, BudgetSettingsView, BudgetSourceView,
+        BudgetUserModelByModelScopeView, BudgetUserModelByUpstreamModelScopeView,
+        BudgetUserModelScopeKind, BudgetUserScopeKind, BudgetUserScopeView,
+        DeactivateBudgetRequest, DeactivateBudgetResultView, Envelope, FocusExportQuery,
+        FocusSelfExportQuery, SpendBudgetServiceAccountView, SpendBudgetUserModelView,
+        SpendBudgetUserView, SpendBudgetsView, SpendDailyPointView, SpendModelBreakdownView,
+        SpendOwnerBreakdownView, SpendReportQuery, SpendReportView, SpendTotalsView,
+        UpsertBudgetRequest, UpsertBudgetResultView, envelope, format_timestamp,
     },
     error::AppError,
     focus_export::{FocusCsvExport, build_focus_csv_export},
@@ -262,6 +263,9 @@ pub async fn list_spend_budgets(
             team_id: user.team_id.map(|value| value.to_string()),
             team_name: user.team_name,
             budget: budget.as_ref().map(budget_to_settings_view),
+            budget_source: budget
+                .as_ref()
+                .map(|budget| budget_source_to_view(&budget.source)),
             current_window_spend_usd_10000: current_window_spend.as_scaled_i64(),
             alert_email_ready: true,
             alert_recipient_summary: user_email,
@@ -305,6 +309,9 @@ pub async fn list_spend_budgets(
             team_name: team.team_name.clone(),
             team_key: team.team_key.clone(),
             budget: budget.as_ref().map(budget_to_settings_view),
+            budget_source: budget
+                .as_ref()
+                .map(|budget| budget_source_to_view(&budget.source)),
             current_window_spend_usd_10000: current_window_spend.as_scaled_i64(),
             alert_email_ready: !recipients.is_empty(),
             alert_recipient_summary: if recipients.is_empty() {
@@ -365,6 +372,7 @@ pub async fn upsert_budget(
         scope: scope_to_view(&budget.scope),
         scope_key: budget.scope_key.clone(),
         budget: budget_to_settings_view(&budget),
+        budget_source: budget_source_to_view(&budget.source),
         current_window_spend_usd_10000: current_window_spend.as_scaled_i64(),
     })))
 }
@@ -474,6 +482,13 @@ fn budget_to_settings_view(record: &BudgetRecord) -> BudgetSettingsView {
     }
 }
 
+fn budget_source_to_view(source: &BudgetSource) -> BudgetSourceView {
+    BudgetSourceView {
+        kind: source.kind.as_str().to_string(),
+        key: source.key.clone(),
+    }
+}
+
 async fn active_user_model_budget_views(
     state: &AppState,
     now: OffsetDateTime,
@@ -505,6 +520,7 @@ async fn active_user_model_budget_views(
             model_id,
             upstream_model,
             budget: budget_to_settings_view(&budget),
+            budget_source: budget_source_to_view(&budget.source),
             current_window_spend_usd_10000: current_window_spend.as_scaled_i64(),
             alert_email_ready: user.is_some(),
             alert_recipient_summary: user
