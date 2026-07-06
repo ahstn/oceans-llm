@@ -6,21 +6,58 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.15.0] - 2026-07-06
+### :rocket: New features
+- *(gateway)* Add declarative user budget defaults by @ahstn
+- *(gateway)* Add declarative user budget defaults by @ahstn in [#228](https://github.com/ahstn/oceans-llm/pull/228)
+
+### :bug: Bug fixes
+- *(gateway)* Harden budget default reconciliation by @ahstn
+- *(gateway)* Preserve budget deactivation guards by @ahstn
+
+### Build
+- Post release tasks - v0.14.0 by @ahstn
+- Updating model pricing catalog by @ahstn
+
+### Changed
+- Fix admin muted surface and API key dialog layout by @ahstn
+- Add service account API key reveal controls by @ahstn
+
+### Documentation
+- *(budgets)* Clearer docs with additional content by @ahstn
+- Clarify user model budget defaults by @ahstn
+
+### Miscellaneous
+- *(version)* V0.15.0
+
+
+
+
 ## [0.14.0] - 2026-07-06
 ### :rocket: New features
+- *(codex)* Add Bedrock-safe client config by @ahstn
 - *(codex)* Add Bedrock-safe client config by @ahstn in [#219](https://github.com/ahstn/oceans-llm/pull/219)
 - *(dev)* Adding impeccable artifacts by @ahstn
 - *(review)* Review agent first pass by @ahstn
 - *(ui)* Migrate to blue/ocean focus color palette by @ahstn
 - *(ui)* Initial service account draft by @ahstn
+- Add native Vertex embeddings by @ahstn
+- Add gemini embedding 2 support by @ahstn
 - *(gateway)* Add native Vertex embeddings by @ahstn in [#225](https://github.com/ahstn/oceans-llm/pull/225)
+- *(gateway)* Add model-level allowlists by @ahstn
 - *(gateway)* Add model-level allowlists by @ahstn in [#226](https://github.com/ahstn/oceans-llm/pull/226)
 
 ### :bug: Bug fixes
 - *(bedrock)* Reject forced image generation tools by @ahstn
 - *(codex)* Tighten generated config and tool guards by @ahstn
+- *(admin-ui)* Refine review agent dialog layout by @ahstn
+- *(admin-ui)* Address review agent PR feedback by @ahstn
 - *(admin-ui)* Refine review agent dialog layout by @ahstn in [#221](https://github.com/ahstn/oceans-llm/pull/221)
+- *(admin-ui)* Serve static assets before auth fallback by @ahstn
+- *(admin-ui)* Address static asset review findings by @ahstn
 - *(admin-ui)* Serve static assets before auth fallback by @ahstn in [#224](https://github.com/ahstn/oceans-llm/pull/224)
+- Address Vertex embeddings review feedback by @ahstn
+- Address embedding review comments by @ahstn
 - *(gateway)* Address model allowlist review comments by @ahstn
 
 ### Build
@@ -35,7 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Miscellaneous
 - Update skills by @ahstn
-- *(version)* V0.14.0
+- *(version)* V0.14.0 by @ahstn
 
 
 
@@ -43,13 +80,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.13.0] - 2026-07-03
 ### :rocket: New features
 - *(gateway)* Allow api keys to grant all models by @ahstn
+- *(gateway)* Add declarative service account config by @ahstn
 - *(gateway)* Add declarative service account config by @ahstn in [#209](https://github.com/ahstn/oceans-llm/pull/209)
 - *(gateway)* Allow api keys to grant all models by @ahstn in [#210](https://github.com/ahstn/oceans-llm/pull/210)
+- *(admin)* Add client config setup context by @ahstn
 - *(admin)* Add client config setup context by @ahstn in [#212](https://github.com/ahstn/oceans-llm/pull/212)
 
 ### :bug: Bug fixes
+- *(test)* Repair api key all-model ci coverage by @ahstn
 - *(test)* Repair api key all-model ci coverage by @ahstn in [#211](https://github.com/ahstn/oceans-llm/pull/211)
 - *(gateway)* Address api key grant review feedback by @ahstn
+- *(admin)* Refresh pricing before releases by @ahstn
 - *(admin)* Refresh pricing before releases by @ahstn in [#207](https://github.com/ahstn/oceans-llm/pull/207)
 - *(gateway)* Harden service account key handling by @ahstn
 - *(e2e)* Seed service account config with new shape by @ahstn
@@ -91,19 +132,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.12.0] - 2026-07-01
 ### :rocket: New features
 - *(gateway)* Implement oidc sso by @ahstn
+- *(auth)* Add direct GitHub OAuth SSO by @ahstn
+- *(auth)* Add direct GitHub OAuth SSO by @ahstn
 - *(gateway)* Implement OIDC SSO by @ahstn in [#157](https://github.com/ahstn/oceans-llm/pull/157)
 - *(auth)* Add direct GitHub OAuth SSO by @ahstn in [#158](https://github.com/ahstn/oceans-llm/pull/158)
+- *(gateway)* Export spend as FOCUS CSV by @ahstn
 - *(gateway)* Include owner tags in FOCUS export by @ahstn
 - *(gateway)* Export spend as FOCUS CSV by @ahstn in [#160](https://github.com/ahstn/oceans-llm/pull/160)
+- *(gateway)* Add external MCP registry by @ahstn
 - *(gateway)* Add external MCP registry by @ahstn in [#161](https://github.com/ahstn/oceans-llm/pull/161)
+- *(gateway)* Add MCP gateway auth and diagnostics by @ahstn
 - *(gateway)* Add MCP gateway auth and diagnostics by @ahstn in [#162](https://github.com/ahstn/oceans-llm/pull/162)
+- *(gateway)* Implement budget principal taxonomy by @ahstn
 - *(gateway)* Implement budget principal taxonomy by @ahstn in [#163](https://github.com/ahstn/oceans-llm/pull/163)
+- *(gateway)* Add bedrock mantle support by @ahstn
 - *(gateway)* Add bedrock mantle support by @ahstn in [#164](https://github.com/ahstn/oceans-llm/pull/164)
 - *(mcp)* Add grants and token overhead telemetry by @ahstn in [#165](https://github.com/ahstn/oceans-llm/pull/165)
+- *(gateway)* Track additional agent harness user agents by @ahstn
 - *(gateway)* Track additional agent harness user agents by @ahstn in [#174](https://github.com/ahstn/oceans-llm/pull/174)
 - *(gateway)* Add aggregate MCP discovery endpoint by @ahstn
 - *(gateway)* Add MCP credential execution by @ahstn
 - *(gateway)* Add aggregate MCP discovery and execution by @ahstn in [#171](https://github.com/ahstn/oceans-llm/pull/171)
+- *(admin-ui)* Add Claude Code client config snippets by @ahstn
 - *(admin-ui)* Add Claude Code client config snippets by @ahstn in [#176](https://github.com/ahstn/oceans-llm/pull/176)
 - Use central cargo build dirs by @ahstn
 - *(admin-ui)* Redesign request log detail as wide inspect drawer by @ahstn
@@ -111,15 +161,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(gateway)* Add OpenRouter routing policy controls by @ahstn
 - *(admin-ui)* Surface api key and caller in the request logs table by @ahstn
 - *(admin-ui)* Surface api key and caller in request logs table by @ahstn in [#177](https://github.com/ahstn/oceans-llm/pull/177)
+- *(gateway)* Support Cloud Run OpenAI-compatible providers by @ahstn
 - *(gateway)* Support Cloud Run OpenAI-compatible providers by @ahstn in [#181](https://github.com/ahstn/oceans-llm/pull/181)
 - *(gateway)* Add OpenRouter routing policy controls by @ahstn in [#180](https://github.com/ahstn/oceans-llm/pull/180)
+- *(gateway)* Restrict github oauth email domains by @ahstn
 - *(gateway)* Restrict github oauth email domains by @ahstn in [#183](https://github.com/ahstn/oceans-llm/pull/183)
 - *(admin-ui)* Polish MCP management UI by @ahstn in [#184](https://github.com/ahstn/oceans-llm/pull/184)
+- *(gateway)* Add Codex client config by @ahstn
 - *(gateway)* Add Codex client config by @ahstn in [#185](https://github.com/ahstn/oceans-llm/pull/185)
+- *(gateway)* Add Anthropic messages for Vertex Claude tools by @ahstn
 - *(gateway)* Add Anthropic messages for Vertex Claude tools by @ahstn in [#186](https://github.com/ahstn/oceans-llm/pull/186)
 - Add multi-model client config generation by @ahstn
 - *(gateway)* Add multi-model client configs by @ahstn in [#189](https://github.com/ahstn/oceans-llm/pull/189)
+- *(review-agent)* Add GitHub review agent foundation by @ahstn
 - *(review-agent)* Add GitHub review agent foundation by @ahstn in [#200](https://github.com/ahstn/oceans-llm/pull/200)
+- *(client-config)* Add Fable 5 adaptive config by @ahstn
 - *(client-config)* Add Fable 5 adaptive config by @ahstn in [#202](https://github.com/ahstn/oceans-llm/pull/202)
 
 ### :bug: Bug fixes
@@ -128,6 +184,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(auth)* Address GitHub OAuth PR feedback by @ahstn
 - *(auth)* Make SSO JIT retries recoverable by @ahstn
 - *(auth)* Harden OAuth provider updates by @ahstn
+- *(gateway)* Address FOCUS export review findings by @ahstn
+- *(gateway)* Address FOCUS export review follow-ups by @ahstn
 - *(gateway)* Harden MCP registry discovery by @ahstn
 - *(gateway)* Address MCP registry review feedback by @ahstn
 - *(gateway)* Tighten MCP catalog auth overrides by @ahstn
@@ -587,6 +645,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+[0.15.0]: https://github.com/ahstn/oceans-llm/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/ahstn/oceans-llm/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/ahstn/oceans-llm/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/ahstn/oceans-llm/compare/v0.8.0...v0.12.0
