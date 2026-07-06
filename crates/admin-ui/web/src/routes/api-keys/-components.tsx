@@ -450,7 +450,10 @@ export function ManageApiKeyDialog({
         {target ? (
           <form className="flex min-h-0 flex-1 flex-col gap-6" onSubmit={onSubmit}>
             <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto pr-1">
-              <section className="flex flex-col gap-3 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-4">
+              <section
+                data-testid="manage-api-key-summary"
+                className="flex flex-col gap-3 border-y border-[color:var(--color-border)] py-4"
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 flex-col gap-1">
                     <p className="font-semibold text-[var(--color-text)]">{target.name}</p>
@@ -463,20 +466,23 @@ export function ManageApiKeyDialog({
                   </Badge>
                 </div>
 
-                <dl className="grid gap-3 text-sm sm:grid-cols-3">
-                  <div className="flex flex-col gap-1">
+                <dl
+                  data-testid="manage-api-key-metadata"
+                  className="flex flex-col divide-y divide-[color:var(--color-border)] text-sm"
+                >
+                  <div className="grid gap-1 py-2 sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-start">
                     <dt className="text-[var(--color-text-soft)]">Owner</dt>
-                    <dd className="text-[var(--color-text)]">{formatOwner(target)}</dd>
+                    <dd className="min-w-0 text-[var(--color-text)]">{formatOwner(target)}</dd>
                   </div>
-                  <div className="flex flex-col gap-1">
+                  <div className="grid gap-1 py-2 sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-start">
                     <dt className="text-[var(--color-text-soft)]">Created</dt>
-                    <dd className="text-[var(--color-text)]">
+                    <dd className="min-w-0 text-[var(--color-text)]">
                       {formatCreatedAt(target.created_at)}
                     </dd>
                   </div>
-                  <div className="flex flex-col gap-1">
+                  <div className="grid gap-1 py-2 sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-start">
                     <dt className="text-[var(--color-text-soft)]">Last used</dt>
-                    <dd className="text-[var(--color-text)]">
+                    <dd className="min-w-0 text-[var(--color-text)]">
                       {formatLastUsedAt(target.last_used_at)}
                     </dd>
                   </div>

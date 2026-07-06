@@ -383,6 +383,19 @@ describe('ApiKeysPage', () => {
     expect(within(dialog).getByText('2026-03-14')).toBeInTheDocument()
     expect(within(dialog).getByText('2026-03-18 09:15')).toBeInTheDocument()
 
+    const summary = within(dialog).getByTestId('manage-api-key-summary')
+    expect(summary).toHaveClass('border-y')
+    expect(summary).not.toHaveClass('rounded-lg')
+    expect(summary).not.toHaveClass('bg-[color:var(--color-surface-muted)]')
+
+    const metadata = within(dialog).getByTestId('manage-api-key-metadata')
+    expect(metadata).toHaveClass('divide-y')
+    expect(within(metadata).getByText('Owner').closest('div')).toHaveTextContent('Jane Admin')
+    expect(within(metadata).getByText('Created').closest('div')).toHaveTextContent('2026-03-14')
+    expect(within(metadata).getByText('Last used').closest('div')).toHaveTextContent(
+      '2026-03-18 09:15',
+    )
+
     const saveButton = within(dialog).getByRole('button', { name: 'Save access' })
     expect(saveButton).toBeDisabled()
 
