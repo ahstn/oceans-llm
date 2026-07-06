@@ -102,12 +102,12 @@ export function ModelsPage() {
     selectableModels.every((model) => selectedModelIdSet.has(model.id))
   const desktopTableMinWidth =
     visibleColumns.contextWindow && visibleColumns.capabilities
-      ? 'min-w-[105rem]'
+      ? 'min-w-[109rem]'
       : visibleColumns.capabilities
-        ? 'min-w-[93rem]'
+        ? 'min-w-[97rem]'
         : visibleColumns.contextWindow
-          ? 'min-w-[87rem]'
-          : 'min-w-[75rem]'
+          ? 'min-w-[91rem]'
+          : 'min-w-[79rem]'
 
   function navigateToPage(page: number) {
     void router.navigate({
@@ -353,6 +353,9 @@ export function ModelsPage() {
                       <TableHead className="sticky left-[3rem] z-30 w-[16rem] min-w-[16rem] bg-[color:var(--color-surface-muted)] px-3 py-2 font-semibold text-[var(--color-text-soft)] shadow-[8px_0_12px_-12px_rgba(0,0,0,0.8)]">
                         Model id
                       </TableHead>
+                      <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                        Actions
+                      </TableHead>
                       <TableHead className="w-[24rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
                         Provider and model
                       </TableHead>
@@ -371,9 +374,6 @@ export function ModelsPage() {
                       ) : null}
                       <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
                         Model allowlist
-                      </TableHead>
-                      <TableHead className="w-[8rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                        Actions
                       </TableHead>
                     </TableRow>
                   </TableHeader>
@@ -425,6 +425,13 @@ export function ModelsPage() {
                             </div>
                           </div>
                         </TableCell>
+                        <TableCell className="px-3 py-3 whitespace-normal">
+                          <ModelActions
+                            model={model}
+                            onOpenClientConfig={openSingleClientConfig}
+                            onOpenInfo={openModelInfo}
+                          />
+                        </TableCell>
                         <TableCell className="px-3 py-3">
                           <div className="flex min-w-0 flex-col gap-2 py-1">
                             <div className="flex min-w-0 items-center gap-2">
@@ -470,13 +477,6 @@ export function ModelsPage() {
                         ) : null}
                         <TableCell className="px-3 py-3 whitespace-normal">
                           <ModelAllowlistDetail model={model} compact />
-                        </TableCell>
-                        <TableCell className="px-3 py-3 whitespace-normal">
-                          <ModelActions
-                            model={model}
-                            onOpenClientConfig={openSingleClientConfig}
-                            onOpenInfo={openModelInfo}
-                          />
                         </TableCell>
                       </TableRow>
                     ))}
@@ -627,11 +627,12 @@ function ModelActions({
           <Button
             type="button"
             variant="secondary"
-            size="icon-sm"
-            aria-label={`View model info for ${model.id}`}
+            size="sm"
+            className="gap-2"
             onClick={() => onOpenInfo(model)}
           >
             <AppIcon icon={BadgeInfoIcon} size={14} stroke={1.5} />
+            Info
           </Button>
         </TooltipTrigger>
         <TooltipContent sideOffset={6}>Model info</TooltipContent>
@@ -685,13 +686,13 @@ function ClientConfigButton({
         <Button
           type="button"
           variant={compact ? 'secondary' : 'outline'}
-          size={compact ? 'icon-sm' : 'sm'}
-          className={compact ? '' : 'gap-2'}
+          size="sm"
+          className="gap-2"
           aria-label={compact ? label : undefined}
           onClick={() => onOpen(model)}
         >
           <AppIcon icon={CodeIcon} size={14} stroke={1.5} />
-          {compact ? null : 'Client config'}
+          {compact ? 'Config' : 'Client config'}
         </Button>
       </TooltipTrigger>
       <TooltipContent sideOffset={6}>{label}</TooltipContent>
