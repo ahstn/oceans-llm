@@ -353,9 +353,23 @@ pub trait BudgetRepository: Send + Sync {
         source: &BudgetSource,
         updated_at: OffsetDateTime,
     ) -> Result<BudgetRecord, StoreError>;
+    async fn upsert_active_budget_with_source_guard(
+        &self,
+        scope: &BudgetScope,
+        settings: &BudgetSettings,
+        source: &BudgetSource,
+        expected_current_source: Option<&BudgetSource>,
+        updated_at: OffsetDateTime,
+    ) -> Result<Option<BudgetRecord>, StoreError>;
     async fn deactivate_active_budget(
         &self,
         scope: &BudgetScope,
+        updated_at: OffsetDateTime,
+    ) -> Result<bool, StoreError>;
+    async fn deactivate_active_budget_by_source(
+        &self,
+        scope: &BudgetScope,
+        source: &BudgetSource,
         updated_at: OffsetDateTime,
     ) -> Result<bool, StoreError>;
     async fn get_usage_ledger_by_request_and_scope(

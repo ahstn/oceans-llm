@@ -787,9 +787,29 @@ mod tests {
             ))
         }
 
+        async fn upsert_active_budget_with_source_guard(
+            &self,
+            _scope: &BudgetScope,
+            _settings: &BudgetSettings,
+            _source: &BudgetSource,
+            _expected_current_source: Option<&BudgetSource>,
+            _updated_at: OffsetDateTime,
+        ) -> Result<Option<BudgetRecord>, StoreError> {
+            Ok(None)
+        }
+
         async fn deactivate_active_budget(
             &self,
             _scope: &BudgetScope,
+            _updated_at: OffsetDateTime,
+        ) -> Result<bool, StoreError> {
+            Ok(false)
+        }
+
+        async fn deactivate_active_budget_by_source(
+            &self,
+            _scope: &BudgetScope,
+            _source: &BudgetSource,
             _updated_at: OffsetDateTime,
         ) -> Result<bool, StoreError> {
             Ok(false)

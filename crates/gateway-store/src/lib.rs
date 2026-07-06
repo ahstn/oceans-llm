@@ -5559,17 +5559,14 @@ mod tests {
             .expect("ops team exists");
         assert_eq!(refreshed_platform.team_name, "Platform Engineering");
         let _ops_team_id = ops_team.team_id;
-        assert_eq!(
+        assert!(
             store
                 .get_active_budget_by_scope(&BudgetScope::User {
                     user_id: user.user_id,
                 })
                 .await
                 .expect("user budget after reseed")
-                .expect("user budget remains")
-                .settings
-                .amount_usd,
-            Money4::from_scaled(750_000)
+                .is_none()
         );
     }
 
@@ -5609,6 +5606,10 @@ mod tests {
             .seed_from_inputs(&[], &models, &[], &[], &[], &[], &[], &users)
             .await
             .expect("seed user");
+        let bootstrap_user = store
+            .upsert_bootstrap_admin_user("Admin", "admin@local", true)
+            .await
+            .expect("bootstrap admin");
         let user = store
             .get_user_by_email_normalized("member@example.com")
             .await
@@ -5656,6 +5657,22 @@ mod tests {
             inherited_user_budget.settings.amount_usd,
             Money4::from_scaled(700_000)
         );
+        let bootstrap_scope = BudgetScope::User {
+            user_id: bootstrap_user.user_id,
+        };
+        let bootstrap_budget = store
+            .get_active_budget_by_scope(&bootstrap_scope)
+            .await
+            .expect("load bootstrap budget")
+            .expect("bootstrap budget exists");
+        assert_eq!(
+            bootstrap_budget.source.kind,
+            BudgetSourceKind::ConfigUserDefault
+        );
+        assert_eq!(
+            bootstrap_budget.settings.amount_usd,
+            Money4::from_scaled(700_000)
+        );
 
         let model_scope = BudgetScope::UserModel {
             user_id: user.user_id,
@@ -5675,6 +5692,122 @@ mod tests {
             Money4::from_scaled(400_000)
         );
 
+        let defaults_without_model = SeedHumanBudgetDefaults {
+            default_user_budget: defaults.default_user_budget.clone(),
+            model_defaults: Vec::new(),
+        };
+        store
+            .reconcile_human_budget_defaults(&defaults_without_model, now + Duration::seconds(1))
+            .await
+            .expect("remove model default");
+        assert!(
+            store
+                .get_active_budget_by_scope(&model_scope)
+                .await
+                .expect("load model budget after default removal")
+                .is_none()
+        );
+        assert_eq!(
+            store
+                .get_latest_budget_by_scope(&model_scope)
+                .await
+                .expect("latest model budget")
+                .expect("inactive model budget remains")
+                .source
+                .kind,
+            BudgetSourceKind::ConfigUserModelDefault
+        );
+        store
+            .reconcile_human_budget_defaults(&defaults, now + Duration::seconds(2))
+            .await
+            .expect("restore model default");
+        let restored_model_budget = store
+            .get_active_budget_by_scope(&model_scope)
+            .await
+            .expect("load restored model budget")
+            .expect("restored model budget exists");
+        assert_eq!(
+            restored_model_budget.source.kind,
+            BudgetSourceKind::ConfigUserModelDefault
+        );
+        assert_eq!(
+            restored_model_budget.settings.amount_usd,
+            Money4::from_scaled(400_000)
+        );
+
+        let override_users = vec![SeedUser {
+            name: "Override".to_string(),
+            email: "override@example.com".to_string(),
+            email_normalized: "override@example.com".to_string(),
+            global_role: GlobalRole::User,
+            auth_mode: AuthMode::Password,
+            request_logging_enabled: true,
+            oidc_provider_key: None,
+            oauth_provider_key: None,
+            membership: None,
+            budget: Some(SeedBudget {
+                cadence: BudgetCadence::Daily,
+                amount_usd: Money4::from_scaled(250_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            }),
+        }];
+        store
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &[], &override_users)
+            .await
+            .expect("seed explicit user override");
+        store
+            .reconcile_human_budget_defaults(&defaults, now + Duration::seconds(3))
+            .await
+            .expect("reconcile defaults with explicit override");
+        let override_user = store
+            .get_user_by_email_normalized("override@example.com")
+            .await
+            .expect("load override user")
+            .expect("override user exists");
+        let override_scope = BudgetScope::User {
+            user_id: override_user.user_id,
+        };
+        let config_override_budget = store
+            .get_active_budget_by_scope(&override_scope)
+            .await
+            .expect("load config override budget")
+            .expect("config override budget exists");
+        assert_eq!(
+            config_override_budget.source.kind,
+            BudgetSourceKind::ConfigUserOverride
+        );
+        assert_eq!(
+            config_override_budget.settings.amount_usd,
+            Money4::from_scaled(250_000)
+        );
+
+        let inherited_users = vec![SeedUser {
+            budget: None,
+            ..override_users[0].clone()
+        }];
+        store
+            .seed_from_inputs(&[], &[], &[], &[], &[], &[], &[], &inherited_users)
+            .await
+            .expect("remove explicit user override");
+        store
+            .reconcile_human_budget_defaults(&defaults, now + Duration::seconds(4))
+            .await
+            .expect("reconcile defaults after override removal");
+        let inherited_override_budget = store
+            .get_active_budget_by_scope(&override_scope)
+            .await
+            .expect("load inherited budget after override removal")
+            .expect("inherited budget exists");
+        assert_eq!(
+            inherited_override_budget.source.kind,
+            BudgetSourceKind::ConfigUserDefault
+        );
+        assert_eq!(
+            inherited_override_budget.settings.amount_usd,
+            Money4::from_scaled(700_000)
+        );
+
         store
             .upsert_active_budget(
                 &user_scope,
@@ -5684,16 +5817,16 @@ mod tests {
                     hard_limit: true,
                     timezone: "UTC".to_string(),
                 },
-                now + Duration::seconds(1),
+                now + Duration::seconds(5),
             )
             .await
             .expect("manual user override");
         store
-            .deactivate_active_budget(&model_scope, now + Duration::seconds(1))
+            .deactivate_active_budget(&model_scope, now + Duration::seconds(5))
             .await
             .expect("manual model deactivation");
         store
-            .reconcile_human_budget_defaults(&defaults, now + Duration::seconds(2))
+            .reconcile_human_budget_defaults(&defaults, now + Duration::seconds(6))
             .await
             .expect("reapply defaults");
 
@@ -6163,17 +6296,14 @@ mod tests {
             .expect("ops team exists");
         assert_eq!(refreshed_platform.team_name, "Platform Engineering");
         let _ops_team_id = ops_team.team_id;
-        assert_eq!(
+        assert!(
             store
                 .get_active_budget_by_scope(&BudgetScope::User {
                     user_id: user.user_id,
                 })
                 .await
                 .expect("user budget after reseed")
-                .expect("user budget remains")
-                .settings
-                .amount_usd,
-            Money4::from_scaled(750_000)
+                .is_none()
         );
 
         store.pool().close().await;

@@ -163,6 +163,10 @@ async fn run_serve_with_store(
 ) -> anyhow::Result<()> {
     let human_budget_defaults = Arc::new(config.seed_human_budget_defaults()?);
 
+    if args.seed_config {
+        seed_config(store.as_ref(), config).await?;
+    }
+
     if args.bootstrap_admin {
         ensure_bootstrap_admin(
             &store,
@@ -171,10 +175,6 @@ async fn run_serve_with_store(
         )
         .await
         .context("failed to ensure bootstrap admin access")?;
-    }
-
-    if args.seed_config {
-        seed_config(store.as_ref(), config).await?;
     }
 
     let service = build_gateway_service(config, store)?;

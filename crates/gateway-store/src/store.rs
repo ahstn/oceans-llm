@@ -702,12 +702,44 @@ impl BudgetRepository for AnyStore {
         )
     }
 
+    async fn upsert_active_budget_with_source_guard(
+        &self,
+        scope: &gateway_core::BudgetScope,
+        settings: &gateway_core::BudgetSettings,
+        source: &gateway_core::BudgetSource,
+        expected_current_source: Option<&gateway_core::BudgetSource>,
+        updated_at: OffsetDateTime,
+    ) -> Result<Option<gateway_core::BudgetRecord>, StoreError> {
+        dispatch_store!(
+            self,
+            upsert_active_budget_with_source_guard(
+                scope,
+                settings,
+                source,
+                expected_current_source,
+                updated_at
+            )
+        )
+    }
+
     async fn deactivate_active_budget(
         &self,
         scope: &gateway_core::BudgetScope,
         updated_at: OffsetDateTime,
     ) -> Result<bool, StoreError> {
         dispatch_store!(self, deactivate_active_budget(scope, updated_at))
+    }
+
+    async fn deactivate_active_budget_by_source(
+        &self,
+        scope: &gateway_core::BudgetScope,
+        source: &gateway_core::BudgetSource,
+        updated_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        dispatch_store!(
+            self,
+            deactivate_active_budget_by_source(scope, source, updated_at)
+        )
     }
 
     async fn get_usage_ledger_by_request_and_scope(

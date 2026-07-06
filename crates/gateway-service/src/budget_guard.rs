@@ -171,8 +171,8 @@ mod tests {
     use async_trait::async_trait;
     use gateway_core::{
         ApiKeyModelGrantMode, ApiKeyOwnerKind, AuthenticatedApiKey, BudgetCadence, BudgetRecord,
-        BudgetRepository, BudgetScope, BudgetSettings, Money4, StoreError, UsageLedgerRecord,
-        UsagePricingStatus,
+        BudgetRepository, BudgetScope, BudgetSettings, BudgetSource, Money4, StoreError,
+        UsageLedgerRecord, UsagePricingStatus,
     };
     use serde_json::json;
     use time::OffsetDateTime;
@@ -218,7 +218,7 @@ mod tests {
             &self,
             _scope: &BudgetScope,
             _settings: &BudgetSettings,
-            _source: &gateway_core::BudgetSource,
+            _source: &BudgetSource,
             _updated_at: OffsetDateTime,
         ) -> Result<BudgetRecord, StoreError> {
             self.active_budget
@@ -226,9 +226,29 @@ mod tests {
                 .ok_or_else(|| StoreError::NotFound("budget missing".to_string()))
         }
 
+        async fn upsert_active_budget_with_source_guard(
+            &self,
+            _scope: &BudgetScope,
+            _settings: &BudgetSettings,
+            _source: &BudgetSource,
+            _expected_current_source: Option<&BudgetSource>,
+            _updated_at: OffsetDateTime,
+        ) -> Result<Option<BudgetRecord>, StoreError> {
+            Ok(self.active_budget.clone())
+        }
+
         async fn deactivate_active_budget(
             &self,
             _scope: &BudgetScope,
+            _updated_at: OffsetDateTime,
+        ) -> Result<bool, StoreError> {
+            Ok(false)
+        }
+
+        async fn deactivate_active_budget_by_source(
+            &self,
+            _scope: &BudgetScope,
+            _source: &BudgetSource,
             _updated_at: OffsetDateTime,
         ) -> Result<bool, StoreError> {
             Ok(false)

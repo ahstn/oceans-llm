@@ -170,6 +170,97 @@ impl BudgetRepository for LibsqlStore {
             })
     }
 
+    async fn upsert_active_budget_with_source_guard(
+        &self,
+        scope: &BudgetScope,
+        settings: &BudgetSettings,
+        source: &BudgetSource,
+        expected_current_source: Option<&BudgetSource>,
+        updated_at: OffsetDateTime,
+    ) -> Result<Option<BudgetRecord>, StoreError> {
+        if let Some(expected_source) = expected_current_source {
+            self.connection
+                .execute(
+                    r#"
+                    INSERT INTO budgets (
+                        budget_id, scope_kind, scope_key, user_id, service_account_id, model_id,
+                        upstream_model, cadence, amount_10000, hard_limit, timezone, is_active,
+                        created_at, updated_at, source_kind, source_key
+                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1, ?12, ?13, ?14, ?15)
+                    ON CONFLICT(scope_key) WHERE is_active = 1
+                    DO UPDATE SET
+                        cadence = excluded.cadence,
+                        amount_10000 = excluded.amount_10000,
+                        hard_limit = excluded.hard_limit,
+                        timezone = excluded.timezone,
+                        source_kind = excluded.source_kind,
+                        source_key = excluded.source_key,
+                        updated_at = excluded.updated_at
+                    WHERE budgets.source_kind = ?16
+                      AND budgets.source_key IS ?17
+                    "#,
+                    libsql::params![
+                        Uuid::new_v4().to_string(),
+                        scope.kind().as_str(),
+                        scope.scope_key(),
+                        scope.user_id().map(|id| id.to_string()),
+                        scope.service_account_id().map(|id| id.to_string()),
+                        scope.model_id().map(|id| id.to_string()),
+                        scope.upstream_model().map(ToOwned::to_owned),
+                        settings.cadence.as_str(),
+                        settings.amount_usd.as_scaled_i64(),
+                        if settings.hard_limit { 1 } else { 0 },
+                        settings.timezone.clone(),
+                        updated_at.unix_timestamp(),
+                        updated_at.unix_timestamp(),
+                        source.kind.as_str(),
+                        source.key.clone(),
+                        expected_source.kind.as_str(),
+                        expected_source.key.clone(),
+                    ],
+                )
+                .await
+                .map_err(to_query_error)?;
+        } else {
+            self.connection
+                .execute(
+                    r#"
+                    INSERT INTO budgets (
+                        budget_id, scope_kind, scope_key, user_id, service_account_id, model_id,
+                        upstream_model, cadence, amount_10000, hard_limit, timezone, is_active,
+                        created_at, updated_at, source_kind, source_key
+                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1, ?12, ?13, ?14, ?15)
+                    ON CONFLICT(scope_key) WHERE is_active = 1
+                    DO NOTHING
+                    "#,
+                    libsql::params![
+                        Uuid::new_v4().to_string(),
+                        scope.kind().as_str(),
+                        scope.scope_key(),
+                        scope.user_id().map(|id| id.to_string()),
+                        scope.service_account_id().map(|id| id.to_string()),
+                        scope.model_id().map(|id| id.to_string()),
+                        scope.upstream_model().map(ToOwned::to_owned),
+                        settings.cadence.as_str(),
+                        settings.amount_usd.as_scaled_i64(),
+                        if settings.hard_limit { 1 } else { 0 },
+                        settings.timezone.clone(),
+                        updated_at.unix_timestamp(),
+                        updated_at.unix_timestamp(),
+                        source.kind.as_str(),
+                        source.key.clone(),
+                    ],
+                )
+                .await
+                .map_err(to_query_error)?;
+        }
+
+        match self.get_active_budget_by_scope(scope).await? {
+            Some(budget) if budget.source.matches(source) => Ok(Some(budget)),
+            Some(_) | None => Ok(None),
+        }
+    }
+
     async fn deactivate_active_budget(
         &self,
         scope: &BudgetScope,
@@ -193,6 +284,36 @@ impl BudgetRepository for LibsqlStore {
                     scope.scope_key(),
                     source.kind.as_str(),
                     source.key,
+                ],
+            )
+            .await
+            .map_err(to_query_error)?;
+        Ok(updated > 0)
+    }
+
+    async fn deactivate_active_budget_by_source(
+        &self,
+        scope: &BudgetScope,
+        source: &BudgetSource,
+        updated_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        let updated = self
+            .connection
+            .execute(
+                r#"
+                UPDATE budgets
+                SET is_active = 0,
+                    updated_at = ?1
+                WHERE scope_key = ?2
+                  AND is_active = 1
+                  AND source_kind = ?3
+                  AND source_key IS ?4
+                "#,
+                libsql::params![
+                    updated_at.unix_timestamp(),
+                    scope.scope_key(),
+                    source.kind.as_str(),
+                    source.key.clone(),
                 ],
             )
             .await
