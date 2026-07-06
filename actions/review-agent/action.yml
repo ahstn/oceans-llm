@@ -50,11 +50,46 @@ inputs:
     required: false
     default: "false"
   pi-binary:
-    description: Explicit Pi binary path. Use until a packaged Pi runtime artifact is available.
+    description: Explicit Pi binary path. Defaults to the globally installed `pi` CLI.
     required: false
   github-token:
     description: GitHub token for PR access and publishing. Defaults to GITHUB_TOKEN.
     required: false
 runs:
-  using: node24
-  main: dist/index.js
+  using: composite
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v6
+      with:
+        node-version: "24"
+
+    - name: Configure npm release age gate
+      shell: bash
+      run: npm config set min-release-age 3
+
+    - name: Install Pi coding agent
+      shell: bash
+      run: npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+
+    - name: Run Oceans LLM review agent
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token || github.token }}
+        INPUT_OCEANS-URL: ${{ inputs.oceans-url }}
+        INPUT_OCEANS-API-KEY: ${{ inputs.oceans-api-key }}
+        INPUT_MODEL-ID: ${{ inputs.model-id }}
+        INPUT_MODEL-MODE: ${{ inputs.model-mode }}
+        INPUT_PROVIDER-KEY: ${{ inputs.provider-key }}
+        INPUT_INLINE-REVIEW: ${{ inputs.inline-review }}
+        INPUT_PR-SUMMARY: ${{ inputs.pr-summary }}
+        INPUT_DIAGRAMS: ${{ inputs.diagrams }}
+        INPUT_LINKED-ISSUE-DETECTION: ${{ inputs.linked-issue-detection }}
+        INPUT_LINKED-ISSUE-ASSESSMENT: ${{ inputs.linked-issue-assessment }}
+        INPUT_TIMEOUT-MINUTES: ${{ inputs.timeout-minutes }}
+        INPUT_MAX-INLINE-COMMENTS: ${{ inputs.max-inline-comments }}
+        INPUT_REQUEST-CHANGES-ON-HIGH-SEVERITY: ${{ inputs.request-changes-on-high-severity }}
+        INPUT_DRY-RUN: ${{ inputs.dry-run }}
+        INPUT_DEBUG: ${{ inputs.debug }}
+        INPUT_PI-BINARY: ${{ inputs.pi-binary || 'pi' }}
+        INPUT_GITHUB-TOKEN: ${{ inputs.github-token || github.token }}
+      run: node "${GITHUB_ACTION_PATH}/dist/index.js"

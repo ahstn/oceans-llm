@@ -217,6 +217,9 @@ jobs:
           echo "action_root=${action_root}"
           echo "target_workspace=${target_workspace}"
           git -C "${target_workspace}" rev-parse HEAD
+          npm config set min-release-age 3
+          npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+          command -v pi
 
           env \
             "GITHUB_EVENT_NAME=pull_request" \
@@ -226,6 +229,7 @@ jobs:
             "INPUT_OCEANS-API-KEY=smoke-oceans-api-key" \
             "INPUT_DRY-RUN=true" \
             "INPUT_TIMEOUT-MINUTES=2" \
+            "INPUT_PI-BINARY=pi" \
             "INPUT_GITHUB-TOKEN=${GH_TOKEN}" \
             mise exec -- node "${action_root}/dist/index.js"
 
