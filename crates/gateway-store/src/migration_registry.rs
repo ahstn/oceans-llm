@@ -180,6 +180,15 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V37__model_allowlists.sql"),
         postgres_sql: include_str!("../migrations/postgres/V37__model_allowlists.sql"),
     },
+    MigrationManifest {
+        version: 38,
+        name: "mcp_code_mode_invocation_linkage",
+        checksum: "V38__mcp_code_mode_invocation_linkage.sql",
+        libsql_sql: include_str!("../migrations/V38__mcp_code_mode_invocation_linkage.sql"),
+        postgres_sql: include_str!(
+            "../migrations/postgres/V38__mcp_code_mode_invocation_linkage.sql"
+        ),
+    }
 ];
 
 #[cfg(test)]

@@ -25,7 +25,7 @@ pub use domain::{
     HarnessUsageBucketRecord, HarnessUsageLeaderRecord, IdentityUserRecord,
     MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, ManagedApiKeySource, McpAccessResolution,
     McpAggregateSessionRecord, McpCatalogAccessResolution, McpCatalogToolRecord, McpGrantSubject,
-    McpTokenEstimateConfidence, McpTokenEstimateSource, McpToolGrantRecord,
+    McpSessionSurface, McpTokenEstimateConfidence, McpTokenEstimateSource, McpToolGrantRecord,
     McpToolGrantSubjectKind, McpToolGrantTargetKind, McpToolInvocationDetail,
     McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
     McpToolInvocationRecord, McpToolInvocationStatus, McpToolPolicyResult,

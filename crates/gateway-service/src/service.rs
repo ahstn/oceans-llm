@@ -362,6 +362,13 @@ where
             .await
     }
 
+    /// The configured MCP invocation payload policy, shared with surfaces
+    /// (such as the Code Mode route) that construct their own loggers.
+    #[must_use]
+    pub fn mcp_invocation_payload_policy(&self) -> crate::McpInvocationPayloadPolicy {
+        self.mcp_invocation_logging.payload_policy().clone()
+    }
+
     pub async fn log_mcp_tool_invocation(
         &self,
         auth: &AuthenticatedApiKey,

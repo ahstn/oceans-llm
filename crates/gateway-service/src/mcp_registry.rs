@@ -25,6 +25,10 @@ use crate::mcp_upstream_auth::{
     validate_mcp_auth_config,
 };
 
+/// Server keys owned by gateway routes; registrations must never collide
+/// with `/mcp` or `/code-mode-mcp` surfaces.
+pub const RESERVED_MCP_SERVER_KEYS: &[&str] = &["mcp", "code-mode-mcp"];
+
 const DEFAULT_DISCOVERY_TIMEOUT_MS: i64 = 30_000;
 const MIN_DISCOVERY_TIMEOUT_MS: i64 = 1_000;
 const MAX_DISCOVERY_TIMEOUT_MS: i64 = 120_000;
@@ -154,6 +158,7 @@ where
     ) -> Result<ExternalMcpServerRecord, GatewayError> {
         let resolved = self.resolve_create_input(input)?;
         let server_key = normalize_mcp_server_key(&resolved.server_key)?;
+        reject_reserved_server_key(&server_key)?;
         if self
             .repo
             .get_external_mcp_server_by_key(&server_key)
@@ -482,6 +487,15 @@ fn discovery_lock_for(mcp_server_id: Uuid) -> Arc<AsyncMutex<()>> {
         .clone()
 }
 
+fn reject_reserved_server_key(server_key: &str) -> Result<(), GatewayError> {
+    if RESERVED_MCP_SERVER_KEYS.contains(&server_key) {
+        return Err(GatewayError::InvalidRequest(format!(
+            "server_key `{server_key}` is reserved for gateway-owned routes"
+        )));
+    }
+    Ok(())
+}
+
 fn validate_display_name(value: String) -> Result<String, GatewayError> {
     let trimmed = value.trim();
     if trimmed.is_empty() || trimmed.len() > 120 {
@@ -590,6 +604,42 @@ mod tests {
     fn server_keys_are_normalized_and_limited() {
         assert_eq!(normalize_mcp_server_key(" GitHub ").unwrap(), "github");
         assert!(normalize_mcp_server_key("bad key").is_err());
+    }
+
+    #[test]
+    fn reserved_server_keys_are_rejected() {
+        for reserved in RESERVED_MCP_SERVER_KEYS {
+            let error = reject_reserved_server_key(reserved).expect_err("reserved key");
+            assert_eq!(error.error_code(), "invalid_request");
+            assert!(error.to_string().contains("reserved"));
+        }
+        assert!(reject_reserved_server_key("github").is_ok());
+    }
+
+    #[tokio::test]
+    async fn create_server_rejects_reserved_keys_before_store_access() {
+        let service = McpRegistryService::with_client(
+            Arc::new(NoopMcpRegistryRepository),
+            Arc::new(NoopMcpDiscoveryClient),
+        );
+        for reserved in ["code-mode-mcp", "mcp", " Code-Mode-MCP "] {
+            let error = service
+                .create_server(CreateExternalMcpServerInput {
+                    recommended_catalog_key: None,
+                    server_key: Some(reserved.to_string()),
+                    display_name: Some("Reserved".to_string()),
+                    description: None,
+                    server_url: Some("https://example.test/mcp".to_string()),
+                    transport: None,
+                    auth_mode: None,
+                    auth_config: Map::new(),
+                    timeout_ms: None,
+                })
+                .await
+                .expect_err("reserved key rejected");
+            assert_eq!(error.error_code(), "invalid_request");
+            assert!(error.to_string().contains("reserved"));
+        }
     }
 
     #[test]

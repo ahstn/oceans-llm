@@ -1,0 +1,16 @@
+[package]
+name = "gateway-code-mode-wasmtime"
+version = "0.9.0"
+edition = "2024"
+
+[dependencies]
+async-trait.workspace = true
+gateway-service.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+wasmtime.workspace = true
+
+[dev-dependencies]
+futures-util.workspace = true

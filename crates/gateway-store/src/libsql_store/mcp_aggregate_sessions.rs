@@ -1,23 +1,27 @@
 use super::*;
 use crate::shared::{parse_uuid, unix_to_datetime};
 
-const SESSION_COLUMNS: &str = "session_id, token_hash, api_key_id, owner_kind, owner_user_id, owner_team_id, owner_service_account_id, protocol_version, initialized, expires_at, created_at, updated_at, revoked_at";
+const SESSION_COLUMNS: &str = "session_id, token_hash, surface, api_key_id, owner_kind, owner_user_id, owner_team_id, owner_service_account_id, protocol_version, initialized, expires_at, created_at, updated_at, revoked_at";
 
 fn decode_session(row: &libsql::Row) -> Result<McpAggregateSessionRecord, StoreError> {
     let session_id: String = row.get(0).map_err(to_query_error)?;
-    let api_key_id: String = row.get(2).map_err(to_query_error)?;
-    let owner_kind: String = row.get(3).map_err(to_query_error)?;
-    let owner_user_id: Option<String> = row.get(4).map_err(to_query_error)?;
-    let owner_team_id: Option<String> = row.get(5).map_err(to_query_error)?;
-    let owner_service_account_id: Option<String> = row.get(6).map_err(to_query_error)?;
-    let initialized: i64 = row.get(8).map_err(to_query_error)?;
-    let expires_at: i64 = row.get(9).map_err(to_query_error)?;
-    let created_at: i64 = row.get(10).map_err(to_query_error)?;
-    let updated_at: i64 = row.get(11).map_err(to_query_error)?;
-    let revoked_at: Option<i64> = row.get(12).map_err(to_query_error)?;
+    let surface: String = row.get(2).map_err(to_query_error)?;
+    let api_key_id: String = row.get(3).map_err(to_query_error)?;
+    let owner_kind: String = row.get(4).map_err(to_query_error)?;
+    let owner_user_id: Option<String> = row.get(5).map_err(to_query_error)?;
+    let owner_team_id: Option<String> = row.get(6).map_err(to_query_error)?;
+    let owner_service_account_id: Option<String> = row.get(7).map_err(to_query_error)?;
+    let initialized: i64 = row.get(9).map_err(to_query_error)?;
+    let expires_at: i64 = row.get(10).map_err(to_query_error)?;
+    let created_at: i64 = row.get(11).map_err(to_query_error)?;
+    let updated_at: i64 = row.get(12).map_err(to_query_error)?;
+    let revoked_at: Option<i64> = row.get(13).map_err(to_query_error)?;
     Ok(McpAggregateSessionRecord {
         session_id: parse_uuid(&session_id)?,
         token_hash: row.get(1).map_err(to_query_error)?,
+        surface: McpSessionSurface::from_db(&surface).ok_or_else(|| {
+            StoreError::Serialization(format!("invalid MCP aggregate session surface `{surface}`"))
+        })?,
         api_key_id: parse_uuid(&api_key_id)?,
         owner_kind: ApiKeyOwnerKind::from_db(&owner_kind).ok_or_else(|| {
             StoreError::Serialization(format!(
@@ -30,7 +34,7 @@ fn decode_session(row: &libsql::Row) -> Result<McpAggregateSessionRecord, StoreE
             .as_deref()
             .map(parse_uuid)
             .transpose()?,
-        protocol_version: row.get(7).map_err(to_query_error)?,
+        protocol_version: row.get(8).map_err(to_query_error)?,
         initialized: initialized == 1,
         expires_at: unix_to_datetime(expires_at)?,
         created_at: unix_to_datetime(created_at)?,
@@ -68,13 +72,14 @@ impl McpAggregateSessionRepository for LibsqlStore {
             .execute(
                 r#"
                 INSERT INTO mcp_aggregate_sessions (
-                    session_id, token_hash, api_key_id, owner_kind, owner_user_id, owner_team_id,
+                    session_id, token_hash, surface, api_key_id, owner_kind, owner_user_id, owner_team_id,
                     owner_service_account_id, protocol_version, initialized, expires_at, created_at, updated_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9, ?10, ?10)
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0, ?10, ?11, ?11)
                 "#,
                 libsql::params![
                     session.session_id.to_string(),
                     session.token_hash.as_str(),
+                    session.surface.as_str(),
                     session.api_key_id.to_string(),
                     session.owner_kind.as_str(),
                     session.owner_user_id.map(|value| value.to_string()),

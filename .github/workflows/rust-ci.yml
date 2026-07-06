@@ -46,6 +46,9 @@ jobs:
       - name: Run `mise run lint`
         run: mise run lint
 
+      - name: Check Code Mode guest wasm artifact drift
+        run: mise run code-mode-guest-check
+
       - name: Run gateway-store Postgres check
         run: mise //crates/gateway-store:check
 

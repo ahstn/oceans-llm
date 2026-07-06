@@ -32,6 +32,7 @@ The admin UI slice uses these endpoints:
 Expected list filters:
 
 - `request_id`
+- `parent_invocation_id`
 - `server_display_key`
 - `server_display_name`
 - `tool_display_key`
@@ -67,6 +68,7 @@ The admin UI consumes these schemas from the generated admin OpenAPI artifact.
 Each invocation record should carry:
 
 - request correlation: `request_id`
+- parent linkage: nullable `parent_invocation_id` for nested Code Mode tool calls
 - owner context: owner kind, API key id, user id, and team id when known
 - MCP target identity: nullable stable IDs plus required server/tool display keys and names
 - outcome: status, error code, latency, and policy result
@@ -78,6 +80,35 @@ Arguments and results must be redacted and bounded before persistence. Sensitive
 `server_id` and `tool_id` are nullable so policy-denied, unknown, or inactive tool names can still be audited. Successful registry-backed `tools/call` executions populate stable server and tool ids.
 
 Aggregate `/mcp` `search_tools` and `describe_tool` calls are discovery operations and do not create MCP invocation rows. Aggregate `call_tool` and direct `/mcp/{server_key}` mediated `tools/call` executions create invocation rows.
+
+## Code Mode Invocations
+
+The `/code-mode-mcp` surface logs at two levels.
+
+Every `explore` and `execute` tool call writes a parent invocation row, even though the corresponding aggregate discovery operations are not logged: Code Mode runs model-authored code, so each execution is auditable. Parent rows use a synthetic gateway identity with no registry-backed ids:
+
+- `server_display_key = "code-mode"`, `server_display_name = "Code Mode"`
+- `tool_display_key = "explore" | "execute"`
+- `server_id` and `tool_id` are null
+- metadata carries `mcp_route = "code-mode"`
+
+Parent-row statuses map execution outcomes:
+
+- `success`: the code ran to completion
+- `policy_denied` with error code `capability_denied`: the execution's uncaught error was a host-function call outside its capability profile, for example `oceans.callTool` from `explore`; a capability denial caught and handled by the code does not affect the parent status (a later unrelated failure is logged as `gateway_error`)
+- `gateway_error` with error code `code_execution_error`: the code threw or failed in the sandbox
+- `gateway_error` with error code `code_mode_executor_error`: the sandbox backend itself failed
+- `timeout`: epoch preemption or wall-clock expiry
+- `invalid_request`: the `code` argument was missing or empty; the executor never ran
+
+Each nested `oceans.callTool` execution writes an ordinary invocation row with real `server_id`/`tool_id` identity and its `parent_invocation_id` set to the parent row. Nested rows keep their normal statuses (`success`, `unauthorized`, `upstream_error`, `timeout`, `gateway_error`). Use the `parent_invocation_id` list filter to retrieve all nested calls for one execution.
+
+Redaction guarantees and limits:
+
+- the parent row's arguments payload is the submitted `code` string **stored as-submitted**, and its result payload carries the execution result, error, captured console log lines, and truncation flag. Both payloads pass through the same capture-mode, byte-bounding, and key-based redaction policy as every other invocation payload, but key-based redaction cannot scrub secrets embedded *inside* an opaque string: a credential written into the code text or printed via `console.log` is persisted in plaintext. Callers must not embed secrets in submitted code; secrets belong in upstream credential bindings, which never enter the sandbox
+- operators who cannot accept code/log persistence can disable MCP invocation payload capture entirely via the request-log payload policy (`request_logging.payloads.capture_mode`), which Code Mode shares; summary rows are still written
+- nested-call arguments and results are redacted and bounded identically to aggregate `call_tool` payloads (key-based redaction applies normally to their structured JSON)
+- sandbox trap and infrastructure detail is reduced to generic error strings before logging; host-side stack traces and guest internals are never persisted
 
 ## Relationship to Request Logs
 

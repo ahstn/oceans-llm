@@ -1,0 +1,29 @@
+[package]
+name = "code-mode-guest"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# This crate is intentionally excluded from the root workspace: it only
+# compiles to `wasm32-wasip1` and is rebuilt via `mise run code-mode-guest-build`.
+# The compiled artifact is checked in at
+# `crates/gateway-code-mode-wasmtime/guest/code_mode_guest.wasm`.
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# Must stay in lockstep with the `rquickjs` pin in the root workspace
+# Cargo.toml: rquickjs 0.12.0 vendors quickjs-ng 0.15.0.
+rquickjs = "=0.12.0"
+serde_json = "1"
+
+# Release settings tuned for a reproducible, small sandbox artifact: the
+# checked-in wasm bytes are compared by `mise run code-mode-guest-check`.
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
