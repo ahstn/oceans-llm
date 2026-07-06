@@ -5,11 +5,11 @@ use axum::{
     body::{Body, to_bytes},
     extract::State,
     http::{
-        HeaderMap, HeaderName, Request, StatusCode, Uri,
-        header::{CONNECTION, HOST},
+        HeaderMap, HeaderName, HeaderValue, Request, StatusCode, Uri,
+        header::{CONNECTION, HOST, LOCATION},
     },
     response::{IntoResponse, Response},
-    routing::any,
+    routing::{any, get},
 };
 use serde_json::json;
 use tracing::warn;
@@ -18,12 +18,14 @@ use crate::AdminUiConfig;
 
 #[derive(Clone)]
 struct ProxyState {
+    base_path: String,
     upstream: String,
     client: reqwest::Client,
 }
 
 impl ProxyState {
     fn new(config: &AdminUiConfig) -> Self {
+        let base_path = normalize_base_path(&config.base_path);
         let upstream = config.upstream.trim_end_matches('/').to_string();
         let client = reqwest::Client::builder()
             .connect_timeout(Duration::from_millis(config.connect_timeout_ms))
@@ -31,7 +33,11 @@ impl ProxyState {
             .build()
             .expect("failed to build reqwest proxy client");
 
-        Self { upstream, client }
+        Self {
+            base_path,
+            upstream,
+            client,
+        }
     }
 }
 
@@ -43,12 +49,30 @@ pub fn mount_admin_ui(router: Router, config: AdminUiConfig) -> Router {
         format!("{base_path}/{{*path}}")
     };
 
+    let state = ProxyState::new(&config);
     let admin_ui_router = Router::new()
         .route(&base_path, any(proxy_request))
         .route(&wildcard_path, any(proxy_request))
-        .with_state(ProxyState::new(&config));
+        .with_state(state.clone());
+
+    let router = if base_path == "/" {
+        router
+    } else {
+        router.route("/", get(redirect_to_admin_ui).with_state(state.clone()))
+    };
 
     router.merge(admin_ui_router)
+}
+
+async fn redirect_to_admin_ui(State(state): State<ProxyState>) -> Response {
+    Response::builder()
+        .status(StatusCode::FOUND)
+        .header(
+            LOCATION,
+            HeaderValue::from_str(&state.base_path).expect("admin UI base path is a valid header"),
+        )
+        .body(Body::empty())
+        .expect("redirect response should build")
 }
 
 async fn proxy_request(State(state): State<ProxyState>, req: Request<Body>) -> Response {
@@ -330,6 +354,59 @@ mod tests {
             .expect("body to read");
         let body_string = String::from_utf8_lossy(&body);
         assert!(body_string.contains("admin_ui_upstream_unavailable"));
+    }
+
+    #[tokio::test]
+    async fn root_redirects_to_admin_base_path() {
+        let app = mount_admin_ui(Router::new(), AdminUiConfig::default());
+
+        let request = Request::builder()
+            .uri("/")
+            .method("GET")
+            .body(Body::empty())
+            .expect("request must build");
+
+        let response = app
+            .oneshot(request)
+            .await
+            .expect("root redirect should succeed");
+
+        assert_eq!(response.status(), StatusCode::FOUND);
+        assert_eq!(
+            response.headers().get("location"),
+            Some(&HeaderValue::from_static("/admin"))
+        );
+    }
+
+    #[tokio::test]
+    async fn root_mount_proxies_root_instead_of_redirecting_to_itself() {
+        let captured = Arc::new(Mutex::new(Vec::<CapturedRequest>::new()));
+        let upstream = start_upstream(captured.clone()).await;
+
+        let app = mount_admin_ui(
+            Router::new(),
+            AdminUiConfig {
+                base_path: "/".to_string(),
+                upstream,
+                ..AdminUiConfig::default()
+            },
+        );
+
+        let request = Request::builder()
+            .uri("/")
+            .method("GET")
+            .body(Body::empty())
+            .expect("request must build");
+
+        let response = app
+            .oneshot(request)
+            .await
+            .expect("proxy request should succeed");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let captured = captured.lock().expect("capture lock");
+        assert_eq!(captured.len(), 1);
+        assert_eq!(captured[0].path_and_query, "/");
     }
 
     async fn start_upstream(captured: Arc<Mutex<Vec<CapturedRequest>>>) -> String {

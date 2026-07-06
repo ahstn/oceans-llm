@@ -75,7 +75,7 @@ const server = Bun.serve({
   async fetch(request) {
     const url = new URL(request.url)
     if (url.pathname === '/') {
-      return Response.redirect(new URL('/admin', url), 302)
+      return Response.redirect('/admin', 302)
     }
 
     const candidate = resolveStaticAssetRequest(url.pathname)
