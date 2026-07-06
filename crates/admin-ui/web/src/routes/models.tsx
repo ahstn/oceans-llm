@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useState, type ComponentProps, type ReactNode } from 'react'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import {
   AttachmentIcon,
@@ -10,6 +10,7 @@ import {
   HomeIcon,
   LiveStreaming03Icon,
   ToolsIcon,
+  Tick02Icon,
   VisionIcon,
 } from '@hugeicons/core-free-icons'
 import { toast } from 'sonner'
@@ -45,6 +46,7 @@ import {
 } from '@/components/ui/table'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { cn } from '@/lib/utils'
 import { requireAdminSession } from '@/routes/-admin-guard'
 import { getModelClientConfigs, getModels } from '@/server/admin-data.functions'
 import type { ModelView } from '@/types/api'
@@ -100,12 +102,12 @@ export function ModelsPage() {
     selectableModels.every((model) => selectedModelIdSet.has(model.id))
   const desktopTableMinWidth =
     visibleColumns.contextWindow && visibleColumns.capabilities
-      ? 'min-w-[113rem]'
+      ? 'min-w-[105rem]'
       : visibleColumns.capabilities
-        ? 'min-w-[101rem]'
+        ? 'min-w-[93rem]'
         : visibleColumns.contextWindow
-          ? 'min-w-[95rem]'
-          : 'min-w-[83rem]'
+          ? 'min-w-[87rem]'
+          : 'min-w-[75rem]'
 
   function navigateToPage(page: number) {
     void router.navigate({
@@ -249,8 +251,7 @@ export function ModelsPage() {
                   </div>
                   <div className="flex flex-col gap-2">
                     <label className="hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-md px-1 py-1.5 text-sm">
-                      <input
-                        type="checkbox"
+                      <ModelCheckbox
                         className="mt-0.5"
                         checked={visibleColumns.contextWindow}
                         onChange={(event) => {
@@ -269,8 +270,7 @@ export function ModelsPage() {
                       </span>
                     </label>
                     <label className="hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-md px-1 py-1.5 text-sm">
-                      <input
-                        type="checkbox"
+                      <ModelCheckbox
                         className="mt-0.5"
                         checked={visibleColumns.capabilities}
                         onChange={(event) => {
@@ -343,8 +343,7 @@ export function ModelsPage() {
                   <TableHeader className="bg-[color:var(--color-surface-muted)]">
                     <TableRow>
                       <TableHead className="sticky left-0 z-30 w-[3rem] bg-[color:var(--color-surface-muted)] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                        <input
-                          type="checkbox"
+                        <ModelCheckbox
                           aria-label="Select all configurable models"
                           checked={allSelectableSelected}
                           disabled={selectableModels.length === 0}
@@ -354,11 +353,8 @@ export function ModelsPage() {
                       <TableHead className="sticky left-[3rem] z-30 w-[16rem] min-w-[16rem] bg-[color:var(--color-surface-muted)] px-3 py-2 font-semibold text-[var(--color-text-soft)] shadow-[8px_0_12px_-12px_rgba(0,0,0,0.8)]">
                         Model id
                       </TableHead>
-                      <TableHead className="w-[16rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                        Upstream model
-                      </TableHead>
-                      <TableHead className="w-[16rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                        Provider
+                      <TableHead className="w-[24rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                        Provider and model
                       </TableHead>
                       <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
                         Cost / 1M tokens
@@ -385,8 +381,7 @@ export function ModelsPage() {
                     {modelPage.items.map((model) => (
                       <TableRow key={model.id} className="align-middle">
                         <TableCell className="bg-card sticky left-0 z-20 px-3 py-3">
-                          <input
-                            type="checkbox"
+                          <ModelCheckbox
                             aria-label={`Select model ${model.id}`}
                             checked={selectedModelIdSet.has(model.id)}
                             disabled={model.client_configurations.length === 0}
@@ -438,21 +433,14 @@ export function ModelsPage() {
                                 {model.upstream_model ?? 'Not currently routed'}
                               </span>
                             </div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="px-3 py-3">
-                          <div className="flex min-w-0 flex-col gap-2 py-1">
-                            <div className="flex min-w-0 items-center gap-2">
-                              <BrandIcon iconKey={model.provider_icon_key} size={14} />
-                              <span className="truncate text-[var(--color-text)]">
-                                {providerTypeLabel(model)}
-                              </span>
+                            <div className="flex min-w-0 items-center gap-2 truncate text-xs tracking-[0.08em] text-[var(--color-text-soft)]">
+                              <BrandIcon
+                                iconKey={model.provider_icon_key}
+                                size={14}
+                                className="shrink-0"
+                              />
+                              <span className="truncate">{providerTypeLabel(model)}</span>
                             </div>
-                            {model.provider_key && model.provider_label !== model.provider_key ? (
-                              <span className="truncate font-mono text-xs text-[var(--color-text-soft)]">
-                                {model.provider_key}
-                              </span>
-                            ) : null}
                           </div>
                         </TableCell>
                         <TableCell className="px-3 py-3 whitespace-normal">
@@ -650,6 +638,29 @@ function ModelActions({
       </Tooltip>
       <ClientConfigButton model={model} onOpen={onOpenClientConfig} compact />
     </div>
+  )
+}
+
+function ModelCheckbox({
+  className,
+  ...props
+}: Omit<ComponentProps<'input'>, 'type' | 'className'> & {
+  className?: string
+}) {
+  return (
+    <span className={cn('relative inline-flex size-5 shrink-0', className)}>
+      <input
+        type="checkbox"
+        className="peer checked:border-primary checked:bg-primary focus-visible:border-ring focus-visible:ring-ring/50 size-5 shrink-0 appearance-none rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] transition-colors focus-visible:ring-3 disabled:cursor-not-allowed disabled:opacity-50"
+        {...props}
+      />
+      <span
+        aria-hidden="true"
+        className="text-primary-foreground pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity peer-checked:opacity-100"
+      >
+        <AppIcon icon={Tick02Icon} size={14} stroke={2.5} />
+      </span>
+    </span>
   )
 }
 
