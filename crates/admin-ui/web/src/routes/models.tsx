@@ -710,7 +710,7 @@ function ModelInfoDialog({
 
   return (
     <Dialog open={model !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[calc(100dvh-2rem)] w-[min(920px,calc(100vw-32px))] flex-col overflow-hidden sm:max-h-[82vh]">
+      <DialogContent className="flex max-h-[calc(100dvh-2rem)] w-[min(1080px,calc(100vw-32px))] max-w-[calc(100vw-2rem)] flex-col overflow-hidden sm:max-h-[82vh] sm:max-w-[min(1080px,calc(100vw-2rem))]">
         {model ? (
           <>
             <DialogHeader>
@@ -722,10 +722,10 @@ function ModelInfoDialog({
               </DialogDescription>
             </DialogHeader>
 
-            <div className="grid min-h-0 flex-1 overflow-hidden border-t md:grid-cols-[11rem_minmax(0,1fr)]">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-t">
               <nav
                 aria-label="Model info sections"
-                className="flex gap-1 overflow-x-auto border-b py-3 md:flex-col md:overflow-visible md:border-r md:border-b-0 md:pr-3"
+                className="flex gap-3 overflow-x-auto border-b py-3"
               >
                 {sections.map((section) => (
                   <Button
@@ -733,7 +733,7 @@ function ModelInfoDialog({
                     type="button"
                     variant={activeSection === section.key ? 'secondary' : 'ghost'}
                     size="sm"
-                    className="justify-start"
+                    className="justify-start px-3"
                     onClick={() => onActiveSectionChange(section.key)}
                   >
                     {section.label}
@@ -741,7 +741,7 @@ function ModelInfoDialog({
                 ))}
               </nav>
 
-              <div className="min-w-0 overflow-y-auto py-4 md:pl-5">
+              <div className="min-w-0 overflow-y-auto py-5">
                 <div className="flex min-w-0 flex-col gap-4">
                   <div>
                     <h3 className="text-sm font-medium text-[var(--color-text)]">{activeLabel}</h3>
@@ -859,7 +859,7 @@ function ModelInfoRow({
   value: ReactNode
 }) {
   return (
-    <div className="grid min-w-0 gap-2 py-3 text-sm sm:grid-cols-[9rem_minmax(0,1fr)]">
+    <div className="grid min-w-0 gap-2 py-3 text-sm sm:grid-cols-[14rem_minmax(0,1fr)]">
       <dt className="text-[var(--color-text-soft)]">{label}</dt>
       <dd
         className={
