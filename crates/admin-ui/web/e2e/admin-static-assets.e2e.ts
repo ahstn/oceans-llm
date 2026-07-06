@@ -2,6 +2,14 @@ import { expect, test } from 'playwright/test'
 
 import { requireEnv } from './env'
 
+test('bare root redirects into the admin app', async ({ request, baseURL }) => {
+  const root = baseURL ?? requireEnv('E2E_BASE_URL')
+  const response = await request.get(root, { maxRedirects: 0 })
+
+  expect(response.status()).toBe(302)
+  expect(response.headers().location).toBe('/admin')
+})
+
 function extractAttribute(tag: string, name: string): string | null {
   const match = tag.match(new RegExp(`\\s${name}=(['"])(.*?)\\1`, 'i'))
   return match?.[2] ?? null
