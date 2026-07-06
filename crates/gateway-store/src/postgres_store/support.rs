@@ -498,6 +498,8 @@ pub(super) fn decode_budget_record(row: &PgRow) -> Result<BudgetRecord, StoreErr
     let is_active: i64 = row.try_get(11).map_err(to_query_error)?;
     let created_at: i64 = row.try_get(12).map_err(to_query_error)?;
     let updated_at: i64 = row.try_get(13).map_err(to_query_error)?;
+    let source_kind: String = row.try_get(14).map_err(to_query_error)?;
+    let source_key: Option<String> = row.try_get(15).map_err(to_query_error)?;
 
     let scope = match BudgetScopeKind::from_db(&scope_kind).ok_or_else(|| {
         StoreError::Serialization(format!("unknown budget scope kind `{scope_kind}`"))
@@ -540,6 +542,12 @@ pub(super) fn decode_budget_record(row: &PgRow) -> Result<BudgetRecord, StoreErr
             amount_usd: Money4::from_scaled(amount_10000),
             hard_limit: hard_limit == 1,
             timezone: row.try_get(10).map_err(to_query_error)?,
+        },
+        source: BudgetSource {
+            kind: BudgetSourceKind::from_db(&source_kind).ok_or_else(|| {
+                StoreError::Serialization(format!("unknown budget source kind `{source_kind}`"))
+            })?,
+            key: source_key,
         },
         is_active: is_active == 1,
         created_at: unix_to_datetime(created_at)?,

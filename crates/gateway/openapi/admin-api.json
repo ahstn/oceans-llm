@@ -5417,6 +5417,23 @@
           }
         }
       },
+      "BudgetSourceView": {
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": "string"
+          }
+        }
+      },
       "BudgetUserModelByModelScopeRequest": {
         "type": "object",
         "required": [
@@ -7745,6 +7762,7 @@
               "scope",
               "scope_key",
               "budget",
+              "budget_source",
               "current_window_spend_usd_10000"
             ],
             "properties": {
@@ -7753,6 +7771,9 @@
               },
               "budget_id": {
                 "type": "string"
+              },
+              "budget_source": {
+                "$ref": "#/components/schemas/BudgetSourceView"
               },
               "current_window_spend_usd_10000": {
                 "type": "integer",
@@ -10085,6 +10106,16 @@
               }
             ]
           },
+          "budget_source": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BudgetSourceView"
+              }
+            ]
+          },
           "current_window_spend_usd_10000": {
             "type": "integer",
             "format": "int64"
@@ -10116,6 +10147,7 @@
           "scope_key",
           "user_id",
           "budget",
+          "budget_source",
           "current_window_spend_usd_10000",
           "alert_email_ready",
           "alert_recipient_summary"
@@ -10132,6 +10164,9 @@
           },
           "budget_id": {
             "type": "string"
+          },
+          "budget_source": {
+            "$ref": "#/components/schemas/BudgetSourceView"
           },
           "current_window_spend_usd_10000": {
             "type": "integer",
@@ -10181,6 +10216,16 @@
               },
               {
                 "$ref": "#/components/schemas/BudgetSettingsView"
+              }
+            ]
+          },
+          "budget_source": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BudgetSourceView"
               }
             ]
           },
@@ -10676,6 +10721,7 @@
           "scope",
           "scope_key",
           "budget",
+          "budget_source",
           "current_window_spend_usd_10000"
         ],
         "properties": {
@@ -10684,6 +10730,9 @@
           },
           "budget_id": {
             "type": "string"
+          },
+          "budget_source": {
+            "$ref": "#/components/schemas/BudgetSourceView"
           },
           "current_window_spend_usd_10000": {
             "type": "integer",

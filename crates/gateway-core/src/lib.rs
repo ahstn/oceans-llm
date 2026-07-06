@@ -11,7 +11,8 @@ pub use auth::{
     AuthenticatedApiKey, ParsedGatewayApiKey, extract_bearer_token, parse_gateway_api_key,
 };
 pub use budgets::{
-    BudgetModelSelector, BudgetRecord, BudgetScope, BudgetScopeKind, BudgetSettings,
+    BudgetModelSelector, BudgetRecord, BudgetScope, BudgetScopeKind, BudgetSettings, BudgetSource,
+    BudgetSourceKind,
 };
 pub use domain::{
     ApiKeyModelGrantMode, ApiKeyOwnerKind, ApiKeyRecord, ApiKeySecretMaterialRecord,
@@ -50,16 +51,17 @@ pub use domain::{
     ReviewAgentRepositoryRecord, ReviewAgentRepositoryStatus, ReviewAgentRunRecord,
     ReviewAgentRunStatus, ReviewAgentSettings, RouteCompatibility, SYSTEM_BOOTSTRAP_ADMIN_EMAIL,
     SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SeedApiKey, SeedApiKeySecretMaterial, SeedBudget,
-    SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute, SeedOauthProvider,
-    SeedOidcProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership,
-    ServiceAccountRecord, ServiceAccountStatus, SpendDailyAggregateRecord,
-    SpendModelAggregateRecord, SpendOwnerAggregateRecord, TeamMembershipRecord, TeamRecord,
-    UpdateExternalMcpServerRecord, UpdateMcpToolsetRecord, UpdateReviewAgentRepositoryRecord,
-    UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
-    UpsertMcpUpstreamCredentialBindingRecord, UpsertReviewAgentPullRequestRecord,
-    UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord, UsageLedgerRecord,
-    UsagePricingStatus, UserOauthAuthRecord, UserOidcAuthRecord, UserPasswordAuthRecord,
-    UserRecord, UserSessionRecord, UserStatus, VERTEX_TEXT_EMBEDDING_MODEL_IDS, budget_window_utc,
+    SeedHumanBudgetDefaults, SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute,
+    SeedOauthProvider, SeedOidcProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser,
+    SeedUserMembership, SeedUserModelBudgetDefault, ServiceAccountRecord, ServiceAccountStatus,
+    SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendOwnerAggregateRecord,
+    TeamMembershipRecord, TeamRecord, UpdateExternalMcpServerRecord, UpdateMcpToolsetRecord,
+    UpdateReviewAgentRepositoryRecord, UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord,
+    UpsertMcpToolGrantRecord, UpsertMcpUpstreamCredentialBindingRecord,
+    UpsertReviewAgentPullRequestRecord, UsageLeaderboardBucketRecord, UsageLeaderboardUserRecord,
+    UsageLedgerRecord, UsagePricingStatus, UserOauthAuthRecord, UserOidcAuthRecord,
+    UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
+    VERTEX_TEXT_EMBEDDING_MODEL_IDS, budget_window_utc,
     is_supported_vertex_text_embedding_model_id, is_supported_vertex_text_embedding_upstream_model,
     vertex_route_capabilities_for_upstream_model, vertex_text_embedding_capabilities,
 };

@@ -19,6 +19,7 @@ const routerMock = {
 }
 
 const createGatewayApiKeyMock = vi.fn()
+const revealGatewayApiKeySecretMock = vi.fn()
 const revokeGatewayApiKeyMock = vi.fn()
 const updateGatewayApiKeyMock = vi.fn()
 
@@ -37,6 +38,7 @@ vi.mock('sonner', () => ({
 vi.mock('@/server/admin-data.functions', () => ({
   createGatewayApiKey: (...args: unknown[]) => createGatewayApiKeyMock(...args),
   getApiKeys: vi.fn(),
+  revealGatewayApiKeySecret: (...args: unknown[]) => revealGatewayApiKeySecretMock(...args),
   revokeGatewayApiKey: (...args: unknown[]) => revokeGatewayApiKeyMock(...args),
   updateGatewayApiKey: (...args: unknown[]) => updateGatewayApiKeyMock(...args),
 }))
@@ -113,6 +115,7 @@ describe('ApiKeysPage', () => {
     routeMock.useSearch.mockReturnValue({ api_key_id: undefined })
     routerMock.invalidate.mockClear()
     createGatewayApiKeyMock.mockReset()
+    revealGatewayApiKeySecretMock.mockReset()
     revokeGatewayApiKeyMock.mockReset()
     updateGatewayApiKeyMock.mockReset()
     Object.assign(navigator, {
@@ -383,6 +386,19 @@ describe('ApiKeysPage', () => {
     expect(within(dialog).getByText('2026-03-14')).toBeInTheDocument()
     expect(within(dialog).getByText('2026-03-18 09:15')).toBeInTheDocument()
 
+    const summary = within(dialog).getByTestId('manage-api-key-summary')
+    expect(summary).toHaveClass('border-y')
+    expect(summary).not.toHaveClass('rounded-lg')
+    expect(summary).not.toHaveClass('bg-[color:var(--color-surface-muted)]')
+
+    const metadata = within(dialog).getByTestId('manage-api-key-metadata')
+    expect(metadata).toHaveClass('divide-y')
+    expect(within(metadata).getByText('Owner').closest('div')).toHaveTextContent('Jane Admin')
+    expect(within(metadata).getByText('Created').closest('div')).toHaveTextContent('2026-03-14')
+    expect(within(metadata).getByText('Last used').closest('div')).toHaveTextContent(
+      '2026-03-18 09:15',
+    )
+
     const saveButton = within(dialog).getByRole('button', { name: 'Save access' })
     expect(saveButton).toBeDisabled()
 
@@ -401,6 +417,57 @@ describe('ApiKeysPage', () => {
       },
     })
     expect(routerMock.invalidate).toHaveBeenCalledTimes(1)
+  })
+
+  it('reveals and copies retrievable service-account-owned API keys from the manage dialog', async () => {
+    revealGatewayApiKeySecretMock.mockResolvedValue({
+      data: { raw_key: 'gwk_service_account.secret-value' },
+    })
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        ...basePayload,
+        items: [
+          {
+            ...basePayload.items[0],
+            owner_kind: 'service_account',
+            owner_id: 'service_account_1',
+            owner_name: 'Deploy Bot',
+            owner_email: null,
+            owner_team_key: 'core-platform',
+            owner_service_account_key: 'deploy-bot',
+            owner_service_account_team_id: 'team_1',
+            owner_service_account_team_key: 'core-platform',
+          },
+        ],
+      },
+    })
+
+    const { ApiKeysPage } = await import('@/routes/api-keys')
+
+    render(<ApiKeysPage />)
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Manage' })[0])
+
+    const dialog = screen.getByRole('dialog', { name: 'Manage API key' })
+    expect(within(dialog).getByText('Credential secret')).toBeInTheDocument()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Reveal API key' }))
+
+    await waitFor(() => expect(revealGatewayApiKeySecretMock).toHaveBeenCalledTimes(1))
+    expect(revealGatewayApiKeySecretMock).toHaveBeenCalledWith({
+      data: { apiKeyId: 'api_key_1' },
+    })
+    expect(await within(dialog).findByTestId('manage-api-key-raw-key')).toHaveTextContent(
+      'gwk_service_account.secret-value',
+    )
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Copy API key' }))
+
+    await waitFor(() =>
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+        'gwk_service_account.secret-value',
+      ),
+    )
   })
 
   it('revokes from the manage dialog lifecycle section', async () => {

@@ -2620,6 +2620,21 @@ pub struct SeedBudget {
     pub timezone: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SeedHumanBudgetDefaults {
+    #[serde(default)]
+    pub default_user_budget: Option<SeedBudget>,
+    #[serde(default)]
+    pub model_defaults: Vec<SeedUserModelBudgetDefault>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeedUserModelBudgetDefault {
+    pub model_key: String,
+    pub model_id: Uuid,
+    pub budget: SeedBudget,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SeedTeam {
     pub team_key: String,

@@ -11,10 +11,33 @@ impl BudgetRepository for PostgresStore {
             r#"
             SELECT budget_id, scope_kind, scope_key, user_id, service_account_id, model_id,
                    upstream_model, cadence, amount_10000, hard_limit, timezone, is_active,
-                   created_at, updated_at
+                   created_at, updated_at, source_kind, source_key
             FROM budgets
             WHERE scope_key = $1
               AND is_active = 1
+            LIMIT 1
+            "#,
+        )
+        .bind(scope.scope_key())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+
+        row.as_ref().map(decode_budget_record).transpose()
+    }
+
+    async fn get_latest_budget_by_scope(
+        &self,
+        scope: &BudgetScope,
+    ) -> Result<Option<BudgetRecord>, StoreError> {
+        let row = sqlx::query(
+            r#"
+            SELECT budget_id, scope_kind, scope_key, user_id, service_account_id, model_id,
+                   upstream_model, cadence, amount_10000, hard_limit, timezone, is_active,
+                   created_at, updated_at, source_kind, source_key
+            FROM budgets
+            WHERE scope_key = $1
+            ORDER BY updated_at DESC, created_at DESC
             LIMIT 1
             "#,
         )
@@ -35,7 +58,7 @@ impl BudgetRepository for PostgresStore {
                 r#"
                 SELECT budget_id, scope_kind, scope_key, user_id, service_account_id, model_id,
                        upstream_model, cadence, amount_10000, hard_limit, timezone, is_active,
-                       created_at, updated_at
+                       created_at, updated_at, source_kind, source_key
                 FROM budgets
                 WHERE scope_kind = $1
                   AND is_active = 1
@@ -51,7 +74,7 @@ impl BudgetRepository for PostgresStore {
                 r#"
                 SELECT budget_id, scope_kind, scope_key, user_id, service_account_id, model_id,
                        upstream_model, cadence, amount_10000, hard_limit, timezone, is_active,
-                       created_at, updated_at
+                       created_at, updated_at, source_kind, source_key
                 FROM budgets
                 WHERE is_active = 1
                 ORDER BY updated_at DESC, scope_key ASC
@@ -70,19 +93,32 @@ impl BudgetRepository for PostgresStore {
         settings: &BudgetSettings,
         updated_at: OffsetDateTime,
     ) -> Result<BudgetRecord, StoreError> {
+        self.upsert_active_budget_with_source(scope, settings, &BudgetSource::manual(), updated_at)
+            .await
+    }
+
+    async fn upsert_active_budget_with_source(
+        &self,
+        scope: &BudgetScope,
+        settings: &BudgetSettings,
+        source: &BudgetSource,
+        updated_at: OffsetDateTime,
+    ) -> Result<BudgetRecord, StoreError> {
         sqlx::query(
             r#"
             INSERT INTO budgets (
                 budget_id, scope_kind, scope_key, user_id, service_account_id, model_id,
                 upstream_model, cadence, amount_10000, hard_limit, timezone, is_active,
-                created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 1, $12, $13)
+                created_at, updated_at, source_kind, source_key
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 1, $12, $13, $14, $15)
             ON CONFLICT (scope_key) WHERE is_active = 1
             DO UPDATE SET
                 cadence = excluded.cadence,
                 amount_10000 = excluded.amount_10000,
                 hard_limit = excluded.hard_limit,
                 timezone = excluded.timezone,
+                source_kind = excluded.source_kind,
+                source_key = excluded.source_key,
                 updated_at = excluded.updated_at
             "#,
         )
@@ -99,6 +135,8 @@ impl BudgetRepository for PostgresStore {
         .bind(&settings.timezone)
         .bind(updated_at.unix_timestamp())
         .bind(updated_at.unix_timestamp())
+        .bind(source.kind.as_str())
+        .bind(source.key.as_deref())
         .execute(&self.pool)
         .await
         .map_err(to_query_error)?;
@@ -110,9 +148,114 @@ impl BudgetRepository for PostgresStore {
             })
     }
 
+    async fn upsert_active_budget_with_source_guard(
+        &self,
+        scope: &BudgetScope,
+        settings: &BudgetSettings,
+        source: &BudgetSource,
+        expected_current_source: Option<&BudgetSource>,
+        updated_at: OffsetDateTime,
+    ) -> Result<Option<BudgetRecord>, StoreError> {
+        if let Some(expected_source) = expected_current_source {
+            sqlx::query(
+                r#"
+                UPDATE budgets
+                SET cadence = $1,
+                    amount_10000 = $2,
+                    hard_limit = $3,
+                    timezone = $4,
+                    source_kind = $5,
+                    source_key = $6,
+                    updated_at = $7
+                WHERE scope_key = $8
+                  AND is_active = 1
+                  AND source_kind = $9
+                  AND source_key IS NOT DISTINCT FROM $10
+                "#,
+            )
+            .bind(settings.cadence.as_str())
+            .bind(settings.amount_usd.as_scaled_i64())
+            .bind(if settings.hard_limit { 1_i64 } else { 0_i64 })
+            .bind(&settings.timezone)
+            .bind(source.kind.as_str())
+            .bind(source.key.as_deref())
+            .bind(updated_at.unix_timestamp())
+            .bind(scope.scope_key())
+            .bind(expected_source.kind.as_str())
+            .bind(expected_source.key.as_deref())
+            .execute(&self.pool)
+            .await
+            .map_err(to_query_error)?;
+        } else {
+            sqlx::query(
+                r#"
+                INSERT INTO budgets (
+                    budget_id, scope_kind, scope_key, user_id, service_account_id, model_id,
+                    upstream_model, cadence, amount_10000, hard_limit, timezone, is_active,
+                    created_at, updated_at, source_kind, source_key
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 1, $12, $13, $14, $15)
+                ON CONFLICT (scope_key) WHERE is_active = 1
+                DO NOTHING
+                "#,
+            )
+            .bind(Uuid::new_v4().to_string())
+            .bind(scope.kind().as_str())
+            .bind(scope.scope_key())
+            .bind(scope.user_id().map(|id| id.to_string()))
+            .bind(scope.service_account_id().map(|id| id.to_string()))
+            .bind(scope.model_id().map(|id| id.to_string()))
+            .bind(scope.upstream_model().map(ToOwned::to_owned))
+            .bind(settings.cadence.as_str())
+            .bind(settings.amount_usd.as_scaled_i64())
+            .bind(if settings.hard_limit { 1_i64 } else { 0_i64 })
+            .bind(&settings.timezone)
+            .bind(updated_at.unix_timestamp())
+            .bind(updated_at.unix_timestamp())
+            .bind(source.kind.as_str())
+            .bind(source.key.as_deref())
+            .execute(&self.pool)
+            .await
+            .map_err(to_query_error)?;
+        }
+
+        match self.get_active_budget_by_scope(scope).await? {
+            Some(budget) if budget.source.matches(source) => Ok(Some(budget)),
+            Some(_) | None => Ok(None),
+        }
+    }
+
     async fn deactivate_active_budget(
         &self,
         scope: &BudgetScope,
+        updated_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        let source = BudgetSource::manual_deactivated();
+        let updated = sqlx::query(
+            r#"
+            UPDATE budgets
+            SET is_active = 0,
+                updated_at = $1,
+                source_kind = $3,
+                source_key = $4
+            WHERE scope_key = $2
+              AND is_active = 1
+            "#,
+        )
+        .bind(updated_at.unix_timestamp())
+        .bind(scope.scope_key())
+        .bind(source.kind.as_str())
+        .bind(source.key)
+        .execute(&self.pool)
+        .await
+        .map_err(to_query_error)?
+        .rows_affected();
+        Ok(updated > 0)
+    }
+
+    async fn deactivate_active_budget_by_source(
+        &self,
+        scope: &BudgetScope,
+        source: &BudgetSource,
         updated_at: OffsetDateTime,
     ) -> Result<bool, StoreError> {
         let updated = sqlx::query(
@@ -122,10 +265,14 @@ impl BudgetRepository for PostgresStore {
                 updated_at = $1
             WHERE scope_key = $2
               AND is_active = 1
+              AND source_kind = $3
+              AND source_key IS NOT DISTINCT FROM $4
             "#,
         )
         .bind(updated_at.unix_timestamp())
         .bind(scope.scope_key())
+        .bind(source.kind.as_str())
+        .bind(source.key.as_deref())
         .execute(&self.pool)
         .await
         .map_err(to_query_error)?

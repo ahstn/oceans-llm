@@ -714,6 +714,12 @@ pub struct BudgetSettingsView {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+pub struct BudgetSourceView {
+    pub kind: String,
+    pub key: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
 pub struct SpendBudgetUserView {
     pub user_id: String,
     pub name: String,
@@ -721,6 +727,7 @@ pub struct SpendBudgetUserView {
     pub team_id: Option<String>,
     pub team_name: Option<String>,
     pub budget: Option<BudgetSettingsView>,
+    pub budget_source: Option<BudgetSourceView>,
     pub current_window_spend_usd_10000: i64,
     pub alert_email_ready: bool,
     pub alert_recipient_summary: String,
@@ -734,6 +741,7 @@ pub struct SpendBudgetUserModelView {
     pub model_id: Option<String>,
     pub upstream_model: Option<String>,
     pub budget: BudgetSettingsView,
+    pub budget_source: BudgetSourceView,
     pub current_window_spend_usd_10000: i64,
     pub alert_email_ready: bool,
     pub alert_recipient_summary: String,
@@ -748,6 +756,7 @@ pub struct SpendBudgetServiceAccountView {
     pub team_name: String,
     pub team_key: String,
     pub budget: Option<BudgetSettingsView>,
+    pub budget_source: Option<BudgetSourceView>,
     pub current_window_spend_usd_10000: i64,
     pub alert_email_ready: bool,
     pub alert_recipient_summary: String,
@@ -888,6 +897,7 @@ pub struct UpsertBudgetResultView {
     pub scope: BudgetScopeView,
     pub scope_key: String,
     pub budget: BudgetSettingsView,
+    pub budget_source: BudgetSourceView,
     pub current_window_spend_usd_10000: i64,
 }
 

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use gateway_core::ProviderRegistry;
+use gateway_core::{ProviderRegistry, SeedHumanBudgetDefaults};
 use gateway_service::{GatewayService, WeightedRoutePlanner};
 use gateway_store::AnyStore;
 
@@ -19,4 +19,5 @@ pub struct AppState {
     pub oidc_public_base_url: Arc<Option<String>>,
     pub oauth_public_base_url: Arc<Option<String>>,
     pub client_config_gateway_base_url: Arc<Option<String>>,
+    pub budget_defaults: Arc<SeedHumanBudgetDefaults>,
 }

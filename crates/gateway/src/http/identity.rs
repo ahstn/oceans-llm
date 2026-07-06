@@ -754,6 +754,14 @@ pub async fn create_identity_user(
             .set_user_oauth_link(user.user_id, &provider.oauth_provider_id, created_at)
             .await?;
     }
+    state
+        .store
+        .apply_human_budget_defaults_for_user(
+            state.budget_defaults.as_ref(),
+            user.user_id,
+            created_at,
+        )
+        .await?;
 
     let response = build_onboarding_response(
         &state,
@@ -1363,6 +1371,10 @@ pub async fn oidc_callback(
         if user.status == UserStatus::Disabled {
             return Ok(oidc_error_redirect("denied"));
         }
+        state
+            .store
+            .apply_human_budget_defaults_for_user(state.budget_defaults.as_ref(), user.user_id, now)
+            .await?;
         if user.status == UserStatus::Invited {
             state
                 .store
@@ -1387,6 +1399,10 @@ pub async fn oidc_callback(
                 Some(email.as_str()),
                 now,
             )
+            .await?;
+        state
+            .store
+            .apply_human_budget_defaults_for_user(state.budget_defaults.as_ref(), user.user_id, now)
             .await?;
         state
             .store
@@ -1598,6 +1614,10 @@ pub async fn oauth_callback_github(
         if user.status == UserStatus::Disabled {
             return Ok(oidc_error_redirect("denied"));
         }
+        state
+            .store
+            .apply_human_budget_defaults_for_user(state.budget_defaults.as_ref(), user.user_id, now)
+            .await?;
         if user.status == UserStatus::Invited {
             state
                 .store
@@ -1622,6 +1642,10 @@ pub async fn oauth_callback_github(
                 Some(email.as_str()),
                 now,
             )
+            .await?;
+        state
+            .store
+            .apply_human_budget_defaults_for_user(state.budget_defaults.as_ref(), user.user_id, now)
             .await?;
         state
             .store
@@ -1966,6 +1990,10 @@ async fn create_jit_oidc_user(
         .await?;
     state
         .store
+        .apply_human_budget_defaults_for_user(state.budget_defaults.as_ref(), user.user_id, now)
+        .await?;
+    state
+        .store
         .update_user_status(user.user_id, UserStatus::Active, now)
         .await?;
 
@@ -2044,6 +2072,10 @@ async fn create_jit_oauth_user(
             Some(email),
             now,
         )
+        .await?;
+    state
+        .store
+        .apply_human_budget_defaults_for_user(state.budget_defaults.as_ref(), user.user_id, now)
         .await?;
     state
         .store

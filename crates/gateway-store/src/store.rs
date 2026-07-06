@@ -9,9 +9,10 @@ use gateway_core::{
     MembershipRole, ModelRepository, OauthLoginStateRecord, OauthProviderRecord,
     OidcLoginStateRecord, OidcProviderRecord, PasswordInvitationRecord, PricingCatalogRepository,
     ProviderRepository, RequestLogRepository, RequestTag, ReviewAgentRepository, SeedApiKey,
-    SeedModel, SeedOauthProvider, SeedOidcProvider, SeedProvider, SeedServiceAccount, SeedTeam,
-    SeedUser, StoreError, StoreHealth, TeamMembershipRecord, TeamRecord, UserOauthAuthRecord,
-    UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord, UserSessionRecord, UserStatus,
+    SeedHumanBudgetDefaults, SeedModel, SeedOauthProvider, SeedOidcProvider, SeedProvider,
+    SeedServiceAccount, SeedTeam, SeedUser, StoreError, StoreHealth, TeamMembershipRecord,
+    TeamRecord, UserOauthAuthRecord, UserOidcAuthRecord, UserPasswordAuthRecord, UserRecord,
+    UserSessionRecord, UserStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -366,6 +367,17 @@ pub trait GatewayStore:
         teams: &[SeedTeam],
         users: &[SeedUser],
     ) -> Result<(), StoreError>;
+    async fn reconcile_human_budget_defaults(
+        &self,
+        defaults: &SeedHumanBudgetDefaults,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError>;
+    async fn apply_human_budget_defaults_for_user(
+        &self,
+        defaults: &SeedHumanBudgetDefaults,
+        user_id: Uuid,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError>;
 }
 
 #[derive(Clone)]
@@ -654,6 +666,13 @@ impl BudgetRepository for AnyStore {
         dispatch_store!(self, get_active_budget_by_scope(scope))
     }
 
+    async fn get_latest_budget_by_scope(
+        &self,
+        scope: &gateway_core::BudgetScope,
+    ) -> Result<Option<gateway_core::BudgetRecord>, StoreError> {
+        dispatch_store!(self, get_latest_budget_by_scope(scope))
+    }
+
     async fn list_active_budgets(
         &self,
         scope_kind: Option<gateway_core::BudgetScopeKind>,
@@ -670,12 +689,57 @@ impl BudgetRepository for AnyStore {
         dispatch_store!(self, upsert_active_budget(scope, settings, updated_at))
     }
 
+    async fn upsert_active_budget_with_source(
+        &self,
+        scope: &gateway_core::BudgetScope,
+        settings: &gateway_core::BudgetSettings,
+        source: &gateway_core::BudgetSource,
+        updated_at: OffsetDateTime,
+    ) -> Result<gateway_core::BudgetRecord, StoreError> {
+        dispatch_store!(
+            self,
+            upsert_active_budget_with_source(scope, settings, source, updated_at)
+        )
+    }
+
+    async fn upsert_active_budget_with_source_guard(
+        &self,
+        scope: &gateway_core::BudgetScope,
+        settings: &gateway_core::BudgetSettings,
+        source: &gateway_core::BudgetSource,
+        expected_current_source: Option<&gateway_core::BudgetSource>,
+        updated_at: OffsetDateTime,
+    ) -> Result<Option<gateway_core::BudgetRecord>, StoreError> {
+        dispatch_store!(
+            self,
+            upsert_active_budget_with_source_guard(
+                scope,
+                settings,
+                source,
+                expected_current_source,
+                updated_at
+            )
+        )
+    }
+
     async fn deactivate_active_budget(
         &self,
         scope: &gateway_core::BudgetScope,
         updated_at: OffsetDateTime,
     ) -> Result<bool, StoreError> {
         dispatch_store!(self, deactivate_active_budget(scope, updated_at))
+    }
+
+    async fn deactivate_active_budget_by_source(
+        &self,
+        scope: &gateway_core::BudgetScope,
+        source: &gateway_core::BudgetSource,
+        updated_at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        dispatch_store!(
+            self,
+            deactivate_active_budget_by_source(scope, source, updated_at)
+        )
     }
 
     async fn get_usage_ledger_by_request_and_scope(
@@ -1644,6 +1708,26 @@ impl GatewayStore for AnyStore {
                 teams,
                 users
             )
+        )
+    }
+
+    async fn reconcile_human_budget_defaults(
+        &self,
+        defaults: &SeedHumanBudgetDefaults,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(self, reconcile_human_budget_defaults(defaults, updated_at))
+    }
+
+    async fn apply_human_budget_defaults_for_user(
+        &self,
+        defaults: &SeedHumanBudgetDefaults,
+        user_id: Uuid,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(
+            self,
+            apply_human_budget_defaults_for_user(defaults, user_id, updated_at)
         )
     }
 }
