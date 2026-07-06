@@ -26,14 +26,18 @@ jobs:
     timeout-minutes: 10
 
     steps:
+      - name: Checkout action source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Setup mise + tools
+        uses: jdx/mise-action@e79ddf65a11cec7b0e882bedced08d6e976efb2d
+
       - name: Checkout PR head
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           ref: refs/pull/${{ inputs.pr_number }}/head
+          path: review-target
           fetch-depth: 0
-
-      - name: Setup mise + tools
-        uses: jdx/mise-action@e79ddf65a11cec7b0e882bedced08d6e976efb2d
 
       - name: Verify self-hosted runner
         run: |
@@ -43,6 +47,7 @@ jobs:
           echo "arch=${RUNNER_ARCH}"
           uname -a
           mise exec -- node --version
+          git -C review-target rev-parse HEAD
 
       - name: Build pull request event payload
         env:
@@ -193,18 +198,36 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          test -f actions/review-agent/action.yml
-          test -f actions/review-agent/dist/index.js
+          action_root="${GITHUB_WORKSPACE}/actions/review-agent"
+          target_workspace="${GITHUB_WORKSPACE}/review-target"
+
+          if [[ ! -f "${action_root}/action.yml" ]]; then
+            echo "::error::Review-agent action metadata is missing at ${action_root}/action.yml"
+            exit 1
+          fi
+          if [[ ! -f "${action_root}/dist/index.js" ]]; then
+            echo "::error::Review-agent action bundle is missing at ${action_root}/dist/index.js"
+            exit 1
+          fi
+          if [[ ! -d "${target_workspace}/.git" ]]; then
+            echo "::error::Review target checkout is missing at ${target_workspace}"
+            exit 1
+          fi
+
+          echo "action_root=${action_root}"
+          echo "target_workspace=${target_workspace}"
+          git -C "${target_workspace}" rev-parse HEAD
 
           env \
             "GITHUB_EVENT_NAME=pull_request" \
             "GITHUB_EVENT_PATH=${REVIEW_AGENT_EVENT_PATH}" \
+            "GITHUB_WORKSPACE=${target_workspace}" \
             "INPUT_OCEANS-URL=${MOCK_OCEANS_URL}" \
             "INPUT_OCEANS-API-KEY=smoke-oceans-api-key" \
             "INPUT_DRY-RUN=true" \
             "INPUT_TIMEOUT-MINUTES=2" \
             "INPUT_GITHUB-TOKEN=${GH_TOKEN}" \
-            mise exec -- node actions/review-agent/dist/index.js
+            mise exec -- node "${action_root}/dist/index.js"
 
       - name: Stop mock Oceans API
         if: always()
