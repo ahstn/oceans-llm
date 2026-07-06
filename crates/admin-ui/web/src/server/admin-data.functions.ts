@@ -47,6 +47,7 @@ import {
   listOidcProviders,
   loginWithPassword,
   logoutCurrentSession,
+  revealApiKeySecret,
   removeTeamMember,
   revokeApiKey,
   refreshMcpServerDiscovery,
@@ -82,6 +83,12 @@ export const createGatewayApiKey = createServerFn({ method: 'POST' }).handler(
 export const revokeGatewayApiKey = createServerFn({ method: 'POST' }).handler(
   async ({ data }: { data: { apiKeyId: string } }) => {
     return revokeApiKey(data.apiKeyId)
+  },
+)
+
+export const revealGatewayApiKeySecret = createServerFn({ method: 'POST' }).handler(
+  async ({ data }: { data: { apiKeyId: string } }) => {
+    return revealApiKeySecret(data.apiKeyId)
   },
 )
 

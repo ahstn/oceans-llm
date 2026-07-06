@@ -70,12 +70,15 @@ export function ApiKeysPage() {
         isPending={state.isPending}
         modelOptions={models}
         open={state.manageDialog.mode === 'open'}
+        revealedKey={state.revealedManageKey}
         submitDisabled={state.isManageDisabled}
         target={state.manageTarget}
         onModelGrantModeChange={state.actions.updateManageModelGrantMode}
         onModelToggle={state.actions.toggleManageModelKey}
         onOpenChange={(open) => (!open ? state.actions.closeManageDialog() : undefined)}
+        onReveal={state.actions.handleRevealManageApiKey}
         onRevoke={state.actions.handleRevokeApiKey}
+        onCopy={state.actions.handleCopy}
         onSubmit={state.actions.handleUpdateApiKey}
       />
     </div>

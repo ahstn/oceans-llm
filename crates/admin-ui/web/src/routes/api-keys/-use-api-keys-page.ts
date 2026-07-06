@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 
 import {
   createGatewayApiKey,
+  revealGatewayApiKeySecret,
   revokeGatewayApiKey,
   updateGatewayApiKey,
 } from '@/server/admin-data.functions'
@@ -45,6 +46,7 @@ export function useApiKeysPageState({
   const [manageForm, setManageForm] = useState<UpdateApiKeyInput>(initialManageForm)
   const [createdResult, setCreatedResult] = useState<CreateApiKeyResult | null>(null)
   const [manageDialog, setManageDialog] = useState<ManageDialogState>({ mode: 'closed' })
+  const [revealedManageKey, setRevealedManageKey] = useState<string | null>(null)
   const [isMutating, setIsMutating] = useState(false)
   const handledFocusedApiKeyId = useRef<string | null>(null)
 
@@ -93,11 +95,13 @@ export function useApiKeysPageState({
       model_grant_mode: target?.model_grant_mode ?? 'explicit',
       model_keys: target?.model_keys ?? [],
     })
+    setRevealedManageKey(null)
     setManageDialog({ mode: 'open', apiKeyId })
   }
 
   function closeManageDialog() {
     setManageForm(initialManageForm)
+    setRevealedManageKey(null)
     setManageDialog({ mode: 'closed' })
   }
 
@@ -260,6 +264,25 @@ export function useApiKeysPageState({
     }
   }
 
+  async function handleRevealManageApiKey() {
+    if (manageDialog.mode !== 'open' || !manageTarget || manageTarget.status !== 'active') {
+      return
+    }
+
+    setIsMutating(true)
+    try {
+      const response = await revealGatewayApiKeySecret({
+        data: { apiKeyId: manageDialog.apiKeyId },
+      })
+      setRevealedManageKey(response.data.raw_key)
+      toast.success('API key revealed')
+    } catch (error) {
+      toast.error(getErrorMessage(error))
+    } finally {
+      setIsMutating(false)
+    }
+  }
+
   async function handleCopy(value: string, successMessage: string) {
     try {
       await navigator.clipboard.writeText(value)
@@ -279,6 +302,7 @@ export function useApiKeysPageState({
     manageDialog,
     manageForm,
     manageTarget,
+    revealedManageKey,
     selectedOwnerLabel,
     actions: {
       closeCreateDialog,
@@ -286,6 +310,7 @@ export function useApiKeysPageState({
       handleCopy,
       handleCreateApiKey,
       handleRevokeApiKey,
+      handleRevealManageApiKey,
       handleUpdateApiKey,
       openCreateDialog,
       openManageDialog,

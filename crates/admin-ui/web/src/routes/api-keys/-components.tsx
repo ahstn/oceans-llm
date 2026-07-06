@@ -416,24 +416,30 @@ export function ManageApiKeyDialog({
   isPending,
   modelOptions,
   open,
+  revealedKey,
   submitDisabled,
   target,
   onModelGrantModeChange,
   onModelToggle,
   onOpenChange,
+  onReveal,
   onRevoke,
+  onCopy,
   onSubmit,
 }: {
   form: UpdateApiKeyInput
   isPending: boolean
   modelOptions: ApiKeyModelOptionView[]
   open: boolean
+  revealedKey: string | null
   submitDisabled: boolean
   target: ApiKeyView | null
   onModelGrantModeChange: (mode: UpdateApiKeyInput['model_grant_mode']) => void
   onModelToggle: (modelKey: string, checked: boolean) => void
   onOpenChange: (open: boolean) => void
+  onReveal: () => void | Promise<void>
   onRevoke: () => void | Promise<void>
+  onCopy: (value: string, successMessage: string) => void | Promise<void>
   onSubmit: (event: FormEvent<HTMLFormElement>) => void | Promise<void>
 }) {
   return (
@@ -488,6 +494,55 @@ export function ManageApiKeyDialog({
                   </div>
                 </dl>
               </section>
+
+              {target.owner_kind === 'service_account' && target.status === 'active' ? (
+                <section
+                  data-testid="manage-api-key-secret"
+                  className="flex flex-col gap-3 border-b border-[color:var(--color-border)] pb-4"
+                >
+                  <div className="flex flex-col gap-1">
+                    <h3 className="text-sm font-semibold text-[var(--color-text)]">
+                      Credential secret
+                    </h3>
+                    <p className="text-sm text-[var(--color-text-muted)]">
+                      Service-account-owned keys can be revealed for this owner scope.
+                    </p>
+                  </div>
+
+                  {revealedKey ? (
+                    <div className="flex flex-col gap-3">
+                      <div className="rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-3">
+                        <p
+                          data-testid="manage-api-key-raw-key"
+                          className="font-mono text-xs break-all text-[var(--color-text)]"
+                        >
+                          {revealedKey}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={() => onCopy(revealedKey, 'API key copied')}
+                        >
+                          Copy API key
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={onReveal}
+                        disabled={isPending}
+                      >
+                        {isPending ? 'Revealing...' : 'Reveal API key'}
+                      </Button>
+                    </div>
+                  )}
+                </section>
+              ) : null}
 
               {target.status === 'revoked' ? (
                 <Alert>

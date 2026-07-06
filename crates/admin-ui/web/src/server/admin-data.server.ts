@@ -62,6 +62,7 @@ import type {
   CreateReviewAgentRepositoryInput,
   UpdateReviewAgentRepositoryInput,
   RevokeApiKeyResult,
+  RevealApiKeySecretResponse,
   ServiceAccountsPayload,
   SpendBudgetsView,
   SpendOwnerKind,
@@ -117,6 +118,17 @@ export async function revokeApiKey(apiKeyId: string): Promise<ApiEnvelope<Revoke
     {
       method: 'POST',
     },
+  )
+}
+
+export async function revealApiKeySecret(
+  apiKeyId: string,
+): Promise<ApiEnvelope<RevealApiKeySecretResponse>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.POST('/api/v1/admin/api-keys/{api_key_id}/secret/reveal', {
+      params: { path: { api_key_id: apiKeyId } },
+    }),
   )
 }
 
