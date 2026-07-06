@@ -21,6 +21,8 @@ Supported budget types:
 
 There is no standalone global model budget. Model-specific spend control is scoped to users. Admins can define config defaults that create a user model budget for every user for selected expensive models.
 
+This is why model-specific defaults are configured under `budgets.users.model_defaults`, not under `models[*]`. A `models[*].budget` field would read like one shared cap for the model across the whole platform, or like a cap that also applies to service accounts. The actual behavior is narrower: each human user receives their own budget for that gateway model. Service-account spend remains controlled by that service account's own budget.
+
 Teams are not budget principals. Teams group users, own service accounts, and provide reporting metadata for service-account spend.
 
 MCP tool grants and toolsets are separate access controls. MCP token-overhead estimates report context-window pressure from tool definitions and results; they are not spend-budget accounting and do not create budget charges.
@@ -255,7 +257,9 @@ budgets:
           timezone: UTC
 ```
 
-The `model` value is the configured gateway model id from `models[*].id`. These defaults apply to all human users, including config-seeded users, bootstrap admins, admin-created users, and JIT OIDC/OAuth users. They do not apply to service accounts.
+The `model` value is the configured gateway model id from `models[*].id`. This does not create one shared `fable-5` budget. It creates a separate `fable-5` user model budget for each human user, so one user's spend does not consume another user's model-specific cap. These defaults apply to config-seeded users, bootstrap admins, admin-created users, and JIT OIDC/OAuth users. They do not apply to service accounts.
+
+Do not put budget defaults under `models[*]`. Model configuration defines routing, provider behavior, and access metadata for the gateway model. Budget defaults define spend policy for human users, so they live under the user budget policy.
 
 Config-seeded `users[*].budget` is a per-user override over `budgets.users.default`. Manual admin/API changes still take precedence over inherited defaults.
 
