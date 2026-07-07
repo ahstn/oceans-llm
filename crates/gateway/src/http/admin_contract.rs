@@ -236,9 +236,11 @@ impl From<ServiceProviderIconKey> for ProviderIconKeyView {
 pub enum ModelIconKeyView {
     Anthropic,
     Claude,
+    DeepSeek,
     Gemini,
     OpenAI,
     OpenRouter,
+    Qwen,
     VertexAI,
 }
 
@@ -247,9 +249,11 @@ impl From<ServiceModelIconKey> for ModelIconKeyView {
         match value {
             ServiceModelIconKey::Anthropic => Self::Anthropic,
             ServiceModelIconKey::Claude => Self::Claude,
+            ServiceModelIconKey::DeepSeek => Self::DeepSeek,
             ServiceModelIconKey::Gemini => Self::Gemini,
             ServiceModelIconKey::OpenAI => Self::OpenAI,
             ServiceModelIconKey::OpenRouter => Self::OpenRouter,
+            ServiceModelIconKey::Qwen => Self::Qwen,
             ServiceModelIconKey::VertexAI => Self::VertexAI,
         }
     }

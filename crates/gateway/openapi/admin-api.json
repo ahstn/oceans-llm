@@ -8843,9 +8843,11 @@
         "enum": [
           "anthropic",
           "claude",
+          "deepseek",
           "gemini",
           "openai",
           "openrouter",
+          "qwen",
           "vertexai"
         ]
       },

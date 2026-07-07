@@ -47,8 +47,7 @@ service_accounts:
         name: Local CI Runner Key
         auto_create: true
         allowed_models:
-          - openai-fast-v2
-          - gemini-fast
+          - openai-fast
 
   - id: local-eval-worker
     name: Local Eval Worker
@@ -253,6 +252,9 @@ models:
       - provider: openai-secondary
         upstream_model: gpt-5
         weight: 1.0
+    allowlist:
+      teams:
+        - platform
 
   - id: openai-fast
     description: Alias kept for backward compatibility
@@ -268,12 +270,6 @@ models:
       - provider: openrouter
         upstream_model: qwen/qwen3.6-27b
 
-  - id: gemini-fast
-    description: Gemini on Vertex
-    routes:
-      - provider: vertex-adc
-        upstream_model: google/gemini-2.0-flash
-
   - id: claude-sonnet
     description: Claude on Vertex
     routes:
@@ -285,8 +281,12 @@ models:
     routes:
       - provider: vertex-claude
         upstream_model: anthropic/claude-opus-4-7
+    allowlist:
+      users:
+        - ben@platform.local
+        - diego@research.local
 
-  - id: bedrock-claude-sonnet
+  - id: claude-sonnet-4.6
     description: Claude Sonnet on AWS Bedrock
     routes:
       - provider: bedrock-us-east-1

@@ -10,6 +10,15 @@ describe('BrandIcon', () => {
     expect(container.querySelector('img')).toBeInTheDocument()
   })
 
+  it('renders image-backed model icons like deepseek and qwen', () => {
+    const { container, rerender } = render(<BrandIcon iconKey="deepseek" title="DeepSeek" />)
+
+    expect(container.querySelector('img')).toBeInTheDocument()
+
+    rerender(<BrandIcon iconKey="qwen" title="Qwen" />)
+    expect(container.querySelector('img')).toBeInTheDocument()
+  })
+
   it('renders inline svg icons like openai', () => {
     const { container } = render(<BrandIcon iconKey="openai" title="OpenAI" />)
 
@@ -17,9 +26,10 @@ describe('BrandIcon', () => {
     expect(container.firstElementChild).toHaveAttribute('title', 'OpenAI')
   })
 
-  it('renders mask-backed icons like openrouter', () => {
+  it('renders inline svg icons like openrouter', () => {
     const { container } = render(<BrandIcon iconKey="openrouter" title="OpenRouter" />)
 
+    expect(container.querySelector('svg')).toBeInTheDocument()
     expect(container.querySelector('img')).not.toBeInTheDocument()
     expect(container.firstElementChild).toHaveAttribute('title', 'OpenRouter')
   })

@@ -2309,7 +2309,7 @@ export interface components {
             items: components["schemas"]["McpToolsetView"][];
         };
         /** @enum {string} */
-        ModelIconKeyView: "anthropic" | "claude" | "gemini" | "openai" | "openrouter" | "vertexai";
+        ModelIconKeyView: "anthropic" | "claude" | "deepseek" | "gemini" | "openai" | "openrouter" | "qwen" | "vertexai";
         /** @enum {string} */
         ObservabilityRangeQueryValue: "7d" | "31d";
         OpenAiErrorBodyView: {

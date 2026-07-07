@@ -56,9 +56,11 @@ impl ProviderIconKey {
 pub enum ModelIconKey {
     Anthropic,
     Claude,
+    DeepSeek,
     Gemini,
     OpenAI,
     OpenRouter,
+    Qwen,
     VertexAI,
 }
 
@@ -68,9 +70,11 @@ impl ModelIconKey {
         match self {
             Self::Anthropic => "anthropic",
             Self::Claude => "claude",
+            Self::DeepSeek => "deepseek",
             Self::Gemini => "gemini",
             Self::OpenAI => "openai",
             Self::OpenRouter => "openrouter",
+            Self::Qwen => "qwen",
             Self::VertexAI => "vertexai",
         }
     }
@@ -80,9 +84,11 @@ impl ModelIconKey {
         match value.trim().to_ascii_lowercase().as_str() {
             "anthropic" => Some(Self::Anthropic),
             "claude" => Some(Self::Claude),
+            "deepseek" | "deep-seek" => Some(Self::DeepSeek),
             "gemini" => Some(Self::Gemini),
             "openai" => Some(Self::OpenAI),
             "openrouter" => Some(Self::OpenRouter),
+            "qwen" => Some(Self::Qwen),
             "vertexai" => Some(Self::VertexAI),
             _ => None,
         }
@@ -168,6 +174,12 @@ fn infer_model_icon_key(value: &str) -> Option<ModelIconKey> {
     }
     if value.contains("gemini") {
         return Some(ModelIconKey::Gemini);
+    }
+    if value.contains("deepseek") || value.contains("deep-seek") {
+        return Some(ModelIconKey::DeepSeek);
+    }
+    if value.contains("qwen") || value.contains("qwq") || value.contains("qvq") {
+        return Some(ModelIconKey::Qwen);
     }
     if is_openai_model_candidate(&value) {
         return Some(ModelIconKey::OpenAI);
@@ -294,6 +306,19 @@ mod tests {
     fn upstream_openai_model_beats_openrouter_alias_name() {
         let icon = resolve_model_icon_key(["gpt-5", "openrouter-fast"]).expect("openai icon");
         assert_eq!(icon, ModelIconKey::OpenAI);
+    }
+
+    #[test]
+    fn deepseek_model_ids_use_deepseek_icon() {
+        let icon = resolve_model_icon_key(["deepseek/deepseek-v4-pro", "openrouter"])
+            .expect("deepseek icon");
+        assert_eq!(icon, ModelIconKey::DeepSeek);
+    }
+
+    #[test]
+    fn qwen_model_ids_use_qwen_icon() {
+        let icon = resolve_model_icon_key(["qwen/qwen3.6-27b", "openrouter"]).expect("qwen icon");
+        assert_eq!(icon, ModelIconKey::Qwen);
     }
 
     #[test]
