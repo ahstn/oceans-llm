@@ -210,6 +210,14 @@ providers:
       kind: bearer
       token: env.OPENAI_API_KEY_SECONDARY
 
+  - id: openrouter
+    type: openai_compat
+    base_url: https://api.openrouter.ai/v1
+    pricing_provider_id: openai
+    auth:
+      kind: bearer
+      token: env.OPENROUTER_API_KEY
+
   - id: vertex-adc
     type: gcp_vertex
     project_id: your-gcp-project
@@ -249,6 +257,16 @@ models:
   - id: openai-fast
     description: Alias kept for backward compatibility
     alias_of: openai-fast-v2
+
+  - id: deepseek-v4-pro
+    routes:
+      - provider: openrouter
+        upstream_model: deepseek/deepseek-v4-pro
+
+  - id: qwen-3.6-27b
+    routes:
+      - provider: openrouter
+        upstream_model: qwen/qwen3.6-27b
 
   - id: gemini-fast
     description: Gemini on Vertex
