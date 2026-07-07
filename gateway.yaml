@@ -48,6 +48,8 @@ service_accounts:
         auto_create: true
         allowed_models:
           - openai-fast
+          - openai-fast-v2
+          - gemini-fast
 
   - id: local-eval-worker
     name: Local Eval Worker
@@ -211,7 +213,7 @@ providers:
 
   - id: openrouter
     type: openai_compat
-    base_url: https://api.openrouter.ai/v1
+    base_url: https://openrouter.ai/api/v1
     pricing_provider_id: openai
     auth:
       kind: bearer
@@ -252,13 +254,16 @@ models:
       - provider: openai-secondary
         upstream_model: gpt-5
         weight: 1.0
-    allowlist:
-      teams:
-        - platform
 
   - id: openai-fast
     description: Alias kept for backward compatibility
     alias_of: openai-fast-v2
+
+  - id: gemini-fast
+    description: Gemini on Vertex
+    routes:
+      - provider: vertex-adc
+        upstream_model: google/gemini-2.0-flash
 
   - id: deepseek-v4-pro
     routes:
@@ -281,10 +286,6 @@ models:
     routes:
       - provider: vertex-claude
         upstream_model: anthropic/claude-opus-4-7
-    allowlist:
-      users:
-        - ben@platform.local
-        - diego@research.local
 
   - id: claude-sonnet-4.6
     description: Claude Sonnet on AWS Bedrock
@@ -298,6 +299,10 @@ models:
         compatibility:
           aws_bedrock:
             api_style: runtime_anthropic_invoke
+    allowlist:
+      users:
+        - ben@platform.local
+        - diego@research.local
 
   - id: gpt-oss-120b
     description: OpenAI OSS on AWS Bedrock
