@@ -302,13 +302,10 @@ describe('ModelsPage', () => {
     expect(headers).toEqual([
       '',
       'Model id',
-      'Upstream model',
-      'Provider',
+      'Actions',
+      'Provider and model',
       'Cost / 1M tokens',
-      'Context window',
-      'Capabilities',
       'Model allowlist',
-      'Client config',
     ])
 
     const identityCell = screen.getAllByTestId('models-desktop-cell-backup-fast')[0]
@@ -321,17 +318,15 @@ describe('ModelsPage', () => {
     const backupCells = within(backupRow as HTMLElement).getAllByRole('cell')
 
     expect(
-      within(backupCells[2] as HTMLElement).getByText('google/gemini-2.0-flash'),
+      within(backupCells[2] as HTMLElement).getByRole('button', { name: 'Info' }),
+    ).toBeInTheDocument()
+    expect(
+      within(backupCells[3] as HTMLElement).getByText('google/gemini-2.0-flash'),
     ).toBeInTheDocument()
     expect(within(backupCells[3] as HTMLElement).getByText('Google Vertex AI')).toBeInTheDocument()
-    expect(within(backupCells[3] as HTMLElement).getByText('vertex-gemini')).toBeInTheDocument()
     expect(within(backupCells[4] as HTMLElement).getByText('Input')).toBeInTheDocument()
     expect(within(backupCells[4] as HTMLElement).getByText('Output')).toBeInTheDocument()
-    expect(within(backupCells[5] as HTMLElement).getByText('Input')).toBeInTheDocument()
-    expect(within(backupCells[5] as HTMLElement).getByText('Output')).toBeInTheDocument()
-    expect(within(backupCells[6] as HTMLElement).getByText('Streaming')).toBeInTheDocument()
-    expect(within(backupCells[6] as HTMLElement).getByText('Vision')).toBeInTheDocument()
-    expect(within(backupCells[8] as HTMLElement).getByText('—')).toBeInTheDocument()
+    expect(within(backupCells[5] as HTMLElement).getByText('Unrestricted')).toBeInTheDocument()
   })
 
   it('renders model allowlists in the desktop table as read-only details', () => {
@@ -348,12 +343,14 @@ describe('ModelsPage', () => {
 
     const fastRow = within(table).getByText('fast').closest('tr')
     expect(fastRow).not.toBeNull()
-    const fastAllowlistCell = within(fastRow as HTMLElement).getAllByRole('cell')[7] as HTMLElement
-    expect(within(fastAllowlistCell).getByText('Unrestricted by model allowlist')).toBeInTheDocument()
+    const fastAllowlistCell = within(fastRow as HTMLElement).getAllByRole('cell')[5] as HTMLElement
+    expect(within(fastAllowlistCell).getByText('Unrestricted')).toBeInTheDocument()
 
     const claudeRow = within(table).getByText('claude-sonnet').closest('tr')
     expect(claudeRow).not.toBeNull()
-    const claudeAllowlistCell = within(claudeRow as HTMLElement).getAllByRole('cell')[7] as HTMLElement
+    const claudeAllowlistCell = within(claudeRow as HTMLElement).getAllByRole(
+      'cell',
+    )[5] as HTMLElement
     expect(within(claudeAllowlistCell).getByText('Users')).toBeInTheDocument()
     expect(within(claudeAllowlistCell).getByText('alice@example.com')).toBeInTheDocument()
     expect(within(claudeAllowlistCell).getByText('bob@example.com')).toBeInTheDocument()
@@ -387,7 +384,9 @@ describe('ModelsPage', () => {
       .closest('div')
     expect(claudeAllowlist).not.toBeNull()
     expect(within(claudeAllowlist as HTMLElement).getByText('Users')).toBeInTheDocument()
-    expect(within(claudeAllowlist as HTMLElement).getByText('alice@example.com')).toBeInTheDocument()
+    expect(
+      within(claudeAllowlist as HTMLElement).getByText('alice@example.com'),
+    ).toBeInTheDocument()
     expect(within(claudeAllowlist as HTMLElement).getByText('bob@example.com')).toBeInTheDocument()
     expect(within(claudeAllowlist as HTMLElement).getByText('Teams')).toBeInTheDocument()
     expect(within(claudeAllowlist as HTMLElement).getByText('platform')).toBeInTheDocument()
@@ -400,9 +399,7 @@ describe('ModelsPage', () => {
       .getByText('Model allowlist')
       .closest('div')
     expect(fastAllowlist).not.toBeNull()
-    expect(
-      within(fastAllowlist as HTMLElement).getByText('Unrestricted by model allowlist'),
-    ).toBeInTheDocument()
+    expect(within(fastAllowlist as HTMLElement).getByText('Unrestricted')).toBeInTheDocument()
 
     for (const allowlistDetail of [claudeAllowlist, fastAllowlist]) {
       expect(within(allowlistDetail as HTMLElement).queryByRole('button')).not.toBeInTheDocument()
@@ -522,7 +519,9 @@ describe('ModelsPage', () => {
     expect(screen.getByText(/model = "claude-sonnet"/)).toBeInTheDocument()
     expect(screen.getByText(/model_reasoning_effort = "medium"/)).toBeInTheDocument()
     expect(screen.getByText(/\[model_providers.oceans-llm\]/)).toBeInTheDocument()
-    expect(screen.getByText(/env_key_instructions = "Set OCEANS_LLM_API_KEY in your environment"/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/env_key_instructions = "Set OCEANS_LLM_API_KEY in your environment"/),
+    ).toBeInTheDocument()
     expect(screen.getByText(/\[analytics\]/)).toBeInTheDocument()
     expect(screen.getByText(/log_user_prompt = false/)).toBeInTheDocument()
     expect(screen.getByText(/wire_api = "responses"/)).toBeInTheDocument()
