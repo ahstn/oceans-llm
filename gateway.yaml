@@ -47,6 +47,7 @@ service_accounts:
         name: Local CI Runner Key
         auto_create: true
         allowed_models:
+          - openai-fast
           - openai-fast-v2
           - gemini-fast
 
@@ -210,6 +211,14 @@ providers:
       kind: bearer
       token: env.OPENAI_API_KEY_SECONDARY
 
+  - id: openrouter
+    type: openai_compat
+    base_url: https://openrouter.ai/api/v1
+    pricing_provider_id: openai
+    auth:
+      kind: bearer
+      token: env.OPENROUTER_API_KEY
+
   - id: vertex-adc
     type: gcp_vertex
     project_id: your-gcp-project
@@ -256,6 +265,16 @@ models:
       - provider: vertex-adc
         upstream_model: google/gemini-2.0-flash
 
+  - id: deepseek-v4-pro
+    routes:
+      - provider: openrouter
+        upstream_model: deepseek/deepseek-v4-pro
+
+  - id: qwen-3.6-27b
+    routes:
+      - provider: openrouter
+        upstream_model: qwen/qwen3.6-27b
+
   - id: claude-sonnet
     description: Claude on Vertex
     routes:
@@ -268,7 +287,7 @@ models:
       - provider: vertex-claude
         upstream_model: anthropic/claude-opus-4-7
 
-  - id: bedrock-claude-sonnet
+  - id: claude-sonnet-4.6
     description: Claude Sonnet on AWS Bedrock
     routes:
       - provider: bedrock-us-east-1
@@ -280,6 +299,10 @@ models:
         compatibility:
           aws_bedrock:
             api_style: runtime_anthropic_invoke
+    allowlist:
+      users:
+        - ben@platform.local
+        - diego@research.local
 
   - id: gpt-oss-120b
     description: OpenAI OSS on AWS Bedrock

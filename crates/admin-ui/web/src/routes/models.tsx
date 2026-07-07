@@ -1,12 +1,16 @@
-import { useState, type ReactNode } from 'react'
+import { useState, type ComponentProps, type ReactNode } from 'react'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import {
   AttachmentIcon,
+  BadgeInfoIcon,
+  CircleCheckIcon,
   CodeIcon,
+  ColumnsThreeCogIcon,
   Copy01Icon,
   HomeIcon,
   LiveStreaming03Icon,
   ToolsIcon,
+  Tick02Icon,
   VisionIcon,
 } from '@hugeicons/core-free-icons'
 import { toast } from 'sonner'
@@ -31,6 +35,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Table,
   TableBody,
@@ -41,6 +46,7 @@ import {
 } from '@/components/ui/table'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { cn } from '@/lib/utils'
 import { requireAdminSession } from '@/routes/-admin-guard'
 import { getModelClientConfigs, getModels } from '@/server/admin-data.functions'
 import type { ModelView } from '@/types/api'
@@ -59,6 +65,8 @@ const COMPACT_NUMBER_FORMATTER = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 2,
 })
 
+type ModelInfoSectionKey = 'overview' | 'routing' | 'economics' | 'access'
+
 export const Route = createFileRoute('/models')({
   beforeLoad: ({ location }) => requireAdminSession(location),
   validateSearch: (search: Record<string, unknown>) => normalizeModelsSearch(search),
@@ -76,7 +84,13 @@ export function ModelsPage() {
     activeKey: string
     clientConfigurations: ModelView['client_configurations']
   } | null>(null)
+  const [infoDialogModel, setInfoDialogModel] = useState<ModelView | null>(null)
+  const [modelInfoSection, setModelInfoSection] = useState<ModelInfoSectionKey>('overview')
   const [selectedModelsById, setSelectedModelsById] = useState<Record<string, ModelView>>({})
+  const [visibleColumns, setVisibleColumns] = useState({
+    contextWindow: false,
+    capabilities: false,
+  })
   const [isGeneratingConfig, setIsGeneratingConfig] = useState(false)
   const totalPages = Math.max(1, Math.ceil(modelPage.total / modelPage.page_size))
   const selectableModels = modelPage.items.filter((model) => model.client_configurations.length > 0)
@@ -86,6 +100,14 @@ export function ModelsPage() {
   const allSelectableSelected =
     selectableModels.length > 0 &&
     selectableModels.every((model) => selectedModelIdSet.has(model.id))
+  const desktopTableMinWidth =
+    visibleColumns.contextWindow && visibleColumns.capabilities
+      ? 'min-w-[109rem]'
+      : visibleColumns.capabilities
+        ? 'min-w-[97rem]'
+        : visibleColumns.contextWindow
+          ? 'min-w-[91rem]'
+          : 'min-w-[79rem]'
 
   function navigateToPage(page: number) {
     void router.navigate({
@@ -171,6 +193,11 @@ export function ModelsPage() {
     void openClientConfig([model])
   }
 
+  function openModelInfo(model: ModelView) {
+    setModelInfoSection('overview')
+    setInfoDialogModel(model)
+  }
+
   const activeClientConfig =
     configDialog?.clientConfigurations.find((config) => config.key === configDialog.activeKey) ??
     configDialog?.clientConfigurations[0] ??
@@ -208,6 +235,62 @@ export function ModelsPage() {
               >
                 Clear
               </Button>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button type="button" variant="outline" size="sm" className="gap-2">
+                    <AppIcon icon={ColumnsThreeCogIcon} size={14} stroke={1.5} />
+                    Columns
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-64 gap-3 p-3">
+                  <div className="flex flex-col gap-1">
+                    <h2 className="text-sm font-medium text-[var(--color-text)]">Table columns</h2>
+                    <p className="text-xs text-[var(--color-text-muted)]">
+                      Show secondary model details in the desktop table.
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <label className="hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-md px-1 py-1.5 text-sm">
+                      <ModelCheckbox
+                        className="mt-0.5"
+                        checked={visibleColumns.contextWindow}
+                        onChange={(event) => {
+                          const checked = event.currentTarget.checked
+                          setVisibleColumns((current) => ({
+                            ...current,
+                            contextWindow: checked,
+                          }))
+                        }}
+                      />
+                      <span className="flex min-w-0 flex-col gap-0.5">
+                        <span className="font-medium text-[var(--color-text)]">Context window</span>
+                        <span className="text-xs text-[var(--color-text-muted)]">
+                          Input and output token limits.
+                        </span>
+                      </span>
+                    </label>
+                    <label className="hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-md px-1 py-1.5 text-sm">
+                      <ModelCheckbox
+                        className="mt-0.5"
+                        checked={visibleColumns.capabilities}
+                        onChange={(event) => {
+                          const checked = event.currentTarget.checked
+                          setVisibleColumns((current) => ({
+                            ...current,
+                            capabilities: checked,
+                          }))
+                        }}
+                      />
+                      <span className="flex min-w-0 flex-col gap-0.5">
+                        <span className="font-medium text-[var(--color-text)]">Capabilities</span>
+                        <span className="text-xs text-[var(--color-text-muted)]">
+                          Streaming, vision, tools, and attachment support.
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+                </PopoverContent>
+              </Popover>
               <Button
                 type="button"
                 variant="secondary"
@@ -256,50 +339,49 @@ export function ModelsPage() {
                 className="hidden min-w-0 overflow-hidden rounded-md border border-[color:var(--color-border)] md:block"
                 data-testid="models-desktop-table"
               >
-                <Table className="min-w-[108rem] table-fixed">
+                <Table className={`${desktopTableMinWidth} table-fixed`}>
                   <TableHeader className="bg-[color:var(--color-surface-muted)]">
                     <TableRow>
-                      <TableHead className="w-[3rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                        <input
-                          type="checkbox"
+                      <TableHead className="sticky left-0 z-30 w-[3rem] bg-[color:var(--color-surface-muted)] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                        <ModelCheckbox
                           aria-label="Select all configurable models"
                           checked={allSelectableSelected}
                           disabled={selectableModels.length === 0}
                           onChange={toggleAllSelectableModels}
                         />
                       </TableHead>
-                      <TableHead className="sticky left-[3rem] z-20 w-[16rem] min-w-[16rem] bg-[color:var(--color-surface-muted)] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                      <TableHead className="sticky left-[3rem] z-30 w-[16rem] min-w-[16rem] bg-[color:var(--color-surface-muted)] px-3 py-2 font-semibold text-[var(--color-text-soft)] shadow-[8px_0_12px_-12px_rgba(0,0,0,0.8)]">
                         Model id
                       </TableHead>
-                      <TableHead className="w-[16rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                        Upstream model
+                      <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                        Actions
                       </TableHead>
-                      <TableHead className="w-[16rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                        Provider
+                      <TableHead className="w-[24rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                        Provider and model
                       </TableHead>
                       <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
                         Cost / 1M tokens
                       </TableHead>
+                      {visibleColumns.contextWindow ? (
+                        <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                          Context window
+                        </TableHead>
+                      ) : null}
+                      {visibleColumns.capabilities ? (
+                        <TableHead className="w-[18rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                          Capabilities
+                        </TableHead>
+                      ) : null}
                       <TableHead className="w-[12rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                        Context window
-                      </TableHead>
-                      <TableHead className="w-[18rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                        Capabilities
-                      </TableHead>
-                      <TableHead className="w-[16rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
                         Model allowlist
-                      </TableHead>
-                      <TableHead className="w-[10rem] px-3 py-2 font-semibold text-[var(--color-text-soft)]">
-                        Client config
                       </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {modelPage.items.map((model) => (
                       <TableRow key={model.id} className="align-middle">
-                        <TableCell className="px-3 py-3">
-                          <input
-                            type="checkbox"
+                        <TableCell className="bg-card sticky left-0 z-20 px-3 py-3">
+                          <ModelCheckbox
                             aria-label={`Select model ${model.id}`}
                             checked={selectedModelIdSet.has(model.id)}
                             disabled={model.client_configurations.length === 0}
@@ -307,7 +389,7 @@ export function ModelsPage() {
                           />
                         </TableCell>
                         <TableCell
-                          className="bg-card sticky left-[3rem] z-10 px-3 py-3 shadow-[8px_0_12px_-12px_rgba(0,0,0,0.8)]"
+                          className="bg-card sticky left-[3rem] z-20 px-3 py-3 shadow-[8px_0_12px_-12px_rgba(0,0,0,0.8)]"
                           data-testid={`models-desktop-cell-${model.id}`}
                         >
                           <div className="flex min-w-0 flex-col gap-2 py-1">
@@ -343,6 +425,13 @@ export function ModelsPage() {
                             </div>
                           </div>
                         </TableCell>
+                        <TableCell className="px-3 py-3 whitespace-normal">
+                          <ModelActions
+                            model={model}
+                            onOpenClientConfig={openSingleClientConfig}
+                            onOpenInfo={openModelInfo}
+                          />
+                        </TableCell>
                         <TableCell className="px-3 py-3">
                           <div className="flex min-w-0 flex-col gap-2 py-1">
                             <div className="flex min-w-0 items-center gap-2">
@@ -351,21 +440,14 @@ export function ModelsPage() {
                                 {model.upstream_model ?? 'Not currently routed'}
                               </span>
                             </div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="px-3 py-3">
-                          <div className="flex min-w-0 flex-col gap-2 py-1">
-                            <div className="flex min-w-0 items-center gap-2">
-                              <BrandIcon iconKey={model.provider_icon_key} size={14} />
-                              <span className="truncate text-[var(--color-text)]">
-                                {providerTypeLabel(model)}
-                              </span>
+                            <div className="flex min-w-0 items-center gap-2 truncate text-xs tracking-[0.08em] text-[var(--color-text-soft)]">
+                              <BrandIcon
+                                iconKey={model.provider_icon_key}
+                                size={14}
+                                className="shrink-0"
+                              />
+                              <span className="truncate">{providerTypeLabel(model)}</span>
                             </div>
-                            {model.provider_key && model.provider_label !== model.provider_key ? (
-                              <span className="truncate font-mono text-xs text-[var(--color-text-soft)]">
-                                {model.provider_key}
-                              </span>
-                            ) : null}
                           </div>
                         </TableCell>
                         <TableCell className="px-3 py-3 whitespace-normal">
@@ -376,24 +458,25 @@ export function ModelsPage() {
                             bottomValue={formatCost(model.output_cost_per_million_tokens_usd_10000)}
                           />
                         </TableCell>
-                        <TableCell className="px-3 py-3 whitespace-normal">
-                          <StackedMetric
-                            topLabel="Input"
-                            topValue={formatWindow(
-                              model.input_window_tokens ?? model.context_window_tokens,
-                            )}
-                            bottomLabel="Output"
-                            bottomValue={formatWindow(model.output_window_tokens)}
-                          />
-                        </TableCell>
-                        <TableCell className="px-3 py-3 whitespace-normal">
-                          <CapabilityBadges model={model} />
-                        </TableCell>
+                        {visibleColumns.contextWindow ? (
+                          <TableCell className="px-3 py-3 whitespace-normal">
+                            <StackedMetric
+                              topLabel="Input"
+                              topValue={formatWindow(
+                                model.input_window_tokens ?? model.context_window_tokens,
+                              )}
+                              bottomLabel="Output"
+                              bottomValue={formatWindow(model.output_window_tokens)}
+                            />
+                          </TableCell>
+                        ) : null}
+                        {visibleColumns.capabilities ? (
+                          <TableCell className="px-3 py-3 whitespace-normal">
+                            <CapabilityBadges model={model} />
+                          </TableCell>
+                        ) : null}
                         <TableCell className="px-3 py-3 whitespace-normal">
                           <ModelAllowlistDetail model={model} compact />
-                        </TableCell>
-                        <TableCell className="px-3 py-3 whitespace-normal">
-                          <ClientConfigButton model={model} onOpen={openSingleClientConfig} compact />
                         </TableCell>
                       </TableRow>
                     ))}
@@ -436,6 +519,16 @@ export function ModelsPage() {
         onOpenChange={(open) => {
           if (!open) {
             setConfigDialog(null)
+          }
+        }}
+      />
+      <ModelInfoDialog
+        model={infoDialogModel}
+        activeSection={modelInfoSection}
+        onActiveSectionChange={setModelInfoSection}
+        onOpenChange={(open) => {
+          if (!open) {
+            setInfoDialogModel(null)
           }
         }}
       />
@@ -509,15 +602,66 @@ function ModelCard({
             }
           />
           <MetricDetail label="Capabilities" value={<CapabilityBadges model={model} />} />
-          <MetricDetail
-            label="Model allowlist"
-            value={<ModelAllowlistDetail model={model} />}
-          />
+          <MetricDetail label="Model allowlist" value={<ModelAllowlistDetail model={model} />} />
         </dl>
         <ModelNotes model={model} />
         <ClientConfigButton model={model} onOpen={onOpenClientConfig} />
       </CardContent>
     </Card>
+  )
+}
+
+function ModelActions({
+  model,
+  onOpenClientConfig,
+  onOpenInfo,
+}: {
+  model: ModelView
+  onOpenClientConfig: (model: ModelView) => void
+  onOpenInfo: (model: ModelView) => void
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="gap-2"
+            onClick={() => onOpenInfo(model)}
+          >
+            <AppIcon icon={BadgeInfoIcon} size={14} stroke={1.5} />
+            Info
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent sideOffset={6}>Model info</TooltipContent>
+      </Tooltip>
+      <ClientConfigButton model={model} onOpen={onOpenClientConfig} compact />
+    </div>
+  )
+}
+
+function ModelCheckbox({
+  className,
+  ...props
+}: Omit<ComponentProps<'input'>, 'type' | 'className'> & {
+  className?: string
+}) {
+  return (
+    <span className={cn('relative inline-flex size-5 shrink-0', className)}>
+      <input
+        type="checkbox"
+        className="peer checked:border-primary checked:bg-primary focus-visible:border-ring focus-visible:ring-ring/50 size-5 shrink-0 appearance-none rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] transition-colors focus-visible:ring-3 disabled:cursor-not-allowed disabled:opacity-50"
+        {...props}
+      />
+      <span
+        aria-hidden="true"
+        className="text-primary-foreground pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity peer-checked:opacity-100"
+      >
+        <AppIcon icon={Tick02Icon} size={14} stroke={2.5} />
+      </span>
+    </span>
   )
 }
 
@@ -542,18 +686,217 @@ function ClientConfigButton({
         <Button
           type="button"
           variant={compact ? 'secondary' : 'outline'}
-          size={compact ? 'icon-sm' : 'sm'}
-          className={compact ? '' : 'gap-2'}
+          size="sm"
+          className="gap-2"
           aria-label={compact ? label : undefined}
           onClick={() => onOpen(model)}
         >
           <AppIcon icon={CodeIcon} size={14} stroke={1.5} />
-          {compact ? null : 'Client config'}
+          {compact ? 'Config' : 'Client config'}
         </Button>
       </TooltipTrigger>
       <TooltipContent sideOffset={6}>{label}</TooltipContent>
     </Tooltip>
   )
+}
+
+function ModelInfoDialog({
+  model,
+  activeSection,
+  onActiveSectionChange,
+  onOpenChange,
+}: {
+  model: ModelView | null
+  activeSection: ModelInfoSectionKey
+  onActiveSectionChange: (section: ModelInfoSectionKey) => void
+  onOpenChange: (open: boolean) => void
+}) {
+  const sections: Array<{ key: ModelInfoSectionKey; label: string }> = [
+    { key: 'overview', label: 'Overview' },
+    { key: 'routing', label: 'Routing' },
+    { key: 'economics', label: 'Economics' },
+    { key: 'access', label: 'Access' },
+  ]
+
+  const activeLabel = sections.find((section) => section.key === activeSection)?.label ?? 'Overview'
+
+  return (
+    <Dialog open={model !== null} onOpenChange={onOpenChange}>
+      <DialogContent className="flex max-h-[calc(100dvh-2rem)] w-[min(1080px,calc(100vw-32px))] max-w-[calc(100vw-2rem)] flex-col overflow-hidden sm:max-h-[82vh] sm:max-w-[min(1080px,calc(100vw-2rem))]">
+        {model ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>Model info</DialogTitle>
+              <DialogDescription className="flex min-w-0 flex-wrap items-center gap-2">
+                <BrandIcon iconKey={model.model_icon_key} size={14} />
+                <span className="truncate font-mono text-xs">{model.id}</span>
+                <span>via {providerTypeLabel(model)}</span>
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-t">
+              <nav
+                aria-label="Model info sections"
+                className="flex gap-3 overflow-x-auto border-b py-3"
+              >
+                {sections.map((section) => (
+                  <Button
+                    key={section.key}
+                    type="button"
+                    variant={activeSection === section.key ? 'secondary' : 'ghost'}
+                    size="sm"
+                    className="justify-start px-3"
+                    onClick={() => onActiveSectionChange(section.key)}
+                  >
+                    {section.label}
+                  </Button>
+                ))}
+              </nav>
+
+              <div className="min-w-0 overflow-y-auto py-5">
+                <div className="flex min-w-0 flex-col gap-4">
+                  <div>
+                    <h3 className="text-sm font-medium text-[var(--color-text)]">{activeLabel}</h3>
+                    <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                      {modelInfoSectionDescription(activeSection)}
+                    </p>
+                  </div>
+
+                  {activeSection === 'overview' ? <ModelInfoOverview model={model} /> : null}
+                  {activeSection === 'routing' ? <ModelInfoRouting model={model} /> : null}
+                  {activeSection === 'economics' ? <ModelInfoEconomics model={model} /> : null}
+                  {activeSection === 'access' ? <ModelInfoAccess model={model} /> : null}
+                </div>
+              </div>
+            </div>
+          </>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ModelInfoOverview({ model }: { model: ModelView }) {
+  return (
+    <div className="divide-y">
+      <ModelInfoRow label="Gateway model" value={model.id} mono />
+      <ModelInfoRow label="Resolved model" value={model.resolved_model_key} mono />
+      <ModelInfoRow label="Status" value={<ModelStatusIndicator status={model.status} />} />
+      <ModelInfoRow label="Alias of" value={model.alias_of ?? '—'} mono={model.alias_of != null} />
+      <ModelInfoRow label="Description" value={model.description ?? '—'} />
+      <ModelInfoRow
+        label="Tags"
+        value={
+          model.tags.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {model.tags.map((tag) => (
+                <Badge key={tag} variant="outline">
+                  {tag}
+                </Badge>
+              ))}
+            </div>
+          ) : (
+            '—'
+          )
+        }
+      />
+    </div>
+  )
+}
+
+function ModelInfoRouting({ model }: { model: ModelView }) {
+  return (
+    <div className="divide-y">
+      <ModelInfoRow
+        label="Upstream model"
+        value={model.upstream_model ?? 'Not currently routed'}
+        mono={model.upstream_model != null}
+      />
+      <ModelInfoRow label="Model ID" value={model.model_id} mono />
+      <ModelInfoRow label="Provider" value={providerTypeLabel(model)} />
+      <ModelInfoRow label="Provider key" value={model.provider_key ?? '—'} mono />
+      <ModelInfoRow
+        label="Client config"
+        value={
+          model.client_configurations.length > 0
+            ? `${model.client_configurations.length} available`
+            : 'Not available'
+        }
+      />
+    </div>
+  )
+}
+
+function ModelInfoEconomics({ model }: { model: ModelView }) {
+  return (
+    <div className="divide-y">
+      <ModelInfoRow
+        label="Input cost"
+        value={formatCost(model.input_cost_per_million_tokens_usd_10000)}
+      />
+      <ModelInfoRow
+        label="Output cost"
+        value={formatCost(model.output_cost_per_million_tokens_usd_10000)}
+      />
+      <ModelInfoRow
+        label="Cache read cost"
+        value={formatCost(model.cache_read_cost_per_million_tokens_usd_10000)}
+      />
+      <ModelInfoRow
+        label="Input window"
+        value={formatWindow(model.input_window_tokens ?? model.context_window_tokens)}
+      />
+      <ModelInfoRow label="Output window" value={formatWindow(model.output_window_tokens)} />
+      <ModelInfoRow label="Context window" value={formatWindow(model.context_window_tokens)} />
+    </div>
+  )
+}
+
+function ModelInfoAccess({ model }: { model: ModelView }) {
+  return (
+    <div className="divide-y">
+      <ModelInfoRow label="Model allowlist" value={<ModelAllowlistDetail model={model} />} />
+      <ModelInfoRow label="Capabilities" value={<CapabilityBadges model={model} />} />
+    </div>
+  )
+}
+
+function ModelInfoRow({
+  label,
+  mono = false,
+  value,
+}: {
+  label: string
+  mono?: boolean
+  value: ReactNode
+}) {
+  return (
+    <div className="grid min-w-0 gap-2 py-3 text-sm sm:grid-cols-[14rem_minmax(0,1fr)]">
+      <dt className="text-[var(--color-text-soft)]">{label}</dt>
+      <dd
+        className={
+          mono
+            ? 'min-w-0 font-mono text-xs break-words text-[var(--color-text-muted)]'
+            : 'min-w-0 text-[var(--color-text-muted)]'
+        }
+      >
+        {value}
+      </dd>
+    </div>
+  )
+}
+
+function modelInfoSectionDescription(section: ModelInfoSectionKey) {
+  switch (section) {
+    case 'overview':
+      return 'Identity, lifecycle state, tags, and operator-facing description.'
+    case 'routing':
+      return 'Gateway and upstream identifiers used to route requests.'
+    case 'economics':
+      return 'Token pricing and context limits exposed by the current route.'
+    case 'access':
+      return 'Allowlist and runtime capability metadata for this model.'
+  }
 }
 
 function ClientConfigDialog({
@@ -634,13 +977,13 @@ function ClientConfigDialog({
                       <TableCell className="w-32 align-baseline font-medium whitespace-nowrap">
                         {item.label}
                       </TableCell>
-                      <TableCell className="min-w-0 align-baseline whitespace-normal text-muted-foreground">
+                      <TableCell className="text-muted-foreground min-w-0 align-baseline whitespace-normal">
                         {item.href ? (
                           <a
                             href={item.href}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="break-words font-mono text-xs underline underline-offset-4"
+                            className="font-mono text-xs break-words underline underline-offset-4"
                           >
                             {item.value}
                           </a>
@@ -753,17 +1096,16 @@ function ModelStatusIndicator({ status }: { status: string }) {
   )
 }
 
-function ModelAllowlistDetail({
-  compact = false,
-  model,
-}: {
-  compact?: boolean
-  model: ModelView
-}) {
+function ModelAllowlistDetail({ compact = false, model }: { compact?: boolean; model: ModelView }) {
   if (!model.allowlist) {
     return (
-      <span className="text-[var(--color-text-soft)]">
-        Unrestricted by model allowlist
+      <span
+        className={`inline-flex items-center gap-1.5 text-[var(--color-text-soft)] ${
+          compact ? 'text-sm' : ''
+        }`}
+      >
+        <AppIcon icon={CircleCheckIcon} size={compact ? 13 : 14} stroke={1.5} />
+        Unrestricted
       </span>
     )
   }
