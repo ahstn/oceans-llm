@@ -6,6 +6,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.16.0] - 2026-07-07
+### :rocket: New features
+- *(models)* Updating model icons by @ahstn
+- *(admin-ui)* Improve models table and icons by @ahstn in [#230](https://github.com/ahstn/oceans-llm/pull/230)
+
+### :bug: Bug fixes
+- *(admin-ui)* Redirect bare root to admin app by @ahstn in [#229](https://github.com/ahstn/oceans-llm/pull/229)
+- *(config)* Preserve demo model access by @ahstn
+
+### Build
+- Post release tasks - v0.15.0 by @ahstn
+
+### Changed
+- Add admin root redirect by @ahstn
+- Fix gateway root admin redirect by @ahstn
+- Improve models table controls by @ahstn
+- Widen model info dialog layout by @ahstn
+- Refine models table layout by @ahstn
+- Reposition model actions column by @ahstn
+
+### Documentation
+- Updating models screenshot by @ahstn
+
+### Miscellaneous
+- Adding deepseek and qwen to dev config by @ahstn
+- *(version)* V0.16.0
+
+### Testing
+- *(models)* Update table layout expectations by @ahstn
+
+
+
+
 ## [0.15.0] - 2026-07-06
 ### :rocket: New features
 - *(gateway)* Add declarative user budget defaults by @ahstn
@@ -28,7 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clarify user model budget defaults by @ahstn
 
 ### Miscellaneous
-- *(version)* V0.15.0
+- *(version)* V0.15.0 by @ahstn
 
 
 
@@ -645,6 +678,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+[0.16.0]: https://github.com/ahstn/oceans-llm/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/ahstn/oceans-llm/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/ahstn/oceans-llm/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/ahstn/oceans-llm/compare/v0.12.0...v0.13.0
