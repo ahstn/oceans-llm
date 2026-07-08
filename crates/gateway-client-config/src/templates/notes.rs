@@ -1,12 +1,13 @@
 use crate::{
     api_style::uses_anthropic_messages_api,
-    types::{AnthropicThinkingPolicy, ClientConfigInput},
+    types::{AnthropicThinkingPolicy, ClientConfigInput, MAX_CLIENT_CONTEXT_WINDOW_TOKENS},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum ClientConfigNoteKind {
     ThinkingPolicy,
     ClaudeCodeBaseUrl,
+    ContextWindow,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -33,10 +34,24 @@ impl ClientConfigNote {
 }
 
 pub(crate) fn thinking_notes(input: &ClientConfigInput) -> Vec<String> {
-    thinking_note_items(input)
+    common_note_items(input)
         .into_iter()
         .map(ClientConfigNote::into_message)
         .collect()
+}
+
+fn common_note_items(input: &ClientConfigInput) -> Vec<ClientConfigNote> {
+    let mut notes = thinking_note_items(input);
+    if input.context_window_is_capped() {
+        notes.push(ClientConfigNote::new(
+            ClientConfigNoteKind::ContextWindow,
+            format!(
+                "Generated client configs cap the input context window at {} tokens to keep long-context costs predictable; edit the limit in the client config if you want to use a larger window.",
+                MAX_CLIENT_CONTEXT_WINDOW_TOKENS
+            ),
+        ));
+    }
+    notes
 }
 
 pub(crate) fn thinking_note_items(input: &ClientConfigInput) -> Vec<ClientConfigNote> {
@@ -50,13 +65,13 @@ pub(crate) fn thinking_note_items(input: &ClientConfigInput) -> Vec<ClientConfig
 }
 
 pub(crate) fn claude_code_note_items(input: &ClientConfigInput) -> Vec<ClientConfigNote> {
-    let mut notes = thinking_note_items(input);
+    let mut notes = common_note_items(input);
     if uses_anthropic_messages_api(input) {
         notes.push(ClientConfigNote::new(
             ClientConfigNoteKind::ClaudeCodeBaseUrl,
             format!(
             "ANTHROPIC_BASE_URL is set to the Claude-compatible gateway base URL; Claude Code appends Anthropic endpoints such as /v1/messages and /v1/models. OpenCode and Pi also use Anthropic Messages for this model via {}.",
-            input.gateway_base_url
+            input.client_base_url()
             ),
         ));
     } else {
@@ -64,7 +79,7 @@ pub(crate) fn claude_code_note_items(input: &ClientConfigInput) -> Vec<ClientCon
             ClientConfigNoteKind::ClaudeCodeBaseUrl,
             format!(
             "ANTHROPIC_BASE_URL is set to the Claude-compatible gateway base URL; Claude Code appends Anthropic endpoints such as /v1/messages and /v1/models. Keep the OpenAI-compatible base URL ({}) for OpenCode and Pi.",
-            input.gateway_base_url
+            input.client_base_url()
             ),
         ));
     }

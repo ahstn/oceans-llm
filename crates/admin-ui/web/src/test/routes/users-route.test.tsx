@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { IdentityUsersPayload } from '@/types/api'
 
@@ -14,6 +14,8 @@ const routerMock = {
 
 const createIdentityUserMock = vi.fn()
 const resendInviteMock = vi.fn()
+const resetOnboardingMock = vi.fn()
+const updateIdentityUserMock = vi.fn()
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
@@ -32,24 +34,37 @@ vi.mock('@/server/admin-data.functions', () => ({
   createIdentityUser: (...args: unknown[]) => createIdentityUserMock(...args),
   getUsers: vi.fn(),
   reactivateIdentityUser: vi.fn(),
-  resetIdentityUserOnboarding: vi.fn(),
+  resetIdentityUserOnboarding: (...args: unknown[]) => resetOnboardingMock(...args),
   resendIdentityUserPasswordInvite: (...args: unknown[]) => resendInviteMock(...args),
-  updateIdentityUser: vi.fn(),
+  updateIdentityUser: (...args: unknown[]) => updateIdentityUserMock(...args),
 }))
 
 const basePayload: IdentityUsersPayload = {
   users: [],
   teams: [],
   oidc_providers: [],
+  oauth_providers: [],
 }
 
 describe('UsersPage', () => {
   beforeEach(() => {
+    if (!Element.prototype.hasPointerCapture) {
+      Element.prototype.hasPointerCapture = () => false
+    }
+    if (!Element.prototype.releasePointerCapture) {
+      Element.prototype.releasePointerCapture = () => {}
+    }
     routeMock.useLoaderData.mockReset()
     routeMock.useSearch.mockReturnValue({ user_id: undefined, user_section: 'overview' })
     routerMock.invalidate.mockClear()
     createIdentityUserMock.mockReset()
     resendInviteMock.mockReset()
+    resetOnboardingMock.mockReset()
+    updateIdentityUserMock.mockReset()
+  })
+
+  afterEach(() => {
+    cleanup()
   })
 
   it('teaches the next step when no users exist', async () => {
@@ -136,6 +151,7 @@ describe('UsersPage', () => {
         ],
         teams: [{ id: 'team_1', name: 'Core Platform' }],
         oidc_providers: [],
+        oauth_providers: [],
       } satisfies IdentityUsersPayload,
     })
 
@@ -155,5 +171,114 @@ describe('UsersPage', () => {
     expect(screen.getByRole('button', { name: 'Reset onboarding' })).toBeDisabled()
     const authMethodControls = screen.getAllByLabelText('Auth method')
     expect(authMethodControls[authMethodControls.length - 1]).toBeDisabled()
+  })
+
+  it('keeps a reset onboarding URL visible after the user list refreshes', async () => {
+    const invitedUser = {
+      id: 'user_1',
+      name: 'Jane Operator',
+      email: 'jane@example.com',
+      auth_mode: 'password',
+      global_role: 'user',
+      team_id: null,
+      team_name: null,
+      team_role: null,
+      request_logging_enabled: true,
+      status: 'invited',
+      tags: [],
+      onboarding: null,
+    } satisfies IdentityUsersPayload['users'][number]
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        ...basePayload,
+        users: [invitedUser],
+      },
+    })
+    routeMock.useSearch.mockReturnValue({ user_id: 'user_1', user_section: 'auth' })
+    resetOnboardingMock.mockResolvedValue({
+      data: {
+        kind: 'password_invite',
+        invite_url: 'http://example.test/invite/reset-user-1',
+        expires_at: '2026-03-14T12:00:00Z',
+        user: invitedUser,
+      },
+    })
+
+    const { UsersPage } = await import('@/routes/identity/users')
+
+    const { rerender } = render(<UsersPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset onboarding' }))
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('Generated URL')).toHaveValue(
+        'http://example.test/invite/reset-user-1',
+      ),
+    )
+
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        ...basePayload,
+        users: [{ ...invitedUser }],
+      },
+    })
+    rerender(<UsersPage />)
+
+    expect(screen.getByLabelText('Generated URL')).toHaveValue(
+      'http://example.test/invite/reset-user-1',
+    )
+  })
+
+  it('renders an OAuth reset onboarding URL', async () => {
+    const invitedUser = {
+      id: 'user_1',
+      name: 'Jane Operator',
+      email: 'jane@example.com',
+      auth_mode: 'oauth',
+      global_role: 'user',
+      team_id: null,
+      team_name: null,
+      team_role: null,
+      request_logging_enabled: true,
+      status: 'invited',
+      tags: [],
+      onboarding: {
+        kind: 'oauth_sign_in',
+        provider_key: 'github',
+        provider_label: 'GitHub',
+        sign_in_url: 'http://example.test/api/v1/auth/oauth/start?provider=github',
+      },
+    } satisfies IdentityUsersPayload['users'][number]
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        ...basePayload,
+        users: [invitedUser],
+        oauth_providers: [{ key: 'github', label: 'GitHub' }],
+      },
+    })
+    routeMock.useSearch.mockReturnValue({ user_id: 'user_1', user_section: 'auth' })
+    resetOnboardingMock.mockResolvedValue({
+      data: {
+        kind: 'oauth_sign_in',
+        provider_label: 'github',
+        sign_in_url: 'http://example.test/api/v1/auth/oauth/start?provider=github',
+      },
+    })
+
+    const { UsersPage } = await import('@/routes/identity/users')
+
+    render(<UsersPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset onboarding' }))
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('Generated URL')).toHaveValue(
+        'http://example.test/api/v1/auth/oauth/start?provider=github',
+      ),
+    )
+    expect(updateIdentityUserMock).not.toHaveBeenCalled()
+    expect(
+      screen.getByText('Share this URL with the user so they can finish SSO onboarding.'),
+    ).toBeInTheDocument()
   })
 })

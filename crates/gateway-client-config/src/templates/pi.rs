@@ -39,7 +39,7 @@ impl PiConfigTemplate {
             let style = group.api_style();
             let provider_id = provider_id_for_group(inputs[0], *group, has_multiple_styles);
             let mut provider = Map::from_iter([
-                ("baseUrl".to_string(), json!(inputs[0].gateway_base_url)),
+                ("baseUrl".to_string(), json!(inputs[0].client_base_url())),
                 ("api".to_string(), json!(pi_provider_api_for_style(style))),
                 (
                     "apiKey".to_string(),

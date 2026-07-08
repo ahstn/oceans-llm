@@ -138,12 +138,12 @@ export function UsersPage() {
   const selectedUser = search.user_id
     ? (users.find((user) => user.id === search.user_id) ?? null)
     : null
+  const selectedUserId = selectedUser?.id ?? null
   const selectedUserSection = search.user_section
 
   useEffect(() => {
     if (!selectedUser) {
       setUpdateForm(initialUpdateForm)
-      setOnboardingResult(null)
       return
     }
 
@@ -162,8 +162,11 @@ export function UsersPage() {
           : null,
       tags: selectedUser.tags,
     })
-    setOnboardingResult(null)
   }, [selectedUser])
+
+  useEffect(() => {
+    setOnboardingResult(null)
+  }, [selectedUserId])
 
   function resetDialog() {
     setForm(initialForm)
@@ -266,12 +269,7 @@ export function UsersPage() {
         await updateIdentityUser({
           data: {
             userId: selectedUser.id,
-            input: sanitizeUpdateForm(
-              updateForm,
-              selectedUser,
-              oidcProviders,
-              oauthProviders,
-            ),
+            input: sanitizeUpdateForm(updateForm, selectedUser, oidcProviders, oauthProviders),
           },
         })
         toast.success('User updated')
@@ -324,6 +322,14 @@ export function UsersPage() {
 
     startTransition(async () => {
       try {
+        if (selectedUser.status === 'invited' && onboardingAuthChanged(selectedUser, updateForm)) {
+          await updateIdentityUser({
+            data: {
+              userId: selectedUser.id,
+              input: sanitizeUpdateForm(updateForm, selectedUser, oidcProviders, oauthProviders),
+            },
+          })
+        }
         const response = await resetIdentityUserOnboarding({ data: { userId: selectedUser.id } })
         setOnboardingResult(response.data)
         toast.success(
@@ -390,7 +396,7 @@ export function UsersPage() {
                     <AlertDescription>
                       {result.kind === 'password_invite'
                         ? `Share this invite before ${result.expires_at}.`
-                        : `Share this URL with ${result.user.email} so they can finish SSO onboarding.`}
+                        : `Share this URL with ${onboardingRecipient(result)} so they can finish SSO onboarding.`}
                     </AlertDescription>
                   </Alert>
 
@@ -530,8 +536,8 @@ export function UsersPage() {
                           <Alert>
                             <AlertTitle>No OAuth providers configured</AlertTitle>
                             <AlertDescription>
-                              Add an OAuth provider in the gateway before inviting users with SSO, or
-                              use password onboarding for now.
+                              Add an OAuth provider in the gateway before inviting users with SSO,
+                              or use password onboarding for now.
                             </AlertDescription>
                           </Alert>
                         ) : null}
@@ -647,10 +653,7 @@ export function UsersPage() {
                     </Button>
                     <Button
                       type="submit"
-                      disabled={
-                        isPending ||
-                        isSsoDisabled(form, oidcProviders, oauthProviders)
-                      }
+                      disabled={isPending || isSsoDisabled(form, oidcProviders, oauthProviders)}
                     >
                       {isPending ? 'Creating…' : 'Create user'}
                     </Button>
@@ -1229,7 +1232,7 @@ export function UsersPage() {
                               <AlertDescription>
                                 {onboardingResult.kind === 'password_invite'
                                   ? `Share this invite before ${onboardingResult.expires_at}.`
-                                  : `Share this URL with ${onboardingResult.user.email} so they can finish SSO onboarding.`}
+                                  : `Share this URL with ${onboardingRecipient(onboardingResult)} so they can finish SSO onboarding.`}
                               </AlertDescription>
 
                               <Field className="mt-3">
@@ -1429,16 +1432,31 @@ function sanitizeUpdateForm(
   return update
 }
 
+function onboardingAuthChanged(user: UserView, form: UpdateUserInput) {
+  if (form.auth_mode !== user.auth_mode) {
+    return true
+  }
+  if (form.auth_mode === 'oidc') {
+    return form.oidc_provider_key !== user.onboarding?.provider_key
+  }
+  if (form.auth_mode === 'oauth') {
+    return form.oauth_provider_key !== user.onboarding?.provider_key
+  }
+  return false
+}
+
+function onboardingRecipient(result: CreateUserResult) {
+  return 'user' in result && result.user ? result.user.email : 'the user'
+}
+
 function isSsoDisabled(
   form: CreateUserInput,
   oidcProviders: IdentityUsersPayload['oidc_providers'],
   oauthProviders: IdentityUsersPayload['oauth_providers'],
 ) {
   return (
-    (form.auth_mode === 'oidc' &&
-      (oidcProviders.length === 0 || !form.oidc_provider_key)) ||
-    (form.auth_mode === 'oauth' &&
-      (oauthProviders.length === 0 || !form.oauth_provider_key))
+    (form.auth_mode === 'oidc' && (oidcProviders.length === 0 || !form.oidc_provider_key)) ||
+    (form.auth_mode === 'oauth' && (oauthProviders.length === 0 || !form.oauth_provider_key))
   )
 }
 

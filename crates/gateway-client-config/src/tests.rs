@@ -92,7 +92,7 @@ fn pi_shape_includes_provider_model_cost_and_windows() {
     let provider = &value["providers"]["oceans-llm"];
     let model = &provider["models"][0];
 
-    assert_eq!(provider["baseUrl"], "http://127.0.0.1:3000/v1");
+    assert_eq!(provider["baseUrl"], "http://127.0.0.1:3000");
     assert!(setup_value(&rendered, "Configuration").contains("~/.pi/agent/models.json"));
     assert!(setup_value(&rendered, "Configuration").contains("~/.pi/agent/settings.json"));
     assert!(setup_value(&rendered, "Configuration").contains(".pi/settings.json"));
@@ -108,10 +108,11 @@ fn pi_shape_includes_provider_model_cost_and_windows() {
     assert_eq!(model["contextWindow"], 200_000);
     assert_eq!(model["maxTokens"], 64_000);
     assert_eq!(model["cost"]["cacheRead"], 0.3);
+    assert_eq!(model["cost"]["cacheWrite"], 0);
 }
 
 #[test]
-fn cache_read_is_omitted_when_missing() {
+fn pi_cache_costs_default_to_zero_when_missing() {
     let mut input = input(Some(AnthropicThinkingPolicy::SafeEffort));
     input.cache_read_cost_per_million_tokens_usd_10000 = None;
 
@@ -126,10 +127,40 @@ fn cache_read_is_omitted_when_missing() {
             .get("cache_read")
             .is_none()
     );
+    assert_eq!(
+        pi["providers"]["oceans-llm"]["models"][0]["cost"]["cacheRead"],
+        0
+    );
+    assert_eq!(
+        pi["providers"]["oceans-llm"]["models"][0]["cost"]["cacheWrite"],
+        0
+    );
+}
+
+#[test]
+fn client_context_window_is_capped_with_note() {
+    let mut input = input(Some(AnthropicThinkingPolicy::SafeEffort));
+    input.context_window_tokens = Some(1_000_000);
+    input.input_window_tokens = None;
+
+    let opencode = OpenCodeConfigTemplate.render(&input);
+    let opencode_value: Value = serde_json::from_str(&opencode.blocks[0].content).expect("json");
+    let pi = PiConfigTemplate.render(&input);
+    let pi_value: Value = serde_json::from_str(&pi.blocks[0].content).expect("json");
+
+    assert_eq!(
+        opencode_value["provider"]["oceans-llm"]["models"]["claude-sonnet"]["limit"]["context"],
+        200_000
+    );
+    assert_eq!(
+        pi_value["providers"]["oceans-llm"]["models"][0]["contextWindow"],
+        200_000
+    );
     assert!(
-        pi["providers"]["oceans-llm"]["models"][0]["cost"]
-            .get("cacheRead")
-            .is_none()
+        opencode
+            .notes
+            .iter()
+            .any(|note| note.contains("cap the input context window at 200000 tokens"))
     );
 }
 
@@ -219,7 +250,7 @@ fn opencode_safe_effort_config_matches_expected_full_shape() {
                     "npm": "@ai-sdk/anthropic",
                     "options": {
                         "apiKey": "{env:OCEANS_LLM_API_KEY}",
-                        "baseURL": "http://127.0.0.1:3000/v1"
+                        "baseURL": "http://127.0.0.1:3000"
                     }
                 }
             }
@@ -239,7 +270,7 @@ fn pi_safe_effort_config_matches_expected_full_shape() {
                 "oceans-llm": {
                     "api": "anthropic-messages",
                     "apiKey": "$OCEANS_LLM_API_KEY",
-                    "baseUrl": "http://127.0.0.1:3000/v1",
+                    "baseUrl": "http://127.0.0.1:3000",
                     "compat": {
                         "forceAdaptiveThinking": true
                     },
@@ -248,6 +279,7 @@ fn pi_safe_effort_config_matches_expected_full_shape() {
                             "contextWindow": 200000,
                             "cost": {
                                 "cacheRead": 0.3,
+                                "cacheWrite": 0,
                                 "input": 3.0,
                                 "output": 15.0
                             },
@@ -584,7 +616,7 @@ fn codex_shape_includes_custom_responses_provider() {
     assert_eq!(provider["name"].as_str(), Some("OpenAI using LLM proxy"));
     assert_eq!(
         provider["base_url"].as_str(),
-        Some("https://oceans.example.com/v1")
+        Some("https://oceans.example.com")
     );
     assert_eq!(provider["env_key"].as_str(), Some("OCEANS_API_KEY"));
     assert_eq!(
@@ -596,7 +628,8 @@ fn codex_shape_includes_custom_responses_provider() {
     assert_eq!(toml["analytics"]["enabled"].as_bool(), Some(false));
     assert_eq!(toml["otel"]["log_user_prompt"].as_bool(), Some(false));
 
-    assert_eq!(content.matches("https://oceans.example.com/v1").count(), 1);
+    assert_eq!(content.matches("https://oceans.example.com").count(), 1);
+    assert!(!content.contains("https://oceans.example.com/v1"));
     assert!(!content.contains("]("));
     assert!(
         rendered

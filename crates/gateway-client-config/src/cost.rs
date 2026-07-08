@@ -29,10 +29,13 @@ pub(crate) fn pi_cost(input: &ClientConfigInput) -> Value {
             "output".to_string(),
             required_money4_to_number(input.output_cost_per_million_tokens_usd_10000),
         ),
+        ("cacheWrite".to_string(), json!(0)),
     ]);
-    if let Some(cache_read) = money4_to_number(input.cache_read_cost_per_million_tokens_usd_10000) {
-        cost.insert("cacheRead".to_string(), cache_read);
-    }
+    cost.insert(
+        "cacheRead".to_string(),
+        money4_to_number(input.cache_read_cost_per_million_tokens_usd_10000)
+            .unwrap_or_else(|| json!(0)),
+    );
     Value::Object(cost)
 }
 
