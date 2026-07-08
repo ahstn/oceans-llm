@@ -1,10 +1,15 @@
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+    time::Duration,
+};
 
 use anyhow::Context;
 use gateway_core::{
-    GatewayError, ModelPricingRecord, ModelRoute, Money4, PricingCatalogCacheRecord,
-    PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
-    PricingResolution, PricingUnpricedReason, ProviderConnection, ResolvedModelPricing,
+    GatewayError, ModelPricingProvenanceUpdate, ModelPricingRecord, ModelPricingSyncChanges,
+    ModelRoute, Money4, PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits,
+    PricingModalities, PricingProvenance, PricingResolution, PricingUnpricedReason,
+    ProviderConnection, ResolvedModelPricing,
 };
 use reqwest::{
     Client, StatusCode,
@@ -19,6 +24,7 @@ use uuid::Uuid;
 pub const DEFAULT_PRICING_CATALOG_SOURCE_URL: &str = "https://models.dev/api.json";
 pub const PRICING_CATALOG_CACHE_KEY: &str = "models_dev_supported_v2";
 pub const DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL: Duration = Duration::from_secs(15 * 60);
+pub const DEFAULT_PRICING_CATALOG_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 pub const SUPPORTED_PRICING_PROVIDER_IDS: [&str; 5] = [
     AMAZON_BEDROCK_PRICING_PROVIDER_ID,
     GOOGLE_VERTEX_PRICING_PROVIDER_ID,
@@ -77,7 +83,7 @@ where
     ) -> Self {
         Self {
             repo,
-            client: Client::new(),
+            client: pricing_catalog_http_client(),
             source_url,
             catalog_key,
             refresh_interval,
@@ -95,7 +101,7 @@ where
     ) -> Self {
         Self {
             repo,
-            client: Client::new(),
+            client: pricing_catalog_http_client(),
             source_url,
             catalog_key,
             refresh_interval,
@@ -123,8 +129,7 @@ where
     }
 
     pub async fn refresh_now_and_sync(&self) -> Result<(), GatewayError> {
-        let current = self.load_stored_snapshot().await?;
-        self.refresh_remote_snapshot(current, RefreshMode::Unconditional)
+        self.refresh_remote_snapshot(None, RefreshMode::Unconditional)
             .await?;
         let snapshot = self.load_snapshot_from_store_or_fallback().await?;
         self.sync_model_pricing_snapshot(&snapshot).await?;
@@ -301,6 +306,8 @@ where
             })
             .collect::<BTreeMap<_, _>>();
 
+        let mut snapshot_keys = BTreeSet::new();
+        let mut changes = ModelPricingSyncChanges::default();
         for (pricing_provider_id, provider_document) in &snapshot.document.providers {
             for (pricing_model_id, model_document) in &provider_document.models {
                 let desired = build_model_pricing_record(
@@ -310,26 +317,51 @@ where
                     model_document,
                 )?;
                 let key = (pricing_provider_id.clone(), pricing_model_id.clone());
+                snapshot_keys.insert(key.clone());
 
                 match active_by_target.get(&key) {
-                    Some(existing) if pricing_record_matches(existing, &desired) => {}
+                    Some(existing) if pricing_record_matches(existing, &desired) => {
+                        if existing.provenance != desired.provenance {
+                            changes
+                                .update_provenance
+                                .push(ModelPricingProvenanceUpdate {
+                                    model_pricing_id: existing.model_pricing_id,
+                                    provenance: desired.provenance,
+                                    updated_at: snapshot.metadata.fetched_at,
+                                });
+                        }
+                    }
                     Some(existing) => {
-                        self.repo
-                            .close_model_pricing(
-                                existing.model_pricing_id,
-                                snapshot.metadata.fetched_at,
-                                snapshot.metadata.fetched_at,
-                            )
-                            .await?;
-                        self.repo.insert_model_pricing(&desired).await?;
+                        changes
+                            .close_model_pricing_ids
+                            .push(existing.model_pricing_id);
+                        changes.insert_model_pricing.push(desired);
                     }
                     None => {
-                        self.repo.insert_model_pricing(&desired).await?;
+                        changes.insert_model_pricing.push(desired);
                     }
                 }
             }
         }
 
+        for (key, existing) in &active_by_target {
+            if !snapshot_keys.contains(key) {
+                changes
+                    .close_model_pricing_ids
+                    .push(existing.model_pricing_id);
+            }
+        }
+
+        if changes.close_model_pricing_ids.is_empty()
+            && changes.update_provenance.is_empty()
+            && changes.insert_model_pricing.is_empty()
+        {
+            return Ok(());
+        }
+
+        self.repo
+            .apply_model_pricing_sync(&changes, snapshot.metadata.fetched_at)
+            .await?;
         Ok(())
     }
 }
@@ -337,7 +369,7 @@ where
 pub async fn fetch_vendored_snapshot(
     source_url: &str,
 ) -> anyhow::Result<PricingCatalogSnapshotFile> {
-    let client = Client::new();
+    let client = pricing_catalog_http_client();
     let response = client
         .get(source_url)
         .send()
@@ -369,6 +401,13 @@ pub async fn fetch_vendored_snapshot(
 
 pub fn snapshot_to_pretty_json(snapshot: &PricingCatalogSnapshotFile) -> anyhow::Result<String> {
     serde_json::to_string_pretty(snapshot).context("failed serializing vendored pricing catalog")
+}
+
+fn pricing_catalog_http_client() -> Client {
+    Client::builder()
+        .timeout(DEFAULT_PRICING_CATALOG_REQUEST_TIMEOUT)
+        .build()
+        .expect("pricing catalog HTTP client configuration is valid")
 }
 
 pub fn is_supported_pricing_provider_id(value: &str) -> bool {
@@ -630,20 +669,29 @@ fn snapshot_is_already_synced(
     active_rows: &[ModelPricingRecord],
     snapshot: &PricingCatalogSnapshot,
 ) -> bool {
-    let snapshot_model_count = snapshot
+    let snapshot_keys = snapshot
         .document
         .providers
-        .values()
-        .map(|provider| provider.models.len())
-        .sum::<usize>();
-    snapshot_model_count > 0
-        && active_rows
-            .iter()
-            .filter(|row| row.provenance.source == snapshot.metadata.source)
-            .filter(|row| row.provenance.etag == snapshot.metadata.etag)
-            .filter(|row| row.provenance.fetched_at == snapshot.metadata.fetched_at)
-            .count()
-            >= snapshot_model_count
+        .iter()
+        .flat_map(|(provider_id, provider)| {
+            provider
+                .models
+                .keys()
+                .map(move |model_id| (provider_id.clone(), model_id.clone()))
+        })
+        .collect::<BTreeSet<_>>();
+
+    !snapshot_keys.is_empty()
+        && active_rows.len() == snapshot_keys.len()
+        && active_rows.iter().all(|row| {
+            row.provenance.source == snapshot.metadata.source
+                && row.provenance.etag == snapshot.metadata.etag
+                && row.provenance.fetched_at == snapshot.metadata.fetched_at
+                && snapshot_keys.contains(&(
+                    row.pricing_provider_id.clone(),
+                    row.pricing_model_id.clone(),
+                ))
+        })
 }
 
 fn parse_money(value: Option<&str>) -> Result<Option<Money4>, GatewayError> {
@@ -901,7 +949,7 @@ mod tests {
         routing::get,
     };
     use gateway_core::{
-        ModelPricingRecord, ModelRoute, Money4, PricingCatalogCacheRecord,
+        ModelPricingRecord, ModelPricingSyncChanges, ModelRoute, Money4, PricingCatalogCacheRecord,
         PricingCatalogRepository, PricingResolution, PricingUnpricedReason, ProviderCapabilities,
         ProviderConnection, StoreError,
     };
@@ -995,6 +1043,41 @@ mod tests {
             };
             row.effective_end_at = Some(effective_end_at);
             row.updated_at = updated_at;
+            Ok(())
+        }
+
+        async fn apply_model_pricing_sync(
+            &self,
+            changes: &ModelPricingSyncChanges,
+            effective_at: OffsetDateTime,
+        ) -> Result<(), StoreError> {
+            let mut rows = self.pricing_rows.lock().expect("pricing rows lock");
+            for model_pricing_id in &changes.close_model_pricing_ids {
+                let Some(row) = rows
+                    .iter_mut()
+                    .find(|row| row.model_pricing_id == *model_pricing_id)
+                else {
+                    return Err(StoreError::NotFound(format!(
+                        "model pricing row `{model_pricing_id}`"
+                    )));
+                };
+                row.effective_end_at = Some(effective_at);
+                row.updated_at = effective_at;
+            }
+            for update in &changes.update_provenance {
+                let Some(row) = rows
+                    .iter_mut()
+                    .find(|row| row.model_pricing_id == update.model_pricing_id)
+                else {
+                    return Err(StoreError::NotFound(format!(
+                        "model pricing row `{}`",
+                        update.model_pricing_id
+                    )));
+                };
+                row.provenance = update.provenance.clone();
+                row.updated_at = update.updated_at;
+            }
+            rows.extend(changes.insert_model_pricing.iter().cloned());
             Ok(())
         }
 
@@ -2149,6 +2232,143 @@ mod tests {
                 && row.input_cost_per_million_tokens == Some(Money4::from_scaled(20_000))
                 && row.effective_end_at.is_none()
         }));
+    }
+
+    #[tokio::test]
+    async fn unchanged_snapshot_refresh_updates_active_row_provenance() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let initial = fallback_snapshot();
+        repo.upsert_pricing_catalog_cache(&PricingCatalogCacheRecord {
+            catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
+            source: initial.metadata.source.clone(),
+            etag: initial.metadata.etag.clone(),
+            fetched_at: initial.metadata.fetched_at,
+            snapshot_json: to_string_pretty(&initial.document).expect("json"),
+        })
+        .await
+        .expect("seed initial snapshot");
+
+        let catalog = empty_catalog(repo.clone(), "http://127.0.0.1:9/api.json".to_string());
+        catalog
+            .resolve_for_provider_connection(
+                &openai_provider("openai"),
+                &route("openai-prod", "gpt-5"),
+                test_time(),
+            )
+            .await
+            .expect("seed initial pricing row");
+
+        let mut refreshed = fallback_snapshot();
+        refreshed.metadata = PricingCatalogSnapshotMetadata {
+            source: REMOTE_SOURCE.to_string(),
+            etag: Some("\"etag-refreshed\"".to_string()),
+            fetched_at: test_time() + Duration::from_secs(3600),
+        };
+        repo.upsert_pricing_catalog_cache(&PricingCatalogCacheRecord {
+            catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
+            source: refreshed.metadata.source.clone(),
+            etag: refreshed.metadata.etag.clone(),
+            fetched_at: refreshed.metadata.fetched_at,
+            snapshot_json: to_string_pretty(&refreshed.document).expect("json"),
+        })
+        .await
+        .expect("seed refreshed snapshot");
+
+        catalog
+            .resolve_for_provider_connection(
+                &openai_provider("openai"),
+                &route("openai-prod", "gpt-5"),
+                refreshed.metadata.fetched_at + Duration::from_secs(1),
+            )
+            .await
+            .expect("resolve refreshed pricing row");
+
+        let pricing_rows = repo.pricing_rows.lock().expect("pricing rows lock");
+        let matching = pricing_rows
+            .iter()
+            .filter(|row| row.pricing_provider_id == "openai" && row.pricing_model_id == "gpt-5")
+            .collect::<Vec<_>>();
+        assert_eq!(matching.len(), 1);
+        assert_eq!(matching[0].provenance.source, refreshed.metadata.source);
+        assert_eq!(matching[0].provenance.etag, refreshed.metadata.etag);
+        assert_eq!(
+            matching[0].provenance.fetched_at,
+            refreshed.metadata.fetched_at
+        );
+    }
+
+    #[tokio::test]
+    async fn refreshed_snapshot_closes_removed_active_pricing_rows() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let initial = fallback_snapshot();
+        repo.upsert_pricing_catalog_cache(&PricingCatalogCacheRecord {
+            catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
+            source: initial.metadata.source.clone(),
+            etag: initial.metadata.etag.clone(),
+            fetched_at: initial.metadata.fetched_at,
+            snapshot_json: to_string_pretty(&initial.document).expect("json"),
+        })
+        .await
+        .expect("seed initial snapshot");
+
+        let catalog = empty_catalog(repo.clone(), "http://127.0.0.1:9/api.json".to_string());
+        catalog
+            .resolve_for_provider_connection(
+                &openai_provider("openai"),
+                &route("openai-prod", "gpt-5"),
+                test_time(),
+            )
+            .await
+            .expect("seed initial pricing row");
+
+        let mut removed = fallback_snapshot();
+        removed.metadata = PricingCatalogSnapshotMetadata {
+            source: REMOTE_SOURCE.to_string(),
+            etag: Some("\"etag-removed\"".to_string()),
+            fetched_at: test_time() + Duration::from_secs(3600),
+        };
+        removed
+            .document
+            .providers
+            .get_mut("openai")
+            .expect("openai provider")
+            .models
+            .remove("gpt-5")
+            .expect("gpt-5 model");
+        repo.upsert_pricing_catalog_cache(&PricingCatalogCacheRecord {
+            catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
+            source: removed.metadata.source.clone(),
+            etag: removed.metadata.etag.clone(),
+            fetched_at: removed.metadata.fetched_at,
+            snapshot_json: to_string_pretty(&removed.document).expect("json"),
+        })
+        .await
+        .expect("seed removed snapshot");
+
+        let resolved = catalog
+            .resolve_for_provider_connection(
+                &openai_provider("openai"),
+                &route("openai-prod", "gpt-5"),
+                removed.metadata.fetched_at + Duration::from_secs(1),
+            )
+            .await
+            .expect("resolve removed pricing row");
+
+        assert_eq!(
+            resolved,
+            PricingResolution::Unpriced {
+                reason: PricingUnpricedReason::ModelNotFound,
+            }
+        );
+        let pricing_rows = repo.pricing_rows.lock().expect("pricing rows lock");
+        let removed_row = pricing_rows
+            .iter()
+            .find(|row| row.pricing_provider_id == "openai" && row.pricing_model_id == "gpt-5")
+            .expect("removed pricing row");
+        assert_eq!(
+            removed_row.effective_end_at,
+            Some(removed.metadata.fetched_at)
+        );
     }
 
     #[tokio::test]

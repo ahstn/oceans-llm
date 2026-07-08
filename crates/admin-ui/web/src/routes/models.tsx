@@ -203,10 +203,17 @@ export function ModelsPage() {
     setIsRefreshingPricing(true)
     try {
       await refreshModelPricing()
-      await router.invalidate()
       toast.success('Pricing refreshed')
     } catch {
       toast.error('Pricing refresh failed')
+      setIsRefreshingPricing(false)
+      return
+    }
+
+    try {
+      await router.invalidate()
+    } catch {
+      toast.error('Pricing refreshed, but the model list did not reload')
     } finally {
       setIsRefreshingPricing(false)
     }

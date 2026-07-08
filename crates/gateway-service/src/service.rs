@@ -708,11 +708,11 @@ mod tests {
         BudgetAlertRepository, BudgetRecord, BudgetRepository, BudgetScope, BudgetSettings,
         BudgetSource, GatewayModel, IdentityRepository, McpToolInvocationDetail,
         McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
-        McpToolInvocationRecord, McpToolInvocationRepository, ModelRepository, ModelRoute, Money4,
-        PricingCatalogCacheRecord, PricingCatalogRepository, ProviderCapabilities,
-        ProviderConnection, ProviderRepository, RequestLogDetail, RequestLogPage,
-        RequestLogPayloadRecord, RequestLogPurgeResult, RequestLogQuery, RequestLogRecord,
-        RequestLogRepository, RouteError, RoutePlanner, StoreError, StoreHealth,
+        McpToolInvocationRecord, McpToolInvocationRepository, ModelPricingSyncChanges,
+        ModelRepository, ModelRoute, Money4, PricingCatalogCacheRecord, PricingCatalogRepository,
+        ProviderCapabilities, ProviderConnection, ProviderRepository, RequestLogDetail,
+        RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult, RequestLogQuery,
+        RequestLogRecord, RequestLogRepository, RouteError, RoutePlanner, StoreError, StoreHealth,
         TeamMembershipRecord, TeamRecord, UsageLedgerRecord, UsagePricingStatus, UserRecord,
     };
     use serde_json::{Map, json};
@@ -971,6 +971,14 @@ mod tests {
             _model_pricing_id: Uuid,
             _effective_end_at: OffsetDateTime,
             _updated_at: OffsetDateTime,
+        ) -> Result<(), StoreError> {
+            Ok(())
+        }
+
+        async fn apply_model_pricing_sync(
+            &self,
+            _changes: &ModelPricingSyncChanges,
+            _effective_at: OffsetDateTime,
         ) -> Result<(), StoreError> {
             Ok(())
         }

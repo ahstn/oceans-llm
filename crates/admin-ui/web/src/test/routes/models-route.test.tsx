@@ -555,6 +555,26 @@ describe('ModelsPage', () => {
     await waitFor(() => expect(invalidateMock).toHaveBeenCalledTimes(1))
   })
 
+  it('keeps a successful pricing refresh when model data reload fails', async () => {
+    refreshModelPricingMock.mockResolvedValue({ data: { refreshed: true }, meta: {} })
+    invalidateMock.mockRejectedValue(new Error('reload failed'))
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh pricing' }))
+
+    expect(refreshModelPricingMock).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(invalidateMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Refresh pricing' })).toBeEnabled()
+    })
+  })
+
   it('selects multiple models and opens generated client config for the selected set', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.assign(navigator, {

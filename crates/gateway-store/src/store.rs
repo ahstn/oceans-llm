@@ -1099,6 +1099,14 @@ impl PricingCatalogRepository for AnyStore {
         )
     }
 
+    async fn apply_model_pricing_sync(
+        &self,
+        changes: &gateway_core::ModelPricingSyncChanges,
+        effective_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(self, apply_model_pricing_sync(changes, effective_at))
+    }
+
     async fn resolve_model_pricing_at(
         &self,
         pricing_provider_id: &str,
