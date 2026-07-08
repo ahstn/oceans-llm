@@ -2051,6 +2051,20 @@ pub struct ModelPricingRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ModelPricingProvenanceUpdate {
+    pub model_pricing_id: Uuid,
+    pub provenance: PricingProvenance,
+    pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ModelPricingSyncChanges {
+    pub close_model_pricing_ids: Vec<Uuid>,
+    pub update_provenance: Vec<ModelPricingProvenanceUpdate>,
+    pub insert_model_pricing: Vec<ModelPricingRecord>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", content = "detail", rename_all = "snake_case")]
 pub enum PricingUnpricedReason {
     ProviderPricingSourceMissing,

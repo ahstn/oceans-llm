@@ -11,7 +11,7 @@ use crate::http::{
         AdminModelAllowlistView, AdminModelClientConfigBlockView,
         AdminModelClientConfigSetupItemView, AdminModelClientConfigView, AdminModelListQuery,
         AdminModelPageView, AdminModelView, Envelope, GenerateModelClientConfigsRequest,
-        GenerateModelClientConfigsResponse, envelope,
+        GenerateModelClientConfigsResponse, RefreshModelPricingCatalogResponse, envelope,
     },
     error::AppError,
     state::AppState,
@@ -107,6 +107,25 @@ pub async fn generate_model_client_configs(
 
     Ok(Json(envelope(GenerateModelClientConfigsResponse {
         client_configurations,
+    })))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/admin/models/pricing-catalog/refresh",
+    responses((status = 200, body = Envelope<RefreshModelPricingCatalogResponse>)),
+    security(("session_cookie" = []))
+)]
+pub async fn refresh_model_pricing_catalog(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Envelope<RefreshModelPricingCatalogResponse>>, AppError> {
+    require_platform_admin(&state, &headers).await?;
+
+    state.service.refresh_pricing_catalog_now().await?;
+
+    Ok(Json(envelope(RefreshModelPricingCatalogResponse {
+        refreshed: true,
     })))
 }
 

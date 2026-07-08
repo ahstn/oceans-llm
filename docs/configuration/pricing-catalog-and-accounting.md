@@ -1,132 +1,115 @@
 # Pricing Catalog and Accounting
 
-`See also`: [Configuration Reference](configuration-reference.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Data Relationships](../contributing/reference/data-relationships.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Budgets and Spending](../contributing/operations/budgets-and-spending.md), [ADR: Hybrid Pricing Catalog from models.dev](../adr/2026-03-06-hybrid-pricing-catalog.md), [ADR: Route-Level Provider API Compatibility Profiles](../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md)
+`See also`: [Configuration Reference](configuration-reference.md), [Budgets](../access/budgets.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md)
 
-This page explains how the gateway turns provider usage into durable pricing records and why some successful requests are intentionally not charged.
+This page explains how Oceans LLM turns provider usage into spend records, why some successful requests are visible but not charged, and what admins should check when model prices look stale or missing.
 
-## Source of Truth
+## What Admins Should Expect
 
-- pricing resolution and refresh logic:
-  - [../crates/gateway-service/src/pricing_catalog.rs](../../crates/gateway-service/src/pricing_catalog.rs)
-- spend ledger writes:
-  - [../crates/gateway-service/src/service.rs](../../crates/gateway-service/src/service.rs)
-- cache and pricing-row persistence:
-  - [../crates/gateway-store/src/libsql_store/pricing_catalog.rs](../../crates/gateway-store/src/libsql_store/pricing_catalog.rs)
-  - [../crates/gateway-store/src/postgres_store/pricing_catalog.rs](../../crates/gateway-store/src/postgres_store/pricing_catalog.rs)
-- vendored fallback snapshot:
-  - [../crates/gateway-service/data/pricing_catalog_fallback.json](../../crates/gateway-service/data/pricing_catalog_fallback.json)
+Oceans LLM charges only when it has both:
 
-## Catalog Layers
+- usage from the provider, such as input and output token counts
+- an exact pricing match for the selected provider, model, location, and supported billing shape
 
-The runtime does not price directly from a live remote response on every request.
+When both are present, the request is recorded as `priced` and counts toward spend reports and hard or soft budget windows.
 
-It uses three layers:
+When either side is missing, the request still appears in reporting, but it does not consume budget:
 
-1. vendored normalized fallback snapshot in the repo
-2. cached normalized remote snapshot in `pricing_catalog_cache`
-3. effective-dated `model_pricing` rows used for historical lookup
+- `usage_missing`: the provider response did not include usable usage counters
+- `unpriced`: usage exists, but Oceans could not resolve an exact price safely
 
-That split keeps historical spend totals stable after an upstream catalog changes.
+This is intentional. Oceans avoids approximate charging because approximate charges can make budget enforcement and audits misleading.
 
-## Upstream Source and Refresh
+## Pricing Catalog Refresh
 
-Current normalized pricing input comes from `models.dev`.
+Oceans uses pricing metadata from `models.dev` when it is available. Admins can refresh that metadata from the Models page with **Refresh pricing**.
 
-Operational shape:
+A refresh updates the gateway's cached catalog snapshot and reconciles effective pricing rows for models with exact coverage. The Models page then reloads so newly priced models can show input and output rates.
 
-- the runtime can refresh pricing metadata from the upstream feed
-- cached snapshots are persisted in `pricing_catalog_cache`
-- the vendored fallback keeps the repo bootstrappable when the remote source is unavailable
+The gateway also keeps a vendored fallback catalog so a new environment can start when the remote catalog is unavailable. The fallback is a bootstrap and outage safety net, not a replacement for refreshing current pricing in a deployed environment.
 
-The durable historical charging source is still `model_pricing`, not the cache row.
+Refreshing the catalog does not rewrite old request charges. Historical spend keeps the rate that was resolved when the request was recorded.
 
-## Historical Pricing Contract
+## How Pricing Is Chosen
 
-Pricing is effective-dated.
+The runtime does not price every request directly from a live remote response. It uses three layers:
 
-At request time, the gateway resolves one pricing row and copies provenance into `usage_cost_events`, including:
+1. a vendored normalized fallback snapshot
+2. a cached normalized remote snapshot
+3. effective-dated pricing rows used for request-time lookup
 
-- `pricing_row_id`
-- `pricing_provider_id`
-- `pricing_model_id`
-- copied rate fields
-- pricing source metadata
+The effective-dated rows are what matter for durable accounting. They let Oceans keep older spend stable after an upstream catalog changes.
 
-## Supported Pricing Paths
+At request time, Oceans records the selected pricing provenance with the spend event, including the pricing provider, pricing model, copied rate fields, and pricing source metadata. That makes later reports explainable even if the external catalog has changed.
 
-Current exact-only coverage is intentionally narrow:
+## Configure Routes For Chargeable Traffic
 
-- `openai_compat` requires a supported `pricing_provider_id`
-- Vertex pricing is inferred from the upstream publisher prefix
+Route configuration affects pricing. The selected route tells Oceans which provider family and upstream model should be used for the pricing lookup.
+
+Current exact pricing coverage is intentionally narrow:
+
+- `openai_compat` routes need a supported `pricing_provider_id`
+- OpenRouter `openai_compat` routes should use `pricing_provider_id: openrouter`
+- Vertex routes are priced from the upstream publisher prefix
 - `google/...` maps to Google Vertex pricing
 - `anthropic/...` maps to Anthropic-on-Vertex pricing
 
-Known coverage constraint:
+Anthropic-on-Vertex pricing is supported only for `location=global`.
 
-- Anthropic-on-Vertex pricing is only supported for `location=global`
+If a route changes provider, upstream model, location, or a billing modifier such as `service_tier`, review pricing behavior before relying on budget enforcement for that traffic.
 
-## Vertex Text Embedding Pricing
+## When Requests Are Not Charged
 
-Native Vertex text embeddings use the same exact pricing resolver as other Vertex traffic:
+A successful provider response can still become `unpriced`.
 
-- `upstream_model: google/gemini-embedding-001` resolves against pricing provider `google-vertex` and pricing model `gemini-embedding-001`
-- `upstream_model: google/gemini-embedding-2` resolves against pricing provider `google-vertex` and pricing model `gemini-embedding-2`
-- `upstream_model: google/text-embedding-005` resolves against pricing provider `google-vertex` and pricing model `text-embedding-005`
-- `upstream_model: google/text-multilingual-embedding-002` resolves against pricing provider `google-vertex` and pricing model `text-multilingual-embedding-002`
+Common causes are:
 
-The mapper charges only from real provider token usage. Vertex `:predict` text embeddings expose token usage through `predictions[].embeddings.statistics.token_count`; `google/gemini-embedding-2` exposes it through `usageMetadata.promptTokenCount` on `:embedContent`. The gateway aggregates those values for array input and records them as prompt/input tokens. It does not infer token counts from characters, bytes, vector dimensions, or input count.
-
-Embedding pricing is input-token based in this slice. `dimensions` and its `output_dimensionality`/`outputDimensionality` aliases affect the provider request and resulting vectors, but they do not select a different pricing key or billing modifier. For `:predict` models, `task_type`, `input_type`, `title`, and `auto_truncate` are also request-shaping fields, not pricing keys. If a future provider rate differentiates one of those dimensions, that modifier must become explicit before it is charged.
-
-Failure-to-charge states:
-
-- `usage_missing`: Vertex returned vectors but did not return usable token-count values.
-- `unpriced`: token usage exists, but no exact catalog row/rate exists for the selected Vertex model and location.
-
-Both states remain report-visible and do not consume hard or soft budget windows.
-
-## Why Requests Become `unpriced`
-
-A request can succeed and still become `unpriced`.
-
-Common causes:
-
-- missing provider pricing source
-- unsupported `pricing_provider_id`
+- no supported pricing source for the provider
+- missing or unsupported `pricing_provider_id`
 - unknown pricing model id
 - unsupported Vertex publisher family
 - unsupported Vertex location
-- unsupported billing modifiers such as `service_tier`
-- missing exact input or output rate coverage
+- unsupported billing modifier such as `service_tier`
+- missing exact input or output token rate
 
-This is fail-closed accounting behavior. Approximate billing is intentionally avoided in this slice.
+`usage_missing` is different. It means Oceans could not normalize usable provider usage at all. For example, a provider may return a successful response without final token counts.
 
-## `usage_missing` Versus `unpriced`
+Both states remain visible in reports and request logs, but neither state counts toward spend totals or hard-limit windows.
 
-- `usage_missing`
-  - provider usage could not be normalized
-- `unpriced`
-  - usage exists, but exact pricing could not be resolved safely
+## Vertex Text Embeddings
 
-Both states stay visible in reporting, but neither counts toward spend totals or hard-limit windows.
+Native Vertex text embeddings use the same exact pricing resolver as other Vertex traffic:
 
-## Streaming Usage and Compatibility
+| Upstream model | Pricing provider | Pricing model |
+| --- | --- | --- |
+| `google/gemini-embedding-001` | `google-vertex` | `gemini-embedding-001` |
+| `google/gemini-embedding-2` | `google-vertex` | `gemini-embedding-2` |
+| `google/text-embedding-005` | `google-vertex` | `text-embedding-005` |
+| `google/text-multilingual-embedding-002` | `google-vertex` | `text-multilingual-embedding-002` |
 
-Some OpenAI-compatible providers only emit streaming usage when the request includes `stream_options.include_usage = true`.
+Oceans charges only from real provider token usage. Vertex `:predict` text embeddings expose token usage through `predictions[].embeddings.statistics.token_count`; `google/gemini-embedding-2` exposes it through `usageMetadata.promptTokenCount` on `:embedContent`. Oceans aggregates those values for array input and records them as prompt/input tokens.
+
+Oceans does not infer embedding token counts from characters, bytes, vector dimensions, or input count.
+
+Embedding pricing in this slice is input-token based. `dimensions` and its `output_dimensionality` or `outputDimensionality` aliases affect the provider request and resulting vectors, but they do not select a different pricing key or billing modifier. For `:predict` models, `task_type`, `input_type`, `title`, and `auto_truncate` are request-shaping fields, not pricing keys.
+
+If a future provider rate differentiates one of those dimensions, Oceans must model that modifier explicitly before charging for it.
+
+## Streaming Usage
+
+Some OpenAI-compatible providers only return streaming usage when the request includes `stream_options.include_usage = true`.
 
 Routes can opt into that request shape with `compatibility.openai_compat.supports_stream_usage`. This improves usage capture for providers that support it, but it is not a billing guarantee:
 
-- providers may omit final usage despite the option
-- provider-specific usage counters may not fit the gateway accounting model
+- providers may still omit final usage
+- provider-specific counters may not fit Oceans accounting
 - successful requests can still become `usage_missing` or `unpriced`
 
-This compatibility option is Chat Completions-specific. Responses streams use the Responses event model and read usage from completed response events with `response.usage`.
-
-The accounting model remains limited to prompt/input tokens, completion/output tokens, and total tokens in this slice.
+This compatibility option applies to Chat Completions streams. Responses streams use the Responses event model and read usage from completed response events.
 
 ## Stored But Not Charged Yet
 
-The pricing catalog can preserve more rate metadata than the runtime charges today.
+The catalog and provider responses can contain more billing signals than Oceans charges today.
 
 | Catalog or provider signal | Current accounting status |
 | --- | --- |
@@ -137,25 +120,19 @@ The pricing catalog can preserve more rate metadata than the runtime charges tod
 | reasoning tokens or traces | not charged separately yet |
 | image, audio, and file modality counters | not charged yet |
 
-That distinction keeps the ledger conservative. The gateway should not infer spend for provider-specific counters until the pricing and request semantics are explicit. Richer token and cache accounting is tracked in [issue #92](https://github.com/ahstn/oceans-llm/issues/92).
+The current accounting model is limited to prompt/input tokens, completion/output tokens, and total tokens.
 
-AWS Bedrock Anthropic Claude responses preserve the raw Anthropic usage object under `usage.provider_usage`, including cache counters such as `cache_read_input_tokens` and `cache_creation_input_tokens` when Bedrock returns them. Bedrock Claude thinking and Converse reasoning blocks are preserved as provider metadata on Chat Completions messages or stream deltas, but they are not priced as separate ledger dimensions. Durable accounting still uses only normalized `prompt_tokens`, `completion_tokens`, and `total_tokens`; cache read/write discounts, hidden thinking costs, and reasoning-specific counters remain aligned with [issue #92](https://github.com/ahstn/oceans-llm/issues/92).
+AWS Bedrock Anthropic Claude responses preserve the raw Anthropic usage object under `usage.provider_usage`, including cache counters such as `cache_read_input_tokens` and `cache_creation_input_tokens` when Bedrock returns them. Bedrock Claude thinking and Converse reasoning blocks are preserved as provider metadata on Chat Completions messages or stream deltas, but they are not priced as separate ledger dimensions.
 
-## Relationship to Request Flow
+Cache read/write discounts, hidden thinking costs, and reasoning-specific counters remain future accounting work tracked in [issue #92](https://github.com/ahstn/oceans-llm/issues/92).
 
-Route choice affects accounting, not only provider execution.
+## Budgets And Reporting
 
-- the chosen provider decides the pricing family
-- the chosen upstream model decides the exact lookup key
-- route or request modifiers can make a request become `unpriced`
+Budget enforcement uses priced totals only.
 
-Use [request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md) for the full cause-and-effect path.
+- `priced` and `legacy_estimated` rows count toward spend totals and budget windows.
+- `unpriced` and `usage_missing` rows stay visible but do not consume hard or soft budgets.
 
-## Relationship to Budgets
+For budget setup, alerting, and budget precedence, see [Budgets](../access/budgets.md).
 
-Budget enforcement only uses priced totals.
-
-- `priced` and `legacy_estimated` rows count
-- `unpriced` and `usage_missing` rows do not count
-
-Use [budgets-and-spending.md](../contributing/operations/budgets-and-spending.md) for budget windows and spend APIs.
+For the full request path and failure behavior, see [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md).

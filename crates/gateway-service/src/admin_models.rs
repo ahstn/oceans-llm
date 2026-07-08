@@ -532,10 +532,10 @@ mod tests {
 
     use async_trait::async_trait;
     use gateway_core::{
-        GatewayError, GatewayModel, ModelAllowlistPolicy, ModelPricingRecord, ModelRepository,
-        ModelRoute, Money4, PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits,
-        PricingModalities, PricingProvenance, ProviderCapabilities, ProviderConnection,
-        ProviderRepository, StoreError,
+        GatewayError, GatewayModel, ModelAllowlistPolicy, ModelPricingRecord,
+        ModelPricingSyncChanges, ModelRepository, ModelRoute, Money4, PricingCatalogCacheRecord,
+        PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
+        ProviderCapabilities, ProviderConnection, ProviderRepository, StoreError,
     };
     use serde_json::json;
     use time::OffsetDateTime;
@@ -705,6 +705,14 @@ mod tests {
             _model_pricing_id: Uuid,
             _effective_end_at: OffsetDateTime,
             _updated_at: OffsetDateTime,
+        ) -> Result<(), StoreError> {
+            Ok(())
+        }
+
+        async fn apply_model_pricing_sync(
+            &self,
+            _changes: &ModelPricingSyncChanges,
+            _effective_at: OffsetDateTime,
         ) -> Result<(), StoreError> {
             Ok(())
         }

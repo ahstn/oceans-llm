@@ -65,6 +65,8 @@ export type GenerateModelClientConfigsInput =
   components['schemas']['GenerateModelClientConfigsRequest']
 export type GenerateModelClientConfigsResponse =
   components['schemas']['GenerateModelClientConfigsResponse']
+export type RefreshModelPricingCatalogResponse =
+  components['schemas']['RefreshModelPricingCatalogResponse']
 
 export type ReviewAgentRepositoryView = components['schemas']['ReviewAgentRepositoryView']
 export type ReviewAgentSettingsView = components['schemas']['ReviewAgentSettingsView']

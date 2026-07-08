@@ -47,6 +47,7 @@ import type {
   GenerateModelClientConfigsInput,
   GenerateModelClientConfigsResponse,
   ModelPageView,
+  RefreshModelPricingCatalogResponse,
   PasswordInviteResult,
   PasswordLoginInput,
   RequestLogDetailView,
@@ -171,6 +172,13 @@ export async function generateModelClientConfigs(
       body: input,
     }),
   )
+}
+
+export async function refreshModelPricingCatalog(): Promise<
+  ApiEnvelope<RefreshModelPricingCatalogResponse>
+> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(await client.POST('/api/v1/admin/models/pricing-catalog/refresh'))
 }
 
 export async function getSpendReport(params?: {

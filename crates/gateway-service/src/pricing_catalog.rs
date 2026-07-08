@@ -1,10 +1,15 @@
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+    time::Duration,
+};
 
 use anyhow::Context;
 use gateway_core::{
-    GatewayError, ModelPricingRecord, ModelRoute, Money4, PricingCatalogCacheRecord,
-    PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
-    PricingResolution, PricingUnpricedReason, ProviderConnection, ResolvedModelPricing,
+    GatewayError, ModelPricingProvenanceUpdate, ModelPricingRecord, ModelPricingSyncChanges,
+    ModelRoute, Money4, PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits,
+    PricingModalities, PricingProvenance, PricingResolution, PricingUnpricedReason,
+    ProviderConnection, ResolvedModelPricing,
 };
 use reqwest::{
     Client, StatusCode,
@@ -19,22 +24,31 @@ use uuid::Uuid;
 pub const DEFAULT_PRICING_CATALOG_SOURCE_URL: &str = "https://models.dev/api.json";
 pub const PRICING_CATALOG_CACHE_KEY: &str = "models_dev_supported_v2";
 pub const DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL: Duration = Duration::from_secs(15 * 60);
-pub const SUPPORTED_PRICING_PROVIDER_IDS: [&str; 4] = [
+pub const DEFAULT_PRICING_CATALOG_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+pub const SUPPORTED_PRICING_PROVIDER_IDS: [&str; 5] = [
     AMAZON_BEDROCK_PRICING_PROVIDER_ID,
     GOOGLE_VERTEX_PRICING_PROVIDER_ID,
     GOOGLE_VERTEX_ANTHROPIC_PRICING_PROVIDER_ID,
     OPENAI_PRICING_PROVIDER_ID,
+    OPENROUTER_PRICING_PROVIDER_ID,
 ];
 
 const AMAZON_BEDROCK_PRICING_PROVIDER_ID: &str = "amazon-bedrock";
 const GOOGLE_VERTEX_PRICING_PROVIDER_ID: &str = "google-vertex";
 const GOOGLE_VERTEX_ANTHROPIC_PRICING_PROVIDER_ID: &str = "google-vertex-anthropic";
 const OPENAI_PRICING_PROVIDER_ID: &str = "openai";
+const OPENROUTER_PRICING_PROVIDER_ID: &str = "openrouter";
 const REMOTE_SOURCE: &str = "models_dev_api";
 const VENDORED_SOURCE: &str = "vendored_models_dev";
 const VENDORED_FALLBACK_JSON: &str = include_str!("../data/pricing_catalog_fallback.json");
 const BEDROCK_GPT_OSS_120B_PRICING_MODEL_ID: &str = "openai.gpt-oss-120b-1:0";
 const BEDROCK_GPT_OSS_20B_PRICING_MODEL_ID: &str = "openai.gpt-oss-20b-1:0";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RefreshMode {
+    Conditional,
+    Unconditional,
+}
 
 #[derive(Clone)]
 pub struct PricingCatalog<R> {
@@ -69,7 +83,7 @@ where
     ) -> Self {
         Self {
             repo,
-            client: Client::new(),
+            client: pricing_catalog_http_client(),
             source_url,
             catalog_key,
             refresh_interval,
@@ -87,7 +101,7 @@ where
     ) -> Self {
         Self {
             repo,
-            client: Client::new(),
+            client: pricing_catalog_http_client(),
             source_url,
             catalog_key,
             refresh_interval,
@@ -110,10 +124,29 @@ where
             return Ok(());
         }
 
+        self.refresh_remote_snapshot(current, RefreshMode::Conditional)
+            .await
+    }
+
+    pub async fn refresh_now_and_sync(&self) -> Result<(), GatewayError> {
+        self.refresh_remote_snapshot(None, RefreshMode::Unconditional)
+            .await?;
+        let snapshot = self.load_snapshot_from_store_or_fallback().await?;
+        self.sync_model_pricing_snapshot(&snapshot).await?;
+        Ok(())
+    }
+
+    async fn refresh_remote_snapshot(
+        &self,
+        current: Option<PricingCatalogSnapshot>,
+        mode: RefreshMode,
+    ) -> Result<(), GatewayError> {
+        let now = OffsetDateTime::now_utc();
         let mut request = self.client.get(&self.source_url);
-        if let Some(etag) = current
-            .as_ref()
-            .and_then(|snapshot| snapshot.metadata.etag.clone())
+        if mode == RefreshMode::Conditional
+            && let Some(etag) = current
+                .as_ref()
+                .and_then(|snapshot| snapshot.metadata.etag.clone())
         {
             request = request.header(IF_NONE_MATCH, etag);
         }
@@ -273,6 +306,8 @@ where
             })
             .collect::<BTreeMap<_, _>>();
 
+        let mut snapshot_keys = BTreeSet::new();
+        let mut changes = ModelPricingSyncChanges::default();
         for (pricing_provider_id, provider_document) in &snapshot.document.providers {
             for (pricing_model_id, model_document) in &provider_document.models {
                 let desired = build_model_pricing_record(
@@ -282,26 +317,51 @@ where
                     model_document,
                 )?;
                 let key = (pricing_provider_id.clone(), pricing_model_id.clone());
+                snapshot_keys.insert(key.clone());
 
                 match active_by_target.get(&key) {
-                    Some(existing) if pricing_record_matches(existing, &desired) => {}
+                    Some(existing) if pricing_record_matches(existing, &desired) => {
+                        if existing.provenance != desired.provenance {
+                            changes
+                                .update_provenance
+                                .push(ModelPricingProvenanceUpdate {
+                                    model_pricing_id: existing.model_pricing_id,
+                                    provenance: desired.provenance,
+                                    updated_at: snapshot.metadata.fetched_at,
+                                });
+                        }
+                    }
                     Some(existing) => {
-                        self.repo
-                            .close_model_pricing(
-                                existing.model_pricing_id,
-                                snapshot.metadata.fetched_at,
-                                snapshot.metadata.fetched_at,
-                            )
-                            .await?;
-                        self.repo.insert_model_pricing(&desired).await?;
+                        changes
+                            .close_model_pricing_ids
+                            .push(existing.model_pricing_id);
+                        changes.insert_model_pricing.push(desired);
                     }
                     None => {
-                        self.repo.insert_model_pricing(&desired).await?;
+                        changes.insert_model_pricing.push(desired);
                     }
                 }
             }
         }
 
+        for (key, existing) in &active_by_target {
+            if !snapshot_keys.contains(key) {
+                changes
+                    .close_model_pricing_ids
+                    .push(existing.model_pricing_id);
+            }
+        }
+
+        if changes.close_model_pricing_ids.is_empty()
+            && changes.update_provenance.is_empty()
+            && changes.insert_model_pricing.is_empty()
+        {
+            return Ok(());
+        }
+
+        self.repo
+            .apply_model_pricing_sync(&changes, snapshot.metadata.fetched_at)
+            .await?;
         Ok(())
     }
 }
@@ -309,7 +369,7 @@ where
 pub async fn fetch_vendored_snapshot(
     source_url: &str,
 ) -> anyhow::Result<PricingCatalogSnapshotFile> {
-    let client = Client::new();
+    let client = pricing_catalog_http_client();
     let response = client
         .get(source_url)
         .send()
@@ -341,6 +401,13 @@ pub async fn fetch_vendored_snapshot(
 
 pub fn snapshot_to_pretty_json(snapshot: &PricingCatalogSnapshotFile) -> anyhow::Result<String> {
     serde_json::to_string_pretty(snapshot).context("failed serializing vendored pricing catalog")
+}
+
+fn pricing_catalog_http_client() -> Client {
+    Client::builder()
+        .timeout(DEFAULT_PRICING_CATALOG_REQUEST_TIMEOUT)
+        .build()
+        .expect("pricing catalog HTTP client configuration is valid")
 }
 
 pub fn is_supported_pricing_provider_id(value: &str) -> bool {
@@ -451,15 +518,28 @@ pub(crate) fn exact_pricing_target_for_route(
 fn normalize_vertex_pricing_model_id(pricing_provider_id: &str, model_id: &str) -> String {
     if pricing_provider_id == GOOGLE_VERTEX_ANTHROPIC_PRICING_PROVIDER_ID
         && !model_id.contains('@')
-        && matches!(
-            model_id,
-            "claude-sonnet-4-6" | "claude-opus-4-6" | "claude-opus-4-7"
-        )
+        && is_default_vertex_anthropic_model_id(model_id)
     {
         return format!("{model_id}@default");
     }
 
     model_id.to_string()
+}
+
+fn is_default_vertex_anthropic_model_id(model_id: &str) -> bool {
+    if model_id == "claude-sonnet-5" {
+        return true;
+    }
+
+    let Some((family, minor)) = model_id.rsplit_once('-') else {
+        return false;
+    };
+    let Ok(minor) = minor.parse::<u16>() else {
+        return false;
+    };
+
+    matches!(family, "claude-sonnet-4" if minor >= 6)
+        || matches!(family, "claude-opus-4" if minor >= 6)
 }
 
 fn normalize_bedrock_pricing_model_id(upstream_model: &str) -> String {
@@ -589,20 +669,29 @@ fn snapshot_is_already_synced(
     active_rows: &[ModelPricingRecord],
     snapshot: &PricingCatalogSnapshot,
 ) -> bool {
-    let snapshot_model_count = snapshot
+    let snapshot_keys = snapshot
         .document
         .providers
-        .values()
-        .map(|provider| provider.models.len())
-        .sum::<usize>();
-    snapshot_model_count > 0
-        && active_rows
-            .iter()
-            .filter(|row| row.provenance.source == snapshot.metadata.source)
-            .filter(|row| row.provenance.etag == snapshot.metadata.etag)
-            .filter(|row| row.provenance.fetched_at == snapshot.metadata.fetched_at)
-            .count()
-            >= snapshot_model_count
+        .iter()
+        .flat_map(|(provider_id, provider)| {
+            provider
+                .models
+                .keys()
+                .map(move |model_id| (provider_id.clone(), model_id.clone()))
+        })
+        .collect::<BTreeSet<_>>();
+
+    !snapshot_keys.is_empty()
+        && active_rows.len() == snapshot_keys.len()
+        && active_rows.iter().all(|row| {
+            row.provenance.source == snapshot.metadata.source
+                && row.provenance.etag == snapshot.metadata.etag
+                && row.provenance.fetched_at == snapshot.metadata.fetched_at
+                && snapshot_keys.contains(&(
+                    row.pricing_provider_id.clone(),
+                    row.pricing_model_id.clone(),
+                ))
+        })
 }
 
 fn parse_money(value: Option<&str>) -> Result<Option<Money4>, GatewayError> {
@@ -860,7 +949,7 @@ mod tests {
         routing::get,
     };
     use gateway_core::{
-        ModelPricingRecord, ModelRoute, Money4, PricingCatalogCacheRecord,
+        ModelPricingRecord, ModelPricingSyncChanges, ModelRoute, Money4, PricingCatalogCacheRecord,
         PricingCatalogRepository, PricingResolution, PricingUnpricedReason, ProviderCapabilities,
         ProviderConnection, StoreError,
     };
@@ -874,7 +963,8 @@ mod tests {
         PricingCatalogDocument, PricingCatalogLimitDocument, PricingCatalogModalitiesDocument,
         PricingCatalogModelDocument, PricingCatalogProviderDocument, PricingCatalogSnapshot,
         PricingCatalogSnapshotMetadata, PricingTarget, REMOTE_SOURCE, VENDORED_SOURCE,
-        normalize_bedrock_pricing_model_id, normalize_models_dev_money, pricing_target_for_route,
+        normalize_bedrock_pricing_model_id, normalize_models_dev_money,
+        normalize_vertex_pricing_model_id, pricing_target_for_route,
     };
 
     #[derive(Clone, Default)]
@@ -953,6 +1043,41 @@ mod tests {
             };
             row.effective_end_at = Some(effective_end_at);
             row.updated_at = updated_at;
+            Ok(())
+        }
+
+        async fn apply_model_pricing_sync(
+            &self,
+            changes: &ModelPricingSyncChanges,
+            effective_at: OffsetDateTime,
+        ) -> Result<(), StoreError> {
+            let mut rows = self.pricing_rows.lock().expect("pricing rows lock");
+            for model_pricing_id in &changes.close_model_pricing_ids {
+                let Some(row) = rows
+                    .iter_mut()
+                    .find(|row| row.model_pricing_id == *model_pricing_id)
+                else {
+                    return Err(StoreError::NotFound(format!(
+                        "model pricing row `{model_pricing_id}`"
+                    )));
+                };
+                row.effective_end_at = Some(effective_at);
+                row.updated_at = effective_at;
+            }
+            for update in &changes.update_provenance {
+                let Some(row) = rows
+                    .iter_mut()
+                    .find(|row| row.model_pricing_id == update.model_pricing_id)
+                else {
+                    return Err(StoreError::NotFound(format!(
+                        "model pricing row `{}`",
+                        update.model_pricing_id
+                    )));
+                };
+                row.provenance = update.provenance.clone();
+                row.updated_at = update.updated_at;
+            }
+            rows.extend(changes.insert_model_pricing.iter().cloned());
             Ok(())
         }
 
@@ -1154,6 +1279,38 @@ mod tests {
                                     },
                                     modalities: PricingCatalogModalitiesDocument {
                                         input: vec!["text".to_string(), "image".to_string()],
+                                        output: vec!["text".to_string()],
+                                    },
+                                },
+                            )]),
+                        },
+                    ),
+                    (
+                        "openrouter".to_string(),
+                        PricingCatalogProviderDocument {
+                            display_name: "OpenRouter".to_string(),
+                            models: BTreeMap::from([(
+                                "deepseek/deepseek-v4-flash".to_string(),
+                                PricingCatalogModelDocument {
+                                    id: "deepseek/deepseek-v4-flash".to_string(),
+                                    display_name: "DeepSeek V4 Flash".to_string(),
+                                    release_date: "2026-07-01".to_string(),
+                                    last_updated: "2026-07-01".to_string(),
+                                    cost: PricingCatalogCostDocument {
+                                        input: Some("0.0900".to_string()),
+                                        output: Some("0.1800".to_string()),
+                                        cache_read: Some("0.0180".to_string()),
+                                        cache_write: None,
+                                        input_audio: None,
+                                        output_audio: None,
+                                    },
+                                    limit: PricingCatalogLimitDocument {
+                                        context: Some(128_000),
+                                        input: None,
+                                        output: Some(8_192),
+                                    },
+                                    modalities: PricingCatalogModalitiesDocument {
+                                        input: vec!["text".to_string()],
                                         output: vec!["text".to_string()],
                                     },
                                 },
@@ -1420,6 +1577,25 @@ mod tests {
     }
 
     #[test]
+    fn openai_compat_can_route_to_openrouter_pricing_provider() {
+        let target = pricing_target_for_route(
+            &openai_provider("openrouter"),
+            &route("openrouter", "deepseek/deepseek-v4-pro"),
+        );
+
+        match target {
+            PricingTarget::Exact {
+                pricing_provider_id,
+                model_id,
+            } => {
+                assert_eq!(pricing_provider_id, "openrouter");
+                assert_eq!(model_id, "deepseek/deepseek-v4-pro");
+            }
+            other => panic!("unexpected pricing target: {other:?}"),
+        }
+    }
+
+    #[test]
     fn cloud_run_openai_compat_without_pricing_provider_is_unpriced() {
         let target = pricing_target_for_route(
             &cloud_run_provider(None),
@@ -1456,6 +1632,34 @@ mod tests {
         assert_eq!(
             normalize_bedrock_pricing_model_id("us.anthropic.claude-sonnet-4-6-v2:0"),
             "us.anthropic.claude-sonnet-4-6-v2:0"
+        );
+    }
+
+    #[test]
+    fn vertex_anthropic_default_version_normalization_tracks_default_catalog_ids() {
+        assert_eq!(
+            normalize_vertex_pricing_model_id("google-vertex-anthropic", "claude-sonnet-4-6"),
+            "claude-sonnet-4-6@default"
+        );
+        assert_eq!(
+            normalize_vertex_pricing_model_id("google-vertex-anthropic", "claude-opus-4-8"),
+            "claude-opus-4-8@default"
+        );
+        assert_eq!(
+            normalize_vertex_pricing_model_id("google-vertex-anthropic", "claude-sonnet-5"),
+            "claude-sonnet-5@default"
+        );
+        assert_eq!(
+            normalize_vertex_pricing_model_id("google-vertex-anthropic", "claude-sonnet-4-5"),
+            "claude-sonnet-4-5"
+        );
+        assert_eq!(
+            normalize_vertex_pricing_model_id("google-vertex-anthropic", "claude-opus-4-8@default"),
+            "claude-opus-4-8@default"
+        );
+        assert_eq!(
+            normalize_vertex_pricing_model_id("google-vertex", "claude-opus-4-8"),
+            "claude-opus-4-8"
         );
     }
 
@@ -1532,6 +1736,35 @@ mod tests {
                 assert_eq!(pricing.provenance.source, VENDORED_SOURCE);
             }
             other => panic!("unexpected vendored resolution: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn vendored_snapshot_prices_openrouter_routes() {
+        let catalog = empty_catalog(
+            Arc::new(InMemoryRepo::default()),
+            "http://127.0.0.1:9/api.json".to_string(),
+        );
+
+        let resolved = catalog
+            .resolve_for_provider_connection(
+                &openai_provider("openrouter"),
+                &route("openrouter", "deepseek/deepseek-v4-flash"),
+                OffsetDateTime::now_utc(),
+            )
+            .await
+            .expect("resolve openrouter pricing");
+
+        match resolved {
+            PricingResolution::Exact { pricing } => {
+                assert_eq!(pricing.pricing_provider_id, "openrouter");
+                assert_eq!(pricing.model_id, "deepseek/deepseek-v4-flash");
+                assert_eq!(
+                    pricing.input_cost_per_million_tokens,
+                    Some(Money4::from_decimal_str("0.0900").expect("money"))
+                );
+            }
+            other => panic!("unexpected openrouter pricing resolution: {other:?}"),
         }
     }
 
@@ -1640,6 +1873,134 @@ mod tests {
             .expect("cache row");
         assert_eq!(cache.etag.as_deref(), Some("\"new-etag\""));
         assert!(cache.snapshot_json.contains("\"gpt-5\""));
+    }
+
+    #[tokio::test]
+    async fn forced_refresh_syncs_pricing_rows() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let body = json!({
+            "google-vertex-anthropic": {
+                "name": "Google Vertex AI Anthropic",
+                "models": {
+                    "claude-opus-4-8@default": {
+                        "id": "claude-opus-4-8@default",
+                        "name": "Claude Opus 4.8",
+                        "release_date": "2026-07-01",
+                        "last_updated": "2026-07-02",
+                        "cost": {
+                            "input": 5.0,
+                            "output": 25.0
+                        },
+                        "limit": {
+                            "context": 200000,
+                            "input": 200000,
+                            "output": 32000
+                        },
+                        "modalities": {
+                            "input": ["text", "image"],
+                            "output": ["text"]
+                        }
+                    }
+                }
+            }
+        });
+        let app = Router::new().route(
+            "/api.json",
+            get(move || {
+                let body = body.clone();
+                async move {
+                    (
+                        [(ETAG, HeaderValue::from_static("\"forced-etag\""))],
+                        axum::Json(body),
+                    )
+                }
+            }),
+        );
+        let host = start_server(app).await;
+
+        let catalog = empty_catalog(repo.clone(), format!("{host}/api.json"));
+        catalog
+            .refresh_now_and_sync()
+            .await
+            .expect("forced refresh");
+
+        let rows = repo.pricing_rows.lock().expect("pricing rows lock");
+        let row = rows
+            .iter()
+            .find(|row| {
+                row.pricing_provider_id == "google-vertex-anthropic"
+                    && row.pricing_model_id == "claude-opus-4-8@default"
+            })
+            .expect("pricing row");
+        assert_eq!(
+            row.input_cost_per_million_tokens,
+            Some(Money4::from_decimal_str("5.0000").expect("money"))
+        );
+        assert_eq!(row.provenance.etag.as_deref(), Some("\"forced-etag\""));
+    }
+
+    #[tokio::test]
+    async fn forced_refresh_ignores_cached_etag() {
+        let repo = Arc::new(InMemoryRepo {
+            cache: Arc::new(Mutex::new(Some(PricingCatalogCacheRecord {
+                catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
+                source: REMOTE_SOURCE.to_string(),
+                etag: Some("\"cached-etag\"".to_string()),
+                fetched_at: OffsetDateTime::from_unix_timestamp(1).expect("timestamp"),
+                snapshot_json: to_string_pretty(&fallback_snapshot().document).expect("json"),
+            }))),
+            pricing_rows: Arc::new(Mutex::new(Vec::new())),
+        });
+        let state = Arc::new(Mutex::new(None::<String>));
+        let body = json!({
+            "openai": {
+                "name": "OpenAI",
+                "models": {
+                    "gpt-5": {
+                        "id": "gpt-5",
+                        "name": "GPT-5",
+                        "release_date": "2025-08-07",
+                        "last_updated": "2025-08-07",
+                        "cost": {
+                            "input": 1.25,
+                            "output": 10.0
+                        },
+                        "limit": {},
+                        "modalities": {}
+                    }
+                }
+            }
+        });
+        let app = Router::new()
+            .route(
+                "/api.json",
+                get(
+                    move |headers: HeaderMap,
+                          State(captured): State<Arc<Mutex<Option<String>>>>| {
+                        let body = body.clone();
+                        async move {
+                            *captured.lock().expect("captured lock") = headers
+                                .get(IF_NONE_MATCH)
+                                .and_then(|value| value.to_str().ok())
+                                .map(str::to_string);
+                            (
+                                [(ETAG, HeaderValue::from_static("\"new-etag\""))],
+                                axum::Json(body),
+                            )
+                        }
+                    },
+                ),
+            )
+            .with_state(state.clone());
+        let host = start_server(app).await;
+
+        let catalog = empty_catalog(repo, format!("{host}/api.json"));
+        catalog
+            .refresh_now_and_sync()
+            .await
+            .expect("forced refresh");
+
+        assert_eq!(state.lock().expect("captured lock").as_deref(), None);
     }
 
     #[tokio::test]
@@ -1871,6 +2232,143 @@ mod tests {
                 && row.input_cost_per_million_tokens == Some(Money4::from_scaled(20_000))
                 && row.effective_end_at.is_none()
         }));
+    }
+
+    #[tokio::test]
+    async fn unchanged_snapshot_refresh_updates_active_row_provenance() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let initial = fallback_snapshot();
+        repo.upsert_pricing_catalog_cache(&PricingCatalogCacheRecord {
+            catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
+            source: initial.metadata.source.clone(),
+            etag: initial.metadata.etag.clone(),
+            fetched_at: initial.metadata.fetched_at,
+            snapshot_json: to_string_pretty(&initial.document).expect("json"),
+        })
+        .await
+        .expect("seed initial snapshot");
+
+        let catalog = empty_catalog(repo.clone(), "http://127.0.0.1:9/api.json".to_string());
+        catalog
+            .resolve_for_provider_connection(
+                &openai_provider("openai"),
+                &route("openai-prod", "gpt-5"),
+                test_time(),
+            )
+            .await
+            .expect("seed initial pricing row");
+
+        let mut refreshed = fallback_snapshot();
+        refreshed.metadata = PricingCatalogSnapshotMetadata {
+            source: REMOTE_SOURCE.to_string(),
+            etag: Some("\"etag-refreshed\"".to_string()),
+            fetched_at: test_time() + Duration::from_secs(3600),
+        };
+        repo.upsert_pricing_catalog_cache(&PricingCatalogCacheRecord {
+            catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
+            source: refreshed.metadata.source.clone(),
+            etag: refreshed.metadata.etag.clone(),
+            fetched_at: refreshed.metadata.fetched_at,
+            snapshot_json: to_string_pretty(&refreshed.document).expect("json"),
+        })
+        .await
+        .expect("seed refreshed snapshot");
+
+        catalog
+            .resolve_for_provider_connection(
+                &openai_provider("openai"),
+                &route("openai-prod", "gpt-5"),
+                refreshed.metadata.fetched_at + Duration::from_secs(1),
+            )
+            .await
+            .expect("resolve refreshed pricing row");
+
+        let pricing_rows = repo.pricing_rows.lock().expect("pricing rows lock");
+        let matching = pricing_rows
+            .iter()
+            .filter(|row| row.pricing_provider_id == "openai" && row.pricing_model_id == "gpt-5")
+            .collect::<Vec<_>>();
+        assert_eq!(matching.len(), 1);
+        assert_eq!(matching[0].provenance.source, refreshed.metadata.source);
+        assert_eq!(matching[0].provenance.etag, refreshed.metadata.etag);
+        assert_eq!(
+            matching[0].provenance.fetched_at,
+            refreshed.metadata.fetched_at
+        );
+    }
+
+    #[tokio::test]
+    async fn refreshed_snapshot_closes_removed_active_pricing_rows() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let initial = fallback_snapshot();
+        repo.upsert_pricing_catalog_cache(&PricingCatalogCacheRecord {
+            catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
+            source: initial.metadata.source.clone(),
+            etag: initial.metadata.etag.clone(),
+            fetched_at: initial.metadata.fetched_at,
+            snapshot_json: to_string_pretty(&initial.document).expect("json"),
+        })
+        .await
+        .expect("seed initial snapshot");
+
+        let catalog = empty_catalog(repo.clone(), "http://127.0.0.1:9/api.json".to_string());
+        catalog
+            .resolve_for_provider_connection(
+                &openai_provider("openai"),
+                &route("openai-prod", "gpt-5"),
+                test_time(),
+            )
+            .await
+            .expect("seed initial pricing row");
+
+        let mut removed = fallback_snapshot();
+        removed.metadata = PricingCatalogSnapshotMetadata {
+            source: REMOTE_SOURCE.to_string(),
+            etag: Some("\"etag-removed\"".to_string()),
+            fetched_at: test_time() + Duration::from_secs(3600),
+        };
+        removed
+            .document
+            .providers
+            .get_mut("openai")
+            .expect("openai provider")
+            .models
+            .remove("gpt-5")
+            .expect("gpt-5 model");
+        repo.upsert_pricing_catalog_cache(&PricingCatalogCacheRecord {
+            catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
+            source: removed.metadata.source.clone(),
+            etag: removed.metadata.etag.clone(),
+            fetched_at: removed.metadata.fetched_at,
+            snapshot_json: to_string_pretty(&removed.document).expect("json"),
+        })
+        .await
+        .expect("seed removed snapshot");
+
+        let resolved = catalog
+            .resolve_for_provider_connection(
+                &openai_provider("openai"),
+                &route("openai-prod", "gpt-5"),
+                removed.metadata.fetched_at + Duration::from_secs(1),
+            )
+            .await
+            .expect("resolve removed pricing row");
+
+        assert_eq!(
+            resolved,
+            PricingResolution::Unpriced {
+                reason: PricingUnpricedReason::ModelNotFound,
+            }
+        );
+        let pricing_rows = repo.pricing_rows.lock().expect("pricing rows lock");
+        let removed_row = pricing_rows
+            .iter()
+            .find(|row| row.pricing_provider_id == "openai" && row.pricing_model_id == "gpt-5")
+            .expect("removed pricing row");
+        assert_eq!(
+            removed_row.effective_end_at,
+            Some(removed.metadata.fetched_at)
+        );
     }
 
     #[tokio::test]

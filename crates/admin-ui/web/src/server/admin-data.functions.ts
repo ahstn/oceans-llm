@@ -50,6 +50,7 @@ import {
   revealApiKeySecret,
   removeTeamMember,
   revokeApiKey,
+  refreshModelPricingCatalog,
   refreshMcpServerDiscovery,
   revokeMcpCredentialBinding,
   replaceMcpToolsetTools,
@@ -116,6 +117,10 @@ export const getModelClientConfigs = createServerFn({ method: 'POST' }).handler(
     return generateModelClientConfigs(data)
   },
 )
+
+export const refreshModelPricing = createServerFn({ method: 'POST' }).handler(async () => {
+  return refreshModelPricingCatalog()
+})
 
 export const getUsageCosts = createServerFn({ method: 'GET' }).handler(async () => {
   return getSpendReport({ days: 7, owner_kind: 'all' })
