@@ -95,6 +95,7 @@ mod tests {
         vec![SeedTeam {
             team_key: "seed-workloads".to_string(),
             team_name: "Seed Workloads".to_string(),
+            tags: Vec::new(),
         }]
     }
 
@@ -102,6 +103,7 @@ mod tests {
         vec![SeedServiceAccount {
             service_account_key: "seed-workloads".to_string(),
             service_account_name: "Seed Workloads".to_string(),
+            tags: Vec::new(),
             team_key: "seed-workloads".to_string(),
             budget: SeedBudget {
                 cadence: BudgetCadence::Daily,
@@ -117,6 +119,10 @@ mod tests {
         vec![SeedServiceAccount {
             service_account_key: "ci-indexer".to_string(),
             service_account_name: "CI Indexer".to_string(),
+            tags: vec![RequestTag {
+                key: "workload".to_string(),
+                value: "ci-indexer".to_string(),
+            }],
             team_key: "seed-workloads".to_string(),
             budget: SeedBudget {
                 cadence: BudgetCadence::Daily,
@@ -146,6 +152,7 @@ mod tests {
         vec![SeedServiceAccount {
             service_account_key: "generated-worker".to_string(),
             service_account_name: "Generated Worker".to_string(),
+            tags: Vec::new(),
             team_key: "seed-workloads".to_string(),
             budget: SeedBudget {
                 cadence: BudgetCadence::Daily,
@@ -173,6 +180,7 @@ mod tests {
         vec![SeedServiceAccount {
             service_account_key: "ci-rotator".to_string(),
             service_account_name: "CI Rotator".to_string(),
+            tags: Vec::new(),
             team_key: "seed-workloads".to_string(),
             budget: SeedBudget {
                 cadence: BudgetCadence::Daily,
@@ -319,6 +327,22 @@ mod tests {
         assert_eq!(api_key.secret_hash, "hash-v1");
         assert_eq!(api_key.owner_kind, ApiKeyOwnerKind::ServiceAccount);
         assert!(api_key.owner_service_account_id.is_some());
+        let seeded_service_account = IdentityRepository::get_service_account_by_id(
+            store,
+            api_key
+                .owner_service_account_id
+                .expect("managed key has service account owner"),
+        )
+        .await
+        .expect("load seeded service account")
+        .expect("seeded service account exists");
+        assert_eq!(
+            seeded_service_account.tags,
+            vec![RequestTag {
+                key: "workload".to_string(),
+                value: "ci-indexer".to_string(),
+            }]
+        );
 
         let material = store
             .get_api_key_secret_material(api_key.id)
@@ -5502,10 +5526,12 @@ mod tests {
             SeedTeam {
                 team_key: "platform".to_string(),
                 team_name: "Platform".to_string(),
+                tags: Vec::new(),
             },
             SeedTeam {
                 team_key: "ops".to_string(),
                 team_name: "Ops".to_string(),
+                tags: Vec::new(),
             },
         ];
         let initial_users = vec![SeedUser {
@@ -5515,6 +5541,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Password,
             request_logging_enabled: false,
+            tags: Vec::new(),
             oidc_provider_key: None,
             oauth_provider_key: None,
             membership: Some(SeedUserMembership {
@@ -5574,10 +5601,12 @@ mod tests {
             SeedTeam {
                 team_key: "platform".to_string(),
                 team_name: "Platform Engineering".to_string(),
+                tags: Vec::new(),
             },
             SeedTeam {
                 team_key: "ops".to_string(),
                 team_name: "Operations".to_string(),
+                tags: Vec::new(),
             },
         ];
         let updated_users = vec![SeedUser {
@@ -5587,6 +5616,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Oidc,
             request_logging_enabled: true,
+            tags: Vec::new(),
             oidc_provider_key: Some("okta".to_string()),
             oauth_provider_key: None,
             membership: Some(SeedUserMembership {
@@ -5680,6 +5710,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Password,
             request_logging_enabled: true,
+            tags: Vec::new(),
             oidc_provider_key: None,
             oauth_provider_key: None,
             membership: None,
@@ -5835,6 +5866,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Password,
             request_logging_enabled: true,
+            tags: Vec::new(),
             oidc_provider_key: None,
             oauth_provider_key: None,
             membership: None,
@@ -6027,6 +6059,7 @@ mod tests {
         let initial_teams = vec![SeedTeam {
             team_key: "platform".to_string(),
             team_name: "Platform".to_string(),
+            tags: Vec::new(),
         }];
         let initial_users = vec![SeedUser {
             name: "Member".to_string(),
@@ -6035,6 +6068,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Password,
             request_logging_enabled: false,
+            tags: Vec::new(),
             oidc_provider_key: None,
             oauth_provider_key: None,
             membership: None,
@@ -6071,6 +6105,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Oidc,
             request_logging_enabled: true,
+            tags: Vec::new(),
             oidc_provider_key: Some("okta".to_string()),
             oauth_provider_key: None,
             membership: None,
@@ -6079,6 +6114,7 @@ mod tests {
         let invalid_teams = vec![SeedTeam {
             team_key: "platform".to_string(),
             team_name: "Platform Renamed".to_string(),
+            tags: Vec::new(),
         }];
 
         let error = store
@@ -6127,6 +6163,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Oidc,
             request_logging_enabled: false,
+            tags: Vec::new(),
             oidc_provider_key: Some("okta".to_string()),
             oauth_provider_key: None,
             membership: None,
@@ -6165,6 +6202,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Oidc,
             request_logging_enabled: true,
+            tags: Vec::new(),
             oidc_provider_key: Some("auth0".to_string()),
             oauth_provider_key: None,
             membership: None,
@@ -6232,6 +6270,7 @@ mod tests {
             global_role: GlobalRole::PlatformAdmin,
             auth_mode: AuthMode::Password,
             request_logging_enabled: false,
+            tags: Vec::new(),
             oidc_provider_key: None,
             oauth_provider_key: None,
             membership: None,
@@ -6260,6 +6299,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Password,
             request_logging_enabled: true,
+            tags: Vec::new(),
             oidc_provider_key: None,
             oauth_provider_key: None,
             membership: None,
@@ -6310,10 +6350,12 @@ mod tests {
             SeedTeam {
                 team_key: "platform".to_string(),
                 team_name: "Platform".to_string(),
+                tags: Vec::new(),
             },
             SeedTeam {
                 team_key: "ops".to_string(),
                 team_name: "Ops".to_string(),
+                tags: Vec::new(),
             },
         ];
         let initial_users = vec![SeedUser {
@@ -6323,6 +6365,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Password,
             request_logging_enabled: false,
+            tags: Vec::new(),
             oidc_provider_key: None,
             oauth_provider_key: None,
             membership: Some(SeedUserMembership {
@@ -6382,10 +6425,12 @@ mod tests {
             SeedTeam {
                 team_key: "platform".to_string(),
                 team_name: "Platform Engineering".to_string(),
+                tags: Vec::new(),
             },
             SeedTeam {
                 team_key: "ops".to_string(),
                 team_name: "Operations".to_string(),
+                tags: Vec::new(),
             },
         ];
         let updated_users = vec![SeedUser {
@@ -6395,6 +6440,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Oidc,
             request_logging_enabled: true,
+            tags: Vec::new(),
             oidc_provider_key: Some("okta".to_string()),
             oauth_provider_key: None,
             membership: Some(SeedUserMembership {
@@ -6499,6 +6545,7 @@ mod tests {
         let initial_teams = vec![SeedTeam {
             team_key: "platform".to_string(),
             team_name: "Platform".to_string(),
+            tags: Vec::new(),
         }];
         let initial_users = vec![SeedUser {
             name: "Member".to_string(),
@@ -6507,6 +6554,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Password,
             request_logging_enabled: false,
+            tags: Vec::new(),
             oidc_provider_key: None,
             oauth_provider_key: None,
             membership: None,
@@ -6543,6 +6591,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Oidc,
             request_logging_enabled: true,
+            tags: Vec::new(),
             oidc_provider_key: Some("okta".to_string()),
             oauth_provider_key: None,
             membership: None,
@@ -6551,6 +6600,7 @@ mod tests {
         let invalid_teams = vec![SeedTeam {
             team_key: "platform".to_string(),
             team_name: "Platform Renamed".to_string(),
+            tags: Vec::new(),
         }];
 
         let error = store
@@ -6614,6 +6664,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Oidc,
             request_logging_enabled: false,
+            tags: Vec::new(),
             oidc_provider_key: Some("okta".to_string()),
             oauth_provider_key: None,
             membership: None,
@@ -6652,6 +6703,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Oidc,
             request_logging_enabled: true,
+            tags: Vec::new(),
             oidc_provider_key: Some("auth0".to_string()),
             oauth_provider_key: None,
             membership: None,
@@ -6733,6 +6785,7 @@ mod tests {
             global_role: GlobalRole::PlatformAdmin,
             auth_mode: AuthMode::Password,
             request_logging_enabled: false,
+            tags: Vec::new(),
             oidc_provider_key: None,
             oauth_provider_key: None,
             membership: None,
@@ -6761,6 +6814,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Password,
             request_logging_enabled: true,
+            tags: Vec::new(),
             oidc_provider_key: None,
             oauth_provider_key: None,
             membership: None,

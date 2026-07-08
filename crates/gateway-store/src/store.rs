@@ -94,6 +94,12 @@ pub trait GatewayStore:
         service_account_name: &str,
         updated_at: OffsetDateTime,
     ) -> Result<(), StoreError>;
+    async fn update_service_account_tags(
+        &self,
+        service_account_id: Uuid,
+        tags: &[RequestTag],
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError>;
     async fn disable_service_account(
         &self,
         service_account_id: Uuid,
@@ -1273,6 +1279,18 @@ impl GatewayStore for AnyStore {
         dispatch_store!(
             self,
             update_service_account_name(service_account_id, service_account_name, updated_at)
+        )
+    }
+
+    async fn update_service_account_tags(
+        &self,
+        service_account_id: Uuid,
+        tags: &[RequestTag],
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(
+            self,
+            update_service_account_tags(service_account_id, tags, updated_at)
         )
     }
 

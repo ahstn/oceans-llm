@@ -4915,6 +4915,7 @@
           "key",
           "name",
           "status",
+          "tags",
           "team_id",
           "team_key",
           "team_name"
@@ -4931,6 +4932,12 @@
           },
           "status": {
             "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminEntityTagView"
+            }
           },
           "team_id": {
             "type": "string"
@@ -5784,6 +5791,12 @@
           "name": {
             "type": "string"
           },
+          "tags": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminEntityTagView"
+            }
+          },
           "team_id": {
             "type": "string"
           }
@@ -6188,6 +6201,7 @@
               "key",
               "name",
               "status",
+              "tags",
               "team_id",
               "team_key",
               "team_name"
@@ -6204,6 +6218,12 @@
               },
               "status": {
                 "type": "string"
+              },
+              "tags": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AdminEntityTagView"
+                }
               },
               "team_id": {
                 "type": "string"
@@ -10607,6 +10627,15 @@
         "properties": {
           "name": {
             "type": "string"
+          },
+          "tags": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/AdminEntityTagView"
+            }
           }
         }
       },

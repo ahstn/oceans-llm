@@ -11,7 +11,7 @@ Tags add admin and user controlled dimensions such as cost center, application, 
 Oceans has two tag surfaces.
 
 - Request tags are supplied by clients on each data-plane request. They are stored with request logs and support request-log filtering.
-- Identity tags are managed by admins on users and teams. They are visible in user and team detail dialogs and are intended for future export, observability, and spend-attribution workflows.
+- Identity tags are managed by admins or config on users, teams, and service accounts. They are visible in admin identity views and are intended for future export, observability, and spend-attribution workflows.
 
 Both surfaces follow the same key/value rules so teams do not need two naming schemes.
 
@@ -73,7 +73,7 @@ Request tags are captured at the gateway boundary and written to request-log dat
 
 ## Identity Tags
 
-Admins can set tags on users and teams from the admin identity UI.
+Admins can set tags on users and teams from the admin identity UI. Deployment config can also seed tags on users, teams, and service accounts with `users[].tags`, `teams[].tags`, and `service_accounts[].tags`.
 
 Identity tags help communicate ownership context. They are useful when an organization has external systems that do not map cleanly to Oceans user or team names, such as:
 
@@ -82,7 +82,7 @@ Identity tags help communicate ownership context. They are useful when an organi
 - compliance or data-boundary labels
 - external owner ids used by reporting systems
 
-Identity tags are displayed when an admin opens a user or team detail dialog. They do not currently affect runtime authorization, budget checks, request routing, or request-log filtering.
+Identity tags are displayed in admin identity views. They do not currently affect runtime authorization, budget checks, request routing, or request-log filtering.
 
 Future exports can combine identity tags with spend or observability data so downstream systems can reconcile Oceans usage with existing organizational metadata.
 
@@ -91,7 +91,7 @@ Future exports can combine identity tags with spend or observability data so dow
 Request tags and identity tags have different retention behavior.
 
 - Request tags are operational request-log detail. They are removed when request-log retention purges the parent request-log row.
-- Identity tags are durable user/team metadata. Request-log retention does not remove users, teams, or their tags.
+- Identity tags are durable user, team, and service-account metadata. Request-log retention does not remove users, teams, service accounts, or their tags.
 - Spend ledger rows remain separate from request-log retention. Future export jobs should join or enrich ledger data intentionally instead of assuming request-log detail is always retained.
 
 For table-level relationships, see [Data Relationships](../contributing/reference/data-relationships.md).

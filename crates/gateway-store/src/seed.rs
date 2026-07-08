@@ -142,6 +142,13 @@ where
             record.team_name = team.team_name.clone();
             record.updated_at = now;
         }
+        if record.tags != team.tags {
+            store
+                .update_team_tags(record.team_id, &team.tags, now)
+                .await?;
+            record.tags = team.tags.clone();
+            record.updated_at = now;
+        }
 
         records.insert(team.team_key.clone(), record);
     }
@@ -464,6 +471,9 @@ where
             seed_user.request_logging_enabled,
             now,
         )
+        .await?;
+    store
+        .update_user_tags(existing_user.user_id, &seed_user.tags, now)
         .await?;
 
     let mut identity_user = load_identity_user(store, existing_user.user_id).await?;

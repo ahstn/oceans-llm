@@ -112,7 +112,7 @@ That boundary is a policy rule, not a UI shortcut.
 
 ## Identity Tags
 
-Admins can attach bounded key/value tags to users and teams from the admin identity UI. These tags are displayed in the user and team detail dialogs and are intended for attribution, export, and reconciliation with external systems.
+Admins can attach bounded key/value tags to users, teams, and service accounts. User and team tags can be managed from the admin identity UI; config-seeded user, team, and service-account tags are reconciled on startup. These tags are displayed in the admin identity views and are intended for attribution, export, and reconciliation with external systems.
 
 Identity tags do not change runtime access, budget checks, request routing, request-log filtering, or historical ownership. The tag rules and usage guidance live in [Tagging](../operations/tagging.md).
 
@@ -193,11 +193,37 @@ Config-backed identity is now part of the startup seed path.
 
 - `teams` are reconciled by `team_key`
 - `users` are reconciled by normalized email
+- `service_accounts` are reconciled by `service_account_key`
 - listed users can reconcile team membership and active budgets
+- `teams[].tags`, `users[].tags`, and `service_accounts[].tags` reconcile identity tags from config
 - new config-seeded users start as `invited`
 - config seeding does not emit invite URLs; admins generate onboarding links from the admin UI when needed
 
 Config seeding no longer creates legacy system-owned runtime API keys. Non-human team access is managed through service accounts.
+
+Team config supports:
+
+- `id`: stable team key used for reconciliation
+- `name`: display name
+- `tags`: optional identity tag list
+
+User config supports:
+
+- `name`, `email`, and `auth_mode`
+- `global_role` and `request_logging_enabled`
+- optional `oidc_provider_key` or `oauth_provider_key` for SSO users
+- optional `membership` with `team` and non-`owner` `role`
+- optional `budget`
+- `tags`: optional identity tag list
+
+Service-account config supports:
+
+- `id`: stable service-account key used for reconciliation
+- `name`: display name, defaulting to `id`
+- `team`: owning team key
+- `budget`
+- `keys`: optional managed API-key declarations
+- `tags`: optional identity tag list
 
 ## Service Accounts
 

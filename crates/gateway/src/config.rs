@@ -8,11 +8,11 @@ use gateway_core::{
     OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
     OpenAiCompatRouteCompatibility, OpenRouterMaxPrice, OpenRouterPercentileCutoffs,
     OpenRouterPercentilePreference, OpenRouterProviderRouting, OpenRouterRouteCompatibility,
-    ProviderCapabilities, RequestLogRetentionWindow, RouteCompatibility, SeedApiKeySecretMaterial,
-    SeedBudget, SeedHumanBudgetDefaults, SeedManagedServiceAccountApiKey, SeedModel,
-    SeedModelRoute, SeedOauthProvider, SeedOidcProvider, SeedProvider, SeedServiceAccount,
-    SeedTeam, SeedUser, SeedUserMembership, SeedUserModelBudgetDefault, hash_gateway_key_secret,
-    parse_gateway_api_key,
+    ProviderCapabilities, RequestLogRetentionWindow, RequestTag, RouteCompatibility,
+    SeedApiKeySecretMaterial, SeedBudget, SeedHumanBudgetDefaults, SeedManagedServiceAccountApiKey,
+    SeedModel, SeedModelRoute, SeedOauthProvider, SeedOidcProvider, SeedProvider,
+    SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership, SeedUserModelBudgetDefault,
+    hash_gateway_key_secret, parse_gateway_api_key,
 };
 use gateway_providers::{
     BedrockAuthConfig, BedrockEndpointKind, BedrockProviderConfig, CloudRunOpenAiCompatAuth,
@@ -28,6 +28,8 @@ use serde_json::{Map, Value, json};
 use uuid::Uuid;
 
 mod providers;
+
+use crate::http::request_tags::validate_entity_tags;
 
 pub use providers::{
     AwsBedrockAuthConfig, AwsBedrockProviderConfig, GcpCloudRunOpenAiCompatAuthConfig,
@@ -396,6 +398,7 @@ impl GatewayConfig {
             if team.name.trim().is_empty() {
                 bail!("team `{team_key}` name cannot be empty");
             }
+            normalize_config_entity_tags(&team.tags, &format!("team `{team_key}` tags"))?;
             if !team_keys.insert(team_key.clone()) {
                 bail!("duplicate team id `{team_key}`");
             }
@@ -412,6 +415,10 @@ impl GatewayConfig {
             {
                 bail!("service account `{service_account_key}` name cannot be empty");
             }
+            normalize_config_entity_tags(
+                &service_account.tags,
+                &format!("service account `{service_account_key}` tags"),
+            )?;
             let team_key = normalize_config_team_key(&service_account.team)
                 .with_context(|| format!("service account `{service_account_key}` team"))?;
             if !team_keys.contains(&team_key) {
@@ -474,6 +481,7 @@ impl GatewayConfig {
             if !user_emails.insert(email_normalized.clone()) {
                 bail!("duplicate user email `{email_normalized}`");
             }
+            normalize_config_entity_tags(&user.tags, &format!("user `{}` tags", user.email))?;
             match user.auth_mode {
                 AuthMode::Oidc => {
                     let Some(provider_key) = user.oidc_provider_key.as_deref() else {
@@ -879,11 +887,16 @@ impl GatewayConfig {
                         allowed_models: key.allowed_models.clone(),
                     });
                 }
+                let tags = normalize_config_entity_tags(
+                    &service_account.tags,
+                    &format!("service account `{service_account_key}` tags"),
+                )?;
 
                 Ok(SeedServiceAccount {
                     service_account_key,
                     service_account_name,
                     team_key: normalize_config_team_key(&service_account.team)?,
+                    tags,
                     budget: service_account.budget.seed_budget()?,
                     managed_api_keys,
                 })
@@ -916,6 +929,10 @@ impl GatewayConfig {
                 Ok(SeedTeam {
                     team_key: normalize_config_team_key(&team.id)?,
                     team_name: team.name.trim().to_string(),
+                    tags: normalize_config_entity_tags(
+                        &team.tags,
+                        &format!("team `{}` tags", team.id),
+                    )?,
                 })
             })
             .collect()
@@ -932,6 +949,10 @@ impl GatewayConfig {
                     global_role: user.global_role,
                     auth_mode: user.auth_mode,
                     request_logging_enabled: user.request_logging_enabled,
+                    tags: normalize_config_entity_tags(
+                        &user.tags,
+                        &format!("user `{}` tags", user.email),
+                    )?,
                     oidc_provider_key: user
                         .oidc_provider_key
                         .as_deref()
@@ -1915,6 +1936,8 @@ impl BootstrapAdminConfig {
 pub struct TeamConfig {
     pub id: String,
     pub name: String,
+    #[serde(default)]
+    pub tags: Vec<RequestTag>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1924,6 +1947,8 @@ pub struct ServiceAccountConfig {
     #[serde(default)]
     pub name: Option<String>,
     pub team: String,
+    #[serde(default)]
+    pub tags: Vec<RequestTag>,
     pub budget: BudgetConfig,
     #[serde(default)]
     pub keys: Vec<ServiceAccountKeyConfig>,
@@ -1952,6 +1977,8 @@ pub struct UserConfig {
     pub global_role: GlobalRole,
     #[serde(default = "default_request_logging_enabled")]
     pub request_logging_enabled: bool,
+    #[serde(default)]
+    pub tags: Vec<RequestTag>,
     #[serde(default)]
     pub oidc_provider_key: Option<String>,
     #[serde(default)]
@@ -2621,6 +2648,13 @@ fn normalize_config_email(email: &str) -> anyhow::Result<String> {
         bail!("email must be a valid email address");
     }
     Ok(normalized)
+}
+
+fn normalize_config_entity_tags(
+    tags: &[RequestTag],
+    context: &str,
+) -> anyhow::Result<Vec<RequestTag>> {
+    validate_entity_tags(tags, context).map_err(|error| anyhow::anyhow!("{error}"))
 }
 
 fn normalize_config_team_key(team_key: &str) -> anyhow::Result<String> {
@@ -4700,12 +4734,18 @@ auth:
 teams:
   - id: " platform "
     name: Platform
+    tags:
+      - key: cost-center
+        value: platform
 users:
   - name: Member
     email: " Member@Example.com "
     auth_mode: oidc
     global_role: platform_admin
     request_logging_enabled: false
+    tags:
+      - key: workload
+        value: admin
     oidc_provider_key: " okta "
     membership:
       team: " platform "
@@ -4731,12 +4771,16 @@ users:
         assert_eq!(teams.len(), 1);
         assert_eq!(teams[0].team_key, "platform");
         assert_eq!(teams[0].team_name, "Platform");
+        assert_eq!(teams[0].tags[0].key, "cost-center");
+        assert_eq!(teams[0].tags[0].value, "platform");
 
         assert_eq!(users.len(), 1);
         assert_eq!(users[0].email_normalized, "member@example.com");
         assert_eq!(users[0].auth_mode, AuthMode::Oidc);
         assert_eq!(users[0].global_role, GlobalRole::PlatformAdmin);
         assert!(!users[0].request_logging_enabled);
+        assert_eq!(users[0].tags[0].key, "workload");
+        assert_eq!(users[0].tags[0].value, "admin");
         assert_eq!(users[0].oidc_provider_key.as_deref(), Some("okta"));
         let membership = users[0].membership.as_ref().expect("membership");
         assert_eq!(membership.team_key, "platform");
@@ -5180,6 +5224,9 @@ service_accounts:
   - id: " ci-indexer "
     name: CI Indexer
     team: " platform "
+    tags:
+      - key: workload
+        value: ci-indexer
     budget:
       cadence: daily
       amount_usd: "25.0000"
@@ -5200,6 +5247,8 @@ service_accounts:
         assert_eq!(service_accounts[0].service_account_key, "ci-indexer");
         assert_eq!(service_accounts[0].service_account_name, "CI Indexer");
         assert_eq!(service_accounts[0].team_key, "platform");
+        assert_eq!(service_accounts[0].tags[0].key, "workload");
+        assert_eq!(service_accounts[0].tags[0].value, "ci-indexer");
         assert_eq!(
             service_accounts[0].budget.amount_usd,
             Money4::from_scaled(250_000)

@@ -189,6 +189,15 @@ impl GatewayStore for LibsqlStore {
         .await
     }
 
+    async fn update_service_account_tags(
+        &self,
+        service_account_id: Uuid,
+        tags: &[RequestTag],
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        Self::update_service_account_tags(self, service_account_id, tags, updated_at).await
+    }
+
     async fn disable_service_account(
         &self,
         service_account_id: Uuid,

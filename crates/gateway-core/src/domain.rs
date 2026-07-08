@@ -520,6 +520,8 @@ pub struct ServiceAccountRecord {
     pub status: ServiceAccountStatus,
     pub model_access_mode: ModelAccessMode,
     pub metadata: Value,
+    #[serde(default)]
+    pub tags: Vec<RequestTag>,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
     pub disabled_at: Option<OffsetDateTime>,
@@ -2509,6 +2511,8 @@ pub struct SeedServiceAccount {
     pub service_account_key: String,
     pub service_account_name: String,
     pub team_key: String,
+    #[serde(default)]
+    pub tags: Vec<RequestTag>,
     pub budget: SeedBudget,
     #[serde(default)]
     pub managed_api_keys: Vec<SeedManagedServiceAccountApiKey>,
@@ -2639,6 +2643,8 @@ pub struct SeedUserModelBudgetDefault {
 pub struct SeedTeam {
     pub team_key: String,
     pub team_name: String,
+    #[serde(default)]
+    pub tags: Vec<RequestTag>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2655,6 +2661,8 @@ pub struct SeedUser {
     pub global_role: GlobalRole,
     pub auth_mode: AuthMode,
     pub request_logging_enabled: bool,
+    #[serde(default)]
+    pub tags: Vec<RequestTag>,
     #[serde(default)]
     pub oidc_provider_key: Option<String>,
     #[serde(default)]

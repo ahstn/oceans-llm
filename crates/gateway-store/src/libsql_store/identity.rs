@@ -196,7 +196,7 @@ impl LibsqlStore {
             .query(
                 r#"
                 SELECT service_account_id, team_id, service_account_key, service_account_name,
-                       status, model_access_mode, metadata_json, created_at, updated_at, disabled_at
+                       status, model_access_mode, metadata_json, tags_json, created_at, updated_at, disabled_at
                 FROM service_accounts
                 WHERE service_account_id = ?1
                 LIMIT 1
@@ -221,7 +221,7 @@ impl LibsqlStore {
             .query(
                 r#"
                 SELECT service_account_id, team_id, service_account_key, service_account_name,
-                       status, model_access_mode, metadata_json, created_at, updated_at, disabled_at
+                       status, model_access_mode, metadata_json, tags_json, created_at, updated_at, disabled_at
                 FROM service_accounts
                 WHERE status = 'active'
                 ORDER BY service_account_name ASC
@@ -245,7 +245,7 @@ impl LibsqlStore {
             .query(
                 r#"
                 SELECT service_account_id, team_id, service_account_key, service_account_name,
-                       status, model_access_mode, metadata_json, created_at, updated_at, disabled_at
+                       status, model_access_mode, metadata_json, tags_json, created_at, updated_at, disabled_at
                 FROM service_accounts
                 ORDER BY service_account_name ASC
                 "#,
@@ -313,6 +313,37 @@ impl LibsqlStore {
                     service_account_name,
                     updated_at.unix_timestamp(),
                     service_account_id.to_string(),
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        if updated == 0 {
+            return Err(StoreError::NotFound(
+                "active service account not found".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    pub async fn update_service_account_tags(
+        &self,
+        service_account_id: Uuid,
+        tags: &[RequestTag],
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        let tags_json = crate::shared::serialize_json(tags)?;
+        let updated = self
+            .connection
+            .execute(
+                r#"
+                UPDATE service_accounts
+                SET tags_json = ?1, updated_at = ?2
+                WHERE service_account_id = ?3 AND status = 'active'
+                "#,
+                libsql::params![
+                    tags_json,
+                    updated_at.unix_timestamp(),
+                    service_account_id.to_string()
                 ],
             )
             .await

@@ -234,12 +234,26 @@ pub async fn create_identity_service_account(
             "service accounts can only be created for active teams".to_string(),
         )));
     }
+    let tags = parse_entity_tag_views(&request.tags, "service account tags")?;
 
     let key = generate_unique_service_account_key(&state.store, team_id, name).await?;
     let account = state
         .store
         .create_service_account(team_id, &key, name, OffsetDateTime::now_utc())
         .await?;
+    state
+        .store
+        .update_service_account_tags(account.service_account_id, &tags, OffsetDateTime::now_utc())
+        .await?;
+    let account = state
+        .store
+        .get_service_account_by_id(account.service_account_id)
+        .await?
+        .ok_or_else(|| {
+            AppError(GatewayError::InvalidRequest(
+                "service account not found".to_string(),
+            ))
+        })?;
     Ok(Json(envelope(service_account_view(&account, &team))))
 }
 
@@ -275,9 +289,18 @@ pub async fn update_identity_service_account(
             "name cannot be empty".to_string(),
         )));
     }
+    let tags = match request.tags.as_ref() {
+        Some(tags) => parse_entity_tag_views(tags, "service account tags")?,
+        None => account.tags.clone(),
+    };
+    let now = OffsetDateTime::now_utc();
     state
         .store
-        .update_service_account_name(service_account_id, name, OffsetDateTime::now_utc())
+        .update_service_account_name(service_account_id, name, now)
+        .await?;
+    state
+        .store
+        .update_service_account_tags(service_account_id, &tags, now)
         .await?;
     let account = state
         .store
@@ -2294,6 +2317,7 @@ fn service_account_view(
         key: account.service_account_key.clone(),
         name: account.service_account_name.clone(),
         status: account.status.as_str().to_string(),
+        tags: entity_tag_views(&account.tags),
         team_id: team.team_id.to_string(),
         team_key: team.team_key.clone(),
         team_name: team.team_name.clone(),
@@ -2347,6 +2371,15 @@ fn parse_entity_tag_views(
         })
         .collect::<Vec<_>>();
     validate_entity_tags(&tags, context).map_err(AppError)
+}
+
+fn entity_tag_views(tags: &[gateway_core::RequestTag]) -> Vec<AdminEntityTagView> {
+    tags.iter()
+        .map(|tag| AdminEntityTagView {
+            key: tag.key.clone(),
+            value: tag.value.clone(),
+        })
+        .collect()
 }
 
 fn validate_team_admin_assignments(

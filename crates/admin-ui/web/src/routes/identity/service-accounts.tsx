@@ -13,6 +13,7 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty'
 import { GeneratedAvatar } from '@/components/ui/generated-avatar'
+import { EntityTagBadges } from '@/routes/identity/-entity-tags'
 import {
   Table,
   TableBody,
@@ -122,6 +123,14 @@ function ServiceAccountTable({ rows }: { rows: ServiceAccountCredentialRow[] }) 
               </div>
               <div>
                 <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
+                  Tags
+                </dt>
+                <dd className="mt-1">
+                  <EntityTagBadges tags={row.serviceAccount.tags} />
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs font-semibold tracking-[0.08em] text-[var(--color-text-soft)] uppercase">
                   API key
                 </dt>
                 <dd className="mt-1 text-[var(--color-text-muted)]">
@@ -154,6 +163,9 @@ function ServiceAccountTable({ rows }: { rows: ServiceAccountCredentialRow[] }) 
                 Status
               </TableHead>
               <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
+                Tags
+              </TableHead>
+              <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
                 API key name
               </TableHead>
               <TableHead className="px-3 py-2 font-semibold text-[var(--color-text-soft)]">
@@ -178,6 +190,9 @@ function ServiceAccountTable({ rows }: { rows: ServiceAccountCredentialRow[] }) 
                 </TableCell>
                 <TableCell className="px-3 py-3">
                   <StatusBadge status={row.serviceAccount.status} />
+                </TableCell>
+                <TableCell className="px-3 py-3">
+                  <EntityTagBadges tags={row.serviceAccount.tags} />
                 </TableCell>
                 <TableCell className="px-3 py-3 text-[var(--color-text-muted)]">
                   {row.apiKey ? row.apiKey.name : 'No credential attached'}

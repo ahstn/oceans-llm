@@ -1,0 +1,1 @@
+ALTER TABLE service_accounts ADD COLUMN IF NOT EXISTS tags_json TEXT NOT NULL DEFAULT '[]';
