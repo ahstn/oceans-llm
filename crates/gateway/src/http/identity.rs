@@ -10,7 +10,7 @@ use gateway_core::{
     AuthError, AuthMode, GatewayError, GlobalRole, IdentityRepository, IdentityUserRecord,
     MembershipRole, OauthLoginStateRecord, OauthProviderRecord, OidcLoginStateRecord,
     OidcProviderRecord, PasswordInvitationRecord, ServiceAccountRecord, TeamRecord, UserRecord,
-    UserSessionRecord, UserStatus,
+    UserSessionRecord, UserStatus, validate_entity_tags,
 };
 use gateway_store::{AnyStore, GatewayStore};
 use openidconnect::{
@@ -51,9 +51,8 @@ use crate::{
         },
         identity_views::{
             build_admin_identity_user_view, build_admin_team_views, build_assignable_user_views,
-            reload_identity_user, reload_team_view,
+            entity_tag_views, reload_identity_user, reload_team_view,
         },
-        request_tags::validate_entity_tags,
         state::AppState,
     },
 };
@@ -2371,15 +2370,6 @@ fn parse_entity_tag_views(
         })
         .collect::<Vec<_>>();
     validate_entity_tags(&tags, context).map_err(AppError)
-}
-
-fn entity_tag_views(tags: &[gateway_core::RequestTag]) -> Vec<AdminEntityTagView> {
-    tags.iter()
-        .map(|tag| AdminEntityTagView {
-            key: tag.key.clone(),
-            value: tag.value.clone(),
-        })
-        .collect()
 }
 
 fn validate_team_admin_assignments(

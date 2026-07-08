@@ -184,7 +184,7 @@ pub(crate) fn format_user_status(status: UserStatus) -> String {
     status.as_str().to_string()
 }
 
-fn entity_tag_views(tags: &[gateway_core::RequestTag]) -> Vec<AdminEntityTagView> {
+pub(crate) fn entity_tag_views(tags: &[gateway_core::RequestTag]) -> Vec<AdminEntityTagView> {
     tags.iter()
         .map(|tag| AdminEntityTagView {
             key: tag.key.clone(),

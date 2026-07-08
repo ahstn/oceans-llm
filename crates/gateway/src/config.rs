@@ -12,7 +12,7 @@ use gateway_core::{
     SeedApiKeySecretMaterial, SeedBudget, SeedHumanBudgetDefaults, SeedManagedServiceAccountApiKey,
     SeedModel, SeedModelRoute, SeedOauthProvider, SeedOidcProvider, SeedProvider,
     SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership, SeedUserModelBudgetDefault,
-    hash_gateway_key_secret, parse_gateway_api_key,
+    hash_gateway_key_secret, parse_gateway_api_key, validate_entity_tags,
 };
 use gateway_providers::{
     BedrockAuthConfig, BedrockEndpointKind, BedrockProviderConfig, CloudRunOpenAiCompatAuth,
@@ -28,8 +28,6 @@ use serde_json::{Map, Value, json};
 use uuid::Uuid;
 
 mod providers;
-
-use crate::http::request_tags::validate_entity_tags;
 
 pub use providers::{
     AwsBedrockAuthConfig, AwsBedrockProviderConfig, GcpCloudRunOpenAiCompatAuthConfig,
