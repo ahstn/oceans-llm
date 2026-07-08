@@ -46,6 +46,26 @@ const basePayload: IdentityUsersPayload = {
   oauth_providers: [],
 }
 
+type UserPayload = IdentityUsersPayload['users'][number]
+
+function invitedUser(overrides: Partial<UserPayload> = {}): UserPayload {
+  return {
+    id: 'user_1',
+    name: 'Jane Operator',
+    email: 'jane@example.com',
+    auth_mode: 'password',
+    global_role: 'user',
+    team_id: null,
+    team_name: null,
+    team_role: null,
+    request_logging_enabled: true,
+    status: 'invited',
+    tags: [],
+    onboarding: null,
+    ...overrides,
+  }
+}
+
 describe('UsersPage', () => {
   beforeEach(() => {
     if (!Element.prototype.hasPointerCapture) {
@@ -174,24 +194,11 @@ describe('UsersPage', () => {
   })
 
   it('keeps a reset onboarding URL visible after the user list refreshes', async () => {
-    const invitedUser = {
-      id: 'user_1',
-      name: 'Jane Operator',
-      email: 'jane@example.com',
-      auth_mode: 'password',
-      global_role: 'user',
-      team_id: null,
-      team_name: null,
-      team_role: null,
-      request_logging_enabled: true,
-      status: 'invited',
-      tags: [],
-      onboarding: null,
-    } satisfies IdentityUsersPayload['users'][number]
+    const user = invitedUser()
     routeMock.useLoaderData.mockReturnValue({
       data: {
         ...basePayload,
-        users: [invitedUser],
+        users: [user],
       },
     })
     routeMock.useSearch.mockReturnValue({ user_id: 'user_1', user_section: 'auth' })
@@ -200,7 +207,7 @@ describe('UsersPage', () => {
         kind: 'password_invite',
         invite_url: 'http://example.test/invite/reset-user-1',
         expires_at: '2026-03-14T12:00:00Z',
-        user: invitedUser,
+        user,
       },
     })
 
@@ -219,7 +226,7 @@ describe('UsersPage', () => {
     routeMock.useLoaderData.mockReturnValue({
       data: {
         ...basePayload,
-        users: [{ ...invitedUser }],
+        users: [{ ...user }],
       },
     })
     rerender(<UsersPage />)
@@ -230,29 +237,19 @@ describe('UsersPage', () => {
   })
 
   it('renders an OAuth reset onboarding URL', async () => {
-    const invitedUser = {
-      id: 'user_1',
-      name: 'Jane Operator',
-      email: 'jane@example.com',
+    const user = invitedUser({
       auth_mode: 'oauth',
-      global_role: 'user',
-      team_id: null,
-      team_name: null,
-      team_role: null,
-      request_logging_enabled: true,
-      status: 'invited',
-      tags: [],
       onboarding: {
         kind: 'oauth_sign_in',
         provider_key: 'github',
         provider_label: 'GitHub',
         sign_in_url: 'http://example.test/api/v1/auth/oauth/start?provider=github',
       },
-    } satisfies IdentityUsersPayload['users'][number]
+    })
     routeMock.useLoaderData.mockReturnValue({
       data: {
         ...basePayload,
-        users: [invitedUser],
+        users: [user],
         oauth_providers: [{ key: 'github', label: 'GitHub' }],
       },
     })
@@ -280,5 +277,29 @@ describe('UsersPage', () => {
     expect(
       screen.getByText('Share this URL with the user so they can finish SSO onboarding.'),
     ).toBeInTheDocument()
+  })
+
+  it('sanitizes onboarding updates to auth fields only', async () => {
+    const { sanitizeOnboardingUpdateForm } = await import('@/routes/identity/users')
+
+    const input = sanitizeOnboardingUpdateForm(
+      {
+        auth_mode: 'oauth',
+        global_role: 'platform_admin',
+        team_id: 'team_1',
+        team_role: 'admin',
+        tags: [{ key: 'department', value: 'engineering' }],
+        oidc_provider_key: 'oidc',
+        oauth_provider_key: 'github',
+      },
+      [{ key: 'oidc', label: 'OIDC' }],
+      [{ key: 'github', label: 'GitHub' }],
+    )
+
+    expect(input).toEqual({
+      auth_mode: 'oauth',
+      oidc_provider_key: null,
+      oauth_provider_key: 'github',
+    })
   })
 })

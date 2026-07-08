@@ -33,15 +33,22 @@ impl ClientConfigNote {
     }
 }
 
-pub(crate) fn thinking_notes(input: &ClientConfigInput) -> Vec<String> {
-    common_note_items(input)
+pub(crate) fn client_notes(input: &ClientConfigInput) -> Vec<String> {
+    client_note_items(input)
         .into_iter()
         .map(ClientConfigNote::into_message)
         .collect()
 }
 
-fn common_note_items(input: &ClientConfigInput) -> Vec<ClientConfigNote> {
-    let mut notes = thinking_note_items(input);
+pub(crate) fn thinking_notes(input: &ClientConfigInput) -> Vec<String> {
+    thinking_note_items(input)
+        .into_iter()
+        .map(ClientConfigNote::into_message)
+        .collect()
+}
+
+pub(crate) fn client_note_items(input: &ClientConfigInput) -> Vec<ClientConfigNote> {
+    let mut notes = Vec::new();
     if input.context_window_is_capped() {
         notes.push(ClientConfigNote::new(
             ClientConfigNoteKind::ContextWindow,
@@ -65,7 +72,7 @@ pub(crate) fn thinking_note_items(input: &ClientConfigInput) -> Vec<ClientConfig
 }
 
 pub(crate) fn claude_code_note_items(input: &ClientConfigInput) -> Vec<ClientConfigNote> {
-    let mut notes = common_note_items(input);
+    let mut notes = client_note_items(input);
     if uses_anthropic_messages_api(input) {
         notes.push(ClientConfigNote::new(
             ClientConfigNoteKind::ClaudeCodeBaseUrl,

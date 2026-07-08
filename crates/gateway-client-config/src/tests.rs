@@ -165,6 +165,35 @@ fn client_context_window_is_capped_with_note() {
 }
 
 #[test]
+fn client_context_window_note_is_emitted_once_for_multi_model_configs() {
+    let mut first = input(Some(AnthropicThinkingPolicy::SafeEffort));
+    first.context_window_tokens = Some(1_000_000);
+    let mut second = first.clone();
+    second.model_id = "claude-haiku".to_string();
+    second.display_name = "Claude Haiku".to_string();
+    let input_set = ClientConfigInputSet::new(vec![first, second]);
+
+    let opencode = OpenCodeConfigTemplate.render_many(&input_set);
+    let pi = PiConfigTemplate.render_many(&input_set);
+
+    assert_eq!(
+        opencode
+            .notes
+            .iter()
+            .filter(|note| note.contains("cap the input context window at 200000 tokens"))
+            .count(),
+        1
+    );
+    assert_eq!(
+        pi.notes
+            .iter()
+            .filter(|note| note.contains("cap the input context window at 200000 tokens"))
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn infers_safe_effort_for_newer_claude_models() {
     for model in [
         "anthropic/claude-fable-5",

@@ -6,7 +6,7 @@ use crate::{
     api_style::{ClientApiStyle, client_api_style, opencode_provider_package_for_style},
     cost::opencode_cost,
     format::to_pretty_json,
-    templates::notes::thinking_notes,
+    templates::notes::{client_notes, thinking_notes},
     types::{
         AnthropicThinkingPolicy, ClientConfig, ClientConfigCodeBlock, ClientConfigInput,
         ClientConfigInputSet, ClientConfigSetupItem, ClientConfigTemplate,
@@ -70,7 +70,10 @@ impl OpenCodeConfigTemplate {
                 filename: "opencode.json".to_string(),
                 content: to_pretty_json(&config),
             }],
-            notes: input_set.models.iter().flat_map(thinking_notes).collect(),
+            notes: client_notes(first)
+                .into_iter()
+                .chain(input_set.models.iter().flat_map(thinking_notes))
+                .collect(),
         }
     }
 }

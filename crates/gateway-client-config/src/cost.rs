@@ -20,7 +20,7 @@ pub(crate) fn opencode_cost(input: &ClientConfigInput) -> Value {
 }
 
 pub(crate) fn pi_cost(input: &ClientConfigInput) -> Value {
-    let mut cost = Map::from_iter([
+    let cost = Map::from_iter([
         (
             "input".to_string(),
             required_money4_to_number(input.input_cost_per_million_tokens_usd_10000),
@@ -29,13 +29,12 @@ pub(crate) fn pi_cost(input: &ClientConfigInput) -> Value {
             "output".to_string(),
             required_money4_to_number(input.output_cost_per_million_tokens_usd_10000),
         ),
+        (
+            "cacheRead".to_string(),
+            required_money4_to_number(input.cache_read_cost_per_million_tokens_usd_10000),
+        ),
         ("cacheWrite".to_string(), json!(0)),
     ]);
-    cost.insert(
-        "cacheRead".to_string(),
-        money4_to_number(input.cache_read_cost_per_million_tokens_usd_10000)
-            .unwrap_or_else(|| json!(0)),
-    );
     Value::Object(cost)
 }
 

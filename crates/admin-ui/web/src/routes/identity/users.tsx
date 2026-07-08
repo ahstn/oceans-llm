@@ -321,14 +321,16 @@ export function UsersPage() {
     }
 
     startTransition(async () => {
+      let savedOnboardingAuth = false
       try {
         if (selectedUser.status === 'invited' && onboardingAuthChanged(selectedUser, updateForm)) {
           await updateIdentityUser({
             data: {
               userId: selectedUser.id,
-              input: sanitizeUpdateForm(updateForm, selectedUser, oidcProviders, oauthProviders),
+              input: sanitizeOnboardingUpdateForm(updateForm, oidcProviders, oauthProviders),
             },
           })
+          savedOnboardingAuth = true
         }
         const response = await resetIdentityUserOnboarding({ data: { userId: selectedUser.id } })
         setOnboardingResult(response.data)
@@ -339,7 +341,14 @@ export function UsersPage() {
         )
         await refreshUsers()
       } catch (error) {
-        toast.error(getErrorMessage(error))
+        if (savedOnboardingAuth) {
+          await refreshUsers()
+        }
+        toast.error(
+          savedOnboardingAuth
+            ? `Auth method was saved, but reset failed: ${getErrorMessage(error)}`
+            : getErrorMessage(error),
+        )
       }
     })
   }
@@ -1423,6 +1432,34 @@ function sanitizeUpdateForm(
   }
 
   if (user.status === 'invited' && update.auth_mode === 'oauth') {
+    const validProvider = oauthProviders.find(
+      (provider) => provider.key === update.oauth_provider_key,
+    )
+    update.oauth_provider_key = validProvider ? update.oauth_provider_key : null
+  }
+
+  return update
+}
+
+export function sanitizeOnboardingUpdateForm(
+  form: UpdateUserInput,
+  oidcProviders: IdentityUsersPayload['oidc_providers'],
+  oauthProviders: IdentityUsersPayload['oauth_providers'],
+): UpdateUserInput {
+  const update: UpdateUserInput = {
+    auth_mode: form.auth_mode,
+    oidc_provider_key: form.auth_mode === 'oidc' ? (form.oidc_provider_key ?? null) : null,
+    oauth_provider_key: form.auth_mode === 'oauth' ? (form.oauth_provider_key ?? null) : null,
+  }
+
+  if (update.auth_mode === 'oidc') {
+    const validProvider = oidcProviders.find(
+      (provider) => provider.key === update.oidc_provider_key,
+    )
+    update.oidc_provider_key = validProvider ? update.oidc_provider_key : null
+  }
+
+  if (update.auth_mode === 'oauth') {
     const validProvider = oauthProviders.find(
       (provider) => provider.key === update.oauth_provider_key,
     )

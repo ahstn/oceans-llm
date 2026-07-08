@@ -43,15 +43,10 @@ pub struct ClientConfigInput {
 impl ClientConfigInput {
     #[must_use]
     pub fn context_window(&self) -> i64 {
-        let window = self
-            .input_window_tokens
+        self.input_window_tokens
             .or(self.context_window_tokens)
-            .unwrap_or_default();
-        if window > 0 {
-            window.min(MAX_CLIENT_CONTEXT_WINDOW_TOKENS)
-        } else {
-            window
-        }
+            .unwrap_or_default()
+            .min(MAX_CLIENT_CONTEXT_WINDOW_TOKENS)
     }
 
     #[must_use]
