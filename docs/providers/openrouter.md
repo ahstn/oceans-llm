@@ -17,7 +17,7 @@ providers:
   - id: openrouter
     type: openai_compat
     base_url: https://openrouter.ai/api/v1
-    pricing_provider_id: openai
+    pricing_provider_id: openrouter
     auth:
       kind: bearer
       token: env.OPENROUTER_API_KEY

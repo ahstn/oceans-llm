@@ -532,6 +532,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/models/pricing-catalog/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["refresh_model_pricing_catalog"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/observability/harness-usage": {
         parameters: {
             query?: never;
@@ -1948,6 +1964,12 @@ export interface components {
             };
             meta: components["schemas"]["ResponseMeta"];
         };
+        Envelope_RefreshModelPricingCatalogResponse: {
+            data: {
+                refreshed: boolean;
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
         Envelope_RequestLogDetailView: {
             data: {
                 attempts: components["schemas"]["RequestAttemptView"][];
@@ -2361,6 +2383,9 @@ export interface components {
         };
         RecommendedMcpServersPayload: {
             items: components["schemas"]["RecommendedMcpServerView"][];
+        };
+        RefreshModelPricingCatalogResponse: {
+            refreshed: boolean;
         };
         ReplaceMcpToolsetToolsRequest: {
             tool_ids: string[];
@@ -3890,6 +3915,25 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_GenerateModelClientConfigsResponse"];
+                };
+            };
+        };
+    };
+    refresh_model_pricing_catalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_RefreshModelPricingCatalogResponse"];
                 };
             };
         };

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -83,7 +83,9 @@ const codexSetup = (): ClientConfigSetup => [
 ]
 
 const navigateMock = vi.hoisted(() => vi.fn())
+const invalidateMock = vi.hoisted(() => vi.fn())
 const getModelClientConfigsMock = vi.hoisted(() => vi.fn())
+const refreshModelPricingMock = vi.hoisted(() => vi.fn())
 
 const routeMock = vi.hoisted(() => ({
   useLoaderData: vi.fn(),
@@ -94,6 +96,7 @@ vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
   useRouter: () => ({
     navigate: navigateMock,
+    invalidate: invalidateMock,
   }),
   redirect: vi.fn(),
 }))
@@ -101,6 +104,7 @@ vi.mock('@tanstack/react-router', () => ({
 vi.mock('@/server/admin-data.functions', () => ({
   getModels: vi.fn(),
   getModelClientConfigs: getModelClientConfigsMock,
+  refreshModelPricing: refreshModelPricingMock,
   getAuthSession: vi.fn(),
 }))
 
@@ -264,7 +268,9 @@ describe('ModelsPage', () => {
     routeMock.useLoaderData.mockReset()
     routeMock.useSearch.mockReset()
     navigateMock.mockReset()
+    invalidateMock.mockReset()
     getModelClientConfigsMock.mockReset()
+    refreshModelPricingMock.mockReset()
     routeMock.useSearch.mockReturnValue({ page: 1, page_size: 30 })
   })
 
@@ -530,6 +536,23 @@ describe('ModelsPage', () => {
     expect(writeText).toHaveBeenLastCalledWith(
       'model = "claude-sonnet"\nmodel_reasoning_effort = "medium"\nmodel_provider = "oceans-llm"\n\n[model_providers.oceans-llm]\nname = "oceans-llm"\nbase_url = "http://127.0.0.1:3000/v1"\nenv_key = "OCEANS_LLM_API_KEY"\nenv_key_instructions = "Set OCEANS_LLM_API_KEY in your environment"\nrequires_openai_auth = false\nwire_api = "responses"\n\n[analytics]\nenabled = false\n\n[otel]\nlog_user_prompt = false\n',
     )
+  })
+
+  it('refreshes pricing and reloads model data from the toolbar', async () => {
+    refreshModelPricingMock.mockResolvedValue({ data: { refreshed: true }, meta: {} })
+    invalidateMock.mockResolvedValue(undefined)
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh pricing' }))
+
+    expect(refreshModelPricingMock).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(invalidateMock).toHaveBeenCalledTimes(1))
   })
 
   it('selects multiple models and opens generated client config for the selected set', async () => {

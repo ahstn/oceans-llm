@@ -328,6 +328,11 @@ pub struct GenerateModelClientConfigsResponse {
     pub client_configurations: Vec<AdminModelClientConfigView>,
 }
 
+#[derive(Debug, Serialize, ToSchema)]
+pub struct RefreshModelPricingCatalogResponse {
+    pub refreshed: bool,
+}
+
 #[derive(Debug, Deserialize, Default, IntoParams)]
 pub struct AdminModelListQuery {
     pub page: Option<u32>,
@@ -1174,6 +1179,7 @@ pub struct RequestLogPayloadView {
         crate::http::identity::list_identity_teams,
         crate::http::models::list_models,
         crate::http::models::generate_model_client_configs,
+        crate::http::models::refresh_model_pricing_catalog,
         crate::http::identity::create_identity_team,
         crate::http::identity::update_identity_team,
         crate::http::identity::add_identity_team_members,
@@ -1331,6 +1337,7 @@ mod tests {
 
         assert!(paths.contains_key("/api/v1/admin/identity/users"));
         assert!(paths.contains_key("/api/v1/admin/models"));
+        assert!(paths.contains_key("/api/v1/admin/models/pricing-catalog/refresh"));
         assert!(paths.contains_key("/api/v1/admin/spend/report"));
         assert!(paths.contains_key("/api/v1/admin/observability/leaderboard"));
         assert!(paths.contains_key("/api/v1/admin/observability/request-logs/{request_log_id}"));

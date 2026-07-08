@@ -9,6 +9,7 @@ import {
   Copy01Icon,
   HomeIcon,
   LiveStreaming03Icon,
+  RefreshIcon,
   ToolsIcon,
   Tick02Icon,
   VisionIcon,
@@ -48,7 +49,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { cn } from '@/lib/utils'
 import { requireAdminSession } from '@/routes/-admin-guard'
-import { getModelClientConfigs, getModels } from '@/server/admin-data.functions'
+import {
+  getModelClientConfigs,
+  getModels,
+  refreshModelPricing,
+} from '@/server/admin-data.functions'
 import type { ModelView } from '@/types/api'
 
 const DEFAULT_PAGE = 1
@@ -92,6 +97,7 @@ export function ModelsPage() {
     capabilities: false,
   })
   const [isGeneratingConfig, setIsGeneratingConfig] = useState(false)
+  const [isRefreshingPricing, setIsRefreshingPricing] = useState(false)
   const totalPages = Math.max(1, Math.ceil(modelPage.total / modelPage.page_size))
   const selectableModels = modelPage.items.filter((model) => model.client_configurations.length > 0)
   const selectedModels = Object.values(selectedModelsById)
@@ -191,6 +197,19 @@ export function ModelsPage() {
 
   function openSingleClientConfig(model: ModelView) {
     void openClientConfig([model])
+  }
+
+  async function refreshPricing() {
+    setIsRefreshingPricing(true)
+    try {
+      await refreshModelPricing()
+      await router.invalidate()
+      toast.success('Pricing refreshed')
+    } catch {
+      toast.error('Pricing refresh failed')
+    } finally {
+      setIsRefreshingPricing(false)
+    }
   }
 
   function openModelInfo(model: ModelView) {
@@ -299,8 +318,19 @@ export function ModelsPage() {
                 onClick={openSelectedClientConfig}
                 disabled={selectedModelIds.length === 0 || isGeneratingConfig}
               >
-                <AppIcon icon={CodeIcon} size={14} stroke={1.5} />
+                <AppIcon icon={CodeIcon} size={14} stroke={1.5} data-icon="inline-start" />
                 Generate config
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={() => void refreshPricing()}
+                disabled={isRefreshingPricing}
+              >
+                <AppIcon icon={RefreshIcon} size={14} stroke={1.5} data-icon="inline-start" />
+                {isRefreshingPricing ? 'Refreshing...' : 'Refresh pricing'}
               </Button>
             </div>
           </div>

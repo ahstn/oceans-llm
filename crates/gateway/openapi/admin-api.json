@@ -1802,6 +1802,31 @@
         ]
       }
     },
+    "/api/v1/admin/models/pricing-catalog/refresh": {
+      "post": {
+        "tags": [
+          "crate::http::models"
+        ],
+        "operationId": "refresh_model_pricing_catalog",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_RefreshModelPricingCatalogResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/observability/harness-usage": {
       "get": {
         "tags": [
@@ -7363,6 +7388,29 @@
           }
         }
       },
+      "Envelope_RefreshModelPricingCatalogResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "refreshed"
+            ],
+            "properties": {
+              "refreshed": {
+                "type": "boolean"
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
       "Envelope_RequestLogDetailView": {
         "type": "object",
         "required": [
@@ -9060,6 +9108,17 @@
             "items": {
               "$ref": "#/components/schemas/RecommendedMcpServerView"
             }
+          }
+        }
+      },
+      "RefreshModelPricingCatalogResponse": {
+        "type": "object",
+        "required": [
+          "refreshed"
+        ],
+        "properties": {
+          "refreshed": {
+            "type": "boolean"
           }
         }
       },

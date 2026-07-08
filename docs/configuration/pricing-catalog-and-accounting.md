@@ -57,6 +57,7 @@ At request time, the gateway resolves one pricing row and copies provenance into
 Current exact-only coverage is intentionally narrow:
 
 - `openai_compat` requires a supported `pricing_provider_id`
+- OpenRouter `openai_compat` routes should use `pricing_provider_id: openrouter`
 - Vertex pricing is inferred from the upstream publisher prefix
 - `google/...` maps to Google Vertex pricing
 - `anthropic/...` maps to Anthropic-on-Vertex pricing

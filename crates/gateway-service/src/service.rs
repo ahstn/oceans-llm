@@ -402,6 +402,10 @@ where
         self.pricing_catalog.refresh_if_stale().await
     }
 
+    pub async fn refresh_pricing_catalog_now(&self) -> Result<(), GatewayError> {
+        self.pricing_catalog.refresh_now_and_sync().await
+    }
+
     pub async fn dispatch_pending_budget_alert_deliveries(
         &self,
         limit: u32,

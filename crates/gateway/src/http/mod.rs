@@ -59,6 +59,10 @@ pub fn build_router(state: AppState, admin_ui: AdminUiConfig) -> Router {
             post(generate_model_client_configs),
         )
         .route(
+            "/api/v1/admin/models/pricing-catalog/refresh",
+            post(refresh_model_pricing_catalog),
+        )
+        .route(
             "/api/v1/admin/identity/users",
             get(list_identity_users).post(create_identity_user),
         )
