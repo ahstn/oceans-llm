@@ -409,32 +409,56 @@ impl LibsqlStore {
                     service_account.service_account_key
                 )));
             }
-            let tags_json = serialize_json(&service_account.tags)?;
-
-            self.connection
-                .execute(
-                    r#"
-                    INSERT INTO service_accounts (
-                        service_account_id, team_id, service_account_key, service_account_name,
-                        status, model_access_mode, metadata_json, tags_json, created_at, updated_at, disabled_at
-                    ) VALUES (?1, ?2, ?3, ?4, 'active', 'all', '{}', ?5, ?6, ?6, NULL)
-                    ON CONFLICT(service_account_id) DO UPDATE SET
-                        service_account_key = excluded.service_account_key,
-                        service_account_name = excluded.service_account_name,
-                        tags_json = excluded.tags_json,
-                        updated_at = excluded.updated_at
-                    "#,
-                    libsql::params![
-                        service_account_id.to_string(),
-                        team.team_id.to_string(),
-                        service_account.service_account_key.as_str(),
-                        service_account.service_account_name.as_str(),
-                        tags_json,
-                        now_unix
-                    ],
-                )
-                .await
-                .map_err(to_query_error)?;
+            if let Some(tags) = service_account.tags.as_ref() {
+                let tags_json = serialize_json(tags)?;
+                self.connection
+                    .execute(
+                        r#"
+                        INSERT INTO service_accounts (
+                            service_account_id, team_id, service_account_key, service_account_name,
+                            status, model_access_mode, metadata_json, tags_json, created_at, updated_at, disabled_at
+                        ) VALUES (?1, ?2, ?3, ?4, 'active', 'all', '{}', ?5, ?6, ?6, NULL)
+                        ON CONFLICT(service_account_id) DO UPDATE SET
+                            service_account_key = excluded.service_account_key,
+                            service_account_name = excluded.service_account_name,
+                            tags_json = excluded.tags_json,
+                            updated_at = excluded.updated_at
+                        "#,
+                        libsql::params![
+                            service_account_id.to_string(),
+                            team.team_id.to_string(),
+                            service_account.service_account_key.as_str(),
+                            service_account.service_account_name.as_str(),
+                            tags_json,
+                            now_unix
+                        ],
+                    )
+                    .await
+                    .map_err(to_query_error)?;
+            } else {
+                self.connection
+                    .execute(
+                        r#"
+                        INSERT INTO service_accounts (
+                            service_account_id, team_id, service_account_key, service_account_name,
+                            status, model_access_mode, metadata_json, created_at, updated_at, disabled_at
+                        ) VALUES (?1, ?2, ?3, ?4, 'active', 'all', '{}', ?5, ?5, NULL)
+                        ON CONFLICT(service_account_id) DO UPDATE SET
+                            service_account_key = excluded.service_account_key,
+                            service_account_name = excluded.service_account_name,
+                            updated_at = excluded.updated_at
+                        "#,
+                        libsql::params![
+                            service_account_id.to_string(),
+                            team.team_id.to_string(),
+                            service_account.service_account_key.as_str(),
+                            service_account.service_account_name.as_str(),
+                            now_unix
+                        ],
+                    )
+                    .await
+                    .map_err(to_query_error)?;
+            }
 
             self.upsert_active_budget(
                 &gateway_core::BudgetScope::ServiceAccount { service_account_id },

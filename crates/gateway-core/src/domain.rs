@@ -2609,7 +2609,7 @@ pub struct SeedServiceAccount {
     pub service_account_name: String,
     pub team_key: String,
     #[serde(default)]
-    pub tags: Vec<RequestTag>,
+    pub tags: Option<Vec<RequestTag>>,
     pub budget: SeedBudget,
     #[serde(default)]
     pub managed_api_keys: Vec<SeedManagedServiceAccountApiKey>,
@@ -2741,7 +2741,7 @@ pub struct SeedTeam {
     pub team_key: String,
     pub team_name: String,
     #[serde(default)]
-    pub tags: Vec<RequestTag>,
+    pub tags: Option<Vec<RequestTag>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2759,7 +2759,7 @@ pub struct SeedUser {
     pub auth_mode: AuthMode,
     pub request_logging_enabled: bool,
     #[serde(default)]
-    pub tags: Vec<RequestTag>,
+    pub tags: Option<Vec<RequestTag>>,
     #[serde(default)]
     pub oidc_provider_key: Option<String>,
     #[serde(default)]

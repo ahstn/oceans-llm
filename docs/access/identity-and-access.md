@@ -195,17 +195,19 @@ Config-backed identity is now part of the startup seed path.
 - `users` are reconciled by normalized email
 - `service_accounts` are reconciled by `service_account_key`
 - listed users can reconcile team membership and active budgets
-- `teams[].tags`, `users[].tags`, and `service_accounts[].tags` reconcile identity tags from config
+- `teams[].tags`, `users[].tags`, and `service_accounts[].tags` reconcile identity tags from config when present
 - new config-seeded users start as `invited`
 - config seeding does not emit invite URLs; admins generate onboarding links from the admin UI when needed
 
 Config seeding no longer creates legacy system-owned runtime API keys. Non-human team access is managed through service accounts.
 
+For teams, users, and service accounts, omitted `tags` leaves existing identity tags unchanged during startup reconciliation. Set `tags: []` when config should explicitly clear tags. Tag validation and semantics are documented in [Tagging](../operations/tagging.md).
+
 Team config supports:
 
 - `id`: stable team key used for reconciliation
 - `name`: display name
-- `tags`: optional identity tag list
+- `tags`: optional identity tag list; omit to leave existing tags unchanged or set `[]` to clear tags
 
 User config supports:
 
@@ -214,7 +216,7 @@ User config supports:
 - optional `oidc_provider_key` or `oauth_provider_key` for SSO users
 - optional `membership` with `team` and non-`owner` `role`
 - optional `budget`
-- `tags`: optional identity tag list
+- `tags`: optional identity tag list; omit to leave existing tags unchanged or set `[]` to clear tags
 
 Service-account config supports:
 
@@ -223,7 +225,7 @@ Service-account config supports:
 - `team`: owning team key
 - `budget`
 - `keys`: optional managed API-key declarations
-- `tags`: optional identity tag list
+- `tags`: optional identity tag list; omit to leave existing tags unchanged or set `[]` to clear tags
 
 ## Service Accounts
 

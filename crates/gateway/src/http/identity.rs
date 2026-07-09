@@ -238,21 +238,8 @@ pub async fn create_identity_service_account(
     let key = generate_unique_service_account_key(&state.store, team_id, name).await?;
     let account = state
         .store
-        .create_service_account(team_id, &key, name, OffsetDateTime::now_utc())
+        .create_service_account_with_tags(team_id, &key, name, &tags, OffsetDateTime::now_utc())
         .await?;
-    state
-        .store
-        .update_service_account_tags(account.service_account_id, &tags, OffsetDateTime::now_utc())
-        .await?;
-    let account = state
-        .store
-        .get_service_account_by_id(account.service_account_id)
-        .await?
-        .ok_or_else(|| {
-            AppError(GatewayError::InvalidRequest(
-                "service account not found".to_string(),
-            ))
-        })?;
     Ok(Json(envelope(service_account_view(&account, &team))))
 }
 
@@ -295,11 +282,7 @@ pub async fn update_identity_service_account(
     let now = OffsetDateTime::now_utc();
     state
         .store
-        .update_service_account_name(service_account_id, name, now)
-        .await?;
-    state
-        .store
-        .update_service_account_tags(service_account_id, &tags, now)
+        .update_service_account_profile(service_account_id, name, &tags, now)
         .await?;
     let account = state
         .store

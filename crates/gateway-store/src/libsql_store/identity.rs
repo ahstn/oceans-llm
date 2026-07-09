@@ -269,21 +269,41 @@ impl LibsqlStore {
         service_account_name: &str,
         created_at: OffsetDateTime,
     ) -> Result<ServiceAccountRecord, StoreError> {
+        self.create_service_account_with_tags(
+            team_id,
+            service_account_key,
+            service_account_name,
+            &[],
+            created_at,
+        )
+        .await
+    }
+
+    pub async fn create_service_account_with_tags(
+        &self,
+        team_id: Uuid,
+        service_account_key: &str,
+        service_account_name: &str,
+        tags: &[RequestTag],
+        created_at: OffsetDateTime,
+    ) -> Result<ServiceAccountRecord, StoreError> {
         let service_account_id = Uuid::new_v4();
         let created_at = created_at.unix_timestamp();
+        let tags_json = crate::shared::serialize_json(tags)?;
         self.connection
             .execute(
                 r#"
                 INSERT INTO service_accounts (
                     service_account_id, team_id, service_account_key, service_account_name,
-                    status, model_access_mode, metadata_json, created_at, updated_at
-                ) VALUES (?1, ?2, ?3, ?4, 'active', 'all', '{}', ?5, ?5)
+                    status, model_access_mode, metadata_json, tags_json, created_at, updated_at
+                ) VALUES (?1, ?2, ?3, ?4, 'active', 'all', '{}', ?5, ?6, ?6)
                 "#,
                 libsql::params![
                     service_account_id.to_string(),
                     team_id.to_string(),
                     service_account_key,
                     service_account_name,
+                    tags_json,
                     created_at,
                 ],
             )
@@ -344,6 +364,39 @@ impl LibsqlStore {
                     tags_json,
                     updated_at.unix_timestamp(),
                     service_account_id.to_string()
+                ],
+            )
+            .await
+            .map_err(to_write_error)?;
+        if updated == 0 {
+            return Err(StoreError::NotFound(
+                "active service account not found".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    pub async fn update_service_account_profile(
+        &self,
+        service_account_id: Uuid,
+        service_account_name: &str,
+        tags: &[RequestTag],
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        let tags_json = crate::shared::serialize_json(tags)?;
+        let updated = self
+            .connection
+            .execute(
+                r#"
+                UPDATE service_accounts
+                SET service_account_name = ?1, tags_json = ?2, updated_at = ?3
+                WHERE service_account_id = ?4 AND status = 'active'
+                "#,
+                libsql::params![
+                    service_account_name,
+                    tags_json,
+                    updated_at.unix_timestamp(),
+                    service_account_id.to_string(),
                 ],
             )
             .await

@@ -68,28 +68,24 @@ fn extract_bespoke_tags(headers: &HeaderMap) -> Result<Vec<RequestTag>, GatewayE
         GatewayError::InvalidRequest(format!("header `{HEADER_TAGS}` must be valid UTF-8 text"))
     })?;
 
-    gateway_core::validate_entity_tags(
-        &raw.split(';')
-            .map(|entry| {
-                let trimmed = entry.trim();
-                if trimmed.is_empty() {
-                    return Err(GatewayError::InvalidRequest(format!(
-                        "header `{HEADER_TAGS}` contains an empty tag entry"
-                    )));
-                }
-                parse_tag_pair(trimmed, HEADER_TAGS)
-            })
-            .collect::<Result<Vec<_>, _>>()?,
-        &format!("header `{HEADER_TAGS}`"),
-    )
-    .map_err(|error| match error {
-        GatewayError::InvalidRequest(message) if message.contains("supports at most") => {
-            GatewayError::InvalidRequest(format!(
-                "header `{HEADER_TAGS}` supports at most {MAX_BESPOKE_TAGS} bespoke tags"
-            ))
+    let mut tags = Vec::new();
+    for entry in raw.split(';') {
+        let trimmed = entry.trim();
+        if trimmed.is_empty() {
+            return Err(GatewayError::InvalidRequest(format!(
+                "header `{HEADER_TAGS}` contains an empty tag entry"
+            )));
         }
-        other => other,
-    })
+        tags.push(parse_tag_pair(trimmed, HEADER_TAGS)?);
+    }
+
+    if tags.len() > MAX_BESPOKE_TAGS {
+        return Err(GatewayError::InvalidRequest(format!(
+            "header `{HEADER_TAGS}` supports at most {MAX_BESPOKE_TAGS} bespoke tags"
+        )));
+    }
+
+    gateway_core::validate_entity_tags(&tags, &format!("header `{HEADER_TAGS}`"))
 }
 
 fn parse_tag_pair(value: &str, context: &str) -> Result<RequestTag, GatewayError> {
@@ -100,8 +96,8 @@ fn parse_tag_pair(value: &str, context: &str) -> Result<RequestTag, GatewayError
     };
 
     Ok(RequestTag {
-        key: validate_tag_key(raw_key, context)?,
-        value: validate_tag_value(raw_value, context)?,
+        key: raw_key.to_string(),
+        value: raw_value.to_string(),
     })
 }
 

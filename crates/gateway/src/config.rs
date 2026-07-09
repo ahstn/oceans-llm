@@ -396,7 +396,10 @@ impl GatewayConfig {
             if team.name.trim().is_empty() {
                 bail!("team `{team_key}` name cannot be empty");
             }
-            normalize_config_entity_tags(&team.tags, &format!("team `{team_key}` tags"))?;
+            normalize_optional_config_entity_tags(
+                team.tags.as_deref(),
+                &format!("team `{team_key}` tags"),
+            )?;
             if !team_keys.insert(team_key.clone()) {
                 bail!("duplicate team id `{team_key}`");
             }
@@ -413,8 +416,8 @@ impl GatewayConfig {
             {
                 bail!("service account `{service_account_key}` name cannot be empty");
             }
-            normalize_config_entity_tags(
-                &service_account.tags,
+            normalize_optional_config_entity_tags(
+                service_account.tags.as_deref(),
                 &format!("service account `{service_account_key}` tags"),
             )?;
             let team_key = normalize_config_team_key(&service_account.team)
@@ -479,7 +482,10 @@ impl GatewayConfig {
             if !user_emails.insert(email_normalized.clone()) {
                 bail!("duplicate user email `{email_normalized}`");
             }
-            normalize_config_entity_tags(&user.tags, &format!("user `{}` tags", user.email))?;
+            normalize_optional_config_entity_tags(
+                user.tags.as_deref(),
+                &format!("user `{}` tags", user.email),
+            )?;
             match user.auth_mode {
                 AuthMode::Oidc => {
                     let Some(provider_key) = user.oidc_provider_key.as_deref() else {
@@ -885,8 +891,8 @@ impl GatewayConfig {
                         allowed_models: key.allowed_models.clone(),
                     });
                 }
-                let tags = normalize_config_entity_tags(
-                    &service_account.tags,
+                let tags = normalize_optional_config_entity_tags(
+                    service_account.tags.as_deref(),
                     &format!("service account `{service_account_key}` tags"),
                 )?;
 
@@ -927,8 +933,8 @@ impl GatewayConfig {
                 Ok(SeedTeam {
                     team_key: normalize_config_team_key(&team.id)?,
                     team_name: team.name.trim().to_string(),
-                    tags: normalize_config_entity_tags(
-                        &team.tags,
+                    tags: normalize_optional_config_entity_tags(
+                        team.tags.as_deref(),
                         &format!("team `{}` tags", team.id),
                     )?,
                 })
@@ -947,8 +953,8 @@ impl GatewayConfig {
                     global_role: user.global_role,
                     auth_mode: user.auth_mode,
                     request_logging_enabled: user.request_logging_enabled,
-                    tags: normalize_config_entity_tags(
-                        &user.tags,
+                    tags: normalize_optional_config_entity_tags(
+                        user.tags.as_deref(),
                         &format!("user `{}` tags", user.email),
                     )?,
                     oidc_provider_key: user
@@ -1935,7 +1941,7 @@ pub struct TeamConfig {
     pub id: String,
     pub name: String,
     #[serde(default)]
-    pub tags: Vec<RequestTag>,
+    pub tags: Option<Vec<RequestTag>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1946,7 +1952,7 @@ pub struct ServiceAccountConfig {
     pub name: Option<String>,
     pub team: String,
     #[serde(default)]
-    pub tags: Vec<RequestTag>,
+    pub tags: Option<Vec<RequestTag>>,
     pub budget: BudgetConfig,
     #[serde(default)]
     pub keys: Vec<ServiceAccountKeyConfig>,
@@ -1976,7 +1982,7 @@ pub struct UserConfig {
     #[serde(default = "default_request_logging_enabled")]
     pub request_logging_enabled: bool,
     #[serde(default)]
-    pub tags: Vec<RequestTag>,
+    pub tags: Option<Vec<RequestTag>>,
     #[serde(default)]
     pub oidc_provider_key: Option<String>,
     #[serde(default)]
@@ -2653,6 +2659,14 @@ fn normalize_config_entity_tags(
     context: &str,
 ) -> anyhow::Result<Vec<RequestTag>> {
     validate_entity_tags(tags, context).map_err(|error| anyhow::anyhow!("{error}"))
+}
+
+fn normalize_optional_config_entity_tags(
+    tags: Option<&[RequestTag]>,
+    context: &str,
+) -> anyhow::Result<Option<Vec<RequestTag>>> {
+    tags.map(|tags| normalize_config_entity_tags(tags, context))
+        .transpose()
 }
 
 fn normalize_config_team_key(team_key: &str) -> anyhow::Result<String> {
@@ -4769,16 +4783,18 @@ users:
         assert_eq!(teams.len(), 1);
         assert_eq!(teams[0].team_key, "platform");
         assert_eq!(teams[0].team_name, "Platform");
-        assert_eq!(teams[0].tags[0].key, "cost-center");
-        assert_eq!(teams[0].tags[0].value, "platform");
+        let team_tags = teams[0].tags.as_ref().expect("team tags");
+        assert_eq!(team_tags[0].key, "cost-center");
+        assert_eq!(team_tags[0].value, "platform");
 
         assert_eq!(users.len(), 1);
         assert_eq!(users[0].email_normalized, "member@example.com");
         assert_eq!(users[0].auth_mode, AuthMode::Oidc);
         assert_eq!(users[0].global_role, GlobalRole::PlatformAdmin);
         assert!(!users[0].request_logging_enabled);
-        assert_eq!(users[0].tags[0].key, "workload");
-        assert_eq!(users[0].tags[0].value, "admin");
+        let user_tags = users[0].tags.as_ref().expect("user tags");
+        assert_eq!(user_tags[0].key, "workload");
+        assert_eq!(user_tags[0].value, "admin");
         assert_eq!(users[0].oidc_provider_key.as_deref(), Some("okta"));
         let membership = users[0].membership.as_ref().expect("membership");
         assert_eq!(membership.team_key, "platform");
@@ -5245,8 +5261,12 @@ service_accounts:
         assert_eq!(service_accounts[0].service_account_key, "ci-indexer");
         assert_eq!(service_accounts[0].service_account_name, "CI Indexer");
         assert_eq!(service_accounts[0].team_key, "platform");
-        assert_eq!(service_accounts[0].tags[0].key, "workload");
-        assert_eq!(service_accounts[0].tags[0].value, "ci-indexer");
+        let service_account_tags = service_accounts[0]
+            .tags
+            .as_ref()
+            .expect("service account tags");
+        assert_eq!(service_account_tags[0].key, "workload");
+        assert_eq!(service_account_tags[0].value, "ci-indexer");
         assert_eq!(
             service_accounts[0].budget.amount_usd,
             Money4::from_scaled(250_000)

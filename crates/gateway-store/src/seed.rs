@@ -142,11 +142,11 @@ where
             record.team_name = team.team_name.clone();
             record.updated_at = now;
         }
-        if record.tags != team.tags {
-            store
-                .update_team_tags(record.team_id, &team.tags, now)
-                .await?;
-            record.tags = team.tags.clone();
+        if let Some(tags) = team.tags.as_ref()
+            && record.tags != *tags
+        {
+            store.update_team_tags(record.team_id, tags, now).await?;
+            record.tags = tags.clone();
             record.updated_at = now;
         }
 
@@ -472,9 +472,13 @@ where
             now,
         )
         .await?;
-    store
-        .update_user_tags(existing_user.user_id, &seed_user.tags, now)
-        .await?;
+    if let Some(tags) = seed_user.tags.as_ref()
+        && existing_user.tags != *tags
+    {
+        store
+            .update_user_tags(existing_user.user_id, tags, now)
+            .await?;
+    }
 
     let mut identity_user = load_identity_user(store, existing_user.user_id).await?;
     sync_seed_user_auth_mode(
