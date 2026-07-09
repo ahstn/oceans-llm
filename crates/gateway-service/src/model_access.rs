@@ -1139,6 +1139,7 @@ mod tests {
             status: ServiceAccountStatus::Active,
             model_access_mode,
             metadata: json!({}),
+            tags: Vec::new(),
             created_at: now,
             updated_at: now,
             disabled_at: None,

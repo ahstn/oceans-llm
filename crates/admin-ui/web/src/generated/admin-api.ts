@@ -1384,6 +1384,7 @@ export interface components {
             key: string;
             name: string;
             status: string;
+            tags: components["schemas"]["AdminEntityTagView"][];
             team_id: string;
             team_key: string;
             team_name: string;
@@ -1589,6 +1590,7 @@ export interface components {
         };
         CreateServiceAccountRequest: {
             name: string;
+            tags?: components["schemas"]["AdminEntityTagView"][];
             team_id: string;
         };
         CreateTeamRequest: {
@@ -1687,6 +1689,7 @@ export interface components {
                 key: string;
                 name: string;
                 status: string;
+                tags: components["schemas"]["AdminEntityTagView"][];
                 team_id: string;
                 team_key: string;
                 team_name: string;
@@ -2781,6 +2784,7 @@ export interface components {
         };
         UpdateServiceAccountRequest: {
             name: string;
+            tags?: components["schemas"]["AdminEntityTagView"][] | null;
         };
         UpdateTeamRequest: {
             admin_user_ids: string[];

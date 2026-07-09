@@ -10,7 +10,7 @@ use gateway_core::{
     AuthError, AuthMode, GatewayError, GlobalRole, IdentityRepository, IdentityUserRecord,
     MembershipRole, OauthLoginStateRecord, OauthProviderRecord, OidcLoginStateRecord,
     OidcProviderRecord, PasswordInvitationRecord, ServiceAccountRecord, TeamRecord, UserRecord,
-    UserSessionRecord, UserStatus,
+    UserSessionRecord, UserStatus, validate_entity_tags,
 };
 use gateway_store::{AnyStore, GatewayStore};
 use openidconnect::{
@@ -51,9 +51,8 @@ use crate::{
         },
         identity_views::{
             build_admin_identity_user_view, build_admin_team_views, build_assignable_user_views,
-            reload_identity_user, reload_team_view,
+            entity_tag_views, reload_identity_user, reload_team_view,
         },
-        request_tags::validate_entity_tags,
         state::AppState,
     },
 };
@@ -234,11 +233,12 @@ pub async fn create_identity_service_account(
             "service accounts can only be created for active teams".to_string(),
         )));
     }
+    let tags = parse_entity_tag_views(&request.tags, "service account tags")?;
 
     let key = generate_unique_service_account_key(&state.store, team_id, name).await?;
     let account = state
         .store
-        .create_service_account(team_id, &key, name, OffsetDateTime::now_utc())
+        .create_service_account_with_tags(team_id, &key, name, &tags, OffsetDateTime::now_utc())
         .await?;
     Ok(Json(envelope(service_account_view(&account, &team))))
 }
@@ -275,9 +275,14 @@ pub async fn update_identity_service_account(
             "name cannot be empty".to_string(),
         )));
     }
+    let tags = match request.tags.as_ref() {
+        Some(tags) => parse_entity_tag_views(tags, "service account tags")?,
+        None => account.tags.clone(),
+    };
+    let now = OffsetDateTime::now_utc();
     state
         .store
-        .update_service_account_name(service_account_id, name, OffsetDateTime::now_utc())
+        .update_service_account_profile(service_account_id, name, &tags, now)
         .await?;
     let account = state
         .store
@@ -2294,6 +2299,7 @@ fn service_account_view(
         key: account.service_account_key.clone(),
         name: account.service_account_name.clone(),
         status: account.status.as_str().to_string(),
+        tags: entity_tag_views(&account.tags),
         team_id: team.team_id.to_string(),
         team_key: team.team_key.clone(),
         team_name: team.team_name.clone(),

@@ -95,6 +95,7 @@ mod tests {
         vec![SeedTeam {
             team_key: "seed-workloads".to_string(),
             team_name: "Seed Workloads".to_string(),
+            tags: None,
         }]
     }
 
@@ -102,6 +103,7 @@ mod tests {
         vec![SeedServiceAccount {
             service_account_key: "seed-workloads".to_string(),
             service_account_name: "Seed Workloads".to_string(),
+            tags: None,
             team_key: "seed-workloads".to_string(),
             budget: SeedBudget {
                 cadence: BudgetCadence::Daily,
@@ -117,6 +119,10 @@ mod tests {
         vec![SeedServiceAccount {
             service_account_key: "ci-indexer".to_string(),
             service_account_name: "CI Indexer".to_string(),
+            tags: Some(vec![RequestTag {
+                key: "workload".to_string(),
+                value: "ci-indexer".to_string(),
+            }]),
             team_key: "seed-workloads".to_string(),
             budget: SeedBudget {
                 cadence: BudgetCadence::Daily,
@@ -146,6 +152,7 @@ mod tests {
         vec![SeedServiceAccount {
             service_account_key: "generated-worker".to_string(),
             service_account_name: "Generated Worker".to_string(),
+            tags: None,
             team_key: "seed-workloads".to_string(),
             budget: SeedBudget {
                 cadence: BudgetCadence::Daily,
@@ -173,6 +180,7 @@ mod tests {
         vec![SeedServiceAccount {
             service_account_key: "ci-rotator".to_string(),
             service_account_name: "CI Rotator".to_string(),
+            tags: None,
             team_key: "seed-workloads".to_string(),
             budget: SeedBudget {
                 cadence: BudgetCadence::Daily,
@@ -319,6 +327,22 @@ mod tests {
         assert_eq!(api_key.secret_hash, "hash-v1");
         assert_eq!(api_key.owner_kind, ApiKeyOwnerKind::ServiceAccount);
         assert!(api_key.owner_service_account_id.is_some());
+        let seeded_service_account = IdentityRepository::get_service_account_by_id(
+            store,
+            api_key
+                .owner_service_account_id
+                .expect("managed key has service account owner"),
+        )
+        .await
+        .expect("load seeded service account")
+        .expect("seeded service account exists");
+        assert_eq!(
+            seeded_service_account.tags,
+            vec![RequestTag {
+                key: "workload".to_string(),
+                value: "ci-indexer".to_string(),
+            }]
+        );
 
         let material = store
             .get_api_key_secret_material(api_key.id)
@@ -466,6 +490,179 @@ mod tests {
             rotated_material.secret_ciphertext,
             "ciphertext-configured456"
         );
+    }
+
+    async fn exercise_identity_seed_tag_reconciliation<S>(store: &S)
+    where
+        S: GatewayStore + Sync,
+    {
+        let team_tags = vec![RequestTag {
+            key: "cost-center".to_string(),
+            value: "platform".to_string(),
+        }];
+        let user_tags = vec![RequestTag {
+            key: "owner".to_string(),
+            value: "identity".to_string(),
+        }];
+        let service_account_tags = vec![RequestTag {
+            key: "workload".to_string(),
+            value: "automation".to_string(),
+        }];
+
+        let tagged_team = SeedTeam {
+            team_key: "platform".to_string(),
+            team_name: "Platform".to_string(),
+            tags: Some(team_tags.clone()),
+        };
+        let tagged_user = SeedUser {
+            name: "Member".to_string(),
+            email: "member@example.com".to_string(),
+            email_normalized: "member@example.com".to_string(),
+            global_role: GlobalRole::User,
+            auth_mode: AuthMode::Password,
+            request_logging_enabled: true,
+            tags: Some(user_tags.clone()),
+            oidc_provider_key: None,
+            oauth_provider_key: None,
+            membership: None,
+            budget: None,
+        };
+        let tagged_service_account = SeedServiceAccount {
+            service_account_key: "automation".to_string(),
+            service_account_name: "Automation".to_string(),
+            team_key: "platform".to_string(),
+            tags: Some(service_account_tags.clone()),
+            budget: SeedBudget {
+                cadence: BudgetCadence::Daily,
+                amount_usd: Money4::from_scaled(100_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            },
+            managed_api_keys: Vec::new(),
+        };
+
+        store
+            .seed_from_inputs(
+                &[],
+                &[],
+                &[],
+                std::slice::from_ref(&tagged_service_account),
+                &[],
+                &[],
+                std::slice::from_ref(&tagged_team),
+                std::slice::from_ref(&tagged_user),
+            )
+            .await
+            .expect("seed tagged identities");
+
+        let team = store
+            .get_team_by_key("platform")
+            .await
+            .expect("load team")
+            .expect("team exists");
+        let user = store
+            .get_user_by_email_normalized("member@example.com")
+            .await
+            .expect("load user")
+            .expect("user exists");
+        let service_account = store
+            .list_service_accounts()
+            .await
+            .expect("list service accounts")
+            .into_iter()
+            .find(|account| account.service_account_key == "automation")
+            .expect("service account exists");
+        assert_eq!(team.tags, team_tags);
+        assert_eq!(user.tags, user_tags);
+        assert_eq!(service_account.tags, service_account_tags);
+
+        store
+            .seed_from_inputs(
+                &[],
+                &[],
+                &[],
+                &[SeedServiceAccount {
+                    tags: None,
+                    ..tagged_service_account.clone()
+                }],
+                &[],
+                &[],
+                &[SeedTeam {
+                    tags: None,
+                    ..tagged_team.clone()
+                }],
+                &[SeedUser {
+                    tags: None,
+                    ..tagged_user.clone()
+                }],
+            )
+            .await
+            .expect("seed omitted identity tags");
+
+        let team = store
+            .get_team_by_key("platform")
+            .await
+            .expect("reload team")
+            .expect("team exists");
+        let user = store
+            .get_user_by_email_normalized("member@example.com")
+            .await
+            .expect("reload user")
+            .expect("user exists");
+        let service_account = store
+            .list_service_accounts()
+            .await
+            .expect("list service accounts")
+            .into_iter()
+            .find(|account| account.service_account_key == "automation")
+            .expect("service account exists");
+        assert_eq!(team.tags, team_tags);
+        assert_eq!(user.tags, user_tags);
+        assert_eq!(service_account.tags, service_account_tags);
+
+        store
+            .seed_from_inputs(
+                &[],
+                &[],
+                &[],
+                &[SeedServiceAccount {
+                    tags: Some(Vec::new()),
+                    ..tagged_service_account
+                }],
+                &[],
+                &[],
+                &[SeedTeam {
+                    tags: Some(Vec::new()),
+                    ..tagged_team
+                }],
+                &[SeedUser {
+                    tags: Some(Vec::new()),
+                    ..tagged_user
+                }],
+            )
+            .await
+            .expect("seed cleared identity tags");
+
+        let team = store
+            .get_team_by_key("platform")
+            .await
+            .expect("reload cleared team")
+            .expect("team exists");
+        let user = store
+            .get_user_by_email_normalized("member@example.com")
+            .await
+            .expect("reload cleared user")
+            .expect("user exists");
+        let service_account = store
+            .list_service_accounts()
+            .await
+            .expect("list service accounts")
+            .into_iter()
+            .find(|account| account.service_account_key == "automation")
+            .expect("service account exists");
+        assert!(team.tags.is_empty());
+        assert!(user.tags.is_empty());
+        assert!(service_account.tags.is_empty());
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -3049,6 +3246,20 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn libsql_seed_preserves_omitted_identity_tags_and_clears_explicit_empty_tags() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        exercise_identity_seed_tag_reconciliation(&store).await;
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn postgres_seed_reconciles_managed_service_account_api_keys() {
         let Some(test_db) = create_postgres_test_database().await else {
             eprintln!(
@@ -3070,6 +3281,34 @@ mod tests {
             .expect("postgres store");
 
         exercise_managed_service_account_seed(&store).await;
+
+        drop(store);
+        drop_postgres_test_database(&test_db).await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_seed_preserves_omitted_identity_tags_and_clears_explicit_empty_tags() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres identity tag seed test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+
+        let options = StoreConnectionOptions::Postgres {
+            url: test_db.database_url.clone(),
+            max_connections: 4,
+        };
+        run_migrations_with_options(&options)
+            .await
+            .expect("postgres migrations");
+
+        let store = PostgresStore::connect(&test_db.database_url, 4)
+            .await
+            .expect("postgres store");
+
+        exercise_identity_seed_tag_reconciliation(&store).await;
 
         drop(store);
         drop_postgres_test_database(&test_db).await;
@@ -5502,10 +5741,12 @@ mod tests {
             SeedTeam {
                 team_key: "platform".to_string(),
                 team_name: "Platform".to_string(),
+                tags: None,
             },
             SeedTeam {
                 team_key: "ops".to_string(),
                 team_name: "Ops".to_string(),
+                tags: None,
             },
         ];
         let initial_users = vec![SeedUser {
@@ -5515,6 +5756,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Password,
             request_logging_enabled: false,
+            tags: None,
             oidc_provider_key: None,
             oauth_provider_key: None,
             membership: Some(SeedUserMembership {
@@ -5574,10 +5816,12 @@ mod tests {
             SeedTeam {
                 team_key: "platform".to_string(),
                 team_name: "Platform Engineering".to_string(),
+                tags: None,
             },
             SeedTeam {
                 team_key: "ops".to_string(),
                 team_name: "Operations".to_string(),
+                tags: None,
             },
         ];
         let updated_users = vec![SeedUser {
@@ -5587,6 +5831,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Oidc,
             request_logging_enabled: true,
+            tags: None,
             oidc_provider_key: Some("okta".to_string()),
             oauth_provider_key: None,
             membership: Some(SeedUserMembership {
@@ -5680,6 +5925,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Password,
             request_logging_enabled: true,
+            tags: None,
             oidc_provider_key: None,
             oauth_provider_key: None,
             membership: None,
@@ -5835,6 +6081,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Password,
             request_logging_enabled: true,
+            tags: None,
             oidc_provider_key: None,
             oauth_provider_key: None,
             membership: None,
@@ -6027,6 +6274,7 @@ mod tests {
         let initial_teams = vec![SeedTeam {
             team_key: "platform".to_string(),
             team_name: "Platform".to_string(),
+            tags: None,
         }];
         let initial_users = vec![SeedUser {
             name: "Member".to_string(),
@@ -6035,6 +6283,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Password,
             request_logging_enabled: false,
+            tags: None,
             oidc_provider_key: None,
             oauth_provider_key: None,
             membership: None,
@@ -6071,6 +6320,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Oidc,
             request_logging_enabled: true,
+            tags: None,
             oidc_provider_key: Some("okta".to_string()),
             oauth_provider_key: None,
             membership: None,
@@ -6079,6 +6329,7 @@ mod tests {
         let invalid_teams = vec![SeedTeam {
             team_key: "platform".to_string(),
             team_name: "Platform Renamed".to_string(),
+            tags: None,
         }];
 
         let error = store
@@ -6127,6 +6378,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Oidc,
             request_logging_enabled: false,
+            tags: None,
             oidc_provider_key: Some("okta".to_string()),
             oauth_provider_key: None,
             membership: None,
@@ -6165,6 +6417,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Oidc,
             request_logging_enabled: true,
+            tags: None,
             oidc_provider_key: Some("auth0".to_string()),
             oauth_provider_key: None,
             membership: None,
@@ -6232,6 +6485,7 @@ mod tests {
             global_role: GlobalRole::PlatformAdmin,
             auth_mode: AuthMode::Password,
             request_logging_enabled: false,
+            tags: None,
             oidc_provider_key: None,
             oauth_provider_key: None,
             membership: None,
@@ -6260,6 +6514,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Password,
             request_logging_enabled: true,
+            tags: None,
             oidc_provider_key: None,
             oauth_provider_key: None,
             membership: None,
@@ -6310,10 +6565,12 @@ mod tests {
             SeedTeam {
                 team_key: "platform".to_string(),
                 team_name: "Platform".to_string(),
+                tags: None,
             },
             SeedTeam {
                 team_key: "ops".to_string(),
                 team_name: "Ops".to_string(),
+                tags: None,
             },
         ];
         let initial_users = vec![SeedUser {
@@ -6323,6 +6580,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Password,
             request_logging_enabled: false,
+            tags: None,
             oidc_provider_key: None,
             oauth_provider_key: None,
             membership: Some(SeedUserMembership {
@@ -6382,10 +6640,12 @@ mod tests {
             SeedTeam {
                 team_key: "platform".to_string(),
                 team_name: "Platform Engineering".to_string(),
+                tags: None,
             },
             SeedTeam {
                 team_key: "ops".to_string(),
                 team_name: "Operations".to_string(),
+                tags: None,
             },
         ];
         let updated_users = vec![SeedUser {
@@ -6395,6 +6655,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Oidc,
             request_logging_enabled: true,
+            tags: None,
             oidc_provider_key: Some("okta".to_string()),
             oauth_provider_key: None,
             membership: Some(SeedUserMembership {
@@ -6499,6 +6760,7 @@ mod tests {
         let initial_teams = vec![SeedTeam {
             team_key: "platform".to_string(),
             team_name: "Platform".to_string(),
+            tags: None,
         }];
         let initial_users = vec![SeedUser {
             name: "Member".to_string(),
@@ -6507,6 +6769,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Password,
             request_logging_enabled: false,
+            tags: None,
             oidc_provider_key: None,
             oauth_provider_key: None,
             membership: None,
@@ -6543,6 +6806,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Oidc,
             request_logging_enabled: true,
+            tags: None,
             oidc_provider_key: Some("okta".to_string()),
             oauth_provider_key: None,
             membership: None,
@@ -6551,6 +6815,7 @@ mod tests {
         let invalid_teams = vec![SeedTeam {
             team_key: "platform".to_string(),
             team_name: "Platform Renamed".to_string(),
+            tags: None,
         }];
 
         let error = store
@@ -6614,6 +6879,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Oidc,
             request_logging_enabled: false,
+            tags: None,
             oidc_provider_key: Some("okta".to_string()),
             oauth_provider_key: None,
             membership: None,
@@ -6652,6 +6918,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Oidc,
             request_logging_enabled: true,
+            tags: None,
             oidc_provider_key: Some("auth0".to_string()),
             oauth_provider_key: None,
             membership: None,
@@ -6733,6 +7000,7 @@ mod tests {
             global_role: GlobalRole::PlatformAdmin,
             auth_mode: AuthMode::Password,
             request_logging_enabled: false,
+            tags: None,
             oidc_provider_key: None,
             oauth_provider_key: None,
             membership: None,
@@ -6761,6 +7029,7 @@ mod tests {
             global_role: GlobalRole::User,
             auth_mode: AuthMode::Password,
             request_logging_enabled: true,
+            tags: None,
             oidc_provider_key: None,
             oauth_provider_key: None,
             membership: None,

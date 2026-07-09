@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -520,6 +520,8 @@ pub struct ServiceAccountRecord {
     pub status: ServiceAccountStatus,
     pub model_access_mode: ModelAccessMode,
     pub metadata: Value,
+    #[serde(default)]
+    pub tags: Vec<RequestTag>,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
     pub disabled_at: Option<OffsetDateTime>,
@@ -1009,6 +1011,103 @@ impl UsagePricingStatus {
 pub struct RequestTag {
     pub key: String,
     pub value: String,
+}
+
+pub const MAX_ENTITY_TAGS: usize = 5;
+pub const MAX_TAG_KEY_LEN: usize = 32;
+pub const MAX_TAG_VALUE_LEN: usize = 64;
+
+pub fn validate_entity_tags(
+    tags: &[RequestTag],
+    context: &str,
+) -> Result<Vec<RequestTag>, crate::GatewayError> {
+    let mut seen = BTreeSet::new();
+    let mut normalized = Vec::with_capacity(tags.len());
+    for tag in tags {
+        let tag = RequestTag {
+            key: validate_tag_key(&tag.key, context)?,
+            value: validate_tag_value(&tag.value, context)?,
+        };
+        if matches!(tag.key.as_str(), "service" | "component" | "env") {
+            return Err(crate::GatewayError::InvalidRequest(format!(
+                "{context} may not redefine reserved tag key `{}`",
+                tag.key
+            )));
+        }
+        if !seen.insert(tag.key.clone()) {
+            return Err(crate::GatewayError::InvalidRequest(format!(
+                "{context} contains duplicate tag key `{}`",
+                tag.key
+            )));
+        }
+        normalized.push(tag);
+    }
+
+    if normalized.len() > MAX_ENTITY_TAGS {
+        return Err(crate::GatewayError::InvalidRequest(format!(
+            "{context} supports at most {MAX_ENTITY_TAGS} tags"
+        )));
+    }
+
+    Ok(normalized)
+}
+
+pub fn validate_tag_key(value: &str, context: &str) -> Result<String, crate::GatewayError> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(crate::GatewayError::InvalidRequest(format!(
+            "{context} key cannot be empty"
+        )));
+    }
+    if trimmed.len() > MAX_TAG_KEY_LEN {
+        return Err(crate::GatewayError::InvalidRequest(format!(
+            "{context} key `{trimmed}` exceeds {MAX_TAG_KEY_LEN} characters"
+        )));
+    }
+
+    let mut chars = trimmed.chars();
+    let Some(first) = chars.next() else {
+        return Err(crate::GatewayError::InvalidRequest(format!(
+            "{context} key cannot be empty"
+        )));
+    };
+    if !first.is_ascii_lowercase() {
+        return Err(crate::GatewayError::InvalidRequest(format!(
+            "{context} key `{trimmed}` must start with a lowercase ASCII letter"
+        )));
+    }
+    if !chars
+        .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || matches!(ch, '-' | '_' | '.'))
+    {
+        return Err(crate::GatewayError::InvalidRequest(format!(
+            "{context} key `{trimmed}` may only contain lowercase ASCII letters, digits, `.`, `_`, or `-`"
+        )));
+    }
+
+    Ok(trimmed.to_string())
+}
+
+pub fn validate_tag_value(value: &str, context: &str) -> Result<String, crate::GatewayError> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(crate::GatewayError::InvalidRequest(format!(
+            "{context} value cannot be empty"
+        )));
+    }
+    if trimmed.len() > MAX_TAG_VALUE_LEN {
+        return Err(crate::GatewayError::InvalidRequest(format!(
+            "{context} value `{trimmed}` exceeds {MAX_TAG_VALUE_LEN} characters"
+        )));
+    }
+    if !trimmed.chars().all(|ch| {
+        ch.is_ascii_lowercase() || ch.is_ascii_digit() || matches!(ch, '-' | '_' | '.' | '/' | ':')
+    }) {
+        return Err(crate::GatewayError::InvalidRequest(format!(
+            "{context} value `{trimmed}` may only contain lowercase ASCII letters, digits, `.`, `_`, `-`, `/`, or `:`"
+        )));
+    }
+
+    Ok(trimmed.to_string())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -2523,6 +2622,8 @@ pub struct SeedServiceAccount {
     pub service_account_key: String,
     pub service_account_name: String,
     pub team_key: String,
+    #[serde(default)]
+    pub tags: Option<Vec<RequestTag>>,
     pub budget: SeedBudget,
     #[serde(default)]
     pub managed_api_keys: Vec<SeedManagedServiceAccountApiKey>,
@@ -2653,6 +2754,8 @@ pub struct SeedUserModelBudgetDefault {
 pub struct SeedTeam {
     pub team_key: String,
     pub team_name: String,
+    #[serde(default)]
+    pub tags: Option<Vec<RequestTag>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2669,6 +2772,8 @@ pub struct SeedUser {
     pub global_role: GlobalRole,
     pub auth_mode: AuthMode,
     pub request_logging_enabled: bool,
+    #[serde(default)]
+    pub tags: Option<Vec<RequestTag>>,
     #[serde(default)]
     pub oidc_provider_key: Option<String>,
     #[serde(default)]

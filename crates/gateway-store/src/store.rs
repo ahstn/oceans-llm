@@ -88,10 +88,31 @@ pub trait GatewayStore:
         service_account_name: &str,
         created_at: OffsetDateTime,
     ) -> Result<gateway_core::ServiceAccountRecord, StoreError>;
+    async fn create_service_account_with_tags(
+        &self,
+        team_id: Uuid,
+        service_account_key: &str,
+        service_account_name: &str,
+        tags: &[RequestTag],
+        created_at: OffsetDateTime,
+    ) -> Result<gateway_core::ServiceAccountRecord, StoreError>;
     async fn update_service_account_name(
         &self,
         service_account_id: Uuid,
         service_account_name: &str,
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError>;
+    async fn update_service_account_tags(
+        &self,
+        service_account_id: Uuid,
+        tags: &[RequestTag],
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError>;
+    async fn update_service_account_profile(
+        &self,
+        service_account_id: Uuid,
+        service_account_name: &str,
+        tags: &[RequestTag],
         updated_at: OffsetDateTime,
     ) -> Result<(), StoreError>;
     async fn disable_service_account(
@@ -1272,6 +1293,26 @@ impl GatewayStore for AnyStore {
         )
     }
 
+    async fn create_service_account_with_tags(
+        &self,
+        team_id: Uuid,
+        service_account_key: &str,
+        service_account_name: &str,
+        tags: &[RequestTag],
+        created_at: OffsetDateTime,
+    ) -> Result<gateway_core::ServiceAccountRecord, StoreError> {
+        dispatch_store!(
+            self,
+            create_service_account_with_tags(
+                team_id,
+                service_account_key,
+                service_account_name,
+                tags,
+                created_at
+            )
+        )
+    }
+
     async fn update_service_account_name(
         &self,
         service_account_id: Uuid,
@@ -1281,6 +1322,36 @@ impl GatewayStore for AnyStore {
         dispatch_store!(
             self,
             update_service_account_name(service_account_id, service_account_name, updated_at)
+        )
+    }
+
+    async fn update_service_account_tags(
+        &self,
+        service_account_id: Uuid,
+        tags: &[RequestTag],
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(
+            self,
+            update_service_account_tags(service_account_id, tags, updated_at)
+        )
+    }
+
+    async fn update_service_account_profile(
+        &self,
+        service_account_id: Uuid,
+        service_account_name: &str,
+        tags: &[RequestTag],
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        dispatch_store!(
+            self,
+            update_service_account_profile(
+                service_account_id,
+                service_account_name,
+                tags,
+                updated_at
+            )
         )
     }
 

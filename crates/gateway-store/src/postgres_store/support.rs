@@ -236,9 +236,10 @@ pub(super) fn decode_service_account_record(
     let status: String = row.try_get(4).map_err(to_query_error)?;
     let model_access_mode: String = row.try_get(5).map_err(to_query_error)?;
     let metadata_json: String = row.try_get(6).map_err(to_query_error)?;
-    let created_at: i64 = row.try_get(7).map_err(to_query_error)?;
-    let updated_at: i64 = row.try_get(8).map_err(to_query_error)?;
-    let disabled_at: Option<i64> = row.try_get(9).map_err(to_query_error)?;
+    let tags_json: String = row.try_get(7).map_err(to_query_error)?;
+    let created_at: i64 = row.try_get(8).map_err(to_query_error)?;
+    let updated_at: i64 = row.try_get(9).map_err(to_query_error)?;
+    let disabled_at: Option<i64> = row.try_get(10).map_err(to_query_error)?;
 
     Ok(ServiceAccountRecord {
         service_account_id: parse_uuid(&row.try_get::<String, _>(0).map_err(to_query_error)?)?,
@@ -252,6 +253,8 @@ pub(super) fn decode_service_account_record(
             StoreError::Serialization(format!("unknown model access mode `{model_access_mode}`"))
         })?,
         metadata: serde_json::from_str(&metadata_json)
+            .map_err(|error| StoreError::Serialization(error.to_string()))?,
+        tags: serde_json::from_str(&tags_json)
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
         created_at: unix_to_datetime(created_at)?,
         updated_at: unix_to_datetime(updated_at)?,

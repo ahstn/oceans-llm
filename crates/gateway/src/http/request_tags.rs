@@ -1,15 +1,13 @@
-use std::collections::BTreeSet;
-
 use axum::http::HeaderMap;
-use gateway_core::{GatewayError, RequestTag, RequestTags};
+use gateway_core::{
+    GatewayError, MAX_ENTITY_TAGS, RequestTag, RequestTags, validate_tag_key, validate_tag_value,
+};
 
 const HEADER_SERVICE: &str = "x-oceans-service";
 const HEADER_COMPONENT: &str = "x-oceans-component";
 const HEADER_ENV: &str = "x-oceans-env";
 const HEADER_TAGS: &str = "x-oceans-tags";
-const MAX_BESPOKE_TAGS: usize = 5;
-const MAX_TAG_KEY_LEN: usize = 32;
-const MAX_TAG_VALUE_LEN: usize = 64;
+const MAX_BESPOKE_TAGS: usize = MAX_ENTITY_TAGS;
 
 pub fn extract_request_tags(headers: &HeaderMap) -> Result<RequestTags, GatewayError> {
     let service = extract_single_header_value(headers, HEADER_SERVICE)?;
@@ -30,41 +28,6 @@ pub fn build_bespoke_tag_filter(key: &str, value: &str) -> Result<RequestTag, Ga
         key: validate_tag_key(key, "request log tag key")?,
         value: validate_tag_value(value, "request log tag value")?,
     })
-}
-
-pub fn validate_entity_tags(
-    tags: &[RequestTag],
-    context: &str,
-) -> Result<Vec<RequestTag>, GatewayError> {
-    let mut seen = BTreeSet::new();
-    let mut normalized = Vec::with_capacity(tags.len());
-    for tag in tags {
-        let tag = RequestTag {
-            key: validate_tag_key(&tag.key, context)?,
-            value: validate_tag_value(&tag.value, context)?,
-        };
-        if matches!(tag.key.as_str(), "service" | "component" | "env") {
-            return Err(GatewayError::InvalidRequest(format!(
-                "{context} may not redefine reserved tag key `{}`",
-                tag.key
-            )));
-        }
-        if !seen.insert(tag.key.clone()) {
-            return Err(GatewayError::InvalidRequest(format!(
-                "{context} contains duplicate tag key `{}`",
-                tag.key
-            )));
-        }
-        normalized.push(tag);
-    }
-
-    if normalized.len() > MAX_BESPOKE_TAGS {
-        return Err(GatewayError::InvalidRequest(format!(
-            "{context} supports at most {MAX_BESPOKE_TAGS} tags"
-        )));
-    }
-
-    Ok(normalized)
 }
 
 fn extract_single_header_value(
@@ -105,7 +68,6 @@ fn extract_bespoke_tags(headers: &HeaderMap) -> Result<Vec<RequestTag>, GatewayE
         GatewayError::InvalidRequest(format!("header `{HEADER_TAGS}` must be valid UTF-8 text"))
     })?;
 
-    let mut seen = BTreeSet::new();
     let mut tags = Vec::new();
     for entry in raw.split(';') {
         let trimmed = entry.trim();
@@ -114,21 +76,7 @@ fn extract_bespoke_tags(headers: &HeaderMap) -> Result<Vec<RequestTag>, GatewayE
                 "header `{HEADER_TAGS}` contains an empty tag entry"
             )));
         }
-
-        let tag = parse_tag_pair(trimmed, HEADER_TAGS)?;
-        if matches!(tag.key.as_str(), "service" | "component" | "env") {
-            return Err(GatewayError::InvalidRequest(format!(
-                "header `{HEADER_TAGS}` may not redefine reserved tag key `{}`",
-                tag.key
-            )));
-        }
-        if !seen.insert(tag.key.clone()) {
-            return Err(GatewayError::InvalidRequest(format!(
-                "header `{HEADER_TAGS}` contains duplicate tag key `{}`",
-                tag.key
-            )));
-        }
-        tags.push(tag);
+        tags.push(parse_tag_pair(trimmed, HEADER_TAGS)?);
     }
 
     if tags.len() > MAX_BESPOKE_TAGS {
@@ -137,7 +85,7 @@ fn extract_bespoke_tags(headers: &HeaderMap) -> Result<Vec<RequestTag>, GatewayE
         )));
     }
 
-    Ok(tags)
+    gateway_core::validate_entity_tags(&tags, &format!("header `{HEADER_TAGS}`"))
 }
 
 fn parse_tag_pair(value: &str, context: &str) -> Result<RequestTag, GatewayError> {
@@ -148,67 +96,9 @@ fn parse_tag_pair(value: &str, context: &str) -> Result<RequestTag, GatewayError
     };
 
     Ok(RequestTag {
-        key: validate_tag_key(raw_key, context)?,
-        value: validate_tag_value(raw_value, context)?,
+        key: raw_key.to_string(),
+        value: raw_value.to_string(),
     })
-}
-
-fn validate_tag_key(value: &str, context: &str) -> Result<String, GatewayError> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return Err(GatewayError::InvalidRequest(format!(
-            "{context} key cannot be empty"
-        )));
-    }
-    if trimmed.len() > MAX_TAG_KEY_LEN {
-        return Err(GatewayError::InvalidRequest(format!(
-            "{context} key `{trimmed}` exceeds {MAX_TAG_KEY_LEN} characters"
-        )));
-    }
-
-    let mut chars = trimmed.chars();
-    let Some(first) = chars.next() else {
-        return Err(GatewayError::InvalidRequest(format!(
-            "{context} key cannot be empty"
-        )));
-    };
-    if !first.is_ascii_lowercase() {
-        return Err(GatewayError::InvalidRequest(format!(
-            "{context} key `{trimmed}` must start with a lowercase ASCII letter"
-        )));
-    }
-    if !chars
-        .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || matches!(ch, '-' | '_' | '.'))
-    {
-        return Err(GatewayError::InvalidRequest(format!(
-            "{context} key `{trimmed}` may only contain lowercase ASCII letters, digits, `.`, `_`, or `-`"
-        )));
-    }
-
-    Ok(trimmed.to_string())
-}
-
-fn validate_tag_value(value: &str, context: &str) -> Result<String, GatewayError> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return Err(GatewayError::InvalidRequest(format!(
-            "{context} value cannot be empty"
-        )));
-    }
-    if trimmed.len() > MAX_TAG_VALUE_LEN {
-        return Err(GatewayError::InvalidRequest(format!(
-            "{context} value `{trimmed}` exceeds {MAX_TAG_VALUE_LEN} characters"
-        )));
-    }
-    if !trimmed.chars().all(|ch| {
-        ch.is_ascii_lowercase() || ch.is_ascii_digit() || matches!(ch, '-' | '_' | '.' | '/' | ':')
-    }) {
-        return Err(GatewayError::InvalidRequest(format!(
-            "{context} value `{trimmed}` may only contain lowercase ASCII letters, digits, `.`, `_`, `-`, `/`, or `:`"
-        )));
-    }
-
-    Ok(trimmed.to_string())
 }
 
 #[cfg(test)]
@@ -245,7 +135,7 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert(
             HEADER_TAGS,
-            HeaderValue::from_static("feature=checkout; feature=search"),
+            HeaderValue::from_static("feature=a; feature=b"),
         );
 
         let error = extract_request_tags(&headers).expect_err("duplicate keys must fail");
@@ -283,5 +173,17 @@ mod tests {
         let tag = build_bespoke_tag_filter("feature", "guest_checkout").expect("valid filter");
         assert_eq!(tag.key, "feature");
         assert_eq!(tag.value, "guest_checkout");
+    }
+
+    #[test]
+    fn rejects_too_many_bespoke_tags() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            HEADER_TAGS,
+            HeaderValue::from_static("a=one; b=two; c=three; d=four; e=five; f=six"),
+        );
+
+        let error = extract_request_tags(&headers).expect_err("too many rejected");
+        assert!(error.to_string().contains("at most 5 bespoke tags"));
     }
 }

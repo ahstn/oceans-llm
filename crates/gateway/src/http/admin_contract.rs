@@ -95,6 +95,8 @@ pub struct AdminServiceAccountView {
     pub key: String,
     pub name: String,
     pub status: String,
+    #[schema(value_type = Vec<AdminEntityTagView>)]
+    pub tags: Vec<AdminEntityTagView>,
     pub team_id: String,
     pub team_key: String,
     pub team_name: String,
@@ -104,11 +106,16 @@ pub struct AdminServiceAccountView {
 pub struct CreateServiceAccountRequest {
     pub team_id: String,
     pub name: String,
+    #[serde(default)]
+    #[schema(value_type = Vec<AdminEntityTagView>)]
+    pub tags: Vec<AdminEntityTagView>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateServiceAccountRequest {
     pub name: String,
+    #[schema(value_type = Option<Vec<AdminEntityTagView>>)]
+    pub tags: Option<Vec<AdminEntityTagView>>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

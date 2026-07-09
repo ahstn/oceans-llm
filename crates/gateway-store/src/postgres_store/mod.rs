@@ -169,6 +169,25 @@ impl GatewayStore for PostgresStore {
         .await
     }
 
+    async fn create_service_account_with_tags(
+        &self,
+        team_id: Uuid,
+        service_account_key: &str,
+        service_account_name: &str,
+        tags: &[RequestTag],
+        created_at: OffsetDateTime,
+    ) -> Result<ServiceAccountRecord, StoreError> {
+        Self::create_service_account_with_tags(
+            self,
+            team_id,
+            service_account_key,
+            service_account_name,
+            tags,
+            created_at,
+        )
+        .await
+    }
+
     async fn update_service_account_name(
         &self,
         service_account_id: Uuid,
@@ -179,6 +198,32 @@ impl GatewayStore for PostgresStore {
             self,
             service_account_id,
             service_account_name,
+            updated_at,
+        )
+        .await
+    }
+
+    async fn update_service_account_tags(
+        &self,
+        service_account_id: Uuid,
+        tags: &[RequestTag],
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        Self::update_service_account_tags(self, service_account_id, tags, updated_at).await
+    }
+
+    async fn update_service_account_profile(
+        &self,
+        service_account_id: Uuid,
+        service_account_name: &str,
+        tags: &[RequestTag],
+        updated_at: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        Self::update_service_account_profile(
+            self,
+            service_account_id,
+            service_account_name,
+            tags,
             updated_at,
         )
         .await

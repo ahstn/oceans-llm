@@ -187,6 +187,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V38__budget_sources.sql"),
         postgres_sql: include_str!("../migrations/postgres/V38__budget_sources.sql"),
     },
+    MigrationManifest {
+        version: 39,
+        name: "service_account_entity_tags",
+        checksum: "V39__service_account_entity_tags.sql",
+        libsql_sql: include_str!("../migrations/V39__service_account_entity_tags.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V39__service_account_entity_tags.sql"),
+    },
 ];
 
 #[cfg(test)]
