@@ -3237,8 +3237,10 @@ mod tests {
         let team_id = Uuid::new_v4();
         let current = Some((team_id, MembershipRole::Owner));
 
-        let membership =
-            parse_update_requested_membership(current, None, None).expect("membership parses");
+        let membership = match parse_update_requested_membership(current, None, None) {
+            Ok(membership) => membership,
+            Err(_) => panic!("membership should parse"),
+        };
 
         assert_eq!(membership, current);
     }
@@ -3248,8 +3250,11 @@ mod tests {
         let team_id = Uuid::new_v4();
         let current = Some((team_id, MembershipRole::Admin));
 
-        let membership = parse_update_requested_membership(current, Some(&None), Some(&None))
-            .expect("membership parses");
+        let membership = match parse_update_requested_membership(current, Some(&None), Some(&None))
+        {
+            Ok(membership) => membership,
+            Err(_) => panic!("membership should parse"),
+        };
 
         assert_eq!(membership, None);
     }
