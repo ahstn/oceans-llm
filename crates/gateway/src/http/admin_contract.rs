@@ -414,8 +414,8 @@ pub struct AddTeamMembersRequest {
 pub struct UpdateUserRequest {
     pub global_role: String,
     pub auth_mode: Option<String>,
-    pub team_id: Option<String>,
-    pub team_role: Option<String>,
+    pub team_id: Option<Option<String>>,
+    pub team_role: Option<Option<String>>,
     pub oidc_provider_key: Option<String>,
     pub oauth_provider_key: Option<String>,
     pub tags: Option<Vec<AdminEntityTagView>>,

@@ -279,7 +279,7 @@ describe('UsersPage', () => {
     ).toBeInTheDocument()
   })
 
-  it('sanitizes onboarding updates to auth fields only', async () => {
+  it('sanitizes onboarding updates to auth fields and persisted role/team membership', async () => {
     const { sanitizeOnboardingUpdateForm } = await import('@/routes/identity/users')
 
     const input = sanitizeOnboardingUpdateForm(
@@ -292,13 +292,15 @@ describe('UsersPage', () => {
         oidc_provider_key: 'oidc',
         oauth_provider_key: 'github',
       },
-      invitedUser({ global_role: 'user' }),
+      invitedUser({ global_role: 'user', team_id: 'team_existing', team_role: 'admin' }),
       [{ key: 'oidc', label: 'OIDC' }],
       [{ key: 'github', label: 'GitHub' }],
     )
 
     expect(input).toEqual({
       global_role: 'user',
+      team_id: 'team_existing',
+      team_role: 'admin',
       auth_mode: 'oauth',
       oidc_provider_key: null,
       oauth_provider_key: 'github',

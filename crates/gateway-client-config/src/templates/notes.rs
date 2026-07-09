@@ -33,8 +33,10 @@ impl ClientConfigNote {
     }
 }
 
-pub(crate) fn client_notes(input: &ClientConfigInput) -> Vec<String> {
-    client_note_items(input)
+pub(crate) fn client_notes_for_inputs<'a>(
+    inputs: impl IntoIterator<Item = &'a ClientConfigInput>,
+) -> Vec<String> {
+    client_note_items_for_inputs(inputs)
         .into_iter()
         .map(ClientConfigNote::into_message)
         .collect()
@@ -47,9 +49,14 @@ pub(crate) fn thinking_notes(input: &ClientConfigInput) -> Vec<String> {
         .collect()
 }
 
-pub(crate) fn client_note_items(input: &ClientConfigInput) -> Vec<ClientConfigNote> {
+pub(crate) fn client_note_items_for_inputs<'a>(
+    inputs: impl IntoIterator<Item = &'a ClientConfigInput>,
+) -> Vec<ClientConfigNote> {
     let mut notes = Vec::new();
-    if input.context_window_is_capped() {
+    if inputs
+        .into_iter()
+        .any(ClientConfigInput::context_window_is_capped)
+    {
         notes.push(ClientConfigNote::new(
             ClientConfigNoteKind::ContextWindow,
             format!(
@@ -59,6 +66,10 @@ pub(crate) fn client_note_items(input: &ClientConfigInput) -> Vec<ClientConfigNo
         ));
     }
     notes
+}
+
+pub(crate) fn client_note_items(input: &ClientConfigInput) -> Vec<ClientConfigNote> {
+    client_note_items_for_inputs([input])
 }
 
 pub(crate) fn thinking_note_items(input: &ClientConfigInput) -> Vec<ClientConfigNote> {
@@ -86,7 +97,7 @@ pub(crate) fn claude_code_note_items(input: &ClientConfigInput) -> Vec<ClientCon
             ClientConfigNoteKind::ClaudeCodeBaseUrl,
             format!(
             "ANTHROPIC_BASE_URL is set to the Claude-compatible gateway base URL; Claude Code appends Anthropic endpoints such as /v1/messages and /v1/models. Keep the OpenAI-compatible base URL ({}) for OpenCode and Pi.",
-            input.client_base_url()
+            input.openai_compatible_client_base_url()
             ),
         ));
     }

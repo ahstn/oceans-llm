@@ -9,7 +9,7 @@ use crate::{
     },
     cost::pi_cost,
     format::to_pretty_json,
-    templates::notes::{client_notes, thinking_notes},
+    templates::notes::{client_notes_for_inputs, thinking_notes},
     types::{
         AnthropicThinkingPolicy, ClientConfig, ClientConfigCodeBlock, ClientConfigInput,
         ClientConfigInputSet, ClientConfigSetupItem, ClientConfigTemplate,
@@ -75,14 +75,10 @@ impl PiConfigTemplate {
                 filename: "models.json".to_string(),
                 content: to_pretty_json(&config),
             }],
-            notes: client_notes(
-                input_set
-                    .first()
-                    .expect("Pi config rendering requires at least one model"),
-            )
-            .into_iter()
-            .chain(input_set.models.iter().flat_map(thinking_notes))
-            .collect(),
+            notes: client_notes_for_inputs(input_set.models.iter())
+                .into_iter()
+                .chain(input_set.models.iter().flat_map(thinking_notes))
+                .collect(),
         }
     }
 }

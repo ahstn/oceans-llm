@@ -327,7 +327,12 @@ export function UsersPage() {
           await updateIdentityUser({
             data: {
               userId: selectedUser.id,
-              input: sanitizeOnboardingUpdateForm(updateForm, selectedUser, oidcProviders, oauthProviders),
+              input: sanitizeOnboardingUpdateForm(
+                updateForm,
+                selectedUser,
+                oidcProviders,
+                oauthProviders,
+              ),
             },
           })
           savedOnboardingAuth = true
@@ -1452,6 +1457,11 @@ export function sanitizeOnboardingUpdateForm(
     auth_mode: form.auth_mode,
     oidc_provider_key: form.auth_mode === 'oidc' ? (form.oidc_provider_key ?? null) : null,
     oauth_provider_key: form.auth_mode === 'oauth' ? (form.oauth_provider_key ?? null) : null,
+  }
+
+  if (user.team_role !== 'owner') {
+    update.team_id = user.team_id ?? null
+    update.team_role = user.team_id ? (user.team_role ?? 'member') : null
   }
 
   if (update.auth_mode === 'oidc') {

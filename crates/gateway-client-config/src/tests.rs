@@ -194,6 +194,32 @@ fn client_context_window_note_is_emitted_once_for_multi_model_configs() {
 }
 
 #[test]
+fn client_context_window_note_is_emitted_when_later_model_is_capped() {
+    let mut first = input(Some(AnthropicThinkingPolicy::SafeEffort));
+    first.context_window_tokens = Some(200_000);
+    let mut second = first.clone();
+    second.model_id = "claude-haiku".to_string();
+    second.display_name = "Claude Haiku".to_string();
+    second.context_window_tokens = Some(1_000_000);
+    let input_set = ClientConfigInputSet::new(vec![first, second]);
+
+    let opencode = OpenCodeConfigTemplate.render_many(&input_set);
+    let pi = PiConfigTemplate.render_many(&input_set);
+
+    assert!(
+        opencode
+            .notes
+            .iter()
+            .any(|note| note.contains("cap the input context window at 200000 tokens"))
+    );
+    assert!(
+        pi.notes
+            .iter()
+            .any(|note| note.contains("cap the input context window at 200000 tokens"))
+    );
+}
+
+#[test]
 fn infers_safe_effort_for_newer_claude_models() {
     for model in [
         "anthropic/claude-fable-5",
@@ -553,6 +579,12 @@ fn claude_code_render_does_not_panic_for_non_anthropic_input() {
 
     assert_eq!(rendered.model_ids, vec!["qwen-coder"]);
     assert_eq!(gateway_settings["env"]["ANTHROPIC_MODEL"], "qwen-coder");
+    assert!(
+        rendered
+            .notes
+            .iter()
+            .any(|note| note.contains("http://127.0.0.1:3000/v1"))
+    );
 }
 
 #[test]
@@ -669,7 +701,7 @@ fn codex_shape_includes_custom_responses_provider() {
     assert_eq!(provider["name"].as_str(), Some("OpenAI using LLM proxy"));
     assert_eq!(
         provider["base_url"].as_str(),
-        Some("https://oceans.example.com")
+        Some("https://oceans.example.com/v1")
     );
     assert_eq!(provider["env_key"].as_str(), Some("OCEANS_API_KEY"));
     assert_eq!(
@@ -681,8 +713,7 @@ fn codex_shape_includes_custom_responses_provider() {
     assert_eq!(toml["analytics"]["enabled"].as_bool(), Some(false));
     assert_eq!(toml["otel"]["log_user_prompt"].as_bool(), Some(false));
 
-    assert_eq!(content.matches("https://oceans.example.com").count(), 1);
-    assert!(!content.contains("https://oceans.example.com/v1"));
+    assert_eq!(content.matches("https://oceans.example.com/v1").count(), 1);
     assert!(!content.contains("]("));
     assert!(
         rendered
