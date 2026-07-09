@@ -236,6 +236,43 @@ describe('UsersPage', () => {
     )
   })
 
+  it('clears a stale reset onboarding URL before retrying', async () => {
+    const user = invitedUser()
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        ...basePayload,
+        users: [user],
+      },
+    })
+    routeMock.useSearch.mockReturnValue({ user_id: 'user_1', user_section: 'auth' })
+    resetOnboardingMock
+      .mockResolvedValueOnce({
+        data: {
+          kind: 'password_invite',
+          invite_url: 'http://example.test/invite/reset-user-1',
+          expires_at: '2026-03-14T12:00:00Z',
+          user,
+        },
+      })
+      .mockRejectedValueOnce(new Error('reset failed'))
+
+    const { UsersPage } = await import('@/routes/identity/users')
+
+    render(<UsersPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset onboarding' }))
+    await waitFor(() =>
+      expect(screen.getByLabelText('Generated URL')).toHaveValue(
+        'http://example.test/invite/reset-user-1',
+      ),
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset onboarding' }))
+
+    await waitFor(() => expect(resetOnboardingMock).toHaveBeenCalledTimes(2))
+    expect(screen.queryByLabelText('Generated URL')).not.toBeInTheDocument()
+  })
+
   it('renders an OAuth reset onboarding URL', async () => {
     const user = invitedUser({
       auth_mode: 'oauth',

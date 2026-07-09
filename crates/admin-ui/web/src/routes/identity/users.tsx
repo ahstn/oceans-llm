@@ -322,6 +322,7 @@ export function UsersPage() {
 
     startTransition(async () => {
       let savedOnboardingAuth = false
+      setOnboardingResult(null)
       try {
         if (selectedUser.status === 'invited' && onboardingAuthChanged(selectedUser, updateForm)) {
           await updateIdentityUser({

@@ -843,13 +843,11 @@ pub async fn update_identity_user(
     .map_err(AppError)?;
     if membership_update_requested(&identity_user, requested_membership) {
         ensure_mutable_membership(identity_user.membership_role).map_err(AppError)?;
-    }
-    if let Some((team_id, _)) = requested_membership {
-        state
-            .store
-            .get_team_by_id(team_id)
-            .await?
-            .ok_or_else(|| AppError(GatewayError::InvalidRequest("team not found".to_string())))?;
+        if let Some((team_id, _)) = requested_membership {
+            state.store.get_team_by_id(team_id).await?.ok_or_else(|| {
+                AppError(GatewayError::InvalidRequest("team not found".to_string()))
+            })?;
+        }
     }
 
     let now = OffsetDateTime::now_utc();
