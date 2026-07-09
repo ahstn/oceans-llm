@@ -39,7 +39,7 @@ impl PiConfigTemplate {
             let style = group.api_style();
             let provider_id = provider_id_for_group(inputs[0], *group, has_multiple_styles);
             let mut provider = Map::from_iter([
-                ("baseUrl".to_string(), json!(inputs[0].client_base_url())),
+                ("baseUrl".to_string(), json!(pi_base_url(inputs[0], style))),
                 ("api".to_string(), json!(pi_provider_api_for_style(style))),
                 (
                     "apiKey".to_string(),
@@ -108,6 +108,13 @@ fn pi_setup(input: &ClientConfigInput) -> Vec<ClientConfigSetupItem> {
             href: Some(PI_SETTINGS_DOCS_URL.to_string()),
         },
     ]
+}
+
+fn pi_base_url(input: &ClientConfigInput, style: ClientApiStyle) -> String {
+    match style {
+        ClientApiStyle::OpenAiCompatible => input.openai_compatible_client_base_url(),
+        ClientApiStyle::AnthropicMessages => input.client_base_url(),
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]

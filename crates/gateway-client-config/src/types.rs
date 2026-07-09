@@ -63,6 +63,11 @@ impl ClientConfigInput {
     }
 
     #[must_use]
+    pub fn openai_compatible_client_base_url(&self) -> String {
+        format!("{}/v1", self.client_base_url())
+    }
+
+    #[must_use]
     pub fn output_window(&self) -> i64 {
         self.output_window_tokens.unwrap_or_default()
     }

@@ -292,11 +292,13 @@ describe('UsersPage', () => {
         oidc_provider_key: 'oidc',
         oauth_provider_key: 'github',
       },
+      invitedUser({ global_role: 'user' }),
       [{ key: 'oidc', label: 'OIDC' }],
       [{ key: 'github', label: 'GitHub' }],
     )
 
     expect(input).toEqual({
+      global_role: 'user',
       auth_mode: 'oauth',
       oidc_provider_key: null,
       oauth_provider_key: 'github',

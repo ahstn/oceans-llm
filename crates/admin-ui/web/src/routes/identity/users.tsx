@@ -327,7 +327,7 @@ export function UsersPage() {
           await updateIdentityUser({
             data: {
               userId: selectedUser.id,
-              input: sanitizeOnboardingUpdateForm(updateForm, oidcProviders, oauthProviders),
+              input: sanitizeOnboardingUpdateForm(updateForm, selectedUser, oidcProviders, oauthProviders),
             },
           })
           savedOnboardingAuth = true
@@ -1443,10 +1443,12 @@ function sanitizeUpdateForm(
 
 export function sanitizeOnboardingUpdateForm(
   form: UpdateUserInput,
+  user: UserView,
   oidcProviders: IdentityUsersPayload['oidc_providers'],
   oauthProviders: IdentityUsersPayload['oauth_providers'],
 ): UpdateUserInput {
   const update: UpdateUserInput = {
+    global_role: user.global_role,
     auth_mode: form.auth_mode,
     oidc_provider_key: form.auth_mode === 'oidc' ? (form.oidc_provider_key ?? null) : null,
     oauth_provider_key: form.auth_mode === 'oauth' ? (form.oauth_provider_key ?? null) : null,

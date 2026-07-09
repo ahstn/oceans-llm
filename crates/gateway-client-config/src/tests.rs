@@ -363,7 +363,15 @@ fn non_anthropic_models_use_openai_compatible_client_surfaces() {
         opencode["provider"]["oceans-llm"]["npm"],
         "@ai-sdk/openai-compatible"
     );
+    assert_eq!(
+        opencode["provider"]["oceans-llm"]["options"]["baseURL"],
+        "http://127.0.0.1:3000/v1"
+    );
     assert_eq!(pi["providers"]["oceans-llm"]["api"], "openai-completions");
+    assert_eq!(
+        pi["providers"]["oceans-llm"]["baseUrl"],
+        "http://127.0.0.1:3000/v1"
+    );
     assert_eq!(
         pi["providers"]["oceans-llm"]["apiKey"],
         "$OCEANS_LLM_API_KEY"
@@ -391,8 +399,16 @@ fn opencode_and_pi_group_mixed_api_styles_into_separate_providers() {
         "@ai-sdk/anthropic"
     );
     assert_eq!(
+        opencode["provider"]["oceans-llm-anthropic-messages"]["options"]["baseURL"],
+        "http://127.0.0.1:3000"
+    );
+    assert_eq!(
         opencode["provider"]["oceans-llm-openai-compatible"]["npm"],
         "@ai-sdk/openai-compatible"
+    );
+    assert_eq!(
+        opencode["provider"]["oceans-llm-openai-compatible"]["options"]["baseURL"],
+        "http://127.0.0.1:3000/v1"
     );
     assert!(
         opencode["provider"]["oceans-llm-anthropic-messages"]["models"]
@@ -415,8 +431,16 @@ fn opencode_and_pi_group_mixed_api_styles_into_separate_providers() {
         "anthropic-messages"
     );
     assert_eq!(
+        pi["providers"]["oceans-llm-anthropic-messages-adaptive-thinking"]["baseUrl"],
+        "http://127.0.0.1:3000"
+    );
+    assert_eq!(
         pi["providers"]["oceans-llm-openai-compatible"]["api"],
         "openai-completions"
+    );
+    assert_eq!(
+        pi["providers"]["oceans-llm-openai-compatible"]["baseUrl"],
+        "http://127.0.0.1:3000/v1"
     );
     assert_eq!(
         pi["providers"]["oceans-llm-anthropic-messages-adaptive-thinking"]["models"][0]["id"],

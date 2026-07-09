@@ -42,7 +42,7 @@ impl OpenCodeConfigTemplate {
                 "npm": opencode_provider_package_for_style(*style),
                 "name": provider_name_for_style(inputs[0], *style, has_multiple_styles),
                 "options": {
-                    "baseURL": inputs[0].client_base_url(),
+                    "baseURL": opencode_base_url(inputs[0], *style),
                     "apiKey": format!("{{env:{}}}", inputs[0].api_key_env_var),
                 },
                 "models": Value::Object(opencode_models(inputs)),
@@ -99,6 +99,13 @@ fn opencode_setup(input: &ClientConfigInput) -> Vec<ClientConfigSetupItem> {
             href: Some(OPENCODE_CONFIG_DOCS_URL.to_string()),
         },
     ]
+}
+
+fn opencode_base_url(input: &ClientConfigInput, style: ClientApiStyle) -> String {
+    match style {
+        ClientApiStyle::OpenAiCompatible => input.openai_compatible_client_base_url(),
+        ClientApiStyle::AnthropicMessages => input.client_base_url(),
+    }
 }
 
 fn grouped_models(
