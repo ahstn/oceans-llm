@@ -272,7 +272,7 @@ describe('UsersPage', () => {
     fireEvent.click(resetButton)
 
     await waitFor(() => expect(resetOnboardingMock).toHaveBeenCalledTimes(2))
-    expect(screen.queryByLabelText('Generated URL')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByLabelText('Generated URL')).not.toBeInTheDocument())
   })
 
   it('renders an OAuth reset onboarding URL', async () => {
