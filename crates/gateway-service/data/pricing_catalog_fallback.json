@@ -1,8 +1,8 @@
 {
   "metadata": {
     "source": "vendored_models_dev",
-    "etag": "\"d31a39603aa5419d8d0e471965b74839\"",
-    "fetched_at": "2026-07-08T11:26:59.776404Z"
+    "etag": "\"4e426d1717be7dae6a7782e565261aea\"",
+    "fetched_at": "2026-07-10T07:52:40.794477Z"
   },
   "providers": {
     "amazon-bedrock": {
@@ -5448,6 +5448,122 @@
             ]
           }
         },
+        "gpt-5.6": {
+          "id": "gpt-5.6",
+          "display_name": "GPT-5.6",
+          "release_date": "2026-07-09",
+          "last_updated": "2026-07-09",
+          "cost": {
+            "input": "5.0000",
+            "output": "30.0000",
+            "cache_read": "0.5000",
+            "cache_write": "6.2500",
+            "input_audio": null,
+            "output_audio": null
+          },
+          "limit": {
+            "context": 1050000,
+            "input": 922000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "gpt-5.6-luna": {
+          "id": "gpt-5.6-luna",
+          "display_name": "GPT-5.6 Luna",
+          "release_date": "2026-07-09",
+          "last_updated": "2026-07-09",
+          "cost": {
+            "input": "1.0000",
+            "output": "6.0000",
+            "cache_read": "0.1000",
+            "cache_write": "1.2500",
+            "input_audio": null,
+            "output_audio": null
+          },
+          "limit": {
+            "context": 1050000,
+            "input": 922000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "gpt-5.6-sol": {
+          "id": "gpt-5.6-sol",
+          "display_name": "GPT-5.6 Sol",
+          "release_date": "2026-07-09",
+          "last_updated": "2026-07-09",
+          "cost": {
+            "input": "5.0000",
+            "output": "30.0000",
+            "cache_read": "0.5000",
+            "cache_write": "6.2500",
+            "input_audio": null,
+            "output_audio": null
+          },
+          "limit": {
+            "context": 1050000,
+            "input": 922000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "gpt-5.6-terra": {
+          "id": "gpt-5.6-terra",
+          "display_name": "GPT-5.6 Terra",
+          "release_date": "2026-07-09",
+          "last_updated": "2026-07-09",
+          "cost": {
+            "input": "2.5000",
+            "output": "15.0000",
+            "cache_read": "0.2500",
+            "cache_write": "3.1250",
+            "input_audio": null,
+            "output_audio": null
+          },
+          "limit": {
+            "context": 1050000,
+            "input": 922000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "gpt-image-1": {
           "id": "gpt-image-1",
           "display_name": "gpt-image-1",
@@ -6190,7 +6306,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 16384,
+            "context": 32768,
             "input": null,
             "output": 2048
           },
@@ -6759,7 +6875,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 123000,
+            "context": 131072,
             "input": null,
             "output": 16000
           },
@@ -6910,6 +7026,33 @@
           "modalities": {
             "input": [
               "image",
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "cognitivecomputations/dolphin-mistral-24b-venice-edition": {
+          "id": "cognitivecomputations/dolphin-mistral-24b-venice-edition",
+          "display_name": "Uncensored",
+          "release_date": "2025-07-09",
+          "last_updated": "2025-07-09",
+          "cost": {
+            "input": "0.2000",
+            "output": "0.9000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null
+          },
+          "limit": {
+            "context": 128000,
+            "input": null,
+            "output": 8192
+          },
+          "modalities": {
+            "input": [
               "text"
             ],
             "output": [
@@ -7120,7 +7263,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 128000,
+            "context": 131072,
             "input": null,
             "output": 16000
           },
@@ -7201,7 +7344,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 64000,
+            "context": 163840,
             "input": null,
             "output": 16000
           },
@@ -7255,7 +7398,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 8192,
+            "context": 128000,
             "input": null,
             "output": 8192
           },
@@ -7309,7 +7452,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 128000,
+            "context": 131072,
             "input": null,
             "output": 64000
           },
@@ -7365,7 +7508,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 16384
+            "output": 65536
           },
           "modalities": {
             "input": [
@@ -7488,37 +7631,6 @@
               "audio",
               "video",
               "pdf"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "google/gemini-2.5-flash-lite-preview-09-2025": {
-          "id": "google/gemini-2.5-flash-lite-preview-09-2025",
-          "display_name": "Gemini 2.5 Flash Lite Preview 09-2025",
-          "release_date": "2025-09-25",
-          "last_updated": "2025-09-25",
-          "cost": {
-            "input": "0.1000",
-            "output": "0.4000",
-            "cache_read": "0.0100",
-            "cache_write": "0.0833",
-            "input_audio": null,
-            "output_audio": null
-          },
-          "limit": {
-            "context": 1048576,
-            "input": null,
-            "output": 65535
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image",
-              "pdf",
-              "audio",
-              "video"
             ],
             "output": [
               "text"
@@ -7900,7 +8012,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 1048576,
+            "context": 1048756,
             "input": null,
             "output": 65536
           },
@@ -8129,7 +8241,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 131072,
+            "context": 262144,
             "input": null,
             "output": 32768
           },
@@ -8530,33 +8642,6 @@
             ]
           }
         },
-        "liquid/lfm-2-24b-a2b": {
-          "id": "liquid/lfm-2-24b-a2b",
-          "display_name": "LFM2-24B-A2B",
-          "release_date": "2026-02-25",
-          "last_updated": "2026-02-25",
-          "cost": {
-            "input": "0.0300",
-            "output": "0.1200",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null
-          },
-          "limit": {
-            "context": 32768,
-            "input": null,
-            "output": 32768
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
         "liquid/lfm-2.5-1.2b-instruct:free": {
           "id": "liquid/lfm-2.5-1.2b-instruct:free",
           "display_name": "LFM2.5-1.2B-Instruct (free)",
@@ -8761,7 +8846,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 60000,
+            "context": 131072,
             "input": null,
             "output": 60000
           },
@@ -8869,7 +8954,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 65536,
+            "context": 131072,
             "input": null,
             "output": 131072
           },
@@ -8924,7 +9009,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 327680,
+            "context": 10000000,
             "input": null,
             "output": 16384
           },
@@ -9007,7 +9092,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 65535,
+            "context": 65536,
             "input": null,
             "output": 8000
           },
@@ -9162,15 +9247,15 @@
           "release_date": "2026-02-12",
           "last_updated": "2026-02-12",
           "cost": {
-            "input": "0.1200",
-            "output": "0.4800",
-            "cache_read": null,
+            "input": "0.1500",
+            "output": "0.9000",
+            "cache_read": "0.0500",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
           },
           "limit": {
-            "context": 196608,
+            "context": 204800,
             "input": null,
             "output": 196608
           },
@@ -9189,15 +9274,15 @@
           "release_date": "2026-03-18",
           "last_updated": "2026-03-18",
           "cost": {
-            "input": "0.1800",
-            "output": "0.7200",
+            "input": "0.2400",
+            "output": "0.9600",
             "cache_read": null,
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
           },
           "limit": {
-            "context": 196608,
+            "context": 204800,
             "input": null,
             "output": 196608
           },
@@ -9224,9 +9309,9 @@
             "output_audio": null
           },
           "limit": {
-            "context": 524288,
+            "context": 1048576,
             "input": null,
-            "output": 512000
+            "output": 131072
           },
           "modalities": {
             "input": [
@@ -9869,7 +9954,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 256000,
+            "context": 262144,
             "input": null,
             "output": 256000
           },
@@ -9891,7 +9976,7 @@
           "cost": {
             "input": "0.6600",
             "output": "3.4100",
-            "cache_read": "0.1400",
+            "cache_read": "0.1500",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -9917,9 +10002,9 @@
           "release_date": "2026-06-12",
           "last_updated": "2026-06-12",
           "cost": {
-            "input": "0.7400",
-            "output": "3.5000",
-            "cache_read": "0.1500",
+            "input": "0.7200",
+            "output": "3.4900",
+            "cache_read": "0.1590",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -9927,7 +10012,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 16384
+            "output": 262144
           },
           "modalities": {
             "input": [
@@ -10309,7 +10394,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 262144,
+            "context": 1000000,
             "input": null,
             "output": 16384
           },
@@ -10336,7 +10421,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 262144,
+            "context": 1000000,
             "input": null,
             "output": 262144
           },
@@ -10363,7 +10448,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 262144,
+            "context": 1000000,
             "input": null,
             "output": 16384
           },
@@ -11744,6 +11829,180 @@
             ]
           }
         },
+        "openai/gpt-5.6-luna": {
+          "id": "openai/gpt-5.6-luna",
+          "display_name": "GPT-5.6 Luna",
+          "release_date": "2026-07-09",
+          "last_updated": "2026-07-09",
+          "cost": {
+            "input": "1.0000",
+            "output": "6.0000",
+            "cache_read": "0.1000",
+            "cache_write": "1.2500",
+            "input_audio": null,
+            "output_audio": null
+          },
+          "limit": {
+            "context": 1050000,
+            "input": 922000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "openai/gpt-5.6-luna-pro": {
+          "id": "openai/gpt-5.6-luna-pro",
+          "display_name": "GPT-5.6 Luna Pro",
+          "release_date": "2026-07-09",
+          "last_updated": "2026-07-09",
+          "cost": {
+            "input": "1.0000",
+            "output": "6.0000",
+            "cache_read": "0.1000",
+            "cache_write": "1.2500",
+            "input_audio": null,
+            "output_audio": null
+          },
+          "limit": {
+            "context": 1050000,
+            "input": 922000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "openai/gpt-5.6-sol": {
+          "id": "openai/gpt-5.6-sol",
+          "display_name": "GPT-5.6 Sol",
+          "release_date": "2026-07-09",
+          "last_updated": "2026-07-09",
+          "cost": {
+            "input": "5.0000",
+            "output": "30.0000",
+            "cache_read": "0.5000",
+            "cache_write": "6.2500",
+            "input_audio": null,
+            "output_audio": null
+          },
+          "limit": {
+            "context": 1050000,
+            "input": 922000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "openai/gpt-5.6-sol-pro": {
+          "id": "openai/gpt-5.6-sol-pro",
+          "display_name": "GPT-5.6 Sol Pro",
+          "release_date": "2026-07-09",
+          "last_updated": "2026-07-09",
+          "cost": {
+            "input": "5.0000",
+            "output": "30.0000",
+            "cache_read": "0.5000",
+            "cache_write": "6.2500",
+            "input_audio": null,
+            "output_audio": null
+          },
+          "limit": {
+            "context": 1050000,
+            "input": 922000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "openai/gpt-5.6-terra": {
+          "id": "openai/gpt-5.6-terra",
+          "display_name": "GPT-5.6 Terra",
+          "release_date": "2026-07-09",
+          "last_updated": "2026-07-09",
+          "cost": {
+            "input": "2.5000",
+            "output": "15.0000",
+            "cache_read": "0.2500",
+            "cache_write": "3.1250",
+            "input_audio": null,
+            "output_audio": null
+          },
+          "limit": {
+            "context": 1050000,
+            "input": 922000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "openai/gpt-5.6-terra-pro": {
+          "id": "openai/gpt-5.6-terra-pro",
+          "display_name": "GPT-5.6 Terra Pro",
+          "release_date": "2026-07-09",
+          "last_updated": "2026-07-09",
+          "cost": {
+            "input": "2.5000",
+            "output": "15.0000",
+            "cache_read": "0.2500",
+            "cache_write": "3.1250",
+            "input_audio": null,
+            "output_audio": null
+          },
+          "limit": {
+            "context": 1050000,
+            "input": 922000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "openai/gpt-audio": {
           "id": "openai/gpt-audio",
           "display_name": "GPT Audio",
@@ -11837,8 +12096,8 @@
           "release_date": "2025-08-05",
           "last_updated": "2025-08-05",
           "cost": {
-            "input": "0.0300",
-            "output": "0.1500",
+            "input": "0.0360",
+            "output": "0.1800",
             "cache_read": null,
             "cache_write": null,
             "input_audio": null,
@@ -12567,7 +12826,7 @@
           "id": "poolside/laguna-m.1",
           "display_name": "Laguna M.1",
           "release_date": "2026-04-28",
-          "last_updated": "2026-04-28",
+          "last_updated": "2026-06-13",
           "cost": {
             "input": "0.2000",
             "output": "0.4000",
@@ -12594,7 +12853,7 @@
           "id": "poolside/laguna-m.1:free",
           "display_name": "Laguna M.1 (free)",
           "release_date": "2026-04-28",
-          "last_updated": "2026-04-28",
+          "last_updated": "2026-06-13",
           "cost": {
             "input": "0.0000",
             "output": "0.0000",
@@ -12671,60 +12930,6 @@
             ]
           }
         },
-        "poolside/laguna-xs.2": {
-          "id": "poolside/laguna-xs.2",
-          "display_name": "Laguna XS.2",
-          "release_date": "2026-04-28",
-          "last_updated": "2026-04-28",
-          "cost": {
-            "input": "0.1000",
-            "output": "0.2000",
-            "cache_read": "0.0500",
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null
-          },
-          "limit": {
-            "context": 262144,
-            "input": null,
-            "output": 32768
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "poolside/laguna-xs.2:free": {
-          "id": "poolside/laguna-xs.2:free",
-          "display_name": "Laguna XS.2 (free)",
-          "release_date": "2026-04-28",
-          "last_updated": "2026-04-28",
-          "cost": {
-            "input": "0.0000",
-            "output": "0.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null
-          },
-          "limit": {
-            "context": 262144,
-            "input": null,
-            "output": 32768
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
         "qwen/qwen-2.5-72b-instruct": {
           "id": "qwen/qwen-2.5-72b-instruct",
           "display_name": "Qwen2.5 72B Instruct",
@@ -12739,7 +12944,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 32768,
+            "context": 131072,
             "input": null,
             "output": 16384
           },
@@ -12766,7 +12971,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 32768,
+            "context": 131072,
             "input": null,
             "output": 32768
           },
@@ -12793,7 +12998,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 32768,
+            "context": 128000,
             "input": null,
             "output": 32768
           },
@@ -12901,7 +13106,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 128000,
+            "context": 131072,
             "input": null,
             "output": 128000
           },
@@ -12929,7 +13134,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 40960,
+            "context": 131702,
             "input": null,
             "output": 40960
           },
@@ -13010,7 +13215,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 131072,
+            "context": 262144,
             "input": null,
             "output": 262144
           },
@@ -13037,7 +13242,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 40960,
+            "context": 131072,
             "input": null,
             "output": 16384
           },
@@ -13064,7 +13269,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 128000,
+            "context": 131072,
             "input": null,
             "output": 32000
           },
@@ -13091,7 +13296,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 81920,
+            "context": 131072,
             "input": null,
             "output": 32768
           },
@@ -13118,7 +13323,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 40960,
+            "context": 131072,
             "input": null,
             "output": 16384
           },
@@ -13172,7 +13377,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 262144,
+            "context": 1048576,
             "input": null,
             "output": 65536
           },
@@ -13307,7 +13512,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 262000,
+            "context": 1048576,
             "input": null,
             "output": 262000
           },
@@ -13442,7 +13647,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 131072,
+            "context": 262144,
             "input": null,
             "output": 32768
           },
@@ -13525,7 +13730,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 131072,
+            "context": 262144,
             "input": null,
             "output": 32768
           },
@@ -13581,7 +13786,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 131072,
+            "context": 262144,
             "input": null,
             "output": 32768
           },
@@ -13609,7 +13814,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 131072,
+            "context": 256000,
             "input": null,
             "output": 32768
           },
@@ -13637,7 +13842,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 131072,
+            "context": 256000,
             "input": null,
             "output": 32768
           },
@@ -13752,7 +13957,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 131072,
+            "context": 256000,
             "input": null,
             "output": 64000
           },
@@ -13897,7 +14102,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 262140,
+            "context": 262144,
             "input": null,
             "output": 262140
           },
@@ -14383,33 +14588,6 @@
             ]
           }
         },
-        "switchpoint/router": {
-          "id": "switchpoint/router",
-          "display_name": "Switchpoint Router",
-          "release_date": "2025-07-11",
-          "last_updated": "2025-07-11",
-          "cost": {
-            "input": "0.8500",
-            "output": "3.4000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null
-          },
-          "limit": {
-            "context": 131072,
-            "input": null,
-            "output": 131072
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
         "tencent/hunyuan-a13b-instruct": {
           "id": "tencent/hunyuan-a13b-instruct",
           "display_name": "Hunyuan A13B Instruct",
@@ -14443,15 +14621,15 @@
           "release_date": "2026-07-06",
           "last_updated": "2026-07-06",
           "cost": {
-            "input": "0.2000",
-            "output": "0.8000",
-            "cache_read": "0.5000",
+            "input": "0.1400",
+            "output": "0.5800",
+            "cache_read": "0.0350",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
           },
           "limit": {
-            "context": 202752,
+            "context": 262144,
             "input": null,
             "output": 131072
           },
@@ -14794,6 +14972,35 @@
             ]
           }
         },
+        "x-ai/grok-4.5": {
+          "id": "x-ai/grok-4.5",
+          "display_name": "Grok 4.5",
+          "release_date": "2026-07-08",
+          "last_updated": "2026-07-08",
+          "cost": {
+            "input": "2.0000",
+            "output": "6.0000",
+            "cache_read": "0.5000",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null
+          },
+          "limit": {
+            "context": 500000,
+            "input": null,
+            "output": 500000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "x-ai/grok-build-0.1": {
           "id": "x-ai/grok-build-0.1",
           "display_name": "Grok Build 0.1",
@@ -14815,7 +15022,8 @@
           "modalities": {
             "input": [
               "text",
-              "image"
+              "image",
+              "pdf"
             ],
             "output": [
               "text"
@@ -14836,7 +15044,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 32000,
+            "context": 1048576,
             "input": null,
             "output": 131072
           },
@@ -15139,7 +15347,7 @@
             "output_audio": null
           },
           "limit": {
-            "context": 200000,
+            "context": 202752,
             "input": null,
             "output": 128000
           },
@@ -15158,9 +15366,9 @@
           "release_date": "2026-06-13",
           "last_updated": "2026-06-13",
           "cost": {
-            "input": "0.9300",
-            "output": "3.0000",
-            "cache_read": "0.1800",
+            "input": "0.5400",
+            "output": "1.7600",
+            "cache_read": "0.1000",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -15168,7 +15376,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 32768
+            "output": 101376
           },
           "modalities": {
             "input": [
@@ -15394,7 +15602,7 @@
           "cost": {
             "input": "0.6600",
             "output": "3.4100",
-            "cache_read": "0.1400",
+            "cache_read": "0.1500",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null
@@ -15423,7 +15631,7 @@
             "input": "5.0000",
             "output": "30.0000",
             "cache_read": "0.5000",
-            "cache_write": null,
+            "cache_write": "6.2500",
             "input_audio": null,
             "output_audio": null
           },
@@ -15466,6 +15674,35 @@
               "pdf",
               "image",
               "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "~x-ai/grok-latest": {
+          "id": "~x-ai/grok-latest",
+          "display_name": "Grok Latest",
+          "release_date": "2026-07-08",
+          "last_updated": "2026-07-08",
+          "cost": {
+            "input": "2.0000",
+            "output": "6.0000",
+            "cache_read": "0.5000",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null
+          },
+          "limit": {
+            "context": 500000,
+            "input": null,
+            "output": 1000000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
             ],
             "output": [
               "text"
