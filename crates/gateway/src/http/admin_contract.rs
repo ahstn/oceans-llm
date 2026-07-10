@@ -5,7 +5,7 @@ use gateway_service::{
     AdminModelStatus as ServiceAdminModelStatus, ModelIconKey as ServiceModelIconKey,
     ProviderIconKey as ServiceProviderIconKey,
 };
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use utoipa::{
@@ -426,11 +426,22 @@ pub struct AddTeamMembersRequest {
 pub struct UpdateUserRequest {
     pub global_role: String,
     pub auth_mode: Option<String>,
-    pub team_id: Option<String>,
-    pub team_role: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable_string")]
+    pub team_id: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable_string")]
+    pub team_role: Option<Option<String>>,
     pub oidc_provider_key: Option<String>,
     pub oauth_provider_key: Option<String>,
     pub tags: Option<Vec<AdminEntityTagView>>,
+}
+
+fn deserialize_optional_nullable_string<'de, D>(
+    deserializer: D,
+) -> Result<Option<Option<String>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer).map(Some)
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -1327,7 +1338,9 @@ pub fn format_timestamp(value: OffsetDateTime) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::admin_openapi;
+    use serde_json::json;
+
+    use super::{UpdateUserRequest, admin_openapi};
 
     #[test]
     fn openapi_document_version_is_release_agnostic() {
@@ -1392,5 +1405,31 @@ mod tests {
         );
         assert!(components.schemas.contains_key("AdminModelAllowlistView"));
         assert!(components.schemas.contains_key("AdminModelView"));
+    }
+
+    #[test]
+    fn update_user_request_distinguishes_omitted_and_null_team_fields() {
+        let omitted: UpdateUserRequest =
+            serde_json::from_value(json!({ "global_role": "user" })).expect("request");
+        assert_eq!(omitted.team_id, None);
+        assert_eq!(omitted.team_role, None);
+
+        let cleared: UpdateUserRequest = serde_json::from_value(json!({
+            "global_role": "user",
+            "team_id": null,
+            "team_role": null
+        }))
+        .expect("request");
+        assert_eq!(cleared.team_id, Some(None));
+        assert_eq!(cleared.team_role, Some(None));
+
+        let assigned: UpdateUserRequest = serde_json::from_value(json!({
+            "global_role": "user",
+            "team_id": "team_1",
+            "team_role": "admin"
+        }))
+        .expect("request");
+        assert_eq!(assigned.team_id, Some(Some("team_1".to_string())));
+        assert_eq!(assigned.team_role, Some(Some("admin".to_string())));
     }
 }

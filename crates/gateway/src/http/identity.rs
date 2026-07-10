@@ -803,8 +803,11 @@ pub async fn update_identity_user(
         .map(parse_auth_mode)
         .transpose()?
         .unwrap_or(identity_user.user.auth_mode);
-    let requested_membership =
-        parse_requested_membership(request.team_id.as_deref(), request.team_role.as_deref())?;
+    let requested_membership = parse_update_requested_membership(
+        current_membership(&identity_user),
+        request.team_id.as_ref(),
+        request.team_role.as_ref(),
+    )?;
     let tags = match request.tags.as_ref() {
         Some(tags) => parse_entity_tag_views(tags, "user tags")?,
         None => identity_user.user.tags.clone(),
@@ -845,13 +848,11 @@ pub async fn update_identity_user(
     .map_err(AppError)?;
     if membership_update_requested(&identity_user, requested_membership) {
         ensure_mutable_membership(identity_user.membership_role).map_err(AppError)?;
-    }
-    if let Some((team_id, _)) = requested_membership {
-        state
-            .store
-            .get_team_by_id(team_id)
-            .await?
-            .ok_or_else(|| AppError(GatewayError::InvalidRequest("team not found".to_string())))?;
+        if let Some((team_id, _)) = requested_membership {
+            state.store.get_team_by_id(team_id).await?.ok_or_else(|| {
+                AppError(GatewayError::InvalidRequest("team not found".to_string()))
+            })?;
+        }
     }
 
     let now = OffsetDateTime::now_utc();
@@ -2459,6 +2460,23 @@ fn parse_requested_membership(
     }
 }
 
+fn parse_update_requested_membership(
+    current_membership: Option<(Uuid, MembershipRole)>,
+    team_id: Option<&Option<String>>,
+    team_role: Option<&Option<String>>,
+) -> Result<Option<(Uuid, MembershipRole)>, AppError> {
+    match (team_id, team_role) {
+        (None, None) => Ok(current_membership),
+        (Some(None), Some(None)) => Ok(None),
+        (Some(Some(team_id)), Some(Some(role))) => {
+            parse_requested_membership(Some(team_id), Some(role))
+        }
+        _ => Err(AppError(GatewayError::InvalidRequest(
+            "team_id and team_role must either both be present or both be absent".to_string(),
+        ))),
+    }
+}
+
 async fn resolve_requested_oidc_provider(
     store: &AnyStore,
     auth_mode: AuthMode,
@@ -3151,9 +3169,12 @@ pub async fn list_public_oauth_providers(
 
 #[cfg(test)]
 mod tests {
+    use gateway_core::{GatewayError, MembershipRole};
+    use uuid::Uuid;
+
     use super::{
         GithubEmailLookupError, GithubEmailResponse, github_email_domain_allowed,
-        select_github_primary_email,
+        parse_update_requested_membership, select_github_primary_email,
     };
 
     #[test]
@@ -3213,5 +3234,45 @@ mod tests {
         let email = select_github_primary_email(&emails, false).expect("email should be selected");
 
         assert_eq!(email, "alice@example.com");
+    }
+
+    #[test]
+    fn update_membership_parser_preserves_membership_when_fields_are_omitted() {
+        let team_id = Uuid::new_v4();
+        let current = Some((team_id, MembershipRole::Owner));
+
+        let membership = match parse_update_requested_membership(current, None, None) {
+            Ok(membership) => membership,
+            Err(_) => panic!("membership should parse"),
+        };
+
+        assert_eq!(membership, current);
+    }
+
+    #[test]
+    fn update_membership_parser_removes_membership_when_fields_are_null() {
+        let team_id = Uuid::new_v4();
+        let current = Some((team_id, MembershipRole::Admin));
+
+        let membership = match parse_update_requested_membership(current, Some(&None), Some(&None))
+        {
+            Ok(membership) => membership,
+            Err(_) => panic!("membership should parse"),
+        };
+
+        assert_eq!(membership, None);
+    }
+
+    #[test]
+    fn update_membership_parser_rejects_partial_membership_fields() {
+        let team_id = Some(Uuid::new_v4().to_string());
+
+        let error = parse_update_requested_membership(None, Some(&team_id), Some(&None))
+            .expect_err("partial membership should fail");
+
+        assert!(matches!(
+            error.0,
+            GatewayError::InvalidRequest(message) if message.contains("team_id and team_role")
+        ));
     }
 }

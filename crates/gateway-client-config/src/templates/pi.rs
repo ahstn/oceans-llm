@@ -9,7 +9,7 @@ use crate::{
     },
     cost::pi_cost,
     format::to_pretty_json,
-    templates::notes::thinking_notes,
+    templates::notes::{client_notes_for_inputs, thinking_notes},
     types::{
         AnthropicThinkingPolicy, ClientConfig, ClientConfigCodeBlock, ClientConfigInput,
         ClientConfigInputSet, ClientConfigSetupItem, ClientConfigTemplate,
@@ -39,7 +39,7 @@ impl PiConfigTemplate {
             let style = group.api_style();
             let provider_id = provider_id_for_group(inputs[0], *group, has_multiple_styles);
             let mut provider = Map::from_iter([
-                ("baseUrl".to_string(), json!(inputs[0].gateway_base_url)),
+                ("baseUrl".to_string(), json!(pi_base_url(inputs[0], style))),
                 ("api".to_string(), json!(pi_provider_api_for_style(style))),
                 (
                     "apiKey".to_string(),
@@ -75,7 +75,10 @@ impl PiConfigTemplate {
                 filename: "models.json".to_string(),
                 content: to_pretty_json(&config),
             }],
-            notes: input_set.models.iter().flat_map(thinking_notes).collect(),
+            notes: client_notes_for_inputs(input_set.models.iter())
+                .into_iter()
+                .chain(input_set.models.iter().flat_map(thinking_notes))
+                .collect(),
         }
     }
 }
@@ -101,6 +104,13 @@ fn pi_setup(input: &ClientConfigInput) -> Vec<ClientConfigSetupItem> {
             href: Some(PI_SETTINGS_DOCS_URL.to_string()),
         },
     ]
+}
+
+fn pi_base_url(input: &ClientConfigInput, style: ClientApiStyle) -> String {
+    match style {
+        ClientApiStyle::OpenAiCompatible => input.openai_compatible_client_base_url(),
+        ClientApiStyle::AnthropicMessages => input.client_base_url(),
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]

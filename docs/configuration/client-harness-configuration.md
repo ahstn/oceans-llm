@@ -17,7 +17,20 @@ Generated snippets are available for:
 
 The snippets use the gateway model ids shown in the Models table. API keys are still created and governed in Oceans; the local client config only tells the harness which gateway URL, key variable, and model ids to use.
 
-By default, snippets use the local development gateway base URL `http://127.0.0.1:3000/v1`. Production deployments should set `GATEWAY_CLIENT_CONFIG_BASE_URL` on the gateway process, or `gateway.clientConfigGatewayBaseUrl` in the Helm chart, to the public gateway API base URL users can reach, for example `https://gateway.example.com/v1`.
+By default, snippets use the local development gateway base URL `http://127.0.0.1:3000`. Production deployments should set `GATEWAY_CLIENT_CONFIG_BASE_URL` on the gateway process, or `gateway.clientConfigGatewayBaseUrl` in the Helm chart, to the public gateway URL users can reach, for example `https://api.oceans-llm.com`.
+
+Base URL can change depending on API format and client harness. Experiment with adding or removing `/v1` if requests initially fail.
+
+For a gateway hosted at `https://api.oceans-llm.com`, generated client configs use:
+
+| Client harness | API format or provider | Generated base URL |
+| --- | --- | --- |
+| Claude Code | Anthropic Messages | `https://api.oceans-llm.com` |
+| Codex | Responses API | `https://api.oceans-llm.com/v1` |
+| OpenCode | `@ai-sdk/anthropic` | `https://api.oceans-llm.com` |
+| OpenCode | `@ai-sdk/openai-compatible` | `https://api.oceans-llm.com/v1` |
+| Pi | `anthropic-messages` | `https://api.oceans-llm.com` |
+| Pi | `openai-completions` | `https://api.oceans-llm.com/v1` |
 
 OpenCode and Pi can include multiple selected models in one generated file. When the selection mixes Anthropic Messages models and OpenAI-compatible models, Oceans emits separate provider entries so each provider keeps the correct client adapter. Claude Code only includes selected models that use Anthropic Messages; non-Anthropic selections are ignored for the Claude Code tab instead of generating invalid overrides. Codex snippets require a single Responses-capable model selection.
 

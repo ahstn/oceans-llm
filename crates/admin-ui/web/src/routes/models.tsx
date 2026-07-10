@@ -70,6 +70,9 @@ const COMPACT_NUMBER_FORMATTER = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 2,
 })
 
+const CLIENT_HARNESS_CONFIGURATION_URL =
+  'https://oceans-llm.com/configuration/client-harness-configuration.html'
+
 type ModelInfoSectionKey = 'overview' | 'routing' | 'economics' | 'access'
 
 export const Route = createFileRoute('/models')({
@@ -1030,6 +1033,25 @@ function ClientConfigDialog({
                       </TableCell>
                     </TableRow>
                   ))}
+                  <TableRow>
+                    <TableCell className="w-32 align-baseline font-medium whitespace-nowrap">
+                      Base URL
+                    </TableCell>
+                    <TableCell className="text-muted-foreground min-w-0 align-baseline whitespace-normal">
+                      Base URL can change depending on API format and client harness. Experiment
+                      with adding or removing <code className="font-mono text-xs">/v1</code> if
+                      requests initially fail. For more info, see:{' '}
+                      <a
+                        href={CLIENT_HARNESS_CONFIGURATION_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline underline-offset-4"
+                      >
+                        client harness configuration
+                      </a>
+                      .
+                    </TableCell>
+                  </TableRow>
                 </TableBody>
               </Table>
             ) : null}

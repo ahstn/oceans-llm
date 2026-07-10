@@ -92,7 +92,7 @@ fn pi_shape_includes_provider_model_cost_and_windows() {
     let provider = &value["providers"]["oceans-llm"];
     let model = &provider["models"][0];
 
-    assert_eq!(provider["baseUrl"], "http://127.0.0.1:3000/v1");
+    assert_eq!(provider["baseUrl"], "http://127.0.0.1:3000");
     assert!(setup_value(&rendered, "Configuration").contains("~/.pi/agent/models.json"));
     assert!(setup_value(&rendered, "Configuration").contains("~/.pi/agent/settings.json"));
     assert!(setup_value(&rendered, "Configuration").contains(".pi/settings.json"));
@@ -108,10 +108,11 @@ fn pi_shape_includes_provider_model_cost_and_windows() {
     assert_eq!(model["contextWindow"], 200_000);
     assert_eq!(model["maxTokens"], 64_000);
     assert_eq!(model["cost"]["cacheRead"], 0.3);
+    assert_eq!(model["cost"]["cacheWrite"], 0);
 }
 
 #[test]
-fn cache_read_is_omitted_when_missing() {
+fn pi_cache_costs_default_to_zero_when_missing() {
     let mut input = input(Some(AnthropicThinkingPolicy::SafeEffort));
     input.cache_read_cost_per_million_tokens_usd_10000 = None;
 
@@ -126,10 +127,95 @@ fn cache_read_is_omitted_when_missing() {
             .get("cache_read")
             .is_none()
     );
+    assert_eq!(
+        pi["providers"]["oceans-llm"]["models"][0]["cost"]["cacheRead"],
+        0
+    );
+    assert_eq!(
+        pi["providers"]["oceans-llm"]["models"][0]["cost"]["cacheWrite"],
+        0
+    );
+}
+
+#[test]
+fn client_context_window_is_capped_with_note() {
+    let mut input = input(Some(AnthropicThinkingPolicy::SafeEffort));
+    input.context_window_tokens = Some(1_000_000);
+    input.input_window_tokens = None;
+
+    let opencode = OpenCodeConfigTemplate.render(&input);
+    let opencode_value: Value = serde_json::from_str(&opencode.blocks[0].content).expect("json");
+    let pi = PiConfigTemplate.render(&input);
+    let pi_value: Value = serde_json::from_str(&pi.blocks[0].content).expect("json");
+
+    assert_eq!(
+        opencode_value["provider"]["oceans-llm"]["models"]["claude-sonnet"]["limit"]["context"],
+        200_000
+    );
+    assert_eq!(
+        pi_value["providers"]["oceans-llm"]["models"][0]["contextWindow"],
+        200_000
+    );
     assert!(
-        pi["providers"]["oceans-llm"]["models"][0]["cost"]
-            .get("cacheRead")
-            .is_none()
+        opencode
+            .notes
+            .iter()
+            .any(|note| note.contains("cap the input context window at 200000 tokens"))
+    );
+}
+
+#[test]
+fn client_context_window_note_is_emitted_once_for_multi_model_configs() {
+    let mut first = input(Some(AnthropicThinkingPolicy::SafeEffort));
+    first.context_window_tokens = Some(1_000_000);
+    let mut second = first.clone();
+    second.model_id = "claude-haiku".to_string();
+    second.display_name = "Claude Haiku".to_string();
+    let input_set = ClientConfigInputSet::new(vec![first, second]);
+
+    let opencode = OpenCodeConfigTemplate.render_many(&input_set);
+    let pi = PiConfigTemplate.render_many(&input_set);
+
+    assert_eq!(
+        opencode
+            .notes
+            .iter()
+            .filter(|note| note.contains("cap the input context window at 200000 tokens"))
+            .count(),
+        1
+    );
+    assert_eq!(
+        pi.notes
+            .iter()
+            .filter(|note| note.contains("cap the input context window at 200000 tokens"))
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn client_context_window_note_is_emitted_when_later_model_is_capped() {
+    let mut first = input(Some(AnthropicThinkingPolicy::SafeEffort));
+    first.context_window_tokens = Some(200_000);
+    let mut second = first.clone();
+    second.model_id = "claude-haiku".to_string();
+    second.display_name = "Claude Haiku".to_string();
+    second.context_window_tokens = Some(1_000_000);
+    let input_set = ClientConfigInputSet::new(vec![first, second]);
+
+    let opencode = OpenCodeConfigTemplate.render_many(&input_set);
+    let pi = PiConfigTemplate.render_many(&input_set);
+
+    assert!(
+        opencode
+            .notes
+            .iter()
+            .any(|note| note.contains("cap the input context window at 200000 tokens"))
+    );
+    assert!(
+        pi.notes
+            .iter()
+            .any(|note| note.contains("cap the input context window at 200000 tokens"))
     );
 }
 
@@ -219,7 +305,7 @@ fn opencode_safe_effort_config_matches_expected_full_shape() {
                     "npm": "@ai-sdk/anthropic",
                     "options": {
                         "apiKey": "{env:OCEANS_LLM_API_KEY}",
-                        "baseURL": "http://127.0.0.1:3000/v1"
+                        "baseURL": "http://127.0.0.1:3000"
                     }
                 }
             }
@@ -239,7 +325,7 @@ fn pi_safe_effort_config_matches_expected_full_shape() {
                 "oceans-llm": {
                     "api": "anthropic-messages",
                     "apiKey": "$OCEANS_LLM_API_KEY",
-                    "baseUrl": "http://127.0.0.1:3000/v1",
+                    "baseUrl": "http://127.0.0.1:3000",
                     "compat": {
                         "forceAdaptiveThinking": true
                     },
@@ -248,6 +334,7 @@ fn pi_safe_effort_config_matches_expected_full_shape() {
                             "contextWindow": 200000,
                             "cost": {
                                 "cacheRead": 0.3,
+                                "cacheWrite": 0,
                                 "input": 3.0,
                                 "output": 15.0
                             },
@@ -302,7 +389,15 @@ fn non_anthropic_models_use_openai_compatible_client_surfaces() {
         opencode["provider"]["oceans-llm"]["npm"],
         "@ai-sdk/openai-compatible"
     );
+    assert_eq!(
+        opencode["provider"]["oceans-llm"]["options"]["baseURL"],
+        "http://127.0.0.1:3000/v1"
+    );
     assert_eq!(pi["providers"]["oceans-llm"]["api"], "openai-completions");
+    assert_eq!(
+        pi["providers"]["oceans-llm"]["baseUrl"],
+        "http://127.0.0.1:3000/v1"
+    );
     assert_eq!(
         pi["providers"]["oceans-llm"]["apiKey"],
         "$OCEANS_LLM_API_KEY"
@@ -330,8 +425,16 @@ fn opencode_and_pi_group_mixed_api_styles_into_separate_providers() {
         "@ai-sdk/anthropic"
     );
     assert_eq!(
+        opencode["provider"]["oceans-llm-anthropic-messages"]["options"]["baseURL"],
+        "http://127.0.0.1:3000"
+    );
+    assert_eq!(
         opencode["provider"]["oceans-llm-openai-compatible"]["npm"],
         "@ai-sdk/openai-compatible"
+    );
+    assert_eq!(
+        opencode["provider"]["oceans-llm-openai-compatible"]["options"]["baseURL"],
+        "http://127.0.0.1:3000/v1"
     );
     assert!(
         opencode["provider"]["oceans-llm-anthropic-messages"]["models"]
@@ -354,8 +457,16 @@ fn opencode_and_pi_group_mixed_api_styles_into_separate_providers() {
         "anthropic-messages"
     );
     assert_eq!(
+        pi["providers"]["oceans-llm-anthropic-messages-adaptive-thinking"]["baseUrl"],
+        "http://127.0.0.1:3000"
+    );
+    assert_eq!(
         pi["providers"]["oceans-llm-openai-compatible"]["api"],
         "openai-completions"
+    );
+    assert_eq!(
+        pi["providers"]["oceans-llm-openai-compatible"]["baseUrl"],
+        "http://127.0.0.1:3000/v1"
     );
     assert_eq!(
         pi["providers"]["oceans-llm-anthropic-messages-adaptive-thinking"]["models"][0]["id"],
@@ -468,6 +579,12 @@ fn claude_code_render_does_not_panic_for_non_anthropic_input() {
 
     assert_eq!(rendered.model_ids, vec!["qwen-coder"]);
     assert_eq!(gateway_settings["env"]["ANTHROPIC_MODEL"], "qwen-coder");
+    assert!(
+        rendered
+            .notes
+            .iter()
+            .any(|note| note.contains("http://127.0.0.1:3000/v1"))
+    );
 }
 
 #[test]

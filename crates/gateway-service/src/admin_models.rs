@@ -1394,7 +1394,7 @@ mod tests {
         assert!(
             items[0].client_configurations[0].blocks[0]
                 .content
-                .contains("\"baseURL\": \"https://gateway.example.com/v1\"")
+                .contains("\"baseURL\": \"https://gateway.example.com\"")
         );
         assert!(
             items[0].client_configurations[2].blocks[0]

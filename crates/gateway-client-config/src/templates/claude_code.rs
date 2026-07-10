@@ -131,7 +131,7 @@ fn claude_code_gateway_env(inputs: &[&ClientConfigInput]) -> Map<String, Value> 
         ),
         (
             "ANTHROPIC_BASE_URL".to_string(),
-            json!(claude_code_gateway_base_url(input)),
+            json!(input.client_base_url()),
         ),
         (
             "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY".to_string(),
@@ -164,15 +164,6 @@ fn claude_code_model_overrides(inputs: &[&ClientConfigInput]) -> Map<String, Val
             )
         })
         .collect()
-}
-
-fn claude_code_gateway_base_url(input: &ClientConfigInput) -> String {
-    input
-        .gateway_base_url
-        .trim_end_matches('/')
-        .strip_suffix("/v1")
-        .unwrap_or_else(|| input.gateway_base_url.trim_end_matches('/'))
-        .to_string()
 }
 
 fn claude_code_model_override_key(input: &ClientConfigInput) -> String {

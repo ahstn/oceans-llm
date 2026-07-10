@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-pub const DEFAULT_GATEWAY_BASE_URL: &str = "http://127.0.0.1:3000/v1";
+pub const DEFAULT_GATEWAY_BASE_URL: &str = "http://127.0.0.1:3000";
 pub const DEFAULT_API_KEY_ENV_VAR: &str = "OCEANS_LLM_API_KEY";
 pub const DEFAULT_PROVIDER_ID: &str = "oceans-llm";
+pub const MAX_CLIENT_CONTEXT_WINDOW_TOKENS: i64 = 200_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -45,6 +46,25 @@ impl ClientConfigInput {
         self.input_window_tokens
             .or(self.context_window_tokens)
             .unwrap_or_default()
+            .min(MAX_CLIENT_CONTEXT_WINDOW_TOKENS)
+    }
+
+    #[must_use]
+    pub fn context_window_is_capped(&self) -> bool {
+        self.input_window_tokens
+            .or(self.context_window_tokens)
+            .is_some_and(|window| window > MAX_CLIENT_CONTEXT_WINDOW_TOKENS)
+    }
+
+    #[must_use]
+    pub fn client_base_url(&self) -> String {
+        let trimmed = self.gateway_base_url.trim_end_matches('/');
+        trimmed.strip_suffix("/v1").unwrap_or(trimmed).to_string()
+    }
+
+    #[must_use]
+    pub fn openai_compatible_client_base_url(&self) -> String {
+        format!("{}/v1", self.client_base_url())
     }
 
     #[must_use]

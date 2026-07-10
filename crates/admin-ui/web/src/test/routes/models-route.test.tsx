@@ -461,6 +461,13 @@ describe('ModelsPage', () => {
     })
     expect(await screen.findByRole('dialog', { name: 'Client config' })).toBeInTheDocument()
     expect(screen.getByText('~/.config/opencode/opencode.json')).toBeInTheDocument()
+    expect(screen.getByText('Base URL')).toBeInTheDocument()
+    expect(screen.getByText(/Base URL can change depending on API format/)).toBeInTheDocument()
+    expect(screen.getByText('/v1')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'client harness configuration' })).toHaveAttribute(
+      'href',
+      'https://oceans-llm.com/configuration/client-harness-configuration.html',
+    )
     expect(screen.getByRole('link', { name: 'https://opencode.ai/docs/config/' })).toHaveAttribute(
       'href',
       'https://opencode.ai/docs/config/',

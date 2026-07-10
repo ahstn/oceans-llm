@@ -25,7 +25,7 @@ impl ClientConfigTemplate for CodexConfigTemplate {
             input.provider_id.clone(),
             CodexModelProviderConfig {
                 name: input.provider_name.clone(),
-                base_url: input.gateway_base_url.clone(),
+                base_url: input.openai_compatible_client_base_url(),
                 env_key: input.api_key_env_var.clone(),
                 env_key_instructions: format!("Set {} in your environment", input.api_key_env_var),
                 requires_openai_auth: false,
