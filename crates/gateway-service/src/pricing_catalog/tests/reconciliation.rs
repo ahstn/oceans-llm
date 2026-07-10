@@ -46,6 +46,39 @@ async fn mixed_newer_active_rows_are_reported_as_a_sync_conflict() {
 }
 
 #[tokio::test]
+async fn mixed_current_and_older_active_rows_finish_reconciling() {
+    let repo = Arc::new(InMemoryRepo::default());
+    let catalog = empty_catalog(repo.clone(), "http://127.0.0.1:9/api.json".to_string());
+    let snapshot = fallback_snapshot();
+    catalog
+        .sync_model_pricing_snapshot(&snapshot)
+        .await
+        .expect("seed pricing rows");
+
+    repo.pricing_rows
+        .lock()
+        .expect("pricing rows")
+        .first_mut()
+        .expect("active pricing row")
+        .provenance
+        .fetched_at -= time::Duration::seconds(1);
+
+    catalog
+        .sync_model_pricing_snapshot(&snapshot)
+        .await
+        .expect("finish partially applied snapshot");
+
+    assert!(
+        repo.pricing_rows
+            .lock()
+            .expect("pricing rows")
+            .iter()
+            .filter(|row| row.effective_end_at.is_none())
+            .all(|row| row.provenance.fetched_at == snapshot.metadata.fetched_at)
+    );
+}
+
+#[tokio::test]
 async fn forced_refresh_syncs_pricing_rows() {
     let repo = Arc::new(InMemoryRepo::default());
     let body = json!({

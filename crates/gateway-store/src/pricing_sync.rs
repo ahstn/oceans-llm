@@ -19,6 +19,9 @@ pub(crate) fn validate_model_pricing_sync(
     let mut active_ids = HashMap::new();
     let mut active_by_target = HashMap::new();
     for row in active_rows {
+        if effective_at < row.provenance_fetched_at {
+            return Err(StoreError::PricingSyncConflict);
+        }
         active_ids.insert(row.model_pricing_id, row.provenance_fetched_at);
         active_by_target.insert(
             (row.pricing_provider_id, row.pricing_model_id),
@@ -272,6 +275,22 @@ mod tests {
             .expect_err("stale pricing sync should be rejected");
         assert!(matches!(stale_error, StoreError::PricingSyncConflict));
 
+        let stale_insert = ModelPricingSyncChanges {
+            insert_model_pricing: vec![pricing_record_for_model(
+                Uuid::new_v4(),
+                "removed-by-newer-snapshot",
+            )],
+            ..Default::default()
+        };
+        let stale_insert_error = store
+            .apply_model_pricing_sync(&stale_insert, initial.provenance.fetched_at)
+            .await
+            .expect_err("stale insert should not resurrect a removed target");
+        assert!(matches!(
+            stale_insert_error,
+            StoreError::PricingSyncConflict
+        ));
+
         let rollback_changes = ModelPricingSyncChanges {
             close_model_pricing_ids: vec![first.model_pricing_id],
             insert_model_pricing: vec![pricing_record(Uuid::new_v4())],
@@ -361,6 +380,32 @@ mod tests {
             active_rows,
         )
         .expect_err("older snapshot should not replace a newer active row");
+
+        assert!(matches!(error, StoreError::PricingSyncConflict));
+    }
+
+    #[test]
+    fn rejects_a_stale_insert_when_another_target_is_newer() {
+        let active_id = Uuid::new_v4();
+        let mut active_record = pricing_record_for_model(active_id, "current-model");
+        active_record.provenance.fetched_at += time::Duration::seconds(1);
+        let changes = ModelPricingSyncChanges {
+            insert_model_pricing: vec![pricing_record_for_model(
+                Uuid::new_v4(),
+                "removed-by-newer-snapshot",
+            )],
+            ..Default::default()
+        };
+        let active_rows = [ActiveModelPricing {
+            model_pricing_id: active_id,
+            pricing_provider_id: active_record.pricing_provider_id,
+            pricing_model_id: active_record.pricing_model_id,
+            provenance_fetched_at: active_record.provenance.fetched_at,
+        }];
+
+        let effective_at = changes.insert_model_pricing[0].provenance.fetched_at;
+        let error = validate_model_pricing_sync(&changes, effective_at, active_rows)
+            .expect_err("stale insert must not resurrect a removed target");
 
         assert!(matches!(error, StoreError::PricingSyncConflict));
     }

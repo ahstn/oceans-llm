@@ -305,7 +305,7 @@ where
         }
         if active_rows
             .iter()
-            .any(|row| row.provenance.fetched_at >= snapshot.metadata.fetched_at)
+            .any(|row| row.provenance.fetched_at > snapshot.metadata.fetched_at)
         {
             return Err(GatewayError::Store(StoreError::PricingSyncConflict));
         }
@@ -337,6 +337,15 @@ where
                 snapshot_keys.insert(key.clone());
 
                 match active_by_target.get(&key) {
+                    Some(existing)
+                        if existing.provenance.fetched_at == snapshot.metadata.fetched_at =>
+                    {
+                        if existing.provenance != desired.provenance
+                            || !pricing_record_matches(existing, &desired)
+                        {
+                            return Err(GatewayError::Store(StoreError::PricingSyncConflict));
+                        }
+                    }
                     Some(existing) if pricing_record_matches(existing, &desired) => {
                         if existing.provenance != desired.provenance {
                             changes
@@ -363,6 +372,9 @@ where
 
         for (key, existing) in &active_by_target {
             if !snapshot_keys.contains(key) {
+                if existing.provenance.fetched_at == snapshot.metadata.fetched_at {
+                    return Err(GatewayError::Store(StoreError::PricingSyncConflict));
+                }
                 changes
                     .close_model_pricing_ids
                     .push(existing.model_pricing_id);
