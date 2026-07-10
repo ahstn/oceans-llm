@@ -82,7 +82,7 @@ impl PricingCatalogRepository for InMemoryRepo {
         if let Some(cache) = guard.as_mut()
             && cache.catalog_key == catalog_key
         {
-            cache.fetched_at = fetched_at;
+            cache.fetched_at = cache.fetched_at.max(fetched_at);
         }
         Ok(())
     }
