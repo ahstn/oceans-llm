@@ -24,21 +24,25 @@ This is intentional. Oceans avoids approximate charging because approximate char
 
 Oceans uses pricing metadata from `models.dev` when it is available. Admins can refresh that metadata from the Models page with **Refresh pricing**.
 
-A refresh updates the gateway's cached catalog snapshot and reconciles effective pricing rows for models with exact coverage. The Models page then reloads so newly priced models can show input and output rates.
+A refresh updates the gateway's cached catalog snapshot and reconciles effective pricing rows for models with exact coverage. Scheduled refreshes run the same reconciliation workflow. The Models page then reloads so newly priced models can show input and output rates.
 
 The gateway also keeps a vendored fallback catalog so a new environment can start when the remote catalog is unavailable. The fallback is a bootstrap and outage safety net, not a replacement for refreshing current pricing in a deployed environment.
+
+Before the gateway starts serving requests, it materializes effective pricing rows from the cached snapshot or, when no cached snapshot is available, from the vendored fallback. This startup step ensures request accounting can use persisted pricing without depending on `models.dev` availability.
 
 Refreshing the catalog does not rewrite old request charges. Historical spend keeps the rate that was resolved when the request was recorded.
 
 ## How Pricing Is Chosen
 
-The runtime does not price every request directly from a live remote response. It uses three layers:
+The runtime uses three layers:
 
 1. a vendored normalized fallback snapshot
 2. a cached normalized remote snapshot
 3. effective-dated pricing rows used for request-time lookup
 
 The effective-dated rows are what matter for durable accounting. They let Oceans keep older spend stable after an upstream catalog changes.
+
+Startup, scheduled refreshes, and manual refreshes own catalog reconciliation. Request-time accounting only looks up the persisted effective row for the selected provider, model, location, and billing shape. It does not fetch `models.dev`, read a catalog snapshot, or reconcile pricing rows while handling a request.
 
 At request time, Oceans records the selected pricing provenance with the spend event, including the pricing provider, pricing model, copied rate fields, and pricing source metadata. That makes later reports explainable even if the external catalog has changed.
 

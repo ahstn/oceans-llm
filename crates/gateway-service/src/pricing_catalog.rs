@@ -9,14 +9,14 @@ use gateway_core::{
     GatewayError, ModelPricingProvenanceUpdate, ModelPricingRecord, ModelPricingSyncChanges,
     ModelRoute, Money4, PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits,
     PricingModalities, PricingProvenance, PricingResolution, PricingUnpricedReason,
-    ProviderConnection, ResolvedModelPricing,
+    ProviderConnection, ResolvedModelPricing, StoreError,
 };
 use reqwest::{
     Client, StatusCode,
     header::{ETAG, IF_NONE_MATCH},
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Number, Value};
+use serde_json::Number;
 use time::OffsetDateTime;
 use tracing::warn;
 use uuid::Uuid;
@@ -25,24 +25,18 @@ pub const DEFAULT_PRICING_CATALOG_SOURCE_URL: &str = "https://models.dev/api.jso
 pub const PRICING_CATALOG_CACHE_KEY: &str = "models_dev_supported_v2";
 pub const DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL: Duration = Duration::from_secs(15 * 60);
 pub const DEFAULT_PRICING_CATALOG_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
-pub const SUPPORTED_PRICING_PROVIDER_IDS: [&str; 5] = [
-    AMAZON_BEDROCK_PRICING_PROVIDER_ID,
-    GOOGLE_VERTEX_PRICING_PROVIDER_ID,
-    GOOGLE_VERTEX_ANTHROPIC_PRICING_PROVIDER_ID,
-    OPENAI_PRICING_PROVIDER_ID,
-    OPENROUTER_PRICING_PROVIDER_ID,
-];
-
-const AMAZON_BEDROCK_PRICING_PROVIDER_ID: &str = "amazon-bedrock";
-const GOOGLE_VERTEX_PRICING_PROVIDER_ID: &str = "google-vertex";
-const GOOGLE_VERTEX_ANTHROPIC_PRICING_PROVIDER_ID: &str = "google-vertex-anthropic";
-const OPENAI_PRICING_PROVIDER_ID: &str = "openai";
-const OPENROUTER_PRICING_PROVIDER_ID: &str = "openrouter";
 const REMOTE_SOURCE: &str = "models_dev_api";
 const VENDORED_SOURCE: &str = "vendored_models_dev";
 const VENDORED_FALLBACK_JSON: &str = include_str!("../data/pricing_catalog_fallback.json");
-const BEDROCK_GPT_OSS_120B_PRICING_MODEL_ID: &str = "openai.gpt-oss-120b-1:0";
-const BEDROCK_GPT_OSS_20B_PRICING_MODEL_ID: &str = "openai.gpt-oss-20b-1:0";
+const MAX_PRICING_SYNC_ATTEMPTS: usize = 3;
+
+mod target;
+
+pub(crate) use target::exact_pricing_target_for_route;
+use target::{PricingTarget, pricing_target_for_route};
+pub use target::{SUPPORTED_PRICING_PROVIDER_IDS, is_supported_pricing_provider_id};
+#[cfg(test)]
+use target::{normalize_bedrock_pricing_model_id, normalize_vertex_pricing_model_id};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RefreshMode {
@@ -110,16 +104,21 @@ where
     }
 
     pub async fn refresh_if_stale(&self) -> Result<(), GatewayError> {
-        let current = self.load_stored_snapshot().await?;
+        let current = self.load_stored_cache().await?;
+        let cache_is_invalid = current
+            .as_ref()
+            .is_some_and(|cache| !cached_document_is_valid(cache));
         let current_fetched_at = current
             .as_ref()
-            .map(|snapshot| snapshot.metadata.fetched_at)
+            .filter(|cache| cached_document_is_valid(cache))
+            .map(|cache| cache.fetched_at)
             .unwrap_or(self.fallback_snapshot.metadata.fetched_at);
         let now = OffsetDateTime::now_utc();
-        if now
-            .unix_timestamp()
-            .saturating_sub(current_fetched_at.unix_timestamp())
-            < self.refresh_interval.as_secs() as i64
+        if !cache_is_invalid
+            && now
+                .unix_timestamp()
+                .saturating_sub(current_fetched_at.unix_timestamp())
+                < self.refresh_interval.as_secs() as i64
         {
             return Ok(());
         }
@@ -129,24 +128,23 @@ where
     }
 
     pub async fn refresh_now_and_sync(&self) -> Result<(), GatewayError> {
-        self.refresh_remote_snapshot(None, RefreshMode::Unconditional)
+        let current = self.load_stored_cache().await?;
+        self.refresh_remote_snapshot(current, RefreshMode::Unconditional)
             .await?;
-        let snapshot = self.load_snapshot_from_store_or_fallback().await?;
-        self.sync_model_pricing_snapshot(&snapshot).await?;
-        Ok(())
+        self.sync_latest_snapshot_with_retry().await
     }
 
     async fn refresh_remote_snapshot(
         &self,
-        current: Option<PricingCatalogSnapshot>,
+        current: Option<PricingCatalogCacheRecord>,
         mode: RefreshMode,
     ) -> Result<(), GatewayError> {
-        let now = OffsetDateTime::now_utc();
         let mut request = self.client.get(&self.source_url);
         if mode == RefreshMode::Conditional
             && let Some(etag) = current
                 .as_ref()
-                .and_then(|snapshot| snapshot.metadata.etag.clone())
+                .filter(|cache| cached_document_is_valid(cache))
+                .and_then(|cache| cache.etag.clone())
         {
             request = request.header(IF_NONE_MATCH, etag);
         }
@@ -155,15 +153,11 @@ where
             GatewayError::Internal(format!("pricing catalog refresh request failed: {error}"))
         })?;
         match response.status() {
-            StatusCode::NOT_MODIFIED => {
-                if current.is_some() {
-                    self.repo
-                        .touch_pricing_catalog_cache_fetched_at(&self.catalog_key, now)
-                        .await?;
-                }
-                Ok(())
-            }
+            StatusCode::NOT_MODIFIED => Ok(()),
             StatusCode::OK => {
+                let expected_fetched_at = current.as_ref().map(|cache| cache.fetched_at);
+                let fetched_at =
+                    next_catalog_generation_at(expected_fetched_at, OffsetDateTime::now_utc());
                 let etag = response
                     .headers()
                     .get(ETAG)
@@ -174,22 +168,30 @@ where
                         "pricing catalog refresh body read failed: {error}"
                     ))
                 })?;
-                let snapshot = project_models_dev_snapshot(&body, REMOTE_SOURCE, etag, now)?;
+                let snapshot = project_models_dev_snapshot(&body, REMOTE_SOURCE, etag, fetched_at)?;
                 let snapshot_json =
                     serde_json::to_string_pretty(&snapshot.document).map_err(|error| {
                         GatewayError::Internal(format!(
                             "failed serializing pricing catalog snapshot: {error}"
                         ))
                     })?;
-                self.repo
-                    .upsert_pricing_catalog_cache(&PricingCatalogCacheRecord {
-                        catalog_key: self.catalog_key.clone(),
-                        source: snapshot.metadata.source.clone(),
-                        etag: snapshot.metadata.etag.clone(),
-                        fetched_at: snapshot.metadata.fetched_at,
-                        snapshot_json,
-                    })
+                let stored = self
+                    .repo
+                    .compare_and_swap_pricing_catalog_cache(
+                        &PricingCatalogCacheRecord {
+                            catalog_key: self.catalog_key.clone(),
+                            source: snapshot.metadata.source.clone(),
+                            etag: snapshot.metadata.etag.clone(),
+                            fetched_at: snapshot.metadata.fetched_at,
+                            snapshot_json,
+                        },
+                        expected_fetched_at,
+                    )
                     .await?;
+                if !stored {
+                    self.confirm_superseding_cache_write(expected_fetched_at)
+                        .await?;
+                }
                 Ok(())
             }
             status => Err(GatewayError::Internal(format!(
@@ -199,13 +201,29 @@ where
         }
     }
 
+    async fn confirm_superseding_cache_write(
+        &self,
+        expected_fetched_at: Option<OffsetDateTime>,
+    ) -> Result<(), GatewayError> {
+        let latest = self.load_stored_cache().await?;
+        let was_superseded = match expected_fetched_at {
+            Some(expected) => latest.is_some_and(|cache| cache.fetched_at > expected),
+            None => latest.is_some(),
+        };
+
+        if was_superseded {
+            Ok(())
+        } else {
+            Err(StoreError::PricingSyncConflict.into())
+        }
+    }
+
     pub async fn resolve_for_provider_connection(
         &self,
         provider: &ProviderConnection,
         route: &ModelRoute,
         occurred_at: OffsetDateTime,
     ) -> Result<PricingResolution, GatewayError> {
-        self.sync_current_snapshot().await?;
         let (pricing_provider_id, model_id) = match pricing_target_for_route(provider, route) {
             PricingTarget::Exact {
                 pricing_provider_id,
@@ -231,7 +249,7 @@ where
         })
     }
 
-    pub async fn sync_current_snapshot(&self) -> Result<(), GatewayError> {
+    pub async fn refresh_if_stale_and_sync(&self) -> Result<(), GatewayError> {
         if let Err(error) = self.refresh_if_stale().await {
             warn!(
                 catalog_key = %self.catalog_key,
@@ -241,9 +259,27 @@ where
             );
         }
 
-        let snapshot = self.load_snapshot_from_store_or_fallback().await?;
-        self.sync_model_pricing_snapshot(&snapshot).await?;
-        Ok(())
+        self.sync_latest_snapshot_with_retry().await
+    }
+
+    async fn sync_latest_snapshot_with_retry(&self) -> Result<(), GatewayError> {
+        for attempt in 1..=MAX_PRICING_SYNC_ATTEMPTS {
+            let snapshot = self.load_snapshot_from_store_or_fallback().await?;
+            match self.sync_model_pricing_snapshot(&snapshot).await {
+                Err(GatewayError::Store(StoreError::PricingSyncConflict))
+                    if attempt < MAX_PRICING_SYNC_ATTEMPTS =>
+                {
+                    warn!(
+                        catalog_key = %self.catalog_key,
+                        attempt,
+                        "pricing catalog changed during reconciliation; retrying latest snapshot"
+                    );
+                }
+                result => return result,
+            }
+        }
+
+        unreachable!("pricing sync attempts always return on their final iteration")
     }
 
     async fn load_snapshot_from_store_or_fallback(
@@ -256,11 +292,7 @@ where
     }
 
     async fn load_stored_snapshot(&self) -> Result<Option<PricingCatalogSnapshot>, GatewayError> {
-        let Some(cache) = self
-            .repo
-            .get_pricing_catalog_cache(&self.catalog_key)
-            .await?
-        else {
+        let Some(cache) = self.load_stored_cache().await? else {
             return Ok(None);
         };
 
@@ -284,6 +316,13 @@ where
         }
     }
 
+    async fn load_stored_cache(&self) -> Result<Option<PricingCatalogCacheRecord>, GatewayError> {
+        Ok(self
+            .repo
+            .get_pricing_catalog_cache(&self.catalog_key)
+            .await?)
+    }
+
     async fn sync_model_pricing_snapshot(
         &self,
         snapshot: &PricingCatalogSnapshot,
@@ -291,6 +330,12 @@ where
         let active_rows = self.repo.list_active_model_pricing().await?;
         if snapshot_is_already_synced(&active_rows, snapshot) {
             return Ok(());
+        }
+        if active_rows
+            .iter()
+            .any(|row| row.provenance.fetched_at > snapshot.metadata.fetched_at)
+        {
+            return Err(GatewayError::Store(StoreError::PricingSyncConflict));
         }
 
         let active_by_target = active_rows
@@ -320,6 +365,15 @@ where
                 snapshot_keys.insert(key.clone());
 
                 match active_by_target.get(&key) {
+                    Some(existing)
+                        if existing.provenance.fetched_at == snapshot.metadata.fetched_at =>
+                    {
+                        if existing.provenance != desired.provenance
+                            || !pricing_record_matches(existing, &desired)
+                        {
+                            return Err(GatewayError::Store(StoreError::PricingSyncConflict));
+                        }
+                    }
                     Some(existing) if pricing_record_matches(existing, &desired) => {
                         if existing.provenance != desired.provenance {
                             changes
@@ -346,6 +400,9 @@ where
 
         for (key, existing) in &active_by_target {
             if !snapshot_keys.contains(key) {
+                if existing.provenance.fetched_at == snapshot.metadata.fetched_at {
+                    return Err(GatewayError::Store(StoreError::PricingSyncConflict));
+                }
                 changes
                     .close_model_pricing_ids
                     .push(existing.model_pricing_id);
@@ -410,180 +467,23 @@ fn pricing_catalog_http_client() -> Client {
         .expect("pricing catalog HTTP client configuration is valid")
 }
 
-pub fn is_supported_pricing_provider_id(value: &str) -> bool {
-    SUPPORTED_PRICING_PROVIDER_IDS.contains(&value)
+fn cached_document_is_valid(cache: &PricingCatalogCacheRecord) -> bool {
+    serde_json::from_str::<PricingCatalogDocument>(&cache.snapshot_json).is_ok()
 }
 
-#[derive(Debug, Clone)]
-enum PricingTarget {
-    Exact {
-        pricing_provider_id: String,
-        model_id: String,
-    },
-    Unpriced(PricingUnpricedReason),
-}
+fn next_catalog_generation_at(
+    current_fetched_at: Option<OffsetDateTime>,
+    now: OffsetDateTime,
+) -> OffsetDateTime {
+    let current_timestamp = current_fetched_at
+        .map(OffsetDateTime::unix_timestamp)
+        .unwrap_or(i64::MIN);
+    let next_timestamp = now
+        .unix_timestamp()
+        .max(current_timestamp.saturating_add(1));
 
-fn pricing_target_for_route(provider: &ProviderConnection, route: &ModelRoute) -> PricingTarget {
-    if let Some(reason) = unsupported_billing_modifier(route) {
-        return PricingTarget::Unpriced(reason);
-    }
-
-    match provider.provider_type.as_str() {
-        "openai_compat" | "gcp_cloud_run_openai_compat" => {
-            let Some(pricing_provider_id) = provider
-                .config
-                .get("pricing_provider_id")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_string)
-            else {
-                return PricingTarget::Unpriced(
-                    PricingUnpricedReason::ProviderPricingSourceMissing,
-                );
-            };
-
-            if !is_supported_pricing_provider_id(&pricing_provider_id) {
-                return PricingTarget::Unpriced(
-                    PricingUnpricedReason::UnsupportedPricingProviderId(pricing_provider_id),
-                );
-            }
-
-            PricingTarget::Exact {
-                pricing_provider_id,
-                model_id: route.upstream_model.clone(),
-            }
-        }
-        "gcp_vertex" => {
-            let mut parts = route.upstream_model.splitn(2, '/');
-            let publisher = parts.next().unwrap_or_default();
-            let model_id = parts.next().unwrap_or_default();
-            if publisher.is_empty() || model_id.is_empty() {
-                return PricingTarget::Unpriced(PricingUnpricedReason::UnsupportedVertexPublisher(
-                    route.upstream_model.clone(),
-                ));
-            }
-
-            let pricing_provider_id = match publisher {
-                "google" => GOOGLE_VERTEX_PRICING_PROVIDER_ID,
-                "anthropic" => GOOGLE_VERTEX_ANTHROPIC_PRICING_PROVIDER_ID,
-                other => {
-                    return PricingTarget::Unpriced(
-                        PricingUnpricedReason::UnsupportedVertexPublisher(other.to_string()),
-                    );
-                }
-            };
-
-            if pricing_provider_id == GOOGLE_VERTEX_ANTHROPIC_PRICING_PROVIDER_ID {
-                let location = provider
-                    .config
-                    .get("location")
-                    .and_then(Value::as_str)
-                    .unwrap_or("global");
-                if location != "global" {
-                    return PricingTarget::Unpriced(
-                        PricingUnpricedReason::UnsupportedVertexLocation(location.to_string()),
-                    );
-                }
-            }
-
-            PricingTarget::Exact {
-                pricing_provider_id: pricing_provider_id.to_string(),
-                model_id: normalize_vertex_pricing_model_id(pricing_provider_id, model_id),
-            }
-        }
-        "aws_bedrock" => PricingTarget::Exact {
-            pricing_provider_id: AMAZON_BEDROCK_PRICING_PROVIDER_ID.to_string(),
-            model_id: normalize_bedrock_pricing_model_id(&route.upstream_model),
-        },
-        other => PricingTarget::Unpriced(PricingUnpricedReason::UnsupportedPricingProviderId(
-            other.to_string(),
-        )),
-    }
-}
-
-pub(crate) fn exact_pricing_target_for_route(
-    provider: &ProviderConnection,
-    route: &ModelRoute,
-) -> Option<(String, String)> {
-    match pricing_target_for_route(provider, route) {
-        PricingTarget::Exact {
-            pricing_provider_id,
-            model_id,
-        } => Some((pricing_provider_id, model_id)),
-        PricingTarget::Unpriced(_) => None,
-    }
-}
-
-fn normalize_vertex_pricing_model_id(pricing_provider_id: &str, model_id: &str) -> String {
-    if pricing_provider_id == GOOGLE_VERTEX_ANTHROPIC_PRICING_PROVIDER_ID
-        && !model_id.contains('@')
-        && is_default_vertex_anthropic_model_id(model_id)
-    {
-        return format!("{model_id}@default");
-    }
-
-    model_id.to_string()
-}
-
-fn is_default_vertex_anthropic_model_id(model_id: &str) -> bool {
-    if model_id == "claude-sonnet-5" {
-        return true;
-    }
-
-    let Some((family, minor)) = model_id.rsplit_once('-') else {
-        return false;
-    };
-    let Ok(minor) = minor.parse::<u16>() else {
-        return false;
-    };
-
-    matches!(family, "claude-sonnet-4" if minor >= 6)
-        || matches!(family, "claude-opus-4" if minor >= 6)
-}
-
-fn normalize_bedrock_pricing_model_id(upstream_model: &str) -> String {
-    let model_id = upstream_model
-        .strip_prefix("arn:")
-        .and_then(|_| upstream_model.rsplit('/').next())
-        .unwrap_or(upstream_model);
-
-    match model_id {
-        "gpt-oss-120b" => return BEDROCK_GPT_OSS_120B_PRICING_MODEL_ID.to_string(),
-        "gpt-oss-20b" => return BEDROCK_GPT_OSS_20B_PRICING_MODEL_ID.to_string(),
-        _ => {}
-    }
-
-    strip_bedrock_default_version_suffix(model_id)
-        .unwrap_or(model_id)
-        .to_string()
-}
-
-fn strip_bedrock_default_version_suffix(model_id: &str) -> Option<&str> {
-    if !(model_id.contains("claude-sonnet-4-6")
-        || model_id.contains("claude-opus-4-6")
-        || model_id.contains("claude-opus-4-7"))
-    {
-        return None;
-    }
-
-    let (base, version) = model_id.rsplit_once("-v")?;
-    if version == "1:0" { Some(base) } else { None }
-}
-
-fn unsupported_billing_modifier(route: &ModelRoute) -> Option<PricingUnpricedReason> {
-    if route.extra_body.contains_key("service_tier") {
-        return Some(PricingUnpricedReason::UnsupportedBillingModifier(
-            "service_tier".to_string(),
-        ));
-    }
-    if route.extra_body.contains_key("serviceTier") {
-        return Some(PricingUnpricedReason::UnsupportedBillingModifier(
-            "serviceTier".to_string(),
-        ));
-    }
-
-    None
+    OffsetDateTime::from_unix_timestamp(next_timestamp)
+        .expect("catalog generation timestamp remains in range")
 }
 
 fn resolved_model_pricing(record: &ModelPricingRecord) -> ResolvedModelPricing {
@@ -930,1541 +830,4 @@ struct ModelsDevModalitiesDocument {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::{
-        collections::BTreeMap,
-        sync::{Arc, Mutex},
-        time::Duration,
-    };
-
-    use async_trait::async_trait;
-    use axum::{
-        Router,
-        extract::State,
-        http::{
-            HeaderMap, HeaderValue, StatusCode,
-            header::{ETAG, IF_NONE_MATCH},
-        },
-        response::IntoResponse,
-        routing::get,
-    };
-    use gateway_core::{
-        ModelPricingRecord, ModelPricingSyncChanges, ModelRoute, Money4, PricingCatalogCacheRecord,
-        PricingCatalogRepository, PricingResolution, PricingUnpricedReason, ProviderCapabilities,
-        ProviderConnection, StoreError,
-    };
-    use serde_json::{Number, Value, json, to_string_pretty};
-    use time::OffsetDateTime;
-    use tokio::net::TcpListener;
-    use uuid::Uuid;
-
-    use super::{
-        PRICING_CATALOG_CACHE_KEY, PricingCatalog, PricingCatalogCostDocument,
-        PricingCatalogDocument, PricingCatalogLimitDocument, PricingCatalogModalitiesDocument,
-        PricingCatalogModelDocument, PricingCatalogProviderDocument, PricingCatalogSnapshot,
-        PricingCatalogSnapshotMetadata, PricingTarget, REMOTE_SOURCE, VENDORED_SOURCE,
-        normalize_bedrock_pricing_model_id, normalize_models_dev_money,
-        normalize_vertex_pricing_model_id, pricing_target_for_route,
-    };
-
-    #[derive(Clone, Default)]
-    struct InMemoryRepo {
-        cache: Arc<Mutex<Option<PricingCatalogCacheRecord>>>,
-        pricing_rows: Arc<Mutex<Vec<ModelPricingRecord>>>,
-    }
-
-    #[async_trait]
-    impl PricingCatalogRepository for InMemoryRepo {
-        async fn get_pricing_catalog_cache(
-            &self,
-            _catalog_key: &str,
-        ) -> Result<Option<PricingCatalogCacheRecord>, StoreError> {
-            Ok(self.cache.lock().expect("cache lock").clone())
-        }
-
-        async fn upsert_pricing_catalog_cache(
-            &self,
-            cache: &PricingCatalogCacheRecord,
-        ) -> Result<(), StoreError> {
-            *self.cache.lock().expect("cache lock") = Some(cache.clone());
-            Ok(())
-        }
-
-        async fn touch_pricing_catalog_cache_fetched_at(
-            &self,
-            catalog_key: &str,
-            fetched_at: OffsetDateTime,
-        ) -> Result<(), StoreError> {
-            let mut guard = self.cache.lock().expect("cache lock");
-            if let Some(cache) = guard.as_mut()
-                && cache.catalog_key == catalog_key
-            {
-                cache.fetched_at = fetched_at;
-            }
-            Ok(())
-        }
-
-        async fn list_active_model_pricing(&self) -> Result<Vec<ModelPricingRecord>, StoreError> {
-            Ok(self
-                .pricing_rows
-                .lock()
-                .expect("pricing rows lock")
-                .iter()
-                .filter(|row| row.effective_end_at.is_none())
-                .cloned()
-                .collect())
-        }
-
-        async fn insert_model_pricing(
-            &self,
-            record: &ModelPricingRecord,
-        ) -> Result<(), StoreError> {
-            self.pricing_rows
-                .lock()
-                .expect("pricing rows lock")
-                .push(record.clone());
-            Ok(())
-        }
-
-        async fn close_model_pricing(
-            &self,
-            model_pricing_id: Uuid,
-            effective_end_at: OffsetDateTime,
-            updated_at: OffsetDateTime,
-        ) -> Result<(), StoreError> {
-            let mut rows = self.pricing_rows.lock().expect("pricing rows lock");
-            let Some(row) = rows
-                .iter_mut()
-                .find(|row| row.model_pricing_id == model_pricing_id)
-            else {
-                return Err(StoreError::NotFound(
-                    "model pricing row missing".to_string(),
-                ));
-            };
-            row.effective_end_at = Some(effective_end_at);
-            row.updated_at = updated_at;
-            Ok(())
-        }
-
-        async fn apply_model_pricing_sync(
-            &self,
-            changes: &ModelPricingSyncChanges,
-            effective_at: OffsetDateTime,
-        ) -> Result<(), StoreError> {
-            let mut rows = self.pricing_rows.lock().expect("pricing rows lock");
-            for model_pricing_id in &changes.close_model_pricing_ids {
-                let Some(row) = rows
-                    .iter_mut()
-                    .find(|row| row.model_pricing_id == *model_pricing_id)
-                else {
-                    return Err(StoreError::NotFound(format!(
-                        "model pricing row `{model_pricing_id}`"
-                    )));
-                };
-                row.effective_end_at = Some(effective_at);
-                row.updated_at = effective_at;
-            }
-            for update in &changes.update_provenance {
-                let Some(row) = rows
-                    .iter_mut()
-                    .find(|row| row.model_pricing_id == update.model_pricing_id)
-                else {
-                    return Err(StoreError::NotFound(format!(
-                        "model pricing row `{}`",
-                        update.model_pricing_id
-                    )));
-                };
-                row.provenance = update.provenance.clone();
-                row.updated_at = update.updated_at;
-            }
-            rows.extend(changes.insert_model_pricing.iter().cloned());
-            Ok(())
-        }
-
-        async fn resolve_model_pricing_at(
-            &self,
-            pricing_provider_id: &str,
-            pricing_model_id: &str,
-            occurred_at: OffsetDateTime,
-        ) -> Result<Option<ModelPricingRecord>, StoreError> {
-            Ok(self
-                .pricing_rows
-                .lock()
-                .expect("pricing rows lock")
-                .iter()
-                .filter(|row| {
-                    row.pricing_provider_id == pricing_provider_id
-                        && row.pricing_model_id == pricing_model_id
-                        && row.effective_start_at <= occurred_at
-                        && row.effective_end_at.is_none_or(|end| end > occurred_at)
-                })
-                .max_by_key(|row| row.effective_start_at)
-                .cloned())
-        }
-    }
-
-    fn test_time() -> OffsetDateTime {
-        OffsetDateTime::from_unix_timestamp(1_700_000_000).expect("timestamp")
-    }
-
-    fn openai_provider(pricing_provider_id: &str) -> ProviderConnection {
-        ProviderConnection {
-            provider_key: "openai-prod".to_string(),
-            provider_type: "openai_compat".to_string(),
-            config: json!({
-                "base_url": "https://api.openai.com/v1",
-                "pricing_provider_id": pricing_provider_id
-            }),
-            secrets: None,
-        }
-    }
-
-    fn cloud_run_provider(pricing_provider_id: Option<&str>) -> ProviderConnection {
-        let mut config = serde_json::Map::from_iter([(
-            "base_url".to_string(),
-            json!("https://gemma-service.run.app/v1"),
-        )]);
-        if let Some(pricing_provider_id) = pricing_provider_id {
-            config.insert(
-                "pricing_provider_id".to_string(),
-                json!(pricing_provider_id),
-            );
-        }
-
-        ProviderConnection {
-            provider_key: "gemma-cloud-run".to_string(),
-            provider_type: "gcp_cloud_run_openai_compat".to_string(),
-            config: Value::Object(config),
-            secrets: None,
-        }
-    }
-
-    fn vertex_provider(location: &str) -> ProviderConnection {
-        ProviderConnection {
-            provider_key: "vertex-prod".to_string(),
-            provider_type: "gcp_vertex".to_string(),
-            config: json!({
-                "project_id": "proj-123",
-                "location": location,
-                "api_host": "aiplatform.googleapis.com"
-            }),
-            secrets: None,
-        }
-    }
-
-    fn bedrock_provider() -> ProviderConnection {
-        ProviderConnection {
-            provider_key: "bedrock-prod".to_string(),
-            provider_type: "aws_bedrock".to_string(),
-            config: json!({
-                "region": "us-east-1",
-                "endpoint_url": "https://bedrock-runtime.us-east-1.amazonaws.com"
-            }),
-            secrets: None,
-        }
-    }
-
-    fn route(provider_key: &str, upstream_model: &str) -> ModelRoute {
-        ModelRoute {
-            id: Uuid::new_v4(),
-            model_id: Uuid::new_v4(),
-            provider_key: provider_key.to_string(),
-            upstream_model: upstream_model.to_string(),
-            priority: 10,
-            weight: 1.0,
-            enabled: true,
-            extra_headers: serde_json::Map::new(),
-            extra_body: serde_json::Map::new(),
-            capabilities: ProviderCapabilities::all_enabled(),
-            compatibility: Default::default(),
-        }
-    }
-
-    fn fallback_snapshot() -> PricingCatalogSnapshot {
-        PricingCatalogSnapshot {
-            metadata: PricingCatalogSnapshotMetadata {
-                source: VENDORED_SOURCE.to_string(),
-                etag: None,
-                fetched_at: OffsetDateTime::from_unix_timestamp(1).expect("timestamp"),
-            },
-            document: PricingCatalogDocument {
-                providers: BTreeMap::from([
-                    (
-                        "amazon-bedrock".to_string(),
-                        PricingCatalogProviderDocument {
-                            display_name: "Amazon Bedrock".to_string(),
-                            models: BTreeMap::from([
-                                (
-                                    "us.anthropic.claude-sonnet-4-6".to_string(),
-                                    PricingCatalogModelDocument {
-                                        id: "us.anthropic.claude-sonnet-4-6".to_string(),
-                                        display_name: "Claude Sonnet 4.6 (US)".to_string(),
-                                        release_date: "2026-02-17".to_string(),
-                                        last_updated: "2026-03-13".to_string(),
-                                        cost: PricingCatalogCostDocument {
-                                            input: Some("3.0000".to_string()),
-                                            output: Some("15.0000".to_string()),
-                                            cache_read: Some("0.3000".to_string()),
-                                            cache_write: Some("3.7500".to_string()),
-                                            input_audio: None,
-                                            output_audio: None,
-                                        },
-                                        limit: PricingCatalogLimitDocument {
-                                            context: Some(1_000_000),
-                                            input: None,
-                                            output: Some(64_000),
-                                        },
-                                        modalities: PricingCatalogModalitiesDocument {
-                                            input: vec![
-                                                "text".to_string(),
-                                                "image".to_string(),
-                                                "pdf".to_string(),
-                                            ],
-                                            output: vec!["text".to_string()],
-                                        },
-                                    },
-                                ),
-                                (
-                                    "openai.gpt-oss-120b-1:0".to_string(),
-                                    PricingCatalogModelDocument {
-                                        id: "openai.gpt-oss-120b-1:0".to_string(),
-                                        display_name: "gpt-oss-120b".to_string(),
-                                        release_date: "2024-12-01".to_string(),
-                                        last_updated: "2024-12-01".to_string(),
-                                        cost: PricingCatalogCostDocument {
-                                            input: Some("0.1500".to_string()),
-                                            output: Some("0.6000".to_string()),
-                                            cache_read: None,
-                                            cache_write: None,
-                                            input_audio: None,
-                                            output_audio: None,
-                                        },
-                                        limit: PricingCatalogLimitDocument {
-                                            context: Some(128_000),
-                                            input: None,
-                                            output: Some(4_096),
-                                        },
-                                        modalities: PricingCatalogModalitiesDocument {
-                                            input: vec!["text".to_string()],
-                                            output: vec!["text".to_string()],
-                                        },
-                                    },
-                                ),
-                            ]),
-                        },
-                    ),
-                    (
-                        "openai".to_string(),
-                        PricingCatalogProviderDocument {
-                            display_name: "OpenAI".to_string(),
-                            models: BTreeMap::from([(
-                                "gpt-5".to_string(),
-                                PricingCatalogModelDocument {
-                                    id: "gpt-5".to_string(),
-                                    display_name: "GPT-5".to_string(),
-                                    release_date: "2025-08-07".to_string(),
-                                    last_updated: "2025-08-07".to_string(),
-                                    cost: PricingCatalogCostDocument {
-                                        input: Some("1.2500".to_string()),
-                                        output: Some("10.0000".to_string()),
-                                        cache_read: Some("0.1250".to_string()),
-                                        cache_write: None,
-                                        input_audio: None,
-                                        output_audio: None,
-                                    },
-                                    limit: PricingCatalogLimitDocument {
-                                        context: Some(400_000),
-                                        input: Some(272_000),
-                                        output: Some(128_000),
-                                    },
-                                    modalities: PricingCatalogModalitiesDocument {
-                                        input: vec!["text".to_string(), "image".to_string()],
-                                        output: vec!["text".to_string()],
-                                    },
-                                },
-                            )]),
-                        },
-                    ),
-                    (
-                        "openrouter".to_string(),
-                        PricingCatalogProviderDocument {
-                            display_name: "OpenRouter".to_string(),
-                            models: BTreeMap::from([(
-                                "deepseek/deepseek-v4-flash".to_string(),
-                                PricingCatalogModelDocument {
-                                    id: "deepseek/deepseek-v4-flash".to_string(),
-                                    display_name: "DeepSeek V4 Flash".to_string(),
-                                    release_date: "2026-07-01".to_string(),
-                                    last_updated: "2026-07-01".to_string(),
-                                    cost: PricingCatalogCostDocument {
-                                        input: Some("0.0900".to_string()),
-                                        output: Some("0.1800".to_string()),
-                                        cache_read: Some("0.0180".to_string()),
-                                        cache_write: None,
-                                        input_audio: None,
-                                        output_audio: None,
-                                    },
-                                    limit: PricingCatalogLimitDocument {
-                                        context: Some(128_000),
-                                        input: None,
-                                        output: Some(8_192),
-                                    },
-                                    modalities: PricingCatalogModalitiesDocument {
-                                        input: vec!["text".to_string()],
-                                        output: vec!["text".to_string()],
-                                    },
-                                },
-                            )]),
-                        },
-                    ),
-                    (
-                        "google-vertex".to_string(),
-                        PricingCatalogProviderDocument {
-                            display_name: "Vertex".to_string(),
-                            models: BTreeMap::from([
-                                (
-                                    "gemini-2.5-flash".to_string(),
-                                    PricingCatalogModelDocument {
-                                        id: "gemini-2.5-flash".to_string(),
-                                        display_name: "Gemini 2.5 Flash".to_string(),
-                                        release_date: "2025-06-17".to_string(),
-                                        last_updated: "2025-06-17".to_string(),
-                                        cost: PricingCatalogCostDocument {
-                                            input: Some("0.3000".to_string()),
-                                            output: Some("2.5000".to_string()),
-                                            cache_read: Some("0.0750".to_string()),
-                                            cache_write: Some("0.3830".to_string()),
-                                            input_audio: None,
-                                            output_audio: None,
-                                        },
-                                        limit: PricingCatalogLimitDocument {
-                                            context: Some(1_048_576),
-                                            input: None,
-                                            output: Some(65_536),
-                                        },
-                                        modalities: PricingCatalogModalitiesDocument {
-                                            input: vec![
-                                                "text".to_string(),
-                                                "image".to_string(),
-                                                "audio".to_string(),
-                                                "video".to_string(),
-                                                "pdf".to_string(),
-                                            ],
-                                            output: vec!["text".to_string()],
-                                        },
-                                    },
-                                ),
-                                (
-                                    "gemini-embedding-001".to_string(),
-                                    PricingCatalogModelDocument {
-                                        id: "gemini-embedding-001".to_string(),
-                                        display_name: "Gemini Embedding".to_string(),
-                                        release_date: "2025-05-20".to_string(),
-                                        last_updated: "2025-05-20".to_string(),
-                                        cost: PricingCatalogCostDocument {
-                                            input: Some("0.1500".to_string()),
-                                            output: None,
-                                            cache_read: None,
-                                            cache_write: None,
-                                            input_audio: None,
-                                            output_audio: None,
-                                        },
-                                        limit: PricingCatalogLimitDocument {
-                                            context: Some(2_048),
-                                            input: None,
-                                            output: None,
-                                        },
-                                        modalities: PricingCatalogModalitiesDocument {
-                                            input: vec!["text".to_string()],
-                                            output: vec!["embedding".to_string()],
-                                        },
-                                    },
-                                ),
-                            ]),
-                        },
-                    ),
-                    (
-                        "google-vertex-anthropic".to_string(),
-                        PricingCatalogProviderDocument {
-                            display_name: "Vertex (Anthropic)".to_string(),
-                            models: BTreeMap::from([(
-                                "claude-sonnet-4-6@default".to_string(),
-                                PricingCatalogModelDocument {
-                                    id: "claude-sonnet-4-6@default".to_string(),
-                                    display_name: "Claude Sonnet 4.6".to_string(),
-                                    release_date: "2026-02-17".to_string(),
-                                    last_updated: "2026-03-13".to_string(),
-                                    cost: PricingCatalogCostDocument {
-                                        input: Some("3.0000".to_string()),
-                                        output: Some("15.0000".to_string()),
-                                        cache_read: Some("0.3000".to_string()),
-                                        cache_write: Some("3.7500".to_string()),
-                                        input_audio: None,
-                                        output_audio: None,
-                                    },
-                                    limit: PricingCatalogLimitDocument {
-                                        context: Some(200_000),
-                                        input: None,
-                                        output: Some(64_000),
-                                    },
-                                    modalities: PricingCatalogModalitiesDocument {
-                                        input: vec![
-                                            "text".to_string(),
-                                            "image".to_string(),
-                                            "pdf".to_string(),
-                                        ],
-                                        output: vec!["text".to_string()],
-                                    },
-                                },
-                            )]),
-                        },
-                    ),
-                ]),
-            },
-        }
-    }
-
-    fn empty_catalog(repo: Arc<InMemoryRepo>, source_url: String) -> PricingCatalog<InMemoryRepo> {
-        PricingCatalog::with_fallback_snapshot(
-            repo,
-            source_url,
-            PRICING_CATALOG_CACHE_KEY.to_string(),
-            Duration::from_secs(0),
-            fallback_snapshot(),
-        )
-    }
-
-    async fn start_server(app: Router) -> String {
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
-        let addr = listener.local_addr().expect("addr");
-        tokio::spawn(async move {
-            axum::serve(listener, app).await.expect("serve");
-        });
-        format!("http://{addr}")
-    }
-
-    #[tokio::test]
-    async fn gcp_vertex_maps_supported_publishers() {
-        let catalog = empty_catalog(
-            Arc::new(InMemoryRepo::default()),
-            "http://127.0.0.1:9/api.json".to_string(),
-        );
-
-        let google = catalog
-            .resolve_for_provider_connection(
-                &vertex_provider("global"),
-                &route("vertex-prod", "google/gemini-2.5-flash"),
-                test_time(),
-            )
-            .await
-            .expect("resolve google");
-        let anthropic = catalog
-            .resolve_for_provider_connection(
-                &vertex_provider("global"),
-                &route("vertex-prod", "anthropic/claude-sonnet-4-6"),
-                test_time(),
-            )
-            .await
-            .expect("resolve anthropic");
-
-        match google {
-            PricingResolution::Exact { pricing } => {
-                assert_eq!(pricing.pricing_provider_id, "google-vertex");
-                assert_eq!(pricing.model_id, "gemini-2.5-flash");
-            }
-            other => panic!("unexpected google resolution: {other:?}"),
-        }
-        match anthropic {
-            PricingResolution::Exact { pricing } => {
-                assert_eq!(pricing.pricing_provider_id, "google-vertex-anthropic");
-                assert_eq!(pricing.model_id, "claude-sonnet-4-6@default");
-            }
-            other => panic!("unexpected anthropic resolution: {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn gcp_vertex_embedding_model_resolves_exact_google_vertex_pricing() {
-        let catalog = empty_catalog(
-            Arc::new(InMemoryRepo::default()),
-            "http://127.0.0.1:9/api.json".to_string(),
-        );
-
-        let resolved = catalog
-            .resolve_for_provider_connection(
-                &vertex_provider("global"),
-                &route("vertex-prod", "google/gemini-embedding-001"),
-                test_time(),
-            )
-            .await
-            .expect("resolve vertex embedding pricing");
-
-        match resolved {
-            PricingResolution::Exact { pricing } => {
-                assert_eq!(pricing.pricing_provider_id, "google-vertex");
-                assert_eq!(pricing.model_id, "gemini-embedding-001");
-                assert_eq!(
-                    pricing.input_cost_per_million_tokens,
-                    Some(Money4::from_decimal_str("0.1500").expect("money"))
-                );
-                assert_eq!(pricing.output_cost_per_million_tokens, None);
-            }
-            other => panic!("unexpected embedding pricing resolution: {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn aws_bedrock_maps_supported_model_ids() {
-        let catalog = empty_catalog(
-            Arc::new(InMemoryRepo::default()),
-            "http://127.0.0.1:9/api.json".to_string(),
-        );
-
-        let claude = catalog
-            .resolve_for_provider_connection(
-                &bedrock_provider(),
-                &route("bedrock-prod", "us.anthropic.claude-sonnet-4-6-v1:0"),
-                test_time(),
-            )
-            .await
-            .expect("resolve claude");
-        let gpt_oss = catalog
-            .resolve_for_provider_connection(
-                &bedrock_provider(),
-                &route("bedrock-prod", "gpt-oss-120b"),
-                test_time(),
-            )
-            .await
-            .expect("resolve gpt oss");
-
-        match claude {
-            PricingResolution::Exact { pricing } => {
-                assert_eq!(pricing.pricing_provider_id, "amazon-bedrock");
-                assert_eq!(pricing.model_id, "us.anthropic.claude-sonnet-4-6");
-                assert_eq!(
-                    pricing.input_cost_per_million_tokens,
-                    Some(Money4::from_decimal_str("3.0000").expect("money"))
-                );
-            }
-            other => panic!("unexpected claude resolution: {other:?}"),
-        }
-        match gpt_oss {
-            PricingResolution::Exact { pricing } => {
-                assert_eq!(pricing.pricing_provider_id, "amazon-bedrock");
-                assert_eq!(pricing.model_id, "openai.gpt-oss-120b-1:0");
-            }
-            other => panic!("unexpected gpt oss resolution: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn cloud_run_openai_compat_routes_to_configured_pricing_provider() {
-        let target = pricing_target_for_route(
-            &cloud_run_provider(Some("google-vertex")),
-            &route("gemma-cloud-run", "gemini-2.5-flash"),
-        );
-
-        match target {
-            PricingTarget::Exact {
-                pricing_provider_id,
-                model_id,
-            } => {
-                assert_eq!(pricing_provider_id, "google-vertex");
-                assert_eq!(model_id, "gemini-2.5-flash");
-            }
-            other => panic!("unexpected pricing target: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn openai_compat_can_route_to_openrouter_pricing_provider() {
-        let target = pricing_target_for_route(
-            &openai_provider("openrouter"),
-            &route("openrouter", "deepseek/deepseek-v4-pro"),
-        );
-
-        match target {
-            PricingTarget::Exact {
-                pricing_provider_id,
-                model_id,
-            } => {
-                assert_eq!(pricing_provider_id, "openrouter");
-                assert_eq!(model_id, "deepseek/deepseek-v4-pro");
-            }
-            other => panic!("unexpected pricing target: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn cloud_run_openai_compat_without_pricing_provider_is_unpriced() {
-        let target = pricing_target_for_route(
-            &cloud_run_provider(None),
-            &route("gemma-cloud-run", "gemini-2.5-flash"),
-        );
-
-        match target {
-            PricingTarget::Unpriced(PricingUnpricedReason::ProviderPricingSourceMissing) => {}
-            other => panic!("unexpected pricing target: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn cloud_run_openai_compat_with_unsupported_pricing_provider_is_unpriced() {
-        let target = pricing_target_for_route(
-            &cloud_run_provider(Some("local-gemma")),
-            &route("gemma-cloud-run", "gemini-2.5-flash"),
-        );
-
-        match target {
-            PricingTarget::Unpriced(PricingUnpricedReason::UnsupportedPricingProviderId(
-                provider_id,
-            )) => assert_eq!(provider_id, "local-gemma"),
-            other => panic!("unexpected pricing target: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn bedrock_default_version_normalization_is_conservative() {
-        assert_eq!(
-            normalize_bedrock_pricing_model_id("us.anthropic.claude-sonnet-4-6-v1:0"),
-            "us.anthropic.claude-sonnet-4-6"
-        );
-        assert_eq!(
-            normalize_bedrock_pricing_model_id("us.anthropic.claude-sonnet-4-6-v2:0"),
-            "us.anthropic.claude-sonnet-4-6-v2:0"
-        );
-    }
-
-    #[test]
-    fn vertex_anthropic_default_version_normalization_tracks_default_catalog_ids() {
-        assert_eq!(
-            normalize_vertex_pricing_model_id("google-vertex-anthropic", "claude-sonnet-4-6"),
-            "claude-sonnet-4-6@default"
-        );
-        assert_eq!(
-            normalize_vertex_pricing_model_id("google-vertex-anthropic", "claude-opus-4-8"),
-            "claude-opus-4-8@default"
-        );
-        assert_eq!(
-            normalize_vertex_pricing_model_id("google-vertex-anthropic", "claude-sonnet-5"),
-            "claude-sonnet-5@default"
-        );
-        assert_eq!(
-            normalize_vertex_pricing_model_id("google-vertex-anthropic", "claude-sonnet-4-5"),
-            "claude-sonnet-4-5"
-        );
-        assert_eq!(
-            normalize_vertex_pricing_model_id("google-vertex-anthropic", "claude-opus-4-8@default"),
-            "claude-opus-4-8@default"
-        );
-        assert_eq!(
-            normalize_vertex_pricing_model_id("google-vertex", "claude-opus-4-8"),
-            "claude-opus-4-8"
-        );
-    }
-
-    #[test]
-    fn models_dev_money_normalization_rounds_extra_precision() {
-        let cost = Number::from_f64(0.00875).expect("number");
-
-        assert_eq!(
-            normalize_models_dev_money(&cost).expect("normalized cost"),
-            "0.0088"
-        );
-    }
-
-    #[tokio::test]
-    async fn exact_model_lookup_succeeds_and_fails_closed() {
-        let catalog = empty_catalog(
-            Arc::new(InMemoryRepo::default()),
-            "http://127.0.0.1:9/api.json".to_string(),
-        );
-
-        let exact = catalog
-            .resolve_for_provider_connection(
-                &openai_provider("openai"),
-                &route("openai-prod", "gpt-5"),
-                test_time(),
-            )
-            .await
-            .expect("resolve");
-        let missing = catalog
-            .resolve_for_provider_connection(
-                &openai_provider("openai"),
-                &route("openai-prod", "gpt-unknown"),
-                test_time(),
-            )
-            .await
-            .expect("resolve missing");
-
-        match exact {
-            PricingResolution::Exact { pricing } => {
-                assert_eq!(pricing.model_id, "gpt-5");
-                assert_eq!(
-                    pricing.input_cost_per_million_tokens,
-                    Some(Money4::from_decimal_str("1.2500").expect("money"))
-                );
-            }
-            other => panic!("unexpected exact resolution: {other:?}"),
-        }
-        assert_eq!(
-            missing,
-            PricingResolution::Unpriced {
-                reason: PricingUnpricedReason::ModelNotFound
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn vendored_snapshot_is_used_without_remote_cache() {
-        let catalog = empty_catalog(
-            Arc::new(InMemoryRepo::default()),
-            "http://127.0.0.1:9/api.json".to_string(),
-        );
-
-        let resolved = catalog
-            .resolve_for_provider_connection(
-                &vertex_provider("global"),
-                &route("vertex-prod", "google/gemini-2.5-flash"),
-                test_time(),
-            )
-            .await
-            .expect("resolve");
-
-        match resolved {
-            PricingResolution::Exact { pricing } => {
-                assert_eq!(pricing.provenance.source, VENDORED_SOURCE);
-            }
-            other => panic!("unexpected vendored resolution: {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn vendored_snapshot_prices_openrouter_routes() {
-        let catalog = empty_catalog(
-            Arc::new(InMemoryRepo::default()),
-            "http://127.0.0.1:9/api.json".to_string(),
-        );
-
-        let resolved = catalog
-            .resolve_for_provider_connection(
-                &openai_provider("openrouter"),
-                &route("openrouter", "deepseek/deepseek-v4-flash"),
-                OffsetDateTime::now_utc(),
-            )
-            .await
-            .expect("resolve openrouter pricing");
-
-        match resolved {
-            PricingResolution::Exact { pricing } => {
-                assert_eq!(pricing.pricing_provider_id, "openrouter");
-                assert_eq!(pricing.model_id, "deepseek/deepseek-v4-flash");
-                assert_eq!(
-                    pricing.input_cost_per_million_tokens,
-                    Some(Money4::from_decimal_str("0.0900").expect("money"))
-                );
-            }
-            other => panic!("unexpected openrouter pricing resolution: {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn refresh_uses_conditional_etag_and_handles_304() {
-        let repo = Arc::new(InMemoryRepo {
-            cache: Arc::new(Mutex::new(Some(PricingCatalogCacheRecord {
-                catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
-                source: REMOTE_SOURCE.to_string(),
-                etag: Some("\"catalog-etag\"".to_string()),
-                fetched_at: OffsetDateTime::from_unix_timestamp(1).expect("timestamp"),
-                snapshot_json: to_string_pretty(&fallback_snapshot().document).expect("json"),
-            }))),
-            pricing_rows: Arc::new(Mutex::new(Vec::new())),
-        });
-        let state = Arc::new(Mutex::new(None::<String>));
-        let app = Router::new()
-            .route(
-                "/api.json",
-                get(
-                    |headers: HeaderMap, State(captured): State<Arc<Mutex<Option<String>>>>| async move {
-                        *captured.lock().expect("captured lock") = headers
-                            .get(IF_NONE_MATCH)
-                            .and_then(|value| value.to_str().ok())
-                            .map(str::to_string);
-                        StatusCode::NOT_MODIFIED.into_response()
-                    },
-                ),
-            )
-            .with_state(state.clone());
-        let host = start_server(app).await;
-
-        let catalog = empty_catalog(repo.clone(), format!("{host}/api.json"));
-        let before = repo
-            .get_pricing_catalog_cache(PRICING_CATALOG_CACHE_KEY)
-            .await
-            .expect("cache before")
-            .expect("cache row");
-
-        catalog.refresh_if_stale().await.expect("304 refresh");
-
-        let after = repo
-            .get_pricing_catalog_cache(PRICING_CATALOG_CACHE_KEY)
-            .await
-            .expect("cache after")
-            .expect("cache row");
-        assert_eq!(
-            state.lock().expect("captured lock").as_deref(),
-            Some("\"catalog-etag\"")
-        );
-        assert_eq!(after.snapshot_json, before.snapshot_json);
-        assert!(after.fetched_at > before.fetched_at);
-    }
-
-    #[tokio::test]
-    async fn refresh_replaces_cached_snapshot_on_200() {
-        let repo = Arc::new(InMemoryRepo::default());
-        let body = json!({
-            "openai": {
-                "name": "OpenAI",
-                "models": {
-                    "gpt-5": {
-                        "id": "gpt-5",
-                        "name": "GPT-5",
-                        "release_date": "2025-08-07",
-                        "last_updated": "2025-08-07",
-                        "cost": {
-                            "input": 1.25,
-                            "output": 10.0,
-                            "cache_read": 0.125
-                        },
-                        "limit": {
-                            "context": 400000,
-                            "input": 272000,
-                            "output": 128000
-                        },
-                        "modalities": {
-                            "input": ["text", "image"],
-                            "output": ["text"]
-                        }
-                    }
-                }
-            }
-        });
-        let app = Router::new().route(
-            "/api.json",
-            get(move || {
-                let body = body.clone();
-                async move {
-                    (
-                        [(ETAG, HeaderValue::from_static("\"new-etag\""))],
-                        axum::Json(body),
-                    )
-                }
-            }),
-        );
-        let host = start_server(app).await;
-
-        let catalog = empty_catalog(repo.clone(), format!("{host}/api.json"));
-        catalog.refresh_if_stale().await.expect("200 refresh");
-
-        let cache = repo
-            .get_pricing_catalog_cache(PRICING_CATALOG_CACHE_KEY)
-            .await
-            .expect("cache")
-            .expect("cache row");
-        assert_eq!(cache.etag.as_deref(), Some("\"new-etag\""));
-        assert!(cache.snapshot_json.contains("\"gpt-5\""));
-    }
-
-    #[tokio::test]
-    async fn forced_refresh_syncs_pricing_rows() {
-        let repo = Arc::new(InMemoryRepo::default());
-        let body = json!({
-            "google-vertex-anthropic": {
-                "name": "Google Vertex AI Anthropic",
-                "models": {
-                    "claude-opus-4-8@default": {
-                        "id": "claude-opus-4-8@default",
-                        "name": "Claude Opus 4.8",
-                        "release_date": "2026-07-01",
-                        "last_updated": "2026-07-02",
-                        "cost": {
-                            "input": 5.0,
-                            "output": 25.0
-                        },
-                        "limit": {
-                            "context": 200000,
-                            "input": 200000,
-                            "output": 32000
-                        },
-                        "modalities": {
-                            "input": ["text", "image"],
-                            "output": ["text"]
-                        }
-                    }
-                }
-            }
-        });
-        let app = Router::new().route(
-            "/api.json",
-            get(move || {
-                let body = body.clone();
-                async move {
-                    (
-                        [(ETAG, HeaderValue::from_static("\"forced-etag\""))],
-                        axum::Json(body),
-                    )
-                }
-            }),
-        );
-        let host = start_server(app).await;
-
-        let catalog = empty_catalog(repo.clone(), format!("{host}/api.json"));
-        catalog
-            .refresh_now_and_sync()
-            .await
-            .expect("forced refresh");
-
-        let rows = repo.pricing_rows.lock().expect("pricing rows lock");
-        let row = rows
-            .iter()
-            .find(|row| {
-                row.pricing_provider_id == "google-vertex-anthropic"
-                    && row.pricing_model_id == "claude-opus-4-8@default"
-            })
-            .expect("pricing row");
-        assert_eq!(
-            row.input_cost_per_million_tokens,
-            Some(Money4::from_decimal_str("5.0000").expect("money"))
-        );
-        assert_eq!(row.provenance.etag.as_deref(), Some("\"forced-etag\""));
-    }
-
-    #[tokio::test]
-    async fn forced_refresh_ignores_cached_etag() {
-        let repo = Arc::new(InMemoryRepo {
-            cache: Arc::new(Mutex::new(Some(PricingCatalogCacheRecord {
-                catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
-                source: REMOTE_SOURCE.to_string(),
-                etag: Some("\"cached-etag\"".to_string()),
-                fetched_at: OffsetDateTime::from_unix_timestamp(1).expect("timestamp"),
-                snapshot_json: to_string_pretty(&fallback_snapshot().document).expect("json"),
-            }))),
-            pricing_rows: Arc::new(Mutex::new(Vec::new())),
-        });
-        let state = Arc::new(Mutex::new(None::<String>));
-        let body = json!({
-            "openai": {
-                "name": "OpenAI",
-                "models": {
-                    "gpt-5": {
-                        "id": "gpt-5",
-                        "name": "GPT-5",
-                        "release_date": "2025-08-07",
-                        "last_updated": "2025-08-07",
-                        "cost": {
-                            "input": 1.25,
-                            "output": 10.0
-                        },
-                        "limit": {},
-                        "modalities": {}
-                    }
-                }
-            }
-        });
-        let app = Router::new()
-            .route(
-                "/api.json",
-                get(
-                    move |headers: HeaderMap,
-                          State(captured): State<Arc<Mutex<Option<String>>>>| {
-                        let body = body.clone();
-                        async move {
-                            *captured.lock().expect("captured lock") = headers
-                                .get(IF_NONE_MATCH)
-                                .and_then(|value| value.to_str().ok())
-                                .map(str::to_string);
-                            (
-                                [(ETAG, HeaderValue::from_static("\"new-etag\""))],
-                                axum::Json(body),
-                            )
-                        }
-                    },
-                ),
-            )
-            .with_state(state.clone());
-        let host = start_server(app).await;
-
-        let catalog = empty_catalog(repo, format!("{host}/api.json"));
-        catalog
-            .refresh_now_and_sync()
-            .await
-            .expect("forced refresh");
-
-        assert_eq!(state.lock().expect("captured lock").as_deref(), None);
-    }
-
-    #[tokio::test]
-    async fn remote_failure_falls_back_to_store_then_vendored_snapshot() {
-        let repo = Arc::new(InMemoryRepo {
-            cache: Arc::new(Mutex::new(Some(PricingCatalogCacheRecord {
-                catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
-                source: REMOTE_SOURCE.to_string(),
-                etag: Some("\"cached\"".to_string()),
-                fetched_at: OffsetDateTime::from_unix_timestamp(1).expect("timestamp"),
-                snapshot_json: to_string_pretty(&PricingCatalogDocument {
-                    providers: BTreeMap::from([(
-                        "openai".to_string(),
-                        PricingCatalogProviderDocument {
-                            display_name: "OpenAI".to_string(),
-                            models: BTreeMap::from([(
-                                "gpt-5".to_string(),
-                                PricingCatalogModelDocument {
-                                    id: "gpt-5".to_string(),
-                                    display_name: "GPT-5 Cached".to_string(),
-                                    release_date: "2025-08-07".to_string(),
-                                    last_updated: "2025-08-08".to_string(),
-                                    cost: PricingCatalogCostDocument {
-                                        input: Some("2.0000".to_string()),
-                                        output: Some("20.0000".to_string()),
-                                        cache_read: None,
-                                        cache_write: None,
-                                        input_audio: None,
-                                        output_audio: None,
-                                    },
-                                    limit: PricingCatalogLimitDocument::default(),
-                                    modalities: PricingCatalogModalitiesDocument::default(),
-                                },
-                            )]),
-                        },
-                    )]),
-                })
-                .expect("json"),
-            }))),
-            pricing_rows: Arc::new(Mutex::new(Vec::new())),
-        });
-        let failing_catalog =
-            empty_catalog(repo.clone(), "http://127.0.0.1:9/api.json".to_string());
-        let cached = failing_catalog
-            .resolve_for_provider_connection(
-                &openai_provider("openai"),
-                &route("openai-prod", "gpt-5"),
-                test_time(),
-            )
-            .await
-            .expect("cached resolve");
-
-        match cached {
-            PricingResolution::Exact { pricing } => {
-                assert_eq!(pricing.display_name, "GPT-5 Cached");
-                assert_eq!(pricing.provenance.source, REMOTE_SOURCE);
-            }
-            other => panic!("unexpected cached resolution: {other:?}"),
-        }
-
-        let vendored_catalog = empty_catalog(
-            Arc::new(InMemoryRepo::default()),
-            "http://127.0.0.1:9/api.json".to_string(),
-        );
-        let vendored = vendored_catalog
-            .resolve_for_provider_connection(
-                &openai_provider("openai"),
-                &route("openai-prod", "gpt-5"),
-                test_time(),
-            )
-            .await
-            .expect("vendored resolve");
-
-        match vendored {
-            PricingResolution::Exact { pricing } => {
-                assert_eq!(pricing.display_name, "GPT-5");
-                assert_eq!(pricing.provenance.source, VENDORED_SOURCE);
-            }
-            other => panic!("unexpected vendored resolution: {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn unsupported_billing_modifiers_resolve_to_unpriced() {
-        let repo = Arc::new(InMemoryRepo::default());
-        let catalog = empty_catalog(repo, "http://127.0.0.1:9/api.json".to_string());
-        let mut service_tier_route = route("openai-prod", "gpt-5");
-        service_tier_route
-            .extra_body
-            .insert("service_tier".to_string(), json!("priority"));
-
-        let service_tier = catalog
-            .resolve_for_provider_connection(
-                &openai_provider("openai"),
-                &service_tier_route,
-                test_time(),
-            )
-            .await
-            .expect("service tier resolve");
-        let regional_vertex = catalog
-            .resolve_for_provider_connection(
-                &vertex_provider("us-central1"),
-                &route("vertex-prod", "anthropic/claude-sonnet-4-5@20250929"),
-                test_time(),
-            )
-            .await
-            .expect("regional vertex resolve");
-
-        assert_eq!(
-            service_tier,
-            PricingResolution::Unpriced {
-                reason: PricingUnpricedReason::UnsupportedBillingModifier(
-                    "service_tier".to_string(),
-                )
-            }
-        );
-        assert_eq!(
-            regional_vertex,
-            PricingResolution::Unpriced {
-                reason: PricingUnpricedReason::UnsupportedVertexLocation("us-central1".to_string(),)
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn unchanged_snapshot_does_not_insert_duplicate_active_pricing_rows() {
-        let repo = Arc::new(InMemoryRepo::default());
-        let catalog = empty_catalog(repo.clone(), "http://127.0.0.1:9/api.json".to_string());
-
-        catalog
-            .resolve_for_provider_connection(
-                &openai_provider("openai"),
-                &route("openai-prod", "gpt-5"),
-                test_time(),
-            )
-            .await
-            .expect("first resolve");
-        catalog
-            .resolve_for_provider_connection(
-                &openai_provider("openai"),
-                &route("openai-prod", "gpt-5"),
-                test_time() + Duration::from_secs(60),
-            )
-            .await
-            .expect("second resolve");
-
-        let pricing_rows = repo.pricing_rows.lock().expect("pricing rows lock");
-        let matching = pricing_rows
-            .iter()
-            .filter(|row| row.pricing_provider_id == "openai" && row.pricing_model_id == "gpt-5")
-            .count();
-        assert_eq!(matching, 1);
-    }
-
-    #[tokio::test]
-    async fn changed_snapshot_rolls_active_window_forward() {
-        let repo = Arc::new(InMemoryRepo::default());
-        let initial = fallback_snapshot();
-        repo.upsert_pricing_catalog_cache(&PricingCatalogCacheRecord {
-            catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
-            source: initial.metadata.source.clone(),
-            etag: initial.metadata.etag.clone(),
-            fetched_at: initial.metadata.fetched_at,
-            snapshot_json: to_string_pretty(&initial.document).expect("json"),
-        })
-        .await
-        .expect("seed initial snapshot");
-
-        let catalog = empty_catalog(repo.clone(), "http://127.0.0.1:9/api.json".to_string());
-        catalog
-            .resolve_for_provider_connection(
-                &openai_provider("openai"),
-                &route("openai-prod", "gpt-5"),
-                test_time(),
-            )
-            .await
-            .expect("seed initial pricing row");
-
-        let mut changed = fallback_snapshot();
-        changed.metadata = PricingCatalogSnapshotMetadata {
-            source: REMOTE_SOURCE.to_string(),
-            etag: Some("\"etag-2\"".to_string()),
-            fetched_at: test_time() + Duration::from_secs(3600),
-        };
-        changed
-            .document
-            .providers
-            .get_mut("openai")
-            .expect("openai provider")
-            .models
-            .get_mut("gpt-5")
-            .expect("gpt-5 model")
-            .cost
-            .input = Some("2.0000".to_string());
-
-        repo.upsert_pricing_catalog_cache(&PricingCatalogCacheRecord {
-            catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
-            source: changed.metadata.source.clone(),
-            etag: changed.metadata.etag.clone(),
-            fetched_at: changed.metadata.fetched_at,
-            snapshot_json: to_string_pretty(&changed.document).expect("json"),
-        })
-        .await
-        .expect("seed changed snapshot");
-
-        catalog
-            .resolve_for_provider_connection(
-                &openai_provider("openai"),
-                &route("openai-prod", "gpt-5"),
-                changed.metadata.fetched_at + Duration::from_secs(1),
-            )
-            .await
-            .expect("resolve changed pricing row");
-
-        let pricing_rows = repo.pricing_rows.lock().expect("pricing rows lock");
-        let matching = pricing_rows
-            .iter()
-            .filter(|row| row.pricing_provider_id == "openai" && row.pricing_model_id == "gpt-5")
-            .cloned()
-            .collect::<Vec<_>>();
-        assert_eq!(matching.len(), 2);
-        assert!(
-            matching
-                .iter()
-                .any(|row| row.effective_end_at == Some(changed.metadata.fetched_at))
-        );
-        assert!(matching.iter().any(|row| {
-            row.effective_start_at == changed.metadata.fetched_at
-                && row.input_cost_per_million_tokens == Some(Money4::from_scaled(20_000))
-                && row.effective_end_at.is_none()
-        }));
-    }
-
-    #[tokio::test]
-    async fn unchanged_snapshot_refresh_updates_active_row_provenance() {
-        let repo = Arc::new(InMemoryRepo::default());
-        let initial = fallback_snapshot();
-        repo.upsert_pricing_catalog_cache(&PricingCatalogCacheRecord {
-            catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
-            source: initial.metadata.source.clone(),
-            etag: initial.metadata.etag.clone(),
-            fetched_at: initial.metadata.fetched_at,
-            snapshot_json: to_string_pretty(&initial.document).expect("json"),
-        })
-        .await
-        .expect("seed initial snapshot");
-
-        let catalog = empty_catalog(repo.clone(), "http://127.0.0.1:9/api.json".to_string());
-        catalog
-            .resolve_for_provider_connection(
-                &openai_provider("openai"),
-                &route("openai-prod", "gpt-5"),
-                test_time(),
-            )
-            .await
-            .expect("seed initial pricing row");
-
-        let mut refreshed = fallback_snapshot();
-        refreshed.metadata = PricingCatalogSnapshotMetadata {
-            source: REMOTE_SOURCE.to_string(),
-            etag: Some("\"etag-refreshed\"".to_string()),
-            fetched_at: test_time() + Duration::from_secs(3600),
-        };
-        repo.upsert_pricing_catalog_cache(&PricingCatalogCacheRecord {
-            catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
-            source: refreshed.metadata.source.clone(),
-            etag: refreshed.metadata.etag.clone(),
-            fetched_at: refreshed.metadata.fetched_at,
-            snapshot_json: to_string_pretty(&refreshed.document).expect("json"),
-        })
-        .await
-        .expect("seed refreshed snapshot");
-
-        catalog
-            .resolve_for_provider_connection(
-                &openai_provider("openai"),
-                &route("openai-prod", "gpt-5"),
-                refreshed.metadata.fetched_at + Duration::from_secs(1),
-            )
-            .await
-            .expect("resolve refreshed pricing row");
-
-        let pricing_rows = repo.pricing_rows.lock().expect("pricing rows lock");
-        let matching = pricing_rows
-            .iter()
-            .filter(|row| row.pricing_provider_id == "openai" && row.pricing_model_id == "gpt-5")
-            .collect::<Vec<_>>();
-        assert_eq!(matching.len(), 1);
-        assert_eq!(matching[0].provenance.source, refreshed.metadata.source);
-        assert_eq!(matching[0].provenance.etag, refreshed.metadata.etag);
-        assert_eq!(
-            matching[0].provenance.fetched_at,
-            refreshed.metadata.fetched_at
-        );
-    }
-
-    #[tokio::test]
-    async fn refreshed_snapshot_closes_removed_active_pricing_rows() {
-        let repo = Arc::new(InMemoryRepo::default());
-        let initial = fallback_snapshot();
-        repo.upsert_pricing_catalog_cache(&PricingCatalogCacheRecord {
-            catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
-            source: initial.metadata.source.clone(),
-            etag: initial.metadata.etag.clone(),
-            fetched_at: initial.metadata.fetched_at,
-            snapshot_json: to_string_pretty(&initial.document).expect("json"),
-        })
-        .await
-        .expect("seed initial snapshot");
-
-        let catalog = empty_catalog(repo.clone(), "http://127.0.0.1:9/api.json".to_string());
-        catalog
-            .resolve_for_provider_connection(
-                &openai_provider("openai"),
-                &route("openai-prod", "gpt-5"),
-                test_time(),
-            )
-            .await
-            .expect("seed initial pricing row");
-
-        let mut removed = fallback_snapshot();
-        removed.metadata = PricingCatalogSnapshotMetadata {
-            source: REMOTE_SOURCE.to_string(),
-            etag: Some("\"etag-removed\"".to_string()),
-            fetched_at: test_time() + Duration::from_secs(3600),
-        };
-        removed
-            .document
-            .providers
-            .get_mut("openai")
-            .expect("openai provider")
-            .models
-            .remove("gpt-5")
-            .expect("gpt-5 model");
-        repo.upsert_pricing_catalog_cache(&PricingCatalogCacheRecord {
-            catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
-            source: removed.metadata.source.clone(),
-            etag: removed.metadata.etag.clone(),
-            fetched_at: removed.metadata.fetched_at,
-            snapshot_json: to_string_pretty(&removed.document).expect("json"),
-        })
-        .await
-        .expect("seed removed snapshot");
-
-        let resolved = catalog
-            .resolve_for_provider_connection(
-                &openai_provider("openai"),
-                &route("openai-prod", "gpt-5"),
-                removed.metadata.fetched_at + Duration::from_secs(1),
-            )
-            .await
-            .expect("resolve removed pricing row");
-
-        assert_eq!(
-            resolved,
-            PricingResolution::Unpriced {
-                reason: PricingUnpricedReason::ModelNotFound,
-            }
-        );
-        let pricing_rows = repo.pricing_rows.lock().expect("pricing rows lock");
-        let removed_row = pricing_rows
-            .iter()
-            .find(|row| row.pricing_provider_id == "openai" && row.pricing_model_id == "gpt-5")
-            .expect("removed pricing row");
-        assert_eq!(
-            removed_row.effective_end_at,
-            Some(removed.metadata.fetched_at)
-        );
-    }
-
-    #[tokio::test]
-    async fn resolution_uses_persisted_pricing_row_for_occurrence_time() {
-        let repo = Arc::new(InMemoryRepo::default());
-        let initial = fallback_snapshot();
-        repo.upsert_pricing_catalog_cache(&PricingCatalogCacheRecord {
-            catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
-            source: initial.metadata.source.clone(),
-            etag: initial.metadata.etag.clone(),
-            fetched_at: initial.metadata.fetched_at,
-            snapshot_json: to_string_pretty(&initial.document).expect("json"),
-        })
-        .await
-        .expect("seed initial snapshot");
-
-        let catalog = empty_catalog(repo.clone(), "http://127.0.0.1:9/api.json".to_string());
-        catalog
-            .resolve_for_provider_connection(
-                &openai_provider("openai"),
-                &route("openai-prod", "gpt-5"),
-                test_time(),
-            )
-            .await
-            .expect("initial resolve");
-
-        let mut changed = fallback_snapshot();
-        changed.metadata = PricingCatalogSnapshotMetadata {
-            source: REMOTE_SOURCE.to_string(),
-            etag: Some("\"etag-3\"".to_string()),
-            fetched_at: test_time() + Duration::from_secs(7200),
-        };
-        changed
-            .document
-            .providers
-            .get_mut("openai")
-            .expect("openai provider")
-            .models
-            .get_mut("gpt-5")
-            .expect("gpt-5 model")
-            .cost
-            .input = Some("2.0000".to_string());
-
-        repo.upsert_pricing_catalog_cache(&PricingCatalogCacheRecord {
-            catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
-            source: changed.metadata.source.clone(),
-            etag: changed.metadata.etag.clone(),
-            fetched_at: changed.metadata.fetched_at,
-            snapshot_json: to_string_pretty(&changed.document).expect("json"),
-        })
-        .await
-        .expect("seed changed snapshot");
-        catalog
-            .resolve_for_provider_connection(
-                &openai_provider("openai"),
-                &route("openai-prod", "gpt-5"),
-                changed.metadata.fetched_at + Duration::from_secs(1),
-            )
-            .await
-            .expect("changed resolve");
-
-        let old_resolution = catalog
-            .resolve_for_provider_connection(
-                &openai_provider("openai"),
-                &route("openai-prod", "gpt-5"),
-                changed.metadata.fetched_at - Duration::from_secs(1),
-            )
-            .await
-            .expect("resolve old pricing window");
-        let new_resolution = catalog
-            .resolve_for_provider_connection(
-                &openai_provider("openai"),
-                &route("openai-prod", "gpt-5"),
-                changed.metadata.fetched_at + Duration::from_secs(1),
-            )
-            .await
-            .expect("resolve new pricing window");
-
-        match old_resolution {
-            PricingResolution::Exact { pricing } => {
-                assert_eq!(
-                    pricing.input_cost_per_million_tokens,
-                    Some(Money4::from_scaled(12_500))
-                );
-            }
-            other => panic!("unexpected old resolution: {other:?}"),
-        }
-        match new_resolution {
-            PricingResolution::Exact { pricing } => {
-                assert_eq!(
-                    pricing.input_cost_per_million_tokens,
-                    Some(Money4::from_scaled(20_000))
-                );
-                assert_eq!(pricing.effective_start_at, changed.metadata.fetched_at);
-            }
-            other => panic!("unexpected new resolution: {other:?}"),
-        }
-    }
-}
+mod tests;

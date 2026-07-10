@@ -13,6 +13,7 @@ mod libsql_store;
 mod migrate;
 mod migration_registry;
 mod postgres_store;
+mod pricing_sync;
 mod seed;
 mod shared;
 mod store;
@@ -5039,7 +5040,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn pricing_catalog_cache_round_trips_and_touch_updates_fetched_at() {
+    async fn pricing_catalog_cache_round_trips() {
         let tmp = tempdir().expect("tempdir");
         let db_path = tmp.path().join("gateway.db");
         run_migrations(&db_path).await.expect("migrations");
@@ -5050,16 +5051,21 @@ mod tests {
         let fetched_at =
             time::OffsetDateTime::from_unix_timestamp(1_700_000_000).expect("timestamp");
 
-        store
-            .upsert_pricing_catalog_cache(&PricingCatalogCacheRecord {
-                catalog_key: "models_dev_supported_v1".to_string(),
-                source: "models_dev_api".to_string(),
-                etag: Some("\"etag-1\"".to_string()),
-                fetched_at,
-                snapshot_json: "{\"providers\":{}}".to_string(),
-            })
-            .await
-            .expect("insert pricing cache");
+        assert!(
+            store
+                .compare_and_swap_pricing_catalog_cache(
+                    &PricingCatalogCacheRecord {
+                        catalog_key: "models_dev_supported_v1".to_string(),
+                        source: "models_dev_api".to_string(),
+                        etag: Some("\"etag-1\"".to_string()),
+                        fetched_at,
+                        snapshot_json: "{\"providers\":{}}".to_string(),
+                    },
+                    None,
+                )
+                .await
+                .expect("insert pricing cache")
+        );
 
         let inserted = store
             .get_pricing_catalog_cache("models_dev_supported_v1")
@@ -5070,19 +5076,7 @@ mod tests {
         assert_eq!(inserted.etag.as_deref(), Some("\"etag-1\""));
         assert_eq!(inserted.fetched_at, fetched_at);
 
-        let touched_at = fetched_at + time::Duration::minutes(5);
-        store
-            .touch_pricing_catalog_cache_fetched_at("models_dev_supported_v1", touched_at)
-            .await
-            .expect("touch pricing cache");
-
-        let touched = store
-            .get_pricing_catalog_cache("models_dev_supported_v1")
-            .await
-            .expect("reload pricing cache")
-            .expect("pricing cache should exist");
-        assert_eq!(touched.snapshot_json, inserted.snapshot_json);
-        assert_eq!(touched.fetched_at, touched_at);
+        assert_eq!(inserted.snapshot_json, "{\"providers\":{}}");
     }
 
     #[tokio::test]
@@ -7540,10 +7534,12 @@ mod tests {
             fetched_at: OffsetDateTime::now_utc(),
             snapshot_json: "{\"providers\":[]}".to_string(),
         };
-        store
-            .upsert_pricing_catalog_cache(&cache)
-            .await
-            .expect("upsert cache");
+        assert!(
+            store
+                .compare_and_swap_pricing_catalog_cache(&cache, None)
+                .await
+                .expect("insert cache")
+        );
         assert_eq!(
             store
                 .get_pricing_catalog_cache("catalog")

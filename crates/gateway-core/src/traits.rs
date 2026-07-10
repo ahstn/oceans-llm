@@ -871,16 +871,11 @@ pub trait PricingCatalogRepository: Send + Sync {
         catalog_key: &str,
     ) -> Result<Option<PricingCatalogCacheRecord>, StoreError>;
 
-    async fn upsert_pricing_catalog_cache(
+    async fn compare_and_swap_pricing_catalog_cache(
         &self,
         cache: &PricingCatalogCacheRecord,
-    ) -> Result<(), StoreError>;
-
-    async fn touch_pricing_catalog_cache_fetched_at(
-        &self,
-        catalog_key: &str,
-        fetched_at: OffsetDateTime,
-    ) -> Result<(), StoreError>;
+        expected_fetched_at: Option<OffsetDateTime>,
+    ) -> Result<bool, StoreError>;
     async fn list_active_model_pricing(&self) -> Result<Vec<ModelPricingRecord>, StoreError>;
     async fn insert_model_pricing(&self, record: &ModelPricingRecord) -> Result<(), StoreError>;
     async fn close_model_pricing(

@@ -31,21 +31,32 @@ impl PricingCatalogRepository for LibsqlStore {
         decode_pricing_catalog_cache_record(&row).map(Some)
     }
 
-    async fn upsert_pricing_catalog_cache(
+    async fn compare_and_swap_pricing_catalog_cache(
         &self,
         cache: &PricingCatalogCacheRecord,
-    ) -> Result<(), StoreError> {
-        self.connection
+        expected_fetched_at: Option<OffsetDateTime>,
+    ) -> Result<bool, StoreError> {
+        let rows_affected = self
+            .connection
             .execute(
                 r#"
                 INSERT INTO pricing_catalog_cache (
                     catalog_key, source, etag, fetched_at, snapshot_json
-                ) VALUES (?1, ?2, ?3, ?4, ?5)
+                )
+                SELECT ?1, ?2, ?3, ?4, ?5
+                WHERE ?6 IS NULL
+                   OR EXISTS (
+                        SELECT 1
+                        FROM pricing_catalog_cache
+                        WHERE catalog_key = ?1 AND fetched_at = ?6
+                    )
                 ON CONFLICT(catalog_key) DO UPDATE SET
                     source = excluded.source,
                     etag = excluded.etag,
                     fetched_at = excluded.fetched_at,
                     snapshot_json = excluded.snapshot_json
+                WHERE pricing_catalog_cache.fetched_at = ?6
+                  AND excluded.fetched_at > pricing_catalog_cache.fetched_at
                 "#,
                 libsql::params![
                     cache.catalog_key.as_str(),
@@ -53,32 +64,13 @@ impl PricingCatalogRepository for LibsqlStore {
                     cache.etag.as_deref(),
                     cache.fetched_at.unix_timestamp(),
                     cache.snapshot_json.as_str(),
+                    expected_fetched_at.map(OffsetDateTime::unix_timestamp),
                 ],
             )
             .await
             .map_err(|error| StoreError::Query(error.to_string()))?;
 
-        Ok(())
-    }
-
-    async fn touch_pricing_catalog_cache_fetched_at(
-        &self,
-        catalog_key: &str,
-        fetched_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
-        self.connection
-            .execute(
-                r#"
-                UPDATE pricing_catalog_cache
-                SET fetched_at = ?1
-                WHERE catalog_key = ?2
-                "#,
-                libsql::params![fetched_at.unix_timestamp(), catalog_key],
-            )
-            .await
-            .map_err(|error| StoreError::Query(error.to_string()))?;
-
-        Ok(())
+        Ok(rows_affected == 1)
     }
 
     async fn list_active_model_pricing(&self) -> Result<Vec<ModelPricingRecord>, StoreError> {
@@ -212,9 +204,37 @@ impl PricingCatalogRepository for LibsqlStore {
     ) -> Result<(), StoreError> {
         let tx = self
             .connection
-            .transaction()
+            .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
             .await
             .map_err(|error| StoreError::Query(error.to_string()))?;
+
+        let mut rows = tx
+            .query(
+                r#"
+                SELECT model_pricing_id, pricing_provider_id, pricing_model_id,
+                       provenance_fetched_at
+                FROM model_pricing
+                WHERE effective_end_at IS NULL
+                "#,
+                (),
+            )
+            .await
+            .map_err(to_query_error)?;
+        let mut active_rows = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            active_rows.push(crate::pricing_sync::ActiveModelPricing {
+                model_pricing_id: crate::shared::parse_uuid(
+                    &row.get::<String>(0).map_err(to_query_error)?,
+                )?,
+                pricing_provider_id: row.get(1).map_err(to_query_error)?,
+                pricing_model_id: row.get(2).map_err(to_query_error)?,
+                provenance_fetched_at: crate::shared::unix_to_datetime(
+                    row.get(3).map_err(to_query_error)?,
+                )?,
+            });
+        }
+        drop(rows);
+        crate::pricing_sync::validate_model_pricing_sync(changes, effective_at, active_rows)?;
 
         for model_pricing_id in &changes.close_model_pricing_ids {
             tx.execute(

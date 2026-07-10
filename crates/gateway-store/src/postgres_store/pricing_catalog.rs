@@ -24,20 +24,30 @@ impl PricingCatalogRepository for PostgresStore {
             .transpose()
     }
 
-    async fn upsert_pricing_catalog_cache(
+    async fn compare_and_swap_pricing_catalog_cache(
         &self,
         cache: &PricingCatalogCacheRecord,
-    ) -> Result<(), StoreError> {
-        sqlx::query(
+        expected_fetched_at: Option<OffsetDateTime>,
+    ) -> Result<bool, StoreError> {
+        let result = sqlx::query(
             r#"
             INSERT INTO pricing_catalog_cache (
                 catalog_key, source, etag, fetched_at, snapshot_json
-            ) VALUES ($1, $2, $3, $4, $5)
+            )
+            SELECT $1, $2, $3, $4, $5
+            WHERE $6::BIGINT IS NULL
+               OR EXISTS (
+                    SELECT 1
+                    FROM pricing_catalog_cache
+                    WHERE catalog_key = $1 AND fetched_at = $6
+                )
             ON CONFLICT(catalog_key) DO UPDATE SET
                 source = excluded.source,
                 etag = excluded.etag,
                 fetched_at = excluded.fetched_at,
                 snapshot_json = excluded.snapshot_json
+            WHERE pricing_catalog_cache.fetched_at = $6
+              AND excluded.fetched_at > pricing_catalog_cache.fetched_at
             "#,
         )
         .bind(cache.catalog_key.as_str())
@@ -45,30 +55,11 @@ impl PricingCatalogRepository for PostgresStore {
         .bind(cache.etag.as_deref())
         .bind(cache.fetched_at.unix_timestamp())
         .bind(cache.snapshot_json.as_str())
+        .bind(expected_fetched_at.map(OffsetDateTime::unix_timestamp))
         .execute(&self.pool)
         .await
         .map_err(to_query_error)?;
-        Ok(())
-    }
-
-    async fn touch_pricing_catalog_cache_fetched_at(
-        &self,
-        catalog_key: &str,
-        fetched_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
-        sqlx::query(
-            r#"
-            UPDATE pricing_catalog_cache
-            SET fetched_at = $1
-            WHERE catalog_key = $2
-            "#,
-        )
-        .bind(fetched_at.unix_timestamp())
-        .bind(catalog_key)
-        .execute(&self.pool)
-        .await
-        .map_err(to_query_error)?;
-        Ok(())
+        Ok(result.rows_affected() == 1)
     }
 
     async fn list_active_model_pricing(&self) -> Result<Vec<ModelPricingRecord>, StoreError> {
@@ -200,6 +191,41 @@ impl PricingCatalogRepository for PostgresStore {
         effective_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
         let mut tx = self.pool.begin().await.map_err(to_query_error)?;
+
+        sqlx::query(
+            "SELECT pg_advisory_xact_lock(hashtext('oceans_llm_model_pricing_reconciliation'))",
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(to_query_error)?;
+
+        let active_rows = sqlx::query(
+            r#"
+            SELECT model_pricing_id, pricing_provider_id, pricing_model_id,
+                   provenance_fetched_at
+            FROM model_pricing
+            WHERE effective_end_at IS NULL
+            FOR UPDATE
+            "#,
+        )
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(to_query_error)?
+        .into_iter()
+        .map(|row| {
+            Ok(crate::pricing_sync::ActiveModelPricing {
+                model_pricing_id: crate::shared::parse_uuid(
+                    &row.try_get::<String, _>(0).map_err(to_query_error)?,
+                )?,
+                pricing_provider_id: row.try_get(1).map_err(to_query_error)?,
+                pricing_model_id: row.try_get(2).map_err(to_query_error)?,
+                provenance_fetched_at: crate::shared::unix_to_datetime(
+                    row.try_get(3).map_err(to_query_error)?,
+                )?,
+            })
+        })
+        .collect::<Result<Vec<_>, StoreError>>()?;
+        crate::pricing_sync::validate_model_pricing_sync(changes, effective_at, active_rows)?;
 
         for model_pricing_id in &changes.close_model_pricing_ids {
             sqlx::query(

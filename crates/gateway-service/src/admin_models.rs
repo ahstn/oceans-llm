@@ -14,9 +14,8 @@ use gateway_core::{
     ProviderConnection, ProviderRepository, vertex_route_capabilities_for_upstream_model,
 };
 use time::OffsetDateTime;
-use tracing::warn;
 
-use crate::pricing_catalog::{PricingCatalog, exact_pricing_target_for_route};
+use crate::pricing_catalog::exact_pricing_target_for_route;
 use crate::{ModelIconKey, ProviderIconKey, resolve_model_icon_key, resolve_provider_display};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -143,16 +142,6 @@ where
     }
 
     async fn list_model_items(&self) -> Result<Vec<AdminModelItem>, GatewayError> {
-        if let Err(error) = PricingCatalog::new(self.repo.clone())
-            .sync_current_snapshot()
-            .await
-        {
-            warn!(
-                error = %error,
-                "pricing catalog sync failed while listing admin models; continuing with existing pricing rows"
-            );
-        }
-
         let pricing_time = OffsetDateTime::now_utc();
         let models = self.repo.list_models().await?;
         let model_ids = models.iter().map(|model| model.id).collect::<Vec<_>>();
@@ -671,19 +660,12 @@ mod tests {
             Ok(None)
         }
 
-        async fn upsert_pricing_catalog_cache(
+        async fn compare_and_swap_pricing_catalog_cache(
             &self,
             _cache: &PricingCatalogCacheRecord,
-        ) -> Result<(), StoreError> {
-            Ok(())
-        }
-
-        async fn touch_pricing_catalog_cache_fetched_at(
-            &self,
-            _catalog_key: &str,
-            _fetched_at: OffsetDateTime,
-        ) -> Result<(), StoreError> {
-            Ok(())
+            _expected_fetched_at: Option<OffsetDateTime>,
+        ) -> Result<bool, StoreError> {
+            Ok(true)
         }
 
         async fn list_active_model_pricing(&self) -> Result<Vec<ModelPricingRecord>, StoreError> {
@@ -1164,7 +1146,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_models_continues_when_pricing_sync_fails() {
+    async fn list_models_does_not_reconcile_pricing() {
         let model_id = Uuid::new_v4();
         let repo = Arc::new(CountingRepo {
             models: vec![GatewayModel {

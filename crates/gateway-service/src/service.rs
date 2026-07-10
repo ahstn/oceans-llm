@@ -399,7 +399,7 @@ where
     }
 
     pub async fn refresh_pricing_catalog_if_stale(&self) -> Result<(), GatewayError> {
-        self.pricing_catalog.refresh_if_stale().await
+        self.pricing_catalog.refresh_if_stale_and_sync().await
     }
 
     pub async fn refresh_pricing_catalog_now(&self) -> Result<(), GatewayError> {
@@ -938,19 +938,12 @@ mod tests {
             Ok(None)
         }
 
-        async fn upsert_pricing_catalog_cache(
+        async fn compare_and_swap_pricing_catalog_cache(
             &self,
             _cache: &PricingCatalogCacheRecord,
-        ) -> Result<(), StoreError> {
-            Ok(())
-        }
-
-        async fn touch_pricing_catalog_cache_fetched_at(
-            &self,
-            _catalog_key: &str,
-            _fetched_at: OffsetDateTime,
-        ) -> Result<(), StoreError> {
-            Ok(())
+            _expected_fetched_at: Option<OffsetDateTime>,
+        ) -> Result<bool, StoreError> {
+            Ok(true)
         }
 
         async fn list_active_model_pricing(

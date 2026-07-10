@@ -267,10 +267,12 @@ describe('UsersPage', () => {
       ),
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Reset onboarding' }))
+    const resetButton = screen.getByRole('button', { name: 'Reset onboarding' })
+    await waitFor(() => expect(resetButton).toBeEnabled())
+    fireEvent.click(resetButton)
 
     await waitFor(() => expect(resetOnboardingMock).toHaveBeenCalledTimes(2))
-    expect(screen.queryByLabelText('Generated URL')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByLabelText('Generated URL')).not.toBeInTheDocument())
   })
 
   it('renders an OAuth reset onboarding URL', async () => {
