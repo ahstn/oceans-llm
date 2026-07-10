@@ -2,12 +2,21 @@ use super::support::*;
 
 type ConcurrentRefreshState = (Arc<tokio::sync::Barrier>, Arc<Mutex<Vec<String>>>);
 
+fn minimal_catalog_body() -> Value {
+    json!({
+        "openai": {
+            "name": "OpenAI",
+            "models": {}
+        }
+    })
+}
+
 #[test]
 fn catalog_generation_advances_when_refreshes_share_a_wall_clock_second() {
     let current = fallback_snapshot();
     let same_second = current.metadata.fetched_at;
 
-    let next = next_catalog_generation_at(Some(&current), same_second);
+    let next = next_catalog_generation_at(Some(current.metadata.fetched_at), same_second);
 
     assert_eq!(
         next,
@@ -89,6 +98,54 @@ async fn concurrent_refreshes_with_different_documents_converge() {
 }
 
 #[tokio::test]
+async fn concurrent_304_does_not_block_a_200_refresh() {
+    let repo = Arc::new(InMemoryRepo {
+        cache: Arc::new(Mutex::new(Some(PricingCatalogCacheRecord {
+            catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
+            source: REMOTE_SOURCE.to_string(),
+            etag: Some("\"old-etag\"".to_string()),
+            fetched_at: OffsetDateTime::from_unix_timestamp(1).expect("timestamp"),
+            snapshot_json: to_string_pretty(&fallback_snapshot().document).expect("json"),
+        }))),
+        ..Default::default()
+    });
+    let barrier = Arc::new(tokio::sync::Barrier::new(2));
+    let app = Router::new().route(
+        "/api.json",
+        get(move |headers: HeaderMap| {
+            let barrier = barrier.clone();
+            async move {
+                barrier.wait().await;
+                if headers.contains_key(IF_NONE_MATCH) {
+                    StatusCode::NOT_MODIFIED.into_response()
+                } else {
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                    (
+                        [(ETAG, HeaderValue::from_static("\"new-etag\""))],
+                        axum::Json(minimal_catalog_body()),
+                    )
+                        .into_response()
+                }
+            }
+        }),
+    );
+    let host = start_server(app).await;
+    let catalog = empty_catalog(repo.clone(), format!("{host}/api.json"));
+
+    let (conditional, forced) =
+        tokio::join!(catalog.refresh_if_stale(), catalog.refresh_now_and_sync());
+
+    conditional.expect("conditional refresh");
+    forced.expect("forced refresh");
+    let cache = repo
+        .get_pricing_catalog_cache(PRICING_CATALOG_CACHE_KEY)
+        .await
+        .expect("load cache")
+        .expect("cache row");
+    assert_eq!(cache.etag.as_deref(), Some("\"new-etag\""));
+}
+
+#[tokio::test]
 async fn refresh_uses_conditional_etag_and_handles_304() {
     let repo = Arc::new(InMemoryRepo {
         cache: Arc::new(Mutex::new(Some(PricingCatalogCacheRecord {
@@ -136,8 +193,7 @@ async fn refresh_uses_conditional_etag_and_handles_304() {
         state.lock().expect("captured lock").as_deref(),
         Some("\"catalog-etag\"")
     );
-    assert_eq!(after.snapshot_json, before.snapshot_json);
-    assert!(after.fetched_at > before.fetched_at);
+    assert_eq!(after, before);
 }
 
 #[tokio::test]
@@ -194,6 +250,72 @@ async fn refresh_replaces_cached_snapshot_on_200() {
         .expect("cache row");
     assert_eq!(cache.etag.as_deref(), Some("\"new-etag\""));
     assert!(cache.snapshot_json.contains("\"gpt-5\""));
+}
+
+#[tokio::test]
+async fn refresh_repairs_an_invalid_cached_snapshot() {
+    let corrupt_fetched_at = OffsetDateTime::from_unix_timestamp(1).expect("timestamp");
+    let repo = Arc::new(InMemoryRepo {
+        cache: Arc::new(Mutex::new(Some(PricingCatalogCacheRecord {
+            catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
+            source: REMOTE_SOURCE.to_string(),
+            etag: Some("\"corrupt-etag\"".to_string()),
+            fetched_at: corrupt_fetched_at,
+            snapshot_json: "not valid json".to_string(),
+        }))),
+        ..Default::default()
+    });
+    let body = minimal_catalog_body();
+    let app = Router::new().route(
+        "/api.json",
+        get(move |headers: HeaderMap| {
+            let body = body.clone();
+            async move {
+                if headers.contains_key(IF_NONE_MATCH) {
+                    StatusCode::NOT_MODIFIED.into_response()
+                } else {
+                    axum::Json(body).into_response()
+                }
+            }
+        }),
+    );
+    let host = start_server(app).await;
+    let catalog = empty_catalog(repo.clone(), format!("{host}/api.json"));
+
+    catalog
+        .refresh_if_stale()
+        .await
+        .expect("repair corrupt cache row");
+
+    let repaired = repo
+        .get_pricing_catalog_cache(PRICING_CATALOG_CACHE_KEY)
+        .await
+        .expect("load repaired cache")
+        .expect("repaired cache row");
+    assert!(repaired.fetched_at > corrupt_fetched_at);
+    serde_json::from_str::<PricingCatalogDocument>(&repaired.snapshot_json)
+        .expect("repaired snapshot JSON");
+}
+
+#[tokio::test]
+async fn refresh_rejects_an_unexplained_cache_write_miss() {
+    let repo = Arc::new(InMemoryRepo {
+        cache_write_rejections_remaining: Arc::new(AtomicUsize::new(1)),
+        ..Default::default()
+    });
+    let app = Router::new().route(
+        "/api.json",
+        get(|| async { axum::Json(minimal_catalog_body()) }),
+    );
+    let host = start_server(app).await;
+    let catalog = empty_catalog(repo, format!("{host}/api.json"));
+
+    let result = catalog.refresh_now_and_sync().await;
+
+    assert!(matches!(
+        result,
+        Err(GatewayError::Store(StoreError::PricingSyncConflict))
+    ));
 }
 
 #[tokio::test]

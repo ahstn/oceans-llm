@@ -73,26 +73,6 @@ impl PricingCatalogRepository for LibsqlStore {
         Ok(rows_affected == 1)
     }
 
-    async fn touch_pricing_catalog_cache_fetched_at(
-        &self,
-        catalog_key: &str,
-        fetched_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
-        self.connection
-            .execute(
-                r#"
-                UPDATE pricing_catalog_cache
-                SET fetched_at = MAX(fetched_at, ?1)
-                WHERE catalog_key = ?2
-                "#,
-                libsql::params![fetched_at.unix_timestamp(), catalog_key],
-            )
-            .await
-            .map_err(|error| StoreError::Query(error.to_string()))?;
-
-        Ok(())
-    }
-
     async fn list_active_model_pricing(&self) -> Result<Vec<ModelPricingRecord>, StoreError> {
         let mut rows = self
             .connection

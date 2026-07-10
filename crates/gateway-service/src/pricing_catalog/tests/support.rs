@@ -46,6 +46,7 @@ pub(super) struct InMemoryRepo {
     pub(super) pricing_sync_applications: Arc<AtomicUsize>,
     pub(super) pricing_resolutions: Arc<AtomicUsize>,
     pub(super) pricing_sync_conflicts_remaining: Arc<AtomicUsize>,
+    pub(super) cache_write_rejections_remaining: Arc<AtomicUsize>,
 }
 
 #[async_trait]
@@ -63,6 +64,16 @@ impl PricingCatalogRepository for InMemoryRepo {
         cache: &PricingCatalogCacheRecord,
         expected_fetched_at: Option<OffsetDateTime>,
     ) -> Result<bool, StoreError> {
+        if self
+            .cache_write_rejections_remaining
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
+                remaining.checked_sub(1)
+            })
+            .is_ok()
+        {
+            return Ok(false);
+        }
+
         let mut stored = self.cache.lock().expect("cache lock");
         if stored.as_ref().map(|current| current.fetched_at) != expected_fetched_at
             || expected_fetched_at.is_some_and(|expected| cache.fetched_at <= expected)
@@ -71,20 +82,6 @@ impl PricingCatalogRepository for InMemoryRepo {
         }
         *stored = Some(cache.clone());
         Ok(true)
-    }
-
-    async fn touch_pricing_catalog_cache_fetched_at(
-        &self,
-        catalog_key: &str,
-        fetched_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
-        let mut guard = self.cache.lock().expect("cache lock");
-        if let Some(cache) = guard.as_mut()
-            && cache.catalog_key == catalog_key
-        {
-            cache.fetched_at = cache.fetched_at.max(fetched_at);
-        }
-        Ok(())
     }
 
     async fn list_active_model_pricing(&self) -> Result<Vec<ModelPricingRecord>, StoreError> {

@@ -946,14 +946,6 @@ mod tests {
             Ok(true)
         }
 
-        async fn touch_pricing_catalog_cache_fetched_at(
-            &self,
-            _catalog_key: &str,
-            _fetched_at: OffsetDateTime,
-        ) -> Result<(), StoreError> {
-            Ok(())
-        }
-
         async fn list_active_model_pricing(
             &self,
         ) -> Result<Vec<gateway_core::ModelPricingRecord>, StoreError> {

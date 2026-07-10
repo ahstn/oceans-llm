@@ -104,16 +104,21 @@ where
     }
 
     pub async fn refresh_if_stale(&self) -> Result<(), GatewayError> {
-        let current = self.load_stored_snapshot().await?;
+        let current = self.load_stored_cache().await?;
+        let cache_is_invalid = current
+            .as_ref()
+            .is_some_and(|cache| !cached_document_is_valid(cache));
         let current_fetched_at = current
             .as_ref()
-            .map(|snapshot| snapshot.metadata.fetched_at)
+            .filter(|cache| cached_document_is_valid(cache))
+            .map(|cache| cache.fetched_at)
             .unwrap_or(self.fallback_snapshot.metadata.fetched_at);
         let now = OffsetDateTime::now_utc();
-        if now
-            .unix_timestamp()
-            .saturating_sub(current_fetched_at.unix_timestamp())
-            < self.refresh_interval.as_secs() as i64
+        if !cache_is_invalid
+            && now
+                .unix_timestamp()
+                .saturating_sub(current_fetched_at.unix_timestamp())
+                < self.refresh_interval.as_secs() as i64
         {
             return Ok(());
         }
@@ -123,7 +128,7 @@ where
     }
 
     pub async fn refresh_now_and_sync(&self) -> Result<(), GatewayError> {
-        let current = self.load_stored_snapshot().await?;
+        let current = self.load_stored_cache().await?;
         self.refresh_remote_snapshot(current, RefreshMode::Unconditional)
             .await?;
         self.sync_latest_snapshot_with_retry().await
@@ -131,15 +136,15 @@ where
 
     async fn refresh_remote_snapshot(
         &self,
-        current: Option<PricingCatalogSnapshot>,
+        current: Option<PricingCatalogCacheRecord>,
         mode: RefreshMode,
     ) -> Result<(), GatewayError> {
-        let now = OffsetDateTime::now_utc();
         let mut request = self.client.get(&self.source_url);
         if mode == RefreshMode::Conditional
             && let Some(etag) = current
                 .as_ref()
-                .and_then(|snapshot| snapshot.metadata.etag.clone())
+                .filter(|cache| cached_document_is_valid(cache))
+                .and_then(|cache| cache.etag.clone())
         {
             request = request.header(IF_NONE_MATCH, etag);
         }
@@ -148,19 +153,11 @@ where
             GatewayError::Internal(format!("pricing catalog refresh request failed: {error}"))
         })?;
         match response.status() {
-            StatusCode::NOT_MODIFIED => {
-                if current.is_some() {
-                    self.repo
-                        .touch_pricing_catalog_cache_fetched_at(&self.catalog_key, now)
-                        .await?;
-                }
-                Ok(())
-            }
+            StatusCode::NOT_MODIFIED => Ok(()),
             StatusCode::OK => {
-                let expected_fetched_at = current
-                    .as_ref()
-                    .map(|snapshot| snapshot.metadata.fetched_at);
-                let fetched_at = next_catalog_generation_at(current.as_ref(), now);
+                let expected_fetched_at = current.as_ref().map(|cache| cache.fetched_at);
+                let fetched_at =
+                    next_catalog_generation_at(expected_fetched_at, OffsetDateTime::now_utc());
                 let etag = response
                     .headers()
                     .get(ETAG)
@@ -178,7 +175,8 @@ where
                             "failed serializing pricing catalog snapshot: {error}"
                         ))
                     })?;
-                self.repo
+                let stored = self
+                    .repo
                     .compare_and_swap_pricing_catalog_cache(
                         &PricingCatalogCacheRecord {
                             catalog_key: self.catalog_key.clone(),
@@ -190,12 +188,33 @@ where
                         expected_fetched_at,
                     )
                     .await?;
+                if !stored {
+                    self.confirm_superseding_cache_write(expected_fetched_at)
+                        .await?;
+                }
                 Ok(())
             }
             status => Err(GatewayError::Internal(format!(
                 "pricing catalog refresh failed with HTTP {}",
                 status.as_u16()
             ))),
+        }
+    }
+
+    async fn confirm_superseding_cache_write(
+        &self,
+        expected_fetched_at: Option<OffsetDateTime>,
+    ) -> Result<(), GatewayError> {
+        let latest = self.load_stored_cache().await?;
+        let was_superseded = match expected_fetched_at {
+            Some(expected) => latest.is_some_and(|cache| cache.fetched_at > expected),
+            None => latest.is_some(),
+        };
+
+        if was_superseded {
+            Ok(())
+        } else {
+            Err(StoreError::PricingSyncConflict.into())
         }
     }
 
@@ -273,11 +292,7 @@ where
     }
 
     async fn load_stored_snapshot(&self) -> Result<Option<PricingCatalogSnapshot>, GatewayError> {
-        let Some(cache) = self
-            .repo
-            .get_pricing_catalog_cache(&self.catalog_key)
-            .await?
-        else {
+        let Some(cache) = self.load_stored_cache().await? else {
             return Ok(None);
         };
 
@@ -299,6 +314,13 @@ where
                 Ok(None)
             }
         }
+    }
+
+    async fn load_stored_cache(&self) -> Result<Option<PricingCatalogCacheRecord>, GatewayError> {
+        Ok(self
+            .repo
+            .get_pricing_catalog_cache(&self.catalog_key)
+            .await?)
     }
 
     async fn sync_model_pricing_snapshot(
@@ -445,12 +467,16 @@ fn pricing_catalog_http_client() -> Client {
         .expect("pricing catalog HTTP client configuration is valid")
 }
 
+fn cached_document_is_valid(cache: &PricingCatalogCacheRecord) -> bool {
+    serde_json::from_str::<PricingCatalogDocument>(&cache.snapshot_json).is_ok()
+}
+
 fn next_catalog_generation_at(
-    current: Option<&PricingCatalogSnapshot>,
+    current_fetched_at: Option<OffsetDateTime>,
     now: OffsetDateTime,
 ) -> OffsetDateTime {
-    let current_timestamp = current
-        .map(|snapshot| snapshot.metadata.fetched_at.unix_timestamp())
+    let current_timestamp = current_fetched_at
+        .map(OffsetDateTime::unix_timestamp)
         .unwrap_or(i64::MIN);
     let next_timestamp = now
         .unix_timestamp()

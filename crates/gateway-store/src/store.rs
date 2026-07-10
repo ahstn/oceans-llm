@@ -1088,17 +1088,6 @@ impl PricingCatalogRepository for AnyStore {
         )
     }
 
-    async fn touch_pricing_catalog_cache_fetched_at(
-        &self,
-        catalog_key: &str,
-        fetched_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
-        dispatch_store!(
-            self,
-            touch_pricing_catalog_cache_fetched_at(catalog_key, fetched_at)
-        )
-    }
-
     async fn list_active_model_pricing(
         &self,
     ) -> Result<Vec<gateway_core::ModelPricingRecord>, StoreError> {

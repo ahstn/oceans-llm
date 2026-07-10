@@ -668,14 +668,6 @@ mod tests {
             Ok(true)
         }
 
-        async fn touch_pricing_catalog_cache_fetched_at(
-            &self,
-            _catalog_key: &str,
-            _fetched_at: OffsetDateTime,
-        ) -> Result<(), StoreError> {
-            Ok(())
-        }
-
         async fn list_active_model_pricing(&self) -> Result<Vec<ModelPricingRecord>, StoreError> {
             if self.fail_pricing_sync.load(Ordering::SeqCst) {
                 return Err(StoreError::Unavailable("pricing sync failed".to_string()));

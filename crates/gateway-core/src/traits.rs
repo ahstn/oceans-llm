@@ -876,12 +876,6 @@ pub trait PricingCatalogRepository: Send + Sync {
         cache: &PricingCatalogCacheRecord,
         expected_fetched_at: Option<OffsetDateTime>,
     ) -> Result<bool, StoreError>;
-
-    async fn touch_pricing_catalog_cache_fetched_at(
-        &self,
-        catalog_key: &str,
-        fetched_at: OffsetDateTime,
-    ) -> Result<(), StoreError>;
     async fn list_active_model_pricing(&self) -> Result<Vec<ModelPricingRecord>, StoreError>;
     async fn insert_model_pricing(&self, record: &ModelPricingRecord) -> Result<(), StoreError>;
     async fn close_model_pricing(

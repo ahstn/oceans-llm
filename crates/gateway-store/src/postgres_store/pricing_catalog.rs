@@ -62,26 +62,6 @@ impl PricingCatalogRepository for PostgresStore {
         Ok(result.rows_affected() == 1)
     }
 
-    async fn touch_pricing_catalog_cache_fetched_at(
-        &self,
-        catalog_key: &str,
-        fetched_at: OffsetDateTime,
-    ) -> Result<(), StoreError> {
-        sqlx::query(
-            r#"
-            UPDATE pricing_catalog_cache
-            SET fetched_at = GREATEST(fetched_at, $1)
-            WHERE catalog_key = $2
-            "#,
-        )
-        .bind(fetched_at.unix_timestamp())
-        .bind(catalog_key)
-        .execute(&self.pool)
-        .await
-        .map_err(to_query_error)?;
-        Ok(())
-    }
-
     async fn list_active_model_pricing(&self) -> Result<Vec<ModelPricingRecord>, StoreError> {
         let rows = sqlx::query(
             r#"

@@ -5040,7 +5040,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn pricing_catalog_cache_round_trips_and_touch_updates_fetched_at() {
+    async fn pricing_catalog_cache_round_trips() {
         let tmp = tempdir().expect("tempdir");
         let db_path = tmp.path().join("gateway.db");
         run_migrations(&db_path).await.expect("migrations");
@@ -5076,19 +5076,7 @@ mod tests {
         assert_eq!(inserted.etag.as_deref(), Some("\"etag-1\""));
         assert_eq!(inserted.fetched_at, fetched_at);
 
-        let touched_at = fetched_at + time::Duration::minutes(5);
-        store
-            .touch_pricing_catalog_cache_fetched_at("models_dev_supported_v1", touched_at)
-            .await
-            .expect("touch pricing cache");
-
-        let touched = store
-            .get_pricing_catalog_cache("models_dev_supported_v1")
-            .await
-            .expect("reload pricing cache")
-            .expect("pricing cache should exist");
-        assert_eq!(touched.snapshot_json, inserted.snapshot_json);
-        assert_eq!(touched.fetched_at, touched_at);
+        assert_eq!(inserted.snapshot_json, "{\"providers\":{}}");
     }
 
     #[tokio::test]
