@@ -151,15 +151,7 @@ async fn unchanged_snapshot_does_not_insert_duplicate_active_pricing_rows() {
 async fn changed_snapshot_rolls_active_window_forward() {
     let repo = Arc::new(InMemoryRepo::default());
     let initial = fallback_snapshot();
-    repo.upsert_pricing_catalog_cache(&PricingCatalogCacheRecord {
-        catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
-        source: initial.metadata.source.clone(),
-        etag: initial.metadata.etag.clone(),
-        fetched_at: initial.metadata.fetched_at,
-        snapshot_json: to_string_pretty(&initial.document).expect("json"),
-    })
-    .await
-    .expect("seed initial snapshot");
+    seed_catalog_snapshot(repo.as_ref(), &initial).await;
 
     let catalog = empty_catalog(repo.clone(), "http://127.0.0.1:9/api.json".to_string());
     catalog
@@ -192,15 +184,7 @@ async fn changed_snapshot_rolls_active_window_forward() {
         .cost
         .input = Some("2.0000".to_string());
 
-    repo.upsert_pricing_catalog_cache(&PricingCatalogCacheRecord {
-        catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
-        source: changed.metadata.source.clone(),
-        etag: changed.metadata.etag.clone(),
-        fetched_at: changed.metadata.fetched_at,
-        snapshot_json: to_string_pretty(&changed.document).expect("json"),
-    })
-    .await
-    .expect("seed changed snapshot");
+    seed_catalog_snapshot(repo.as_ref(), &changed).await;
     catalog
         .refresh_if_stale_and_sync()
         .await
@@ -238,15 +222,7 @@ async fn changed_snapshot_rolls_active_window_forward() {
 async fn unchanged_snapshot_refresh_updates_active_row_provenance() {
     let repo = Arc::new(InMemoryRepo::default());
     let initial = fallback_snapshot();
-    repo.upsert_pricing_catalog_cache(&PricingCatalogCacheRecord {
-        catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
-        source: initial.metadata.source.clone(),
-        etag: initial.metadata.etag.clone(),
-        fetched_at: initial.metadata.fetched_at,
-        snapshot_json: to_string_pretty(&initial.document).expect("json"),
-    })
-    .await
-    .expect("seed initial snapshot");
+    seed_catalog_snapshot(repo.as_ref(), &initial).await;
 
     let catalog = empty_catalog(repo.clone(), "http://127.0.0.1:9/api.json".to_string());
     catalog
@@ -268,15 +244,7 @@ async fn unchanged_snapshot_refresh_updates_active_row_provenance() {
         etag: Some("\"etag-refreshed\"".to_string()),
         fetched_at: test_time() + Duration::from_secs(3600),
     };
-    repo.upsert_pricing_catalog_cache(&PricingCatalogCacheRecord {
-        catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
-        source: refreshed.metadata.source.clone(),
-        etag: refreshed.metadata.etag.clone(),
-        fetched_at: refreshed.metadata.fetched_at,
-        snapshot_json: to_string_pretty(&refreshed.document).expect("json"),
-    })
-    .await
-    .expect("seed refreshed snapshot");
+    seed_catalog_snapshot(repo.as_ref(), &refreshed).await;
     catalog
         .refresh_if_stale_and_sync()
         .await
@@ -309,15 +277,7 @@ async fn unchanged_snapshot_refresh_updates_active_row_provenance() {
 async fn refreshed_snapshot_closes_removed_active_pricing_rows() {
     let repo = Arc::new(InMemoryRepo::default());
     let initial = fallback_snapshot();
-    repo.upsert_pricing_catalog_cache(&PricingCatalogCacheRecord {
-        catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
-        source: initial.metadata.source.clone(),
-        etag: initial.metadata.etag.clone(),
-        fetched_at: initial.metadata.fetched_at,
-        snapshot_json: to_string_pretty(&initial.document).expect("json"),
-    })
-    .await
-    .expect("seed initial snapshot");
+    seed_catalog_snapshot(repo.as_ref(), &initial).await;
 
     let catalog = empty_catalog(repo.clone(), "http://127.0.0.1:9/api.json".to_string());
     catalog
@@ -347,15 +307,7 @@ async fn refreshed_snapshot_closes_removed_active_pricing_rows() {
         .models
         .remove("gpt-5")
         .expect("gpt-5 model");
-    repo.upsert_pricing_catalog_cache(&PricingCatalogCacheRecord {
-        catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
-        source: removed.metadata.source.clone(),
-        etag: removed.metadata.etag.clone(),
-        fetched_at: removed.metadata.fetched_at,
-        snapshot_json: to_string_pretty(&removed.document).expect("json"),
-    })
-    .await
-    .expect("seed removed snapshot");
+    seed_catalog_snapshot(repo.as_ref(), &removed).await;
     catalog
         .refresh_if_stale_and_sync()
         .await

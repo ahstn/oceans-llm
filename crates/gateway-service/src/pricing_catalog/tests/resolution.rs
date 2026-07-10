@@ -419,15 +419,7 @@ async fn unsupported_billing_modifiers_resolve_to_unpriced() {
 async fn resolution_uses_persisted_pricing_row_for_occurrence_time() {
     let repo = Arc::new(InMemoryRepo::default());
     let initial = fallback_snapshot();
-    repo.upsert_pricing_catalog_cache(&PricingCatalogCacheRecord {
-        catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
-        source: initial.metadata.source.clone(),
-        etag: initial.metadata.etag.clone(),
-        fetched_at: initial.metadata.fetched_at,
-        snapshot_json: to_string_pretty(&initial.document).expect("json"),
-    })
-    .await
-    .expect("seed initial snapshot");
+    seed_catalog_snapshot(repo.as_ref(), &initial).await;
 
     let catalog = empty_catalog(repo.clone(), "http://127.0.0.1:9/api.json".to_string());
     catalog
@@ -460,15 +452,7 @@ async fn resolution_uses_persisted_pricing_row_for_occurrence_time() {
         .cost
         .input = Some("2.0000".to_string());
 
-    repo.upsert_pricing_catalog_cache(&PricingCatalogCacheRecord {
-        catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
-        source: changed.metadata.source.clone(),
-        etag: changed.metadata.etag.clone(),
-        fetched_at: changed.metadata.fetched_at,
-        snapshot_json: to_string_pretty(&changed.document).expect("json"),
-    })
-    .await
-    .expect("seed changed snapshot");
+    seed_catalog_snapshot(repo.as_ref(), &changed).await;
     catalog
         .refresh_if_stale_and_sync()
         .await

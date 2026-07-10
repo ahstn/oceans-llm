@@ -524,6 +524,18 @@ pub(super) fn empty_catalog(
     )
 }
 
+pub(super) async fn seed_catalog_snapshot(repo: &InMemoryRepo, snapshot: &PricingCatalogSnapshot) {
+    repo.upsert_pricing_catalog_cache(&PricingCatalogCacheRecord {
+        catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
+        source: snapshot.metadata.source.clone(),
+        etag: snapshot.metadata.etag.clone(),
+        fetched_at: snapshot.metadata.fetched_at,
+        snapshot_json: to_string_pretty(&snapshot.document).expect("json"),
+    })
+    .await
+    .expect("seed catalog snapshot");
+}
+
 pub(super) async fn start_server(app: Router) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let addr = listener.local_addr().expect("addr");
