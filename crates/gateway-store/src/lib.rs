@@ -5051,16 +5051,21 @@ mod tests {
         let fetched_at =
             time::OffsetDateTime::from_unix_timestamp(1_700_000_000).expect("timestamp");
 
-        store
-            .upsert_pricing_catalog_cache(&PricingCatalogCacheRecord {
-                catalog_key: "models_dev_supported_v1".to_string(),
-                source: "models_dev_api".to_string(),
-                etag: Some("\"etag-1\"".to_string()),
-                fetched_at,
-                snapshot_json: "{\"providers\":{}}".to_string(),
-            })
-            .await
-            .expect("insert pricing cache");
+        assert!(
+            store
+                .compare_and_swap_pricing_catalog_cache(
+                    &PricingCatalogCacheRecord {
+                        catalog_key: "models_dev_supported_v1".to_string(),
+                        source: "models_dev_api".to_string(),
+                        etag: Some("\"etag-1\"".to_string()),
+                        fetched_at,
+                        snapshot_json: "{\"providers\":{}}".to_string(),
+                    },
+                    None,
+                )
+                .await
+                .expect("insert pricing cache")
+        );
 
         let inserted = store
             .get_pricing_catalog_cache("models_dev_supported_v1")
@@ -7541,10 +7546,12 @@ mod tests {
             fetched_at: OffsetDateTime::now_utc(),
             snapshot_json: "{\"providers\":[]}".to_string(),
         };
-        store
-            .upsert_pricing_catalog_cache(&cache)
-            .await
-            .expect("upsert cache");
+        assert!(
+            store
+                .compare_and_swap_pricing_catalog_cache(&cache, None)
+                .await
+                .expect("insert cache")
+        );
         assert_eq!(
             store
                 .get_pricing_catalog_cache("catalog")

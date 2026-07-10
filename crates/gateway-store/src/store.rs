@@ -1077,11 +1077,15 @@ impl PricingCatalogRepository for AnyStore {
         dispatch_store!(self, get_pricing_catalog_cache(catalog_key))
     }
 
-    async fn upsert_pricing_catalog_cache(
+    async fn compare_and_swap_pricing_catalog_cache(
         &self,
         cache: &gateway_core::PricingCatalogCacheRecord,
-    ) -> Result<(), StoreError> {
-        dispatch_store!(self, upsert_pricing_catalog_cache(cache))
+        expected_fetched_at: Option<OffsetDateTime>,
+    ) -> Result<bool, StoreError> {
+        dispatch_store!(
+            self,
+            compare_and_swap_pricing_catalog_cache(cache, expected_fetched_at)
+        )
     }
 
     async fn touch_pricing_catalog_cache_fetched_at(

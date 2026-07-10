@@ -32,8 +32,8 @@ pub(super) use super::super::{
     PRICING_CATALOG_CACHE_KEY, PricingCatalog, PricingCatalogCostDocument, PricingCatalogDocument,
     PricingCatalogLimitDocument, PricingCatalogModalitiesDocument, PricingCatalogModelDocument,
     PricingCatalogProviderDocument, PricingCatalogSnapshot, PricingCatalogSnapshotMetadata,
-    PricingTarget, REMOTE_SOURCE, VENDORED_SOURCE, next_catalog_generation_at,
-    normalize_bedrock_pricing_model_id, normalize_models_dev_money,
+    PricingTarget, REMOTE_SOURCE, VENDORED_SOURCE, build_model_pricing_record,
+    next_catalog_generation_at, normalize_bedrock_pricing_model_id, normalize_models_dev_money,
     normalize_vertex_pricing_model_id, pricing_target_for_route, snapshot_is_already_synced,
 };
 
@@ -58,19 +58,19 @@ impl PricingCatalogRepository for InMemoryRepo {
         Ok(self.cache.lock().expect("cache lock").clone())
     }
 
-    async fn upsert_pricing_catalog_cache(
+    async fn compare_and_swap_pricing_catalog_cache(
         &self,
         cache: &PricingCatalogCacheRecord,
-    ) -> Result<(), StoreError> {
-        let mut cache = cache.clone();
+        expected_fetched_at: Option<OffsetDateTime>,
+    ) -> Result<bool, StoreError> {
         let mut stored = self.cache.lock().expect("cache lock");
-        if let Some(current) = stored.as_ref()
-            && cache.fetched_at <= current.fetched_at
+        if stored.as_ref().map(|current| current.fetched_at) != expected_fetched_at
+            || expected_fetched_at.is_some_and(|expected| cache.fetched_at <= expected)
         {
-            cache.fetched_at = current.fetched_at + time::Duration::seconds(1);
+            return Ok(false);
         }
-        *stored = Some(cache);
-        Ok(())
+        *stored = Some(cache.clone());
+        Ok(true)
     }
 
     async fn touch_pricing_catalog_cache_fetched_at(
@@ -569,15 +569,28 @@ pub(super) fn empty_catalog(
 }
 
 pub(super) async fn seed_catalog_snapshot(repo: &InMemoryRepo, snapshot: &PricingCatalogSnapshot) {
-    repo.upsert_pricing_catalog_cache(&PricingCatalogCacheRecord {
-        catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
-        source: snapshot.metadata.source.clone(),
-        etag: snapshot.metadata.etag.clone(),
-        fetched_at: snapshot.metadata.fetched_at,
-        snapshot_json: to_string_pretty(&snapshot.document).expect("json"),
-    })
-    .await
-    .expect("seed catalog snapshot");
+    let expected_fetched_at = repo
+        .get_pricing_catalog_cache(PRICING_CATALOG_CACHE_KEY)
+        .await
+        .expect("load catalog snapshot")
+        .map(|cache| cache.fetched_at);
+    let stored = repo
+        .compare_and_swap_pricing_catalog_cache(
+            &PricingCatalogCacheRecord {
+                catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
+                source: snapshot.metadata.source.clone(),
+                etag: snapshot.metadata.etag.clone(),
+                fetched_at: snapshot.metadata.fetched_at,
+                snapshot_json: to_string_pretty(&snapshot.document).expect("json"),
+            },
+            expected_fetched_at,
+        )
+        .await
+        .expect("seed catalog snapshot");
+    assert!(
+        stored,
+        "catalog snapshot should replace the expected generation"
+    );
 }
 
 pub(super) async fn start_server(app: Router) -> String {

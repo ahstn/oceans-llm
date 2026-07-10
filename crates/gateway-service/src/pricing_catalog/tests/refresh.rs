@@ -70,6 +70,22 @@ async fn concurrent_refreshes_with_different_documents_converge() {
         .await
         .expect("active pricing");
     assert!(snapshot_is_already_synced(&active, &latest));
+    let latest_model = latest
+        .document
+        .providers
+        .get("openai")
+        .and_then(|provider| provider.models.get("gpt-5"))
+        .expect("latest GPT-5 pricing");
+    let expected = build_model_pricing_record(&latest.metadata, "openai", "gpt-5", latest_model)
+        .expect("build expected GPT-5 pricing");
+    let active_gpt_5 = active
+        .iter()
+        .find(|row| row.pricing_provider_id == "openai" && row.pricing_model_id == "gpt-5")
+        .expect("active GPT-5 pricing");
+    assert_eq!(
+        active_gpt_5.input_cost_per_million_tokens,
+        expected.input_cost_per_million_tokens
+    );
 }
 
 #[tokio::test]

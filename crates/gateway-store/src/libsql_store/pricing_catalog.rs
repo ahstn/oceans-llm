@@ -31,24 +31,32 @@ impl PricingCatalogRepository for LibsqlStore {
         decode_pricing_catalog_cache_record(&row).map(Some)
     }
 
-    async fn upsert_pricing_catalog_cache(
+    async fn compare_and_swap_pricing_catalog_cache(
         &self,
         cache: &PricingCatalogCacheRecord,
-    ) -> Result<(), StoreError> {
-        self.connection
+        expected_fetched_at: Option<OffsetDateTime>,
+    ) -> Result<bool, StoreError> {
+        let rows_affected = self
+            .connection
             .execute(
                 r#"
                 INSERT INTO pricing_catalog_cache (
                     catalog_key, source, etag, fetched_at, snapshot_json
-                ) VALUES (?1, ?2, ?3, ?4, ?5)
+                )
+                SELECT ?1, ?2, ?3, ?4, ?5
+                WHERE ?6 IS NULL
+                   OR EXISTS (
+                        SELECT 1
+                        FROM pricing_catalog_cache
+                        WHERE catalog_key = ?1 AND fetched_at = ?6
+                    )
                 ON CONFLICT(catalog_key) DO UPDATE SET
                     source = excluded.source,
                     etag = excluded.etag,
-                    fetched_at = MAX(
-                        excluded.fetched_at,
-                        pricing_catalog_cache.fetched_at + 1
-                    ),
+                    fetched_at = excluded.fetched_at,
                     snapshot_json = excluded.snapshot_json
+                WHERE pricing_catalog_cache.fetched_at = ?6
+                  AND excluded.fetched_at > pricing_catalog_cache.fetched_at
                 "#,
                 libsql::params![
                     cache.catalog_key.as_str(),
@@ -56,12 +64,13 @@ impl PricingCatalogRepository for LibsqlStore {
                     cache.etag.as_deref(),
                     cache.fetched_at.unix_timestamp(),
                     cache.snapshot_json.as_str(),
+                    expected_fetched_at.map(OffsetDateTime::unix_timestamp),
                 ],
             )
             .await
             .map_err(|error| StoreError::Query(error.to_string()))?;
 
-        Ok(())
+        Ok(rows_affected == 1)
     }
 
     async fn touch_pricing_catalog_cache_fetched_at(

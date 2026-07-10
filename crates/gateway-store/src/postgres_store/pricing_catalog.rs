@@ -24,23 +24,30 @@ impl PricingCatalogRepository for PostgresStore {
             .transpose()
     }
 
-    async fn upsert_pricing_catalog_cache(
+    async fn compare_and_swap_pricing_catalog_cache(
         &self,
         cache: &PricingCatalogCacheRecord,
-    ) -> Result<(), StoreError> {
-        sqlx::query(
+        expected_fetched_at: Option<OffsetDateTime>,
+    ) -> Result<bool, StoreError> {
+        let result = sqlx::query(
             r#"
             INSERT INTO pricing_catalog_cache (
                 catalog_key, source, etag, fetched_at, snapshot_json
-            ) VALUES ($1, $2, $3, $4, $5)
+            )
+            SELECT $1, $2, $3, $4, $5
+            WHERE $6::BIGINT IS NULL
+               OR EXISTS (
+                    SELECT 1
+                    FROM pricing_catalog_cache
+                    WHERE catalog_key = $1 AND fetched_at = $6
+                )
             ON CONFLICT(catalog_key) DO UPDATE SET
                 source = excluded.source,
                 etag = excluded.etag,
-                fetched_at = GREATEST(
-                    excluded.fetched_at,
-                    pricing_catalog_cache.fetched_at + 1
-                ),
+                fetched_at = excluded.fetched_at,
                 snapshot_json = excluded.snapshot_json
+            WHERE pricing_catalog_cache.fetched_at = $6
+              AND excluded.fetched_at > pricing_catalog_cache.fetched_at
             "#,
         )
         .bind(cache.catalog_key.as_str())
@@ -48,10 +55,11 @@ impl PricingCatalogRepository for PostgresStore {
         .bind(cache.etag.as_deref())
         .bind(cache.fetched_at.unix_timestamp())
         .bind(cache.snapshot_json.as_str())
+        .bind(expected_fetched_at.map(OffsetDateTime::unix_timestamp))
         .execute(&self.pool)
         .await
         .map_err(to_query_error)?;
-        Ok(())
+        Ok(result.rows_affected() == 1)
     }
 
     async fn touch_pricing_catalog_cache_fetched_at(

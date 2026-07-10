@@ -157,6 +157,9 @@ where
                 Ok(())
             }
             StatusCode::OK => {
+                let expected_fetched_at = current
+                    .as_ref()
+                    .map(|snapshot| snapshot.metadata.fetched_at);
                 let fetched_at = next_catalog_generation_at(current.as_ref(), now);
                 let etag = response
                     .headers()
@@ -176,13 +179,16 @@ where
                         ))
                     })?;
                 self.repo
-                    .upsert_pricing_catalog_cache(&PricingCatalogCacheRecord {
-                        catalog_key: self.catalog_key.clone(),
-                        source: snapshot.metadata.source.clone(),
-                        etag: snapshot.metadata.etag.clone(),
-                        fetched_at: snapshot.metadata.fetched_at,
-                        snapshot_json,
-                    })
+                    .compare_and_swap_pricing_catalog_cache(
+                        &PricingCatalogCacheRecord {
+                            catalog_key: self.catalog_key.clone(),
+                            source: snapshot.metadata.source.clone(),
+                            etag: snapshot.metadata.etag.clone(),
+                            fetched_at: snapshot.metadata.fetched_at,
+                            snapshot_json,
+                        },
+                        expected_fetched_at,
+                    )
                     .await?;
                 Ok(())
             }

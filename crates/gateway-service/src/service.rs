@@ -938,11 +938,12 @@ mod tests {
             Ok(None)
         }
 
-        async fn upsert_pricing_catalog_cache(
+        async fn compare_and_swap_pricing_catalog_cache(
             &self,
             _cache: &PricingCatalogCacheRecord,
-        ) -> Result<(), StoreError> {
-            Ok(())
+            _expected_fetched_at: Option<OffsetDateTime>,
+        ) -> Result<bool, StoreError> {
+            Ok(true)
         }
 
         async fn touch_pricing_catalog_cache_fetched_at(
