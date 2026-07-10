@@ -212,9 +212,37 @@ impl PricingCatalogRepository for LibsqlStore {
     ) -> Result<(), StoreError> {
         let tx = self
             .connection
-            .transaction()
+            .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
             .await
             .map_err(|error| StoreError::Query(error.to_string()))?;
+
+        let mut rows = tx
+            .query(
+                r#"
+                SELECT model_pricing_id, pricing_provider_id, pricing_model_id,
+                       provenance_fetched_at
+                FROM model_pricing
+                WHERE effective_end_at IS NULL
+                "#,
+                (),
+            )
+            .await
+            .map_err(to_query_error)?;
+        let mut active_rows = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            active_rows.push(crate::pricing_sync::ActiveModelPricing {
+                model_pricing_id: crate::shared::parse_uuid(
+                    &row.get::<String>(0).map_err(to_query_error)?,
+                )?,
+                pricing_provider_id: row.get(1).map_err(to_query_error)?,
+                pricing_model_id: row.get(2).map_err(to_query_error)?,
+                provenance_fetched_at: crate::shared::unix_to_datetime(
+                    row.get(3).map_err(to_query_error)?,
+                )?,
+            });
+        }
+        drop(rows);
+        crate::pricing_sync::validate_model_pricing_sync(changes, effective_at, active_rows)?;
 
         for model_pricing_id in &changes.close_model_pricing_ids {
             tx.execute(

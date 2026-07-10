@@ -13,6 +13,7 @@ mod libsql_store;
 mod migrate;
 mod migration_registry;
 mod postgres_store;
+mod pricing_sync;
 mod seed;
 mod shared;
 mod store;

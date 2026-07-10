@@ -399,7 +399,7 @@ where
     }
 
     pub async fn refresh_pricing_catalog_if_stale(&self) -> Result<(), GatewayError> {
-        self.pricing_catalog.refresh_if_stale().await
+        self.pricing_catalog.refresh_if_stale_and_sync().await
     }
 
     pub async fn refresh_pricing_catalog_now(&self) -> Result<(), GatewayError> {

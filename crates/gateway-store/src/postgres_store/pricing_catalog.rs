@@ -201,6 +201,41 @@ impl PricingCatalogRepository for PostgresStore {
     ) -> Result<(), StoreError> {
         let mut tx = self.pool.begin().await.map_err(to_query_error)?;
 
+        sqlx::query(
+            "SELECT pg_advisory_xact_lock(hashtext('oceans_llm_model_pricing_reconciliation'))",
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(to_query_error)?;
+
+        let active_rows = sqlx::query(
+            r#"
+            SELECT model_pricing_id, pricing_provider_id, pricing_model_id,
+                   provenance_fetched_at
+            FROM model_pricing
+            WHERE effective_end_at IS NULL
+            FOR UPDATE
+            "#,
+        )
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(to_query_error)?
+        .into_iter()
+        .map(|row| {
+            Ok(crate::pricing_sync::ActiveModelPricing {
+                model_pricing_id: crate::shared::parse_uuid(
+                    &row.try_get::<String, _>(0).map_err(to_query_error)?,
+                )?,
+                pricing_provider_id: row.try_get(1).map_err(to_query_error)?,
+                pricing_model_id: row.try_get(2).map_err(to_query_error)?,
+                provenance_fetched_at: crate::shared::unix_to_datetime(
+                    row.try_get(3).map_err(to_query_error)?,
+                )?,
+            })
+        })
+        .collect::<Result<Vec<_>, StoreError>>()?;
+        crate::pricing_sync::validate_model_pricing_sync(changes, effective_at, active_rows)?;
+
         for model_pricing_id in &changes.close_model_pricing_ids {
             sqlx::query(
                 r#"

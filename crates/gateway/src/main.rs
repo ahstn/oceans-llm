@@ -178,9 +178,10 @@ async fn run_serve_with_store(
     }
 
     let service = build_gateway_service(config, store)?;
-    if let Err(error) = service.refresh_pricing_catalog_if_stale().await {
-        tracing::warn!(error = %error, "initial pricing catalog refresh failed");
-    }
+    service
+        .refresh_pricing_catalog_if_stale()
+        .await
+        .context("failed to initialize pricing catalog")?;
     spawn_pricing_catalog_refresh_loop(service.clone());
     spawn_budget_alert_delivery_loop(service.clone(), &config.budget_alerts.email);
     request_log_purge::spawn_loop(service.clone(), &config.request_logging.purge);

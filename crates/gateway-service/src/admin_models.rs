@@ -144,7 +144,7 @@ where
 
     async fn list_model_items(&self) -> Result<Vec<AdminModelItem>, GatewayError> {
         if let Err(error) = PricingCatalog::new(self.repo.clone())
-            .sync_current_snapshot()
+            .refresh_if_stale_and_sync()
             .await
         {
             warn!(

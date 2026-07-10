@@ -47,6 +47,8 @@ pub enum StoreError {
     NotFound(String),
     #[error("store conflict: {0}")]
     Conflict(String),
+    #[error("model pricing changed during reconciliation")]
+    PricingSyncConflict,
     #[error("store unavailable: {0}")]
     Unavailable(String),
     #[error("store unexpected error: {0}")]
@@ -162,7 +164,7 @@ impl GatewayError {
             Self::UnprocessableEntity(_) => 422,
             Self::PayloadTooLarge { .. } => 413,
             Self::Store(StoreError::NotFound(_)) => 404,
-            Self::Store(StoreError::Conflict(_)) => 409,
+            Self::Store(StoreError::Conflict(_) | StoreError::PricingSyncConflict) => 409,
             Self::Route(RouteError::ModelNotFound(_)) => 404,
             Self::NotImplemented(_) | Self::Provider(ProviderError::NotImplemented(_)) => 501,
             Self::McpUpstreamAuthRequired { .. }
@@ -198,7 +200,9 @@ impl GatewayError {
             Self::Route(RouteError::ModelNotFound(_)) => "not_found_error",
             Self::Route(_) => "routing_error",
             Self::Store(StoreError::NotFound(_)) => "not_found_error",
-            Self::Store(StoreError::Conflict(_)) => "conflict_error",
+            Self::Store(StoreError::Conflict(_) | StoreError::PricingSyncConflict) => {
+                "conflict_error"
+            }
             Self::Store(_) => "store_error",
             Self::Provider(ProviderError::InvalidRequest(_)) => "invalid_request_error",
             Self::PayloadTooLarge { .. } => "invalid_request_error",
@@ -234,7 +238,7 @@ impl GatewayError {
             Self::BudgetExceeded { .. } => "budget_exceeded",
             Self::IdentityConstraint(_) => "identity_constraint_violation",
             Self::Store(StoreError::NotFound(_)) => "not_found",
-            Self::Store(StoreError::Conflict(_)) => "conflict",
+            Self::Store(StoreError::Conflict(_) | StoreError::PricingSyncConflict) => "conflict",
             Self::Store(_) => "store_error",
             Self::Route(RouteError::ModelNotFound(_)) => "model_not_found",
             Self::Route(RouteError::NoRoutesAvailable(_)) => "no_routes_available",
