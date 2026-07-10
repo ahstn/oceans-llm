@@ -144,7 +144,7 @@ impl PricingCatalogRepository for InMemoryRepo {
         let mut rows = self.pricing_rows.lock().expect("pricing rows lock");
         if rows
             .iter()
-            .any(|row| effective_at < row.provenance.fetched_at)
+            .any(|row| row.effective_end_at.is_none() && effective_at < row.provenance.fetched_at)
         {
             return Err(StoreError::PricingSyncConflict);
         }

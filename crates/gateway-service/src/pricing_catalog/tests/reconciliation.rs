@@ -68,12 +68,15 @@ async fn mixed_current_and_older_active_rows_finish_reconciling() {
         .await
         .expect("finish partially applied snapshot");
 
+    let rows = repo.pricing_rows.lock().expect("pricing rows");
+    let active_rows = rows
+        .iter()
+        .filter(|row| row.effective_end_at.is_none())
+        .collect::<Vec<_>>();
+    assert!(!active_rows.is_empty());
     assert!(
-        repo.pricing_rows
-            .lock()
-            .expect("pricing rows")
+        active_rows
             .iter()
-            .filter(|row| row.effective_end_at.is_none())
             .all(|row| row.provenance.fetched_at == snapshot.metadata.fetched_at)
     );
 }
