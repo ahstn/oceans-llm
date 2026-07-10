@@ -1,5 +1,7 @@
 use super::support::*;
 
+type ConcurrentRefreshState = (Arc<tokio::sync::Barrier>, Arc<Mutex<Vec<String>>>);
+
 #[test]
 fn catalog_generation_advances_when_refreshes_share_a_wall_clock_second() {
     let current = fallback_snapshot();
@@ -11,6 +13,63 @@ fn catalog_generation_advances_when_refreshes_share_a_wall_clock_second() {
         next,
         current.metadata.fetched_at + time::Duration::seconds(1)
     );
+}
+
+#[tokio::test]
+async fn concurrent_refreshes_with_different_documents_converge() {
+    let catalog_body = |input_cost: f64| {
+        json!({
+            "openai": {
+                "name": "OpenAI",
+                "models": {
+                    "gpt-5": {
+                        "id": "gpt-5",
+                        "name": "GPT-5",
+                        "release_date": "2025-01-01",
+                        "last_updated": "2026-07-10",
+                        "cost": {"input": input_cost, "output": 10.0},
+                        "limit": {"context": 128000, "output": 32000},
+                        "modalities": {"input": ["text"], "output": ["text"]}
+                    }
+                }
+            }
+        })
+        .to_string()
+    };
+    let barrier = Arc::new(tokio::sync::Barrier::new(2));
+    let bodies = Arc::new(Mutex::new(vec![catalog_body(2.0), catalog_body(3.0)]));
+    let app = Router::new()
+        .route(
+            "/api.json",
+            get(
+                |State((barrier, bodies)): State<ConcurrentRefreshState>| async move {
+                    barrier.wait().await;
+                    let body = bodies.lock().expect("catalog bodies").pop().expect("body");
+                    (StatusCode::OK, body)
+                },
+            ),
+        )
+        .with_state((barrier, bodies));
+    let host = start_server(app).await;
+    let repo = Arc::new(InMemoryRepo::default());
+    let catalog = empty_catalog(repo.clone(), format!("{host}/api.json"));
+
+    let (first, second) = tokio::join!(
+        catalog.refresh_now_and_sync(),
+        catalog.refresh_now_and_sync()
+    );
+
+    first.expect("first refresh");
+    second.expect("second refresh");
+    let latest = catalog
+        .load_snapshot_from_store_or_fallback()
+        .await
+        .expect("latest snapshot");
+    let active = repo
+        .list_active_model_pricing()
+        .await
+        .expect("active pricing");
+    assert!(snapshot_is_already_synced(&active, &latest));
 }
 
 #[tokio::test]

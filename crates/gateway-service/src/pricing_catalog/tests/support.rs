@@ -34,7 +34,7 @@ pub(super) use super::super::{
     PricingCatalogProviderDocument, PricingCatalogSnapshot, PricingCatalogSnapshotMetadata,
     PricingTarget, REMOTE_SOURCE, VENDORED_SOURCE, next_catalog_generation_at,
     normalize_bedrock_pricing_model_id, normalize_models_dev_money,
-    normalize_vertex_pricing_model_id, pricing_target_for_route,
+    normalize_vertex_pricing_model_id, pricing_target_for_route, snapshot_is_already_synced,
 };
 
 #[derive(Clone, Default)]
@@ -62,7 +62,14 @@ impl PricingCatalogRepository for InMemoryRepo {
         &self,
         cache: &PricingCatalogCacheRecord,
     ) -> Result<(), StoreError> {
-        *self.cache.lock().expect("cache lock") = Some(cache.clone());
+        let mut cache = cache.clone();
+        let mut stored = self.cache.lock().expect("cache lock");
+        if let Some(current) = stored.as_ref()
+            && cache.fetched_at <= current.fetched_at
+        {
+            cache.fetched_at = current.fetched_at + time::Duration::seconds(1);
+        }
+        *stored = Some(cache);
         Ok(())
     }
 
@@ -138,6 +145,37 @@ impl PricingCatalogRepository for InMemoryRepo {
         }
 
         let mut rows = self.pricing_rows.lock().expect("pricing rows lock");
+        let closing = changes
+            .close_model_pricing_ids
+            .iter()
+            .copied()
+            .collect::<std::collections::HashSet<_>>();
+        for expected_id in closing.iter().copied().chain(
+            changes
+                .update_provenance
+                .iter()
+                .map(|update| update.model_pricing_id),
+        ) {
+            let Some(active) = rows
+                .iter()
+                .find(|row| row.model_pricing_id == expected_id && row.effective_end_at.is_none())
+            else {
+                return Err(StoreError::PricingSyncConflict);
+            };
+            if effective_at <= active.provenance.fetched_at {
+                return Err(StoreError::PricingSyncConflict);
+            }
+        }
+        for inserted in &changes.insert_model_pricing {
+            if rows.iter().any(|row| {
+                row.effective_end_at.is_none()
+                    && row.pricing_provider_id == inserted.pricing_provider_id
+                    && row.pricing_model_id == inserted.pricing_model_id
+                    && !closing.contains(&row.model_pricing_id)
+            }) {
+                return Err(StoreError::PricingSyncConflict);
+            }
+        }
         for model_pricing_id in &changes.close_model_pricing_ids {
             let Some(row) = rows
                 .iter_mut()

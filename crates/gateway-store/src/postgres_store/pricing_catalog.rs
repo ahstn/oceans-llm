@@ -36,7 +36,10 @@ impl PricingCatalogRepository for PostgresStore {
             ON CONFLICT(catalog_key) DO UPDATE SET
                 source = excluded.source,
                 etag = excluded.etag,
-                fetched_at = excluded.fetched_at,
+                fetched_at = GREATEST(
+                    excluded.fetched_at,
+                    pricing_catalog_cache.fetched_at + 1
+                ),
                 snapshot_json = excluded.snapshot_json
             "#,
         )
@@ -59,7 +62,7 @@ impl PricingCatalogRepository for PostgresStore {
         sqlx::query(
             r#"
             UPDATE pricing_catalog_cache
-            SET fetched_at = $1
+            SET fetched_at = GREATEST(fetched_at, $1)
             WHERE catalog_key = $2
             "#,
         )

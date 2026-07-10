@@ -44,7 +44,10 @@ impl PricingCatalogRepository for LibsqlStore {
                 ON CONFLICT(catalog_key) DO UPDATE SET
                     source = excluded.source,
                     etag = excluded.etag,
-                    fetched_at = excluded.fetched_at,
+                    fetched_at = MAX(
+                        excluded.fetched_at,
+                        pricing_catalog_cache.fetched_at + 1
+                    ),
                     snapshot_json = excluded.snapshot_json
                 "#,
                 libsql::params![
@@ -70,7 +73,7 @@ impl PricingCatalogRepository for LibsqlStore {
             .execute(
                 r#"
                 UPDATE pricing_catalog_cache
-                SET fetched_at = ?1
+                SET fetched_at = MAX(fetched_at, ?1)
                 WHERE catalog_key = ?2
                 "#,
                 libsql::params![fetched_at.unix_timestamp(), catalog_key],

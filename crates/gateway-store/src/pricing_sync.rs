@@ -74,8 +74,8 @@ mod tests {
     use std::env;
 
     use gateway_core::{
-        ModelPricingRecord, ModelPricingSyncChanges, PricingCatalogRepository, PricingLimits,
-        PricingModalities, PricingProvenance,
+        ModelPricingRecord, ModelPricingSyncChanges, PricingCatalogCacheRecord,
+        PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
     };
     use serial_test::serial;
     use tempfile::tempdir;
@@ -182,6 +182,60 @@ mod tests {
             ),
             "one concurrent sync should win and one should retry: first={first_result:?}, second={second_result:?}"
         );
+    }
+
+    async fn assert_concurrent_cache_writes_allocate_distinct_generations<S>(
+        first_store: S,
+        second_store: S,
+    ) where
+        S: PricingCatalogRepository + Clone + Send + Sync,
+    {
+        let initial_fetched_at =
+            OffsetDateTime::from_unix_timestamp(1_700_000_000).expect("timestamp");
+        let cache_record =
+            |etag: &str, snapshot_json: &str, fetched_at| PricingCatalogCacheRecord {
+                catalog_key: "concurrent-catalog".to_string(),
+                source: "test".to_string(),
+                etag: Some(etag.to_string()),
+                fetched_at,
+                snapshot_json: snapshot_json.to_string(),
+            };
+        first_store
+            .upsert_pricing_catalog_cache(&cache_record("initial", "initial", initial_fetched_at))
+            .await
+            .expect("seed cache generation");
+        let read_store = first_store.clone();
+
+        let requested_generation = initial_fetched_at + time::Duration::seconds(1);
+        let first_cache = cache_record("first", "first", requested_generation);
+        let second_cache = cache_record("second", "second", requested_generation);
+        let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(2));
+
+        let first_barrier = barrier.clone();
+        let first = async move {
+            first_barrier.wait().await;
+            first_store.upsert_pricing_catalog_cache(&first_cache).await
+        };
+        let second = async move {
+            barrier.wait().await;
+            second_store
+                .upsert_pricing_catalog_cache(&second_cache)
+                .await
+        };
+        let (first_result, second_result) = tokio::join!(first, second);
+        first_result.expect("first concurrent cache write");
+        second_result.expect("second concurrent cache write");
+
+        let stored = read_store
+            .get_pricing_catalog_cache("concurrent-catalog")
+            .await
+            .expect("load cache generation")
+            .expect("cache generation");
+        assert_eq!(
+            stored.fetched_at,
+            initial_fetched_at + time::Duration::seconds(2)
+        );
+        assert!(matches!(stored.snapshot_json.as_str(), "first" | "second"));
     }
 
     async fn assert_stale_sync_and_rollback_are_rejected(store: &impl PricingCatalogRepository) {
@@ -324,6 +378,11 @@ mod tests {
             .await
             .expect("second store");
 
+        assert_concurrent_cache_writes_allocate_distinct_generations(
+            store.clone(),
+            second_store.clone(),
+        )
+        .await;
         assert_concurrent_syncs_serialize(store.clone(), second_store).await;
         assert_stale_sync_and_rollback_are_rejected(&store).await;
     }
@@ -362,6 +421,8 @@ mod tests {
             .await
             .expect("postgres store");
 
+        assert_concurrent_cache_writes_allocate_distinct_generations(store.clone(), store.clone())
+            .await;
         assert_concurrent_syncs_serialize(store.clone(), store.clone()).await;
         assert_stale_sync_and_rollback_are_rejected(&store).await;
 
