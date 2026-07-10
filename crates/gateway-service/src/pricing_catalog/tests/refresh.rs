@@ -1,5 +1,18 @@
 use super::support::*;
 
+#[test]
+fn catalog_generation_advances_when_refreshes_share_a_wall_clock_second() {
+    let current = fallback_snapshot();
+    let same_second = current.metadata.fetched_at;
+
+    let next = next_catalog_generation_at(Some(&current), same_second);
+
+    assert_eq!(
+        next,
+        current.metadata.fetched_at + time::Duration::seconds(1)
+    );
+}
+
 #[tokio::test]
 async fn refresh_uses_conditional_etag_and_handles_304() {
     let repo = Arc::new(InMemoryRepo {

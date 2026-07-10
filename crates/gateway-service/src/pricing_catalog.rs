@@ -123,7 +123,8 @@ where
     }
 
     pub async fn refresh_now_and_sync(&self) -> Result<(), GatewayError> {
-        self.refresh_remote_snapshot(None, RefreshMode::Unconditional)
+        let current = self.load_stored_snapshot().await?;
+        self.refresh_remote_snapshot(current, RefreshMode::Unconditional)
             .await?;
         self.sync_latest_snapshot_with_retry().await
     }
@@ -156,6 +157,7 @@ where
                 Ok(())
             }
             StatusCode::OK => {
+                let fetched_at = next_catalog_generation_at(current.as_ref(), now);
                 let etag = response
                     .headers()
                     .get(ETAG)
@@ -166,7 +168,7 @@ where
                         "pricing catalog refresh body read failed: {error}"
                     ))
                 })?;
-                let snapshot = project_models_dev_snapshot(&body, REMOTE_SOURCE, etag, now)?;
+                let snapshot = project_models_dev_snapshot(&body, REMOTE_SOURCE, etag, fetched_at)?;
                 let snapshot_json =
                     serde_json::to_string_pretty(&snapshot.document).map_err(|error| {
                         GatewayError::Internal(format!(
@@ -298,14 +300,14 @@ where
         snapshot: &PricingCatalogSnapshot,
     ) -> Result<(), GatewayError> {
         let active_rows = self.repo.list_active_model_pricing().await?;
-        if active_rows
-            .iter()
-            .any(|row| row.provenance.fetched_at > snapshot.metadata.fetched_at)
-        {
-            return Ok(());
-        }
         if snapshot_is_already_synced(&active_rows, snapshot) {
             return Ok(());
+        }
+        if active_rows
+            .iter()
+            .any(|row| row.provenance.fetched_at >= snapshot.metadata.fetched_at)
+        {
+            return Err(GatewayError::Store(StoreError::PricingSyncConflict));
         }
 
         let active_by_target = active_rows
@@ -423,6 +425,21 @@ fn pricing_catalog_http_client() -> Client {
         .timeout(DEFAULT_PRICING_CATALOG_REQUEST_TIMEOUT)
         .build()
         .expect("pricing catalog HTTP client configuration is valid")
+}
+
+fn next_catalog_generation_at(
+    current: Option<&PricingCatalogSnapshot>,
+    now: OffsetDateTime,
+) -> OffsetDateTime {
+    let current_timestamp = current
+        .map(|snapshot| snapshot.metadata.fetched_at.unix_timestamp())
+        .unwrap_or(i64::MIN);
+    let next_timestamp = now
+        .unix_timestamp()
+        .max(current_timestamp.saturating_add(1));
+
+    OffsetDateTime::from_unix_timestamp(next_timestamp)
+        .expect("catalog generation timestamp remains in range")
 }
 
 fn resolved_model_pricing(record: &ModelPricingRecord) -> ResolvedModelPricing {

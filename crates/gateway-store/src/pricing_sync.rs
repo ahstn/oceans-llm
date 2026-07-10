@@ -40,7 +40,7 @@ pub(crate) fn validate_model_pricing_sync(
     if expected_active_ids.into_iter().any(|model_pricing_id| {
         active_ids
             .get(&model_pricing_id)
-            .is_none_or(|fetched_at| effective_at < *fetched_at)
+            .is_none_or(|fetched_at| effective_at <= *fetched_at)
     }) {
         return Err(StoreError::PricingSyncConflict);
     }
@@ -89,11 +89,18 @@ mod tests {
     };
 
     fn pricing_record(model_pricing_id: Uuid) -> ModelPricingRecord {
+        pricing_record_for_model(model_pricing_id, "gpt-5")
+    }
+
+    fn pricing_record_for_model(
+        model_pricing_id: Uuid,
+        pricing_model_id: &str,
+    ) -> ModelPricingRecord {
         let now = OffsetDateTime::from_unix_timestamp(1_700_000_000).expect("timestamp");
         ModelPricingRecord {
             model_pricing_id,
             pricing_provider_id: "openai".to_string(),
-            pricing_model_id: "gpt-5".to_string(),
+            pricing_model_id: pricing_model_id.to_string(),
             display_name: "GPT-5".to_string(),
             input_cost_per_million_tokens: None,
             output_cost_per_million_tokens: None,
@@ -122,6 +129,59 @@ mod tests {
             created_at: now,
             updated_at: now,
         }
+    }
+
+    async fn assert_concurrent_syncs_serialize<S>(first_store: S, second_store: S)
+    where
+        S: PricingCatalogRepository + Clone + Send + Sync,
+    {
+        let model_id = "gpt-5-concurrent";
+        let initial = pricing_record_for_model(Uuid::new_v4(), model_id);
+        first_store
+            .insert_model_pricing(&initial)
+            .await
+            .expect("insert concurrent test pricing");
+
+        let effective_at = initial.provenance.fetched_at + time::Duration::seconds(1);
+        let changes = |replacement_id| ModelPricingSyncChanges {
+            close_model_pricing_ids: vec![initial.model_pricing_id],
+            insert_model_pricing: vec![{
+                let mut replacement = pricing_record_for_model(replacement_id, model_id);
+                replacement.effective_start_at = effective_at;
+                replacement.provenance.fetched_at = effective_at;
+                replacement.created_at = effective_at;
+                replacement.updated_at = effective_at;
+                replacement
+            }],
+            ..Default::default()
+        };
+        let first_changes = changes(Uuid::new_v4());
+        let second_changes = changes(Uuid::new_v4());
+        let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(2));
+
+        let first_barrier = barrier.clone();
+        let first = async move {
+            first_barrier.wait().await;
+            first_store
+                .apply_model_pricing_sync(&first_changes, effective_at)
+                .await
+        };
+        let second = async move {
+            barrier.wait().await;
+            second_store
+                .apply_model_pricing_sync(&second_changes, effective_at)
+                .await
+        };
+        let (first_result, second_result) = tokio::join!(first, second);
+
+        assert!(
+            matches!(
+                (&first_result, &second_result),
+                (Ok(()), Err(StoreError::PricingSyncConflict))
+                    | (Err(StoreError::PricingSyncConflict), Ok(()))
+            ),
+            "one concurrent sync should win and one should retry: first={first_result:?}, second={second_result:?}"
+        );
     }
 
     async fn assert_stale_sync_and_rollback_are_rejected(store: &impl PricingCatalogRepository) {
@@ -173,8 +233,12 @@ mod tests {
             .list_active_model_pricing()
             .await
             .expect("list active pricing");
-        assert_eq!(active.len(), 1);
-        assert_eq!(active[0].model_pricing_id, first.model_pricing_id);
+        let active_for_model = active
+            .iter()
+            .filter(|row| row.pricing_model_id == "gpt-5")
+            .collect::<Vec<_>>();
+        assert_eq!(active_for_model.len(), 1);
+        assert_eq!(active_for_model[0].model_pricing_id, first.model_pricing_id);
     }
 
     #[test]
@@ -215,7 +279,8 @@ mod tests {
             provenance_fetched_at: pricing_record(original_id).provenance.fetched_at,
         }];
 
-        let effective_at = changes.insert_model_pricing[0].provenance.fetched_at;
+        let effective_at =
+            changes.insert_model_pricing[0].provenance.fetched_at + time::Duration::seconds(1);
         validate_model_pricing_sync(&changes, effective_at, active_rows)
             .expect("current sync should be valid");
     }
@@ -255,7 +320,11 @@ mod tests {
         let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
             .await
             .expect("store");
+        let second_store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("second store");
 
+        assert_concurrent_syncs_serialize(store.clone(), second_store).await;
         assert_stale_sync_and_rollback_are_rejected(&store).await;
     }
 
@@ -293,6 +362,7 @@ mod tests {
             .await
             .expect("postgres store");
 
+        assert_concurrent_syncs_serialize(store.clone(), store.clone()).await;
         assert_stale_sync_and_rollback_are_rejected(&store).await;
 
         drop(store);

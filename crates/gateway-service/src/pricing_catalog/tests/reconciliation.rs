@@ -17,6 +17,35 @@ async fn pricing_reconciliation_reloads_and_retries_after_a_store_conflict() {
 }
 
 #[tokio::test]
+async fn mixed_newer_active_rows_are_reported_as_a_sync_conflict() {
+    let repo = Arc::new(InMemoryRepo::default());
+    let catalog = empty_catalog(repo.clone(), "http://127.0.0.1:9/api.json".to_string());
+    let snapshot = fallback_snapshot();
+    catalog
+        .sync_model_pricing_snapshot(&snapshot)
+        .await
+        .expect("seed pricing rows");
+
+    repo.pricing_rows
+        .lock()
+        .expect("pricing rows")
+        .first_mut()
+        .expect("active pricing row")
+        .provenance
+        .fetched_at += time::Duration::seconds(1);
+
+    let error = catalog
+        .sync_model_pricing_snapshot(&snapshot)
+        .await
+        .expect_err("mixed catalog generations must not report convergence");
+
+    assert!(matches!(
+        error,
+        GatewayError::Store(StoreError::PricingSyncConflict)
+    ));
+}
+
+#[tokio::test]
 async fn forced_refresh_syncs_pricing_rows() {
     let repo = Arc::new(InMemoryRepo::default());
     let body = json!({

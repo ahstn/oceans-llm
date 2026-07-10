@@ -19,9 +19,9 @@ pub(super) use axum::{
     routing::get,
 };
 pub(super) use gateway_core::{
-    ModelPricingRecord, ModelPricingSyncChanges, ModelRoute, Money4, PricingCatalogCacheRecord,
-    PricingCatalogRepository, PricingResolution, PricingUnpricedReason, ProviderCapabilities,
-    ProviderConnection, StoreError,
+    GatewayError, ModelPricingRecord, ModelPricingSyncChanges, ModelRoute, Money4,
+    PricingCatalogCacheRecord, PricingCatalogRepository, PricingResolution, PricingUnpricedReason,
+    ProviderCapabilities, ProviderConnection, StoreError,
 };
 pub(super) use serde_json::{Number, Value, json, to_string_pretty};
 pub(super) use time::OffsetDateTime;
@@ -32,8 +32,9 @@ pub(super) use super::super::{
     PRICING_CATALOG_CACHE_KEY, PricingCatalog, PricingCatalogCostDocument, PricingCatalogDocument,
     PricingCatalogLimitDocument, PricingCatalogModalitiesDocument, PricingCatalogModelDocument,
     PricingCatalogProviderDocument, PricingCatalogSnapshot, PricingCatalogSnapshotMetadata,
-    PricingTarget, REMOTE_SOURCE, VENDORED_SOURCE, normalize_bedrock_pricing_model_id,
-    normalize_models_dev_money, normalize_vertex_pricing_model_id, pricing_target_for_route,
+    PricingTarget, REMOTE_SOURCE, VENDORED_SOURCE, next_catalog_generation_at,
+    normalize_bedrock_pricing_model_id, normalize_models_dev_money,
+    normalize_vertex_pricing_model_id, pricing_target_for_route,
 };
 
 #[derive(Clone, Default)]

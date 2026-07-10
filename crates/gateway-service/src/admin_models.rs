@@ -14,9 +14,8 @@ use gateway_core::{
     ProviderConnection, ProviderRepository, vertex_route_capabilities_for_upstream_model,
 };
 use time::OffsetDateTime;
-use tracing::warn;
 
-use crate::pricing_catalog::{PricingCatalog, exact_pricing_target_for_route};
+use crate::pricing_catalog::exact_pricing_target_for_route;
 use crate::{ModelIconKey, ProviderIconKey, resolve_model_icon_key, resolve_provider_display};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -143,16 +142,6 @@ where
     }
 
     async fn list_model_items(&self) -> Result<Vec<AdminModelItem>, GatewayError> {
-        if let Err(error) = PricingCatalog::new(self.repo.clone())
-            .refresh_if_stale_and_sync()
-            .await
-        {
-            warn!(
-                error = %error,
-                "pricing catalog sync failed while listing admin models; continuing with existing pricing rows"
-            );
-        }
-
         let pricing_time = OffsetDateTime::now_utc();
         let models = self.repo.list_models().await?;
         let model_ids = models.iter().map(|model| model.id).collect::<Vec<_>>();
@@ -1164,7 +1153,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_models_continues_when_pricing_sync_fails() {
+    async fn list_models_does_not_reconcile_pricing() {
         let model_id = Uuid::new_v4();
         let repo = Arc::new(CountingRepo {
             models: vec![GatewayModel {
