@@ -36,7 +36,6 @@ run = "npm run docs:preview"
 [tasks.verify]
 description = "Run docs structure checks and build the docs site"
 depends = [":check", ":build"]
-run = "true"
 
 [tasks.cf-pages-create]
 description = "Create the Cloudflare Pages project for the docs site"

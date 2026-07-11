@@ -1,19 +1,9 @@
-name: helm-ci
+name: contract-ci
 
 on:
   pull_request:
-    paths:
-      - "deploy/helm/oceans-llm/**"
-      - ".github/workflows/helm-ci.yml"
-      - "mise.toml"
-      - "mise.lock"
   push:
     branches: ["main"]
-    paths:
-      - "deploy/helm/oceans-llm/**"
-      - ".github/workflows/helm-ci.yml"
-      - "mise.toml"
-      - "mise.lock"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -26,18 +16,18 @@ env:
   MISE_EXPERIMENTAL: true
 
 jobs:
-  helm-check:
+  admin-contract-check:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
-      - name: Setup mise and Helm
+      - name: Setup mise, Rust, and Bun
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
-          install_args: helm
+          install_args: rust bun
 
-      - name: Run Helm checks
-        run: mise run helm-check
+      - name: Check generated admin contract
+        run: mise run admin-contract-check

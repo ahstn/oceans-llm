@@ -1,12 +1,14 @@
 # Admin UI Conventions
 
 ## Cards and Page Structure
+
 - Match existing admin page card rhythm: consistent `Card`, `CardHeader`, `CardTitle`, `CardDescription`, and `CardContent` usage.
 - Avoid nested “card in a card” layouts unless the inner card is a distinct repeated item or modal surface.
 - Separate unrelated page sections into separate cards. Do not place a visual wrapper behind multiple cards unless the broader page pattern already does this.
 - Keep page-level backgrounds quiet; the only visual layer behind cards should usually be the body background.
 
 ## Tables
+
 - Use the Teams/API Keys table style for admin data tables:
   - outlined table container
   - header row with muted background
@@ -18,6 +20,7 @@
 - Prefer action buttons with consistent sizing, background, hover state, and tooltips.
 
 ## Dialogs
+
 - Detail dialogs with multiple sections should use a sidebar navigation pattern.
 - Keep section tabs such as Overview, Configuration, Tools, and Credentials inside the dialog instead of expanding page-level complexity.
 - Inside dialogs, prefer single-sided borders (`border-t`, `border-b`, `border-y`, `divide-y`, or `border-r` for sidebars) to separate elements, inputs, items, and sections. Avoid wrapping every setting or row in a full four-sided border unless it is a distinct nested surface.
@@ -37,6 +40,7 @@
 - Long JSON schemas must scroll inside their own code panel and must not widen or clip the dialog.
 
 ## Regression Coverage
+
 - Add route/component tests for interactive admin UI regressions:
   - selection state keeps actions visible
   - inactive rows cannot be selected

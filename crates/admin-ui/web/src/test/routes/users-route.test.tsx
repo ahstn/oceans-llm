@@ -267,9 +267,11 @@ describe('UsersPage', () => {
       ),
     )
 
-    const resetButton = screen.getByRole('button', { name: 'Reset onboarding' })
-    await waitFor(() => expect(resetButton).toBeEnabled())
-    fireEvent.click(resetButton)
+    await waitFor(() => expect(routerMock.invalidate).toHaveBeenCalledTimes(1))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Reset onboarding' })).toBeEnabled(),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Reset onboarding' }))
 
     await waitFor(() => expect(resetOnboardingMock).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(screen.queryByLabelText('Generated URL')).not.toBeInTheDocument())

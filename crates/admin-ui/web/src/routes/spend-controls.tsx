@@ -238,7 +238,12 @@ export function SpendControlsPage() {
             <MoneyCell amountUsd10000={user.current_window_spend_usd_10000} />
             <TextCell>{user.alert_recipient_summary}</TextCell>
             <ActionCell>
-              <Button type="button" size="sm" variant="secondary" onClick={() => openUserDialog(user)}>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => openUserDialog(user)}
+              >
                 Configure
               </Button>
               {user.budget ? (
@@ -248,10 +253,7 @@ export function SpendControlsPage() {
                   variant="ghost"
                   disabled={isPending}
                   onClick={() =>
-                    handleDeactivate(
-                      { kind: 'user', user_id: user.user_id },
-                      'User budget removed',
-                    )
+                    handleDeactivate({ kind: 'user', user_id: user.user_id }, 'User budget removed')
                   }
                 >
                   Remove
@@ -360,7 +362,10 @@ export function SpendControlsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form className="grid gap-3 lg:grid-cols-[220px_190px_minmax(0,1fr)_140px_130px_120px_120px]" onSubmit={handleCreateUserModelBudget}>
+          <form
+            className="grid gap-3 lg:grid-cols-[220px_190px_minmax(0,1fr)_140px_130px_120px_120px]"
+            onSubmit={handleCreateUserModelBudget}
+          >
             <Select
               value={userModelDraft.userId}
               onValueChange={(value) =>
@@ -678,7 +683,10 @@ function BudgetSettingsFields({
   return (
     <>
       <div className="grid gap-1">
-        <label className="text-xs font-semibold text-[var(--color-text-soft)]" htmlFor="budget-cadence">
+        <label
+          className="text-xs font-semibold text-[var(--color-text-soft)]"
+          htmlFor="budget-cadence"
+        >
           Cadence
         </label>
         <Select
@@ -704,7 +712,10 @@ function BudgetSettingsFields({
       </div>
 
       <div className="grid gap-1">
-        <label className="text-xs font-semibold text-[var(--color-text-soft)]" htmlFor="budget-amount">
+        <label
+          className="text-xs font-semibold text-[var(--color-text-soft)]"
+          htmlFor="budget-amount"
+        >
           Amount (USD)
         </label>
         <Input
@@ -719,7 +730,10 @@ function BudgetSettingsFields({
       </div>
 
       <div className="grid gap-1">
-        <label className="text-xs font-semibold text-[var(--color-text-soft)]" htmlFor="budget-timezone">
+        <label
+          className="text-xs font-semibold text-[var(--color-text-soft)]"
+          htmlFor="budget-timezone"
+        >
           Timezone
         </label>
         <Input

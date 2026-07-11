@@ -5,8 +5,9 @@ import { GlobalErrorPage, getErrorMessage } from '@/components/layout/global-err
 
 describe('getErrorMessage', () => {
   it('uses Error messages when available', () => {
-    expect(getErrorMessage(new Error('Unable to connect. Is the computer able to access the url?')))
-      .toBe('Unable to connect. Is the computer able to access the url?')
+    expect(
+      getErrorMessage(new Error('Unable to connect. Is the computer able to access the url?')),
+    ).toBe('Unable to connect. Is the computer able to access the url?')
   })
 
   it('falls back when the thrown value is not useful', () => {

@@ -122,10 +122,7 @@ describe('AgentHarnessesPage', () => {
           range: '31d',
         },
       })
-      expect(scope.getByRole('radio', { name: 'Last 31 days' })).toHaveAttribute(
-        'data-state',
-        'on',
-      )
+      expect(scope.getByRole('radio', { name: 'Last 31 days' })).toHaveAttribute('data-state', 'on')
     })
   })
 
@@ -145,10 +142,7 @@ describe('AgentHarnessesPage', () => {
           range: '31d',
         },
       })
-      expect(scope.getByRole('radio', { name: 'Last 7 days' })).toHaveAttribute(
-        'data-state',
-        'on',
-      )
+      expect(scope.getByRole('radio', { name: 'Last 7 days' })).toHaveAttribute('data-state', 'on')
     })
   })
 

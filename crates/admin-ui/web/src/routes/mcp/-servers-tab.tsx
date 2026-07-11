@@ -61,12 +61,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   addMcpServer,
   disableExternalMcpServer,
@@ -542,13 +537,13 @@ function ServerTable({
                     <McpServerIconMark server={server} />
                     <span className="flex min-w-0 flex-col gap-1">
                       <span className="truncate font-medium">{server.display_name}</span>
-                      <span className="truncate font-mono text-xs text-muted-foreground">
+                      <span className="text-muted-foreground truncate font-mono text-xs">
                         {server.server_key}
                       </span>
                     </span>
                   </button>
                 </TableCell>
-                <TableCell className="max-w-[20rem] truncate px-3 py-3 font-mono text-xs text-muted-foreground">
+                <TableCell className="text-muted-foreground max-w-[20rem] truncate px-3 py-3 font-mono text-xs">
                   {server.server_url}
                 </TableCell>
                 <TableCell className="px-3 py-3">{formatAuthMode(server.auth_mode)}</TableCell>
@@ -703,7 +698,7 @@ function ServerDetailDialog({
 
         {server ? (
           <SidebarProvider
-            className="min-h-0 min-w-0 max-w-full items-start overflow-hidden"
+            className="min-h-0 max-w-full min-w-0 items-start overflow-hidden"
             style={{ '--sidebar-width': '14rem' } as CSSProperties}
           >
             <Sidebar
@@ -736,7 +731,7 @@ function ServerDetailDialog({
             <main className="flex max-h-[720px] min-h-[560px] min-w-0 flex-1 flex-col overflow-hidden">
               <header className="flex shrink-0 flex-col gap-4 border-b border-[color:var(--color-border)] px-6 py-5">
                 <div className="flex items-start gap-3">
-                  <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                  <div className="bg-primary text-primary-foreground flex size-11 shrink-0 items-center justify-center rounded-full">
                     <McpServerIconMark server={server} size={22} bare />
                   </div>
                   <div className="min-w-0 flex-1 pt-0.5">
@@ -798,14 +793,22 @@ function ServerDetailDialog({
                       variant={section === entry.value ? 'secondary' : 'ghost'}
                       onClick={() => setSection(entry.value)}
                     >
-                      <AppIcon icon={entry.icon} stroke={1.5} aria-hidden data-icon="inline-start" />
+                      <AppIcon
+                        icon={entry.icon}
+                        stroke={1.5}
+                        aria-hidden
+                        data-icon="inline-start"
+                      />
                       {entry.label}
                     </Button>
                   ))}
                 </div>
               </header>
 
-              <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-6" data-testid="mcp-server-detail">
+              <div
+                className="min-h-0 min-w-0 flex-1 overflow-y-auto p-6"
+                data-testid="mcp-server-detail"
+              >
                 {section === 'overview' ? (
                   <ServerOverviewPanel
                     server={server}
@@ -825,7 +828,11 @@ function ServerDetailDialog({
                     </div>
                     <ServerFormFields mode="edit" form={form} onFormChange={onFormChange} />
                     <DialogFooter className="mt-auto border-t border-[color:var(--color-border)] pt-4">
-                      <Button type="button" variant="secondary" onClick={() => setSection('overview')}>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => setSection('overview')}
+                      >
                         Cancel
                       </Button>
                       <Button type="submit" disabled={actionPending}>
@@ -884,7 +891,9 @@ export function RecommendedCatalog({
     <Card>
       <CardHeader>
         <CardTitle>Recommended catalog</CardTitle>
-        <CardDescription>Import common MCP endpoints or customize before registration.</CardDescription>
+        <CardDescription>
+          Import common MCP endpoints or customize before registration.
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
@@ -980,7 +989,7 @@ function McpServerIconMark({
   }
 
   return (
-    <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+    <span className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md">
       {icon}
     </span>
   )
@@ -1001,7 +1010,10 @@ function resolveMcpLobeIcon(server: McpIconSubject) {
 
   return MCP_LOBE_ICON_MATCHERS.find(({ aliases }) =>
     aliases.some((alias) => {
-      const normalizedAlias = alias.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+      const normalizedAlias = alias
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim()
       if (!normalizedAlias) {
         return false
       }
