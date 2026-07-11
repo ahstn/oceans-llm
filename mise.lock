@@ -67,10 +67,10 @@ version = "3.21.2"
 backend = "aqua:helm/helm"
 
 [tools.helm."platforms.linux-x64"]
-url = "https://get.helm.sh/helm-3.21.2-linux-amd64.tar.gz"
+url = "https://get.helm.sh/helm-v3.21.2-linux-amd64.tar.gz"
 
 [tools.helm."platforms.macos-arm64"]
-url = "https://get.helm.sh/helm-3.21.2-darwin-arm64.tar.gz"
+url = "https://get.helm.sh/helm-v3.21.2-darwin-arm64.tar.gz"
 
 [[tools.node]]
 version = "24.18.0"
