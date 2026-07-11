@@ -89,6 +89,7 @@ bun run --cwd crates/admin-ui/web generate:admin-api
 [tasks.admin-contract-check]
 description = "Verify generated admin contract artifacts are up to date"
 depends = ["ui-install"]
+shell = "bash -c"
 run = """
 set -euo pipefail
 
