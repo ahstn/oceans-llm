@@ -6,6 +6,54 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.17.0] - 2026-07-14
+### :rocket: New features
+- *(identity)* Seed config tags for identity entities by @ahstn
+- *(identity)* Seed config tags for identity entities by @ahstn in [#234](https://github.com/ahstn/oceans-llm/pull/234)
+- Update catalog pricing by @ahstn
+
+### :bug: Bug fixes
+- *(gateway)* Refresh model pricing catalog by @ahstn
+- *(gateway)* Harden pricing refresh sync by @ahstn
+- *(gateway)* Refresh model pricing catalog by @ahstn in [#231](https://github.com/ahstn/oceans-llm/pull/231)
+- *(identity)* Share tag validation for config tags by @ahstn
+- *(identity)* Address config tag review feedback by @ahstn
+- Update client config generation and onboarding reset links by @ahstn
+- Narrow onboarding reset updates by @ahstn
+- Address client config review feedback by @ahstn
+- Address follow-up PR review comments by @ahstn
+- Address onboarding reset review feedback by @ahstn
+- Update client config generation and onboarding reset links by @ahstn in [#235](https://github.com/ahstn/oceans-llm/pull/235)
+- *(pricing)* Make catalog reconciliation race-safe by @ahstn
+- *(pricing)* Address reconciliation review findings by @ahstn
+- *(pricing)* Allocate catalog generations atomically by @ahstn
+- *(pricing)* Reject stale catalog insertions by @ahstn
+- *(pricing)* Preserve concurrent catalog winner by @ahstn
+- *(pricing)* Harden catalog refresh convergence by @ahstn
+- *(pricing)* Make catalog reconciliation race-safe by @ahstn in [#240](https://github.com/ahstn/oceans-llm/pull/240)
+
+### Build
+- Post release tasks - v0.16.0 by @ahstn
+
+### Changed
+- *(pricing)* Simplify catalog test setup by @ahstn
+
+### Documentation
+- Refocus pricing catalog guide by @ahstn
+- Clarify client harness base URLs by @ahstn
+
+### Miscellaneous
+- *(version)* V0.17.0
+
+### Testing
+- Avoid debug bound in identity tests by @ahstn
+- *(pricing)* Mirror monotonic cache touches by @ahstn
+- *(pricing)* Align reconciliation fixtures by @ahstn
+- *(ui)* Await onboarding reset state by @ahstn
+
+
+
+
 ## [0.16.0] - 2026-07-07
 ### :rocket: New features
 - *(models)* Updating model icons by @ahstn
@@ -31,7 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Miscellaneous
 - Adding deepseek and qwen to dev config by @ahstn
-- *(version)* V0.16.0
+- *(version)* V0.16.0 by @ahstn
 
 ### Testing
 - *(models)* Update table layout expectations by @ahstn
@@ -678,6 +726,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+[0.17.0]: https://github.com/ahstn/oceans-llm/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/ahstn/oceans-llm/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/ahstn/oceans-llm/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/ahstn/oceans-llm/compare/v0.13.0...v0.14.0
