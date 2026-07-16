@@ -4938,6 +4938,40 @@ models:
     }
 
     #[test]
+    fn rejects_malformed_and_overflowing_route_pricing_overrides() {
+        for (input_rate, expected_error) in [
+            ("1.23456", "invalid fractional part"),
+            ("not-a-rate", "invalid integer part"),
+            ("922337203685478", "overflowed"),
+        ] {
+            let tmp = tempdir().expect("tempdir");
+            let config_path = tmp.path().join("gateway.yaml");
+            write_config(
+                &config_path,
+                &format!(
+                    r#"
+models:
+  - id: contracted
+    routes:
+      - provider: private
+        upstream_model: upstream
+        pricing_override:
+          input_usd_per_million_tokens: "{input_rate}"
+          output_usd_per_million_tokens: "5.0000"
+"#
+                ),
+            );
+
+            let error = GatewayConfig::from_path(&config_path)
+                .expect_err("invalid route pricing must be rejected");
+            assert!(
+                format!("{error:#}").contains(expected_error),
+                "unexpected error for `{input_rate}`: {error:#}"
+            );
+        }
+    }
+
+    #[test]
     fn production_config_requires_bootstrap_password_change() {
         let config_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../gateway.prod.yaml");
         unsafe {

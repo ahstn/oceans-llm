@@ -7441,8 +7441,13 @@ mod tests {
                 priority: 10,
                 weight: 1.0,
                 enabled: true,
-                context_window_tokens: None,
-                pricing_override: None,
+                context_window_tokens: Some(128_000),
+                pricing_override: Some(RoutePricingOverride {
+                    input_cost_per_million_tokens: Money4::from_scaled(12_500),
+                    output_cost_per_million_tokens: Money4::from_scaled(50_000),
+                    cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_250)),
+                    cache_write_cost_per_million_tokens: Some(Money4::from_scaled(2_500)),
+                }),
                 extra_headers: Map::new(),
                 extra_body: Map::new(),
                 capabilities: ProviderCapabilities::with_dimensions(
@@ -7513,6 +7518,16 @@ mod tests {
             .expect("list routes");
         assert_eq!(routes.len(), 1);
         assert!(!routes[0].capabilities.vision);
+        assert_eq!(routes[0].context_window_tokens, Some(128_000));
+        assert_eq!(
+            routes[0].pricing_override,
+            Some(RoutePricingOverride {
+                input_cost_per_million_tokens: Money4::from_scaled(12_500),
+                output_cost_per_million_tokens: Money4::from_scaled(50_000),
+                cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_250)),
+                cache_write_cost_per_million_tokens: Some(Money4::from_scaled(2_500)),
+            })
+        );
 
         let user = store
             .upsert_bootstrap_admin_user("Admin", "admin@local", true)

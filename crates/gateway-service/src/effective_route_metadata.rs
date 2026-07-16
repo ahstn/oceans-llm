@@ -242,4 +242,21 @@ mod tests {
             Some(EffectiveMetadataSourceKind::ConfiguredOverride)
         );
     }
+
+    #[test]
+    fn absent_configured_context_preserves_catalog_limits_and_provenance() {
+        let catalog = PricingLimits {
+            context: Some(256_000),
+            input: Some(200_000),
+            output: Some(64_000),
+        };
+
+        let (effective, source) = effective_limits(&catalog, Some(catalog_source()), None);
+
+        assert_eq!(effective, catalog);
+        assert_eq!(
+            source.map(|source| source.kind),
+            Some(EffectiveMetadataSourceKind::Catalog)
+        );
+    }
 }
