@@ -314,18 +314,28 @@ impl LibsqlStore {
                 let extra_body_json = serialize_json(&route.extra_body)?;
                 let capabilities_json = serialize_json(&route.capabilities)?;
                 let compatibility_json = serialize_json(&route.compatibility)?;
+                let pricing_override_json = route
+                    .pricing_override
+                    .as_ref()
+                    .map(serialize_json)
+                    .transpose()?;
 
                 self.connection
                     .execute(
                         r#"
                         INSERT INTO model_routes (
                             id, model_id, provider_key, upstream_model, priority, weight, enabled,
-                            extra_headers_json, extra_body_json, capabilities_json, compatibility_json,
-                            created_at, updated_at
-                        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12)
+                            context_window_tokens, pricing_override_json, extra_headers_json,
+                            extra_body_json, capabilities_json, compatibility_json, created_at,
+                            updated_at
+                        ) VALUES (
+                            ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?14
+                        )
                         ON CONFLICT(id) DO UPDATE SET
                             weight = excluded.weight,
                             enabled = excluded.enabled,
+                            context_window_tokens = excluded.context_window_tokens,
+                            pricing_override_json = excluded.pricing_override_json,
                             extra_headers_json = excluded.extra_headers_json,
                             extra_body_json = excluded.extra_body_json,
                             capabilities_json = excluded.capabilities_json,
@@ -340,6 +350,8 @@ impl LibsqlStore {
                             route.priority,
                             route.weight,
                             if route.enabled { 1_i64 } else { 0_i64 },
+                            route.context_window_tokens,
+                            pricing_override_json,
                             extra_headers_json,
                             extra_body_json,
                             capabilities_json,

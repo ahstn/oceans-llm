@@ -949,6 +949,8 @@ pub struct UsageLedgerRecord {
     pub service_account_id: Option<Uuid>,
     pub actor_user_id: Option<Uuid>,
     pub model_id: Option<Uuid>,
+    #[serde(default)]
+    pub model_route_id: Option<Uuid>,
     pub provider_key: String,
     pub upstream_model: String,
     pub prompt_tokens: Option<i64>,
@@ -966,6 +968,10 @@ pub struct UsageLedgerRecord {
     pub pricing_last_updated: Option<String>,
     pub input_cost_per_million_tokens: Option<Money4>,
     pub output_cost_per_million_tokens: Option<Money4>,
+    #[serde(default)]
+    pub cache_read_cost_per_million_tokens: Option<Money4>,
+    #[serde(default)]
+    pub cache_write_cost_per_million_tokens: Option<Money4>,
     pub computed_cost_usd: Money4,
     pub occurred_at: OffsetDateTime,
 }
@@ -2086,6 +2092,14 @@ pub struct PricingCatalogCacheRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RoutePricingOverride {
+    pub input_cost_per_million_tokens: Money4,
+    pub output_cost_per_million_tokens: Money4,
+    pub cache_read_cost_per_million_tokens: Option<Money4>,
+    pub cache_write_cost_per_million_tokens: Option<Money4>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PricingLimits {
     pub context: Option<i64>,
     pub input: Option<i64>,
@@ -2178,6 +2192,7 @@ pub enum PricingUnpricedReason {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PricingResolution {
     Exact { pricing: Box<ResolvedModelPricing> },
+    ConfiguredOverride { pricing: RoutePricingOverride },
     Unpriced { reason: PricingUnpricedReason },
 }
 
@@ -2207,6 +2222,10 @@ pub struct ModelRoute {
     pub priority: i32,
     pub weight: f64,
     pub enabled: bool,
+    #[serde(default)]
+    pub context_window_tokens: Option<i64>,
+    #[serde(default)]
+    pub pricing_override: Option<RoutePricingOverride>,
     #[serde(default)]
     pub extra_headers: Map<String, Value>,
     #[serde(default)]
@@ -2583,6 +2602,10 @@ pub struct SeedModelRoute {
     pub priority: i32,
     pub weight: f64,
     pub enabled: bool,
+    #[serde(default)]
+    pub context_window_tokens: Option<i64>,
+    #[serde(default)]
+    pub pricing_override: Option<RoutePricingOverride>,
     #[serde(default)]
     pub extra_headers: Map<String, Value>,
     #[serde(default)]

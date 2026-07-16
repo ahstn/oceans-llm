@@ -4648,6 +4648,7 @@
           "resolved_model_key",
           "tags",
           "status",
+          "pricing_varies_by_route",
           "client_configurations"
         ],
         "properties": {
@@ -4674,11 +4675,28 @@
             ],
             "format": "int64"
           },
+          "cache_write_cost_per_million_tokens_usd_10000": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
           "client_configurations": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/AdminModelClientConfigView"
             }
+          },
+          "context_window_source": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/EffectiveMetadataSourceView"
+              }
+            ]
           },
           "context_window_tokens": {
             "type": [
@@ -4736,6 +4754,19 @@
               "null"
             ],
             "format": "int64"
+          },
+          "pricing_source": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/EffectiveMetadataSourceView"
+              }
+            ]
+          },
+          "pricing_varies_by_route": {
+            "type": "boolean"
           },
           "provider_icon_key": {
             "oneOf": [
@@ -6013,6 +6044,43 @@
           },
           "scope_key": {
             "type": "string"
+          }
+        }
+      },
+      "EffectiveMetadataSourceKindView": {
+        "type": "string",
+        "enum": [
+          "configured_override",
+          "catalog",
+          "mixed"
+        ]
+      },
+      "EffectiveMetadataSourceView": {
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "catalog_etag": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "catalog_fetched_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "catalog_source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/EffectiveMetadataSourceKindView"
           }
         }
       },

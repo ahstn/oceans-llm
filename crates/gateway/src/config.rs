@@ -9,10 +9,11 @@ use gateway_core::{
     OpenAiCompatRouteCompatibility, OpenRouterMaxPrice, OpenRouterPercentileCutoffs,
     OpenRouterPercentilePreference, OpenRouterProviderRouting, OpenRouterRouteCompatibility,
     ProviderCapabilities, RequestLogRetentionWindow, RequestTag, RouteCompatibility,
-    SeedApiKeySecretMaterial, SeedBudget, SeedHumanBudgetDefaults, SeedManagedServiceAccountApiKey,
-    SeedModel, SeedModelRoute, SeedOauthProvider, SeedOidcProvider, SeedProvider,
-    SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership, SeedUserModelBudgetDefault,
-    hash_gateway_key_secret, parse_gateway_api_key, validate_entity_tags,
+    RoutePricingOverride, SeedApiKeySecretMaterial, SeedBudget, SeedHumanBudgetDefaults,
+    SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute, SeedOauthProvider,
+    SeedOidcProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership,
+    SeedUserModelBudgetDefault, hash_gateway_key_secret, parse_gateway_api_key,
+    validate_entity_tags,
 };
 use gateway_providers::{
     BedrockAuthConfig, BedrockEndpointKind, BedrockProviderConfig, CloudRunOpenAiCompatAuth,
@@ -23,7 +24,7 @@ use gateway_service::{
     encrypt_gateway_api_key_secret, is_supported_pricing_provider_id, parse_payload_path,
 };
 use gateway_store::StoreConnectionOptions;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer, de};
 use serde_json::{Map, Value, json};
 use uuid::Uuid;
 
@@ -353,6 +354,22 @@ impl GatewayConfig {
             }
 
             for route in &model.routes {
+                if let Some(context_window_tokens) = route.context_window_tokens
+                    && context_window_tokens <= 0
+                {
+                    bail!(
+                        "model `{}` route `{}` context_window_tokens must be positive",
+                        model.id,
+                        route.upstream_model
+                    );
+                }
+                if let Some(pricing_override) = &route.pricing_override {
+                    pricing_override.resolve(&format!(
+                        "model `{}` route `{}` pricing_override",
+                        model.id, route.upstream_model
+                    ))?;
+                }
+
                 let provider = provider_by_id.get(route.provider.as_str()).copied();
 
                 if provider.is_some_and(|provider| matches!(provider, ProviderConfig::GcpVertex(_)))
@@ -795,22 +812,35 @@ impl GatewayConfig {
                     routes: model
                         .routes
                         .iter()
-                        .map(|route| SeedModelRoute {
-                            provider_key: route.provider.clone(),
-                            upstream_model: route.upstream_model.clone(),
-                            priority: route.priority,
-                            weight: route.weight,
-                            enabled: route.enabled,
-                            extra_headers: route
-                                .extra_headers
-                                .iter()
-                                .map(|(key, value)| (key.clone(), Value::String(value.clone())))
-                                .collect::<Map<String, Value>>(),
-                            extra_body: route.extra_body.clone(),
-                            capabilities: route.capabilities.clone().into_capabilities(),
-                            compatibility: route.compatibility.clone().into_compatibility(),
+                        .map(|route| {
+                            Ok(SeedModelRoute {
+                                provider_key: route.provider.clone(),
+                                upstream_model: route.upstream_model.clone(),
+                                priority: route.priority,
+                                weight: route.weight,
+                                enabled: route.enabled,
+                                context_window_tokens: route.context_window_tokens,
+                                pricing_override: route
+                                    .pricing_override
+                                    .as_ref()
+                                    .map(|pricing| {
+                                        pricing.resolve(&format!(
+                                            "model `{}` route `{}` pricing_override",
+                                            model.id, route.upstream_model
+                                        ))
+                                    })
+                                    .transpose()?,
+                                extra_headers: route
+                                    .extra_headers
+                                    .iter()
+                                    .map(|(key, value)| (key.clone(), Value::String(value.clone())))
+                                    .collect::<Map<String, Value>>(),
+                                extra_body: route.extra_body.clone(),
+                                capabilities: route.capabilities.clone().into_capabilities(),
+                                compatibility: route.compatibility.clone().into_compatibility(),
+                            })
                         })
-                        .collect(),
+                        .collect::<anyhow::Result<Vec<_>>>()?,
                     allowlist: model
                         .allowlist
                         .as_ref()
@@ -2095,6 +2125,10 @@ pub struct ModelRouteConfig {
     #[serde(default = "default_enabled")]
     pub enabled: bool,
     #[serde(default)]
+    pub context_window_tokens: Option<i64>,
+    #[serde(default)]
+    pub pricing_override: Option<RoutePricingOverrideConfig>,
+    #[serde(default)]
     pub extra_headers: BTreeMap<String, String>,
     #[serde(default)]
     pub extra_body: Map<String, Value>,
@@ -2102,6 +2136,84 @@ pub struct ModelRouteConfig {
     pub capabilities: RouteCapabilitiesConfig,
     #[serde(default)]
     pub compatibility: RouteCompatibilityConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RoutePricingOverrideConfig {
+    #[serde(deserialize_with = "deserialize_yaml_string")]
+    pub input_usd_per_million_tokens: String,
+    #[serde(deserialize_with = "deserialize_yaml_string")]
+    pub output_usd_per_million_tokens: String,
+    #[serde(default, deserialize_with = "deserialize_optional_yaml_string")]
+    pub cache_read_usd_per_million_tokens: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_yaml_string")]
+    pub cache_write_usd_per_million_tokens: Option<String>,
+}
+
+fn deserialize_yaml_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match serde_yaml::Value::deserialize(deserializer)? {
+        serde_yaml::Value::String(value) => Ok(value),
+        _ => Err(de::Error::custom("expected a quoted decimal string")),
+    }
+}
+
+fn deserialize_optional_yaml_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match Option::<serde_yaml::Value>::deserialize(deserializer)? {
+        None | Some(serde_yaml::Value::Null) => Ok(None),
+        Some(serde_yaml::Value::String(value)) => Ok(Some(value)),
+        Some(_) => Err(de::Error::custom("expected a quoted decimal string")),
+    }
+}
+
+impl RoutePricingOverrideConfig {
+    fn resolve(&self, label: &str) -> anyhow::Result<RoutePricingOverride> {
+        Ok(RoutePricingOverride {
+            input_cost_per_million_tokens: parse_non_negative_rate(
+                &self.input_usd_per_million_tokens,
+                &format!("{label}.input_usd_per_million_tokens"),
+            )?,
+            output_cost_per_million_tokens: parse_non_negative_rate(
+                &self.output_usd_per_million_tokens,
+                &format!("{label}.output_usd_per_million_tokens"),
+            )?,
+            cache_read_cost_per_million_tokens: self
+                .cache_read_usd_per_million_tokens
+                .as_deref()
+                .map(|value| {
+                    parse_non_negative_rate(
+                        value,
+                        &format!("{label}.cache_read_usd_per_million_tokens"),
+                    )
+                })
+                .transpose()?,
+            cache_write_cost_per_million_tokens: self
+                .cache_write_usd_per_million_tokens
+                .as_deref()
+                .map(|value| {
+                    parse_non_negative_rate(
+                        value,
+                        &format!("{label}.cache_write_usd_per_million_tokens"),
+                    )
+                })
+                .transpose()?,
+        })
+    }
+}
+
+fn parse_non_negative_rate(value: &str, label: &str) -> anyhow::Result<Money4> {
+    let rate = Money4::from_decimal_str(value)
+        .map_err(|error| anyhow::anyhow!("{label} is invalid: {error}"))?;
+    if rate.is_negative() {
+        bail!("{label} cannot be negative");
+    }
+    Ok(rate)
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -4708,6 +4820,121 @@ models:
         assert!(!route.capabilities.vision);
         assert!(route.capabilities.json_schema);
         assert!(route.capabilities.developer_role);
+    }
+
+    #[test]
+    fn parses_route_context_and_exact_pricing_override() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(
+            &config_path,
+            r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+models:
+  - id: contracted
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-5
+        context_window_tokens: 128000
+        pricing_override:
+          input_usd_per_million_tokens: "0"
+          output_usd_per_million_tokens: "1.2345"
+          cache_write_usd_per_million_tokens: "0.5000"
+"#,
+        );
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let seeded = config.seed_models().expect("seed models");
+        let route = &seeded[0].routes[0];
+        let pricing = route.pricing_override.as_ref().expect("pricing override");
+
+        assert_eq!(route.context_window_tokens, Some(128_000));
+        assert_eq!(pricing.input_cost_per_million_tokens, Money4::ZERO);
+        assert_eq!(
+            pricing.output_cost_per_million_tokens,
+            Money4::from_scaled(12_345)
+        );
+        assert_eq!(pricing.cache_read_cost_per_million_tokens, None);
+        assert_eq!(
+            pricing.cache_write_cost_per_million_tokens,
+            Some(Money4::from_scaled(5_000))
+        );
+    }
+
+    #[test]
+    fn rejects_numeric_route_pricing_values() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(
+            &config_path,
+            r#"
+models:
+  - id: contracted
+    routes:
+      - provider: private
+        upstream_model: upstream
+        pricing_override:
+          input_usd_per_million_tokens: 1.25
+          output_usd_per_million_tokens: "5.0000"
+"#,
+        );
+
+        GatewayConfig::from_path(&config_path)
+            .expect_err("floating-point YAML pricing must be rejected");
+    }
+
+    #[test]
+    fn rejects_non_positive_route_context_override() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(
+            &config_path,
+            r#"
+models:
+  - id: contracted
+    routes:
+      - provider: private
+        upstream_model: upstream
+        context_window_tokens: 0
+"#,
+        );
+
+        let error = GatewayConfig::from_path(&config_path)
+            .expect_err("non-positive context must be rejected");
+        assert!(
+            format!("{error:#}").contains("context_window_tokens must be positive"),
+            "unexpected error: {error:#}"
+        );
+    }
+
+    #[test]
+    fn rejects_negative_route_pricing_override() {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(
+            &config_path,
+            r#"
+models:
+  - id: contracted
+    routes:
+      - provider: private
+        upstream_model: upstream
+        pricing_override:
+          input_usd_per_million_tokens: "-1.0000"
+          output_usd_per_million_tokens: "5.0000"
+"#,
+        );
+
+        let error =
+            GatewayConfig::from_path(&config_path).expect_err("negative rate must be rejected");
+        assert!(
+            format!("{error:#}").contains("input_usd_per_million_tokens cannot be negative"),
+            "unexpected error: {error:#}"
+        );
     }
 
     #[test]

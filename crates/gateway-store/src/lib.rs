@@ -55,13 +55,14 @@ mod tests {
         RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestTag, RequestTags,
         RequestToolCardinality, ReviewAgentProvider, ReviewAgentPullRequestState,
         ReviewAgentRepository, ReviewAgentRepositoryStatus, ReviewAgentRunStatus,
-        ReviewAgentSettings, RouteCompatibility, SeedApiKey, SeedApiKeySecretMaterial, SeedBudget,
-        SeedHumanBudgetDefaults, SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute,
-        SeedOauthProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser,
-        SeedUserMembership, SeedUserModelBudgetDefault, ServiceAccountStatus, StoreError,
-        StoreHealth, UpdateExternalMcpServerRecord, UpdateReviewAgentRunRecord,
-        UpsertExternalMcpToolRecord, UpsertMcpUpstreamCredentialBindingRecord,
-        UpsertReviewAgentPullRequestRecord, UsageLedgerRecord, UsagePricingStatus, UserStatus,
+        ReviewAgentSettings, RouteCompatibility, RoutePricingOverride, SeedApiKey,
+        SeedApiKeySecretMaterial, SeedBudget, SeedHumanBudgetDefaults,
+        SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute, SeedOauthProvider,
+        SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership,
+        SeedUserModelBudgetDefault, ServiceAccountStatus, StoreError, StoreHealth,
+        UpdateExternalMcpServerRecord, UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord,
+        UpsertMcpUpstreamCredentialBindingRecord, UpsertReviewAgentPullRequestRecord,
+        UsageLedgerRecord, UsagePricingStatus, UserStatus,
     };
     use serde_json::{Map, json};
     use serial_test::serial;
@@ -695,6 +696,10 @@ mod tests {
             service_account_id,
             actor_user_id: None,
             model_id,
+            model_route_id: Some(Uuid::new_v5(
+                &Uuid::NAMESPACE_OID,
+                format!("route:{request_id}").as_bytes(),
+            )),
             provider_key: "openai-prod".to_string(),
             upstream_model: upstream_model.to_string(),
             prompt_tokens: Some(100),
@@ -716,6 +721,8 @@ mod tests {
             pricing_last_updated: Some("2026-03-15".to_string()),
             input_cost_per_million_tokens: Some(Money4::from_scaled(1_250)),
             output_cost_per_million_tokens: Some(Money4::from_scaled(10_000)),
+            cache_read_cost_per_million_tokens: Some(Money4::from_scaled(125)),
+            cache_write_cost_per_million_tokens: Some(Money4::from_scaled(250)),
             computed_cost_usd: Money4::from_scaled(computed_cost_10000),
             occurred_at,
         }
@@ -1136,6 +1143,8 @@ mod tests {
                 priority: 10,
                 weight: 1.0,
                 enabled: true,
+                context_window_tokens: None,
+                pricing_override: None,
                 extra_headers: Map::new(),
                 extra_body: Map::new(),
                 capabilities: ProviderCapabilities::all_enabled(),
@@ -1697,6 +1706,8 @@ mod tests {
                     priority: 10,
                     weight: 1.0,
                     enabled: true,
+                    context_window_tokens: None,
+                    pricing_override: None,
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
                     capabilities: ProviderCapabilities::all_enabled(),
@@ -1716,6 +1727,8 @@ mod tests {
                     priority: 10,
                     weight: 1.0,
                     enabled: true,
+                    context_window_tokens: None,
+                    pricing_override: None,
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
                     capabilities: ProviderCapabilities::all_enabled(),
@@ -2987,6 +3000,13 @@ mod tests {
                 priority: 10,
                 weight: 1.0,
                 enabled: true,
+                context_window_tokens: Some(128_000),
+                pricing_override: Some(RoutePricingOverride {
+                    input_cost_per_million_tokens: Money4::from_scaled(12_500),
+                    output_cost_per_million_tokens: Money4::from_scaled(50_000),
+                    cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_250)),
+                    cache_write_cost_per_million_tokens: None,
+                }),
                 extra_headers: Map::new(),
                 extra_body: Map::new(),
                 capabilities: ProviderCapabilities::with_dimensions(
@@ -3079,6 +3099,15 @@ mod tests {
         assert!(!routes[0].capabilities.stream);
         assert!(!routes[0].capabilities.tools);
         assert!(!routes[0].capabilities.vision);
+        assert_eq!(routes[0].context_window_tokens, Some(128_000));
+        assert_eq!(
+            routes[0]
+                .pricing_override
+                .as_ref()
+                .expect("route pricing override")
+                .cache_read_cost_per_million_tokens,
+            Some(Money4::from_scaled(1_250))
+        );
         let profile = routes[0]
             .compatibility
             .openai_compat
@@ -3910,12 +3939,19 @@ mod tests {
                 .expect("seeded usage lookup")
                 .is_none()
         );
-        assert!(
-            store
-                .get_usage_ledger_by_request_and_scope("req-kept", "user:scope-kept")
-                .await
-                .expect("kept usage lookup")
-                .is_some()
+        let kept_usage = store
+            .get_usage_ledger_by_request_and_scope("req-kept", "user:scope-kept")
+            .await
+            .expect("kept usage lookup")
+            .expect("kept usage event");
+        assert!(kept_usage.model_route_id.is_some());
+        assert_eq!(
+            kept_usage.cache_read_cost_per_million_tokens,
+            Some(Money4::from_scaled(125))
+        );
+        assert_eq!(
+            kept_usage.cache_write_cost_per_million_tokens,
+            Some(Money4::from_scaled(250))
         );
 
         // Repeat deletes are no-ops, which is what makes reseeding idempotent.
@@ -4171,12 +4207,19 @@ mod tests {
                 .expect("seeded usage lookup")
                 .is_none()
         );
-        assert!(
-            store
-                .get_usage_ledger_by_request_and_scope("req-kept-postgres", "user:scope-kept")
-                .await
-                .expect("kept usage lookup")
-                .is_some()
+        let kept_usage = store
+            .get_usage_ledger_by_request_and_scope("req-kept-postgres", "user:scope-kept")
+            .await
+            .expect("kept usage lookup")
+            .expect("kept usage event");
+        assert!(kept_usage.model_route_id.is_some());
+        assert_eq!(
+            kept_usage.cache_read_cost_per_million_tokens,
+            Some(Money4::from_scaled(125))
+        );
+        assert_eq!(
+            kept_usage.cache_write_cost_per_million_tokens,
+            Some(Money4::from_scaled(250))
         );
 
         // Repeat deletes are no-ops, which is what makes reseeding idempotent.
@@ -4261,6 +4304,8 @@ mod tests {
                     priority: 10,
                     weight: 1.0,
                     enabled: true,
+                    context_window_tokens: None,
+                    pricing_override: None,
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
                     capabilities: ProviderCapabilities::all_enabled(),
@@ -7084,6 +7129,8 @@ mod tests {
                 priority: 10,
                 weight: 1.0,
                 enabled: true,
+                context_window_tokens: None,
+                pricing_override: None,
                 extra_headers: Map::new(),
                 extra_body: Map::new(),
                 capabilities: ProviderCapabilities::all_enabled(),
@@ -7394,6 +7441,8 @@ mod tests {
                 priority: 10,
                 weight: 1.0,
                 enabled: true,
+                context_window_tokens: None,
+                pricing_override: None,
                 extra_headers: Map::new(),
                 extra_body: Map::new(),
                 capabilities: ProviderCapabilities::with_dimensions(
@@ -7606,6 +7655,7 @@ mod tests {
             service_account_id: None,
             actor_user_id: None,
             model_id: None,
+            model_route_id: None,
             provider_key: "openai-prod".to_string(),
             upstream_model: "gpt-5".to_string(),
             prompt_tokens: Some(10),
@@ -7623,6 +7673,8 @@ mod tests {
             pricing_last_updated: Some("2025-01-01".to_string()),
             input_cost_per_million_tokens: pricing_record.input_cost_per_million_tokens,
             output_cost_per_million_tokens: pricing_record.output_cost_per_million_tokens,
+            cache_read_cost_per_million_tokens: pricing_record.cache_read_cost_per_million_tokens,
+            cache_write_cost_per_million_tokens: pricing_record.cache_write_cost_per_million_tokens,
             computed_cost_usd: Money4::from_scaled(25),
             occurred_at: pricing_time,
         };
@@ -7636,6 +7688,7 @@ mod tests {
             service_account_id: None,
             actor_user_id: None,
             model_id: None,
+            model_route_id: None,
             provider_key: "openai-prod".to_string(),
             upstream_model: "gpt-5".to_string(),
             prompt_tokens: Some(10),
@@ -7653,6 +7706,8 @@ mod tests {
             pricing_last_updated: None,
             input_cost_per_million_tokens: None,
             output_cost_per_million_tokens: None,
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: None,
             computed_cost_usd: Money4::ZERO,
             occurred_at: pricing_time,
         };
@@ -7951,6 +8006,8 @@ mod tests {
                 priority: 10,
                 weight: 1.0,
                 enabled: true,
+                context_window_tokens: None,
+                pricing_override: None,
                 extra_headers: Map::new(),
                 extra_body: Map::new(),
                 capabilities: ProviderCapabilities::all_enabled(),
@@ -8287,6 +8344,8 @@ mod tests {
                     priority: 10,
                     weight: 1.0,
                     enabled: true,
+                    context_window_tokens: None,
+                    pricing_override: None,
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
                     capabilities: ProviderCapabilities::all_enabled(),

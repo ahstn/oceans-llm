@@ -289,13 +289,15 @@ impl BudgetRepository for PostgresStore {
             r#"
             SELECT
                 usage_event_id, request_id, ownership_scope_key, api_key_id, user_id,
-                team_id, service_account_id, actor_user_id, model_id, provider_key, upstream_model,
-                prompt_tokens, completion_tokens, total_tokens, provider_usage_json,
-                pricing_status, unpriced_reason, pricing_row_id, pricing_provider_id,
-                pricing_model_id, pricing_source, pricing_source_etag,
+                team_id, service_account_id, actor_user_id, model_id, model_route_id,
+                provider_key, upstream_model, prompt_tokens, completion_tokens, total_tokens,
+                provider_usage_json, pricing_status, unpriced_reason, pricing_row_id,
+                pricing_provider_id, pricing_model_id, pricing_source, pricing_source_etag,
                 pricing_source_fetched_at, pricing_last_updated,
                 input_cost_per_million_tokens_10000,
-                output_cost_per_million_tokens_10000, computed_cost_10000, occurred_at
+                output_cost_per_million_tokens_10000,
+                cache_read_cost_per_million_tokens_10000,
+                cache_write_cost_per_million_tokens_10000, computed_cost_10000, occurred_at
             FROM usage_cost_events
             WHERE request_id = $1
               AND ownership_scope_key = $2
@@ -1004,16 +1006,19 @@ impl BudgetRepository for PostgresStore {
             r#"
             INSERT INTO usage_cost_events (
                 usage_event_id, request_id, ownership_scope_key, api_key_id, user_id,
-                team_id, service_account_id, actor_user_id, model_id, provider_key, upstream_model,
-                prompt_tokens, completion_tokens, total_tokens, provider_usage_json,
-                pricing_status, unpriced_reason, pricing_row_id, pricing_provider_id,
-                pricing_model_id, pricing_source, pricing_source_etag,
+                team_id, service_account_id, actor_user_id, model_id, model_route_id,
+                provider_key, upstream_model, prompt_tokens, completion_tokens, total_tokens,
+                provider_usage_json, pricing_status, unpriced_reason, pricing_row_id,
+                pricing_provider_id, pricing_model_id, pricing_source, pricing_source_etag,
                 pricing_source_fetched_at, pricing_last_updated,
                 input_cost_per_million_tokens_10000,
-                output_cost_per_million_tokens_10000, computed_cost_10000, occurred_at
+                output_cost_per_million_tokens_10000,
+                cache_read_cost_per_million_tokens_10000,
+                cache_write_cost_per_million_tokens_10000, computed_cost_10000, occurred_at
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-                $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28
+                $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28,
+                $29, $30, $31
             )
             ON CONFLICT (request_id, ownership_scope_key) DO NOTHING
             "#,
@@ -1027,6 +1032,7 @@ impl BudgetRepository for PostgresStore {
         .bind(event.service_account_id.map(|value| value.to_string()))
         .bind(event.actor_user_id.map(|value| value.to_string()))
         .bind(event.model_id.map(|value| value.to_string()))
+        .bind(event.model_route_id.map(|value| value.to_string()))
         .bind(event.provider_key.as_str())
         .bind(event.upstream_model.as_str())
         .bind(event.prompt_tokens)
@@ -1054,6 +1060,16 @@ impl BudgetRepository for PostgresStore {
         .bind(
             event
                 .output_cost_per_million_tokens
+                .map(Money4::as_scaled_i64),
+        )
+        .bind(
+            event
+                .cache_read_cost_per_million_tokens
+                .map(Money4::as_scaled_i64),
+        )
+        .bind(
+            event
+                .cache_write_cost_per_million_tokens
                 .map(Money4::as_scaled_i64),
         )
         .bind(event.computed_cost_usd.as_scaled_i64())

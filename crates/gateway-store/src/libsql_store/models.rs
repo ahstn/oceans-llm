@@ -172,7 +172,8 @@ impl ModelRepository for LibsqlStore {
             .query(
                 r#"
                 SELECT id, model_id, provider_key, upstream_model, priority, weight, enabled,
-                       extra_headers_json, extra_body_json, capabilities_json, compatibility_json
+                       context_window_tokens, pricing_override_json, extra_headers_json,
+                       extra_body_json, capabilities_json, compatibility_json
                 FROM model_routes
                 WHERE model_id = ?1
                 ORDER BY priority ASC
@@ -208,8 +209,9 @@ impl ModelRepository for LibsqlStore {
             .join(", ");
         let query = format!(
             "SELECT id, model_id, provider_key, upstream_model, priority, weight, enabled, \
-             extra_headers_json, extra_body_json, capabilities_json, compatibility_json \
-             FROM model_routes WHERE model_id IN ({placeholders}) ORDER BY model_id ASC, priority ASC"
+             context_window_tokens, pricing_override_json, extra_headers_json, extra_body_json, \
+             capabilities_json, compatibility_json FROM model_routes WHERE model_id IN \
+             ({placeholders}) ORDER BY model_id ASC, priority ASC"
         );
         let params = model_ids
             .iter()
