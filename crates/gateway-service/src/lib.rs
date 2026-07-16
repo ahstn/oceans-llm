@@ -4,6 +4,7 @@ pub mod authenticator;
 pub mod budget_alerts;
 pub mod budget_guard;
 pub mod budget_scopes;
+pub mod effective_route_metadata;
 pub mod icon_identity;
 pub mod mcp_access;
 pub mod mcp_catalog;
@@ -33,6 +34,10 @@ pub use authenticator::{Authenticator, verify_gateway_key_secret};
 pub use budget_alerts::{
     BUDGET_ALERT_THRESHOLD_BPS, BudgetAlertEmail, BudgetAlertSendResult, BudgetAlertSender,
     BudgetAlertService, SinkBudgetAlertSender,
+};
+pub use effective_route_metadata::{
+    EffectiveMetadataSource, EffectiveMetadataSourceKind, EffectiveRouteMetadata,
+    EffectiveRoutePricing, resolve_effective_route_metadata,
 };
 pub use gateway_core::hash_gateway_key_secret;
 pub use icon_identity::{

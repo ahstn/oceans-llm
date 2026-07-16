@@ -74,6 +74,28 @@ models:
         upstream_model: gpt-4o-mini
 ```
 
+### Route metadata overrides
+
+Route metadata is deployment policy, so it lives on each `models[*].routes[*]` entry:
+
+```yaml
+models:
+  - id: contracted-model
+    routes:
+      - provider: private-provider
+        upstream_model: upstream-model
+        context_window_tokens: 128000
+        pricing_override:
+          input_usd_per_million_tokens: "1.2500"
+          output_usd_per_million_tokens: "5.0000"
+          cache_read_usd_per_million_tokens: "0.1250"
+          cache_write_usd_per_million_tokens: "1.5000"
+```
+
+`context_window_tokens` is an optional positive integer. It caps the effective route context but cannot raise a known catalog context limit. Startup rejects a configured cap above a known catalog limit; when catalog context is unknown, the configured value is accepted as admin policy.
+
+`pricing_override` is optional. When present, `input_usd_per_million_tokens` and `output_usd_per_million_tokens` are required. Cache rates are optional and remain absent when omitted; they do not fall back to catalog cache rates. All rates use exact fixed-point decimal strings with at most four fractional digits. Zero is valid; negative, malformed, floating-point, and overflowing values are rejected.
+
 ## Production-Shaped Example
 
 ```yaml

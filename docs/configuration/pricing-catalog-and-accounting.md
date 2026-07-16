@@ -42,15 +42,38 @@ The runtime uses three layers:
 
 The effective-dated rows are what matter for durable accounting. They let Oceans keep older spend stable after an upstream catalog changes.
 
-Startup, scheduled refreshes, and manual refreshes own catalog reconciliation. Request-time accounting only looks up the persisted effective row for the selected provider, model, location, and billing shape. It does not fetch `models.dev`, read a catalog snapshot, or reconcile pricing rows while handling a request.
+Startup, scheduled refreshes, and manual refreshes own catalog reconciliation. Request-time accounting first checks the selected route for an admin-authored pricing override. Without one, it looks up the persisted effective catalog row for the selected provider, model, location, and billing shape. It does not fetch `models.dev`, read a catalog snapshot, or reconcile pricing rows while handling a request.
 
-At request time, Oceans records the selected pricing provenance with the spend event, including the pricing provider, pricing model, copied rate fields, and pricing source metadata. That makes later reports explainable even if the external catalog has changed.
+At request time, Oceans copies the selected rates and provenance onto the spend event. Catalog-priced events include the pricing provider, pricing model, source, ETag, and fetched-at timestamp. Configured-price events identify `configured_override`, leave catalog-only identity and generation fields absent, and retain the selected route id. Historical spend therefore stays explainable and immutable after either catalog or route configuration changes.
+
+## Route Pricing Overrides
+
+Use `models[*].routes[*].pricing_override` when a contract, reseller, self-hosted deployment, or private provider has an authoritative rate that differs from or is absent in the external catalog:
+
+```yaml
+models:
+  - id: contracted-model
+    routes:
+      - provider: private-provider
+        upstream_model: upstream-model
+        pricing_override:
+          input_usd_per_million_tokens: "1.2500"
+          output_usd_per_million_tokens: "5.0000"
+          cache_read_usd_per_million_tokens: "0.1250"
+          cache_write_usd_per_million_tokens: "1.5000"
+```
+
+Input and output rates are required when the block is present. Cache read and cache write rates are optional. Omitted cache rates remain absent rather than inheriting catalog values. Rates are exact non-negative Money4 strings; `"0"` and `"0.0000"` are valid authoritative prices.
+
+Each input and output token subtotal is calculated with integer fixed-point arithmetic from the per-million rate, rounded half up to the nearest `$0.0001`, then added to the request cost. Floating-point rate values are rejected at configuration load so binary floating-point conversion cannot change an admin-authored rate.
+
+An override takes precedence over catalog lookup for its route, including when a conflicting catalog row exists or no catalog row can be resolved. Catalog refresh does not modify overrides or historical spend events.
 
 ## Configure Routes For Chargeable Traffic
 
 Route configuration affects pricing. The selected route tells Oceans which provider family and upstream model should be used for the pricing lookup.
 
-Current exact pricing coverage is intentionally narrow:
+Current exact catalog coverage, used only when a route has no pricing override, is intentionally narrow:
 
 - `openai_compat` routes need a supported `pricing_provider_id`
 - OpenRouter `openai_compat` routes should use `pricing_provider_id: openrouter`
@@ -115,20 +138,21 @@ This compatibility option applies to Chat Completions streams. Responses streams
 
 The catalog and provider responses can contain more billing signals than Oceans charges today.
 
-| Catalog or provider signal | Current accounting status |
+| Catalog, override, or provider signal | Current accounting status |
 | --- | --- |
-| prompt/input tokens | charged when exact pricing resolves |
-| completion/output tokens | charged when exact pricing resolves |
+| prompt/input tokens | charged from the effective input rate |
+| completion/output tokens | charged from the effective output rate |
 | total tokens | stored for reporting and validation context |
-| cache reads/writes | not charged yet |
+| cache read/write rates | stored on spend events and propagated to generated client metadata |
+| cache read/write token counts | stored in raw provider usage when available, but not charged yet |
 | reasoning tokens or traces | not charged separately yet |
 | image, audio, and file modality counters | not charged yet |
 
-The current accounting model is limited to prompt/input tokens, completion/output tokens, and total tokens.
+The current cost calculation remains limited to normalized prompt/input tokens and completion/output tokens. Cache rates are durable metadata for auditability and clients, not additional ledger arithmetic until Oceans defines a canonical normalized cache-token contract.
 
 AWS Bedrock Anthropic Claude responses preserve the raw Anthropic usage object under `usage.provider_usage`, including cache counters such as `cache_read_input_tokens` and `cache_creation_input_tokens` when Bedrock returns them. Bedrock Claude thinking and Converse reasoning blocks are preserved as provider metadata on Chat Completions messages or stream deltas, but they are not priced as separate ledger dimensions.
 
-Cache read/write discounts, hidden thinking costs, and reasoning-specific counters remain future accounting work tracked in [issue #92](https://github.com/ahstn/oceans-llm/issues/92).
+Cache token accounting, hidden thinking costs, and reasoning-specific counters remain future accounting work tracked in [issue #92](https://github.com/ahstn/oceans-llm/issues/92).
 
 ## Budgets And Reporting
 

@@ -345,6 +345,7 @@ mod tests {
             service_account_id: None,
             actor_user_id: None,
             model_id: None,
+            model_route_id: None,
             provider_key: "openai-prod".to_string(),
             upstream_model: "gpt-4o-mini".to_string(),
             prompt_tokens: Some(100),
@@ -362,6 +363,8 @@ mod tests {
             pricing_last_updated: Some("2026-01-01".to_string()),
             input_cost_per_million_tokens: Some(Money4::from_scaled(50_000)),
             output_cost_per_million_tokens: Some(Money4::from_scaled(200_000)),
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: None,
             computed_cost_usd,
             occurred_at,
         }

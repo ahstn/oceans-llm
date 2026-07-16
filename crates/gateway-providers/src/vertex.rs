@@ -2410,7 +2410,7 @@ where
                         &stream_id,
                         created,
                         &model,
-                        Some("assistant").filter(|_| !role_emitted),
+                        (!role_emitted).then_some("assistant"),
                         Some(&text),
                         None,
                     );
@@ -2537,7 +2537,7 @@ where
                                 &stream_id,
                                 created,
                                 &model,
-                                Some("assistant").filter(|_| !role_emitted),
+                                (!role_emitted).then_some("assistant"),
                                 Some(text),
                                 None,
                             );

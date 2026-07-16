@@ -120,6 +120,8 @@ models:
     routes:
       - provider: openai-prod
         upstream_model: gpt-5
+        # Optional route context and pricing overrides are documented in
+        # docs/configuration/configuration-reference.md.
         weight: 9.0
       - provider: openai-secondary
         upstream_model: gpt-5

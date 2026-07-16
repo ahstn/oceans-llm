@@ -415,6 +415,7 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
             service_account_id: api_key.owner_service_account_id,
             actor_user_id: None,
             model_id: Some(model_id),
+            model_route_id: None,
             provider_key: fixture.provider_key.to_string(),
             upstream_model: fixture.upstream_model.to_string(),
             prompt_tokens: fixture.prompt_tokens,
@@ -465,6 +466,8 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
             } else {
                 None
             },
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: None,
             computed_cost_usd: Money4::from_scaled(fixture.cost_scaled),
             occurred_at,
         };

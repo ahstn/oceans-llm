@@ -301,6 +301,8 @@ pub(super) fn route(provider_key: &str, upstream_model: &str) -> ModelRoute {
         priority: 10,
         weight: 1.0,
         enabled: true,
+        context_window_tokens: None,
+        pricing_override: None,
         extra_headers: serde_json::Map::new(),
         extra_body: serde_json::Map::new(),
         capabilities: ProviderCapabilities::all_enabled(),

@@ -194,6 +194,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V39__service_account_entity_tags.sql"),
         postgres_sql: include_str!("../migrations/postgres/V39__service_account_entity_tags.sql"),
     },
+    MigrationManifest {
+        version: 40,
+        name: "route_metadata_overrides",
+        checksum: "V40__route_metadata_overrides.sql",
+        libsql_sql: include_str!("../migrations/V40__route_metadata_overrides.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V40__route_metadata_overrides.sql"),
+    },
 ];
 
 #[cfg(test)]
