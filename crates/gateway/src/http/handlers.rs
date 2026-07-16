@@ -50,7 +50,11 @@ pub async fn readyz(State(state): State<AppState>) -> Result<Json<serde_json::Va
 }
 
 pub async fn api_health() -> Json<serde_json::Value> {
-    Json(json!({ "status": "ok", "service": "gateway" }))
+    Json(json!({
+        "status": "ok",
+        "service": "gateway",
+        "version": env!("CARGO_PKG_VERSION"),
+    }))
 }
 
 pub async fn v1_models(
@@ -1959,10 +1963,19 @@ mod tests {
     use tower_http::request_id::RequestId;
 
     use super::{
-        anthropic_error_response, canonical_request_id, extract_anthropic_authorization_header,
-        route_effective_provider_capabilities, select_first_eligible_route,
-        split_partial_provider_error,
+        anthropic_error_response, api_health, canonical_request_id,
+        extract_anthropic_authorization_header, route_effective_provider_capabilities,
+        select_first_eligible_route, split_partial_provider_error,
     };
+
+    #[tokio::test]
+    async fn api_health_reports_running_gateway_version() {
+        let axum::Json(payload) = api_health().await;
+
+        assert_eq!(payload["status"], "ok");
+        assert_eq!(payload["service"], "gateway");
+        assert_eq!(payload["version"], env!("CARGO_PKG_VERSION"));
+    }
 
     struct StaticProvider {
         provider_type: &'static str,

@@ -85,6 +85,21 @@ import {
   unwrapGatewayResponse,
 } from '@/server/gateway-client.server'
 
+interface GatewayHealth {
+  status: string
+  service: string
+  version?: unknown
+}
+
+const GATEWAY_VERSION_TIMEOUT_MS = 1_000
+
+export async function getGatewayVersion(): Promise<string | null> {
+  const health = await fetchGatewayJson<GatewayHealth>('/api/v1/health', {
+    signal: AbortSignal.timeout(GATEWAY_VERSION_TIMEOUT_MS),
+  })
+  return typeof health.version === 'string' && health.version.trim() ? health.version.trim() : null
+}
+
 export type PublicOidcProvidersPayload = {
   providers: Array<{
     key: string

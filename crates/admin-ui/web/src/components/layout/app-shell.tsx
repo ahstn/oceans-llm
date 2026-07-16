@@ -24,9 +24,10 @@ import type { AuthSessionView } from '@/types/api'
 interface AppShellProps {
   children: ReactNode
   session: AuthSessionView
+  oceansVersion: string | null
 }
 
-export function AppShell({ children, session }: AppShellProps) {
+export function AppShell({ children, session, oceansVersion }: AppShellProps) {
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const [isSigningOut, startSignOut] = useTransition()
   const currentPath = normalizeAdminPath(pathname)
@@ -49,6 +50,7 @@ export function AppShell({ children, session }: AppShellProps) {
       <AppSidebar
         currentPath={currentPath}
         session={session}
+        oceansVersion={oceansVersion}
         signOutPending={isSigningOut}
         onSignOut={handleSignOut}
       />
@@ -75,11 +77,6 @@ export function AppShell({ children, session }: AppShellProps) {
               </BreadcrumbItem>
             </BreadcrumbList>
           </Breadcrumb>
-
-          <div className="border-border/70 bg-card/70 text-muted-foreground ml-auto hidden items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium sm:flex">
-            <span className="bg-primary inline-flex size-2 rounded-full" />
-            Server-first · same-origin
-          </div>
         </header>
 
         <main className="min-h-0 min-w-0 flex-1 overflow-auto">

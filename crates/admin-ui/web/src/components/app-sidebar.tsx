@@ -30,11 +30,18 @@ import type { AuthSessionView } from '@/types/api'
 interface AppSidebarProps {
   currentPath: string
   session: AuthSessionView
+  oceansVersion: string | null
   signOutPending: boolean
   onSignOut: () => void
 }
 
-export function AppSidebar({ currentPath, session, signOutPending, onSignOut }: AppSidebarProps) {
+export function AppSidebar({
+  currentPath,
+  session,
+  oceansVersion,
+  signOutPending,
+  onSignOut,
+}: AppSidebarProps) {
   return (
     <Sidebar collapsible="icon" variant="inset">
       <SidebarHeader className="gap-3 p-3 pb-2">
@@ -53,7 +60,9 @@ export function AppSidebar({ currentPath, session, signOutPending, onSignOut }: 
                   <span className="text-sidebar-foreground truncate text-sm font-medium">
                     Oceans Gateway
                   </span>
-                  <span className="text-sidebar-foreground/70 truncate text-xs">Control plane</span>
+                  <span className="text-sidebar-foreground/70 truncate text-xs">
+                    {oceansVersion ? `Oceans v${oceansVersion}` : 'Oceans'}
+                  </span>
                 </div>
               </div>
             </SidebarMenuButton>
