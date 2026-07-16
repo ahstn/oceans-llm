@@ -1,5 +1,7 @@
 # Route Pricing and Context Overrides Interview
 
+`See also`: [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md), [ADR: Route-Level Effective Model Metadata Overrides](../adr/2026-07-16-route-level-effective-model-metadata-overrides.md)
+
 - Date: 2026-07-16
 - Status: Confirmed for implementation
 - Issues: [#243](https://github.com/ahstn/oceans-llm/issues/243), [#242](https://github.com/ahstn/oceans-llm/issues/242), and absorbed [#237](https://github.com/ahstn/oceans-llm/issues/237)

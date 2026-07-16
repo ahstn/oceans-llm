@@ -35,6 +35,15 @@ pub struct RecordedChatUsage {
     pub cost_usd: Option<f64>,
 }
 
+#[derive(Debug)]
+struct RouteContextOverrideConflict {
+    route_id: Uuid,
+    provider_key: String,
+    upstream_model: String,
+    configured_context: i64,
+    catalog_context: i64,
+}
+
 #[derive(Clone)]
 pub struct GatewayService<S, P> {
     store: Arc<S>,
@@ -410,7 +419,7 @@ where
     }
 
     pub async fn validate_route_context_overrides(&self) -> Result<(), GatewayError> {
-        let Some((route_id, provider_key, upstream_model, configured, catalog)) = self
+        let Some(conflict) = self
             .route_context_override_conflicts()
             .await?
             .into_iter()
@@ -420,21 +429,23 @@ where
         };
 
         Err(GatewayError::InvalidRequest(format!(
-            "route `{route_id}` ({provider_key}/{upstream_model}) context_window_tokens \
-             `{configured}` exceeds catalog context `{catalog}`"
+            "route `{}` ({}/{}) context_window_tokens `{}` exceeds catalog context `{}`",
+            conflict.route_id,
+            conflict.provider_key,
+            conflict.upstream_model,
+            conflict.configured_context,
+            conflict.catalog_context,
         )))
     }
 
     async fn warn_on_route_context_override_conflicts(&self) -> Result<(), GatewayError> {
-        for (route_id, provider_key, upstream_model, configured, catalog) in
-            self.route_context_override_conflicts().await?
-        {
+        for conflict in self.route_context_override_conflicts().await? {
             warn!(
-                %route_id,
-                %provider_key,
-                %upstream_model,
-                configured_context_window_tokens = configured,
-                catalog_context_window_tokens = catalog,
+                route_id = %conflict.route_id,
+                provider_key = %conflict.provider_key,
+                upstream_model = %conflict.upstream_model,
+                configured_context_window_tokens = conflict.configured_context,
+                catalog_context_window_tokens = conflict.catalog_context,
                 "configured route context exceeds the current catalog limit; using catalog limit"
             );
         }
@@ -443,7 +454,7 @@ where
 
     async fn route_context_override_conflicts(
         &self,
-    ) -> Result<Vec<(Uuid, String, String, i64, i64)>, GatewayError> {
+    ) -> Result<Vec<RouteContextOverrideConflict>, GatewayError> {
         let mut conflicts = Vec::new();
         for model in self.store.list_models().await? {
             for route in self.store.list_routes_for_model(model.id).await? {
@@ -457,13 +468,13 @@ where
                     continue;
                 };
                 if configured > catalog {
-                    conflicts.push((
-                        route.id,
-                        route.provider_key,
-                        route.upstream_model,
-                        configured,
-                        catalog,
-                    ));
+                    conflicts.push(RouteContextOverrideConflict {
+                        route_id: route.id,
+                        provider_key: route.provider_key,
+                        upstream_model: route.upstream_model,
+                        configured_context: configured,
+                        catalog_context: catalog,
+                    });
                 }
             }
         }
@@ -518,6 +529,22 @@ where
         occurred_at: OffsetDateTime,
     ) -> Result<EffectiveRouteMetadata, GatewayError> {
         let provider = self.store.get_provider_by_key(&route.provider_key).await?;
+        resolve_effective_route_metadata(self.store.as_ref(), provider.as_ref(), route, occurred_at)
+            .await
+    }
+
+    pub async fn resolve_route_metadata_with_provider(
+        &self,
+        route: &ModelRoute,
+        provider: Option<&ResolvedProviderConnection>,
+        occurred_at: OffsetDateTime,
+    ) -> Result<EffectiveRouteMetadata, GatewayError> {
+        let provider = provider.map(|provider| gateway_core::ProviderConnection {
+            provider_key: provider.provider_key.clone(),
+            provider_type: provider.provider_type.clone(),
+            config: provider.config.clone(),
+            secrets: None,
+        });
         resolve_effective_route_metadata(self.store.as_ref(), provider.as_ref(), route, occurred_at)
             .await
     }
@@ -1345,6 +1372,49 @@ mod tests {
                 .contains("context_window_tokens `128000` exceeds catalog context `64000`"),
             "unexpected error: {error}"
         );
+    }
+
+    #[tokio::test]
+    async fn startup_context_validation_uses_catalog_limits_for_modified_pricing_routes() {
+        let model_id = Uuid::new_v4();
+        let model = model(model_id);
+        let mut route = vertex_embedding_route(model_id);
+        route.upstream_model = "gpt-5".to_string();
+        route.context_window_tokens = Some(128_000);
+        route
+            .extra_body
+            .insert("service_tier".to_string(), json!("priority"));
+        let provider = openai_provider(&route.provider_key);
+        let repo = Arc::new(UsageAccountingRepo {
+            models: vec![model],
+            routes: vec![route.clone()],
+            provider: Some(provider),
+            pricing: Some(pricing_record(Some(64_000))),
+            ..Default::default()
+        });
+        let service = GatewayService::new(repo, Arc::new(PassThroughPlanner));
+
+        let error = service
+            .validate_route_context_overrides()
+            .await
+            .expect_err("billing modifiers must not hide catalog context");
+        assert!(
+            error
+                .to_string()
+                .contains("context_window_tokens `128000` exceeds catalog context `64000`"),
+            "unexpected error: {error}"
+        );
+
+        let pricing = service
+            .resolve_route_pricing(&route, OffsetDateTime::now_utc())
+            .await
+            .expect("pricing resolution");
+        assert!(matches!(
+            pricing,
+            gateway_core::PricingResolution::Unpriced {
+                reason: gateway_core::PricingUnpricedReason::UnsupportedBillingModifier(_)
+            }
+        ));
     }
 
     #[tokio::test]

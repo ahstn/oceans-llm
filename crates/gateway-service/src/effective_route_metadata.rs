@@ -4,7 +4,7 @@ use gateway_core::{
 };
 use time::OffsetDateTime;
 
-use crate::pricing_catalog::exact_pricing_target_for_route;
+use crate::pricing_catalog::catalog_metadata_target_for_route;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EffectiveMetadataSourceKind {
@@ -82,7 +82,7 @@ where
     R: PricingCatalogRepository + Send + Sync + 'static,
 {
     let catalog_record =
-        match provider.and_then(|provider| exact_pricing_target_for_route(provider, route)) {
+        match provider.and_then(|provider| catalog_metadata_target_for_route(provider, route)) {
             Some((pricing_provider_id, pricing_model_id)) => {
                 repo.resolve_model_pricing_at(&pricing_provider_id, &pricing_model_id, occurred_at)
                     .await?

@@ -1703,7 +1703,7 @@ async fn best_effort_record_mcp_request_telemetry(
     let occurred_at = OffsetDateTime::now_utc();
     let context_window_tokens = match state
         .service
-        .resolve_route_metadata(route, occurred_at)
+        .resolve_route_metadata_with_provider(route, provider, occurred_at)
         .await
     {
         Ok(metadata) => metadata.limits.context,

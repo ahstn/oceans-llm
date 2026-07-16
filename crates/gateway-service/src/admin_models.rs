@@ -205,32 +205,44 @@ where
                 resolve_provider_display(route.provider_key.as_str(), primary_provider)
             });
             let route_capabilities = primary_route.map(|route| route.capabilities);
+            let primary_metadata = match primary_route {
+                Some(route) => Some(
+                    resolve_effective_route_metadata(
+                        self.repo.as_ref(),
+                        primary_provider,
+                        route,
+                        pricing_time,
+                    )
+                    .await?,
+                ),
+                None => None,
+            };
             let mut route_metadata = Vec::new();
             for route in routes
                 .iter()
                 .filter(|route| route_is_eligible(&providers_by_key, route))
             {
-                let provider = providers_by_key
-                    .get(&route.provider_key)
-                    .expect("eligible route provider exists");
-                route_metadata.push((
-                    route.id,
+                let metadata = if primary_route.is_some_and(|primary| primary.id == route.id) {
+                    primary_metadata
+                        .as_ref()
+                        .expect("primary route metadata was resolved")
+                        .clone()
+                } else {
+                    let provider = providers_by_key
+                        .get(&route.provider_key)
+                        .expect("eligible route provider exists");
                     resolve_effective_route_metadata(
                         self.repo.as_ref(),
                         Some(provider),
                         route,
                         pricing_time,
                     )
-                    .await?,
-                ));
+                    .await?
+                };
+                route_metadata.push((route.id, metadata));
             }
-            let primary_metadata = primary_route.and_then(|route| {
-                route_metadata
-                    .iter()
-                    .find(|(route_id, _)| *route_id == route.id)
-                    .map(|(_, metadata)| metadata)
-            });
             let aggregate = aggregate_model_metadata(&route_metadata);
+            let primary_metadata = primary_metadata.as_ref();
             let primary_pricing = primary_metadata.and_then(|metadata| metadata.pricing.as_ref());
             let model_icon_key = resolve_model_icon_key(
                 primary_route
@@ -1195,6 +1207,72 @@ mod tests {
         assert_eq!(items[0].supports_streaming, Some(true));
         assert_eq!(items[0].supports_attachments, None);
         assert!(items[0].client_configurations.is_empty());
+    }
+
+    #[tokio::test]
+    async fn degraded_model_keeps_primary_pricing_but_has_unknown_aggregate_limits() {
+        let model_id = Uuid::new_v4();
+        let route = ModelRoute {
+            id: Uuid::new_v4(),
+            model_id,
+            provider_key: "openai".to_string(),
+            upstream_model: "upstream".to_string(),
+            priority: 0,
+            weight: 1.0,
+            enabled: false,
+            context_window_tokens: None,
+            pricing_override: None,
+            extra_headers: Default::default(),
+            extra_body: Default::default(),
+            capabilities: ProviderCapabilities::all_enabled(),
+            compatibility: Default::default(),
+        };
+        let provider = ProviderConnection {
+            provider_key: route.provider_key.clone(),
+            provider_type: "openai_compat".to_string(),
+            config: json!({"pricing_provider_id": "openai"}),
+            secrets: None,
+        };
+        let pricing = pricing_record(
+            "openai",
+            &route.upstream_model,
+            "1.2500",
+            "5.0000",
+            (Some(128_000), Some(96_000), Some(32_000)),
+            &["text"],
+        );
+        let repo = Arc::new(CountingRepo {
+            models: vec![GatewayModel {
+                id: model_id,
+                model_key: "disabled-model".to_string(),
+                alias_target_model_key: None,
+                description: None,
+                tags: Vec::new(),
+                rank: 1,
+            }],
+            routes_by_model: HashMap::from([(model_id, vec![route])]),
+            providers_by_key: HashMap::from([("openai".to_string(), provider)]),
+            pricing_by_key: HashMap::from([(
+                ("openai".to_string(), "upstream".to_string()),
+                pricing,
+            )]),
+            ..Default::default()
+        });
+
+        let items = AdminModelsService::new(repo)
+            .list_models()
+            .await
+            .expect("admin models");
+        let model = &items[0];
+
+        assert_eq!(model.status, AdminModelStatus::Degraded);
+        assert_eq!(model.input_cost_per_million_tokens_usd_10000, Some(12_500));
+        assert_eq!(model.context_window_tokens, None);
+        assert_eq!(
+            model.pricing_source.as_ref().map(|source| source.kind),
+            Some(crate::EffectiveMetadataSourceKind::Catalog)
+        );
+        assert!(!model.client_configurations.is_empty());
     }
 
     #[tokio::test]

@@ -39,6 +39,23 @@ pub(super) fn pricing_target_for_route(
         return PricingTarget::Unpriced(reason);
     }
 
+    pricing_identity_for_route(provider, route)
+}
+
+pub(crate) fn catalog_metadata_target_for_route(
+    provider: &ProviderConnection,
+    route: &ModelRoute,
+) -> Option<(String, String)> {
+    match pricing_identity_for_route(provider, route) {
+        PricingTarget::Exact {
+            pricing_provider_id,
+            model_id,
+        } => Some((pricing_provider_id, model_id)),
+        PricingTarget::Unpriced(_) => None,
+    }
+}
+
+fn pricing_identity_for_route(provider: &ProviderConnection, route: &ModelRoute) -> PricingTarget {
     match provider.provider_type.as_str() {
         "openai_compat" | "gcp_cloud_run_openai_compat" => {
             openai_compatible_pricing_target(provider, route)
@@ -51,19 +68,6 @@ pub(super) fn pricing_target_for_route(
         other => PricingTarget::Unpriced(PricingUnpricedReason::UnsupportedPricingProviderId(
             other.to_string(),
         )),
-    }
-}
-
-pub(crate) fn exact_pricing_target_for_route(
-    provider: &ProviderConnection,
-    route: &ModelRoute,
-) -> Option<(String, String)> {
-    match pricing_target_for_route(provider, route) {
-        PricingTarget::Exact {
-            pricing_provider_id,
-            model_id,
-        } => Some((pricing_provider_id, model_id)),
-        PricingTarget::Unpriced(_) => None,
     }
 }
 
