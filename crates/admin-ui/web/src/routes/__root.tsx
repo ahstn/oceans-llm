@@ -50,10 +50,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     beforeLoad: async ({ location }) => {
       const currentPath = normalizeAdminPath(location.pathname);
       const isPublicRoute = isPublicAdminRoute(currentPath);
-      const [{ data: session }, oceansVersion] = await Promise.all([
-        loadAuthSession(),
-        loadOceansVersion().catch(() => null),
-      ]);
+      const { data: session } = await loadAuthSession();
       const adminSession = isPlatformAdminSession(session) ? session : null;
 
       if (isPublicRoute) {
@@ -72,7 +69,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
           });
         }
 
-        return { session: adminSession, oceansVersion };
+        return { session: adminSession, oceansVersion: null };
       }
 
       if (!adminSession) {
@@ -91,6 +88,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         throw redirect({ to: "/change-password" });
       }
 
+      const oceansVersion = await loadOceansVersion().catch(() => null);
       return { session: adminSession, oceansVersion };
     },
     errorComponent: RootErrorComponent,

@@ -71,6 +71,30 @@ describe('AppShell', () => {
     expect(screen.queryByText('Server-first · same-origin')).not.toBeInTheDocument()
   })
 
+  it('renders an unversioned fallback when gateway version is unavailable', () => {
+    render(
+      <TooltipProvider>
+        <AppShell
+          oceansVersion={null}
+          session={{
+            must_change_password: false,
+            user: {
+              id: 'user_1',
+              name: 'Admin User',
+              email: 'admin@example.com',
+              global_role: 'owner',
+            },
+          }}
+        >
+          content
+        </AppShell>
+      </TooltipProvider>,
+    )
+
+    expect(screen.getByText('Oceans')).toBeVisible()
+    expect(screen.queryByText(/^Oceans v/)).not.toBeInTheDocument()
+  })
+
   it('signs out from the account menu', async () => {
     render(
       <TooltipProvider>

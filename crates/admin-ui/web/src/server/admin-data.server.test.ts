@@ -877,6 +877,17 @@ describe('server-side admin data wrappers', () => {
     })
 
     await expect(getGatewayVersion()).resolves.toBe('0.17.0')
-    expect(fetchGatewayJson).toHaveBeenCalledWith('/api/v1/health')
+    expect(fetchGatewayJson).toHaveBeenCalledWith('/api/v1/health', {
+      signal: expect.any(AbortSignal),
+    })
+  })
+
+  it('returns null when gateway health omits the version', async () => {
+    fetchGatewayJson.mockResolvedValueOnce({
+      status: 'ok',
+      service: 'gateway',
+    })
+
+    await expect(getGatewayVersion()).resolves.toBeNull()
   })
 })

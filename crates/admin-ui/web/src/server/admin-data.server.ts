@@ -88,12 +88,18 @@ import {
 interface GatewayHealth {
   status: string
   service: string
-  version: string
+  version?: unknown
 }
 
-export async function getGatewayVersion(): Promise<string> {
-  const health = await fetchGatewayJson<GatewayHealth>('/api/v1/health')
-  return health.version
+const GATEWAY_VERSION_TIMEOUT_MS = 1_000
+
+export async function getGatewayVersion(): Promise<string | null> {
+  const health = await fetchGatewayJson<GatewayHealth>('/api/v1/health', {
+    signal: AbortSignal.timeout(GATEWAY_VERSION_TIMEOUT_MS),
+  })
+  return typeof health.version === 'string' && health.version.trim()
+    ? health.version.trim()
+    : null
 }
 
 export type PublicOidcProvidersPayload = {
