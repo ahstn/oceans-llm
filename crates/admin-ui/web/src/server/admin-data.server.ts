@@ -85,6 +85,17 @@ import {
   unwrapGatewayResponse,
 } from '@/server/gateway-client.server'
 
+interface GatewayHealth {
+  status: string
+  service: string
+  version: string
+}
+
+export async function getGatewayVersion(): Promise<string> {
+  const health = await fetchGatewayJson<GatewayHealth>('/api/v1/health')
+  return health.version
+}
+
 export type PublicOidcProvidersPayload = {
   providers: Array<{
     key: string

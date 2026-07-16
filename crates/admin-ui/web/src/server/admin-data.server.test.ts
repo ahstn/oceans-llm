@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createApiKey,
   deactivateUser,
+  getGatewayVersion,
   getRequestLogDetail,
   getMcpInvocationDetail,
   getSpendReport,
@@ -866,5 +867,16 @@ describe('server-side admin data wrappers', () => {
     await expect(logoutCurrentSession()).resolves.toMatchObject({ data: { status: 'ok' } })
 
     expect(POST).toHaveBeenCalledWith('/api/v1/auth/logout')
+  })
+
+  it('reads the running Oceans version from gateway health', async () => {
+    fetchGatewayJson.mockResolvedValueOnce({
+      status: 'ok',
+      service: 'gateway',
+      version: '0.17.0',
+    })
+
+    await expect(getGatewayVersion()).resolves.toBe('0.17.0')
+    expect(fetchGatewayJson).toHaveBeenCalledWith('/api/v1/health')
   })
 })

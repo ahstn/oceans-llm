@@ -17,7 +17,10 @@ import { Toaster } from "sonner";
 import { AppShell } from "@/components/layout/app-shell";
 import { GlobalErrorPage } from "@/components/layout/global-error-page";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { getAuthSession } from "@/server/admin-data.functions";
+import {
+  getAuthSession,
+  getOceansVersion,
+} from "@/server/admin-data.functions";
 import globalsCss from "@/styles/globals.css?url";
 import faviconUrl from "@/assets/oceans-logo-rounded-square.png?url";
 import {
@@ -35,12 +38,22 @@ const loadAuthSession = createIsomorphicFn()
   })
   .client(() => getAuthSession());
 
+const loadOceansVersion = createIsomorphicFn()
+  .server(async () => {
+    const { getGatewayVersion } = await import("@/server/admin-data.server");
+    return getGatewayVersion();
+  })
+  .client(() => getOceansVersion());
+
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   {
     beforeLoad: async ({ location }) => {
       const currentPath = normalizeAdminPath(location.pathname);
       const isPublicRoute = isPublicAdminRoute(currentPath);
-      const { data: session } = await loadAuthSession();
+      const [{ data: session }, oceansVersion] = await Promise.all([
+        loadAuthSession(),
+        loadOceansVersion().catch(() => null),
+      ]);
       const adminSession = isPlatformAdminSession(session) ? session : null;
 
       if (isPublicRoute) {
@@ -59,7 +72,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
           });
         }
 
-        return { session: adminSession };
+        return { session: adminSession, oceansVersion };
       }
 
       if (!adminSession) {
@@ -78,7 +91,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         throw redirect({ to: "/change-password" });
       }
 
-      return { session: adminSession };
+      return { session: adminSession, oceansVersion };
     },
     errorComponent: RootErrorComponent,
     head: () => ({
@@ -115,7 +128,7 @@ function RootComponent() {
   });
   const currentPath = normalizeAdminPath(pathname);
   const isPublicRoute = isPublicAdminRoute(currentPath);
-  const { session } = Route.useRouteContext();
+  const { session, oceansVersion } = Route.useRouteContext();
 
   if (!isPublicRoute && session?.must_change_password) {
     return (
@@ -130,7 +143,7 @@ function RootComponent() {
       {isPublicRoute ? (
         <Outlet />
       ) : session ? (
-        <AppShell session={session}>
+        <AppShell session={session} oceansVersion={oceansVersion}>
           <Outlet />
         </AppShell>
       ) : null}

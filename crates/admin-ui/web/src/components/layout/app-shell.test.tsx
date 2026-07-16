@@ -36,6 +36,7 @@ describe('AppShell', () => {
     render(
       <TooltipProvider>
         <AppShell
+          oceansVersion="0.17.0"
           session={{
             must_change_password: false,
             user: {
@@ -60,17 +61,21 @@ describe('AppShell', () => {
       'Identity',
       'Admin User',
       'admin@example.com',
+      'Oceans v0.17.0',
     ]
 
     for (const label of labels) {
       expect(screen.getAllByText(label).length).toBeGreaterThan(0)
     }
+
+    expect(screen.queryByText('Server-first · same-origin')).not.toBeInTheDocument()
   })
 
   it('signs out from the account menu', async () => {
     render(
       <TooltipProvider>
         <AppShell
+          oceansVersion="0.17.0"
           session={{
             must_change_password: false,
             user: {

@@ -25,6 +25,7 @@ import {
   getUsageLeaderboard,
   getSpendReport,
   getInvitation,
+  getGatewayVersion,
   listRequestLogs,
   listMcpInvocations,
   listMcpServers,
@@ -70,6 +71,10 @@ import {
   revokeMcpGrant,
 } from '@/server/admin-data.server'
 import { resolveBrowserGatewayOrigin } from '@/server/gateway-client.server'
+
+export const getOceansVersion = createServerFn({ method: 'GET' }).handler(async () => {
+  return getGatewayVersion()
+})
 
 export const getApiKeys = createServerFn({ method: 'GET' }).handler(async () => {
   return listApiKeys()
