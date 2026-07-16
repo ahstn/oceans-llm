@@ -12,7 +12,7 @@
 
 ## Context
 
-The external pricing catalog describes upstream list prices and advertised model limits. It cannot represent deployment policy such as negotiated rates, self-hosted costs, reseller pricing, or a deliberately constrained context window. Editing downloaded catalog data would mix operator policy with external metadata and would be unsafe across refreshes.
+The external pricing catalog describes upstream list prices and advertised model limits. It cannot represent deployment policy such as negotiated rates, self-hosted costs, reseller pricing, or a deliberately constrained context window. Editing downloaded catalog data would mix admin policy with external metadata and would be unsafe across refreshes.
 
 Issues [#242](https://github.com/ahstn/oceans-llm/issues/242) and [#243](https://github.com/ahstn/oceans-llm/issues/243) require route-specific effective metadata that remains auditable through routing, accounting, admin APIs, generated client configuration, and MCP telemetry.
 
@@ -67,7 +67,7 @@ Catalog modalities remain optional in the effective metadata model. Absence mean
 Benefits:
 
 - negotiated and private-provider traffic participates in deterministic spend accounting and hard budgets
-- external catalog refresh remains isolated from operator policy
+- external catalog refresh remains isolated from admin policy
 - historical spend stays explainable after both configuration and catalog changes
 - generated clients and MCP telemetry use the same deployment-specific context contract
 - aliases and multi-route logical models retain conservative aggregate limits
@@ -76,14 +76,14 @@ Trade-offs:
 
 - pricing values must be quoted in YAML, which is stricter than ordinary string coercion
 - route metadata adds storage and admin-contract fields across both database backends
-- a newly reduced catalog context discovered after startup produces a warning and a conservative effective limit; operators must correct configuration before the next restart
+- a newly reduced catalog context discovered after startup produces a warning and a conservative effective limit; admins must correct configuration before the next restart
 - cache rates are visible before cache token usage participates in gateway-side charging
 
 ## Follow-up work
 
 - Add canonical request-time token-count preflight enforcement only after a tokenizer contract exists.
 - Charge cache-read/cache-write usage only after provider counters are normalized into explicit ledger dimensions.
-- Add operator mutation APIs if route configuration becomes editable outside declarative seed configuration.
+- Add admin mutation APIs if route configuration becomes editable outside declarative seed configuration.
 
 ## Attribution
 

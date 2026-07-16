@@ -92,7 +92,7 @@ models:
           cache_write_usd_per_million_tokens: "1.5000"
 ```
 
-`context_window_tokens` is an optional positive integer. It caps the effective route context but cannot raise a known catalog context limit. Startup rejects a configured cap above a known catalog limit; when catalog context is unknown, the configured value is accepted as operator policy.
+`context_window_tokens` is an optional positive integer. It caps the effective route context but cannot raise a known catalog context limit. Startup rejects a configured cap above a known catalog limit; when catalog context is unknown, the configured value is accepted as admin policy.
 
 `pricing_override` is optional. When present, `input_usd_per_million_tokens` and `output_usd_per_million_tokens` are required. Cache rates are optional and remain absent when omitted; they do not fall back to catalog cache rates. All rates use exact fixed-point decimal strings with at most four fractional digits. Zero is valid; negative, malformed, floating-point, and overflowing values are rejected.
 

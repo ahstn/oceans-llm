@@ -871,6 +871,7 @@ mod tests {
         budget: Option<BudgetRecord>,
         provider: Option<ProviderConnection>,
         pricing: Option<ModelPricingRecord>,
+        pricing_lookup_fails: bool,
     }
 
     struct PassThroughPlanner;
@@ -1159,6 +1160,11 @@ mod tests {
             _pricing_model_id: &str,
             _occurred_at: OffsetDateTime,
         ) -> Result<Option<ModelPricingRecord>, StoreError> {
+            if self.pricing_lookup_fails {
+                return Err(StoreError::Unavailable(
+                    "pricing catalog unavailable".to_string(),
+                ));
+            }
             Ok(self.pricing.clone())
         }
     }
@@ -1480,7 +1486,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn configured_route_pricing_is_charged_and_snapshotted_without_catalog_identity() {
+    async fn configured_route_pricing_is_charged_and_snapshotted_when_catalog_is_unavailable() {
         let auth = auth();
         let model_id = Uuid::new_v4();
         let model = model(model_id);
@@ -1521,6 +1527,7 @@ mod tests {
             budget: Some(budget),
             provider: Some(provider),
             pricing: Some(conflicting_catalog_pricing),
+            pricing_lookup_fails: true,
             ..Default::default()
         });
         let service = GatewayService::new(repo.clone(), Arc::new(PassThroughPlanner));

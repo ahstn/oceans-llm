@@ -10,7 +10,7 @@
 
 This interview defines the implementation contract for route-level pricing overrides and context-window overrides. It also absorbs #237 because the confirmed pricing schema includes cache-write metadata that must reach generated Pi configuration.
 
-The design keeps operator policy separate from the downloaded pricing catalog. It preserves exact fixed-point accounting, snapshots applied rates on usage events, and does not add approximate request token enforcement.
+The design keeps admin policy separate from the downloaded pricing catalog. It preserves exact fixed-point accounting, snapshots applied rates on usage events, and does not add approximate request token enforcement.
 
 ## Context Reviewed
 
@@ -95,7 +95,7 @@ A route pricing override is authoritative for the complete configured pricing sh
 2. Do not fill omitted cache fields from the catalog.
 3. If no override exists, retain current exact catalog resolution and current unpriced reasons.
 
-Catalog limits, modalities, and display metadata may still supplement a route whose token rates are configured. The catalog itself is never mutated to represent operator policy.
+Catalog limits, modalities, and display metadata may still supplement a route whose token rates are configured. The catalog itself is never mutated to represent admin policy.
 
 ### Context precedence
 
@@ -211,7 +211,7 @@ The required sequence for serving startup is:
 4. Validate persisted configured context caps against known catalog contexts.
 5. Fail before binding if validation finds a configured cap above a known catalog context.
 
-Manual and background catalog refreshes do not fail solely because an upstream context limit shrank. Effective metadata clamps to the new catalog value and a warning identifies the stale operator cap.
+Manual and background catalog refreshes do not fail solely because an upstream context limit shrank. Effective metadata clamps to the new catalog value and a warning identifies the stale admin cap.
 
 The standalone `seed-config` command does not acquire a new network/catalog lifecycle. Catalog-dependent validation is guaranteed by serving startup, including startup with `--seed-config=false`.
 

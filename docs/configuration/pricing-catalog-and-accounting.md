@@ -42,7 +42,7 @@ The runtime uses three layers:
 
 The effective-dated rows are what matter for durable accounting. They let Oceans keep older spend stable after an upstream catalog changes.
 
-Startup, scheduled refreshes, and manual refreshes own catalog reconciliation. Request-time accounting first checks the selected route for an operator-authored pricing override. Without one, it looks up the persisted effective catalog row for the selected provider, model, location, and billing shape. It does not fetch `models.dev`, read a catalog snapshot, or reconcile pricing rows while handling a request.
+Startup, scheduled refreshes, and manual refreshes own catalog reconciliation. Request-time accounting first checks the selected route for an admin-authored pricing override. Without one, it looks up the persisted effective catalog row for the selected provider, model, location, and billing shape. It does not fetch `models.dev`, read a catalog snapshot, or reconcile pricing rows while handling a request.
 
 At request time, Oceans copies the selected rates and provenance onto the spend event. Catalog-priced events include the pricing provider, pricing model, source, ETag, and fetched-at timestamp. Configured-price events identify `configured_override`, leave catalog-only identity and generation fields absent, and retain the selected route id. Historical spend therefore stays explainable and immutable after either catalog or route configuration changes.
 
@@ -65,7 +65,7 @@ models:
 
 Input and output rates are required when the block is present. Cache read and cache write rates are optional. Omitted cache rates remain absent rather than inheriting catalog values. Rates are exact non-negative Money4 strings; `"0"` and `"0.0000"` are valid authoritative prices.
 
-Each input and output token subtotal is calculated with integer fixed-point arithmetic from the per-million rate, rounded half up to the nearest `$0.0001`, then added to the request cost. Floating-point rate values are rejected at configuration load so binary floating-point conversion cannot change an operator-authored rate.
+Each input and output token subtotal is calculated with integer fixed-point arithmetic from the per-million rate, rounded half up to the nearest `$0.0001`, then added to the request cost. Floating-point rate values are rejected at configuration load so binary floating-point conversion cannot change an admin-authored rate.
 
 An override takes precedence over catalog lookup for its route, including when a conflicting catalog row exists or no catalog row can be resolved. Catalog refresh does not modify overrides or historical spend events.
 

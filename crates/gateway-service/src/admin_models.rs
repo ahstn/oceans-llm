@@ -250,17 +250,21 @@ where
                     .into_iter()
                     .chain([execution_model.model_key.as_str(), model.model_key.as_str()]),
             );
-            let client_config_input = build_client_config_input(ClientConfigContext {
-                model: &model,
-                execution_model: &execution_model,
-                primary_route,
-                primary_provider,
-                provider_display: provider_display.as_ref(),
-                metadata: primary_metadata,
-                limits: &aggregate.limits,
-                route_capabilities,
-                gateway_base_url: &self.client_config_gateway_base_url,
-            });
+            let client_config_input = primary_route
+                .filter(|route| route_is_eligible(&providers_by_key, route))
+                .and_then(|primary_route| {
+                    build_client_config_input(ClientConfigContext {
+                        model: &model,
+                        execution_model: &execution_model,
+                        primary_route: Some(primary_route),
+                        primary_provider,
+                        provider_display: provider_display.as_ref(),
+                        metadata: primary_metadata,
+                        limits: &aggregate.limits,
+                        route_capabilities,
+                        gateway_base_url: &self.client_config_gateway_base_url,
+                    })
+                });
             let client_configurations = client_config_input
                 .as_ref()
                 .map(render_default_configs)
@@ -1272,7 +1276,7 @@ mod tests {
             model.pricing_source.as_ref().map(|source| source.kind),
             Some(crate::EffectiveMetadataSourceKind::Catalog)
         );
-        assert!(!model.client_configurations.is_empty());
+        assert!(model.client_configurations.is_empty());
     }
 
     #[tokio::test]
