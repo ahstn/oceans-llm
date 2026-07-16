@@ -458,6 +458,9 @@ where
         let mut conflicts = Vec::new();
         for model in self.store.list_models().await? {
             for route in self.store.list_routes_for_model(model.id).await? {
+                if !route.enabled || route.weight <= 0.0 {
+                    continue;
+                }
                 let Some(configured) = route.context_window_tokens else {
                     continue;
                 };
@@ -1378,6 +1381,36 @@ mod tests {
                 .contains("context_window_tokens `128000` exceeds catalog context `64000`"),
             "unexpected error: {error}"
         );
+    }
+
+    #[tokio::test]
+    async fn startup_context_validation_skips_non_selectable_routes() {
+        let model_id = Uuid::new_v4();
+        let model = model(model_id);
+        let mut disabled_route = vertex_embedding_route(model_id);
+        disabled_route.upstream_model = "gpt-5".to_string();
+        disabled_route.context_window_tokens = Some(128_000);
+        disabled_route.enabled = false;
+        let mut zero_weight_route = disabled_route.clone();
+        zero_weight_route.id = Uuid::new_v4();
+        zero_weight_route.enabled = true;
+        zero_weight_route.weight = 0.0;
+        let provider = openai_provider(&disabled_route.provider_key);
+        let service = GatewayService::new(
+            Arc::new(UsageAccountingRepo {
+                models: vec![model],
+                routes: vec![disabled_route, zero_weight_route],
+                provider: Some(provider),
+                pricing: Some(pricing_record(Some(64_000))),
+                ..Default::default()
+            }),
+            Arc::new(PassThroughPlanner),
+        );
+
+        service
+            .validate_route_context_overrides()
+            .await
+            .expect("disabled and zero-weight routes cannot block startup");
     }
 
     #[tokio::test]
