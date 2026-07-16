@@ -9,14 +9,16 @@ use gateway_client_config::{
     infer_anthropic_thinking_policy, render_default_configs, render_default_configs_for_models,
 };
 use gateway_core::{
-    GatewayError, GatewayModel, ModelAllowlistPolicy, ModelPricingRecord, ModelRepository,
-    ModelRoute, PricingCatalogRepository, PricingModalities, ProviderCapabilities,
+    GatewayError, GatewayModel, ModelAllowlistPolicy, ModelRepository, ModelRoute,
+    PricingCatalogRepository, PricingLimits, PricingModalities, ProviderCapabilities,
     ProviderConnection, ProviderRepository, vertex_route_capabilities_for_upstream_model,
 };
 use time::OffsetDateTime;
 
-use crate::pricing_catalog::exact_pricing_target_for_route;
-use crate::{ModelIconKey, ProviderIconKey, resolve_model_icon_key, resolve_provider_display};
+use crate::{
+    EffectiveMetadataSource, EffectiveRouteMetadata, ModelIconKey, ProviderIconKey,
+    resolve_effective_route_metadata, resolve_model_icon_key, resolve_provider_display,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AdminModelStatus {
@@ -52,7 +54,11 @@ pub struct AdminModelSummary {
     pub input_cost_per_million_tokens_usd_10000: Option<i64>,
     pub output_cost_per_million_tokens_usd_10000: Option<i64>,
     pub cache_read_cost_per_million_tokens_usd_10000: Option<i64>,
+    pub cache_write_cost_per_million_tokens_usd_10000: Option<i64>,
+    pub pricing_source: Option<EffectiveMetadataSource>,
+    pub pricing_varies_by_route: bool,
     pub context_window_tokens: Option<i64>,
+    pub context_window_source: Option<EffectiveMetadataSource>,
     pub input_window_tokens: Option<i64>,
     pub output_window_tokens: Option<i64>,
     pub supports_streaming: Option<bool>,
@@ -199,29 +205,66 @@ where
                 resolve_provider_display(route.provider_key.as_str(), primary_provider)
             });
             let route_capabilities = primary_route.map(|route| route.capabilities);
-            let pricing_record = match (primary_route, primary_provider) {
-                (Some(route), Some(provider)) => {
-                    resolve_display_pricing(self.repo.as_ref(), provider, route, pricing_time)
-                        .await?
-                }
-                _ => None,
+            let primary_metadata = match primary_route {
+                Some(route) => Some(
+                    resolve_effective_route_metadata(
+                        self.repo.as_ref(),
+                        primary_provider,
+                        route,
+                        pricing_time,
+                    )
+                    .await?,
+                ),
+                None => None,
             };
+            let mut route_metadata = Vec::new();
+            for route in routes
+                .iter()
+                .filter(|route| route_is_eligible(&providers_by_key, route))
+            {
+                let metadata = if primary_route.is_some_and(|primary| primary.id == route.id) {
+                    primary_metadata
+                        .as_ref()
+                        .expect("primary route metadata was resolved")
+                        .clone()
+                } else {
+                    let provider = providers_by_key
+                        .get(&route.provider_key)
+                        .expect("eligible route provider exists");
+                    resolve_effective_route_metadata(
+                        self.repo.as_ref(),
+                        Some(provider),
+                        route,
+                        pricing_time,
+                    )
+                    .await?
+                };
+                route_metadata.push((route.id, metadata));
+            }
+            let aggregate = aggregate_model_metadata(&route_metadata);
+            let primary_metadata = primary_metadata.as_ref();
+            let primary_pricing = primary_metadata.and_then(|metadata| metadata.pricing.as_ref());
             let model_icon_key = resolve_model_icon_key(
                 primary_route
                     .map(|route| route.upstream_model.as_str())
                     .into_iter()
                     .chain([execution_model.model_key.as_str(), model.model_key.as_str()]),
             );
-            let client_config_input = build_client_config_input(ClientConfigContext {
-                model: &model,
-                execution_model: &execution_model,
-                primary_route,
-                primary_provider,
-                provider_display: provider_display.as_ref(),
-                pricing_record: pricing_record.as_ref(),
-                route_capabilities,
-                gateway_base_url: &self.client_config_gateway_base_url,
-            });
+            let client_config_input = primary_route
+                .filter(|route| route_is_eligible(&providers_by_key, route))
+                .and_then(|primary_route| {
+                    build_client_config_input(ClientConfigContext {
+                        model: &model,
+                        execution_model: &execution_model,
+                        primary_route: Some(primary_route),
+                        primary_provider,
+                        provider_display: provider_display.as_ref(),
+                        metadata: primary_metadata,
+                        limits: &aggregate.limits,
+                        route_capabilities,
+                        gateway_base_url: &self.client_config_gateway_base_url,
+                    })
+                });
             let client_configurations = client_config_input
                 .as_ref()
                 .map(render_default_configs)
@@ -244,43 +287,32 @@ where
                     provider_icon_key: provider_display.map(|display| display.icon_key),
                     upstream_model: primary_route.map(|route| route.upstream_model.clone()),
                     model_icon_key,
-                    input_cost_per_million_tokens_usd_10000: pricing_record.as_ref().and_then(
-                        |record| {
-                            record
-                                .input_cost_per_million_tokens
-                                .map(|value| value.as_scaled_i64())
-                        },
-                    ),
-                    output_cost_per_million_tokens_usd_10000: pricing_record.as_ref().and_then(
-                        |record| {
-                            record
-                                .output_cost_per_million_tokens
-                                .map(|value| value.as_scaled_i64())
-                        },
-                    ),
-                    cache_read_cost_per_million_tokens_usd_10000: pricing_record.as_ref().and_then(
-                        |record| {
-                            record
-                                .cache_read_cost_per_million_tokens
-                                .map(|value| value.as_scaled_i64())
-                        },
-                    ),
-                    context_window_tokens: pricing_record
-                        .as_ref()
-                        .and_then(|record| record.limits.context),
-                    input_window_tokens: pricing_record
-                        .as_ref()
-                        .and_then(|record| record.limits.input),
-                    output_window_tokens: pricing_record
-                        .as_ref()
-                        .and_then(|record| record.limits.output),
+                    input_cost_per_million_tokens_usd_10000: primary_pricing
+                        .and_then(|pricing| pricing.input_cost_per_million_tokens)
+                        .map(|value| value.as_scaled_i64()),
+                    output_cost_per_million_tokens_usd_10000: primary_pricing
+                        .and_then(|pricing| pricing.output_cost_per_million_tokens)
+                        .map(|value| value.as_scaled_i64()),
+                    cache_read_cost_per_million_tokens_usd_10000: primary_pricing
+                        .and_then(|pricing| pricing.cache_read_cost_per_million_tokens)
+                        .map(|value| value.as_scaled_i64()),
+                    cache_write_cost_per_million_tokens_usd_10000: primary_pricing
+                        .and_then(|pricing| pricing.cache_write_cost_per_million_tokens)
+                        .map(|value| value.as_scaled_i64()),
+                    pricing_source: primary_metadata
+                        .and_then(|metadata| metadata.pricing_source.clone()),
+                    pricing_varies_by_route: aggregate.pricing_varies_by_route,
+                    context_window_tokens: aggregate.limits.context,
+                    context_window_source: aggregate.context_source.clone(),
+                    input_window_tokens: aggregate.limits.input,
+                    output_window_tokens: aggregate.limits.output,
                     supports_streaming: route_capabilities.map(|caps| caps.stream),
                     supports_vision: route_capabilities.map(|caps| caps.vision),
                     supports_tool_calling: route_capabilities.map(|caps| caps.tools),
                     supports_structured_output: route_capabilities.map(|caps| caps.json_schema),
-                    supports_attachments: pricing_record
-                        .as_ref()
-                        .map(|record| supports_attachments(&record.modalities)),
+                    supports_attachments: primary_metadata
+                        .and_then(|metadata| metadata.modalities.as_ref())
+                        .map(supports_attachments),
                     client_configurations,
                 },
                 client_config_input,
@@ -303,7 +335,8 @@ struct ClientConfigContext<'a> {
     primary_route: Option<&'a ModelRoute>,
     primary_provider: Option<&'a ProviderConnection>,
     provider_display: Option<&'a crate::ProviderDisplayIdentity>,
-    pricing_record: Option<&'a ModelPricingRecord>,
+    metadata: Option<&'a EffectiveRouteMetadata>,
+    limits: &'a PricingLimits,
     route_capabilities: Option<ProviderCapabilities>,
     gateway_base_url: &'a str,
 }
@@ -334,12 +367,15 @@ fn build_client_config_input(context: ClientConfigContext<'_>) -> Option<ClientC
                 context.model.model_key.as_str(),
             ]),
     );
-
     let capabilities = effective_provider_route_capabilities(
         context.route_capabilities,
         context.primary_provider,
         Some(primary_route),
     );
+    let pricing = context
+        .metadata
+        .and_then(|metadata| metadata.pricing.as_ref());
+
     Some(ClientConfigInput {
         model_id: context.model.model_key.clone(),
         display_name: context
@@ -348,47 +384,37 @@ fn build_client_config_input(context: ClientConfigContext<'_>) -> Option<ClientC
             .clone()
             .or_else(|| {
                 context
-                    .pricing_record
-                    .map(|record| record.display_name.clone())
+                    .metadata
+                    .and_then(|metadata| metadata.display_name.clone())
             })
             .unwrap_or_else(|| context.model.model_key.clone()),
-        upstream_model: context
-            .primary_route
-            .map(|route| route.upstream_model.clone()),
+        upstream_model: Some(primary_route.upstream_model.clone()),
         provider_id: DEFAULT_PROVIDER_ID.to_string(),
         provider_name: DEFAULT_PROVIDER_ID.to_string(),
         gateway_base_url: context.gateway_base_url.to_string(),
         api_key_env_var: DEFAULT_API_KEY_ENV_VAR.to_string(),
-        input_cost_per_million_tokens_usd_10000: context.pricing_record.and_then(|record| {
-            record
-                .input_cost_per_million_tokens
-                .map(|value| value.as_scaled_i64())
-        }),
-        output_cost_per_million_tokens_usd_10000: context.pricing_record.and_then(|record| {
-            record
-                .output_cost_per_million_tokens
-                .map(|value| value.as_scaled_i64())
-        }),
-        cache_read_cost_per_million_tokens_usd_10000: context.pricing_record.and_then(|record| {
-            record
-                .cache_read_cost_per_million_tokens
-                .map(|value| value.as_scaled_i64())
-        }),
-        context_window_tokens: context
-            .pricing_record
-            .and_then(|record| record.limits.context),
-        input_window_tokens: context
-            .pricing_record
-            .and_then(|record| record.limits.input),
-        output_window_tokens: context
-            .pricing_record
-            .and_then(|record| record.limits.output),
+        input_cost_per_million_tokens_usd_10000: pricing
+            .and_then(|pricing| pricing.input_cost_per_million_tokens)
+            .map(|value| value.as_scaled_i64()),
+        output_cost_per_million_tokens_usd_10000: pricing
+            .and_then(|pricing| pricing.output_cost_per_million_tokens)
+            .map(|value| value.as_scaled_i64()),
+        cache_read_cost_per_million_tokens_usd_10000: pricing
+            .and_then(|pricing| pricing.cache_read_cost_per_million_tokens)
+            .map(|value| value.as_scaled_i64()),
+        cache_write_cost_per_million_tokens_usd_10000: pricing
+            .and_then(|pricing| pricing.cache_write_cost_per_million_tokens)
+            .map(|value| value.as_scaled_i64()),
+        context_window_tokens: context.limits.context,
+        input_window_tokens: context.limits.input,
+        output_window_tokens: context.limits.output,
         capabilities: ClientModelCapabilities {
             responses: capabilities.responses,
             tool_calling: capabilities.tools,
             attachments: context
-                .pricing_record
-                .is_some_and(|record| supports_attachments(&record.modalities)),
+                .metadata
+                .and_then(|metadata| metadata.modalities.as_ref())
+                .is_some_and(supports_attachments),
             vision: capabilities.vision,
         },
         thinking_policy,
@@ -433,24 +459,65 @@ fn vertex_route_capabilities(route: Option<&ModelRoute>) -> ProviderCapabilities
     vertex_route_capabilities_for_upstream_model(route.map(|route| route.upstream_model.as_str()))
 }
 
-async fn resolve_display_pricing<R>(
-    repo: &R,
-    provider: &ProviderConnection,
-    route: &ModelRoute,
-    pricing_time: OffsetDateTime,
-) -> Result<Option<ModelPricingRecord>, GatewayError>
-where
-    R: PricingCatalogRepository + Send + Sync + 'static,
-{
-    let Some((pricing_provider_id, pricing_model_id)) =
-        exact_pricing_target_for_route(provider, route)
-    else {
-        return Ok(None);
-    };
+#[derive(Debug)]
+struct AggregatedModelMetadata {
+    limits: PricingLimits,
+    context_source: Option<EffectiveMetadataSource>,
+    pricing_varies_by_route: bool,
+}
 
-    Ok(repo
-        .resolve_model_pricing_at(&pricing_provider_id, &pricing_model_id, pricing_time)
-        .await?)
+fn aggregate_model_metadata(
+    route_metadata: &[(uuid::Uuid, EffectiveRouteMetadata)],
+) -> AggregatedModelMetadata {
+    let context = aggregate_limit(route_metadata, |metadata| metadata.limits.context);
+    let input = aggregate_limit(route_metadata, |metadata| metadata.limits.input);
+    let output = aggregate_limit(route_metadata, |metadata| metadata.limits.output);
+    let context_source = context.and_then(|minimum| {
+        merge_sources(
+            route_metadata
+                .iter()
+                .filter(|(_, metadata)| metadata.limits.context == Some(minimum))
+                .filter_map(|(_, metadata)| metadata.context_source.clone()),
+        )
+    });
+    let pricing_varies_by_route = route_metadata.first().is_some_and(|(_, first)| {
+        route_metadata
+            .iter()
+            .skip(1)
+            .any(|(_, metadata)| metadata.pricing != first.pricing)
+    });
+
+    AggregatedModelMetadata {
+        limits: PricingLimits {
+            context,
+            input,
+            output,
+        },
+        context_source,
+        pricing_varies_by_route,
+    }
+}
+
+fn aggregate_limit(
+    route_metadata: &[(uuid::Uuid, EffectiveRouteMetadata)],
+    select: impl Fn(&EffectiveRouteMetadata) -> Option<i64>,
+) -> Option<i64> {
+    let mut values = route_metadata.iter().map(|(_, metadata)| select(metadata));
+    let first = values.next()??;
+    values.try_fold(first, |minimum, value| {
+        value.map(|value| minimum.min(value))
+    })
+}
+
+fn merge_sources(
+    mut sources: impl Iterator<Item = EffectiveMetadataSource>,
+) -> Option<EffectiveMetadataSource> {
+    let first = sources.next()?;
+    if sources.all(|source| source == first) {
+        Some(first)
+    } else {
+        Some(EffectiveMetadataSource::mixed())
+    }
 }
 
 fn supports_attachments(modalities: &PricingModalities) -> bool {
@@ -460,17 +527,25 @@ fn supports_attachments(modalities: &PricingModalities) -> bool {
         .any(|value| matches!(value.as_str(), "audio" | "file" | "image" | "pdf" | "video"))
 }
 
+fn route_is_eligible(
+    providers_by_key: &HashMap<String, ProviderConnection>,
+    route: &ModelRoute,
+) -> bool {
+    route.enabled && route.weight > 0.0 && providers_by_key.contains_key(&route.provider_key)
+}
+
 fn route_health(
     providers_by_key: &HashMap<String, ProviderConnection>,
     routes: &[gateway_core::ModelRoute],
 ) -> AdminModelStatus {
-    for route in routes {
-        if route.enabled && providers_by_key.contains_key(&route.provider_key) {
-            return AdminModelStatus::Healthy;
-        }
+    if routes
+        .iter()
+        .any(|route| route_is_eligible(providers_by_key, route))
+    {
+        AdminModelStatus::Healthy
+    } else {
+        AdminModelStatus::Degraded
     }
-
-    AdminModelStatus::Degraded
 }
 
 fn select_display_route<'a>(
@@ -479,7 +554,7 @@ fn select_display_route<'a>(
 ) -> Option<&'a gateway_core::ModelRoute> {
     routes
         .iter()
-        .find(|route| route.enabled && providers_by_key.contains_key(&route.provider_key))
+        .find(|route| route_is_eligible(providers_by_key, route))
         .or_else(|| {
             routes
                 .iter()
@@ -531,9 +606,84 @@ mod tests {
     use uuid::Uuid;
 
     use super::{
-        AdminModelStatus, AdminModelsService, effective_provider_route_capabilities,
-        provider_capabilities,
+        AdminModelStatus, AdminModelsService, EffectiveMetadataSource, EffectiveRouteMetadata,
+        aggregate_model_metadata, effective_provider_route_capabilities, provider_capabilities,
     };
+    use crate::EffectiveRoutePricing;
+
+    fn effective_metadata(
+        limits: PricingLimits,
+        pricing: Option<EffectiveRoutePricing>,
+    ) -> EffectiveRouteMetadata {
+        EffectiveRouteMetadata {
+            display_name: None,
+            pricing,
+            pricing_source: Some(EffectiveMetadataSource::configured_override()),
+            catalog_limits: PricingLimits {
+                context: None,
+                input: None,
+                output: None,
+            },
+            limits,
+            context_source: Some(EffectiveMetadataSource::configured_override()),
+            modalities: Some(PricingModalities {
+                input: Vec::new(),
+                output: Vec::new(),
+            }),
+        }
+    }
+
+    #[test]
+    fn empty_route_metadata_has_unknown_aggregate_limits() {
+        let aggregate = aggregate_model_metadata(&[]);
+
+        assert_eq!(aggregate.limits.context, None);
+        assert_eq!(aggregate.limits.input, None);
+        assert_eq!(aggregate.limits.output, None);
+        assert_eq!(aggregate.context_source, None);
+        assert!(!aggregate.pricing_varies_by_route);
+    }
+
+    #[test]
+    fn aggregate_limits_are_unknown_when_any_selectable_route_is_unknown() {
+        let priced = EffectiveRoutePricing {
+            input_cost_per_million_tokens: Some(Money4::from_scaled(10_000)),
+            output_cost_per_million_tokens: Some(Money4::from_scaled(20_000)),
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: None,
+        };
+        let route_metadata = vec![
+            (
+                Uuid::new_v4(),
+                effective_metadata(
+                    PricingLimits {
+                        context: Some(128_000),
+                        input: Some(100_000),
+                        output: Some(32_000),
+                    },
+                    Some(priced),
+                ),
+            ),
+            (
+                Uuid::new_v4(),
+                effective_metadata(
+                    PricingLimits {
+                        context: None,
+                        input: Some(80_000),
+                        output: Some(16_000),
+                    },
+                    None,
+                ),
+            ),
+        ];
+
+        let aggregate = aggregate_model_metadata(&route_metadata);
+
+        assert_eq!(aggregate.limits.context, None);
+        assert_eq!(aggregate.limits.input, Some(80_000));
+        assert_eq!(aggregate.limits.output, Some(16_000));
+        assert!(aggregate.pricing_varies_by_route);
+    }
 
     #[derive(Default)]
     struct CountingRepo {
@@ -784,6 +934,8 @@ mod tests {
             priority: 0,
             weight: 1.0,
             enabled: true,
+            context_window_tokens: None,
+            pricing_override: None,
             extra_headers: Default::default(),
             extra_body: Default::default(),
             capabilities,
@@ -883,6 +1035,8 @@ mod tests {
                     priority: 0,
                     weight: 1.0,
                     enabled: true,
+                    context_window_tokens: None,
+                    pricing_override: None,
                     extra_headers: Default::default(),
                     extra_body: Default::default(),
                     capabilities: Default::default(),
@@ -959,7 +1113,20 @@ mod tests {
             Some(100_000)
         );
         assert_eq!(alias.cache_read_cost_per_million_tokens_usd_10000, None);
+        assert_eq!(alias.cache_write_cost_per_million_tokens_usd_10000, None);
+        assert_eq!(
+            alias.pricing_source.as_ref().map(|source| source.kind),
+            Some(crate::EffectiveMetadataSourceKind::Catalog)
+        );
+        assert!(!alias.pricing_varies_by_route);
         assert_eq!(alias.context_window_tokens, Some(400_000));
+        assert_eq!(
+            alias
+                .context_window_source
+                .as_ref()
+                .map(|source| source.kind),
+            Some(crate::EffectiveMetadataSourceKind::Catalog)
+        );
         assert_eq!(alias.input_window_tokens, Some(272_000));
         assert_eq!(alias.output_window_tokens, Some(128_000));
         assert_eq!(alias.supports_streaming, Some(true));
@@ -1023,6 +1190,8 @@ mod tests {
                     priority: 0,
                     weight: 1.0,
                     enabled: true,
+                    context_window_tokens: None,
+                    pricing_override: None,
                     extra_headers: Default::default(),
                     extra_body: Default::default(),
                     capabilities: Default::default(),
@@ -1042,6 +1211,72 @@ mod tests {
         assert_eq!(items[0].supports_streaming, Some(true));
         assert_eq!(items[0].supports_attachments, None);
         assert!(items[0].client_configurations.is_empty());
+    }
+
+    #[tokio::test]
+    async fn degraded_model_keeps_primary_pricing_but_has_unknown_aggregate_limits() {
+        let model_id = Uuid::new_v4();
+        let route = ModelRoute {
+            id: Uuid::new_v4(),
+            model_id,
+            provider_key: "openai".to_string(),
+            upstream_model: "upstream".to_string(),
+            priority: 0,
+            weight: 1.0,
+            enabled: false,
+            context_window_tokens: None,
+            pricing_override: None,
+            extra_headers: Default::default(),
+            extra_body: Default::default(),
+            capabilities: ProviderCapabilities::all_enabled(),
+            compatibility: Default::default(),
+        };
+        let provider = ProviderConnection {
+            provider_key: route.provider_key.clone(),
+            provider_type: "openai_compat".to_string(),
+            config: json!({"pricing_provider_id": "openai"}),
+            secrets: None,
+        };
+        let pricing = pricing_record(
+            "openai",
+            &route.upstream_model,
+            "1.2500",
+            "5.0000",
+            (Some(128_000), Some(96_000), Some(32_000)),
+            &["text"],
+        );
+        let repo = Arc::new(CountingRepo {
+            models: vec![GatewayModel {
+                id: model_id,
+                model_key: "disabled-model".to_string(),
+                alias_target_model_key: None,
+                description: None,
+                tags: Vec::new(),
+                rank: 1,
+            }],
+            routes_by_model: HashMap::from([(model_id, vec![route])]),
+            providers_by_key: HashMap::from([("openai".to_string(), provider)]),
+            pricing_by_key: HashMap::from([(
+                ("openai".to_string(), "upstream".to_string()),
+                pricing,
+            )]),
+            ..Default::default()
+        });
+
+        let items = AdminModelsService::new(repo)
+            .list_models()
+            .await
+            .expect("admin models");
+        let model = &items[0];
+
+        assert_eq!(model.status, AdminModelStatus::Degraded);
+        assert_eq!(model.input_cost_per_million_tokens_usd_10000, Some(12_500));
+        assert_eq!(model.context_window_tokens, None);
+        assert_eq!(
+            model.pricing_source.as_ref().map(|source| source.kind),
+            Some(crate::EffectiveMetadataSourceKind::Catalog)
+        );
+        assert!(model.client_configurations.is_empty());
     }
 
     #[tokio::test]
@@ -1069,6 +1304,8 @@ mod tests {
                         priority: 0,
                         weight: 1.0,
                         enabled: true,
+                        context_window_tokens: None,
+                        pricing_override: None,
                         extra_headers: Default::default(),
                         extra_body: Default::default(),
                         capabilities: Default::default(),
@@ -1082,6 +1319,8 @@ mod tests {
                         priority: 1,
                         weight: 1.0,
                         enabled: true,
+                        context_window_tokens: None,
+                        pricing_override: None,
                         extra_headers: Default::default(),
                         extra_body: Default::default(),
                         capabilities: ProviderCapabilities::with_dimensions(
@@ -1192,6 +1431,8 @@ mod tests {
                     priority: 0,
                     weight: 1.0,
                     enabled: true,
+                    context_window_tokens: None,
+                    pricing_override: None,
                     extra_headers: Default::default(),
                     extra_body: json!({"service_tier": "priority"})
                         .as_object()
@@ -1252,6 +1493,8 @@ mod tests {
         );
         pricing.cache_read_cost_per_million_tokens =
             Some(Money4::from_decimal_str("0.3000").expect("cache read cost"));
+        pricing.cache_write_cost_per_million_tokens =
+            Some(Money4::from_decimal_str("0.7500").expect("cache write cost"));
 
         let build_repo = |provider_type: &str, capabilities: ProviderCapabilities| {
             Arc::new(CountingRepo {
@@ -1273,6 +1516,8 @@ mod tests {
                         priority: 0,
                         weight: 1.0,
                         enabled: true,
+                        context_window_tokens: None,
+                        pricing_override: None,
                         extra_headers: Default::default(),
                         extra_body: Default::default(),
                         capabilities,
@@ -1312,6 +1557,15 @@ mod tests {
             items[0].cache_read_cost_per_million_tokens_usd_10000,
             Some(3_000)
         );
+        assert_eq!(
+            items[0].cache_write_cost_per_million_tokens_usd_10000,
+            Some(7_500)
+        );
+        assert_eq!(
+            items[0].pricing_source.as_ref().map(|source| source.kind),
+            Some(crate::EffectiveMetadataSourceKind::Catalog)
+        );
+        assert!(!items[0].pricing_varies_by_route);
         assert_eq!(items[0].supports_tool_calling, Some(true));
         assert_eq!(items[0].client_configurations.len(), 3);
         assert_eq!(items[0].client_configurations[0].key, "opencode");
@@ -1346,6 +1600,11 @@ mod tests {
             items[0].client_configurations[1].blocks[0]
                 .content
                 .contains("\"thinkingLevelMap\"")
+        );
+        assert!(
+            items[0].client_configurations[1].blocks[0]
+                .content
+                .contains("\"cacheWrite\": 0.75")
         );
         assert_eq!(items[0].client_configurations[2].key, "claude-code");
         assert_eq!(items[0].client_configurations[2].blocks.len(), 2);
@@ -1452,6 +1711,8 @@ mod tests {
             priority: 0,
             weight: 1.0,
             enabled: true,
+            context_window_tokens: None,
+            pricing_override: None,
             extra_headers: Default::default(),
             extra_body: Default::default(),
             capabilities: ProviderCapabilities::all_enabled(),

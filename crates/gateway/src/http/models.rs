@@ -3,15 +3,19 @@ use axum::{
     extract::{Query, State},
     http::HeaderMap,
 };
-use gateway_service::{AdminModelSummary, AdminModelsService};
+use gateway_service::{
+    AdminModelSummary, AdminModelsService, EffectiveMetadataSource, EffectiveMetadataSourceKind,
+};
 
 use crate::http::{
     admin_auth::require_platform_admin,
     admin_contract::{
         AdminModelAllowlistView, AdminModelClientConfigBlockView,
         AdminModelClientConfigSetupItemView, AdminModelClientConfigView, AdminModelListQuery,
-        AdminModelPageView, AdminModelView, Envelope, GenerateModelClientConfigsRequest,
+        AdminModelPageView, AdminModelView, EffectiveMetadataSourceKindView,
+        EffectiveMetadataSourceView, Envelope, GenerateModelClientConfigsRequest,
         GenerateModelClientConfigsResponse, RefreshModelPricingCatalogResponse, envelope,
+        format_timestamp,
     },
     error::AppError,
     state::AppState,
@@ -161,7 +165,12 @@ fn map_model_summary(model: AdminModelSummary) -> AdminModelView {
         output_cost_per_million_tokens_usd_10000: model.output_cost_per_million_tokens_usd_10000,
         cache_read_cost_per_million_tokens_usd_10000: model
             .cache_read_cost_per_million_tokens_usd_10000,
+        cache_write_cost_per_million_tokens_usd_10000: model
+            .cache_write_cost_per_million_tokens_usd_10000,
+        pricing_source: model.pricing_source.map(map_metadata_source),
+        pricing_varies_by_route: model.pricing_varies_by_route,
         context_window_tokens: model.context_window_tokens,
+        context_window_source: model.context_window_source.map(map_metadata_source),
         input_window_tokens: model.input_window_tokens,
         output_window_tokens: model.output_window_tokens,
         supports_streaming: model.supports_streaming,
@@ -197,5 +206,20 @@ fn map_model_summary(model: AdminModelSummary) -> AdminModelView {
                 notes: config.notes,
             })
             .collect(),
+    }
+}
+
+fn map_metadata_source(source: EffectiveMetadataSource) -> EffectiveMetadataSourceView {
+    EffectiveMetadataSourceView {
+        kind: match source.kind {
+            EffectiveMetadataSourceKind::ConfiguredOverride => {
+                EffectiveMetadataSourceKindView::ConfiguredOverride
+            }
+            EffectiveMetadataSourceKind::Catalog => EffectiveMetadataSourceKindView::Catalog,
+            EffectiveMetadataSourceKind::Mixed => EffectiveMetadataSourceKindView::Mixed,
+        },
+        catalog_source: source.catalog_source,
+        catalog_etag: source.catalog_etag,
+        catalog_fetched_at: source.catalog_fetched_at.map(format_timestamp),
     }
 }

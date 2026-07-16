@@ -33,7 +33,10 @@ pub(crate) fn pi_cost(input: &ClientConfigInput) -> Value {
             "cacheRead".to_string(),
             required_money4_to_number(input.cache_read_cost_per_million_tokens_usd_10000),
         ),
-        ("cacheWrite".to_string(), json!(0)),
+        (
+            "cacheWrite".to_string(),
+            required_money4_to_number(input.cache_write_cost_per_million_tokens_usd_10000),
+        ),
     ]);
     Value::Object(cost)
 }

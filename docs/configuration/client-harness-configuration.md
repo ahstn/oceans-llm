@@ -42,6 +42,8 @@ The OpenCode tab emits `opencode.json` content for the user-level OpenCode confi
 
 The Pi tab emits `models.json` content for Pi custom provider/model configuration. Pi settings are separate configuration: use `~/.pi/agent/settings.json` for global settings and `.pi/settings.json` for project overrides. The dialog shows those paths together with the generated provider configuration path and links to the [Pi settings docs].
 
+Generated model metadata uses effective route pricing and conservative logical-model context limits from the Models API. Pi receives `cost.cacheRead` and `cost.cacheWrite` when those rates are available; either value falls back to zero only when the effective route pricing omits it. OpenCode receives its supported input, output, and cache-read fields. If selectable routes differ in pricing, the Models API marks `pricing_varies_by_route`; generated snippets use the primary display route's effective rates.
+
 ## Claude Code
 
 The Claude Code tab emits `.claude/settings.json` content with the SchemaStore Claude Code schema URL. The gateway settings block includes:

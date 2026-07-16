@@ -8,7 +8,7 @@ use gateway_core::{
     PricingResolution, PricingUnpricedReason, ProviderRepository, RequestLogDetail, RequestLogPage,
     RequestLogPurgeResult, RequestLogQuery, RequestLogRecord, RequestLogRepository,
     RequestLogRetentionWindow, RequestTags, ResolvedModelPricing, ResponsesRequest, RouteError,
-    RoutePlanner, StoreHealth, UsageLedgerRecord, UsagePricingStatus,
+    RoutePlanner, RoutePricingOverride, StoreHealth, UsageLedgerRecord, UsagePricingStatus,
 };
 use serde_json::{Value, json};
 use time::OffsetDateTime;
@@ -22,6 +22,7 @@ use crate::{
     budget_alerts::{BudgetAlertSender, BudgetAlertService, SinkBudgetAlertSender},
     budget_guard::BudgetGuard,
     budget_scopes::usage_ownership_scope_key,
+    effective_route_metadata::{EffectiveRouteMetadata, resolve_effective_route_metadata},
     mcp_invocation_logging::{McpInvocationLogInput, McpInvocationLogging},
 };
 
@@ -32,6 +33,15 @@ pub struct RecordedChatUsage {
     pub completion_tokens: Option<i64>,
     pub total_tokens: Option<i64>,
     pub cost_usd: Option<f64>,
+}
+
+#[derive(Debug)]
+struct RouteContextOverrideConflict {
+    route_id: Uuid,
+    provider_key: String,
+    upstream_model: String,
+    configured_context: i64,
+    catalog_context: i64,
 }
 
 #[derive(Clone)]
@@ -399,11 +409,79 @@ where
     }
 
     pub async fn refresh_pricing_catalog_if_stale(&self) -> Result<(), GatewayError> {
-        self.pricing_catalog.refresh_if_stale_and_sync().await
+        self.pricing_catalog.refresh_if_stale_and_sync().await?;
+        self.warn_on_route_context_override_conflicts().await
     }
 
     pub async fn refresh_pricing_catalog_now(&self) -> Result<(), GatewayError> {
-        self.pricing_catalog.refresh_now_and_sync().await
+        self.pricing_catalog.refresh_now_and_sync().await?;
+        self.warn_on_route_context_override_conflicts().await
+    }
+
+    pub async fn validate_route_context_overrides(&self) -> Result<(), GatewayError> {
+        let Some(conflict) = self
+            .route_context_override_conflicts()
+            .await?
+            .into_iter()
+            .next()
+        else {
+            return Ok(());
+        };
+
+        Err(GatewayError::InvalidRequest(format!(
+            "route `{}` ({}/{}) context_window_tokens `{}` exceeds catalog context `{}`",
+            conflict.route_id,
+            conflict.provider_key,
+            conflict.upstream_model,
+            conflict.configured_context,
+            conflict.catalog_context,
+        )))
+    }
+
+    async fn warn_on_route_context_override_conflicts(&self) -> Result<(), GatewayError> {
+        for conflict in self.route_context_override_conflicts().await? {
+            warn!(
+                route_id = %conflict.route_id,
+                provider_key = %conflict.provider_key,
+                upstream_model = %conflict.upstream_model,
+                configured_context_window_tokens = conflict.configured_context,
+                catalog_context_window_tokens = conflict.catalog_context,
+                "configured route context exceeds the current catalog limit; using catalog limit"
+            );
+        }
+        Ok(())
+    }
+
+    async fn route_context_override_conflicts(
+        &self,
+    ) -> Result<Vec<RouteContextOverrideConflict>, GatewayError> {
+        let mut conflicts = Vec::new();
+        for model in self.store.list_models().await? {
+            for route in self.store.list_routes_for_model(model.id).await? {
+                if !route.enabled || route.weight <= 0.0 {
+                    continue;
+                }
+                let Some(configured) = route.context_window_tokens else {
+                    continue;
+                };
+                let metadata = self
+                    .resolve_route_metadata(&route, OffsetDateTime::now_utc())
+                    .await?;
+                let Some(catalog) = metadata.catalog_limits.context else {
+                    continue;
+                };
+                if configured > catalog {
+                    conflicts.push(RouteContextOverrideConflict {
+                        route_id: route.id,
+                        provider_key: route.provider_key,
+                        upstream_model: route.upstream_model,
+                        configured_context: configured,
+                        catalog_context: catalog,
+                    });
+                }
+            }
+        }
+        Ok(conflicts)
     }
 
     pub async fn dispatch_pending_budget_alert_deliveries(
@@ -429,6 +507,12 @@ where
         route: &ModelRoute,
         occurred_at: OffsetDateTime,
     ) -> Result<PricingResolution, GatewayError> {
+        if let Some(pricing) = &route.pricing_override {
+            return Ok(PricingResolution::ConfiguredOverride {
+                pricing: pricing.clone(),
+            });
+        }
+
         let Some(provider) = self.store.get_provider_by_key(&route.provider_key).await? else {
             return Ok(PricingResolution::Unpriced {
                 reason: PricingUnpricedReason::UnsupportedPricingProviderId(
@@ -439,6 +523,32 @@ where
 
         self.pricing_catalog
             .resolve_for_provider_connection(&provider, route, occurred_at)
+            .await
+    }
+
+    pub async fn resolve_route_metadata(
+        &self,
+        route: &ModelRoute,
+        occurred_at: OffsetDateTime,
+    ) -> Result<EffectiveRouteMetadata, GatewayError> {
+        let provider = self.store.get_provider_by_key(&route.provider_key).await?;
+        resolve_effective_route_metadata(self.store.as_ref(), provider.as_ref(), route, occurred_at)
+            .await
+    }
+
+    pub async fn resolve_route_metadata_with_provider(
+        &self,
+        route: &ModelRoute,
+        provider: Option<&ResolvedProviderConnection>,
+        occurred_at: OffsetDateTime,
+    ) -> Result<EffectiveRouteMetadata, GatewayError> {
+        let provider = provider.map(|provider| gateway_core::ProviderConnection {
+            provider_key: provider.provider_key.clone(),
+            provider_type: provider.provider_type.clone(),
+            config: provider.config.clone(),
+            secrets: None,
+        });
+        resolve_effective_route_metadata(self.store.as_ref(), provider.as_ref(), route, occurred_at)
             .await
     }
 
@@ -478,6 +588,7 @@ where
             service_account_id: auth.owner_service_account_id,
             actor_user_id: None,
             model_id: Some(model.id),
+            model_route_id: Some(route.id),
             provider_key: route.provider_key.clone(),
             upstream_model: route.upstream_model.clone(),
             prompt_tokens: usage_summary.prompt_tokens,
@@ -495,6 +606,8 @@ where
             pricing_last_updated: None,
             input_cost_per_million_tokens: None,
             output_cost_per_million_tokens: None,
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: None,
             computed_cost_usd: Money4::ZERO,
             occurred_at,
         };
@@ -502,6 +615,9 @@ where
         if usage_summary.has_usage() {
             match self.resolve_route_pricing(route, occurred_at).await? {
                 PricingResolution::Exact { pricing } => apply_exact_pricing(&mut record, &pricing)?,
+                PricingResolution::ConfiguredOverride { pricing } => {
+                    apply_configured_pricing(&mut record, &pricing)?
+                }
                 PricingResolution::Unpriced { reason } => {
                     record.pricing_status = UsagePricingStatus::Unpriced;
                     record.unpriced_reason = Some(unpriced_reason_string(&reason));
@@ -612,17 +728,44 @@ fn apply_exact_pricing(
     record.pricing_last_updated = Some(pricing.last_updated.clone());
     record.input_cost_per_million_tokens = pricing.input_cost_per_million_tokens;
     record.output_cost_per_million_tokens = pricing.output_cost_per_million_tokens;
+    record.cache_read_cost_per_million_tokens = pricing.cache_read_cost_per_million_tokens;
+    record.cache_write_cost_per_million_tokens = pricing.cache_write_cost_per_million_tokens;
 
-    if record.prompt_tokens.unwrap_or_default() > 0
-        && pricing.input_cost_per_million_tokens.is_none()
-    {
+    apply_token_rates(
+        record,
+        pricing.input_cost_per_million_tokens,
+        pricing.output_cost_per_million_tokens,
+    )
+}
+
+fn apply_configured_pricing(
+    record: &mut UsageLedgerRecord,
+    pricing: &RoutePricingOverride,
+) -> Result<(), GatewayError> {
+    record.pricing_source = Some("configured_override".to_string());
+    record.input_cost_per_million_tokens = Some(pricing.input_cost_per_million_tokens);
+    record.output_cost_per_million_tokens = Some(pricing.output_cost_per_million_tokens);
+    record.cache_read_cost_per_million_tokens = pricing.cache_read_cost_per_million_tokens;
+    record.cache_write_cost_per_million_tokens = pricing.cache_write_cost_per_million_tokens;
+
+    apply_token_rates(
+        record,
+        Some(pricing.input_cost_per_million_tokens),
+        Some(pricing.output_cost_per_million_tokens),
+    )
+}
+
+fn apply_token_rates(
+    record: &mut UsageLedgerRecord,
+    input_rate: Option<Money4>,
+    output_rate: Option<Money4>,
+) -> Result<(), GatewayError> {
+    if record.prompt_tokens.unwrap_or_default() > 0 && input_rate.is_none() {
         record.pricing_status = UsagePricingStatus::Unpriced;
         record.unpriced_reason = Some("missing_input_rate".to_string());
         return Ok(());
     }
-    if record.completion_tokens.unwrap_or_default() > 0
-        && pricing.output_cost_per_million_tokens.is_none()
-    {
+    if record.completion_tokens.unwrap_or_default() > 0 && output_rate.is_none() {
         record.pricing_status = UsagePricingStatus::Unpriced;
         record.unpriced_reason = Some("missing_output_rate".to_string());
         return Ok(());
@@ -631,9 +774,9 @@ fn apply_exact_pricing(
     record.pricing_status = UsagePricingStatus::Priced;
     record.computed_cost_usd = compute_usage_cost(
         record.prompt_tokens,
-        pricing.input_cost_per_million_tokens,
+        input_rate,
         record.completion_tokens,
-        pricing.output_cost_per_million_tokens,
+        output_rate,
     )?;
     Ok(())
 }
@@ -705,15 +848,17 @@ mod tests {
     use async_trait::async_trait;
     use gateway_core::{
         ApiKeyModelGrantMode, ApiKeyOwnerKind, ApiKeyRecord, ApiKeyRepository, AuthenticatedApiKey,
-        BudgetAlertRepository, BudgetRecord, BudgetRepository, BudgetScope, BudgetSettings,
-        BudgetSource, GatewayModel, IdentityRepository, McpToolInvocationDetail,
-        McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
-        McpToolInvocationRecord, McpToolInvocationRepository, ModelPricingSyncChanges,
-        ModelRepository, ModelRoute, Money4, PricingCatalogCacheRecord, PricingCatalogRepository,
-        ProviderCapabilities, ProviderConnection, ProviderRepository, RequestLogDetail,
-        RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult, RequestLogQuery,
-        RequestLogRecord, RequestLogRepository, RouteError, RoutePlanner, StoreError, StoreHealth,
-        TeamMembershipRecord, TeamRecord, UsageLedgerRecord, UsagePricingStatus, UserRecord,
+        BudgetAlertRepository, BudgetCadence, BudgetRecord, BudgetRepository, BudgetScope,
+        BudgetSettings, BudgetSource, GatewayError, GatewayModel, IdentityRepository,
+        McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationPayloadRecord,
+        McpToolInvocationQuery, McpToolInvocationRecord, McpToolInvocationRepository,
+        ModelPricingRecord, ModelPricingSyncChanges, ModelRepository, ModelRoute, Money4,
+        PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
+        PricingProvenance, ProviderCapabilities, ProviderConnection, ProviderRepository,
+        RequestLogDetail, RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult,
+        RequestLogQuery, RequestLogRecord, RequestLogRepository, RouteError, RoutePlanner,
+        RoutePricingOverride, StoreError, StoreHealth, TeamMembershipRecord, TeamRecord,
+        UsageLedgerRecord, UsagePricingStatus, UserRecord,
     };
     use serde_json::{Map, json};
     use time::OffsetDateTime;
@@ -724,6 +869,12 @@ mod tests {
     #[derive(Clone, Default)]
     struct UsageAccountingRepo {
         events: Arc<Mutex<Vec<UsageLedgerRecord>>>,
+        models: Vec<GatewayModel>,
+        routes: Vec<ModelRoute>,
+        budget: Option<BudgetRecord>,
+        provider: Option<ProviderConnection>,
+        pricing: Option<ModelPricingRecord>,
+        pricing_lookup_fails: bool,
     }
 
     struct PassThroughPlanner;
@@ -755,9 +906,13 @@ mod tests {
     impl BudgetRepository for UsageAccountingRepo {
         async fn get_active_budget_by_scope(
             &self,
-            _scope: &BudgetScope,
+            scope: &BudgetScope,
         ) -> Result<Option<BudgetRecord>, StoreError> {
-            Ok(None)
+            Ok(self
+                .budget
+                .as_ref()
+                .filter(|budget| &budget.scope == scope)
+                .cloned())
         }
 
         async fn get_latest_budget_by_scope(
@@ -838,11 +993,32 @@ mod tests {
 
         async fn sum_usage_cost_for_budget_scope_in_window(
             &self,
-            _scope: &BudgetScope,
-            _window_start: OffsetDateTime,
-            _window_end: OffsetDateTime,
+            scope: &BudgetScope,
+            window_start: OffsetDateTime,
+            window_end: OffsetDateTime,
         ) -> Result<Money4, StoreError> {
-            Ok(Money4::ZERO)
+            let mut total = Money4::ZERO;
+            for event in self
+                .events
+                .lock()
+                .expect("events lock")
+                .iter()
+                .filter(|event| {
+                    let in_scope = match scope {
+                        BudgetScope::User { user_id } => event.user_id == Some(*user_id),
+                        _ => false,
+                    };
+                    in_scope
+                        && event.occurred_at >= window_start
+                        && event.occurred_at < window_end
+                        && event.pricing_status.counts_toward_spend()
+                })
+            {
+                total = total.checked_add(event.computed_cost_usd).ok_or_else(|| {
+                    StoreError::Unexpected("usage accounting test cost overflow".to_string())
+                })?;
+            }
+            Ok(total)
         }
 
         async fn insert_usage_ledger_if_absent(
@@ -864,7 +1040,7 @@ mod tests {
     #[async_trait]
     impl ModelRepository for UsageAccountingRepo {
         async fn list_models(&self) -> Result<Vec<GatewayModel>, StoreError> {
-            Ok(Vec::new())
+            Ok(self.models.clone())
         }
 
         async fn get_model_by_key(
@@ -891,9 +1067,14 @@ mod tests {
 
         async fn list_routes_for_model(
             &self,
-            _model_id: Uuid,
+            model_id: Uuid,
         ) -> Result<Vec<ModelRoute>, StoreError> {
-            Ok(Vec::new())
+            Ok(self
+                .routes
+                .iter()
+                .filter(|route| route.model_id == model_id)
+                .cloned()
+                .collect())
         }
     }
 
@@ -981,8 +1162,13 @@ mod tests {
             _pricing_provider_id: &str,
             _pricing_model_id: &str,
             _occurred_at: OffsetDateTime,
-        ) -> Result<Option<gateway_core::ModelPricingRecord>, StoreError> {
-            Ok(None)
+        ) -> Result<Option<ModelPricingRecord>, StoreError> {
+            if self.pricing_lookup_fails {
+                return Err(StoreError::Unavailable(
+                    "pricing catalog unavailable".to_string(),
+                ));
+            }
+            Ok(self.pricing.clone())
         }
     }
 
@@ -1063,9 +1249,13 @@ mod tests {
     impl ProviderRepository for UsageAccountingRepo {
         async fn get_provider_by_key(
             &self,
-            _provider_key: &str,
+            provider_key: &str,
         ) -> Result<Option<ProviderConnection>, StoreError> {
-            Ok(None)
+            Ok(self
+                .provider
+                .as_ref()
+                .filter(|provider| provider.provider_key == provider_key)
+                .cloned())
         }
     }
 
@@ -1109,11 +1299,304 @@ mod tests {
             priority: 0,
             weight: 1.0,
             enabled: true,
+            context_window_tokens: None,
+            pricing_override: None,
             extra_headers: Map::new(),
             extra_body: Map::new(),
             capabilities: ProviderCapabilities::all_enabled(),
             compatibility: Default::default(),
         }
+    }
+
+    fn openai_provider(provider_key: &str) -> ProviderConnection {
+        ProviderConnection {
+            provider_key: provider_key.to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: json!({"pricing_provider_id": "openai"}),
+            secrets: None,
+        }
+    }
+
+    fn pricing_record(context_window_tokens: Option<i64>) -> ModelPricingRecord {
+        let now = OffsetDateTime::UNIX_EPOCH;
+        ModelPricingRecord {
+            model_pricing_id: Uuid::new_v4(),
+            pricing_provider_id: "openai".to_string(),
+            pricing_model_id: "gpt-5".to_string(),
+            display_name: "GPT-5".to_string(),
+            input_cost_per_million_tokens: Some(Money4::from_scaled(10_000)),
+            output_cost_per_million_tokens: Some(Money4::from_scaled(20_000)),
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: None,
+            input_audio_cost_per_million_tokens: None,
+            output_audio_cost_per_million_tokens: None,
+            release_date: "2026-01-01".to_string(),
+            last_updated: "2026-01-01".to_string(),
+            effective_start_at: now,
+            effective_end_at: None,
+            limits: PricingLimits {
+                context: context_window_tokens,
+                input: None,
+                output: None,
+            },
+            modalities: PricingModalities {
+                input: vec!["text".to_string()],
+                output: vec!["text".to_string()],
+            },
+            provenance: PricingProvenance {
+                source: "test".to_string(),
+                etag: Some("etag-1".to_string()),
+                fetched_at: now,
+            },
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    #[tokio::test]
+    async fn startup_rejects_context_override_above_known_catalog_limit() {
+        let model_id = Uuid::new_v4();
+        let model = model(model_id);
+        let mut route = vertex_embedding_route(model_id);
+        route.upstream_model = "gpt-5".to_string();
+        route.context_window_tokens = Some(128_000);
+        let provider = openai_provider(&route.provider_key);
+        let repo = Arc::new(UsageAccountingRepo {
+            models: vec![model],
+            routes: vec![route],
+            provider: Some(provider),
+            pricing: Some(pricing_record(Some(64_000))),
+            ..Default::default()
+        });
+        let service = GatewayService::new(repo, Arc::new(PassThroughPlanner));
+
+        let error = service
+            .validate_route_context_overrides()
+            .await
+            .expect_err("startup validation must reject conflicting cap");
+
+        assert!(
+            error
+                .to_string()
+                .contains("context_window_tokens `128000` exceeds catalog context `64000`"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn startup_context_validation_skips_non_selectable_routes() {
+        let model_id = Uuid::new_v4();
+        let model = model(model_id);
+        let mut disabled_route = vertex_embedding_route(model_id);
+        disabled_route.upstream_model = "gpt-5".to_string();
+        disabled_route.context_window_tokens = Some(128_000);
+        disabled_route.enabled = false;
+        let mut zero_weight_route = disabled_route.clone();
+        zero_weight_route.id = Uuid::new_v4();
+        zero_weight_route.enabled = true;
+        zero_weight_route.weight = 0.0;
+        let provider = openai_provider(&disabled_route.provider_key);
+        let service = GatewayService::new(
+            Arc::new(UsageAccountingRepo {
+                models: vec![model],
+                routes: vec![disabled_route, zero_weight_route],
+                provider: Some(provider),
+                pricing: Some(pricing_record(Some(64_000))),
+                ..Default::default()
+            }),
+            Arc::new(PassThroughPlanner),
+        );
+
+        service
+            .validate_route_context_overrides()
+            .await
+            .expect("disabled and zero-weight routes cannot block startup");
+    }
+
+    #[tokio::test]
+    async fn configured_pricing_does_not_bypass_context_validation() {
+        let model_id = Uuid::new_v4();
+        let model = model(model_id);
+        let mut route = vertex_embedding_route(model_id);
+        route.upstream_model = "gpt-5".to_string();
+        route.context_window_tokens = Some(128_000);
+        route.pricing_override = Some(RoutePricingOverride {
+            input_cost_per_million_tokens: Money4::from_scaled(10_000),
+            output_cost_per_million_tokens: Money4::from_scaled(20_000),
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: None,
+        });
+        let provider = openai_provider(&route.provider_key);
+        let service = GatewayService::new(
+            Arc::new(UsageAccountingRepo {
+                models: vec![model.clone()],
+                routes: vec![route.clone()],
+                provider: Some(provider.clone()),
+                pricing: Some(pricing_record(Some(256_000))),
+                ..Default::default()
+            }),
+            Arc::new(PassThroughPlanner),
+        );
+
+        service
+            .validate_route_context_overrides()
+            .await
+            .expect("configured cap below catalog context should be valid");
+        assert!(matches!(
+            service
+                .resolve_route_pricing(&route, OffsetDateTime::now_utc())
+                .await
+                .expect("configured pricing"),
+            gateway_core::PricingResolution::ConfiguredOverride { .. }
+        ));
+
+        let conflicting_service = GatewayService::new(
+            Arc::new(UsageAccountingRepo {
+                models: vec![model],
+                routes: vec![route],
+                provider: Some(provider),
+                pricing: Some(pricing_record(Some(64_000))),
+                ..Default::default()
+            }),
+            Arc::new(PassThroughPlanner),
+        );
+        let error = conflicting_service
+            .validate_route_context_overrides()
+            .await
+            .expect_err("configured pricing must not bypass an oversized context cap");
+        assert!(
+            error
+                .to_string()
+                .contains("context_window_tokens `128000` exceeds catalog context `64000`"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn startup_context_validation_uses_catalog_limits_for_modified_pricing_routes() {
+        let model_id = Uuid::new_v4();
+        let model = model(model_id);
+        let mut route = vertex_embedding_route(model_id);
+        route.upstream_model = "gpt-5".to_string();
+        route.context_window_tokens = Some(128_000);
+        route
+            .extra_body
+            .insert("service_tier".to_string(), json!("priority"));
+        let provider = openai_provider(&route.provider_key);
+        let repo = Arc::new(UsageAccountingRepo {
+            models: vec![model],
+            routes: vec![route.clone()],
+            provider: Some(provider),
+            pricing: Some(pricing_record(Some(64_000))),
+            ..Default::default()
+        });
+        let service = GatewayService::new(repo, Arc::new(PassThroughPlanner));
+
+        let error = service
+            .validate_route_context_overrides()
+            .await
+            .expect_err("billing modifiers must not hide catalog context");
+        assert!(
+            error
+                .to_string()
+                .contains("context_window_tokens `128000` exceeds catalog context `64000`"),
+            "unexpected error: {error}"
+        );
+
+        let pricing = service
+            .resolve_route_pricing(&route, OffsetDateTime::now_utc())
+            .await
+            .expect("pricing resolution");
+        assert!(matches!(
+            pricing,
+            gateway_core::PricingResolution::Unpriced {
+                reason: gateway_core::PricingUnpricedReason::UnsupportedBillingModifier(_)
+            }
+        ));
+
+        let metadata = service
+            .resolve_route_metadata(&route, OffsetDateTime::now_utc())
+            .await
+            .expect("effective metadata");
+        assert_eq!(metadata.limits.context, Some(64_000));
+        assert_eq!(metadata.pricing, None);
+        assert_eq!(metadata.pricing_source, None);
+    }
+
+    #[tokio::test]
+    async fn startup_context_validation_uses_catalog_limits_for_regional_vertex_routes() {
+        let model_id = Uuid::new_v4();
+        let model = model(model_id);
+        let mut route = vertex_embedding_route(model_id);
+        route.upstream_model = "anthropic/claude-sonnet-4-6".to_string();
+        route.context_window_tokens = Some(128_000);
+        let provider = ProviderConnection {
+            provider_key: route.provider_key.clone(),
+            provider_type: "gcp_vertex".to_string(),
+            config: json!({"location": "us-central1"}),
+            secrets: None,
+        };
+        let repo = Arc::new(UsageAccountingRepo {
+            models: vec![model],
+            routes: vec![route.clone()],
+            provider: Some(provider),
+            pricing: Some(pricing_record(Some(64_000))),
+            ..Default::default()
+        });
+        let service = GatewayService::new(repo, Arc::new(PassThroughPlanner));
+
+        let error = service
+            .validate_route_context_overrides()
+            .await
+            .expect_err("regional pricing limits must not hide catalog context");
+        assert!(
+            error
+                .to_string()
+                .contains("context_window_tokens `128000` exceeds catalog context `64000`"),
+            "unexpected error: {error}"
+        );
+
+        let pricing = service
+            .resolve_route_pricing(&route, OffsetDateTime::now_utc())
+            .await
+            .expect("pricing resolution");
+        assert!(matches!(
+            pricing,
+            gateway_core::PricingResolution::Unpriced {
+                reason: gateway_core::PricingUnpricedReason::UnsupportedVertexLocation(_)
+            }
+        ));
+
+        let metadata = service
+            .resolve_route_metadata(&route, OffsetDateTime::now_utc())
+            .await
+            .expect("effective metadata");
+        assert_eq!(metadata.limits.context, Some(64_000));
+        assert_eq!(metadata.pricing, None);
+        assert_eq!(metadata.pricing_source, None);
+    }
+
+    #[tokio::test]
+    async fn startup_accepts_context_override_when_catalog_context_is_unknown() {
+        let model_id = Uuid::new_v4();
+        let model = model(model_id);
+        let mut route = vertex_embedding_route(model_id);
+        route.upstream_model = "gpt-5".to_string();
+        route.context_window_tokens = Some(128_000);
+        let provider = openai_provider(&route.provider_key);
+        let repo = Arc::new(UsageAccountingRepo {
+            models: vec![model],
+            routes: vec![route],
+            provider: Some(provider),
+            pricing: Some(pricing_record(None)),
+            ..Default::default()
+        });
+        let service = GatewayService::new(repo, Arc::new(PassThroughPlanner));
+
+        service
+            .validate_route_context_overrides()
+            .await
+            .expect("unknown catalog context should accept configured cap");
     }
 
     #[tokio::test]
@@ -1153,5 +1636,145 @@ mod tests {
             events[0].provider_usage["statistics"]["billable_character_count"],
             999
         );
+    }
+
+    #[tokio::test]
+    async fn configured_route_pricing_is_charged_and_snapshotted_when_catalog_is_unavailable() {
+        let auth = auth();
+        let model_id = Uuid::new_v4();
+        let model = model(model_id);
+        let mut route = vertex_embedding_route(model_id);
+        route.upstream_model = "gpt-5".to_string();
+        route.pricing_override = Some(RoutePricingOverride {
+            input_cost_per_million_tokens: Money4::from_scaled(10_000),
+            output_cost_per_million_tokens: Money4::from_scaled(20_000),
+            cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_000)),
+            cache_write_cost_per_million_tokens: None,
+        });
+        let provider = openai_provider(&route.provider_key);
+        let mut conflicting_catalog_pricing = pricing_record(Some(256_000));
+        conflicting_catalog_pricing.input_cost_per_million_tokens =
+            Some(Money4::from_scaled(90_000));
+        conflicting_catalog_pricing.output_cost_per_million_tokens =
+            Some(Money4::from_scaled(300_000));
+        let occurred_at = OffsetDateTime::now_utc();
+        let scope = BudgetScope::User {
+            user_id: auth.owner_user_id.expect("user owner"),
+        };
+        let budget = BudgetRecord {
+            budget_id: Uuid::new_v4(),
+            scope_key: scope.scope_key(),
+            scope,
+            settings: BudgetSettings {
+                cadence: BudgetCadence::Daily,
+                amount_usd: Money4::from_scaled(20_000),
+                hard_limit: true,
+                timezone: "UTC".to_string(),
+            },
+            source: BudgetSource::manual(),
+            is_active: true,
+            created_at: occurred_at,
+            updated_at: occurred_at,
+        };
+        let repo = Arc::new(UsageAccountingRepo {
+            budget: Some(budget),
+            provider: Some(provider),
+            pricing: Some(conflicting_catalog_pricing),
+            pricing_lookup_fails: true,
+            ..Default::default()
+        });
+        let service = GatewayService::new(repo.clone(), Arc::new(PassThroughPlanner));
+
+        let recorded = service
+            .record_chat_usage(
+                &auth,
+                &model,
+                &route,
+                "req_configured_pricing",
+                Some(json!({
+                    "prompt_tokens": 1_000_000,
+                    "completion_tokens": 500_000,
+                    "total_tokens": 1_500_000
+                })),
+                occurred_at,
+            )
+            .await
+            .expect("usage should be recorded");
+
+        assert_eq!(recorded.pricing_status, UsagePricingStatus::Priced);
+        assert_eq!(recorded.cost_usd, Some(2.0));
+
+        {
+            let events = repo.events.lock().expect("events lock");
+            let event = events.first().expect("usage event");
+            assert_eq!(event.model_route_id, Some(route.id));
+            assert_eq!(event.pricing_source.as_deref(), Some("configured_override"));
+            assert_eq!(event.pricing_row_id, None);
+            assert_eq!(event.pricing_provider_id, None);
+            assert_eq!(event.pricing_model_id, None);
+            assert_eq!(event.pricing_source_etag, None);
+            assert_eq!(event.pricing_source_fetched_at, None);
+            assert_eq!(
+                event.input_cost_per_million_tokens,
+                Some(Money4::from_scaled(10_000))
+            );
+            assert_eq!(
+                event.output_cost_per_million_tokens,
+                Some(Money4::from_scaled(20_000))
+            );
+            assert_eq!(
+                event.cache_read_cost_per_million_tokens,
+                Some(Money4::from_scaled(1_000))
+            );
+            assert_eq!(event.cache_write_cost_per_million_tokens, None);
+            assert_eq!(event.computed_cost_usd, Money4::from_scaled(20_000));
+        }
+
+        let error = service
+            .enforce_pre_provider_budget(
+                &auth,
+                "req_after_configured_pricing",
+                Some(model.id),
+                Some(&route.upstream_model),
+                occurred_at,
+            )
+            .await
+            .expect_err("configured spend should consume the hard budget");
+        assert!(matches!(
+            error,
+            GatewayError::BudgetExceeded {
+                projected_cost_usd,
+                limit_usd,
+                ..
+            } if projected_cost_usd == Money4::from_scaled(20_000)
+                && limit_usd == Money4::from_scaled(20_000)
+        ));
+    }
+
+    #[tokio::test]
+    async fn configured_route_pricing_does_not_require_a_catalog_match() {
+        let model_id = Uuid::new_v4();
+        let mut route = vertex_embedding_route(model_id);
+        route.pricing_override = Some(RoutePricingOverride {
+            input_cost_per_million_tokens: Money4::from_scaled(12_500),
+            output_cost_per_million_tokens: Money4::from_scaled(50_000),
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: Some(Money4::from_scaled(15_000)),
+        });
+        let service = GatewayService::new(
+            Arc::new(UsageAccountingRepo::default()),
+            Arc::new(PassThroughPlanner),
+        );
+
+        let resolution = service
+            .resolve_route_pricing(&route, OffsetDateTime::now_utc())
+            .await
+            .expect("configured pricing should resolve without a catalog row");
+
+        assert!(matches!(
+            resolution,
+            gateway_core::PricingResolution::ConfiguredOverride { pricing }
+                if pricing == route.pricing_override.expect("pricing override")
+        ));
     }
 }

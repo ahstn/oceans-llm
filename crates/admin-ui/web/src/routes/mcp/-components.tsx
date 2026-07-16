@@ -6,11 +6,7 @@ import { AppIcon } from '@/components/icons/app-icon'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
   Dialog,
   DialogContent,
@@ -176,7 +172,10 @@ export function ServerToolsPanel({
   }
 
   return (
-    <div className="min-w-0 max-w-full overflow-hidden rounded-md border" data-testid="mcp-server-tools">
+    <div
+      className="max-w-full min-w-0 overflow-hidden rounded-md border"
+      data-testid="mcp-server-tools"
+    >
       <div className="flex items-center justify-between gap-2 border-b p-4">
         <div>
           <h3 className="font-medium">Discovered tools</h3>
@@ -260,10 +259,10 @@ function ToolDisclosureRow({
   const description = tool.description?.trim()
 
   return (
-    <Collapsible className="min-w-0 max-w-full" open={expanded} onOpenChange={onToggleExpanded}>
+    <Collapsible className="max-w-full min-w-0" open={expanded} onOpenChange={onToggleExpanded}>
       <div
         className={cn(
-          'min-w-0 max-w-full overflow-hidden border-t transition-colors hover:bg-[var(--color-muted)]/40',
+          'max-w-full min-w-0 overflow-hidden border-t transition-colors hover:bg-[var(--color-muted)]/40',
           selected && 'bg-[var(--color-muted)]',
         )}
       >
@@ -301,8 +300,8 @@ function ToolDisclosureRow({
             </Button>
           </CollapsibleTrigger>
         </div>
-        <CollapsibleContent className="min-w-0 max-w-full overflow-hidden">
-          <div className="min-w-0 max-w-full overflow-hidden border-t bg-[var(--color-background)] px-4 py-4">
+        <CollapsibleContent className="max-w-full min-w-0 overflow-hidden">
+          <div className="max-w-full min-w-0 overflow-hidden border-t bg-[var(--color-background)] px-4 py-4">
             <dl className="grid gap-3 text-sm md:grid-cols-3">
               <div className="min-w-0">
                 <dt className="text-xs font-medium text-[var(--color-text-muted)]">Tool ID</dt>
@@ -322,13 +321,13 @@ function ToolDisclosureRow({
                 <dd className="mt-1">{tool.schema_version}</dd>
               </div>
             </dl>
-            <div className="mt-4 min-w-0 max-w-full">
+            <div className="mt-4 max-w-full min-w-0">
               <div className="mb-2 text-xs font-medium text-[var(--color-text-muted)]">
                 JSON schema
               </div>
               {schema ? (
                 <div
-                  className="min-w-0 max-w-full overflow-hidden rounded-md border bg-[var(--color-muted)]"
+                  className="max-w-full min-w-0 overflow-hidden rounded-md border bg-[var(--color-muted)]"
                   data-testid="mcp-tool-schema-scroll"
                 >
                   <pre
@@ -686,11 +685,7 @@ export function ServerFormDialog({
           </DialogDescription>
         </DialogHeader>
         <form className="flex flex-col gap-4" onSubmit={onSubmit}>
-          <ServerFormFields
-            mode={mode}
-            form={form}
-            onFormChange={onFormChange}
-          />
+          <ServerFormFields mode={mode} form={form} onFormChange={onFormChange} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel

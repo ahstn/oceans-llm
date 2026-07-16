@@ -23,10 +23,7 @@ function assetUrlsFromHtml(
   const tags =
     selector === 'stylesheet'
       ? Array.from(html.matchAll(/<link\b[^>]*>/gi), (match) => match[0]).filter((tag) =>
-          extractAttribute(tag, 'rel')
-            ?.toLowerCase()
-            .split(/\s+/)
-            .includes('stylesheet'),
+          extractAttribute(tag, 'rel')?.toLowerCase().split(/\s+/).includes('stylesheet'),
         )
       : Array.from(html.matchAll(/<script\b[^>]*>/gi), (match) => match[0])
 
@@ -69,9 +66,7 @@ test('admin shell serves linked CSS and JavaScript assets through the gateway', 
 
   const scriptResponse = await request.get(scriptUrl.href)
   expect(scriptResponse.status()).toBe(200)
-  expect(scriptResponse.headers()['content-type']).toMatch(
-    /^(?:application|text)\/javascript\b/i,
-  )
+  expect(scriptResponse.headers()['content-type']).toMatch(/^(?:application|text)\/javascript\b/i)
 
   const scriptBody = await scriptResponse.text()
   expect(scriptBody.trimStart()).not.toMatch(/^(?:<!doctype html|<html\b)/i)

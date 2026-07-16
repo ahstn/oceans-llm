@@ -1386,8 +1386,7 @@ function sanitizeInviteForm(
         : null,
     oauth_provider_key:
       form.auth_mode === 'oauth'
-        ? (form.oauth_provider_key ??
-          (oauthProviders.length === 1 ? oauthProviders[0].key : null))
+        ? (form.oauth_provider_key ?? (oauthProviders.length === 1 ? oauthProviders[0].key : null))
         : null,
     tags: sanitizeEntityTags(form.tags),
   }
@@ -1412,10 +1411,8 @@ function isInviteSsoDisabled(
   oauthProviders: IdentityTeamsPayload['oauth_providers'],
 ) {
   return (
-    (form.auth_mode === 'oidc' &&
-      (oidcProviders.length === 0 || !form.oidc_provider_key)) ||
-    (form.auth_mode === 'oauth' &&
-      (oauthProviders.length === 0 || !form.oauth_provider_key))
+    (form.auth_mode === 'oidc' && (oidcProviders.length === 0 || !form.oidc_provider_key)) ||
+    (form.auth_mode === 'oauth' && (oauthProviders.length === 0 || !form.oauth_provider_key))
   )
 }
 

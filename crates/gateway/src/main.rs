@@ -182,6 +182,10 @@ async fn run_serve_with_store(
         .refresh_pricing_catalog_if_stale()
         .await
         .context("failed to initialize pricing catalog")?;
+    service
+        .validate_route_context_overrides()
+        .await
+        .context("invalid route context-window override")?;
     spawn_pricing_catalog_refresh_loop(service.clone());
     spawn_budget_alert_delivery_loop(service.clone(), &config.budget_alerts.email);
     request_log_purge::spawn_loop(service.clone(), &config.request_logging.purge);

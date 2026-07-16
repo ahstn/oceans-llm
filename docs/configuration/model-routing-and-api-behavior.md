@@ -79,6 +79,8 @@ Each route can define:
 - `weight`
 - `enabled`
 - `capabilities`
+- `context_window_tokens`
+- `pricing_override`
 
 Current planner behavior:
 
@@ -93,6 +95,23 @@ Current runtime nuance:
 - the handler executes only the first eligible route
 
 Weight affects selection inside a single priority bucket. It does not mean the gateway sends one request to several providers, retries the next route, or falls back after an upstream error. Configurable retry and fallback remains separate follow-up work in [issue #118](https://github.com/ahstn/oceans-llm/issues/118).
+
+## Effective Route Metadata
+
+`context_window_tokens` declares a deployment-specific context cap for one route. The effective context is the smaller of the configured cap and a known catalog context limit. Catalog input and output limits are also clamped to the effective context. A catalog refresh may lower effective metadata, but it never rewrites the configured override.
+
+Serving startup validates configured context caps after pricing catalog initialization. A cap above a known catalog context fails startup. If the catalog has no context for that route, the configured cap is accepted. Manual and scheduled catalog refreshes keep serving available if newly refreshed catalog context is smaller; Oceans applies the smaller value and emits a warning.
+
+The Models admin API exposes logical-model limits conservatively:
+
+- each dimension is the minimum across selectable routes
+- a dimension is `null` when any selectable route lacks that dimension
+- context provenance is `configured_override`, `catalog`, or `mixed`
+- pricing remains the primary route's effective pricing and sets `pricing_varies_by_route` when another selectable route differs or is unpriced
+
+Generated client configurations use the same conservative logical-model limits. The OpenAI-compatible `/v1/models` response remains an identity/discovery contract and does not gain Oceans-specific metadata.
+
+This first slice governs advertised and internally consumed model metadata only. It does not count request tokens or reject oversized prompts before provider execution; request-time preflight enforcement remains follow-up work until Oceans has a canonical tokenizer contract.
 
 ## Capability-Aware Gating
 

@@ -464,7 +464,10 @@ test('admin ui can create, manage, and revoke an api key that gates live gateway
   await expect(dialog).toContainText('Never')
 
   await dialog.getByRole('button', { name: /fast/i }).click()
-  await page.locator('[data-slot="command-item"]').filter({ hasText: /reasoning/ }).click()
+  await page
+    .locator('[data-slot="command-item"]')
+    .filter({ hasText: /reasoning/ })
+    .click()
   await page.locator('[data-slot="command-item"]').filter({ hasText: /fast/ }).click()
   await page.keyboard.press('Escape')
   await dialog.getByRole('button', { name: 'Save access' }).click()

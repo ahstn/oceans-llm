@@ -137,7 +137,8 @@ impl ModelRepository for PostgresStore {
         let rows = sqlx::query(
             r#"
             SELECT id, model_id, provider_key, upstream_model, priority, weight, enabled,
-                   extra_headers_json, extra_body_json, capabilities_json, compatibility_json
+                   context_window_tokens, pricing_override_json, extra_headers_json,
+                   extra_body_json, capabilities_json, compatibility_json
             FROM model_routes
             WHERE model_id = $1
             ORDER BY priority ASC
@@ -161,8 +162,8 @@ impl ModelRepository for PostgresStore {
 
         let mut builder = sqlx::QueryBuilder::<sqlx::Postgres>::new(
             "SELECT id, model_id, provider_key, upstream_model, priority, weight, enabled, \
-             extra_headers_json, extra_body_json, capabilities_json, compatibility_json \
-             FROM model_routes WHERE model_id IN (",
+             context_window_tokens, pricing_override_json, extra_headers_json, extra_body_json, \
+             capabilities_json, compatibility_json FROM model_routes WHERE model_id IN (",
         );
         {
             let mut separated = builder.separated(", ");

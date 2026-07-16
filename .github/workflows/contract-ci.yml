@@ -1,4 +1,4 @@
-name: ui-ci
+name: contract-ci
 
 on:
   pull_request:
@@ -17,7 +17,7 @@ env:
   MISE_TASK_RUN_AUTO_INSTALL: "false"
 
 jobs:
-  admin-ui-check:
+  admin-contract-check:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -27,10 +27,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup mise and Bun
+      - name: Setup mise, Rust, and Bun
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
-          install_args: bun
+          install_args: rust bun
 
-      - name: Check admin UI
-        run: mise run ui-check
+      - name: Check generated admin contract
+        run: mise run admin-contract-check

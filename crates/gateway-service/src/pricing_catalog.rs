@@ -32,9 +32,9 @@ const MAX_PRICING_SYNC_ATTEMPTS: usize = 3;
 
 mod target;
 
-pub(crate) use target::exact_pricing_target_for_route;
 use target::{PricingTarget, pricing_target_for_route};
 pub use target::{SUPPORTED_PRICING_PROVIDER_IDS, is_supported_pricing_provider_id};
+pub(crate) use target::{catalog_metadata_target_for_route, catalog_pricing_supported_for_route};
 #[cfg(test)]
 use target::{normalize_bedrock_pricing_model_id, normalize_vertex_pricing_model_id};
 

@@ -97,10 +97,17 @@ pub(super) fn decode_gateway_model(row: &PgRow) -> Result<GatewayModel, StoreErr
 
 pub(super) fn decode_model_route(row: &PgRow) -> Result<ModelRoute, StoreError> {
     let enabled: i64 = row.try_get(6).map_err(to_query_error)?;
-    let extra_headers_json: String = row.try_get(7).map_err(to_query_error)?;
-    let extra_body_json: String = row.try_get(8).map_err(to_query_error)?;
-    let capabilities_json: String = row.try_get(9).map_err(to_query_error)?;
-    let compatibility_json: String = row.try_get(10).map_err(to_query_error)?;
+    let context_window_tokens: Option<i64> = row.try_get(7).map_err(to_query_error)?;
+    let pricing_override_json: Option<String> = row.try_get(8).map_err(to_query_error)?;
+    let extra_headers_json: String = row.try_get(9).map_err(to_query_error)?;
+    let extra_body_json: String = row.try_get(10).map_err(to_query_error)?;
+    let capabilities_json: String = row.try_get(11).map_err(to_query_error)?;
+    let compatibility_json: String = row.try_get(12).map_err(to_query_error)?;
+    let pricing_override = pricing_override_json
+        .as_deref()
+        .map(serde_json::from_str)
+        .transpose()
+        .map_err(|error| StoreError::Serialization(error.to_string()))?;
     let capabilities = serde_json::from_str(&capabilities_json)
         .map_err(|error| StoreError::Serialization(error.to_string()))?;
     let compatibility = serde_json::from_str(&compatibility_json)
@@ -114,6 +121,8 @@ pub(super) fn decode_model_route(row: &PgRow) -> Result<ModelRoute, StoreError> 
         priority: row.try_get(4).map_err(to_query_error)?,
         weight: row.try_get(5).map_err(to_query_error)?,
         enabled: enabled == 1,
+        context_window_tokens,
+        pricing_override,
         extra_headers: json_object_from_str(&extra_headers_json)?,
         extra_body: json_object_from_str(&extra_body_json)?,
         capabilities,
@@ -586,16 +595,21 @@ pub(super) fn decode_usage_ledger_record(row: &PgRow) -> Result<UsageLedgerRecor
     let service_account_id: Option<String> = row.try_get(6).map_err(to_query_error)?;
     let actor_user_id: Option<String> = row.try_get(7).map_err(to_query_error)?;
     let model_id: Option<String> = row.try_get(8).map_err(to_query_error)?;
-    let provider_usage_json: String = row.try_get(14).map_err(to_query_error)?;
-    let pricing_status: String = row.try_get(15).map_err(to_query_error)?;
-    let pricing_row_id: Option<String> = row.try_get(17).map_err(to_query_error)?;
-    let pricing_source_fetched_at: Option<i64> = row.try_get(22).map_err(to_query_error)?;
+    let model_route_id: Option<String> = row.try_get(9).map_err(to_query_error)?;
+    let provider_usage_json: String = row.try_get(15).map_err(to_query_error)?;
+    let pricing_status: String = row.try_get(16).map_err(to_query_error)?;
+    let pricing_row_id: Option<String> = row.try_get(18).map_err(to_query_error)?;
+    let pricing_source_fetched_at: Option<i64> = row.try_get(23).map_err(to_query_error)?;
     let input_cost_per_million_tokens_10000: Option<i64> =
-        row.try_get(24).map_err(to_query_error)?;
-    let output_cost_per_million_tokens_10000: Option<i64> =
         row.try_get(25).map_err(to_query_error)?;
-    let computed_cost_10000: i64 = row.try_get(26).map_err(to_query_error)?;
-    let occurred_at: i64 = row.try_get(27).map_err(to_query_error)?;
+    let output_cost_per_million_tokens_10000: Option<i64> =
+        row.try_get(26).map_err(to_query_error)?;
+    let cache_read_cost_per_million_tokens_10000: Option<i64> =
+        row.try_get(27).map_err(to_query_error)?;
+    let cache_write_cost_per_million_tokens_10000: Option<i64> =
+        row.try_get(28).map_err(to_query_error)?;
+    let computed_cost_10000: i64 = row.try_get(29).map_err(to_query_error)?;
+    let occurred_at: i64 = row.try_get(30).map_err(to_query_error)?;
 
     Ok(UsageLedgerRecord {
         usage_event_id: parse_uuid(&usage_event_id)?,
@@ -607,28 +621,33 @@ pub(super) fn decode_usage_ledger_record(row: &PgRow) -> Result<UsageLedgerRecor
         service_account_id: service_account_id.as_deref().map(parse_uuid).transpose()?,
         actor_user_id: actor_user_id.as_deref().map(parse_uuid).transpose()?,
         model_id: model_id.as_deref().map(parse_uuid).transpose()?,
-        provider_key: row.try_get(9).map_err(to_query_error)?,
-        upstream_model: row.try_get(10).map_err(to_query_error)?,
-        prompt_tokens: row.try_get(11).map_err(to_query_error)?,
-        completion_tokens: row.try_get(12).map_err(to_query_error)?,
-        total_tokens: row.try_get(13).map_err(to_query_error)?,
+        model_route_id: model_route_id.as_deref().map(parse_uuid).transpose()?,
+        provider_key: row.try_get(10).map_err(to_query_error)?,
+        upstream_model: row.try_get(11).map_err(to_query_error)?,
+        prompt_tokens: row.try_get(12).map_err(to_query_error)?,
+        completion_tokens: row.try_get(13).map_err(to_query_error)?,
+        total_tokens: row.try_get(14).map_err(to_query_error)?,
         provider_usage: serde_json::from_str(&provider_usage_json)
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
         pricing_status: UsagePricingStatus::from_db(&pricing_status).ok_or_else(|| {
             StoreError::Serialization(format!("unknown usage pricing status `{pricing_status}`"))
         })?,
-        unpriced_reason: row.try_get(16).map_err(to_query_error)?,
+        unpriced_reason: row.try_get(17).map_err(to_query_error)?,
         pricing_row_id: pricing_row_id.as_deref().map(parse_uuid).transpose()?,
-        pricing_provider_id: row.try_get(18).map_err(to_query_error)?,
-        pricing_model_id: row.try_get(19).map_err(to_query_error)?,
-        pricing_source: row.try_get(20).map_err(to_query_error)?,
-        pricing_source_etag: row.try_get(21).map_err(to_query_error)?,
+        pricing_provider_id: row.try_get(19).map_err(to_query_error)?,
+        pricing_model_id: row.try_get(20).map_err(to_query_error)?,
+        pricing_source: row.try_get(21).map_err(to_query_error)?,
+        pricing_source_etag: row.try_get(22).map_err(to_query_error)?,
         pricing_source_fetched_at: pricing_source_fetched_at
             .map(unix_to_datetime)
             .transpose()?,
-        pricing_last_updated: row.try_get(23).map_err(to_query_error)?,
+        pricing_last_updated: row.try_get(24).map_err(to_query_error)?,
         input_cost_per_million_tokens: input_cost_per_million_tokens_10000.map(Money4::from_scaled),
         output_cost_per_million_tokens: output_cost_per_million_tokens_10000
+            .map(Money4::from_scaled),
+        cache_read_cost_per_million_tokens: cache_read_cost_per_million_tokens_10000
+            .map(Money4::from_scaled),
+        cache_write_cost_per_million_tokens: cache_write_cost_per_million_tokens_10000
             .map(Money4::from_scaled),
         computed_cost_usd: Money4::from_scaled(computed_cost_10000),
         occurred_at: unix_to_datetime(occurred_at)?,

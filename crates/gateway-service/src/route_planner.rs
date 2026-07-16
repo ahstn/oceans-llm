@@ -91,6 +91,8 @@ mod tests {
             priority,
             weight,
             enabled: true,
+            context_window_tokens: None,
+            pricing_override: None,
             extra_headers: Map::new(),
             extra_body: Map::new(),
             capabilities: ProviderCapabilities::all_enabled(),

@@ -16,6 +16,7 @@ fn input(policy: Option<AnthropicThinkingPolicy>) -> ClientConfigInput {
         input_cost_per_million_tokens_usd_10000: Some(30_000),
         output_cost_per_million_tokens_usd_10000: Some(150_000),
         cache_read_cost_per_million_tokens_usd_10000: Some(3_000),
+        cache_write_cost_per_million_tokens_usd_10000: Some(7_500),
         context_window_tokens: Some(200_000),
         output_window_tokens: Some(64_000),
         capabilities: ClientModelCapabilities {
@@ -108,13 +109,14 @@ fn pi_shape_includes_provider_model_cost_and_windows() {
     assert_eq!(model["contextWindow"], 200_000);
     assert_eq!(model["maxTokens"], 64_000);
     assert_eq!(model["cost"]["cacheRead"], 0.3);
-    assert_eq!(model["cost"]["cacheWrite"], 0);
+    assert_eq!(model["cost"]["cacheWrite"], 0.75);
 }
 
 #[test]
 fn pi_cache_costs_default_to_zero_when_missing() {
     let mut input = input(Some(AnthropicThinkingPolicy::SafeEffort));
     input.cache_read_cost_per_million_tokens_usd_10000 = None;
+    input.cache_write_cost_per_million_tokens_usd_10000 = None;
 
     let opencode: Value =
         serde_json::from_str(&OpenCodeConfigTemplate.render(&input).blocks[0].content)
@@ -334,7 +336,7 @@ fn pi_safe_effort_config_matches_expected_full_shape() {
                             "contextWindow": 200000,
                             "cost": {
                                 "cacheRead": 0.3,
-                                "cacheWrite": 0,
+                                "cacheWrite": 0.75,
                                 "input": 3.0,
                                 "output": 15.0
                             },

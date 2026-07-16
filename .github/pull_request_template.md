@@ -16,6 +16,6 @@ Use this section for review hints, explanations, discussion points, and follow-u
 
 - [ ] `mise run lint`
 - [ ] `mise run test`
-- [ ] If this PR touches runtime, store, migration, or release behavior: `mise run check-rust-postgres`
-- [ ] If this PR touches runtime, store, migration, or release behavior: `mise run test-rust-postgres`
-- [ ] If this PR touches runtime, store, migration, or release behavior: `mise run test-gateway-postgres-smoke`
+- [ ] If this PR touches runtime, store, migration, or release behavior: `mise run //crates/gateway-store:check`
+- [ ] If this PR touches runtime, store, migration, or release behavior: `mise run //crates/gateway-store:test:postgres`
+- [ ] If this PR touches runtime, store, migration, or release behavior: `mise run //crates/gateway-store:smoke:postgres`

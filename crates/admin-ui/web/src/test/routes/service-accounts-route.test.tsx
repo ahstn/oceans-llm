@@ -135,7 +135,9 @@ describe('ServiceAccountsPage', () => {
     expect(screen.getAllByText('Deploy Worker Key').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Nightly Rollup').length).toBeGreaterThan(0)
     expect(screen.getAllByText('No credential attached').length).toBeGreaterThan(0)
-    expect(screen.queryByRole('button', { name: /create|add|disable|revoke|rename/i })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /create|add|disable|revoke|rename/i }),
+    ).not.toBeInTheDocument()
   })
 
   it('links teams to the identity Teams page', async () => {
@@ -164,7 +166,9 @@ describe('ServiceAccountsPage', () => {
     render(<ServiceAccountsPage />)
 
     expect(screen.getByText('No service accounts visible')).toBeInTheDocument()
-    expect(screen.getByText(/No service accounts are visible for the current scope/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/No service accounts are visible for the current scope/),
+    ).toBeInTheDocument()
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 })

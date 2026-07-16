@@ -97,9 +97,7 @@ export async function getGatewayVersion(): Promise<string | null> {
   const health = await fetchGatewayJson<GatewayHealth>('/api/v1/health', {
     signal: AbortSignal.timeout(GATEWAY_VERSION_TIMEOUT_MS),
   })
-  return typeof health.version === 'string' && health.version.trim()
-    ? health.version.trim()
-    : null
+  return typeof health.version === 'string' && health.version.trim() ? health.version.trim() : null
 }
 
 export type PublicOidcProvidersPayload = {

@@ -9,8 +9,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 env:
   MISE_EXPERIMENTAL: true
+  MISE_TASK_RUN_AUTO_INSTALL: "false"
+  POSTGRES_CONNECTION: postgres://oceans:oceans@localhost:5432/oceans_llm_ci
 
 jobs:
   rust-lint-test:
@@ -30,30 +35,35 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
-    env:
-      POSTGRES_URL: postgres://oceans:oceans@localhost:5432/oceans_llm_ci
-      TEST_POSTGRES_URL: postgres://oceans:oceans@localhost:5432/oceans_llm_ci
-      OPENAI_API_KEY: test-openai-key
-      OPENAI_API_KEY_SECONDARY: test-openai-key-secondary
-
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
 
-      - name: Setup mise + tools
-        uses: jdx/mise-action@v4
+      - name: Setup mise and Rust
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          install_args: rust
 
-      - name: Run `mise run lint`
-        run: mise run lint
+      - name: Check Rust formatting
+        run: mise run rust-fmt-check
+
+      - name: Lint Rust workspace
+        run: mise run rust-lint
 
       - name: Run gateway-store Postgres check
         run: mise //crates/gateway-store:check
 
       - name: Test Rust workspace
-        run: mise exec -- cargo test --workspace
+        run: mise run rust-test
 
       - name: Run gateway-store Postgres tests
+        env:
+          TEST_POSTGRES_URL: ${{ env.POSTGRES_CONNECTION }}
         run: mise //crates/gateway-store:test:postgres
 
       - name: Run gateway Postgres smoke checks
+        env:
+          POSTGRES_URL: ${{ env.POSTGRES_CONNECTION }}
         run: mise //crates/gateway-store:smoke:postgres

@@ -272,6 +272,22 @@ pub struct AdminModelAllowlistView {
     pub teams: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum EffectiveMetadataSourceKindView {
+    ConfiguredOverride,
+    Catalog,
+    Mixed,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct EffectiveMetadataSourceView {
+    pub kind: EffectiveMetadataSourceKindView,
+    pub catalog_source: Option<String>,
+    pub catalog_etag: Option<String>,
+    pub catalog_fetched_at: Option<String>,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AdminModelView {
     pub id: String,
@@ -290,7 +306,11 @@ pub struct AdminModelView {
     pub input_cost_per_million_tokens_usd_10000: Option<i64>,
     pub output_cost_per_million_tokens_usd_10000: Option<i64>,
     pub cache_read_cost_per_million_tokens_usd_10000: Option<i64>,
+    pub cache_write_cost_per_million_tokens_usd_10000: Option<i64>,
+    pub pricing_source: Option<EffectiveMetadataSourceView>,
+    pub pricing_varies_by_route: bool,
     pub context_window_tokens: Option<i64>,
+    pub context_window_source: Option<EffectiveMetadataSourceView>,
     pub input_window_tokens: Option<i64>,
     pub output_window_tokens: Option<i64>,
     pub supports_streaming: Option<bool>,

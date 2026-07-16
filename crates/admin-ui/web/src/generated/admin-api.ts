@@ -1322,7 +1322,10 @@ export interface components {
             allowlist?: null | components["schemas"]["AdminModelAllowlistView"];
             /** Format: int64 */
             cache_read_cost_per_million_tokens_usd_10000?: number | null;
+            /** Format: int64 */
+            cache_write_cost_per_million_tokens_usd_10000?: number | null;
             client_configurations: components["schemas"]["AdminModelClientConfigView"][];
+            context_window_source?: null | components["schemas"]["EffectiveMetadataSourceView"];
             /** Format: int64 */
             context_window_tokens?: number | null;
             description?: string | null;
@@ -1337,6 +1340,8 @@ export interface components {
             output_cost_per_million_tokens_usd_10000?: number | null;
             /** Format: int64 */
             output_window_tokens?: number | null;
+            pricing_source?: null | components["schemas"]["EffectiveMetadataSourceView"];
+            pricing_varies_by_route: boolean;
             provider_icon_key?: null | components["schemas"]["ProviderIconKeyView"];
             provider_key?: string | null;
             provider_label?: string | null;
@@ -1635,6 +1640,14 @@ export interface components {
             deactivated: boolean;
             scope: components["schemas"]["BudgetScopeView"];
             scope_key: string;
+        };
+        /** @enum {string} */
+        EffectiveMetadataSourceKindView: "configured_override" | "catalog" | "mixed";
+        EffectiveMetadataSourceView: {
+            catalog_etag?: string | null;
+            catalog_fetched_at?: string | null;
+            catalog_source?: string | null;
+            kind: components["schemas"]["EffectiveMetadataSourceKindView"];
         };
         Envelope_ActionConfigResolveResponse: {
             data: {

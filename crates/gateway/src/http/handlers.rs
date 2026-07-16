@@ -1704,6 +1704,24 @@ async fn best_effort_record_mcp_request_telemetry(
     context.tool_cardinality.exposed_tool_count = Some(resolution.allowed_tools.len() as i64);
     context.tool_cardinality.filtered_tool_count = Some(resolution.filtered_tool_count);
 
+    let occurred_at = OffsetDateTime::now_utc();
+    let context_window_tokens = match state
+        .service
+        .resolve_route_metadata_with_provider(route, provider, occurred_at)
+        .await
+    {
+        Ok(metadata) => metadata.limits.context,
+        Err(error) => {
+            tracing::warn!(
+                request_id = %context.request_id,
+                route_id = %route.id,
+                error = %error,
+                "failed resolving effective context for MCP request telemetry"
+            );
+            None
+        }
+    };
+
     let overhead = McpTokenOverhead::new(state.store.clone());
     if let Err(error) = overhead
         .record_request_overhead(McpTokenOverheadInput {
@@ -1715,9 +1733,9 @@ async fn best_effort_record_mcp_request_telemetry(
                 .unwrap_or_else(|| route.provider_key.clone()),
             model_or_encoding: route.upstream_model.clone(),
             tools: resolution.allowed_tools,
-            context_window_tokens: None,
+            context_window_tokens,
             protocol_version: None,
-            occurred_at: OffsetDateTime::now_utc(),
+            occurred_at,
         })
         .await
     {
@@ -2028,6 +2046,8 @@ mod tests {
             priority: 0,
             weight: 1.0,
             enabled: true,
+            context_window_tokens: None,
+            pricing_override: None,
             extra_headers: Default::default(),
             extra_body: Default::default(),
             capabilities,
