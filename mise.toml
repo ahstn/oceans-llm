@@ -311,10 +311,8 @@ run = "bun run --cwd actions/review-agent typecheck"
 
 [tasks.review-agent-action-check]
 description = "Typecheck, test, verify dist, and smoke test the review agent action"
-depends = ["review-agent-action-install"]
+depends = ["review-agent-action-typecheck", "review-agent-action-test"]
 run = """
-bun run --cwd actions/review-agent typecheck
-bun run --cwd actions/review-agent test
 bun run --cwd actions/review-agent check:dist
 bun run --cwd actions/review-agent smoke:no-install
 """
