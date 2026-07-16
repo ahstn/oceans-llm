@@ -9,8 +9,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 env:
   MISE_EXPERIMENTAL: true
+  MISE_TASK_RUN_AUTO_INSTALL: "false"
 
 jobs:
   docs-check:
@@ -19,10 +23,14 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
 
-      - name: Setup mise + tools
-        uses: jdx/mise-action@e79ddf65a11cec7b0e882bedced08d6e976efb2d
+      - name: Setup mise and Node.js
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          install_args: node
 
       - name: Verify docs site
         run: mise //docs:verify

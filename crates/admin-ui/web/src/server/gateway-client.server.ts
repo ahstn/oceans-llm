@@ -17,8 +17,7 @@ function isLoopbackHostname(hostname: string) {
 
 function parseRequestTarget(request: Request) {
   const requestUrl = new URL(request.url)
-  const protocol =
-    request.headers.get('x-forwarded-proto') ?? requestUrl.protocol.replace(/:$/, '')
+  const protocol = request.headers.get('x-forwarded-proto') ?? requestUrl.protocol.replace(/:$/, '')
   const forwardedHost = request.headers.get('x-forwarded-host') ?? request.headers.get('host')
 
   if (forwardedHost) {
@@ -56,10 +55,7 @@ export function resolveGatewayOriginFromRequest(request: Request, explicitOrigin
   return trimOrigin(requestTarget.origin)
 }
 
-export function resolveBrowserGatewayOriginFromRequest(
-  request: Request,
-  explicitOrigin?: string,
-) {
+export function resolveBrowserGatewayOriginFromRequest(request: Request, explicitOrigin?: string) {
   const explicit = explicitOrigin?.trim()
   if (explicit) {
     return trimOrigin(explicit)
@@ -71,10 +67,7 @@ export function resolveBrowserGatewayOriginFromRequest(
   }
 
   const requestTarget = parseRequestTarget(request)
-  if (
-    requestTarget.port === DEFAULT_DEV_UI_PORT ||
-    requestTarget.port === DEFAULT_DOCKER_UI_PORT
-  ) {
+  if (requestTarget.port === DEFAULT_DEV_UI_PORT || requestTarget.port === DEFAULT_DOCKER_UI_PORT) {
     const gatewayOrigin = new URL(requestTarget.origin)
     gatewayOrigin.port = DEFAULT_GATEWAY_PORT
     return trimOrigin(gatewayOrigin.origin)
@@ -85,10 +78,7 @@ export function resolveBrowserGatewayOriginFromRequest(
 
 export function resolveBrowserGatewayOrigin() {
   const request = getRequest()
-  return resolveBrowserGatewayOriginFromRequest(
-    request,
-    process.env.ADMIN_GATEWAY_BROWSER_ORIGIN,
-  )
+  return resolveBrowserGatewayOriginFromRequest(request, process.env.ADMIN_GATEWAY_BROWSER_ORIGIN)
 }
 
 function resolveGatewayOrigin() {

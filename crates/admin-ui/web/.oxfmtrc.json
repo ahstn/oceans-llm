@@ -7,5 +7,5 @@
   "sortTailwindcss": {
     "functions": ["cn"]
   },
-  "ignorePatterns": ["dist", ".output", "node_modules"]
+  "ignorePatterns": ["dist", ".output", "node_modules", "src/generated", "src/routeTree.gen.ts"]
 }

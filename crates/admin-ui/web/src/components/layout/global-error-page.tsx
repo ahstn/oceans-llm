@@ -3,13 +3,7 @@ import type { ErrorComponentProps } from '@tanstack/react-router'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 
 const DEFAULT_ERROR_TITLE = 'The admin UI could not load'
@@ -155,7 +149,7 @@ export function GlobalErrorPage({ error, info, reset }: ErrorComponentProps) {
                 </Button>
               </CardHeader>
               <CardContent>
-                <pre className="text-muted-foreground max-h-72 overflow-auto whitespace-pre-wrap rounded-lg font-mono text-xs leading-5">
+                <pre className="text-muted-foreground max-h-72 overflow-auto rounded-lg font-mono text-xs leading-5 whitespace-pre-wrap">
                   {details}
                 </pre>
               </CardContent>

@@ -9,8 +9,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 env:
   MISE_EXPERIMENTAL: true
+  MISE_TASK_RUN_AUTO_INSTALL: "false"
 
 jobs:
   e2e-contract-tests:
@@ -19,17 +23,21 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
 
-      - name: Setup mise + tools
-        uses: jdx/mise-action@e79ddf65a11cec7b0e882bedced08d6e976efb2d
+      - name: Setup mise, Rust, Bun, and Node.js
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          install_args: rust bun node
 
       - name: Run end-to-end contract tests
         run: mise run e2e-test
 
       - name: Upload Playwright report
         if: failure()
-        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: playwright-report
           path: crates/admin-ui/web/playwright-report
@@ -37,7 +45,7 @@ jobs:
 
       - name: Upload Playwright test results
         if: failure()
-        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: playwright-test-results
           path: crates/admin-ui/web/test-results

@@ -1,4 +1,4 @@
-name: ui-ci
+name: review-agent-ci
 
 on:
   pull_request:
@@ -17,7 +17,7 @@ env:
   MISE_TASK_RUN_AUTO_INSTALL: "false"
 
 jobs:
-  admin-ui-check:
+  review-agent-check:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -32,5 +32,5 @@ jobs:
         with:
           install_args: bun
 
-      - name: Check admin UI
-        run: mise run ui-check
+      - name: Check review agent action
+        run: mise run review-agent-action-check

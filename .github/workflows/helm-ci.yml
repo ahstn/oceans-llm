@@ -4,10 +4,16 @@ on:
   pull_request:
     paths:
       - "deploy/helm/oceans-llm/**"
+      - ".github/workflows/helm-ci.yml"
+      - "mise.toml"
+      - "mise.lock"
   push:
     branches: ["main"]
     paths:
       - "deploy/helm/oceans-llm/**"
+      - ".github/workflows/helm-ci.yml"
+      - "mise.toml"
+      - "mise.lock"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -18,6 +24,7 @@ permissions:
 
 env:
   MISE_EXPERIMENTAL: true
+  MISE_TASK_RUN_AUTO_INSTALL: "false"
 
 jobs:
   helm-check:
@@ -26,10 +33,14 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
 
-      - name: Setup mise + tools
-        uses: jdx/mise-action@v4
+      - name: Setup mise and Helm
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          install_args: helm
 
       - name: Run Helm checks
         run: mise run helm-check

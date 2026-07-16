@@ -1,12 +1,9 @@
-import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
-import { Link } from "@tanstack/react-router";
+import { ArrowRight01Icon } from '@hugeicons/core-free-icons'
+import { Link } from '@tanstack/react-router'
 
-import { AppIcon } from "@/components/icons/app-icon";
-import {
-  adminNavSections,
-  matchesAdminPath,
-} from "@/components/layout/admin-nav";
-import { GeneratedAvatar } from "@/components/ui/generated-avatar";
+import { AppIcon } from '@/components/icons/app-icon'
+import { adminNavSections, matchesAdminPath } from '@/components/layout/admin-nav'
+import { GeneratedAvatar } from '@/components/ui/generated-avatar'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,7 +11,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from '@/components/ui/dropdown-menu'
 import {
   Sidebar,
   SidebarContent,
@@ -27,22 +24,17 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
-} from "@/components/ui/sidebar";
-import type { AuthSessionView } from "@/types/api";
+} from '@/components/ui/sidebar'
+import type { AuthSessionView } from '@/types/api'
 
 interface AppSidebarProps {
-  currentPath: string;
-  session: AuthSessionView;
-  signOutPending: boolean;
-  onSignOut: () => void;
+  currentPath: string
+  session: AuthSessionView
+  signOutPending: boolean
+  onSignOut: () => void
 }
 
-export function AppSidebar({
-  currentPath,
-  session,
-  signOutPending,
-  onSignOut,
-}: AppSidebarProps) {
+export function AppSidebar({ currentPath, session, signOutPending, onSignOut }: AppSidebarProps) {
   return (
     <Sidebar collapsible="icon" variant="inset">
       <SidebarHeader className="gap-3 p-3 pb-2">
@@ -61,9 +53,7 @@ export function AppSidebar({
                   <span className="text-sidebar-foreground truncate text-sm font-medium">
                     Oceans Gateway
                   </span>
-                  <span className="text-sidebar-foreground/70 truncate text-xs">
-                    Control plane
-                  </span>
+                  <span className="text-sidebar-foreground/70 truncate text-xs">Control plane</span>
                 </div>
               </div>
             </SidebarMenuButton>
@@ -80,7 +70,7 @@ export function AppSidebar({
             <SidebarGroupContent>
               <SidebarMenu className="gap-1">
                 {section.items.map((item) => {
-                  const active = matchesAdminPath(currentPath, item.to);
+                  const active = matchesAdminPath(currentPath, item.to)
 
                   return (
                     <SidebarMenuItem key={item.to}>
@@ -96,7 +86,7 @@ export function AppSidebar({
                         </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
-                  );
+                  )
                 })}
               </SidebarMenu>
             </SidebarGroupContent>
@@ -109,10 +99,7 @@ export function AppSidebar({
           <SidebarMenuItem>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <SidebarMenuButton
-                  size="lg"
-                  className="h-auto rounded-lg px-2 py-2"
-                >
+                <SidebarMenuButton size="lg" className="h-auto rounded-lg px-2 py-2">
                   <GeneratedAvatar
                     kind="user"
                     name={session.user.name || session.user.email}
@@ -121,9 +108,7 @@ export function AppSidebar({
                     square
                   />
                   <div className="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
-                    <span className="truncate font-medium">
-                      {session.user.name}
-                    </span>
+                    <span className="truncate font-medium">{session.user.name}</span>
                     <span className="text-sidebar-foreground/70 truncate text-xs">
                       {session.user.email}
                     </span>
@@ -138,9 +123,7 @@ export function AppSidebar({
               </DropdownMenuTrigger>
               <DropdownMenuContent side="top" align="start" className="w-64">
                 <DropdownMenuLabel className="grid gap-1">
-                  <span className="truncate text-sm font-medium">
-                    {session.user.name}
-                  </span>
+                  <span className="truncate text-sm font-medium">{session.user.name}</span>
                   <span className="text-muted-foreground truncate text-xs font-normal">
                     {session.user.email}
                   </span>
@@ -156,11 +139,11 @@ export function AppSidebar({
                   variant="destructive"
                   disabled={signOutPending}
                   onSelect={(event) => {
-                    event.preventDefault();
-                    onSignOut();
+                    event.preventDefault()
+                    onSignOut()
                   }}
                 >
-                  {signOutPending ? "Signing out..." : "Sign out"}
+                  {signOutPending ? 'Signing out...' : 'Sign out'}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -170,13 +153,13 @@ export function AppSidebar({
 
       <SidebarRail />
     </Sidebar>
-  );
+  )
 }
 
 function formatRole(role: string) {
   return role
-    .split("_")
+    .split('_')
     .filter(Boolean)
     .map((part) => part[0]?.toUpperCase() + part.slice(1))
-    .join(" ");
+    .join(' ')
 }

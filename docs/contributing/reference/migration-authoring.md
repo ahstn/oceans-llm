@@ -45,8 +45,8 @@ Use mise tasks instead of ad hoc database commands.
 mise run gateway-migrate
 mise run postgres-start
 mise run gateway-migrate-prod
-mise run test-rust-postgres
-mise run test-gateway-postgres-smoke
+mise run //crates/gateway-store:test:postgres
+mise run //crates/gateway-store:smoke:postgres
 ```
 
 For full pre-handoff validation, use:

@@ -5,13 +5,7 @@ import { AppIcon } from '@/components/icons/app-icon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from '@/components/ui/empty'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { GeneratedAvatar } from '@/components/ui/generated-avatar'
 import { EntityTagBadges } from '@/routes/identity/-entity-tags'
 import {
