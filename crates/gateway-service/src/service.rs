@@ -1381,6 +1381,65 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn configured_pricing_does_not_bypass_context_validation() {
+        let model_id = Uuid::new_v4();
+        let model = model(model_id);
+        let mut route = vertex_embedding_route(model_id);
+        route.upstream_model = "gpt-5".to_string();
+        route.context_window_tokens = Some(128_000);
+        route.pricing_override = Some(RoutePricingOverride {
+            input_cost_per_million_tokens: Money4::from_scaled(10_000),
+            output_cost_per_million_tokens: Money4::from_scaled(20_000),
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: None,
+        });
+        let provider = openai_provider(&route.provider_key);
+        let service = GatewayService::new(
+            Arc::new(UsageAccountingRepo {
+                models: vec![model.clone()],
+                routes: vec![route.clone()],
+                provider: Some(provider.clone()),
+                pricing: Some(pricing_record(Some(256_000))),
+                ..Default::default()
+            }),
+            Arc::new(PassThroughPlanner),
+        );
+
+        service
+            .validate_route_context_overrides()
+            .await
+            .expect("configured cap below catalog context should be valid");
+        assert!(matches!(
+            service
+                .resolve_route_pricing(&route, OffsetDateTime::now_utc())
+                .await
+                .expect("configured pricing"),
+            gateway_core::PricingResolution::ConfiguredOverride { .. }
+        ));
+
+        let conflicting_service = GatewayService::new(
+            Arc::new(UsageAccountingRepo {
+                models: vec![model],
+                routes: vec![route],
+                provider: Some(provider),
+                pricing: Some(pricing_record(Some(64_000))),
+                ..Default::default()
+            }),
+            Arc::new(PassThroughPlanner),
+        );
+        let error = conflicting_service
+            .validate_route_context_overrides()
+            .await
+            .expect_err("configured pricing must not bypass an oversized context cap");
+        assert!(
+            error
+                .to_string()
+                .contains("context_window_tokens `128000` exceeds catalog context `64000`"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[tokio::test]
     async fn startup_context_validation_uses_catalog_limits_for_modified_pricing_routes() {
         let model_id = Uuid::new_v4();
         let model = model(model_id);
@@ -1421,6 +1480,14 @@ mod tests {
                 reason: gateway_core::PricingUnpricedReason::UnsupportedBillingModifier(_)
             }
         ));
+
+        let metadata = service
+            .resolve_route_metadata(&route, OffsetDateTime::now_utc())
+            .await
+            .expect("effective metadata");
+        assert_eq!(metadata.limits.context, Some(64_000));
+        assert_eq!(metadata.pricing, None);
+        assert_eq!(metadata.pricing_source, None);
     }
 
     #[tokio::test]
@@ -1466,6 +1533,14 @@ mod tests {
                 reason: gateway_core::PricingUnpricedReason::UnsupportedVertexLocation(_)
             }
         ));
+
+        let metadata = service
+            .resolve_route_metadata(&route, OffsetDateTime::now_utc())
+            .await
+            .expect("effective metadata");
+        assert_eq!(metadata.limits.context, Some(64_000));
+        assert_eq!(metadata.pricing, None);
+        assert_eq!(metadata.pricing_source, None);
     }
 
     #[tokio::test]

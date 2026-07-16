@@ -4,7 +4,9 @@ use gateway_core::{
 };
 use time::OffsetDateTime;
 
-use crate::pricing_catalog::catalog_metadata_target_for_route;
+use crate::pricing_catalog::{
+    catalog_metadata_target_for_route, catalog_pricing_supported_for_route,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EffectiveMetadataSourceKind {
@@ -81,14 +83,21 @@ pub async fn resolve_effective_route_metadata<R>(
 where
     R: PricingCatalogRepository + Send + Sync + 'static,
 {
-    let catalog_record =
-        match provider.and_then(|provider| catalog_metadata_target_for_route(provider, route)) {
-            Some((pricing_provider_id, pricing_model_id)) => {
+    let (catalog_record, catalog_pricing_supported) = match provider
+        .and_then(|provider| catalog_metadata_target_for_route(provider, route))
+    {
+        Some((pricing_provider_id, pricing_model_id)) => {
+            let pricing_supported = provider.is_some_and(|provider| {
+                catalog_pricing_supported_for_route(provider, route, &pricing_provider_id)
+            });
+            (
                 repo.resolve_model_pricing_at(&pricing_provider_id, &pricing_model_id, occurred_at)
-                    .await?
-            }
-            None => None,
-        };
+                    .await?,
+                pricing_supported,
+            )
+        }
+        None => (None, false),
+    };
 
     let catalog_source = catalog_record
         .as_ref()
@@ -100,18 +109,22 @@ where
             cache_read_cost_per_million_tokens: pricing.cache_read_cost_per_million_tokens,
             cache_write_cost_per_million_tokens: pricing.cache_write_cost_per_million_tokens,
         })
-    } else {
+    } else if catalog_pricing_supported {
         catalog_record.as_ref().map(|record| EffectiveRoutePricing {
             input_cost_per_million_tokens: record.input_cost_per_million_tokens,
             output_cost_per_million_tokens: record.output_cost_per_million_tokens,
             cache_read_cost_per_million_tokens: record.cache_read_cost_per_million_tokens,
             cache_write_cost_per_million_tokens: record.cache_write_cost_per_million_tokens,
         })
+    } else {
+        None
     };
     let pricing_source = if route.pricing_override.is_some() {
         Some(EffectiveMetadataSource::configured_override())
-    } else {
+    } else if catalog_pricing_supported {
         catalog_source.clone()
+    } else {
+        None
     };
 
     let catalog_limits = catalog_record

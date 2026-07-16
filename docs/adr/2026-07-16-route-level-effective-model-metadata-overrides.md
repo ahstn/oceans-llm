@@ -56,6 +56,8 @@ The effective route context is the configured cap when catalog context is absent
 
 The effective context caps catalog input and output dimensions conservatively. If any selectable route lacks a known dimension, the logical-model aggregate remains unknown rather than advertising an unsafe maximum.
 
+This limit is advertised metadata in the current implementation. The gateway does not count request tokens or reject an oversized request before provider dispatch.
+
 ### 6. Effective metadata has explicit provenance
 
 Admin model data exposes effective pricing and context sources as `catalog` or `configured_override`, including catalog source metadata when applicable. Generated client configurations consume effective rates and conservative logical-model limits. MCP token-overhead telemetry records the selected route's effective context.

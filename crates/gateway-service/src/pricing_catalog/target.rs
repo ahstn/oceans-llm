@@ -59,6 +59,16 @@ pub(crate) fn catalog_metadata_target_for_route(
     }
 }
 
+pub(crate) fn catalog_pricing_supported_for_route(
+    provider: &ProviderConnection,
+    route: &ModelRoute,
+    pricing_provider_id: &str,
+) -> bool {
+    unsupported_billing_modifier(route).is_none()
+        && unsupported_vertex_location_for_pricing_provider_id(provider, pricing_provider_id)
+            .is_none()
+}
+
 fn catalog_identity_for_route(provider: &ProviderConnection, route: &ModelRoute) -> PricingTarget {
     match provider.provider_type.as_str() {
         "openai_compat" | "gcp_cloud_run_openai_compat" => {
@@ -198,6 +208,13 @@ fn unsupported_vertex_location(
     else {
         return None;
     };
+    unsupported_vertex_location_for_pricing_provider_id(provider, pricing_provider_id)
+}
+
+fn unsupported_vertex_location_for_pricing_provider_id(
+    provider: &ProviderConnection,
+    pricing_provider_id: &str,
+) -> Option<PricingUnpricedReason> {
     if pricing_provider_id != GOOGLE_VERTEX_ANTHROPIC_PRICING_PROVIDER_ID {
         return None;
     }
