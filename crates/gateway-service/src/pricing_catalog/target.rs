@@ -39,14 +39,18 @@ pub(super) fn pricing_target_for_route(
         return PricingTarget::Unpriced(reason);
     }
 
-    pricing_identity_for_route(provider, route)
+    let target = catalog_identity_for_route(provider, route);
+    if let Some(reason) = unsupported_vertex_location(provider, &target) {
+        return PricingTarget::Unpriced(reason);
+    }
+    target
 }
 
 pub(crate) fn catalog_metadata_target_for_route(
     provider: &ProviderConnection,
     route: &ModelRoute,
 ) -> Option<(String, String)> {
-    match pricing_identity_for_route(provider, route) {
+    match catalog_identity_for_route(provider, route) {
         PricingTarget::Exact {
             pricing_provider_id,
             model_id,
@@ -55,12 +59,12 @@ pub(crate) fn catalog_metadata_target_for_route(
     }
 }
 
-fn pricing_identity_for_route(provider: &ProviderConnection, route: &ModelRoute) -> PricingTarget {
+fn catalog_identity_for_route(provider: &ProviderConnection, route: &ModelRoute) -> PricingTarget {
     match provider.provider_type.as_str() {
         "openai_compat" | "gcp_cloud_run_openai_compat" => {
             openai_compatible_pricing_target(provider, route)
         }
-        "gcp_vertex" => vertex_pricing_target(provider, route),
+        "gcp_vertex" => vertex_catalog_target(route),
         "aws_bedrock" => PricingTarget::Exact {
             pricing_provider_id: AMAZON_BEDROCK_PRICING_PROVIDER_ID.to_string(),
             model_id: normalize_bedrock_pricing_model_id(&route.upstream_model),
@@ -98,7 +102,7 @@ fn openai_compatible_pricing_target(
     }
 }
 
-fn vertex_pricing_target(provider: &ProviderConnection, route: &ModelRoute) -> PricingTarget {
+fn vertex_catalog_target(route: &ModelRoute) -> PricingTarget {
     let mut parts = route.upstream_model.splitn(2, '/');
     let publisher = parts.next().unwrap_or_default();
     let model_id = parts.next().unwrap_or_default();
@@ -117,19 +121,6 @@ fn vertex_pricing_target(provider: &ProviderConnection, route: &ModelRoute) -> P
             ));
         }
     };
-
-    if pricing_provider_id == GOOGLE_VERTEX_ANTHROPIC_PRICING_PROVIDER_ID {
-        let location = provider
-            .config
-            .get("location")
-            .and_then(Value::as_str)
-            .unwrap_or("global");
-        if location != "global" {
-            return PricingTarget::Unpriced(PricingUnpricedReason::UnsupportedVertexLocation(
-                location.to_string(),
-            ));
-        }
-    }
 
     PricingTarget::Exact {
         pricing_provider_id: pricing_provider_id.to_string(),
@@ -194,6 +185,30 @@ fn strip_bedrock_default_version_suffix(model_id: &str) -> Option<&str> {
 
     let (base, version) = model_id.rsplit_once("-v")?;
     if version == "1:0" { Some(base) } else { None }
+}
+
+fn unsupported_vertex_location(
+    provider: &ProviderConnection,
+    target: &PricingTarget,
+) -> Option<PricingUnpricedReason> {
+    let PricingTarget::Exact {
+        pricing_provider_id,
+        ..
+    } = target
+    else {
+        return None;
+    };
+    if pricing_provider_id != GOOGLE_VERTEX_ANTHROPIC_PRICING_PROVIDER_ID {
+        return None;
+    }
+
+    let location = provider
+        .config
+        .get("location")
+        .and_then(Value::as_str)
+        .unwrap_or("global");
+    (location != "global")
+        .then(|| PricingUnpricedReason::UnsupportedVertexLocation(location.to_string()))
 }
 
 fn unsupported_billing_modifier(route: &ModelRoute) -> Option<PricingUnpricedReason> {

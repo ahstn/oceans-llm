@@ -1424,6 +1424,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn startup_context_validation_uses_catalog_limits_for_regional_vertex_routes() {
+        let model_id = Uuid::new_v4();
+        let model = model(model_id);
+        let mut route = vertex_embedding_route(model_id);
+        route.upstream_model = "anthropic/claude-sonnet-4-6".to_string();
+        route.context_window_tokens = Some(128_000);
+        let provider = ProviderConnection {
+            provider_key: route.provider_key.clone(),
+            provider_type: "gcp_vertex".to_string(),
+            config: json!({"location": "us-central1"}),
+            secrets: None,
+        };
+        let repo = Arc::new(UsageAccountingRepo {
+            models: vec![model],
+            routes: vec![route.clone()],
+            provider: Some(provider),
+            pricing: Some(pricing_record(Some(64_000))),
+            ..Default::default()
+        });
+        let service = GatewayService::new(repo, Arc::new(PassThroughPlanner));
+
+        let error = service
+            .validate_route_context_overrides()
+            .await
+            .expect_err("regional pricing limits must not hide catalog context");
+        assert!(
+            error
+                .to_string()
+                .contains("context_window_tokens `128000` exceeds catalog context `64000`"),
+            "unexpected error: {error}"
+        );
+
+        let pricing = service
+            .resolve_route_pricing(&route, OffsetDateTime::now_utc())
+            .await
+            .expect("pricing resolution");
+        assert!(matches!(
+            pricing,
+            gateway_core::PricingResolution::Unpriced {
+                reason: gateway_core::PricingUnpricedReason::UnsupportedVertexLocation(_)
+            }
+        ));
+    }
+
+    #[tokio::test]
     async fn startup_accepts_context_override_when_catalog_context_is_unknown() {
         let model_id = Uuid::new_v4();
         let model = model(model_id);
