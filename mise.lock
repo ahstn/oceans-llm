@@ -32,6 +32,21 @@ backend = "aqua:cocogitto/cocogitto"
 checksum = "sha256:e03938ff2c4c86d71c00c0f3284dbbe95c5ca76fe34a51f33e945c23010d59bb"
 url = "https://github.com/cocogitto/cocogitto/releases/download/7.0.0/cocogitto-7.0.0-x86_64-unknown-linux-musl.tar.gz"
 
+[tools.cocogitto."platforms.linux-x64-baseline"]
+checksum = "sha256:e03938ff2c4c86d71c00c0f3284dbbe95c5ca76fe34a51f33e945c23010d59bb"
+url = "https://github.com/cocogitto/cocogitto/releases/download/7.0.0/cocogitto-7.0.0-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/cocogitto/cocogitto/releases/assets/366659350"
+
+[tools.cocogitto."platforms.linux-x64-musl"]
+checksum = "sha256:e03938ff2c4c86d71c00c0f3284dbbe95c5ca76fe34a51f33e945c23010d59bb"
+url = "https://github.com/cocogitto/cocogitto/releases/download/7.0.0/cocogitto-7.0.0-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/cocogitto/cocogitto/releases/assets/366659350"
+
+[tools.cocogitto."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:e03938ff2c4c86d71c00c0f3284dbbe95c5ca76fe34a51f33e945c23010d59bb"
+url = "https://github.com/cocogitto/cocogitto/releases/download/7.0.0/cocogitto-7.0.0-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/cocogitto/cocogitto/releases/assets/366659350"
+
 [tools.cocogitto."platforms.macos-arm64"]
 checksum = "sha256:429303b6d68c6461aa221ab4de82b26d0bbcdee7127947ea9c7c411ab9bc574c"
 url = "https://github.com/cocogitto/cocogitto/releases/download/7.0.0/cocogitto-7.0.0-aarch64-apple-darwin.tar.gz"
@@ -43,6 +58,24 @@ backend = "aqua:cli/cli"
 [tools.gh."platforms.linux-x64"]
 checksum = "sha256:83d5c2ccad5498f58bf6368acb1ab32588cf43ab3a4b1c301bf36328b1c8bd60"
 url = "https://github.com/cli/cli/releases/download/v2.96.0/gh_2.96.0_linux_amd64.tar.gz"
+provenance = "github-attestations"
+
+[tools.gh."platforms.linux-x64-baseline"]
+checksum = "sha256:83d5c2ccad5498f58bf6368acb1ab32588cf43ab3a4b1c301bf36328b1c8bd60"
+url = "https://github.com/cli/cli/releases/download/v2.96.0/gh_2.96.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/464728543"
+provenance = "github-attestations"
+
+[tools.gh."platforms.linux-x64-musl"]
+checksum = "sha256:83d5c2ccad5498f58bf6368acb1ab32588cf43ab3a4b1c301bf36328b1c8bd60"
+url = "https://github.com/cli/cli/releases/download/v2.96.0/gh_2.96.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/464728543"
+provenance = "github-attestations"
+
+[tools.gh."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:83d5c2ccad5498f58bf6368acb1ab32588cf43ab3a4b1c301bf36328b1c8bd60"
+url = "https://github.com/cli/cli/releases/download/v2.96.0/gh_2.96.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/464728543"
 provenance = "github-attestations"
 
 [tools.gh."platforms.macos-arm64"]
@@ -58,6 +91,21 @@ backend = "aqua:orhun/git-cliff"
 checksum = "sha256:200d2535da6d9703f3bcc8a4d159c3b55eacdb01cf2148c55b3eee9dd04d5249"
 url = "https://github.com/orhun/git-cliff/releases/download/v2.13.1/git-cliff-2.13.1-x86_64-unknown-linux-musl.tar.gz"
 
+[tools.git-cliff."platforms.linux-x64-baseline"]
+checksum = "sha256:200d2535da6d9703f3bcc8a4d159c3b55eacdb01cf2148c55b3eee9dd04d5249"
+url = "https://github.com/orhun/git-cliff/releases/download/v2.13.1/git-cliff-2.13.1-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/orhun/git-cliff/releases/assets/405850671"
+
+[tools.git-cliff."platforms.linux-x64-musl"]
+checksum = "sha256:200d2535da6d9703f3bcc8a4d159c3b55eacdb01cf2148c55b3eee9dd04d5249"
+url = "https://github.com/orhun/git-cliff/releases/download/v2.13.1/git-cliff-2.13.1-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/orhun/git-cliff/releases/assets/405850671"
+
+[tools.git-cliff."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:200d2535da6d9703f3bcc8a4d159c3b55eacdb01cf2148c55b3eee9dd04d5249"
+url = "https://github.com/orhun/git-cliff/releases/download/v2.13.1/git-cliff-2.13.1-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/orhun/git-cliff/releases/assets/405850671"
+
 [tools.git-cliff."platforms.macos-arm64"]
 checksum = "sha256:21547ae4a0421164070ab75c2522864ea5565858a011fabc5f583061b20f1226"
 url = "https://github.com/orhun/git-cliff/releases/download/v2.13.1/git-cliff-2.13.1-aarch64-apple-darwin.tar.gz"
@@ -67,9 +115,23 @@ version = "3.21.2"
 backend = "aqua:helm/helm"
 
 [tools.helm."platforms.linux-x64"]
+checksum = "sha256:0a745198de24545d0055cd8414bc8d2ba10363ef5f5d38369ea1b399671cc083"
+url = "https://get.helm.sh/helm-v3.21.2-linux-amd64.tar.gz"
+
+[tools.helm."platforms.linux-x64-baseline"]
+checksum = "sha256:0a745198de24545d0055cd8414bc8d2ba10363ef5f5d38369ea1b399671cc083"
+url = "https://get.helm.sh/helm-v3.21.2-linux-amd64.tar.gz"
+
+[tools.helm."platforms.linux-x64-musl"]
+checksum = "sha256:0a745198de24545d0055cd8414bc8d2ba10363ef5f5d38369ea1b399671cc083"
+url = "https://get.helm.sh/helm-v3.21.2-linux-amd64.tar.gz"
+
+[tools.helm."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:0a745198de24545d0055cd8414bc8d2ba10363ef5f5d38369ea1b399671cc083"
 url = "https://get.helm.sh/helm-v3.21.2-linux-amd64.tar.gz"
 
 [tools.helm."platforms.macos-arm64"]
+checksum = "sha256:aea537342b4c03cf58e089cb8dc99468087bb1a0218531df40462faca3f6c5d3"
 url = "https://get.helm.sh/helm-v3.21.2-darwin-arm64.tar.gz"
 
 [[tools.node]]
@@ -79,6 +141,18 @@ backend = "core:node"
 [tools.node."platforms.linux-x64"]
 checksum = "sha256:783130984963db7ba9cbd01089eaf2c2efb055c7c1693c943174b967b3050cb8"
 url = "https://nodejs.org/dist/v24.18.0/node-v24.18.0-linux-x64.tar.gz"
+
+[tools.node."platforms.linux-x64-baseline"]
+checksum = "sha256:783130984963db7ba9cbd01089eaf2c2efb055c7c1693c943174b967b3050cb8"
+url = "https://nodejs.org/dist/v24.18.0/node-v24.18.0-linux-x64.tar.gz"
+
+[tools.node."platforms.linux-x64-musl"]
+checksum = "sha256:ea58409911e141ec6b19d9178efa2d9185a13295005b1cbf5521b3157eed1d95"
+url = "https://unofficial-builds.nodejs.org/download/release/v24.18.0/node-v24.18.0-linux-x64-musl.tar.gz"
+
+[tools.node."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:ea58409911e141ec6b19d9178efa2d9185a13295005b1cbf5521b3157eed1d95"
+url = "https://unofficial-builds.nodejs.org/download/release/v24.18.0/node-v24.18.0-linux-x64-musl.tar.gz"
 
 [tools.node."platforms.macos-arm64"]
 checksum = "sha256:e1a97e14c99c803e96c7339403282ea05a499c32f8d83defe9ef5ec66f979ed1"
@@ -96,6 +170,21 @@ backend = "aqua:opentofu/opentofu"
 checksum = "sha256:f87d45408dcbb963ddbe10b2f75e55b3495310556e05c35765dfd5913551f182"
 url = "https://github.com/opentofu/opentofu/releases/download/v1.12.3/tofu_1.12.3_linux_amd64.tar.gz"
 
+[tools.opentofu."platforms.linux-x64-baseline"]
+checksum = "sha256:f87d45408dcbb963ddbe10b2f75e55b3495310556e05c35765dfd5913551f182"
+url = "https://github.com/opentofu/opentofu/releases/download/v1.12.3/tofu_1.12.3_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/opentofu/opentofu/releases/assets/451267210"
+
+[tools.opentofu."platforms.linux-x64-musl"]
+checksum = "sha256:f87d45408dcbb963ddbe10b2f75e55b3495310556e05c35765dfd5913551f182"
+url = "https://github.com/opentofu/opentofu/releases/download/v1.12.3/tofu_1.12.3_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/opentofu/opentofu/releases/assets/451267210"
+
+[tools.opentofu."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:f87d45408dcbb963ddbe10b2f75e55b3495310556e05c35765dfd5913551f182"
+url = "https://github.com/opentofu/opentofu/releases/download/v1.12.3/tofu_1.12.3_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/opentofu/opentofu/releases/assets/451267210"
+
 [tools.opentofu."platforms.macos-arm64"]
 checksum = "sha256:0c8ddee4294f7cea34d82b122fa805febce41d21905a54dc9ce9f79ee8145284"
 url = "https://github.com/opentofu/opentofu/releases/download/v1.12.3/tofu_1.12.3_darwin_arm64.tar.gz"
@@ -105,6 +194,15 @@ version = "17.10"
 backend = "vfox:mise-plugins/vfox-postgres"
 
 [tools.postgres."platforms.linux-x64"]
+url = "https://ftp.postgresql.org/pub/source/v17.10/postgresql-17.10.tar.gz"
+
+[tools.postgres."platforms.linux-x64-baseline"]
+url = "https://ftp.postgresql.org/pub/source/v17.10/postgresql-17.10.tar.gz"
+
+[tools.postgres."platforms.linux-x64-musl"]
+url = "https://ftp.postgresql.org/pub/source/v17.10/postgresql-17.10.tar.gz"
+
+[tools.postgres."platforms.linux-x64-musl-baseline"]
 url = "https://ftp.postgresql.org/pub/source/v17.10/postgresql-17.10.tar.gz"
 
 [tools.postgres."platforms.macos-arm64"]
@@ -117,6 +215,24 @@ backend = "aqua:j178/prek"
 [tools.prek."platforms.linux-x64"]
 checksum = "sha256:21df9ac0c3d3c047e424be612cc55f5b243546f9ef5cde12ed134752312bdf7b"
 url = "https://github.com/j178/prek/releases/download/v0.4.8/prek-x86_64-unknown-linux-musl.tar.gz"
+provenance = "github-attestations"
+
+[tools.prek."platforms.linux-x64-baseline"]
+checksum = "sha256:21df9ac0c3d3c047e424be612cc55f5b243546f9ef5cde12ed134752312bdf7b"
+url = "https://github.com/j178/prek/releases/download/v0.4.8/prek-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/j178/prek/releases/assets/466303341"
+provenance = "github-attestations"
+
+[tools.prek."platforms.linux-x64-musl"]
+checksum = "sha256:21df9ac0c3d3c047e424be612cc55f5b243546f9ef5cde12ed134752312bdf7b"
+url = "https://github.com/j178/prek/releases/download/v0.4.8/prek-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/j178/prek/releases/assets/466303341"
+provenance = "github-attestations"
+
+[tools.prek."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:21df9ac0c3d3c047e424be612cc55f5b243546f9ef5cde12ed134752312bdf7b"
+url = "https://github.com/j178/prek/releases/download/v0.4.8/prek-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/j178/prek/releases/assets/466303341"
 provenance = "github-attestations"
 
 [tools.prek."platforms.macos-arm64"]
