@@ -1,2 +1,16 @@
-[env]
-OPENROUTER_API_KEY = { required = "OpenRouter API Key required for integration tests" }
+[tools]
+node = "lts"
+
+[tasks.install]
+description = "Install native coding-harness integration test dependencies"
+run = "npm ci"
+
+[tasks.typecheck]
+description = "Typecheck native coding-harness integration tests"
+depends = ["install"]
+run = "npm run typecheck"
+
+[tasks.test]
+description = "Run Pi and OpenCode live integration tests through Oceans"
+depends = ["install"]
+run = "npm test"

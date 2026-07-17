@@ -105,7 +105,7 @@ diff -u crates/admin-ui/web/src/generated/admin-api.ts "$tmpdir/admin-api.ts"
 
 [tasks.lint]
 description = "Run repository linting and static checks"
-depends = ["rust-lint", "ui-lint", "review-agent-action-typecheck"]
+depends = ["rust-lint", "ui-lint", "review-agent-action-typecheck", "harness-integration-typecheck"]
 
 [tasks.build]
 description = "Build Rust crates and admin UI bundle"
@@ -330,6 +330,18 @@ run = "cargo build -p gateway --bin gateway"
 description = "Run gateway and admin UI end-to-end contract tests"
 depends = ["ui-build", "e2e-install", "e2e-gateway-build"]
 run = "bun run --cwd crates/admin-ui/web test:e2e"
+
+[tasks.harness-integration-install]
+description = "Install native coding-harness integration test dependencies"
+run = "mise -C tests/harness-integration run install"
+
+[tasks.harness-integration-typecheck]
+description = "Typecheck native coding-harness integration tests"
+run = "mise -C tests/harness-integration run typecheck"
+
+[tasks.harness-integration-test]
+description = "Run Pi and OpenCode live integration tests through Oceans LLM Gateway"
+run = "mise -C tests/harness-integration run test"
 
 [tasks.release]
 description = "Analyze commits and dispatch the release workflow when a release is pending"

@@ -72,9 +72,9 @@ pub enum JsonRpcId {
 pub struct JsonRpcResponse<T = Value> {
     pub jsonrpc: String,
     pub id: Option<JsonRpcId>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result: Option<T>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<JsonRpcErrorObject>,
 }
 
@@ -82,7 +82,7 @@ pub struct JsonRpcResponse<T = Value> {
 pub struct JsonRpcErrorObject {
     pub code: i64,
     pub message: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data: Option<Value>,
 }
 
@@ -119,7 +119,7 @@ pub struct InitializeResponse {
     pub protocol_version: String,
     #[serde(default)]
     pub capabilities: Value,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub server_info: Option<McpImplementation>,
 }
 
@@ -128,7 +128,7 @@ pub struct InitializeResponse {
 pub struct ToolsListResponse {
     #[serde(default)]
     pub tools: Vec<McpTool>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<String>,
 }
 
@@ -162,7 +162,7 @@ pub struct ToolsCallResponse {
 #[serde(rename_all = "camelCase")]
 pub struct McpTool {
     pub name: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(default)]
     pub input_schema: Value,
