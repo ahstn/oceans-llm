@@ -1,0 +1,2 @@
+[env]
+OPENROUTER_API_KEY = { required = "OpenRouter API Key required for integration tests" }
