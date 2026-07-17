@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,6 +22,7 @@ export class PiAdapter implements HarnessAdapter {
   }
 
   async run(workspace: string, prompt: string): Promise<HarnessRun> {
+    const requestTag = randomUUID();
     const isolated = await createIsolatedPaths(workspace, this.key);
     const agentDir = join(isolated.config, "agent");
     await mkdir(agentDir, { recursive: true });
@@ -33,6 +35,7 @@ export class PiAdapter implements HarnessAdapter {
               api: "openai-completions",
               apiKey: "$OCEANS_API_KEY",
               baseUrl: `${this.#runtime.baseUrl}/v1`,
+              headers: { "x-oceans-tags": `harness_run=${requestTag}` },
               models: [
                 {
                   contextWindow: 128_000,
@@ -85,7 +88,6 @@ export class PiAdapter implements HarnessAdapter {
         "--thinking",
         "off",
         "--approve",
-        prompt,
       ],
       {
         cwd: workspace,
@@ -97,10 +99,11 @@ export class PiAdapter implements HarnessAdapter {
           XDG_CONFIG_HOME: isolated.config,
           XDG_DATA_HOME: isolated.data,
         },
+        stdin: prompt,
         timeoutMs: 180_000,
       },
     );
     const output = `${result.stdout}\n${result.stderr}`.trim();
-    return { output, toolCalls: parseToolCalls(output) };
+    return { output, requestTag, toolCalls: parseToolCalls(output) };
   }
 }

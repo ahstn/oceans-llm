@@ -1,8 +1,9 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 
 export interface CommandOptions {
   cwd: string;
   env?: NodeJS.ProcessEnv;
+  stdin?: string;
   timeoutMs?: number;
 }
 
@@ -10,6 +11,15 @@ export interface CommandResult {
   stderr: string;
   stdout: string;
 }
+
+interface ProcessCompletion {
+  error?: Error;
+  exitCode: number | null;
+  signal: NodeJS.Signals | null;
+}
+
+const DEFAULT_TIMEOUT_MS = 180_000;
+const TERMINATION_GRACE_MS = 5_000;
 
 export async function runCommand(
   command: string,
@@ -19,37 +29,68 @@ export async function runCommand(
   const child = spawn(command, args, {
     cwd: options.cwd,
     env: { ...process.env, ...options.env },
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["pipe", "pipe", "pipe"],
   });
+  child.stdin.end(options.stdin);
   const stdout: Buffer[] = [];
   const stderr: Buffer[] = [];
   child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
   child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
 
-  const { promise, resolve, reject } = Promise.withResolvers<number | null>();
-  child.once("error", reject);
-  child.once("exit", resolve);
-
-  const timeout = setTimeout(() => {
-    child.kill("SIGTERM");
-    reject(new Error(`Command timed out after ${options.timeoutMs ?? 180_000}ms: ${command}`));
-  }, options.timeoutMs ?? 180_000);
-
-  try {
-    const exitCode = await promise;
-    const result = {
-      stdout: Buffer.concat(stdout).toString("utf8"),
-      stderr: Buffer.concat(stderr).toString("utf8"),
-    };
-    if (exitCode !== 0) {
-      throw new Error(
-        `Command failed with exit code ${exitCode}: ${command}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
-      );
-    }
-    return result;
-  } finally {
-    clearTimeout(timeout);
+  const completion = new Promise<ProcessCompletion>((resolve) => {
+    child.once("error", (error) => resolve({ error, exitCode: null, signal: null }));
+    child.once("close", (exitCode, signal) => resolve({ exitCode, signal }));
+  });
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const initialCompletion = await waitForCompletion(completion, timeoutMs);
+  if (!initialCompletion) {
+    const stopped = await stopTimedOutCommand(child, completion);
+    const result = commandOutput(stdout, stderr);
+    const termination = stopped ? "" : "\nProcess did not close after SIGKILL.";
+    throw new Error(
+      `Command timed out after ${timeoutMs}ms: ${command}${termination}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+    );
   }
+
+  if (initialCompletion.error) {
+    throw new Error(`Command failed to start: ${command}`, { cause: initialCompletion.error });
+  }
+  const result = commandOutput(stdout, stderr);
+  if (initialCompletion.exitCode !== 0) {
+    const status = initialCompletion.signal
+      ? `signal ${initialCompletion.signal}`
+      : `exit code ${initialCompletion.exitCode}`;
+    throw new Error(
+      `Command failed with ${status}: ${command}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+    );
+  }
+  return result;
+}
+
+async function stopTimedOutCommand(
+  child: ChildProcess,
+  completion: Promise<ProcessCompletion>,
+): Promise<ProcessCompletion | undefined> {
+  child.kill("SIGTERM");
+  const terminated = await waitForCompletion(completion, TERMINATION_GRACE_MS);
+  if (terminated) return terminated;
+
+  child.kill("SIGKILL");
+  return waitForCompletion(completion, TERMINATION_GRACE_MS);
+}
+
+function commandOutput(stdout: Buffer[], stderr: Buffer[]): CommandResult {
+  return {
+    stdout: Buffer.concat(stdout).toString("utf8"),
+    stderr: Buffer.concat(stderr).toString("utf8"),
+  };
+}
+
+async function waitForCompletion(
+  completion: Promise<ProcessCompletion>,
+  timeoutMs: number,
+): Promise<ProcessCompletion | undefined> {
+  return Promise.race([completion, delay(timeoutMs).then(() => undefined)]);
 }
 
 export function delay(ms: number): Promise<void> {

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -19,6 +20,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
   }
 
   async run(workspace: string, prompt: string): Promise<HarnessRun> {
+    const requestTag = randomUUID();
     const isolated = await createIsolatedPaths(workspace, this.key);
     const config = {
       agent: {
@@ -50,6 +52,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
           options: {
             apiKey: "{env:OCEANS_API_KEY}",
             baseURL: `${this.#runtime.baseUrl}/v1`,
+            headers: { "x-oceans-tags": `harness_run=${requestTag}` },
           },
         },
       },
@@ -93,6 +96,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
         "--dir",
         workspace,
         "--auto",
+        "--",
         prompt,
       ],
       {
@@ -102,6 +106,6 @@ export class OpenCodeAdapter implements HarnessAdapter {
       },
     );
     const output = `${result.stdout}\n${result.stderr}`.trim();
-    return { output, toolCalls: parseToolCalls(output) };
+    return { output, requestTag, toolCalls: parseToolCalls(output) };
   }
 }

@@ -41,21 +41,12 @@ export class GatewayAdminClient {
     this.#cookie = setCookie.split(";", 1)[0];
   }
 
-  async requestLogIds(): Promise<Set<string>> {
-    const page = await this.#getRequestLogs();
-    return new Set(page.items.map((item) => item.request_log_id));
-  }
 
-  async waitForSuccessfulModelLog(previousIds: Set<string>): Promise<RequestLog> {
+  async waitForSuccessfulModelLog(requestTag: string): Promise<RequestLog> {
     const deadline = Date.now() + 30_000;
     do {
-      const page = await this.#getRequestLogs();
-      const log = page.items.find(
-        (item) =>
-          !previousIds.has(item.request_log_id) &&
-          item.model_key === this.#runtime.model &&
-          item.status_code === 200,
-      );
+      const page = await this.#getRequestLogs(requestTag);
+      const log = page.items.find((item) => item.status_code === 200);
       if (log) {
         return log;
       }
@@ -63,17 +54,19 @@ export class GatewayAdminClient {
     } while (Date.now() < deadline);
 
     throw new Error(
-      `No successful request log appeared for Oceans model ${this.#runtime.model}`,
+      `No successful request log appeared for Oceans model ${this.#runtime.model} and harness tag ${requestTag}`,
     );
   }
 
-  async #getRequestLogs(): Promise<z.infer<typeof RequestLogPageSchema>> {
+  async #getRequestLogs(requestTag: string): Promise<z.infer<typeof RequestLogPageSchema>> {
     if (!this.#cookie) {
       throw new Error("GatewayAdminClient.login() must be called first");
     }
     const url = new URL("/api/v1/admin/observability/request-logs", this.#runtime.baseUrl);
     url.searchParams.set("page_size", "100");
     url.searchParams.set("model_key", this.#runtime.model);
+    url.searchParams.set("tag_key", "harness_run");
+    url.searchParams.set("tag_value", requestTag);
     const response = await fetch(url, { headers: { cookie: this.#cookie } });
     return readEnvelope(response, "request-log query", RequestLogPageSchema);
   }

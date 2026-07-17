@@ -7,6 +7,7 @@ export interface GatewayRuntime {
 }
 
 export interface HarnessRun {
+  requestTag: string;
   output: string;
   toolCalls: string[];
 }

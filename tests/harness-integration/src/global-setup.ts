@@ -135,6 +135,9 @@ function startGateway(
 async function assertGatewayReady(baseUrl: string, gatewayProcess?: ChildProcess): Promise<void> {
   const deadline = Date.now() + 60_000;
   do {
+    if (gatewayProcess?.signalCode) {
+      throw new Error(`Managed Oceans gateway exited from signal ${gatewayProcess.signalCode}`);
+    }
     if (gatewayProcess?.exitCode !== null && gatewayProcess?.exitCode !== undefined) {
       throw new Error(`Managed Oceans gateway exited with code ${gatewayProcess.exitCode}`);
     }

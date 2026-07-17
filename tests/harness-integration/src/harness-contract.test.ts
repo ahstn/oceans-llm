@@ -27,14 +27,13 @@ function defineHarnessContract(adapter: HarnessAdapter, gateway: GatewayRuntime)
     afterEach(async () => rm(workspace, { force: true, recursive: true }));
 
     test("routes an OpenRouter model call through Oceans and records it", async () => {
-      const previousLogIds = await admin.requestLogIds();
       const result = await adapter.run(
         workspace,
         "Reply with exactly OCEANS_HARNESS_OK and no other text.",
       );
 
       expect(result.output).toContain("OCEANS_HARNESS_OK");
-      const requestLog = await admin.waitForSuccessfulModelLog(previousLogIds);
+      const requestLog = await admin.waitForSuccessfulModelLog(result.requestTag);
       expect(requestLog.provider_key).toBe("openrouter");
     });
 
