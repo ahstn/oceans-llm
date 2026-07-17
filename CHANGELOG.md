@@ -6,6 +6,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.18.0] - 2026-07-17
+### :rocket: New features
+- *(admin-ui)* Show running Oceans version by @ahstn
+- *(gateway)* Support route metadata overrides by @ahstn
+- *(gateway)* Support route metadata overrides by @ahstn in [#244](https://github.com/ahstn/oceans-llm/pull/244)
+- *(admin-ui)* Show running Oceans version by @ahstn in [#247](https://github.com/ahstn/oceans-llm/pull/247)
+
+### :bug: Bug fixes
+- *(admin-ui)* Bound runtime version lookup by @ahstn
+- *(gateway)* Preserve route metadata semantics by @ahstn
+- *(gateway)* Gate degraded client configs by @ahstn
+- *(gateway)* Retain regional model limits by @ahstn
+- *(gateway)* Align metadata pricing eligibility by @ahstn
+- *(gateway)* Skip inactive route context validation by @ahstn
+- *(ci)* Correct locked Helm download URLs by @ahstn
+- *(ci)* Run contract verification with Bash by @ahstn
+- *(ci)* Address workflow review findings by @ahstn
+
+### Build
+- Post release tasks - v0.17.0 by @ahstn
+
+### CI
+- Standardize workflows and mise tasks by @ahstn
+- Standardize workflows and mise tasks by @ahstn in [#241](https://github.com/ahstn/oceans-llm/pull/241)
+
+### Miscellaneous
+- *(rust)* Satisfy current clippy by @ahstn
+- *(deps)* Update Rust dependencies by @ahstn
+- Merge origin/main by @ahstn
+- *(version)* V0.18.0
+
+### Testing
+- *(gateway)* Close override coverage gaps by @ahstn
+
+
+
+
 ## [0.17.0] - 2026-07-14
 ### :rocket: New features
 - *(identity)* Seed config tags for identity entities by @ahstn
@@ -43,7 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clarify client harness base URLs by @ahstn
 
 ### Miscellaneous
-- *(version)* V0.17.0
+- *(version)* V0.17.0 by @ahstn
 
 ### Testing
 - Avoid debug bound in identity tests by @ahstn
@@ -726,6 +763,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+[0.18.0]: https://github.com/ahstn/oceans-llm/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/ahstn/oceans-llm/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/ahstn/oceans-llm/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/ahstn/oceans-llm/compare/v0.14.0...v0.15.0
