@@ -95,6 +95,7 @@ export class PiAdapter implements HarnessAdapter {
         cwd: workspace,
         env: createHarnessEnvironment(isolated, {
           OCEANS_API_KEY: this.#runtime.apiKey,
+          PI_OFFLINE: "1",
           PI_CODING_AGENT_DIR: agentDir,
         }),
         stdin: prompt,
