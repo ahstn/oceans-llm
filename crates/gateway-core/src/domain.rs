@@ -2497,6 +2497,8 @@ pub struct AwsBedrockRouteCompatibility {
     pub api_style: AwsBedrockApiStyle,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub openai_base_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supports_strict_tools: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

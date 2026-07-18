@@ -178,7 +178,7 @@ fn maps_openai_file_content_to_bedrock_document() {
 }
 
 #[test]
-fn rejects_documents_in_invalid_message_contexts() {
+fn rejects_images_and_documents_in_invalid_message_contexts() {
     let cases = [
         (
             "assistant",
@@ -193,6 +193,14 @@ fn rejects_documents_in_invalid_message_contexts() {
                 {"type": "input_text", "text": "Summary"}
             ]),
             "document content is only supported in user messages",
+        ),
+        (
+            "assistant",
+            json!([{
+                "type": "image_url",
+                "image_url": {"url": "data:image/png;base64,aW1hZ2U="}
+            }]),
+            "image content is only supported in user messages",
         ),
         (
             "user",
@@ -221,7 +229,7 @@ fn rejects_documents_in_invalid_message_contexts() {
         };
 
         let error = map_chat_request_to_converse(&request, &context("amazon.nova-pro-v1:0"))
-            .expect_err("invalid document context rejected")
+            .expect_err("invalid media context rejected")
             .to_string();
         assert!(error.contains(expected_error), "{error}");
     }

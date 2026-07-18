@@ -2295,6 +2295,8 @@ pub struct AwsBedrockRouteCompatibilityConfig {
     pub api_style: AwsBedrockApiStyle,
     #[serde(default)]
     pub openai_base_path: Option<String>,
+    #[serde(default)]
+    pub supports_strict_tools: Option<bool>,
 }
 
 impl AwsBedrockRouteCompatibilityConfig {
@@ -2302,6 +2304,7 @@ impl AwsBedrockRouteCompatibilityConfig {
         AwsBedrockRouteCompatibility {
             api_style: self.api_style,
             openai_base_path: self.openai_base_path,
+            supports_strict_tools: self.supports_strict_tools,
         }
     }
 }
@@ -2689,6 +2692,16 @@ fn validate_aws_bedrock_route_compatibility(
     {
         bail!(
             "model `{model_id}` route for aws_bedrock provider `{}` api_style `{:?}` cannot set compatibility.aws_bedrock.openai_base_path",
+            provider.id,
+            compatibility.api_style
+        );
+    }
+
+    if compatibility.supports_strict_tools.is_some()
+        && compatibility.api_style != AwsBedrockApiStyle::RuntimeConverse
+    {
+        bail!(
+            "model `{model_id}` route for aws_bedrock provider `{}` api_style `{:?}` cannot set compatibility.aws_bedrock.supports_strict_tools; the override applies only to `runtime_converse`",
             provider.id,
             compatibility.api_style
         );
@@ -3090,7 +3103,7 @@ mod tests {
     use gateway_service::RequestLogPayloadCaptureMode;
     use tempfile::tempdir;
 
-    use super::GatewayConfig;
+    use super::{AwsBedrockRouteCompatibilityConfig, GatewayConfig};
 
     fn write_config(path: &Path, yaml: &str) {
         std::fs::write(path, yaml).expect("write config");
@@ -4050,6 +4063,18 @@ models:
             ),
             "unexpected error: {error_text}"
         );
+    }
+
+    #[test]
+    fn maps_bedrock_strict_tools_compatibility_override() {
+        let compatibility = AwsBedrockRouteCompatibilityConfig {
+            api_style: AwsBedrockApiStyle::RuntimeConverse,
+            openai_base_path: None,
+            supports_strict_tools: Some(false),
+        }
+        .into_compatibility();
+
+        assert_eq!(compatibility.supports_strict_tools, Some(false));
     }
 
     #[test]

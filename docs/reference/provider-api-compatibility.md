@@ -94,6 +94,8 @@ models:
 
 `api_style` values are `runtime_converse`, `runtime_anthropic_invoke`, `runtime_openai_chat`, `mantle_openai_responses`, `mantle_openai_chat`, and `mantle_anthropic_messages`. OpenAI-shaped styles require `openai_base_path`. Only `mantle_openai_responses` routes can enable `responses` and `json_schema`; those routes must disable `chat_completions`.
 
+Runtime Converse compatibility also accepts optional `supports_strict_tools`. When absent, transparent model IDs use model-family detection; set it explicitly for opaque application-inference-profile IDs or ARNs so Claude Opus 4.7/4.8 routes omit the unsupported `strict` field while supported models retain it.
+
 ## Effective Capabilities
 
 Effective capability is the intersection of configured route metadata and provider runtime support.

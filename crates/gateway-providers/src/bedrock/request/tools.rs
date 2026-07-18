@@ -237,34 +237,41 @@ fn map_bedrock_tool_result_content(content: &Value) -> Result<Vec<Value>, Provid
     match content {
         Value::String(text) => Ok(vec![json!({ "text": text })]),
         Value::Object(object) => Ok(vec![json!({ "json": object })]),
-        Value::Array(items) => items
-            .iter()
-            .map(|item| {
-                let object = item.as_object().ok_or_else(|| {
-                    ProviderError::InvalidRequest(
-                        "tool message content array entries must be objects".to_string(),
-                    )
-                })?;
-                if object.get("type").is_none()
-                    && let Some(text) = object.get("text").and_then(Value::as_str)
-                {
-                    return Ok(json!({ "text": text }));
-                }
-                if object.get("type").and_then(Value::as_str) == Some("json") {
-                    let value = object
-                        .get("json")
-                        .or_else(|| object.get("value"))
-                        .ok_or_else(|| {
-                            ProviderError::InvalidRequest(
-                                "json tool result content must include `json` or `value`"
-                                    .to_string(),
-                            )
-                        })?;
-                    return Ok(json!({ "json": value }));
-                }
-                map_bedrock_message_content_block(object)
-            })
-            .collect(),
+        Value::Array(items) => {
+            if items.is_empty() {
+                return Err(ProviderError::InvalidRequest(
+                    "Bedrock tool result content must contain at least one block".to_string(),
+                ));
+            }
+            items
+                .iter()
+                .map(|item| {
+                    let object = item.as_object().ok_or_else(|| {
+                        ProviderError::InvalidRequest(
+                            "tool message content array entries must be objects".to_string(),
+                        )
+                    })?;
+                    if object.get("type").is_none()
+                        && let Some(text) = object.get("text").and_then(Value::as_str)
+                    {
+                        return Ok(json!({ "text": text }));
+                    }
+                    if object.get("type").and_then(Value::as_str) == Some("json") {
+                        let value = object
+                            .get("json")
+                            .or_else(|| object.get("value"))
+                            .ok_or_else(|| {
+                                ProviderError::InvalidRequest(
+                                    "json tool result content must include `json` or `value`"
+                                        .to_string(),
+                                )
+                            })?;
+                        return Ok(json!({ "json": value }));
+                    }
+                    map_bedrock_message_content_block(object)
+                })
+                .collect()
+        }
         _ => Err(ProviderError::InvalidRequest(
             "tool message content must be a string or typed content array".to_string(),
         )),
@@ -322,6 +329,7 @@ fn normalize_bedrock_tool_use_id(id: &str) -> String {
 pub(super) fn extract_tool_config(
     extra: &mut BTreeMap<String, Value>,
     upstream_model: &str,
+    supports_strict_tools: Option<bool>,
 ) -> Result<Option<Value>, ProviderError> {
     let Some(tools) = extra.remove("tools") else {
         if let Some(tool_choice) = extra.remove("tool_choice")
@@ -346,6 +354,8 @@ pub(super) fn extract_tool_config(
         return Ok(None);
     }
 
+    let supports_strict_tools = supports_strict_tools
+        .unwrap_or_else(|| bedrock_model_supports_strict_tools(upstream_model));
     let mut bedrock_tools = Vec::new();
     for tool in tools_array {
         let object = tool.as_object().ok_or_else(|| {
@@ -390,7 +400,7 @@ pub(super) fn extract_tool_config(
         if let Some(strict) = function
             .get("strict")
             .and_then(Value::as_bool)
-            .filter(|_| bedrock_model_supports_strict_tools(upstream_model))
+            .filter(|_| supports_strict_tools)
         {
             spec.insert("strict".to_string(), Value::Bool(strict));
         }

@@ -46,17 +46,18 @@ pub(super) fn map_bedrock_message_content_blocks(
     role: &str,
 ) -> Result<Vec<Value>, ProviderError> {
     let blocks = map_bedrock_content_blocks(content)?;
-    if blocks.iter().any(|block| block.get("document").is_some()) {
-        if role != "user" {
-            return Err(ProviderError::InvalidRequest(
-                "Bedrock document content is only supported in user messages".to_string(),
-            ));
-        }
-        if !blocks.iter().any(|block| block.get("text").is_some()) {
-            return Err(ProviderError::InvalidRequest(
-                "Bedrock user messages containing documents must also contain text".to_string(),
-            ));
-        }
+    let has_document = blocks.iter().any(|block| block.get("document").is_some());
+    let has_image = blocks.iter().any(|block| block.get("image").is_some());
+    if role != "user" && (has_document || has_image) {
+        let content_type = if has_document { "document" } else { "image" };
+        return Err(ProviderError::InvalidRequest(format!(
+            "Bedrock {content_type} content is only supported in user messages"
+        )));
+    }
+    if has_document && !blocks.iter().any(|block| block.get("text").is_some()) {
+        return Err(ProviderError::InvalidRequest(
+            "Bedrock user messages containing documents must also contain text".to_string(),
+        ));
     }
     Ok(blocks)
 }

@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use bytes::Bytes;
 use futures_util::StreamExt;
 use gateway_core::{ProviderStream, SseEventParser};
@@ -49,6 +51,8 @@ where
         let mut saw_output_event = false;
         let mut saw_terminal_event = false;
         let mut stream_failed = false;
+        let mut seen_choices = HashSet::new();
+        let mut finished_choices = HashSet::new();
         futures_util::pin_mut!(upstream);
 
         'upstream: while let Some(chunk) = upstream.next().await {
@@ -106,11 +110,28 @@ where
                         break 'upstream;
                     }
                 };
+                let semantics = match chat_sse_semantics(&value) {
+                    Ok(semantics) => semantics,
+                    Err(error) => {
+                        yield Ok(openai_sse_error_chunk(
+                            "openai_compat_protocol_error",
+                            &error,
+                        ));
+                        stream_failed = true;
+                        break 'upstream;
+                    }
+                };
                 saw_payload_event = true;
-                let (normalized_data, semantics) =
-                    normalize_openai_compat_chat_sse_data(value);
                 saw_output_event |= semantics.has_output;
-                saw_terminal_event |= semantics.is_terminal;
+                for choice in semantics.choices {
+                    seen_choices.insert(choice.key);
+                    if choice.is_terminal {
+                        finished_choices.insert(choice.key);
+                    }
+                }
+                saw_terminal_event =
+                    !seen_choices.is_empty() && seen_choices.is_subset(&finished_choices);
+                let normalized_data = normalize_openai_compat_chat_sse_data(value);
                 yield Ok(render_sse_event_chunk(event.event.as_deref(), &normalized_data));
 
                 if semantics.is_error {
@@ -155,17 +176,28 @@ where
     })
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum ChatChoiceKey {
+    Index(u64),
+    Position(usize),
+}
+
+#[derive(Debug)]
+struct ChatChoiceSemantics {
+    key: ChatChoiceKey,
+    is_terminal: bool,
+}
+
 #[derive(Debug, Default)]
 struct ChatSseSemantics {
     has_output: bool,
-    is_terminal: bool,
     is_error: bool,
+    choices: Vec<ChatChoiceSemantics>,
 }
 
-fn normalize_openai_compat_chat_sse_data(mut value: Value) -> (String, ChatSseSemantics) {
-    let semantics = chat_sse_semantics(&value);
+fn normalize_openai_compat_chat_sse_data(mut value: Value) -> String {
     normalize_openai_compat_chunk_value(&mut value);
-    (value.to_string(), semantics)
+    value.to_string()
 }
 
 pub(crate) fn normalize_openai_compat_responses_stream<S>(upstream: S) -> ProviderStream
@@ -326,36 +358,69 @@ where
     })
 }
 
-fn chat_sse_semantics(value: &Value) -> ChatSseSemantics {
-    let Some(object) = value.as_object() else {
-        return ChatSseSemantics::default();
-    };
-    let choices = object.get("choices").and_then(Value::as_array);
-    ChatSseSemantics {
-        has_output: choices.is_some_and(|choices| {
-            choices.iter().any(|choice| {
-                choice
-                    .get("delta")
-                    .and_then(Value::as_object)
-                    .is_some_and(|delta| {
-                        delta.iter().any(|(key, value)| {
-                            key != "role"
-                                && !value.is_null()
-                                && value.as_str().is_none_or(|text| !text.is_empty())
-                        })
-                    })
-            })
-        }),
-        is_terminal: choices.is_some_and(|choices| {
-            choices.iter().any(|choice| {
-                choice
-                    .get("finish_reason")
-                    .and_then(Value::as_str)
-                    .is_some_and(|reason| !reason.is_empty())
-            })
-        }),
-        is_error: is_top_level_stream_error(value),
+fn chat_sse_semantics(value: &Value) -> Result<ChatSseSemantics, String> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| "Chat Completions SSE payload must be a JSON object".to_string())?;
+    if is_top_level_stream_error(value) {
+        return Ok(ChatSseSemantics {
+            is_error: true,
+            ..ChatSseSemantics::default()
+        });
     }
+    if object.get("choices").is_none() && object.get("usage").is_some_and(Value::is_object) {
+        return Ok(ChatSseSemantics::default());
+    }
+
+    let choices = object
+        .get("choices")
+        .ok_or_else(|| {
+            "received a non-Chat Completions payload from a Chat Completions endpoint".to_string()
+        })?
+        .as_array()
+        .ok_or_else(|| "Chat Completions SSE `choices` must be an array".to_string())?;
+    let mut semantics = ChatSseSemantics::default();
+    for (position, choice) in choices.iter().enumerate() {
+        let choice = choice
+            .as_object()
+            .ok_or_else(|| "Chat Completions SSE choices must be objects".to_string())?;
+        let key = match choice.get("index") {
+            None => ChatChoiceKey::Position(position),
+            Some(index) => ChatChoiceKey::Index(index.as_u64().ok_or_else(|| {
+                "Chat Completions SSE choice `index` must be a non-negative integer".to_string()
+            })?),
+        };
+        let is_terminal = match choice.get("finish_reason") {
+            None | Some(Value::Null) => false,
+            Some(Value::String(reason)) if !reason.is_empty() => true,
+            Some(Value::String(_)) => {
+                return Err(
+                    "Chat Completions SSE choice `finish_reason` must not be empty".to_string(),
+                );
+            }
+            Some(_) => {
+                return Err(
+                    "Chat Completions SSE choice `finish_reason` must be a string or null"
+                        .to_string(),
+                );
+            }
+        };
+        semantics.has_output |=
+            choice
+                .get("delta")
+                .and_then(Value::as_object)
+                .is_some_and(|delta| {
+                    delta.iter().any(|(key, value)| {
+                        key != "role"
+                            && !value.is_null()
+                            && value.as_str().is_none_or(|text| !text.is_empty())
+                    })
+                });
+        semantics
+            .choices
+            .push(ChatChoiceSemantics { key, is_terminal });
+    }
+    Ok(semantics)
 }
 
 fn is_top_level_stream_error(value: &Value) -> bool {
@@ -429,14 +494,17 @@ fn validate_responses_terminal_status(
         .and_then(Value::as_object)
         .and_then(|response| response.get("status"))
         .and_then(Value::as_str);
-    status
-        .filter(|status| *status != expected_status)
-        .map(|status| {
-            format!(
-                "terminal event `{}` conflicts with response status `{status}`",
-                event_type.unwrap_or_default()
-            )
-        })
+    match status {
+        Some(status) if status == expected_status => None,
+        Some(status) => Some(format!(
+            "terminal event `{}` conflicts with response status `{status}`",
+            event_type.unwrap_or_default()
+        )),
+        None => Some(format!(
+            "terminal event `{}` must include string response status `{expected_status}`",
+            event_type.unwrap_or_default()
+        )),
+    }
 }
 
 fn normalize_openai_compat_chunk_value(value: &mut Value) {
@@ -534,11 +602,11 @@ mod tests {
     #[tokio::test]
     async fn chat_rejects_non_string_finish_reason_as_terminal() {
         let rendered = render(normalize_openai_compat_stream(upstream(
-            "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":false}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":false}]}\n\ndata: [DONE]\n\n",
         )))
         .await;
 
-        assert!(rendered.contains("\"code\":\"openai_compat_premature_eof\""));
+        assert!(rendered.contains("\"code\":\"openai_compat_protocol_error\""));
         assert!(!rendered.contains("data: [DONE]"));
     }
 
@@ -551,6 +619,45 @@ mod tests {
 
         assert!(rendered.contains("\"code\":\"openai_compat_payload_parse_error\""));
         assert!(!rendered.contains("data: [DONE]"));
+    }
+
+    #[tokio::test]
+    async fn chat_rejects_responses_protocol_mismatch() {
+        let rendered = render(normalize_openai_compat_stream(upstream(
+            "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\ndata: [DONE]\n\n",
+        )))
+        .await;
+
+        assert!(rendered.contains("\"code\":\"openai_compat_protocol_error\""));
+        assert!(!rendered.contains("response.completed"));
+        assert!(!rendered.contains("data: [DONE]"));
+    }
+
+    #[tokio::test]
+    async fn chat_requires_every_seen_choice_to_finish_before_eof() {
+        let incomplete = render(normalize_openai_compat_stream(upstream(
+            "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"},{\"index\":1,\"delta\":{\"content\":\"partial\"},\"finish_reason\":null}]}\n\n",
+        )))
+        .await;
+        assert!(incomplete.contains("\"code\":\"openai_compat_premature_eof\""));
+        assert!(!incomplete.contains("data: [DONE]"));
+
+        let complete = render(normalize_openai_compat_stream(upstream(
+            "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"},{\"index\":1,\"delta\":{\"content\":\"partial\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":1,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+        )))
+        .await;
+        assert!(complete.ends_with("data: [DONE]\n\n"));
+    }
+
+    #[tokio::test]
+    async fn chat_accepts_proxy_usage_chunk_without_choices() {
+        let rendered = render(normalize_openai_compat_stream(upstream(
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: {\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1,\"total_tokens\":3}}\n\n",
+        )))
+        .await;
+
+        assert!(rendered.contains("\"usage\""));
+        assert!(rendered.ends_with("data: [DONE]\n\n"));
     }
 
     #[tokio::test]
@@ -671,5 +778,21 @@ mod tests {
 
         assert!(rendered.contains("\"code\":\"openai_compat_responses_protocol_error\""));
         assert!(!rendered.contains("data: [DONE]"));
+    }
+
+    #[tokio::test]
+    async fn responses_requires_string_terminal_status() {
+        for response in ["{}", "{\"status\":123}"] {
+            let transcript = format!(
+                "event: response.completed\ndata: {{\"type\":\"response.completed\",\"response\":{response}}}\n\n"
+            );
+            let rendered = render(normalize_openai_compat_responses_stream(stream::iter([
+                Ok::<Bytes, reqwest::Error>(Bytes::from(transcript)),
+            ])))
+            .await;
+
+            assert!(rendered.contains("\"code\":\"openai_compat_responses_protocol_error\""));
+            assert!(!rendered.contains("data: [DONE]"));
+        }
     }
 }

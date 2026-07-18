@@ -869,6 +869,8 @@ models:
 - `mantle_openai_chat`
 - `mantle_anthropic_messages`
 
+`compatibility.aws_bedrock.supports_strict_tools` is optional. When unset, Runtime Converse routes infer support from transparent upstream model IDs and omit `strict` for Claude Opus 4.7/4.8. Set it to `false` for opaque application-inference-profile IDs or ARNs backed by those models; explicit `true` or `false` overrides inference.
+
 OpenAI-compatible profile defaults:
 
 | Field | Default | Supported values |

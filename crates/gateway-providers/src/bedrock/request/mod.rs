@@ -78,7 +78,16 @@ pub(super) fn map_chat_request_to_converse(
         );
     }
 
-    if let Some(tool_config) = extract_tool_config(&mut passthrough, &context.upstream_model)? {
+    let supports_strict_tools = context
+        .compatibility
+        .aws_bedrock
+        .as_ref()
+        .and_then(|compatibility| compatibility.supports_strict_tools);
+    if let Some(tool_config) = extract_tool_config(
+        &mut passthrough,
+        &context.upstream_model,
+        supports_strict_tools,
+    )? {
         body.insert("toolConfig".to_string(), tool_config);
     }
 

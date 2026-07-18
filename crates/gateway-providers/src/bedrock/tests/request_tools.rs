@@ -96,6 +96,44 @@ fn omits_strict_only_for_affected_claude_opus_models() {
             "strict should be retained for {model}"
         );
     }
+
+    let mut opaque_profile = context_with_api_style(
+        "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/abc123",
+        AwsBedrockApiStyle::RuntimeConverse,
+        None,
+    );
+    opaque_profile
+        .compatibility
+        .aws_bedrock
+        .as_mut()
+        .unwrap()
+        .supports_strict_tools = Some(false);
+    let body =
+        map_chat_request_to_converse(&request, &opaque_profile).expect("opaque profile mapped");
+    assert!(
+        body["toolConfig"]["tools"][0]["toolSpec"]
+            .get("strict")
+            .is_none(),
+        "explicit compatibility must omit strict for opaque profiles"
+    );
+
+    let mut explicit_support = context_with_api_style(
+        "global.anthropic.claude-opus-4-7-v1:0",
+        AwsBedrockApiStyle::RuntimeConverse,
+        None,
+    );
+    explicit_support
+        .compatibility
+        .aws_bedrock
+        .as_mut()
+        .unwrap()
+        .supports_strict_tools = Some(true);
+    let body = map_chat_request_to_converse(&request, &explicit_support)
+        .expect("explicit override mapped");
+    assert_eq!(
+        body["toolConfig"]["tools"][0]["toolSpec"]["strict"],
+        json!(true)
+    );
 }
 
 #[test]
@@ -191,6 +229,29 @@ fn maps_rich_converse_tool_result_content() {
     );
     assert_eq!(content[2]["document"]["name"], json!("Quarterly Report"));
     assert_eq!(content[11], json!({"json": {"ok": true}}));
+}
+
+#[test]
+fn rejects_empty_converse_tool_result_content() {
+    let mut tool = CoreChatMessage {
+        role: "tool".to_string(),
+        content: json!([]),
+        name: None,
+        extra: BTreeMap::new(),
+    };
+    tool.extra
+        .insert("tool_call_id".to_string(), json!("toolu_empty"));
+    let request = CoreChatRequest {
+        model: "nova".to_string(),
+        messages: vec![tool],
+        stream: false,
+        extra: BTreeMap::new(),
+    };
+
+    let error = map_chat_request_to_converse(&request, &context("amazon.nova-pro-v1:0"))
+        .expect_err("empty tool result rejected")
+        .to_string();
+    assert!(error.contains("must contain at least one block"), "{error}");
 }
 
 #[test]
