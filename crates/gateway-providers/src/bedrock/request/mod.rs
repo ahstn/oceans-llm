@@ -99,6 +99,7 @@ pub(super) fn map_chat_request_to_converse(
     }
     extract_converse_request_controls(&mut body, &mut passthrough, request.stream)?;
     merge_object_overrides(&mut body, &context.extra_body);
+    validate_converse_request_controls(&body, request.stream)?;
     apply_converse_anthropic_thinking_compatibility(
         &mut body,
         &mut passthrough,

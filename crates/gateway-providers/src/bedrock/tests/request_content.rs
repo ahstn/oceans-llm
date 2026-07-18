@@ -395,6 +395,31 @@ fn static_route_extra_body_still_overrides_validated_request_controls() {
 }
 
 #[test]
+fn revalidates_converse_controls_after_static_route_merge() {
+    let request_metadata = (0..16)
+        .map(|index| (format!("request-{index}"), json!("value")))
+        .collect::<Map<String, Value>>();
+    let request = CoreChatRequest {
+        model: "nova".to_string(),
+        messages: vec![message("user", "Hello")],
+        stream: false,
+        extra: BTreeMap::from([(
+            "requestMetadata".to_string(),
+            Value::Object(request_metadata),
+        )]),
+    };
+    let mut route_context = context("amazon.nova-pro-v1:0");
+    route_context
+        .extra_body
+        .insert("requestMetadata".to_string(), json!({"route": "value"}));
+
+    let error = map_chat_request_to_converse(&request, &route_context)
+        .expect_err("merged metadata limit rejected")
+        .to_string();
+    assert!(error.contains("at most 16 entries"), "{error}");
+}
+
+#[test]
 fn accepts_snake_case_converse_controls_and_rejects_alias_conflicts() {
     let request = CoreChatRequest {
         model: "nova".to_string(),

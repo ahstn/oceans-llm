@@ -98,6 +98,25 @@ pub(super) fn extract_converse_request_controls(
     Ok(())
 }
 
+pub(super) fn validate_converse_request_controls(
+    body: &Map<String, Value>,
+    stream: bool,
+) -> Result<(), ProviderError> {
+    if let Some(value) = body.get("requestMetadata") {
+        validate_request_metadata(value)?;
+    }
+    if let Some(value) = body.get("performanceConfig") {
+        validate_performance_config(value)?;
+    }
+    if let Some(value) = body.get("guardrailConfig") {
+        validate_guardrail_config(value, stream)?;
+    }
+    if let Some(value) = body.get("additionalModelResponseFieldPaths") {
+        validate_additional_model_response_field_paths(value)?;
+    }
+    Ok(())
+}
+
 fn take_aliased_converse_field(
     extra: &mut BTreeMap<String, Value>,
     canonical: &str,
