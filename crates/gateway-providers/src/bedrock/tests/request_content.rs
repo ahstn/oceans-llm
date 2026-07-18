@@ -178,6 +178,56 @@ fn maps_openai_file_content_to_bedrock_document() {
 }
 
 #[test]
+fn rejects_documents_in_invalid_message_contexts() {
+    let cases = [
+        (
+            "assistant",
+            json!([
+                {
+                    "type": "input_file",
+                    "file": {
+                        "file_data": "data:application/pdf;base64,cGRm",
+                        "filename": "report.pdf"
+                    }
+                },
+                {"type": "input_text", "text": "Summary"}
+            ]),
+            "document content is only supported in user messages",
+        ),
+        (
+            "user",
+            json!([{
+                "type": "input_file",
+                "file": {
+                    "file_data": "data:application/pdf;base64,cGRm",
+                    "filename": "report.pdf"
+                }
+            }]),
+            "messages containing documents must also contain text",
+        ),
+    ];
+
+    for (role, content, expected_error) in cases {
+        let request = CoreChatRequest {
+            model: "nova".to_string(),
+            messages: vec![CoreChatMessage {
+                role: role.to_string(),
+                content,
+                name: None,
+                extra: BTreeMap::new(),
+            }],
+            stream: false,
+            extra: BTreeMap::new(),
+        };
+
+        let error = map_chat_request_to_converse(&request, &context("amazon.nova-pro-v1:0"))
+            .expect_err("invalid document context rejected")
+            .to_string();
+        assert!(error.contains(expected_error), "{error}");
+    }
+}
+
+#[test]
 fn maps_validated_request_scoped_converse_controls() {
     let request = CoreChatRequest {
         model: "nova".to_string(),
@@ -283,6 +333,14 @@ fn rejects_invalid_request_scoped_converse_controls() {
             "guardrailConfig",
             json!({"guardrailVersion": "01"}),
             "positive version",
+        ),
+        (
+            "guardrailConfig",
+            json!({
+                "guardrailIdentifier":
+                    "arn:aws-:bedrock:us-east-1:123456789012:guardrail/abc"
+            }),
+            "Bedrock guardrail ARN",
         ),
         (
             "additionalModelResponseFieldPaths",

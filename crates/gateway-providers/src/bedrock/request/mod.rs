@@ -27,11 +27,12 @@ pub(super) fn map_chat_request_to_converse(
             "user" => {
                 messages.push(json!({
                     "role": "user",
-                    "content": map_bedrock_content_blocks(&message.content)?
+                    "content": map_bedrock_message_content_blocks(&message.content, "user")?
                 }));
             }
             "assistant" => {
-                let mut content = map_bedrock_content_blocks(&message.content)?;
+                let mut content =
+                    map_bedrock_message_content_blocks(&message.content, "assistant")?;
                 content.extend(map_assistant_tool_uses(message)?);
                 messages.push(json!({
                     "role": "assistant",
@@ -147,6 +148,7 @@ pub(super) fn map_openai_responses_request(
         }
         enforce_bedrock_responses_hosted_tool_compatibility(object, context)?;
     }
+    crate::replay_id::normalize_openai_responses_replay_ids(&mut body)?;
     Ok(body)
 }
 

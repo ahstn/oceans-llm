@@ -402,6 +402,60 @@ async fn builds_mantle_openai_responses_bearer_request_for_gpt_55() {
 }
 
 #[tokio::test]
+async fn normalizes_mantle_openai_responses_replay_ids() {
+    let provider = mantle_bearer_provider();
+    let foreign_call_id = format!("copilot|{}", "x".repeat(100));
+    let mut request = responses_request(false);
+    request.input = json!([
+        {
+            "type": "function_call",
+            "id": "foreign-provider-item",
+            "call_id": foreign_call_id,
+            "name": "lookup",
+            "arguments": "{}"
+        },
+        {
+            "type": "function_call_output",
+            "call_id": foreign_call_id,
+            "output": "ok"
+        },
+        {
+            "type": "reasoning",
+            "id": format!("rs_{}", "x".repeat(100)),
+            "summary": []
+        },
+        {
+            "type": "message",
+            "id": "msg_native123",
+            "role": "assistant",
+            "content": []
+        }
+    ]);
+    let context = context_with_api_style(
+        "openai.gpt-5.5",
+        AwsBedrockApiStyle::MantleOpenaiResponses,
+        Some("/openai/v1"),
+    );
+
+    let built = provider
+        .build_responses_request(&request, &context, false)
+        .await
+        .expect("request");
+    let body: Value =
+        serde_json::from_slice(built.body().unwrap().as_bytes().unwrap()).expect("json body");
+    let input = body["input"].as_array().expect("input");
+
+    let call_id = input[0]["call_id"].as_str().expect("call id");
+    assert!(input[0]["id"].as_str().unwrap().starts_with("fc_"));
+    assert!(call_id.starts_with("call_"));
+    assert!(call_id.len() <= 64);
+    assert_eq!(input[1]["call_id"], call_id);
+    assert!(input[2]["id"].as_str().unwrap().starts_with("rs_"));
+    assert!(input[2]["id"].as_str().unwrap().len() <= 64);
+    assert_eq!(input[3]["id"], "msg_native123");
+}
+
+#[tokio::test]
 async fn builds_mantle_openai_responses_stream_request() {
     let provider = mantle_bearer_provider();
     let context = context_with_api_style(

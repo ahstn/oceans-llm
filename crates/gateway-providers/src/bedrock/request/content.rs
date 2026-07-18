@@ -41,7 +41,27 @@ pub(super) fn message_content_as_text(content: &Value) -> Result<String, Provide
     }
 }
 
-pub(super) fn map_bedrock_content_blocks(content: &Value) -> Result<Vec<Value>, ProviderError> {
+pub(super) fn map_bedrock_message_content_blocks(
+    content: &Value,
+    role: &str,
+) -> Result<Vec<Value>, ProviderError> {
+    let blocks = map_bedrock_content_blocks(content)?;
+    if blocks.iter().any(|block| block.get("document").is_some()) {
+        if role != "user" {
+            return Err(ProviderError::InvalidRequest(
+                "Bedrock document content is only supported in user messages".to_string(),
+            ));
+        }
+        if !blocks.iter().any(|block| block.get("text").is_some()) {
+            return Err(ProviderError::InvalidRequest(
+                "Bedrock user messages containing documents must also contain text".to_string(),
+            ));
+        }
+    }
+    Ok(blocks)
+}
+
+fn map_bedrock_content_blocks(content: &Value) -> Result<Vec<Value>, ProviderError> {
     match content {
         Value::Null => Ok(Vec::new()),
         Value::String(text) => Ok(vec![json!({ "text": text })]),

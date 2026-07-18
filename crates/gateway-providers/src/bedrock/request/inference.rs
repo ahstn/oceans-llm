@@ -248,7 +248,10 @@ fn is_valid_guardrail_identifier(identifier: &str) -> bool {
     else {
         return false;
     };
-    (partition == "aws" || partition.starts_with("aws-"))
+    (partition == "aws"
+        || partition
+            .strip_prefix("aws-")
+            .is_some_and(|suffix| !suffix.is_empty()))
         && !region.is_empty()
         && region.len() <= 20
         && region
