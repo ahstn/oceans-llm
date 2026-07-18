@@ -141,6 +141,219 @@ fn maps_converse_base64_image_blocks_and_rejects_remote_urls() {
 }
 
 #[test]
+fn maps_openai_file_content_to_bedrock_document() {
+    let request = CoreChatRequest {
+        model: "nova".to_string(),
+        messages: vec![CoreChatMessage {
+            role: "user".to_string(),
+            content: json!([
+                {
+                    "type": "input_file",
+                    "file": {
+                        "file_data": "data:application/pdf;base64,cGRm",
+                        "filename": "reports/Board_Packet!!.pdf"
+                    }
+                },
+                {"type": "input_text", "text": "Summarize the document"}
+            ]),
+            name: None,
+            extra: BTreeMap::new(),
+        }],
+        stream: false,
+        extra: BTreeMap::new(),
+    };
+
+    let body =
+        map_chat_request_to_converse(&request, &context("amazon.nova-pro-v1:0")).expect("mapped");
+    assert_eq!(
+        body["messages"][0]["content"][0],
+        json!({
+            "document": {
+                "format": "pdf",
+                "name": "Board Packet",
+                "source": {"bytes": "cGRm"}
+            }
+        })
+    );
+}
+
+#[test]
+fn maps_validated_request_scoped_converse_controls() {
+    let request = CoreChatRequest {
+        model: "nova".to_string(),
+        messages: vec![message("user", "Hello")],
+        stream: false,
+        extra: BTreeMap::from([
+            (
+                "requestMetadata".to_string(),
+                json!({"tenant": "acme", "cost:center": "research"}),
+            ),
+            (
+                "performanceConfig".to_string(),
+                json!({"latency": "optimized"}),
+            ),
+            (
+                "guardrailConfig".to_string(),
+                json!({
+                    "guardrailIdentifier": "guardrail123",
+                    "guardrailVersion": "DRAFT",
+                    "trace": "enabled_full"
+                }),
+            ),
+            (
+                "additionalModelResponseFieldPaths".to_string(),
+                json!(["/stop_sequence", "/nested~1field"]),
+            ),
+        ]),
+    };
+
+    let body =
+        map_chat_request_to_converse(&request, &context("amazon.nova-pro-v1:0")).expect("mapped");
+    assert_eq!(
+        body["requestMetadata"],
+        json!({"tenant": "acme", "cost:center": "research"})
+    );
+    assert_eq!(body["performanceConfig"], json!({"latency": "optimized"}));
+    assert_eq!(
+        body["guardrailConfig"],
+        json!({
+            "guardrailIdentifier": "guardrail123",
+            "guardrailVersion": "DRAFT",
+            "trace": "enabled_full"
+        })
+    );
+    assert_eq!(
+        body["additionalModelResponseFieldPaths"],
+        json!(["/stop_sequence", "/nested~1field"])
+    );
+}
+
+#[test]
+fn validates_stream_specific_guardrail_controls() {
+    let request = CoreChatRequest {
+        model: "nova".to_string(),
+        messages: vec![message("user", "Hello")],
+        stream: true,
+        extra: BTreeMap::from([(
+            "guardrailConfig".to_string(),
+            json!({
+                "guardrailIdentifier": "guardrail123",
+                "guardrailVersion": "1",
+                "streamProcessingMode": "async"
+            }),
+        )]),
+    };
+    let body =
+        map_chat_request_to_converse(&request, &context("amazon.nova-pro-v1:0")).expect("mapped");
+    assert_eq!(
+        body["guardrailConfig"]["streamProcessingMode"],
+        json!("async")
+    );
+
+    let non_streaming = CoreChatRequest {
+        stream: false,
+        ..request
+    };
+    let error = map_chat_request_to_converse(&non_streaming, &context("amazon.nova-pro-v1:0"))
+        .expect_err("stream-only field rejected")
+        .to_string();
+    assert!(error.contains("streamProcessingMode"));
+}
+
+#[test]
+fn rejects_invalid_request_scoped_converse_controls() {
+    let too_many_metadata = Value::Object(
+        (0..17)
+            .map(|index| (format!("key{index}"), json!("value")))
+            .collect(),
+    );
+    for (field, value, expected) in [
+        ("requestMetadata", too_many_metadata, "at most 16 entries"),
+        (
+            "requestMetadata",
+            json!({"invalid!key": "value"}),
+            "keys must be 1-256",
+        ),
+        (
+            "performanceConfig",
+            json!({"latency": "fastest"}),
+            "standard",
+        ),
+        (
+            "guardrailConfig",
+            json!({"guardrailVersion": "01"}),
+            "positive version",
+        ),
+        (
+            "additionalModelResponseFieldPaths",
+            json!(["not/a/pointer"]),
+            "RFC 6901",
+        ),
+        (
+            "additionalModelResponseFieldPaths",
+            json!(["/invalid~2escape"]),
+            "RFC 6901",
+        ),
+    ] {
+        let request = CoreChatRequest {
+            model: "nova".to_string(),
+            messages: vec![message("user", "Hello")],
+            stream: false,
+            extra: BTreeMap::from([(field.to_string(), value)]),
+        };
+        let error = map_chat_request_to_converse(&request, &context("amazon.nova-pro-v1:0"))
+            .expect_err("invalid control rejected")
+            .to_string();
+        assert!(
+            error.contains(expected),
+            "expected `{expected}` in error for {field}: {error}"
+        );
+    }
+}
+
+#[test]
+fn static_route_extra_body_still_overrides_validated_request_controls() {
+    let request = CoreChatRequest {
+        model: "nova".to_string(),
+        messages: vec![message("user", "Hello")],
+        stream: false,
+        extra: BTreeMap::from([("requestMetadata".to_string(), json!({"source": "request"}))]),
+    };
+    let mut route_context = context("amazon.nova-pro-v1:0");
+    route_context
+        .extra_body
+        .insert("requestMetadata".to_string(), json!({"source": "route"}));
+
+    let body = map_chat_request_to_converse(&request, &route_context).expect("mapped");
+    assert_eq!(body["requestMetadata"], json!({"source": "route"}));
+}
+
+#[test]
+fn accepts_snake_case_converse_controls_and_rejects_alias_conflicts() {
+    let request = CoreChatRequest {
+        model: "nova".to_string(),
+        messages: vec![message("user", "Hello")],
+        stream: false,
+        extra: BTreeMap::from([("request_metadata".to_string(), json!({"source": "request"}))]),
+    };
+    let body =
+        map_chat_request_to_converse(&request, &context("amazon.nova-pro-v1:0")).expect("mapped");
+    assert_eq!(body["requestMetadata"], json!({"source": "request"}));
+
+    let conflicting = CoreChatRequest {
+        extra: BTreeMap::from([
+            ("requestMetadata".to_string(), json!({"source": "camel"})),
+            ("request_metadata".to_string(), json!({"source": "snake"})),
+        ]),
+        ..request
+    };
+    let error = map_chat_request_to_converse(&conflicting, &context("amazon.nova-pro-v1:0"))
+        .expect_err("conflicting aliases rejected")
+        .to_string();
+    assert!(error.contains("conflicts with `request_metadata`"));
+}
+
+#[test]
 fn rejects_unknown_bedrock_converse_request_fields() {
     let request = CoreChatRequest {
         model: "nova".to_string(),

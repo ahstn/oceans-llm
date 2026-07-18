@@ -77,7 +77,7 @@ pub(super) fn map_chat_request_to_converse(
         );
     }
 
-    if let Some(tool_config) = extract_tool_config(&mut passthrough)? {
+    if let Some(tool_config) = extract_tool_config(&mut passthrough, &context.upstream_model)? {
         body.insert("toolConfig".to_string(), tool_config);
     }
 
@@ -87,6 +87,7 @@ pub(super) fn map_chat_request_to_converse(
     if let Some(additional) = passthrough.remove("additional_model_request_fields") {
         body.insert("additionalModelRequestFields".to_string(), additional);
     }
+    extract_converse_request_controls(&mut body, &mut passthrough, request.stream)?;
     merge_object_overrides(&mut body, &context.extra_body);
     apply_converse_anthropic_thinking_compatibility(
         &mut body,

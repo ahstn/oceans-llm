@@ -28,6 +28,7 @@ pub(super) fn map_assistant_tool_uses(
                     "assistant tool_calls entries must include `id`".to_string(),
                 )
             })?;
+            let tool_use_id = normalize_bedrock_tool_use_id(tool_use_id);
             let function = object
                 .get("function")
                 .and_then(Value::as_object)
@@ -96,6 +97,7 @@ pub(super) fn map_anthropic_assistant_tool_uses(
                     "assistant tool_calls entries must include `id`".to_string(),
                 )
             })?;
+            let id = normalize_bedrock_tool_use_id(id);
             let function = object
                 .get("function")
                 .and_then(Value::as_object)
@@ -144,30 +146,8 @@ pub(super) fn map_tool_result(
         .ok_or_else(|| {
             ProviderError::InvalidRequest("tool messages must include `tool_call_id`".to_string())
         })?;
-    let content = match &message.content {
-        Value::String(text) => vec![json!({ "text": text })],
-        Value::Array(items) => items
-            .iter()
-            .map(|item| {
-                let object = item.as_object().ok_or_else(|| {
-                    ProviderError::InvalidRequest(
-                        "tool message content array entries must be objects".to_string(),
-                    )
-                })?;
-                let text = object.get("text").and_then(Value::as_str).ok_or_else(|| {
-                    ProviderError::InvalidRequest(
-                        "tool message content entries must include string `text`".to_string(),
-                    )
-                })?;
-                Ok(json!({ "text": text }))
-            })
-            .collect::<Result<Vec<_>, ProviderError>>()?,
-        _ => {
-            return Err(ProviderError::InvalidRequest(
-                "tool message content must be a string or text content array".to_string(),
-            ));
-        }
-    };
+    let tool_call_id = normalize_bedrock_tool_use_id(tool_call_id);
+    let content = map_bedrock_tool_result_content(&message.content)?;
 
     Ok(json!({
         "toolResult": {
@@ -187,6 +167,7 @@ pub(super) fn map_anthropic_tool_result(
         .ok_or_else(|| {
             ProviderError::InvalidRequest("tool messages must include `tool_call_id`".to_string())
         })?;
+    let tool_use_id = normalize_bedrock_tool_use_id(tool_use_id);
     let content = match &message.content {
         Value::String(text) => Value::String(text.clone()),
         Value::Array(items) => Value::Array(
@@ -233,16 +214,61 @@ pub(super) fn map_tool_result_content_block(
                 "tool_result content must include tool_use_id".to_string(),
             )
         })?;
-    let text = object.get("text").and_then(Value::as_str).ok_or_else(|| {
-        ProviderError::InvalidRequest("tool_result content must include string `text`".to_string())
-    })?;
+    let tool_use_id = normalize_bedrock_tool_use_id(tool_use_id);
+    let content = if let Some(content) = object.get("content") {
+        map_bedrock_tool_result_content(content)?
+    } else if let Some(text) = object.get("text").and_then(Value::as_str) {
+        vec![json!({ "text": text })]
+    } else {
+        return Err(ProviderError::InvalidRequest(
+            "tool_result content must include `content` or string `text`".to_string(),
+        ));
+    };
 
     Ok(json!({
         "toolResult": {
             "toolUseId": tool_use_id,
-            "content": [{ "text": text }]
+            "content": content
         }
     }))
+}
+
+fn map_bedrock_tool_result_content(content: &Value) -> Result<Vec<Value>, ProviderError> {
+    match content {
+        Value::String(text) => Ok(vec![json!({ "text": text })]),
+        Value::Object(object) => Ok(vec![json!({ "json": object })]),
+        Value::Array(items) => items
+            .iter()
+            .map(|item| {
+                let object = item.as_object().ok_or_else(|| {
+                    ProviderError::InvalidRequest(
+                        "tool message content array entries must be objects".to_string(),
+                    )
+                })?;
+                if object.get("type").is_none()
+                    && let Some(text) = object.get("text").and_then(Value::as_str)
+                {
+                    return Ok(json!({ "text": text }));
+                }
+                if object.get("type").and_then(Value::as_str) == Some("json") {
+                    let value = object
+                        .get("json")
+                        .or_else(|| object.get("value"))
+                        .ok_or_else(|| {
+                            ProviderError::InvalidRequest(
+                                "json tool result content must include `json` or `value`"
+                                    .to_string(),
+                            )
+                        })?;
+                    return Ok(json!({ "json": value }));
+                }
+                map_bedrock_message_content_block(object)
+            })
+            .collect(),
+        _ => Err(ProviderError::InvalidRequest(
+            "tool message content must be a string or typed content array".to_string(),
+        )),
+    }
 }
 
 pub(super) fn map_anthropic_tool_result_content_block(
@@ -257,6 +283,7 @@ pub(super) fn map_anthropic_tool_result_content_block(
                 "tool_result content must include tool_use_id".to_string(),
             )
         })?;
+    let tool_use_id = normalize_bedrock_tool_use_id(tool_use_id);
     let content = object
         .get("content")
         .cloned()
@@ -279,8 +306,22 @@ pub(super) fn map_anthropic_tool_result_content_block(
     }))
 }
 
+fn normalize_bedrock_tool_use_id(id: &str) -> String {
+    if !id.is_empty()
+        && id.len() <= 64
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+    {
+        id.to_string()
+    } else {
+        crate::replay_id::stable_prefixed_hash("tool_", id)
+    }
+}
+
 pub(super) fn extract_tool_config(
     extra: &mut BTreeMap<String, Value>,
+    upstream_model: &str,
 ) -> Result<Option<Value>, ProviderError> {
     let Some(tools) = extra.remove("tools") else {
         if let Some(tool_choice) = extra.remove("tool_choice")
@@ -346,7 +387,11 @@ pub(super) fn extract_tool_config(
             );
         }
         spec.insert("inputSchema".to_string(), json!({ "json": schema }));
-        if let Some(strict) = function.get("strict").and_then(Value::as_bool) {
+        if let Some(strict) = function
+            .get("strict")
+            .and_then(Value::as_bool)
+            .filter(|_| bedrock_model_supports_strict_tools(upstream_model))
+        {
             spec.insert("strict".to_string(), Value::Bool(strict));
         }
         bedrock_tools.push(json!({ "toolSpec": spec }));
@@ -361,6 +406,18 @@ pub(super) fn extract_tool_config(
     }
 
     Ok(Some(Value::Object(tool_config)))
+}
+
+fn bedrock_model_supports_strict_tools(upstream_model: &str) -> bool {
+    let model = upstream_model.to_ascii_lowercase();
+    !["claude-opus-4-7", "claude-opus-4-8"].iter().any(|marker| {
+        model.split(marker).skip(1).any(|rest| {
+            rest.chars().next().is_none_or(|character| {
+                character.is_ascii_whitespace()
+                    || matches!(character, '-' | '/' | ':' | '@' | ',' | ')' | ']')
+            })
+        })
+    })
 }
 
 pub(super) fn extract_anthropic_tools(

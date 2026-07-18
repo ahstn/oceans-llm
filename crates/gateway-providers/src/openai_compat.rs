@@ -3,10 +3,10 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc, time::Duration};
 use async_trait::async_trait;
 use gateway_core::{
     CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest, OpenAiCompatDeveloperRole,
-    OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
-    ProviderCapabilities, ProviderClient, ProviderError, ProviderRequestContext, ProviderStream,
-    core_chat_request_to_openai, core_embeddings_request_to_openai,
-    core_responses_request_to_openai,
+    OpenAiCompatEmptyTools, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
+    OpenAiCompatRouteCompatibility, ProviderCapabilities, ProviderClient, ProviderError,
+    ProviderRequestContext, ProviderStream, core_chat_request_to_openai,
+    core_embeddings_request_to_openai, core_responses_request_to_openai,
 };
 use serde_json::{Map, Value, json};
 
@@ -353,6 +353,10 @@ impl OpenAiCompatProvider {
                 object.insert(key.clone(), value.clone());
             }
         }
+        if endpoint_suffix == "responses" {
+            normalize_openai_responses_replay_ids(&mut body)?;
+        }
+        apply_openai_compat_empty_tools_profile(&mut body, context);
         if apply_compatibility_profile {
             apply_openai_compat_request_profile(&mut body, context);
             apply_openrouter_routing_policy(&mut body, context)?;
@@ -515,6 +519,133 @@ fn apply_openai_compat_request_profile(body: &mut Value, context: &ProviderReque
         return;
     };
     apply_openai_compat_profile_to_body(body, profile);
+}
+
+fn apply_openai_compat_empty_tools_profile(body: &mut Value, context: &ProviderRequestContext) {
+    let Some(profile) = context.compatibility.openai_compat.as_ref() else {
+        return;
+    };
+    let Some(object) = body.as_object_mut() else {
+        return;
+    };
+    if !object
+        .get("tools")
+        .is_some_and(|tools| matches!(tools, Value::Array(tools) if tools.is_empty()))
+    {
+        return;
+    }
+
+    let preserve = match profile.empty_tools {
+        OpenAiCompatEmptyTools::Preserve => true,
+        OpenAiCompatEmptyTools::Omit => false,
+        OpenAiCompatEmptyTools::PreserveWithToolHistory => has_tool_history(object),
+    };
+    if !preserve {
+        object.remove("tools");
+    }
+}
+
+fn has_tool_history(body: &Map<String, Value>) -> bool {
+    body.get("messages")
+        .and_then(Value::as_array)
+        .is_some_and(|messages| {
+            messages.iter().any(|message| {
+                let Some(message) = message.as_object() else {
+                    return false;
+                };
+                message.get("role").and_then(Value::as_str) == Some("tool")
+                    || message
+                        .get("tool_calls")
+                        .and_then(Value::as_array)
+                        .is_some_and(|calls| !calls.is_empty())
+            })
+        })
+        || body
+            .get("input")
+            .and_then(Value::as_array)
+            .is_some_and(|items| {
+                items.iter().any(|item| {
+                    matches!(
+                        item.get("type").and_then(Value::as_str),
+                        Some("function_call" | "function_call_output")
+                    )
+                })
+            })
+}
+
+fn normalize_openai_responses_replay_ids(body: &mut Value) -> Result<(), ProviderError> {
+    let Some(items) = body
+        .as_object_mut()
+        .and_then(|body| body.get_mut("input"))
+        .and_then(Value::as_array_mut)
+    else {
+        return Ok(());
+    };
+
+    for item in items {
+        let Some(item) = item.as_object_mut() else {
+            continue;
+        };
+        match item.get("type").and_then(Value::as_str) {
+            Some("function_call") => {
+                normalize_optional_responses_item_id(item, "fc_")?;
+                normalize_responses_call_id(item)?;
+            }
+            Some("function_call_output") => normalize_responses_call_id(item)?,
+            Some("reasoning") => normalize_optional_responses_item_id(item, "rs_")?,
+            Some("message") => normalize_optional_responses_item_id(item, "msg_")?,
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn normalize_optional_responses_item_id(
+    item: &mut Map<String, Value>,
+    native_prefix: &str,
+) -> Result<(), ProviderError> {
+    let Some(id) = item.get("id") else {
+        return Ok(());
+    };
+    let id = id.as_str().ok_or_else(|| {
+        ProviderError::InvalidRequest("OpenAI Responses item `id` must be a string".to_string())
+    })?;
+    if is_valid_responses_id(id, Some(native_prefix)) {
+        return Ok(());
+    }
+    item.insert(
+        "id".to_string(),
+        Value::String(crate::replay_id::stable_prefixed_hash(native_prefix, id)),
+    );
+    Ok(())
+}
+
+fn normalize_responses_call_id(item: &mut Map<String, Value>) -> Result<(), ProviderError> {
+    let Some(call_id) = item.get("call_id") else {
+        return Ok(());
+    };
+    let call_id = call_id.as_str().ok_or_else(|| {
+        ProviderError::InvalidRequest(
+            "OpenAI Responses function call `call_id` must be a string".to_string(),
+        )
+    })?;
+    if is_valid_responses_id(call_id, None) {
+        return Ok(());
+    }
+    item.insert(
+        "call_id".to_string(),
+        Value::String(crate::replay_id::stable_prefixed_hash("call_", call_id)),
+    );
+    Ok(())
+}
+
+fn is_valid_responses_id(id: &str, required_prefix: Option<&str>) -> bool {
+    !id.is_empty()
+        && id.len() <= 64
+        && required_prefix.is_none_or(|prefix| id.starts_with(prefix) && id.len() > prefix.len())
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
 }
 
 fn apply_openrouter_routing_policy(
@@ -690,10 +821,10 @@ mod tests {
     use futures_util::{StreamExt, stream};
     use gateway_core::{
         CoreChatMessage, CoreChatRequest, CoreResponsesRequest, OpenAiCompatDeveloperRole,
-        OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
-        OpenRouterMaxPrice, OpenRouterPercentileCutoffs, OpenRouterPercentilePreference,
-        OpenRouterProviderRouting, OpenRouterRouteCompatibility, ProviderClient, ProviderError,
-        ProviderRequestContext, RouteCompatibility,
+        OpenAiCompatEmptyTools, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
+        OpenAiCompatRouteCompatibility, OpenRouterMaxPrice, OpenRouterPercentileCutoffs,
+        OpenRouterPercentilePreference, OpenRouterProviderRouting, OpenRouterRouteCompatibility,
+        ProviderClient, ProviderError, ProviderRequestContext, RouteCompatibility,
     };
     use serde_json::{Map, Value, json};
     use tokio::net::TcpListener;
@@ -1283,6 +1414,187 @@ mod tests {
     }
 
     #[test]
+    fn omits_empty_chat_tools_when_profile_requires_it() {
+        let provider = provider();
+        let request = CoreChatRequest {
+            model: "fast".to_string(),
+            messages: vec![CoreChatMessage {
+                role: "user".to_string(),
+                content: json!("hello"),
+                name: None,
+                extra: BTreeMap::new(),
+            }],
+            stream: false,
+            extra: BTreeMap::from([("tools".to_string(), json!([]))]),
+        };
+        let context = context_with_profile(OpenAiCompatRouteCompatibility {
+            empty_tools: OpenAiCompatEmptyTools::Omit,
+            ..Default::default()
+        });
+
+        let built = provider
+            .build_chat_request(&request, &context)
+            .expect("build request");
+        assert!(request_body_json(&built).get("tools").is_none());
+    }
+
+    #[test]
+    fn preserves_empty_chat_tools_only_when_tool_history_requires_it() {
+        let provider = provider();
+        let profile = OpenAiCompatRouteCompatibility {
+            empty_tools: OpenAiCompatEmptyTools::PreserveWithToolHistory,
+            ..Default::default()
+        };
+        let mut request = CoreChatRequest {
+            model: "fast".to_string(),
+            messages: vec![CoreChatMessage {
+                role: "user".to_string(),
+                content: json!("hello"),
+                name: None,
+                extra: BTreeMap::new(),
+            }],
+            stream: false,
+            extra: BTreeMap::from([("tools".to_string(), json!([]))]),
+        };
+
+        let without_history = provider
+            .build_chat_request(&request, &context_with_profile(profile.clone()))
+            .expect("build request");
+        assert!(request_body_json(&without_history).get("tools").is_none());
+
+        request.messages.push(CoreChatMessage {
+            role: "tool".to_string(),
+            content: json!("result"),
+            name: None,
+            extra: BTreeMap::from([("tool_call_id".to_string(), json!("call_1"))]),
+        });
+        let with_history = provider
+            .build_chat_request(&request, &context_with_profile(profile))
+            .expect("build request");
+        assert_eq!(request_body_json(&with_history)["tools"], json!([]));
+    }
+
+    #[test]
+    fn omits_empty_responses_tools_for_regular_and_streaming_requests() {
+        let provider = provider();
+        let mut request = responses_request(false);
+        request.tools = Some(json!([]));
+        let context = context_with_profile(OpenAiCompatRouteCompatibility {
+            empty_tools: OpenAiCompatEmptyTools::Omit,
+            ..Default::default()
+        });
+
+        let regular = provider
+            .build_responses_request(&request, &context)
+            .expect("build request");
+        let streaming = provider
+            .build_responses_stream_request(&request, &context)
+            .expect("build stream request");
+
+        assert!(request_body_json(&regular).get("tools").is_none());
+        assert!(request_body_json(&streaming).get("tools").is_none());
+    }
+
+    #[test]
+    fn preserves_empty_responses_tools_when_tool_history_requires_it() {
+        let provider = provider();
+        let profile = OpenAiCompatRouteCompatibility {
+            empty_tools: OpenAiCompatEmptyTools::PreserveWithToolHistory,
+            ..Default::default()
+        };
+        let mut request = responses_request(false);
+        request.tools = Some(json!([]));
+
+        let without_history = provider
+            .build_responses_request(&request, &context_with_profile(profile.clone()))
+            .expect("build request");
+        assert!(request_body_json(&without_history).get("tools").is_none());
+
+        request.input = json!([{
+            "type": "function_call_output",
+            "call_id": "call_1",
+            "output": "result"
+        }]);
+        let with_history = provider
+            .build_responses_stream_request(&request, &context_with_profile(profile))
+            .expect("build stream request");
+        assert_eq!(request_body_json(&with_history)["tools"], json!([]));
+    }
+
+    #[test]
+    fn normalizes_foreign_responses_replay_ids_without_touching_native_ids() {
+        let provider = provider();
+        let foreign_call_id = format!("copilot|{}", "x".repeat(100));
+        let mut request = responses_request(false);
+        request.input = json!([
+            {
+                "type": "function_call",
+                "id": "foreign-provider-item",
+                "call_id": foreign_call_id,
+                "name": "lookup",
+                "arguments": "{}"
+            },
+            {
+                "type": "function_call_output",
+                "call_id": foreign_call_id,
+                "output": "ok"
+            },
+            {
+                "type": "reasoning",
+                "id": format!("rs_{}", "x".repeat(100)),
+                "summary": []
+            },
+            {
+                "type": "reasoning",
+                "id": "rs_native123",
+                "summary": []
+            },
+            {
+                "type": "message",
+                "id": "msg_bad|id",
+                "role": "assistant",
+                "content": []
+            },
+            {
+                "type": "message",
+                "id": "msg_native123",
+                "role": "assistant",
+                "content": []
+            },
+            {
+                "type": "function_call",
+                "call_id": "call_native123",
+                "name": "lookup",
+                "arguments": "{}"
+            }
+        ]);
+
+        let built = provider
+            .build_responses_request(&request, &default_context())
+            .expect("build request");
+        let body = request_body_json(&built);
+        let input = body["input"].as_array().expect("input");
+
+        let item_id = input[0]["id"].as_str().expect("item id");
+        assert!(item_id.starts_with("fc_"));
+        assert!(item_id.len() <= 64);
+        let normalized_call_id = input[0]["call_id"].as_str().expect("call id");
+        assert!(normalized_call_id.starts_with("call_"));
+        assert!(normalized_call_id.len() <= 64);
+        assert_eq!(input[1]["call_id"], input[0]["call_id"]);
+        let reasoning_id = input[2]["id"].as_str().expect("reasoning id");
+        assert!(reasoning_id.starts_with("rs_"));
+        assert!(reasoning_id.len() <= 64);
+        assert_eq!(input[3]["id"], json!("rs_native123"));
+        let message_id = input[4]["id"].as_str().expect("message id");
+        assert!(message_id.starts_with("msg_"));
+        assert!(message_id.len() <= 64);
+        assert_eq!(input[5]["id"], json!("msg_native123"));
+        assert!(input[6].get("id").is_none());
+        assert_eq!(input[6]["call_id"], json!("call_native123"));
+    }
+
+    #[test]
     fn builds_responses_request_with_expected_path_and_body() {
         let provider = provider();
         let request = responses_request(false);
@@ -1767,7 +2079,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn appends_done_when_upstream_omits_done_marker() {
+    async fn rejects_chat_stream_without_terminal_semantics() {
         let app = Router::new().route(
             "/v1/chat/completions",
             post(|| async move {
@@ -1828,7 +2140,8 @@ mod tests {
             rendered.push_str(std::str::from_utf8(chunk.expect("chunk").as_ref()).expect("utf8"));
         }
 
-        assert_eq!(rendered.matches("data: [DONE]").count(), 1);
+        assert!(rendered.contains("\"code\":\"openai_compat_premature_eof\""));
+        assert!(!rendered.contains("data: [DONE]"));
     }
 
     #[tokio::test]

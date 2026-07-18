@@ -18,6 +18,7 @@ Known differences include:
 - `reasoning_effort` passthrough, omission, or remapping
 - stream usage placement and whether usage must be requested
 - provider-specific reasoning delta field names
+- whether an explicit empty `tools` array must be preserved, omitted, or retained only for tool-history replay
 
 Encoding these differences as `extra_body` conventions would hide behavior inside additive overrides and make route behavior hard to reason about. Preserving legacy fallback behavior would also make future adapters copy implicit quirks instead of declaring compatibility explicitly.
 
@@ -31,8 +32,8 @@ Implementation points:
 - `ProviderRequestContext` carries the selected route's compatibility profile into the provider adapter.
 - `model_routes.compatibility_json` persists the typed profile as JSON.
 - `gateway.yaml` accepts route metadata under `compatibility.openai_compat`.
-- `crates/gateway-providers/src/openai_compat.rs` applies explicit, tested outbound transforms.
-- OpenAI-compatible stream normalization covers basic usage and reasoning field variants.
+- `crates/gateway-providers/src/openai_compat.rs` applies explicit, tested outbound transforms, including the shared empty-tools policy for Chat Completions and Responses.
+- OpenAI-compatible stream normalization covers usage and reasoning field variants while requiring valid terminal semantics.
 
 Unsupported API-family work is tracked as separate implementation issues instead of being represented as dormant config flags.
 

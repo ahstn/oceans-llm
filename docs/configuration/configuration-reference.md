@@ -813,6 +813,7 @@ models:
             developer_role: system
             reasoning_effort: omit
             supports_stream_usage: true
+            empty_tools: omit
 ```
 
 OpenRouter route policy:
@@ -877,6 +878,9 @@ OpenAI-compatible profile defaults:
 | `developer_role` | `developer` | `developer`, `system` |
 | `reasoning_effort` | `passthrough` | `passthrough`, `omit`, `reasoning_object` |
 | `supports_stream_usage` | `false` | `true`, `false` |
+| `empty_tools` | `preserve` | `preserve`, `omit`, `preserve_with_tool_history` |
+
+`empty_tools: omit` removes `tools: []` from Chat Completions and Responses requests for providers such as DashScope/Qwen that reject an empty array. `preserve_with_tool_history` omits an otherwise empty array but retains it when the request contains function-tool history, which is required by some LiteLLM/Anthropic proxy routes. The default `preserve` keeps existing stateless proxy behavior.
 
 OpenRouter policy fields:
 

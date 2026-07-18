@@ -212,8 +212,7 @@ impl BedrockProvider {
     }
 
     fn bedrock_model_endpoint(&self, upstream_model: &str, operation: &str) -> String {
-        let encoded_model_id: String =
-            url::form_urlencoded::byte_serialize(upstream_model.as_bytes()).collect();
+        let encoded_model_id = encode_bedrock_model_id(upstream_model);
         format!(
             "{}/model/{encoded_model_id}/{operation}",
             self.config.endpoint_url
@@ -221,12 +220,7 @@ impl BedrockProvider {
     }
 
     fn invoke_endpoint(&self, upstream_model: &str) -> String {
-        let encoded_model_id: String =
-            url::form_urlencoded::byte_serialize(upstream_model.as_bytes()).collect();
-        format!(
-            "{}/model/{encoded_model_id}/invoke",
-            self.config.endpoint_url
-        )
+        self.bedrock_model_endpoint(upstream_model, "invoke")
     }
 
     async fn build_chat_request(
@@ -747,6 +741,17 @@ impl ProviderClient for BedrockProvider {
         Ok(normalize_openai_compat_responses_stream(
             response.bytes_stream(),
         ))
+    }
+}
+
+fn encode_bedrock_model_id(model_id: &str) -> String {
+    let encoded: String = url::form_urlencoded::byte_serialize(model_id.as_bytes())
+        .collect::<String>()
+        .replace('+', "%20");
+    if model_id.starts_with("arn:") {
+        encoded.replace("%3A", ":").replace("%2F", "/")
+    } else {
+        encoded
     }
 }
 

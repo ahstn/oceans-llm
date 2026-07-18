@@ -48,15 +48,15 @@ mod tests {
         McpUpstreamCredentialRepository, McpUpstreamSecretStorageKind, MembershipRole,
         ModelPricingRecord, ModelRepository, Money4, NewExternalMcpServerRecord,
         NewReviewAgentRepositoryRecord, NewReviewAgentRunRecord, OauthJitPolicy,
-        OidcLoginStateRecord, OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField,
-        OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility, PricingCatalogCacheRecord,
-        PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
-        ProviderCapabilities, RequestAttemptRecord, RequestAttemptStatus, RequestLogPayloadRecord,
-        RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestTag, RequestTags,
-        RequestToolCardinality, ReviewAgentProvider, ReviewAgentPullRequestState,
-        ReviewAgentRepository, ReviewAgentRepositoryStatus, ReviewAgentRunStatus,
-        ReviewAgentSettings, RouteCompatibility, RoutePricingOverride, SeedApiKey,
-        SeedApiKeySecretMaterial, SeedBudget, SeedHumanBudgetDefaults,
+        OidcLoginStateRecord, OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools,
+        OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
+        PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
+        PricingProvenance, ProviderCapabilities, RequestAttemptRecord, RequestAttemptStatus,
+        RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository,
+        RequestTag, RequestTags, RequestToolCardinality, ReviewAgentProvider,
+        ReviewAgentPullRequestState, ReviewAgentRepository, ReviewAgentRepositoryStatus,
+        ReviewAgentRunStatus, ReviewAgentSettings, RouteCompatibility, RoutePricingOverride,
+        SeedApiKey, SeedApiKeySecretMaterial, SeedBudget, SeedHumanBudgetDefaults,
         SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute, SeedOauthProvider,
         SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership,
         SeedUserModelBudgetDefault, ServiceAccountStatus, StoreError, StoreHealth,
@@ -3019,6 +3019,7 @@ mod tests {
                         developer_role: OpenAiCompatDeveloperRole::System,
                         reasoning_effort: OpenAiCompatReasoningEffort::ReasoningObject,
                         supports_stream_usage: true,
+                        empty_tools: OpenAiCompatEmptyTools::PreserveWithToolHistory,
                     }),
                     ..Default::default()
                 },
@@ -3124,6 +3125,10 @@ mod tests {
             OpenAiCompatReasoningEffort::ReasoningObject
         );
         assert!(profile.supports_stream_usage);
+        assert_eq!(
+            profile.empty_tools,
+            OpenAiCompatEmptyTools::PreserveWithToolHistory
+        );
 
         let occurred_at = OffsetDateTime::now_utc();
         let zero_counts_log_id = Uuid::new_v4();

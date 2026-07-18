@@ -2548,6 +2548,8 @@ pub struct OpenAiCompatRouteCompatibility {
     pub reasoning_effort: OpenAiCompatReasoningEffort,
     #[serde(default)]
     pub supports_stream_usage: bool,
+    #[serde(default)]
+    pub empty_tools: OpenAiCompatEmptyTools,
 }
 
 impl Default for OpenAiCompatRouteCompatibility {
@@ -2558,6 +2560,7 @@ impl Default for OpenAiCompatRouteCompatibility {
             developer_role: OpenAiCompatDeveloperRole::default(),
             reasoning_effort: OpenAiCompatReasoningEffort::default(),
             supports_stream_usage: false,
+            empty_tools: OpenAiCompatEmptyTools::default(),
         }
     }
 }
@@ -2585,6 +2588,15 @@ pub enum OpenAiCompatReasoningEffort {
     Passthrough,
     Omit,
     ReasoningObject,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum OpenAiCompatEmptyTools {
+    #[default]
+    Preserve,
+    Omit,
+    PreserveWithToolHistory,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

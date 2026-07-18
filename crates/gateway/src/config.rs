@@ -5,14 +5,14 @@ use gateway_core::{
     ApiKeySecretStorageKind, AuthMode, AwsBedrockApiStyle, AwsBedrockRouteCompatibility,
     BudgetCadence, GlobalRole, ManagedApiKeySource, MembershipRole, ModelAllowlistPolicy, Money4,
     OauthJitMembership, OauthJitPolicy, OidcJitMembership, OidcJitPolicy,
-    OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
-    OpenAiCompatRouteCompatibility, OpenRouterMaxPrice, OpenRouterPercentileCutoffs,
-    OpenRouterPercentilePreference, OpenRouterProviderRouting, OpenRouterRouteCompatibility,
-    ProviderCapabilities, RequestLogRetentionWindow, RequestTag, RouteCompatibility,
-    RoutePricingOverride, SeedApiKeySecretMaterial, SeedBudget, SeedHumanBudgetDefaults,
-    SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute, SeedOauthProvider,
-    SeedOidcProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership,
-    SeedUserModelBudgetDefault, hash_gateway_key_secret, parse_gateway_api_key,
+    OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools, OpenAiCompatMaxTokensField,
+    OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility, OpenRouterMaxPrice,
+    OpenRouterPercentileCutoffs, OpenRouterPercentilePreference, OpenRouterProviderRouting,
+    OpenRouterRouteCompatibility, ProviderCapabilities, RequestLogRetentionWindow, RequestTag,
+    RouteCompatibility, RoutePricingOverride, SeedApiKeySecretMaterial, SeedBudget,
+    SeedHumanBudgetDefaults, SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute,
+    SeedOauthProvider, SeedOidcProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser,
+    SeedUserMembership, SeedUserModelBudgetDefault, hash_gateway_key_secret, parse_gateway_api_key,
     validate_entity_tags,
 };
 use gateway_providers::{
@@ -2318,6 +2318,8 @@ pub struct OpenAiCompatRouteCompatibilityConfig {
     pub reasoning_effort: OpenAiCompatReasoningEffort,
     #[serde(default)]
     pub supports_stream_usage: bool,
+    #[serde(default)]
+    pub empty_tools: OpenAiCompatEmptyTools,
 }
 
 impl OpenAiCompatRouteCompatibilityConfig {
@@ -2328,6 +2330,7 @@ impl OpenAiCompatRouteCompatibilityConfig {
             developer_role: self.developer_role,
             reasoning_effort: self.reasoning_effort,
             supports_stream_usage: self.supports_stream_usage,
+            empty_tools: self.empty_tools,
         }
     }
 }
@@ -3079,8 +3082,9 @@ mod tests {
 
     use gateway_core::{
         AuthMode, AwsBedrockApiStyle, BudgetCadence, GlobalRole, ManagedApiKeySource,
-        MembershipRole, Money4, OpenAiCompatDeveloperRole, OpenAiCompatMaxTokensField,
-        OpenAiCompatReasoningEffort, OpenRouterPercentilePreference, RequestLogRetentionWindow,
+        MembershipRole, Money4, OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools,
+        OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenRouterPercentilePreference,
+        RequestLogRetentionWindow,
     };
     use gateway_providers::{BearerAuthHeader, BedrockAuthConfig};
     use gateway_service::RequestLogPayloadCaptureMode;
@@ -3781,6 +3785,7 @@ models:
             developer_role: system
             reasoning_effort: reasoning_object
             supports_stream_usage: true
+            empty_tools: preserve_with_tool_history
 "#,
         );
 
@@ -3803,6 +3808,10 @@ models:
             OpenAiCompatReasoningEffort::ReasoningObject
         );
         assert!(profile.supports_stream_usage);
+        assert_eq!(
+            profile.empty_tools,
+            OpenAiCompatEmptyTools::PreserveWithToolHistory
+        );
     }
 
     #[test]

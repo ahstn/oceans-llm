@@ -59,25 +59,10 @@ pub(super) fn map_bedrock_content_blocks(content: &Value) -> Result<Vec<Value>, 
                     )
                 })?;
                 match kind {
-                    "text" | "input_text" => {
-                        let text = object.get("text").and_then(Value::as_str).ok_or_else(|| {
-                            ProviderError::InvalidRequest(
-                                "text content entries must include a string `text`".to_string(),
-                            )
-                        })?;
-                        blocks.push(json!({ "text": text }));
-                    }
                     "tool_result" => {
                         blocks.push(map_tool_result_content_block(object)?);
                     }
-                    "image" | "image_url" | "input_image" => {
-                        blocks.push(map_bedrock_image_block(object)?);
-                    }
-                    other => {
-                        return Err(ProviderError::InvalidRequest(format!(
-                            "unsupported content type `{other}` for aws_bedrock Converse mapping"
-                        )));
-                    }
+                    _ => blocks.push(map_bedrock_message_content_block(object)?),
                 }
             }
             Ok(blocks)
@@ -85,6 +70,173 @@ pub(super) fn map_bedrock_content_blocks(content: &Value) -> Result<Vec<Value>, 
         _ => Err(ProviderError::InvalidRequest(
             "message content must be a string or typed content array".to_string(),
         )),
+    }
+}
+
+pub(super) fn map_bedrock_message_content_block(
+    object: &Map<String, Value>,
+) -> Result<Value, ProviderError> {
+    let kind = object.get("type").and_then(Value::as_str).ok_or_else(|| {
+        ProviderError::InvalidRequest("content entries must include `type`".to_string())
+    })?;
+    match kind {
+        "text" | "input_text" => {
+            let text = object.get("text").and_then(Value::as_str).ok_or_else(|| {
+                ProviderError::InvalidRequest(
+                    "text content entries must include a string `text`".to_string(),
+                )
+            })?;
+            Ok(json!({ "text": text }))
+        }
+        "image" | "image_url" | "input_image" => map_bedrock_image_block(object),
+        "document" | "file" | "input_file" => map_bedrock_file_block(object),
+        other => Err(ProviderError::InvalidRequest(format!(
+            "unsupported content type `{other}` for aws_bedrock Converse mapping"
+        ))),
+    }
+}
+
+fn map_bedrock_file_block(object: &Map<String, Value>) -> Result<Value, ProviderError> {
+    let file = object
+        .get("file")
+        .and_then(Value::as_object)
+        .unwrap_or(object);
+    let source = file
+        .get("source")
+        .and_then(Value::as_object)
+        .or_else(|| object.get("source").and_then(Value::as_object));
+    let filename = string_field(file, &["filename", "name"])
+        .or_else(|| string_field(object, &["filename", "name"]));
+    let explicit_media_type = string_field(file, &["media_type", "mime_type", "mediaType"])
+        .or_else(|| string_field(object, &["media_type", "mime_type", "mediaType"]))
+        .or_else(|| source.and_then(|source| string_field(source, &["media_type", "mime_type"])));
+    let encoded = string_field(file, &["file_data"])
+        .or_else(|| file.get("data").and_then(encoded_data))
+        .or_else(|| source.and_then(|source| string_field(source, &["data", "bytes"])))
+        .ok_or_else(|| {
+            ProviderError::InvalidRequest(
+                "Bedrock file content must include base64 `file_data`, `data`, or `source.data`"
+                    .to_string(),
+            )
+        })?;
+    let (data_url_media_type, bytes) = parse_base64_data_url(encoded)
+        .map_or((None, encoded), |(media_type, data)| {
+            (Some(media_type), data)
+        });
+    let media_type = explicit_media_type
+        .or(data_url_media_type)
+        .or_else(|| filename.and_then(infer_media_type_from_filename))
+        .ok_or_else(|| {
+            ProviderError::InvalidRequest(
+                "Bedrock file content must include a supported media type or filename extension"
+                    .to_string(),
+            )
+        })?;
+
+    if media_type.starts_with("image/") {
+        return map_bedrock_base64_image(media_type, bytes);
+    }
+
+    let format = bedrock_document_format(media_type).ok_or_else(|| {
+        ProviderError::InvalidRequest(format!(
+            "unsupported document media type `{media_type}` for aws_bedrock Converse"
+        ))
+    })?;
+    Ok(json!({
+        "document": {
+            "format": format,
+            "name": sanitize_bedrock_document_name(filename, format),
+            "source": {"bytes": bytes}
+        }
+    }))
+}
+
+fn string_field<'a>(object: &'a Map<String, Value>, fields: &[&str]) -> Option<&'a str> {
+    fields
+        .iter()
+        .find_map(|field| object.get(*field).and_then(Value::as_str))
+}
+
+fn encoded_data(value: &Value) -> Option<&str> {
+    value.as_str().or_else(|| {
+        value
+            .as_object()
+            .and_then(|data| data.get("data"))
+            .and_then(Value::as_str)
+    })
+}
+
+fn parse_base64_data_url(value: &str) -> Option<(&str, &str)> {
+    value
+        .strip_prefix("data:")
+        .and_then(|value| value.split_once(";base64,"))
+}
+
+fn bedrock_document_format(media_type: &str) -> Option<&'static str> {
+    match media_type {
+        "application/pdf" => Some("pdf"),
+        "text/csv" | "application/csv" => Some("csv"),
+        "application/msword" => Some("doc"),
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => Some("docx"),
+        "application/vnd.ms-excel" => Some("xls"),
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => Some("xlsx"),
+        "text/html" => Some("html"),
+        "text/plain" => Some("txt"),
+        "text/markdown" | "text/x-markdown" => Some("md"),
+        _ => None,
+    }
+}
+
+fn infer_media_type_from_filename(filename: &str) -> Option<&'static str> {
+    let extension = filename.rsplit_once('.')?.1.to_ascii_lowercase();
+    match extension.as_str() {
+        "pdf" => Some("application/pdf"),
+        "csv" => Some("text/csv"),
+        "doc" => Some("application/msword"),
+        "docx" => Some("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+        "xls" => Some("application/vnd.ms-excel"),
+        "xlsx" => Some("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+        "html" | "htm" => Some("text/html"),
+        "txt" => Some("text/plain"),
+        "md" | "markdown" => Some("text/markdown"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "png" => Some("image/png"),
+        "webp" => Some("image/webp"),
+        "gif" => Some("image/gif"),
+        _ => None,
+    }
+}
+
+fn sanitize_bedrock_document_name(filename: Option<&str>, format: &str) -> String {
+    let filename = filename
+        .and_then(|filename| {
+            filename
+                .rsplit(|character| ['/', '\\'].contains(&character))
+                .next()
+        })
+        .unwrap_or("document");
+    let stem = filename.rsplit_once('.').map_or(filename, |(stem, _)| stem);
+    let mut name = String::with_capacity(stem.len().min(200));
+    let mut previous_was_space = true;
+    for character in stem.chars() {
+        if name.len() >= 200 {
+            break;
+        }
+        let allowed =
+            character.is_ascii_alphanumeric() || matches!(character, '-' | '(' | ')' | '[' | ']');
+        if allowed {
+            name.push(character);
+            previous_was_space = false;
+        } else if !previous_was_space {
+            name.push(' ');
+            previous_was_space = true;
+        }
+    }
+    let name = name.trim();
+    if name.is_empty() {
+        format!("document {format}")
+    } else {
+        name.to_string()
     }
 }
 

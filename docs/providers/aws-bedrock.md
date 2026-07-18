@@ -100,6 +100,8 @@ Examples verified against AWS model cards on 2026-04-30:
 
 Prefer geo or global inference profile IDs when your AWS account and residency policy allow them. They let Bedrock route within the selected geography or globally for higher throughput. Use in-region base model IDs when data residency requires one specific Region.
 
+Model IDs are encoded as URL path segments. For Bedrock ARNs, including `application-inference-profile` ARNs, the required `:` and `/` resource delimiters are preserved for Converse, ConverseStream, and InvokeModel while other unsafe characters remain percent-encoded.
+
 ## Runtime Claude Example
 
 This route sends non-streaming Chat Completions requests to Bedrock Runtime `InvokeModel` with Anthropic Messages fields, including `anthropic_version: bedrock-2023-05-31`. The `api_style` selects that behavior.
@@ -198,6 +200,21 @@ models:
 ```
 
 Keep `vision: false` unless the route has been tested with the exact public request shape you plan to support. Bedrock model cards can list multimodal support even when the gateway adapter has not normalized that modality for the public OpenAI-shaped request.
+
+### Converse Request Controls and Tool Results
+
+Runtime Converse routes accept request-scoped `requestMetadata`, `performanceConfig`, `guardrailConfig`, and `additionalModelResponseFieldPaths`; snake_case aliases are also accepted. Validation follows the Bedrock API contract:
+
+- `requestMetadata` is a string map with at most 16 entries and 256-character keys/values using AWS's allowed character set.
+- `performanceConfig.latency` is `standard` or `optimized`.
+- guardrail identifiers, versions, trace values, and fields are validated; `streamProcessingMode: sync|async` is allowed only for ConverseStream.
+- additional response paths are at most 10 non-empty RFC 6901 JSON Pointers of at most 256 characters.
+
+Static route `extra_body` is merged after request-scoped validation and remains the final admin-controlled override.
+
+Converse user content and tool results share base64 image/document conversion. Supported documents are PDF, CSV, Word (`doc`, `docx`), Excel (`xls`, `xlsx`), HTML, Markdown, and plain text. Tool results also accept structured JSON. Document names are normalized to Bedrock's required character set. Tool IDs that are invalid or longer than 64 characters are replaced deterministically on both the tool-use and tool-result blocks; valid Bedrock IDs are unchanged.
+
+Bedrock rejects `strict` in Claude Opus 4.7 and 4.8 tool specifications, so the gateway omits it only for those model IDs. Models that support the field continue receiving the caller's explicit value.
 
 ## Fallback Across Providers
 
