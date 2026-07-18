@@ -15,6 +15,36 @@ for (const adapter of adapters) {
   defineHarnessContract(adapter, runtime);
 }
 
+const allowlistedUser = runtime.allowlistedUser;
+describe("Pi human-user model allowlist contract", () => {
+  let workspace: string;
+
+  beforeEach(async () => {
+    workspace = await mkdtemp(join(tmpdir(), "oceans-pi-allowlist-"));
+  });
+  afterEach(async () => rm(workspace, { force: true, recursive: true }));
+
+  test.skipIf(!allowlistedUser)(
+    "allows a user whose normalized email is in the model allowlist",
+    async () => {
+      if (!allowlistedUser) {
+        throw new Error("Allowlisted user runtime is not configured");
+      }
+      const adapter = new PiAdapter({
+        ...runtime,
+        apiKey: allowlistedUser.apiKey,
+        model: allowlistedUser.model,
+      });
+      const result = await adapter.run(
+        workspace,
+        "Reply with exactly ALLOWLIST_AUTHZ_OK and no other text.",
+      );
+
+      expect(result.output).toContain("ALLOWLIST_AUTHZ_OK");
+    },
+  );
+});
+
 function defineHarnessContract(adapter: HarnessAdapter, gateway: GatewayRuntime): void {
   describe(`${adapter.label} native harness contract`, () => {
     const admin = new GatewayAdminClient(gateway);

@@ -1,4 +1,8 @@
 export interface GatewayRuntime {
+  allowlistedUser?: {
+    apiKey: string;
+    model: string;
+  };
   adminEmail: string;
   adminPassword: string;
   apiKey: string;

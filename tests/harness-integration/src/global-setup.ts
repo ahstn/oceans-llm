@@ -12,6 +12,8 @@ import { delay, runCommand } from "./process.js";
 import type { GatewayRuntime } from "./types.js";
 
 const GATEWAY_MODEL = "harness-openrouter";
+const ALLOWLISTED_GATEWAY_MODEL = "harness-openrouter-user-allowlist";
+const ALLOWLISTED_USER_EMAIL = "allowlisted.harness@example.com";
 const DEFAULT_OPENROUTER_MODEL = "deepseek/deepseek-v4-flash";
 const MANAGED_API_KEY = "gwk_harness.integration-secret";
 const MANAGED_ADMIN_EMAIL = "harness-admin@local";
@@ -27,6 +29,18 @@ const DiscoverySchema = z.object({
 });
 const ServiceAccountsSchema = z.object({
   service_accounts: z.array(z.object({ id: z.string(), key: z.string() })),
+});
+const IdentityUsersSchema = z.object({
+  users: z.array(z.object({ email: z.string(), id: z.string() })),
+});
+const CreatedApiKeySchema = z.object({
+  raw_key: z.string(),
+});
+const PasswordInviteSchema = z.object({
+  invite_url: z.string(),
+});
+const PasswordActivationSchema = z.object({
+  status: z.literal("password_set"),
 });
 
 interface ManagedGateway {
@@ -64,7 +78,10 @@ export default async function setup(context: TestProject): Promise<() => Promise
 
   try {
     await assertGatewayReady(baseUrl, managed.process);
-    await configureContext7(runtime);
+    runtime.allowlistedUser = {
+      apiKey: await configureManagedGateway(runtime),
+      model: ALLOWLISTED_GATEWAY_MODEL,
+    };
   } catch (error) {
     await stopManagedGateway(managed);
     throw error;
@@ -75,12 +92,19 @@ export default async function setup(context: TestProject): Promise<() => Promise
 }
 
 function externalRuntime(baseUrl: string): GatewayRuntime {
+  const allowlistedApiKey = process.env.OCEANS_ALLOWLISTED_USER_API_KEY;
+  const allowlistedModel = process.env.OCEANS_ALLOWLISTED_TEST_MODEL;
+  const allowlistedUser =
+    allowlistedApiKey && allowlistedModel
+      ? { apiKey: allowlistedApiKey, model: allowlistedModel }
+      : undefined;
   return {
     adminEmail: requiredEnvironment("GATEWAY_ADMIN_EMAIL"),
     adminPassword: requiredEnvironment("GATEWAY_ADMIN_PASSWORD"),
     apiKey: requiredEnvironment("OCEANS_API_KEY"),
     baseUrl,
     model: process.env.OCEANS_TEST_MODEL ?? GATEWAY_MODEL,
+    ...(allowlistedUser ? { allowlistedUser } : {}),
   };
 }
 
@@ -154,7 +178,7 @@ async function assertGatewayReady(baseUrl: string, gatewayProcess?: ChildProcess
   throw new Error(`Oceans gateway did not become ready at ${baseUrl}`);
 }
 
-async function configureContext7(runtime: GatewayRuntime): Promise<void> {
+async function configureManagedGateway(runtime: GatewayRuntime): Promise<string> {
   const login = await fetch(`${runtime.baseUrl}/api/v1/auth/login/password`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -223,6 +247,55 @@ async function configureContext7(runtime: GatewayRuntime): Promise<void> {
       "PUT",
     );
   }
+
+  const identity = await adminRequest(
+    runtime.baseUrl,
+    cookie,
+    "/api/v1/admin/identity/users",
+    undefined,
+    IdentityUsersSchema,
+    "GET",
+  );
+  const allowlistedUser = identity.users.find(
+    (user) => user.email.toLowerCase() === ALLOWLISTED_USER_EMAIL,
+  );
+  if (!allowlistedUser) {
+    throw new Error("Managed gateway did not seed the allowlisted human user");
+  }
+  const invitation = await adminRequest(
+    runtime.baseUrl,
+    cookie,
+    `/api/v1/admin/identity/users/${allowlistedUser.id}/password-invite`,
+    undefined,
+    PasswordInviteSchema,
+  );
+  const invitationToken = new URL(invitation.invite_url).pathname.split("/").pop();
+  if (!invitationToken) {
+    throw new Error("Managed gateway returned an invalid password invitation URL");
+  }
+  await adminRequest(
+    runtime.baseUrl,
+    cookie,
+    `/api/v1/auth/invitations/${encodeURIComponent(invitationToken)}/password`,
+    { password: "harness-allowlisted-user-password" },
+    PasswordActivationSchema,
+  );
+  const createdKey = await adminRequest(
+    runtime.baseUrl,
+    cookie,
+    "/api/v1/admin/api-keys",
+    {
+      model_grant_mode: "all",
+      model_keys: [],
+      name: "Harness Allowlisted User Key",
+      owner_kind: "user",
+      owner_service_account_id: null,
+      owner_team_id: null,
+      owner_user_id: allowlistedUser.id,
+    },
+    CreatedApiKeySchema,
+  );
+  return createdKey.raw_key;
 }
 
 async function adminRequest<T>(
@@ -307,6 +380,11 @@ teams:
   - id: harness
     name: Harness Integration
 
+users:
+  - name: Allowlisted Harness User
+    email: ${ALLOWLISTED_USER_EMAIL}
+    auth_mode: password
+
 service_accounts:
   - id: harness
     name: Harness Integration
@@ -334,6 +412,15 @@ providers:
 models:
   - id: ${GATEWAY_MODEL}
     description: DeepSeek V4 Flash through OpenRouter for harness integration tests
+    routes:
+      - provider: openrouter
+        upstream_model: ${upstreamModel}
+
+  - id: ${ALLOWLISTED_GATEWAY_MODEL}
+    description: Mixed-case human-user allowlist through OpenRouter
+    allowlist:
+      users:
+        - Allowlisted.Harness@Example.com
     routes:
       - provider: openrouter
         upstream_model: ${upstreamModel}
