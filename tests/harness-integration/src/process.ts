@@ -28,7 +28,7 @@ export async function runCommand(
 ): Promise<CommandResult> {
   const child = spawn(command, args, {
     cwd: options.cwd,
-    env: { ...process.env, ...options.env },
+    env: options.env,
     stdio: ["pipe", "pipe", "pipe"],
   });
   child.stdin.end(options.stdin);
@@ -90,7 +90,15 @@ async function waitForCompletion(
   completion: Promise<ProcessCompletion>,
   timeoutMs: number,
 ): Promise<ProcessCompletion | undefined> {
-  return Promise.race([completion, delay(timeoutMs).then(() => undefined)]);
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => resolve(undefined), timeoutMs);
+  });
+  try {
+    return await Promise.race([completion, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export function delay(ms: number): Promise<void> {

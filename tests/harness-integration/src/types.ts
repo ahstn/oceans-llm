@@ -10,10 +10,15 @@ export interface GatewayRuntime {
   model: string;
 }
 
+export interface ToolCall {
+  input: unknown;
+  name: string;
+}
+
 export interface HarnessRun {
   requestTag: string;
   output: string;
-  toolCalls: string[];
+  toolCalls: ToolCall[];
 }
 
 export interface HarnessAdapter {

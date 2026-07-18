@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import type { TestProject } from "vitest/node";
 import { z } from "zod";
 
-import { assertSuccessful, readEnvelope } from "./gateway-client.js";
+import { assertSuccessful, fetchWithTimeout, readEnvelope } from "./gateway-client.js";
 import { delay, runCommand } from "./process.js";
 import type { GatewayRuntime } from "./types.js";
 
@@ -49,7 +49,9 @@ interface ManagedGateway {
 }
 
 export default async function setup(context: TestProject): Promise<() => Promise<void>> {
-  const externalBaseUrl = process.env.GATEWAY_BASE_URL?.replace(/\/$/, "");
+  const externalBaseUrl = process.env.GATEWAY_BASE_URL
+    ? normalizeExternalBaseUrl(process.env.GATEWAY_BASE_URL)
+    : undefined;
   if (externalBaseUrl) {
     const runtime = externalRuntime(externalBaseUrl);
     await assertGatewayReady(runtime.baseUrl);
@@ -58,46 +60,49 @@ export default async function setup(context: TestProject): Promise<() => Promise
   }
 
   const openRouterApiKey = requiredEnvironment("OPENROUTER_API_KEY");
-  const runtimeDir = await mkdtemp(join(tmpdir(), "oceans-harness-integration-"));
-  const port = await availablePort();
-  const baseUrl = `http://127.0.0.1:${port}`;
-  const configPath = join(runtimeDir, "gateway.harness.yaml");
-  const databasePath = join(runtimeDir, "gateway.harness.db");
-  const upstreamModel = process.env.OPENROUTER_TEST_MODEL ?? DEFAULT_OPENROUTER_MODEL;
-  await writeFile(configPath, gatewayConfig(port, databasePath, upstreamModel), "utf8");
-
   const gatewayBinary = await buildGateway();
-  const managed = startGateway(gatewayBinary, configPath, runtimeDir, openRouterApiKey);
-  const runtime: GatewayRuntime = {
-    adminEmail: MANAGED_ADMIN_EMAIL,
-    adminPassword: MANAGED_ADMIN_PASSWORD,
-    apiKey: MANAGED_API_KEY,
-    baseUrl,
-    model: GATEWAY_MODEL,
-  };
-
+  const runtimeDir = await mkdtemp(join(tmpdir(), "oceans-harness-integration-"));
+  let managed: ManagedGateway | undefined;
   try {
-    await assertGatewayReady(baseUrl, managed.process);
+    const port = await availablePort();
+    const baseUrl = `http://127.0.0.1:${port}`;
+    const configPath = join(runtimeDir, "gateway.harness.yaml");
+    const databasePath = join(runtimeDir, "gateway.harness.db");
+    const upstreamModel = process.env.OPENROUTER_TEST_MODEL ?? DEFAULT_OPENROUTER_MODEL;
+    await writeFile(configPath, gatewayConfig(port, databasePath, upstreamModel), "utf8");
+
+    const runningGateway = startGateway(gatewayBinary, configPath, runtimeDir, openRouterApiKey);
+    managed = runningGateway;
+    const runtime: GatewayRuntime = {
+      adminEmail: MANAGED_ADMIN_EMAIL,
+      adminPassword: MANAGED_ADMIN_PASSWORD,
+      apiKey: MANAGED_API_KEY,
+      baseUrl,
+      model: GATEWAY_MODEL,
+    };
+    await assertGatewayReady(baseUrl, runningGateway.process);
     runtime.allowlistedUser = {
       apiKey: await configureManagedGateway(runtime),
       model: ALLOWLISTED_GATEWAY_MODEL,
     };
+
+    context.provide("gateway", runtime);
+    return async () => stopManagedGateway(runningGateway);
   } catch (error) {
-    await stopManagedGateway(managed);
+    if (managed) {
+      await stopManagedGateway(managed);
+    } else {
+      await rm(runtimeDir, { force: true, recursive: true });
+    }
     throw error;
   }
-
-  context.provide("gateway", runtime);
-  return async () => stopManagedGateway(managed);
 }
 
 function externalRuntime(baseUrl: string): GatewayRuntime {
-  const allowlistedApiKey = process.env.OCEANS_ALLOWLISTED_USER_API_KEY;
-  const allowlistedModel = process.env.OCEANS_ALLOWLISTED_TEST_MODEL;
-  const allowlistedUser =
-    allowlistedApiKey && allowlistedModel
-      ? { apiKey: allowlistedApiKey, model: allowlistedModel }
-      : undefined;
+  const allowlistedUser = externalAllowlistedUser(
+    process.env.OCEANS_ALLOWLISTED_USER_API_KEY,
+    process.env.OCEANS_ALLOWLISTED_TEST_MODEL,
+  );
   return {
     adminEmail: requiredEnvironment("GATEWAY_ADMIN_EMAIL"),
     adminPassword: requiredEnvironment("GATEWAY_ADMIN_PASSWORD"),
@@ -106,6 +111,31 @@ function externalRuntime(baseUrl: string): GatewayRuntime {
     model: process.env.OCEANS_TEST_MODEL ?? GATEWAY_MODEL,
     ...(allowlistedUser ? { allowlistedUser } : {}),
   };
+}
+
+export function normalizeExternalBaseUrl(value: string): string {
+  const url = new URL(value);
+  const isLoopback = ["127.0.0.1", "[::1]", "::1", "localhost"].includes(url.hostname);
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && isLoopback)) {
+    throw new Error("GATEWAY_BASE_URL must use HTTPS unless it targets a loopback host");
+  }
+  if (url.search || url.hash) {
+    throw new Error("GATEWAY_BASE_URL must not include a query string or fragment");
+  }
+  url.pathname = url.pathname.replace(/\/+$/, "");
+  return url.href.replace(/\/$/, "");
+}
+
+export function externalAllowlistedUser(
+  apiKey: string | undefined,
+  model: string | undefined,
+): GatewayRuntime["allowlistedUser"] {
+  if (Boolean(apiKey) !== Boolean(model)) {
+    throw new Error(
+      "OCEANS_ALLOWLISTED_USER_API_KEY and OCEANS_ALLOWLISTED_TEST_MODEL must be configured together",
+    );
+  }
+  return apiKey && model ? { apiKey, model } : undefined;
 }
 
 function requiredEnvironment(name: string): string {
@@ -166,7 +196,11 @@ async function assertGatewayReady(baseUrl: string, gatewayProcess?: ChildProcess
       throw new Error(`Managed Oceans gateway exited with code ${gatewayProcess.exitCode}`);
     }
     try {
-      const response = await fetch(`${baseUrl}/readyz`);
+      const response = await fetchWithTimeout(
+        `${baseUrl}/readyz`,
+        {},
+        Math.min(1_000, Math.max(1, deadline - Date.now())),
+      );
       if (response.ok) {
         return;
       }
@@ -179,7 +213,7 @@ async function assertGatewayReady(baseUrl: string, gatewayProcess?: ChildProcess
 }
 
 async function configureManagedGateway(runtime: GatewayRuntime): Promise<string> {
-  const login = await fetch(`${runtime.baseUrl}/api/v1/auth/login/password`, {
+  const login = await fetchWithTimeout(`${runtime.baseUrl}/api/v1/auth/login/password`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ email: runtime.adminEmail, password: runtime.adminPassword }),
@@ -218,7 +252,7 @@ async function configureManagedGateway(runtime: GatewayRuntime): Promise<string>
     throw new Error(`Context7 discovery failed: ${discovery.status}`);
   }
 
-  const accountsResponse = await fetch(
+  const accountsResponse = await fetchWithTimeout(
     `${runtime.baseUrl}/api/v1/admin/identity/service-accounts`,
     { headers: { cookie } },
   );
@@ -269,7 +303,10 @@ async function configureManagedGateway(runtime: GatewayRuntime): Promise<string>
     undefined,
     PasswordInviteSchema,
   );
-  const invitationToken = new URL(invitation.invite_url).pathname.split("/").pop();
+  const invitationToken = new URL(invitation.invite_url, runtime.baseUrl)
+    .pathname.split("/")
+    .filter(Boolean)
+    .pop();
   if (!invitationToken) {
     throw new Error("Managed gateway returned an invalid password invitation URL");
   }
@@ -313,7 +350,7 @@ async function adminRequest<T>(
   if (body !== undefined) {
     request.body = JSON.stringify(body);
   }
-  const response = await fetch(`${baseUrl}${path}`, request);
+  const response = await fetchWithTimeout(`${baseUrl}${path}`, request);
   return readEnvelope(response, path, schema);
 }
 
@@ -341,16 +378,46 @@ async function availablePort(): Promise<number> {
 }
 
 async function stopManagedGateway(managed: ManagedGateway): Promise<void> {
-  if (managed.process.exitCode === null) {
-    const { promise, resolve } = Promise.withResolvers<void>();
-    managed.process.once("exit", () => resolve());
+  if (!hasProcessExited(managed.process)) {
     managed.process.kill("SIGTERM");
-    await Promise.race([promise, delay(5_000)]);
-    if (managed.process.exitCode === null) {
+    if (!(await waitForProcessExit(managed.process, 5_000))) {
       managed.process.kill("SIGKILL");
+      if (!(await waitForProcessExit(managed.process, 5_000))) {
+        throw new Error("Managed gateway did not exit after SIGKILL");
+      }
     }
   }
   await rm(managed.runtimeDir, { force: true, recursive: true });
+}
+
+function hasProcessExited(process: ChildProcess): boolean {
+  return process.exitCode !== null || process.signalCode !== null;
+}
+
+function waitForProcessExit(process: ChildProcess, timeoutMs: number): Promise<boolean> {
+  if (hasProcessExited(process)) {
+    return Promise.resolve(true);
+  }
+  return new Promise((resolve) => {
+    let timer: NodeJS.Timeout | undefined;
+    let settled = false;
+    const finish = (exited: boolean) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      process.off("exit", onExit);
+      resolve(exited);
+    };
+    const onExit = () => finish(true);
+    process.once("exit", onExit);
+    if (hasProcessExited(process)) {
+      finish(true);
+      return;
+    }
+    timer = setTimeout(() => finish(false), timeoutMs);
+  });
 }
 
 function gatewayConfig(port: number, databasePath: string, upstreamModel: string): string {
@@ -414,7 +481,7 @@ models:
     description: DeepSeek V4 Flash through OpenRouter for harness integration tests
     routes:
       - provider: openrouter
-        upstream_model: ${upstreamModel}
+        upstream_model: ${JSON.stringify(upstreamModel)}
 
   - id: ${ALLOWLISTED_GATEWAY_MODEL}
     description: Mixed-case human-user allowlist through OpenRouter
@@ -423,6 +490,6 @@ models:
         - Allowlisted.Harness@Example.com
     routes:
       - provider: openrouter
-        upstream_model: ${upstreamModel}
+        upstream_model: ${JSON.stringify(upstreamModel)}
 `;
 }

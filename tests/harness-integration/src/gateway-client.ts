@@ -25,14 +25,17 @@ export class GatewayAdminClient {
   }
 
   async login(): Promise<void> {
-    const response = await fetch(`${this.#runtime.baseUrl}/api/v1/auth/login/password`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        email: this.#runtime.adminEmail,
-        password: this.#runtime.adminPassword,
-      }),
-    });
+    const response = await fetchWithTimeout(
+      `${this.#runtime.baseUrl}/api/v1/auth/login/password`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: this.#runtime.adminEmail,
+          password: this.#runtime.adminPassword,
+        }),
+      },
+    );
     await assertSuccessful(response, "admin login");
     const setCookie = response.headers.get("set-cookie");
     if (!setCookie) {
@@ -44,21 +47,24 @@ export class GatewayAdminClient {
 
   async waitForSuccessfulModelLog(requestTag: string): Promise<RequestLog> {
     const deadline = Date.now() + 30_000;
-    do {
-      const page = await this.#getRequestLogs(requestTag);
+    while (Date.now() < deadline) {
+      const page = await this.#getRequestLogs(requestTag, Math.max(1, deadline - Date.now()));
       const log = page.items.find((item) => item.status_code === 200);
       if (log) {
         return log;
       }
       await delay(250);
-    } while (Date.now() < deadline);
+    }
 
     throw new Error(
       `No successful request log appeared for Oceans model ${this.#runtime.model} and harness tag ${requestTag}`,
     );
   }
 
-  async #getRequestLogs(requestTag: string): Promise<z.infer<typeof RequestLogPageSchema>> {
+  async #getRequestLogs(
+    requestTag: string,
+    timeoutMs: number,
+  ): Promise<z.infer<typeof RequestLogPageSchema>> {
     if (!this.#cookie) {
       throw new Error("GatewayAdminClient.login() must be called first");
     }
@@ -67,9 +73,21 @@ export class GatewayAdminClient {
     url.searchParams.set("model_key", this.#runtime.model);
     url.searchParams.set("tag_key", "harness_run");
     url.searchParams.set("tag_value", requestTag);
-    const response = await fetch(url, { headers: { cookie: this.#cookie } });
+    const response = await fetchWithTimeout(
+      url,
+      { headers: { cookie: this.#cookie } },
+      timeoutMs,
+    );
     return readEnvelope(response, "request-log query", RequestLogPageSchema);
   }
+}
+
+export function fetchWithTimeout(
+  input: string | URL,
+  init: RequestInit = {},
+  timeoutMs = 10_000,
+): Promise<Response> {
+  return fetch(input, { ...init, signal: AbortSignal.timeout(timeoutMs) });
 }
 
 export async function readEnvelope<T>(

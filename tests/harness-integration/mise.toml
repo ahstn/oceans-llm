@@ -3,6 +3,8 @@ node = "lts"
 
 [tasks.install]
 description = "Install native coding-harness integration test dependencies"
+sources = ["package.json", "package-lock.json"]
+outputs = ["node_modules/.package-lock.json"]
 run = "npm ci"
 
 [tasks.typecheck]

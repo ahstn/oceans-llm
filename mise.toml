@@ -333,15 +333,22 @@ run = "bun run --cwd crates/admin-ui/web test:e2e"
 
 [tasks.harness-integration-install]
 description = "Install native coding-harness integration test dependencies"
-run = "mise -C tests/harness-integration run install"
+sources = [
+  "tests/harness-integration/package.json",
+  "tests/harness-integration/package-lock.json",
+]
+outputs = ["tests/harness-integration/node_modules/.package-lock.json"]
+run = "npm ci --prefix tests/harness-integration"
 
 [tasks.harness-integration-typecheck]
 description = "Typecheck native coding-harness integration tests"
-run = "mise -C tests/harness-integration run typecheck"
+depends = ["harness-integration-install"]
+run = "npm run typecheck --prefix tests/harness-integration"
 
 [tasks.harness-integration-test]
 description = "Run Pi and OpenCode live integration tests through Oceans LLM Gateway"
-run = "mise -C tests/harness-integration run test"
+depends = ["harness-integration-install"]
+run = "npm test --prefix tests/harness-integration"
 
 [tasks.release]
 description = "Analyze commits and dispatch the release workflow when a release is pending"

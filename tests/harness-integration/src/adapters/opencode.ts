@@ -4,8 +4,8 @@ import { fileURLToPath } from "node:url";
 
 import { runCommand } from "../process.js";
 import type { GatewayRuntime, HarnessAdapter, HarnessRun } from "../types.js";
-import { parseToolCalls } from "./events.js";
-import { createIsolatedPaths } from "./isolation.js";
+import { parseAssistantOutput, parseToolCalls } from "./events.js";
+import { createHarnessEnvironment, createIsolatedPaths } from "./isolation.js";
 
 const PACKAGE_ROOT = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const OPENCODE_BINARY = join(PACKAGE_ROOT, "node_modules", ".bin", "opencode");
@@ -38,6 +38,11 @@ export class OpenCodeAdapter implements HarnessAdapter {
           url: `${this.#runtime.baseUrl}/mcp`,
         },
       },
+      permission: {
+        bash: "deny",
+        external_directory: "deny",
+        task: "deny",
+      },
       model: `oceans/${this.#runtime.model}`,
       provider: {
         oceans: {
@@ -57,34 +62,32 @@ export class OpenCodeAdapter implements HarnessAdapter {
         },
       },
     };
-    const environment: NodeJS.ProcessEnv = {
-      HOME: isolated.home,
+    const environment = createHarnessEnvironment(isolated, {
       OCEANS_API_KEY: this.#runtime.apiKey,
       OPENCODE_CONFIG_CONTENT: JSON.stringify(config),
       OPENCODE_CONFIG_DIR: isolated.config,
+      OPENCODE_DISABLE_AUTOUPDATE: "true",
       OPENCODE_DISABLE_DEFAULT_PLUGINS: "true",
       OPENCODE_DISABLE_LSP_DOWNLOAD: "true",
-      OPENCODE_DISABLE_UPDATE_CHECK: "true",
-      XDG_CACHE_HOME: isolated.cache,
-      XDG_CONFIG_HOME: isolated.config,
-      XDG_DATA_HOME: isolated.data,
-    };
+    });
     const mcpStatus = await runCommand(
       OPENCODE_BINARY,
       ["--print-logs", "--log-level", "DEBUG", "mcp", "list"],
       {
-      cwd: workspace,
-      env: environment,
-      timeoutMs: 30_000,
+        cwd: workspace,
+        env: environment,
+        timeoutMs: 30_000,
       },
     );
-    if (!mcpStatus.stdout.includes("oceans") || /failed|error/i.test(mcpStatus.stdout)) {
+    const mcpStatusLine = mcpStatus.stdout
+      .split("\n")
+      .map(stripAnsi)
+      .find((line) => line.includes("oceans"));
+    if (!mcpStatusLine || !/\boceans\s+connected\b/i.test(mcpStatusLine)) {
       throw new Error(
         `OpenCode did not connect to Oceans MCP:\n${mcpStatus.stdout}\n${mcpStatus.stderr}`,
       );
     }
-
-
     const result = await runCommand(
       OPENCODE_BINARY,
       [
@@ -105,7 +108,14 @@ export class OpenCodeAdapter implements HarnessAdapter {
         timeoutMs: 90_000,
       },
     );
-    const output = `${result.stdout}\n${result.stderr}`.trim();
-    return { output, requestTag, toolCalls: parseToolCalls(output) };
+    return {
+      output: parseAssistantOutput(result.stdout),
+      requestTag,
+      toolCalls: parseToolCalls(result.stdout),
+    };
   }
+}
+
+function stripAnsi(value: string): string {
+  return value.replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, "");
 }

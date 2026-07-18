@@ -6,7 +6,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, inject, test } from
 import { OpenCodeAdapter } from "./adapters/opencode.js";
 import { PiAdapter } from "./adapters/pi.js";
 import { GatewayAdminClient } from "./gateway-client.js";
-import type { GatewayRuntime, HarnessAdapter } from "./types.js";
+import type { GatewayRuntime, HarnessAdapter, ToolCall } from "./types.js";
 
 const runtime = inject("gateway");
 const adapters: HarnessAdapter[] = [new PiAdapter(runtime), new OpenCodeAdapter(runtime)];
@@ -40,7 +40,14 @@ describe("Pi human-user model allowlist contract", () => {
         "Reply with exactly ALLOWLIST_AUTHZ_OK and no other text.",
       );
 
-      expect(result.output).toContain("ALLOWLIST_AUTHZ_OK");
+      expect(result.output).toBe("ALLOWLIST_AUTHZ_OK");
+      const admin = new GatewayAdminClient({
+        ...runtime,
+        model: allowlistedUser.model,
+      });
+      await admin.login();
+      const requestLog = await admin.waitForSuccessfulModelLog(result.requestTag);
+      expect(requestLog.provider_key).toBe("openrouter");
     },
   );
 });
@@ -76,8 +83,8 @@ function defineHarnessContract(adapter: HarnessAdapter, gateway: GatewayRuntime)
         `Use the read tool to read source.txt. Then use the write tool, not a shell command, to write destination.txt containing exactly ${marker}-copied. You must use both tools.`,
       );
 
-      expect(result.toolCalls).toContain("read");
-      expect(result.toolCalls).toContain("write");
+      expect(result.toolCalls.map((toolCall) => toolCall.name)).toContain("read");
+      expect(result.toolCalls.map((toolCall) => toolCall.name)).toContain("write");
       await expect(readFile(join(workspace, "destination.txt"), "utf8")).resolves.toBe(
         `${marker}-copied`,
       );
@@ -86,17 +93,50 @@ function defineHarnessContract(adapter: HarnessAdapter, gateway: GatewayRuntime)
     test("gets useful Vitest documentation from Context7 through aggregate MCP", async () => {
       const result = await adapter.run(
         workspace,
-        "Use the configured Oceans MCP server. You must invoke its MCP tools to search for Context7 library-documentation tools, then call Context7 for Vitest fake-timer documentation. Summarize the tool-backed answer and include the words VITEST and TIMER.",
+        "Use the configured Oceans MCP server and perform exactly these operations in order before answering: first invoke the Oceans aggregate tool named search_tools with a query for Context7 library-documentation tools; then use that result to invoke the aggregate tool named call_tool and ask Context7 which async Vitest API advances fake timers by a duration. Both aggregate tool calls are mandatory. Include the exact API in the final answer.",
       );
 
-      expect(
-        result.toolCalls.some(
-          (tool) => tool === "mcp" || tool.endsWith("search_tools") || tool.endsWith("call_tool"),
-        ),
-        result.output,
-      ).toBe(true);
-      expect(result.output).toMatch(/vitest/i);
-      expect(result.output).toMatch(/timer/i);
+      const discoveryIndex = result.toolCalls.findIndex(
+        (toolCall) => aggregateOperation(toolCall) === "search_tools",
+      );
+      const documentationIndex = result.toolCalls.findIndex(
+        (toolCall, index) =>
+          index > discoveryIndex &&
+          aggregateOperation(toolCall) === "call_tool" &&
+          toolInputContains(toolCall, "context7"),
+      );
+      const toolEvidence = JSON.stringify(result.toolCalls);
+      expect(discoveryIndex, toolEvidence).toBeGreaterThanOrEqual(0);
+      expect(documentationIndex, toolEvidence).toBeGreaterThan(discoveryIndex);
+      expect(result.output).toMatch(/advanceTimersByTimeAsync/i);
     });
   });
+}
+
+function aggregateOperation(toolCall: ToolCall): string | undefined {
+  if (toolCall.name.endsWith("search_tools")) {
+    return "search_tools";
+  }
+  if (toolCall.name.endsWith("call_tool")) {
+    return "call_tool";
+  }
+  if (toolCall.name !== "mcp" || !isRecord(toolCall.input)) {
+    return undefined;
+  }
+  const operation = toolCall.input.tool;
+  if (typeof operation !== "string") {
+    return undefined;
+  }
+  if (operation.endsWith("search_tools")) {
+    return "search_tools";
+  }
+  return operation.endsWith("call_tool") ? "call_tool" : undefined;
+}
+
+function toolInputContains(toolCall: ToolCall, value: string): boolean {
+  return JSON.stringify(toolCall.input).toLowerCase().includes(value.toLowerCase());
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

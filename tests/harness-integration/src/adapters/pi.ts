@@ -5,8 +5,8 @@ import { fileURLToPath } from "node:url";
 
 import { runCommand } from "../process.js";
 import type { GatewayRuntime, HarnessAdapter, HarnessRun } from "../types.js";
-import { parseToolCalls } from "./events.js";
-import { createIsolatedPaths } from "./isolation.js";
+import { parseAssistantOutput, parseToolCalls } from "./events.js";
+import { createHarnessEnvironment, createIsolatedPaths } from "./isolation.js";
 
 const PACKAGE_ROOT = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const PI_BINARY = join(PACKAGE_ROOT, "node_modules", ".bin", "pi");
@@ -26,6 +26,7 @@ export class PiAdapter implements HarnessAdapter {
     const isolated = await createIsolatedPaths(workspace, this.key);
     const agentDir = join(isolated.config, "agent");
     await mkdir(agentDir, { recursive: true });
+    const sandboxExtension = join(agentDir, "workspace-sandbox.mjs");
     await Promise.all([
       writeFile(
         join(agentDir, "models.json"),
@@ -65,6 +66,7 @@ export class PiAdapter implements HarnessAdapter {
         }),
         "utf8",
       ),
+      writeFile(sandboxExtension, workspaceSandboxSource(workspace), "utf8"),
     ]);
 
     const result = await runCommand(
@@ -79,31 +81,60 @@ export class PiAdapter implements HarnessAdapter {
         "--no-extensions",
         "--extension",
         MCP_EXTENSION,
+        "--extension",
+        sandboxExtension,
         "--provider",
         "oceans",
         "--model",
         this.#runtime.model,
-        "--api-key",
-        this.#runtime.apiKey,
         "--thinking",
         "off",
         "--approve",
       ],
       {
         cwd: workspace,
-        env: {
-          HOME: isolated.home,
+        env: createHarnessEnvironment(isolated, {
           OCEANS_API_KEY: this.#runtime.apiKey,
           PI_CODING_AGENT_DIR: agentDir,
-          XDG_CACHE_HOME: isolated.cache,
-          XDG_CONFIG_HOME: isolated.config,
-          XDG_DATA_HOME: isolated.data,
-        },
+        }),
         stdin: prompt,
         timeoutMs: 180_000,
       },
     );
-    const output = `${result.stdout}\n${result.stderr}`.trim();
-    return { output, requestTag, toolCalls: parseToolCalls(output) };
+    return {
+      output: parseAssistantOutput(result.stdout),
+      requestTag,
+      toolCalls: parseToolCalls(result.stdout),
+    };
   }
+}
+
+function workspaceSandboxSource(workspace: string): string {
+  return `import { isAbsolute, relative, resolve, sep } from "node:path";
+
+const workspace = ${JSON.stringify(workspace)};
+
+function isWithinWorkspace(target) {
+  const relativePath = relative(workspace, resolve(workspace, target));
+  return (
+    relativePath === "" ||
+    (relativePath !== ".." && !relativePath.startsWith(".." + sep) && !isAbsolute(relativePath))
+  );
+}
+
+export default function workspaceSandbox(pi) {
+  pi.on("tool_call", async (event) => {
+    if (event.toolName === "bash") {
+      return { block: true, reason: "Shell access is disabled in the harness integration sandbox" };
+    }
+    if (!["edit", "read", "write"].includes(event.toolName)) {
+      return;
+    }
+    const target = event.input?.path;
+    if (typeof target !== "string" || !isWithinWorkspace(target)) {
+      return { block: true, reason: "File access outside the harness workspace is disabled" };
+    }
+  });
+}
+`;
 }
