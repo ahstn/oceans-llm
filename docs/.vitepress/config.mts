@@ -97,10 +97,19 @@ const primarySidebar = [
       { text: "Identity and Access", link: "/access/identity-and-access" },
       { text: "Service Accounts", link: "/access/service-accounts" },
       { text: "Budgets", link: "/access/budgets" },
-      { text: "OIDC and SSO", link: "/access/oidc-and-sso-status" },
       {
-        text: "GitHub OAuth SSO Setup",
-        link: "/access/github-oauth-admin-setup",
+        text: "OIDC and SSO",
+        link: "/access/oidc-and-sso-status",
+        items: [
+          {
+            text: "Google OAuth 2.0 / OIDC SSO Setup",
+            link: "/access/google-oauth-admin-setup",
+          },
+          {
+            text: "GitHub OAuth SSO Setup",
+            link: "/access/github-oauth-admin-setup",
+          },
+        ],
       },
       { text: "Admin Control Plane", link: "/access/admin-control-plane" },
     ],

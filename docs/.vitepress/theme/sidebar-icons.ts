@@ -62,6 +62,7 @@ const sidebarIcons: Record<string, readonly HugeIconNode[]> = {
   "/access/service-accounts": Key01Icon,
   "/access/budgets": SaveMoneyDollarIcon,
   "/access/oidc-and-sso-status": Shield01Icon,
+  "/access/google-oauth-admin-setup": AiCloudIcon,
   "/access/github-oauth-admin-setup": GithubIcon,
   "/access/admin-control-plane": DashboardSquare01Icon,
   "/reference/request-lifecycle-and-failure-modes": WorkflowSquare01Icon,
